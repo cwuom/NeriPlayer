@@ -518,9 +518,11 @@ internal fun visibleDownloadProgressTasks(tasks: List<DownloadTask>): List<Downl
     return tasks
         .asSequence()
         .filter { task ->
-            task.status == DownloadStatus.QUEUED ||
-                task.status == DownloadStatus.DOWNLOADING ||
-                task.status == DownloadStatus.WAITING_NETWORK
+            (
+                task.status == DownloadStatus.QUEUED ||
+                    task.status == DownloadStatus.DOWNLOADING ||
+                    task.status == DownloadStatus.WAITING_NETWORK
+                ) && hasDownloadTaskStartedWork(task)
         }
         .sortedWith(
             compareBy<DownloadTask> { downloadTaskPresentationPriority(it) }
@@ -541,6 +543,7 @@ internal fun hasDownloadTaskStartedWork(task: DownloadTask): Boolean {
         stage == AudioDownloadManager.DownloadStage.VERIFYING_AUDIO ||
         stage == AudioDownloadManager.DownloadStage.COMMITTING_CORE ||
         stage == AudioDownloadManager.DownloadStage.ASSETS_ENRICHING ||
+        stage == AudioDownloadManager.DownloadStage.WAITING_RETRY ||
         stage == AudioDownloadManager.DownloadStage.FINALIZING
 }
 

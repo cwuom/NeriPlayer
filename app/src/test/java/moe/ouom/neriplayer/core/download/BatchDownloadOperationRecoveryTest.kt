@@ -333,10 +333,12 @@ class BatchDownloadOperationRecoveryTest {
         val pendingUpsertBody = methodBody(recoveryStoreSource, "upsertPendingDownloadQueue")
         val waitingUpsertBody = methodBody(recoveryStoreSource, "upsertWaitingStorageMutation")
 
-        assertTrue(stagingBody.contains("readOperationSnapshots("))
+        assertTrue(stagingBody.contains("readOperationRequestMetadata("))
         assertTrue(stagingBody.contains("readOperationIdentities("))
-        assertTrue(stagingBody.contains("continue"))
-        assertTrue(batchBody.contains("val operationSnapshots"))
+        assertTrue(stagingBody.contains("promoteWaitingStorageMutations("))
+        assertFalse(stagingBody.contains("rememberPendingDownloadQueue("))
+        assertTrue(batchBody.contains("val operationHeaders"))
+        assertFalse(batchBody.contains("val operationSnapshots"))
         assertTrue(roomStoreSource.contains("normalizedOperationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE)"))
         assertTrue(pendingUpsertBody.contains("rehydrateMalformedReusableOperations("))
         assertFalse(pendingUpsertBody.contains("rehydrateMalformedReusableOperation("))
@@ -432,8 +434,8 @@ class BatchDownloadOperationRecoveryTest {
         assertTrue(
             "batch scheduling must verify the fixed operation before enqueueing its host",
             artifactBody.contains("DownloadExecutionRoomStore.read") &&
-                claimableBody.contains("DownloadExecutionRoomStore.state") &&
-                schedulingBody.contains("DownloadExecutionRoomStore.read") &&
+                claimableBody.contains("DownloadExecutionRoomStore.readOperationHeaders") &&
+                schedulingBody.contains("scheduleMetadataBySongKey") &&
                 schedulingBody.contains("DownloadExecutionRoomStore.state")
         )
         assertTrue(

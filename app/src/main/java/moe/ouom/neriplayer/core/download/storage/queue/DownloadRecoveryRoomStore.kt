@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPER
 import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -36,6 +37,7 @@ internal class DownloadRecoveryRoomStore(
     ): List<String> {
         return database.withTransaction {
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
+            if (distinctSongs.isEmpty()) return@withTransaction emptyList()
             val songKeys = distinctSongs.map(SongItem::stableKey)
             val inFlightOperationIds = DownloadExecutionRoomStore
                 .findReadableOperationsBySongKeys(
@@ -57,48 +59,20 @@ internal class DownloadRecoveryRoomStore(
                 updatedAtMs = nowMs,
                 database = database
             )
-            val reusableEntries = DownloadExecutionRoomStore.listByStates(
-                context = appContext,
+            val existing = readLatestOperationCandidates(
+                songKeys = songKeys,
                 states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
                 excludeUserStoppedOperations = true,
-                database = database
+                invalidateDuplicates = true,
+                nowMs = nowMs
             )
-            val reusableGroups = reusableEntries.groupBy { it.request.song.stableKey() }
-            val existing = reusableGroups
-                .mapValues { (_, entries) ->
-                    entries.maxWithOrNull(
-                        compareBy<DownloadExecutionRoomStore.StateEntry> {
-                            it.createdAtMs
-                        }.thenBy { it.request.operationId }
-                    ) ?: error("missing operation entry")
-                }
-                .toMutableMap()
-            reusableGroups.forEach { (_, entries) ->
-                val winnerId = entries.maxWithOrNull(
-                    compareBy<DownloadExecutionRoomStore.StateEntry> { it.createdAtMs }
-                        .thenBy { it.request.operationId }
-                )?.request?.operationId
-                entries.filterNot { entry -> entry.request.operationId == winnerId }
-                    .forEach { entry ->
-                        database.downloadOperationDao().transitionState(
-                            operationId = entry.request.operationId,
-                            expectedStates = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
-                            state = "INVALID",
-                            updatedAtMs = nowMs,
-                            errorCode = "DUPLICATE_STABLE_KEY_OPERATION"
-                        )
-                    }
+            val existingOperationIds = existing.mapValues { (_, candidate) ->
+                candidate.metadata.operationId
             }
-            val existingOperationIds = DownloadExecutionRoomStore
-                .findReadableOperationsBySongKeys(
-                    context = appContext,
-                    songKeys = songKeys,
-                    database = database,
-                    states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
-                    excludeUserStoppedOperations = true
-                )
-                .mapValues { (_, request) -> request.operationId }
-            var nextOrder = (existing.values.maxOfOrNull { it.queueOrder } ?: -1) + 1
+            var nextOrder = database.downloadOperationDao().findMaxQueueOrderByStates(
+                libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(appContext),
+                states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+            )?.let { maxOrder -> maxOrder + 1 } ?: 0
             distinctSongs.map { song ->
                 val key = song.stableKey()
                 inFlightOperationIds[key]?.let { operationId ->
@@ -106,30 +80,29 @@ internal class DownloadRecoveryRoomStore(
                 }
                 val old = existing[key]
                 val operationId = existingOperationIds[key]
-                    ?: old?.request?.operationId
                     ?: UUID.randomUUID().toString()
                 val effectiveRequiresWifiNetwork = if (userInitiated) {
                     requiresWifiNetwork
                 } else {
-                    old?.request?.requiresWifiNetwork ?: requiresWifiNetwork
+                    old?.metadata?.requiresWifiNetwork ?: requiresWifiNetwork
                 }
                 DownloadExecutionRoomStore.upsert(
                     context = appContext,
                     request = DownloadExecutionRequest(
                         operationId = operationId,
                         song = song,
-                        preserveStaging = old?.request?.preserveStaging ?: false,
+                        preserveStaging = old?.metadata?.preserveStaging ?: false,
                         requiresWifiNetwork = effectiveRequiresWifiNetwork,
-                        attemptId = old?.request?.attemptId,
-                        artifactLeaseId = old?.request?.artifactLeaseId
+                        attemptId = old?.metadata?.attemptId,
+                        artifactLeaseId = old?.metadata?.artifactLeaseId
                             ?: UUID.randomUUID().toString(),
-                        userInitiated = old?.request?.userInitiated == true || userInitiated,
-                        downloadAudioQuality = old?.request?.downloadAudioQuality
+                        userInitiated = old?.metadata?.userInitiated == true || userInitiated,
+                        downloadAudioQuality = old?.metadata?.downloadAudioQuality
                             ?: downloadAudioQuality
                     ),
                     state = PENDING_QUEUE_STATE,
-                    queueOrder = old?.queueOrder ?: nextOrder++,
-                    createdAtMs = old?.createdAtMs ?: nowMs,
+                    queueOrder = old?.header?.queueOrder ?: nextOrder++,
+                    createdAtMs = old?.header?.createdAtMs ?: nowMs,
                     database = database
                 )
                 operationId
@@ -163,41 +136,16 @@ internal class DownloadRecoveryRoomStore(
         return database.withTransaction {
             val dao = database.downloadOperationDao()
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
+            if (distinctSongs.isEmpty()) return@withTransaction emptyList()
             val songKeys = distinctSongs.map(SongItem::stableKey)
             val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(appContext)
-            val waitingEntries = DownloadExecutionRoomStore.listByStates(
-                context = appContext,
+            val waitingWinners = readLatestOperationCandidates(
+                songKeys = songKeys,
                 states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE),
                 excludeUserStoppedOperations = true,
-                database = database
+                invalidateDuplicates = true,
+                nowMs = nowMs
             )
-            val waitingGroups = waitingEntries.groupBy { entry ->
-                entry.request.song.stableKey()
-            }
-            val waitingWinners = waitingGroups.mapValues { (_, entries) ->
-                entries.maxWithOrNull(
-                    compareBy<DownloadExecutionRoomStore.StateEntry> { entry ->
-                        entry.createdAtMs
-                    }.thenBy { entry -> entry.request.operationId }
-                ) ?: error("missing waiting storage mutation entry")
-            }
-            waitingGroups.forEach { (_, entries) ->
-                val winnerId = entries.maxWithOrNull(
-                    compareBy<DownloadExecutionRoomStore.StateEntry> { entry ->
-                        entry.createdAtMs
-                    }.thenBy { entry -> entry.request.operationId }
-                )?.request?.operationId
-                entries.filterNot { entry -> entry.request.operationId == winnerId }
-                    .forEach { entry ->
-                        dao.transitionState(
-                            operationId = entry.request.operationId,
-                            expectedStates = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE),
-                            state = "INVALID",
-                            updatedAtMs = nowMs,
-                            errorCode = "DUPLICATE_STABLE_KEY_OPERATION"
-                        )
-                    }
-            }
             val inFlightOperationIds = DownloadExecutionRoomStore
                 .findReadableOperationsBySongKeys(
                     context = appContext,
@@ -252,14 +200,15 @@ internal class DownloadRecoveryRoomStore(
                         deterministicOperationsById[header.operationId] = header.state
                     }
                 }
-            var nextOrder = (
-                (waitingWinners.values + DownloadExecutionRoomStore.listByStates(
-                    context = appContext,
-                    states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
-                    database = database
-                ))
-                    .maxOfOrNull { entry -> entry.queueOrder } ?: -1
-                ) + 1
+            val maxWaitingOrder = dao.findMaxQueueOrderByStates(
+                libraryId = libraryId,
+                states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE)
+            ) ?: -1
+            val maxReusableOrder = dao.findMaxQueueOrderByStates(
+                libraryId = libraryId,
+                states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+            ) ?: -1
+            var nextOrder = maxOf(maxWaitingOrder, maxReusableOrder) + 1
             distinctSongs.mapNotNull { song ->
                 val key = song.stableKey()
                 if (
@@ -279,7 +228,7 @@ internal class DownloadRecoveryRoomStore(
                 ]
                 val mustReplaceDeterministicOperation =
                     deterministicOperationState in WAITING_STORAGE_MUTATION_REPLACED_TERMINAL_STATES
-                val operationId = existing?.request?.operationId
+                val operationId = existing?.metadata?.operationId
                     ?: if (mustReplaceDeterministicOperation) {
                         UUID.randomUUID().toString()
                     } else {
@@ -288,25 +237,25 @@ internal class DownloadRecoveryRoomStore(
                 val effectiveRequiresWifiNetwork = if (userInitiated) {
                     requiresWifiNetwork
                 } else {
-                    existing?.request?.requiresWifiNetwork ?: requiresWifiNetwork
+                    existing?.metadata?.requiresWifiNetwork ?: requiresWifiNetwork
                 }
                 DownloadExecutionRoomStore.upsert(
                     context = appContext,
                     request = DownloadExecutionRequest(
                         operationId = operationId,
                         song = song,
-                        preserveStaging = existing?.request?.preserveStaging ?: false,
+                        preserveStaging = existing?.metadata?.preserveStaging ?: false,
                         requiresWifiNetwork = effectiveRequiresWifiNetwork,
-                        attemptId = existing?.request?.attemptId,
-                        artifactLeaseId = existing?.request?.artifactLeaseId
+                        attemptId = existing?.metadata?.attemptId,
+                        artifactLeaseId = existing?.metadata?.artifactLeaseId
                             ?: UUID.randomUUID().toString(),
-                        userInitiated = existing?.request?.userInitiated == true || userInitiated,
-                        downloadAudioQuality = existing?.request?.downloadAudioQuality
+                        userInitiated = existing?.metadata?.userInitiated == true || userInitiated,
+                        downloadAudioQuality = existing?.metadata?.downloadAudioQuality
                             ?: downloadAudioQuality
                     ),
                     state = WAITING_STORAGE_MUTATION_OPERATION_STATE,
-                    queueOrder = existing?.queueOrder ?: nextOrder++,
-                    createdAtMs = existing?.createdAtMs ?: nowMs,
+                    queueOrder = existing?.header?.queueOrder ?: nextOrder++,
+                    createdAtMs = existing?.header?.createdAtMs ?: nowMs,
                     database = database
                 )
                 operationId
@@ -336,6 +285,14 @@ internal class DownloadRecoveryRoomStore(
         )
     }
 
+    suspend fun promoteWaitingStorageMutations(operationIds: Collection<String>): Int {
+        return DownloadExecutionRoomStore.promoteWaitingStorageMutations(
+            context = appContext,
+            operationIds = operationIds,
+            database = database
+        )
+    }
+
     suspend fun listPendingQueuedDownloads(): List<ManagedDownloadStorage.PendingDownloadQueueEntry> {
         return DownloadExecutionRoomStore.listByStates(
             context = appContext,
@@ -353,6 +310,144 @@ internal class DownloadRecoveryRoomStore(
                     requiresWifiNetwork = entry.request.requiresWifiNetwork
                 )
             }
+    }
+
+    suspend fun countPendingQueuedDownloads(): Int {
+        return DownloadExecutionRoomStore.countByStates(
+            context = appContext,
+            states = PENDING_QUEUE_VISIBLE_STATES,
+            database = database
+        )
+    }
+
+    private data class ReadableOperationCandidate(
+        val header: DownloadOperationHeaderRow,
+        val metadata: DownloadExecutionRoomStore.OperationRequestMetadata
+    )
+
+    /** 只读取请求歌曲对应的表头和调度字段，避免扫描整张 operation 表 */
+    private suspend fun readLatestOperationCandidates(
+        songKeys: Collection<String>,
+        states: List<String>,
+        excludeUserStoppedOperations: Boolean,
+        invalidateDuplicates: Boolean,
+        nowMs: Long
+    ): Map<String, ReadableOperationCandidate> {
+        val normalizedKeys = songKeys
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+        if (normalizedKeys.isEmpty() || states.isEmpty()) return emptyMap()
+
+        val dao = database.downloadOperationDao()
+        val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(appContext)
+        val headersByStableKey = linkedMapOf<String, MutableList<DownloadOperationHeaderRow>>()
+
+        fun addHeaders(headers: Collection<DownloadOperationHeaderRow>) {
+            headers.forEach { header ->
+                if (header.stableKey in normalizedKeys) {
+                    headersByStableKey
+                        .getOrPut(header.stableKey) { mutableListOf() }
+                        .apply {
+                            if (none { existing -> existing.operationId == header.operationId }) {
+                                add(header)
+                            }
+                        }
+                }
+            }
+        }
+
+        normalizedKeys.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).forEach { keyChunk ->
+            addHeaders(
+                dao.findAllHeadersByStableKeys(
+                    libraryId = libraryId,
+                    stableKeys = keyChunk,
+                    states = states
+                )
+            )
+        }
+
+        fun candidateHeaders(key: String): List<DownloadOperationHeaderRow> {
+            return headersByStableKey[key]
+                .orEmpty()
+                .asSequence()
+                .filterNot { header ->
+                    excludeUserStoppedOperations && header.stopRequestedByUser
+                }
+                .sortedWith(
+                    compareByDescending<DownloadOperationHeaderRow> { it.createdAtMs }
+                        .thenBy { it.operationId }
+                )
+                .toList()
+        }
+
+        var candidateHeaderList = normalizedKeys.flatMap(::candidateHeaders)
+        var metadataByOperationId = DownloadExecutionRoomStore.readOperationRequestMetadata(
+            context = appContext,
+            operationIds = candidateHeaderList.map(DownloadOperationHeaderRow::operationId),
+            database = database
+        )
+        val unresolvedKeys = normalizedKeys.filter { key ->
+            candidateHeaders(key).none { header -> metadataByOperationId[header.operationId] != null }
+        }
+        if (unresolvedKeys.isNotEmpty()) {
+            unresolvedKeys.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).forEach { keyChunk ->
+                addHeaders(
+                    dao.findAllHeadersByStableKeysAnyLibrary(
+                        stableKeys = keyChunk,
+                        states = states
+                    )
+                )
+            }
+            candidateHeaderList = normalizedKeys.flatMap(::candidateHeaders)
+            metadataByOperationId = DownloadExecutionRoomStore.readOperationRequestMetadata(
+                context = appContext,
+                operationIds = candidateHeaderList.map(DownloadOperationHeaderRow::operationId),
+                database = database
+            )
+        }
+
+        val selected = linkedMapOf<String, ReadableOperationCandidate>()
+        normalizedKeys.forEach { key ->
+            val header = candidateHeaders(key).firstOrNull { candidate ->
+                metadataByOperationId[candidate.operationId] != null
+            } ?: return@forEach
+            val metadata = metadataByOperationId[header.operationId] ?: return@forEach
+            if (metadata.stableKey != header.stableKey) return@forEach
+            if (header.libraryId != libraryId) {
+                dao.rehomeOperationLibrary(
+                    operationId = header.operationId,
+                    stableKey = header.stableKey,
+                    libraryId = libraryId,
+                    states = states,
+                    updatedAtMs = nowMs
+                )
+            }
+            selected[header.stableKey] = ReadableOperationCandidate(
+                header = header,
+                metadata = metadata
+            )
+        }
+
+        if (invalidateDuplicates) {
+            headersByStableKey.forEach { (key, headers) ->
+                val winnerId = selected[key]?.header?.operationId
+                headers.filterNot { header -> header.operationId == winnerId }
+                    .filter { header ->
+                        !excludeUserStoppedOperations || !header.stopRequestedByUser
+                    }
+                    .forEach { header ->
+                        dao.transitionState(
+                            operationId = header.operationId,
+                            expectedStates = states,
+                            state = "INVALID",
+                            updatedAtMs = nowMs,
+                            errorCode = "DUPLICATE_STABLE_KEY_OPERATION"
+                        )
+                    }
+            }
+        }
+        return selected
     }
 
     suspend fun removePendingDownloadQueueEntries(songKeys: Collection<String>) {

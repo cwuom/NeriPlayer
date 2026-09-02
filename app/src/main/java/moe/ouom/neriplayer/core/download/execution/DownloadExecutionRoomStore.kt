@@ -34,6 +34,18 @@ internal object DownloadExecutionRoomStore {
         val state: String
     )
 
+    internal data class OperationRequestMetadata(
+        val operationId: String,
+        val stableKey: String,
+        val state: String,
+        val preserveStaging: Boolean,
+        val requiresWifiNetwork: Boolean,
+        val attemptId: Long?,
+        val artifactLeaseId: String,
+        val userInitiated: Boolean,
+        val downloadAudioQuality: DownloadAudioQualitySelection?
+    )
+
     internal data class CoreCommitJournalRecovery(
         val outcome: Outcome,
         val state: String?,
@@ -202,6 +214,119 @@ internal object DownloadExecutionRoomStore {
         return snapshots
     }
 
+    /** 批量读取 operation 表头，不把歌词等大载荷装入内存 */
+    suspend fun readOperationHeaders(
+        context: Context,
+        operationIds: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Map<String, DownloadOperationHeaderRow> {
+        val normalizedOperationIds = operationIds
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .toList()
+        if (normalizedOperationIds.isEmpty()) return emptyMap()
+        return normalizedOperationIds
+            .chunked(SQLITE_IN_QUERY_CHUNK_SIZE)
+            .flatMap { operationIdChunk ->
+                database.downloadOperationDao().findAllHeadersByOperationIds(operationIdChunk)
+            }
+            .associateBy(DownloadOperationHeaderRow::operationId)
+    }
+
+    /** 读取调度所需的小字段，避免为批量任务解码完整歌曲和歌词 */
+    suspend fun readOperationRequestMetadata(
+        context: Context,
+        operationIds: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Map<String, OperationRequestMetadata> {
+        val normalizedOperationIds = operationIds
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .toList()
+        if (normalizedOperationIds.isEmpty()) return emptyMap()
+        val metadata = linkedMapOf<String, OperationRequestMetadata>()
+        val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()
+        normalizedOperationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { operationIdChunk ->
+            val chunkMetadata = database.withTransaction {
+                val dao = database.downloadOperationDao()
+                dao.findAllHeadersByOperationIds(operationIdChunk).mapNotNull { header ->
+                    val sourceHintJson = readSourceHintJson(dao, header)
+                    val root = sourceHintJson?.let { json ->
+                        runCatching { JSONObject(json) }.getOrNull()
+                    }
+                    val sourceStableKey = root?.optString("sourceStableKey")
+                        ?.takeIf(String::isNotBlank)
+                    val artifactLeaseId = root?.optString("artifactLeaseId")
+                        ?.takeIf(String::isNotBlank)
+                    if (
+                        root == null ||
+                            root.optInt("schemaVersion") != JOURNAL_PAYLOAD_VERSION ||
+                            root.optJSONObject("song") == null ||
+                            sourceStableKey != null && sourceStableKey != header.stableKey
+                    ) {
+                        if (sourceHintJson != null) malformedHeaders += header
+                        return@mapNotNull null
+                    }
+                    OperationRequestMetadata(
+                        operationId = header.operationId,
+                        stableKey = header.stableKey,
+                        state = header.state,
+                        preserveStaging = root.optBoolean("preserveStaging", false),
+                        requiresWifiNetwork = if (root.has("requiresWifiNetwork")) {
+                            root.optBoolean("requiresWifiNetwork", true)
+                        } else {
+                            true
+                        },
+                        attemptId = root.optLong("attemptId", 0L)
+                            .takeIf { attemptId -> attemptId > 0L },
+                        artifactLeaseId = artifactLeaseId ?: header.operationId,
+                        userInitiated = if (root.has("userInitiated")) {
+                            root.optBoolean("userInitiated", false)
+                        } else {
+                            false
+                        },
+                        downloadAudioQuality = root.optJSONObject("downloadAudioQuality")
+                            ?.let { quality ->
+                                DownloadAudioQualitySelection.normalized(
+                                    neteaseQuality = quality.optString("neteaseQuality"),
+                                    youtubeQuality = quality.optString("youtubeQuality"),
+                                    biliQuality = quality.optString("biliQuality")
+                                )
+                            }
+                    )
+                }
+            }
+            chunkMetadata.forEach { item -> metadata[item.operationId] = item }
+        }
+        malformedHeaders.forEach { header -> invalidateMalformedPayload(database, header) }
+        return metadata
+    }
+
+    suspend fun promoteWaitingStorageMutations(
+        context: Context,
+        operationIds: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Int {
+        val normalizedOperationIds = operationIds
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .toList()
+        if (normalizedOperationIds.isEmpty()) return 0
+        return database.withTransaction {
+            database.downloadOperationDao().promoteWaitingStorageMutations(
+                operationIds = normalizedOperationIds,
+                libraryId = currentLibraryId(context),
+                updatedAtMs = System.currentTimeMillis()
+            )
+        }
+    }
+
     /** 批量提升失败时仍需知道该 operation 属于哪首歌，不能让一条坏记录中止整批 */
     suspend fun readOperationIdentities(
         context: Context,
@@ -308,6 +433,18 @@ internal object DownloadExecutionRoomStore {
             context = context,
             states = listOf(state),
             database = database
+        )
+    }
+
+    suspend fun countByStates(
+        context: Context,
+        states: List<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Int {
+        if (states.isEmpty()) return 0
+        return database.downloadOperationDao().countByStatesInLibrary(
+            libraryId = currentLibraryId(context),
+            states = states
         )
     }
 

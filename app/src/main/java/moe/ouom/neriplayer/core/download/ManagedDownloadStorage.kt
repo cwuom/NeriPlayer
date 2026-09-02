@@ -3107,6 +3107,10 @@ internal object ManagedDownloadStorage {
         return ManagedDownloadRecoveryFiles.listPendingQueuedDownloads(context)
     }
 
+    internal fun countPendingQueuedDownloads(context: Context): Int {
+        return ManagedDownloadRecoveryFiles.countPendingQueuedDownloads(context)
+    }
+
     internal fun findQueuedOperationIdForSong(context: Context, songKey: String): String? {
         return ManagedDownloadRecoveryFiles.findQueuedOperationIdForSong(context, songKey)
     }

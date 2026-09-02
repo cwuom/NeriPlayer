@@ -12,23 +12,29 @@ import org.junit.Test
 class DownloadProgressPresentationTest {
 
     @Test
-    fun `progress page renders queued waiting and transferring songs`() {
-        val tasks = DownloadStatus.entries.mapIndexed { index, status ->
-            DownloadTask(
-                song = song(index.toLong() + 1L),
-                progress = null,
-                status = status,
-                attemptId = index.toLong() + 1L
-            )
-        }
+    fun `progress page hides queued and waiting songs before work starts`() {
+        val queued = DownloadTask(
+            song = song(1L),
+            progress = null,
+            status = DownloadStatus.QUEUED,
+            attemptId = 1L
+        )
+        val waiting = DownloadTask(
+            song = song(2L),
+            progress = null,
+            status = DownloadStatus.WAITING_NETWORK,
+            attemptId = 2L
+        )
+        val active = DownloadTask(
+            song = song(3L),
+            progress = progress(song(3L).stableKey(), 3L),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 3L
+        )
 
         assertEquals(
-            listOf(
-                DownloadStatus.DOWNLOADING,
-                DownloadStatus.WAITING_NETWORK,
-                DownloadStatus.QUEUED
-            ),
-            visibleDownloadProgressTasks(tasks).map(DownloadTask::status)
+            listOf(active),
+            visibleDownloadProgressTasks(listOf(queued, waiting, active))
         )
     }
 
@@ -75,7 +81,7 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(
-            listOf(active, resolving, waitingWithProgress, queuedBeforeActive, queuedAfterActive),
+            listOf(active, resolving, waitingWithProgress),
             visible
         )
     }
@@ -96,7 +102,7 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(
-            listOf(transfer, unhydrated),
+            listOf(transfer),
             visibleDownloadProgressTasks(listOf(unhydrated, transfer))
         )
         assertTrue(hasDownloadTaskStartedWork(transfer))
@@ -133,7 +139,7 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(
-            listOf(sourceResolving, unhydrated, networkWaiting, queued),
+            listOf(sourceResolving),
             visibleDownloadProgressTasks(
                 listOf(networkWaiting, queued, sourceResolving, unhydrated)
             )

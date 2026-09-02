@@ -112,6 +112,20 @@ internal interface DownloadOperationDao {
     ): List<DownloadOperationHeaderRow>
 
     @Query(
+        "UPDATE download_operation SET library_id = :libraryId, state = 'QUEUED', " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
+            "last_error_code = NULL " +
+            "WHERE operation_id IN (:operationIds) " +
+            "AND state = 'WAITING_STORAGE_MUTATION' " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun promoteWaitingStorageMutations(
+        operationIds: List<String>,
+        libraryId: String,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
@@ -253,6 +267,24 @@ internal interface DownloadOperationDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM download_operation WHERE state IN (:states))")
     fun hasAnyByStates(states: List<String>): Boolean
+
+    @Query(
+        "SELECT COUNT(*) FROM download_operation " +
+            "WHERE library_id = :libraryId AND state IN (:states)"
+    )
+    suspend fun countByStatesInLibrary(
+        libraryId: String,
+        states: List<String>
+    ): Int
+
+    @Query(
+        "SELECT MAX(queue_order) FROM download_operation " +
+            "WHERE library_id = :libraryId AND state IN (:states)"
+    )
+    suspend fun findMaxQueueOrderByStates(
+        libraryId: String,
+        states: List<String>
+    ): Int?
 
     @Query(
         "SELECT * FROM download_operation " +

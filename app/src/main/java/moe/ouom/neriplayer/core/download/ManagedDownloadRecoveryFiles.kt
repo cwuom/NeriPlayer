@@ -188,6 +188,12 @@ internal object ManagedDownloadRecoveryFiles {
         }
     }
 
+    fun countPendingQueuedDownloads(context: Context): Int {
+        return runBlocking(Dispatchers.IO) {
+            roomStore(context).countPendingQueuedDownloads()
+        }
+    }
+
     fun findQueuedOperationIdForSong(context: Context, songKey: String): String? {
         return runBlocking(Dispatchers.IO) {
             roomStore(context).findQueuedOperationIdForSong(songKey)
