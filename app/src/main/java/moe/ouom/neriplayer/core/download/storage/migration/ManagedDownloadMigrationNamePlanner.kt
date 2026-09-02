@@ -411,7 +411,7 @@ internal object ManagedDownloadMigrationNamePlanner {
         entries.asSequence()
             .filter { entry -> entry.entry.reference !in plannedNames }
             .sortedWith(
-                compareBy<ManagedMigrationEntryRef>(
+                compareBy(
                     { it.subdirectory.orEmpty() },
                     { it.entry.name },
                     { it.entry.reference }
@@ -631,11 +631,7 @@ internal object ManagedDownloadMigrationNamePlanner {
         }
         fun assignGenerated(entry: ManagedMigrationEntryRef, desiredName: String): String {
             val reusedTarget = generatedPlan.reusedTargetFor(entry)
-            return if (reusedTarget != null) {
-                reusedTarget.name
-            } else {
-                reservationsFor(entry.subdirectory).reserve(desiredName)
-            }
+            return reusedTarget?.name ?: reservationsFor(entry.subdirectory).reserve(desiredName)
         }
 
         entries.asSequence()
@@ -956,11 +952,6 @@ private class ManagedMigrationTargetIdentityIndex(targetIndex: ManagedMigrationT
         )
     }
 
-    fun targetFor(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata
-    ): ManagedDownloadStorage.StoredEntry? {
-        return matchFor(metadata)?.target
-    }
 }
 
 private fun migrationSongIdentities(

@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 
@@ -32,6 +33,74 @@ class BatchDownloadOperationRecoveryTest {
         )
 
         assertEquals(listOf(songs[0], songs[2]), candidates)
+    }
+
+    @Test
+    fun `newly persisted waiting request remains readable before metadata reload`() {
+        val request = DownloadExecutionRequest(
+            operationId = "operation-new-batch",
+            song = song(11L)
+        )
+
+        val stableKey = GlobalDownloadManager.resolveBatchWaitingOperationStableKey(
+            directRequest = request,
+            metadataStableKey = null,
+            identityStableKey = request.song.stableKey()
+        )
+
+        assertEquals(request.song.stableKey(), stableKey)
+        assertTrue(
+            GlobalDownloadManager.isBatchWaitingOperationReadable(
+                directRequest = request,
+                metadataAvailable = false,
+                stableKey = stableKey,
+                identityStableKey = request.song.stableKey()
+            )
+        )
+    }
+
+    @Test
+    fun `metadata fallback keeps a recovered waiting request readable`() {
+        val stableKey = song(12L).stableKey()
+
+        assertEquals(
+            stableKey,
+            GlobalDownloadManager.resolveBatchWaitingOperationStableKey(
+                directRequest = null,
+                metadataStableKey = stableKey,
+                identityStableKey = stableKey
+            )
+        )
+        assertTrue(
+            GlobalDownloadManager.isBatchWaitingOperationReadable(
+                directRequest = null,
+                metadataAvailable = true,
+                stableKey = stableKey,
+                identityStableKey = stableKey
+            )
+        )
+    }
+
+    @Test
+    fun `identity alone does not promote an unreadable waiting request`() {
+        val stableKey = song(13L).stableKey()
+
+        assertEquals(
+            stableKey,
+            GlobalDownloadManager.resolveBatchWaitingOperationStableKey(
+                directRequest = null,
+                metadataStableKey = null,
+                identityStableKey = stableKey
+            )
+        )
+        assertFalse(
+            GlobalDownloadManager.isBatchWaitingOperationReadable(
+                directRequest = null,
+                metadataAvailable = false,
+                stableKey = stableKey,
+                identityStableKey = stableKey
+            )
+        )
     }
 
     @Test

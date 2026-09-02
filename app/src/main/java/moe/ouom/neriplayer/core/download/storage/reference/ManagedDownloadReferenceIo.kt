@@ -140,7 +140,7 @@ internal object ManagedDownloadReferenceIo {
                     )
                 }
             }
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             DeleteResult.PermissionLost
         } catch (error: CancellationException) {
             throw error
@@ -158,7 +158,7 @@ internal object ManagedDownloadReferenceIo {
     }
 
     fun isContentReferenceGone(context: Context, uri: Uri): Boolean {
-        return when (val result = inspect(context, uri.toString())) {
+        return when (inspect(context, uri.toString())) {
             AccessResult.Missing -> true
             AccessResult.PermissionLost -> throw SecurityException(
                 "SAF permission lost while confirming deletion: $uri"
@@ -180,11 +180,11 @@ internal object ManagedDownloadReferenceIo {
         return try {
             if (!file.isFile) AccessResult.Missing
             else file.inputStream().use { AccessResult.Accessible }
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             AccessResult.PermissionLost
         } catch (error: CancellationException) {
             throw error
-        } catch (error: FileNotFoundException) {
+        } catch (_: FileNotFoundException) {
             AccessResult.Missing
         } catch (error: Throwable) {
             AccessResult.ProviderFailure(error)
@@ -195,11 +195,11 @@ internal object ManagedDownloadReferenceIo {
         return try {
             if (!file.isDirectory) AccessResult.Missing
             else AccessResult.Accessible
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             AccessResult.PermissionLost
         } catch (error: CancellationException) {
             throw error
-        } catch (error: FileNotFoundException) {
+        } catch (_: FileNotFoundException) {
             AccessResult.Missing
         } catch (error: Throwable) {
             AccessResult.ProviderFailure(error)
@@ -222,7 +222,7 @@ internal object ManagedDownloadReferenceIo {
                 } ?: return AccessResult.ProviderFailure(
                     IllegalStateException("provider returned null file descriptor")
                 )
-            } catch (error: SecurityException) {
+            } catch (_: SecurityException) {
                 return AccessResult.PermissionLost
             } catch (error: CancellationException) {
                 throw error
@@ -231,7 +231,7 @@ internal object ManagedDownloadReferenceIo {
             } catch (error: Throwable) {
                 return classifyDocumentOpenFailure(error)
             }
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             return AccessResult.PermissionLost
         } catch (error: CancellationException) {
             throw error
@@ -264,7 +264,7 @@ internal object ManagedDownloadReferenceIo {
                 }
             }
             return AccessResult.Accessible
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             return AccessResult.PermissionLost
         } catch (error: CancellationException) {
             throw error
@@ -293,7 +293,7 @@ internal object ManagedDownloadReferenceIo {
             context.contentResolver.openFileDescriptor(uri, "r")?.use {
                 AccessResult.Accessible
             } ?: AccessResult.ProviderFailure(nullDocumentCursorFailure(uri))
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             AccessResult.PermissionLost
         } catch (error: CancellationException) {
             throw error
@@ -354,7 +354,7 @@ internal object ManagedDownloadReferenceIo {
             if (DocumentsContract.deleteDocument(context.contentResolver, uri)) {
                 return DeleteResult.Deleted
             }
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             return DeleteResult.PermissionLost
         } catch (error: CancellationException) {
             throw error
@@ -375,7 +375,7 @@ internal object ManagedDownloadReferenceIo {
             if (context.contentResolver.delete(uri, null, null) > 0) {
                 return DeleteResult.Deleted
             }
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             return DeleteResult.PermissionLost
         } catch (error: CancellationException) {
             throw error
@@ -394,7 +394,7 @@ internal object ManagedDownloadReferenceIo {
                     IllegalStateException("DocumentFile delete was not accepted")
                 )
             }
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             return DeleteResult.PermissionLost
         } catch (error: CancellationException) {
             throw error

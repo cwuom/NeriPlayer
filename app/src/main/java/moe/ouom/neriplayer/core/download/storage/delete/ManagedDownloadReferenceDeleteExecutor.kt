@@ -210,7 +210,7 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                         }
                     }
                 }
-            } catch (error: SecurityException) {
+            } catch (_: SecurityException) {
                 if (firstFailure == null) {
                     firstFailure = StorageMutationResult.PermissionLost
                 }
@@ -304,8 +304,7 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                 reference = StorageReference.SafRef(candidateUri),
                 externalReference = reference.externalReference
             )
-            val result = contentReferenceDeleteOperation(context, candidate, 1, 0L)
-            when (result) {
+            when (val result = contentReferenceDeleteOperation(context, candidate, 1, 0L)) {
                 StorageMutationResult.Deleted -> return true
                 StorageMutationResult.Missing -> missingAliasObserved = true
                 else -> if (firstFailure == null) {

@@ -224,7 +224,25 @@ internal object ManagedDownloadCoverAssetStore {
     private data class ReadCover(
         val bytes: ByteArray,
         val displayName: String
-    )
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as ReadCover
+
+            if (!bytes.contentEquals(other.bytes)) return false
+            if (displayName != other.displayName) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = bytes.contentHashCode()
+            result = 31 * result + displayName.hashCode()
+            return result
+        }
+    }
 
     private fun resolveReference(context: Context, rawReference: String): ResolvedReference? {
         val uri = runCatching { rawReference.toUri() }.getOrNull()

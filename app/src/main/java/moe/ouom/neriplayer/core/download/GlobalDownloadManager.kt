@@ -743,6 +743,8 @@ object GlobalDownloadManager {
         DOWNLOAD_LIBRARY_SCAN_TARGET_MS
     private const val STARTUP_ARTIFACT_RECOVERY_HANDOFF_DELAY_MS = 250L
     private const val STARTUP_ARTIFACT_RECOVERY_YIELD_BATCH_SIZE = 16
+    /** pending 音频收尾允许有限并发，避免千首歌曲逐项等待 I/O */
+    private const val PENDING_AUDIO_RECOVERY_PARALLELISM = 8
     private const val DOWNLOADED_PLAYBACK_RESOLUTION_ATTEMPTS = 6
     private const val DOWNLOADED_PLAYBACK_RETRY_BASE_DELAY_MS = 50L
     private const val DOWNLOADED_PLAYBACK_RETRY_MAX_DELAY_MS = 250L
@@ -1504,14 +1506,29 @@ object GlobalDownloadManager {
         )
         val skippedSongKeys = linkedSetOf<String>()
         val promotableWaitingOperationIds = waitingOperationIds.filter { operationId ->
-            val stableKey = waitingOperationMetadata[operationId]?.stableKey
-                ?: waitingOperationIdentities[operationId]?.stableKey
-            if (waitingOperationMetadata[operationId] == null || stableKey.isNullOrBlank()) {
+            val directRequest = waitingBatch.requestsByOperationId[operationId]
+            val metadata = waitingOperationMetadata[operationId]
+            val identityStableKey = waitingOperationIdentities[operationId]?.stableKey
+            val stableKey = resolveBatchWaitingOperationStableKey(
+                directRequest = directRequest,
+                metadataStableKey = metadata?.stableKey,
+                identityStableKey = identityStableKey
+            )
+            if (!isBatchWaitingOperationReadable(
+                    directRequest = directRequest,
+                    metadataAvailable = metadata != null,
+                    stableKey = stableKey,
+                    identityStableKey = identityStableKey
+                )
+            ) {
                 if (!stableKey.isNullOrBlank()) skippedSongKeys += stableKey
                 NPLogger.w(
                     TAG,
                     "下载意图在提升前不可读，保留该歌曲等待恢复并继续同批其余任务: " +
-                        "operationId=$operationId, stableKey=$stableKey"
+                        "operationId=$operationId, stableKey=$stableKey, " +
+                        "directRequest=${directRequest != null}, " +
+                        "metadata=${metadata != null}, " +
+                        "identityStableKey=$identityStableKey"
                 )
                 false
             } else {
@@ -1542,8 +1559,12 @@ object GlobalDownloadManager {
             }
         }
         promotableWaitingOperationIds.forEach { operationId ->
-            val stableKey = waitingOperationMetadata[operationId]?.stableKey
-                ?: waitingOperationIdentities[operationId]?.stableKey
+            val directRequest = waitingBatch.requestsByOperationId[operationId]
+            val stableKey = resolveBatchWaitingOperationStableKey(
+                directRequest = directRequest,
+                metadataStableKey = waitingOperationMetadata[operationId]?.stableKey,
+                identityStableKey = waitingOperationIdentities[operationId]?.stableKey
+            )
             val header = candidateHeaders[operationId]
             if (
                 !stableKey.isNullOrBlank() &&
@@ -1552,8 +1573,9 @@ object GlobalDownloadManager {
                     DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES
             ) {
                 operationIdsBySongKey[stableKey] = operationId
-                waitingBatch.requestsByOperationId[operationId]
-                    ?.let { request -> operationRequestsBySongKey[stableKey] = request }
+                directRequest?.let { request ->
+                    operationRequestsBySongKey[stableKey] = request
+                }
             } else if (!stableKey.isNullOrBlank()) {
                 skippedSongKeys += stableKey
                 NPLogger.w(
@@ -1586,6 +1608,30 @@ object GlobalDownloadManager {
                     "skipped=${it.skippedSongKeys.size}"
             )
         }
+    }
+
+    /** 本批次刚写入的 request 尚未重新从 Room 解码时，仍可安全参与提升 */
+    internal fun resolveBatchWaitingOperationStableKey(
+        directRequest: DownloadExecutionRequest?,
+        metadataStableKey: String?,
+        identityStableKey: String?
+    ): String? {
+        return directRequest?.song?.stableKey()?.trim()?.takeIf(String::isNotBlank)
+            ?: metadataStableKey?.trim()?.takeIf(String::isNotBlank)
+            ?: identityStableKey?.trim()?.takeIf(String::isNotBlank)
+    }
+
+    internal fun isBatchWaitingOperationReadable(
+        directRequest: DownloadExecutionRequest?,
+        metadataAvailable: Boolean,
+        stableKey: String?,
+        identityStableKey: String?
+    ): Boolean {
+        if (directRequest == null && !metadataAvailable) return false
+        if (stableKey.isNullOrBlank()) return false
+        return directRequest == null ||
+            identityStableKey.isNullOrBlank() ||
+            directRequest.song.stableKey() == identityStableKey
     }
 
     private suspend fun promoteWaitingStorageMutationsForRecovery(
@@ -2373,237 +2419,246 @@ object GlobalDownloadManager {
                 failedAudioCount = pendingAudioWrites.size
             )
         }
-        var attemptedAudioCount = 0
-        var failedAudioCount = cancelledSourceCleanupFailedCount
-        for ((index, pendingAudio) in pendingAudioWrites.withIndex()) {
-            if (
-                admissionTicket != null &&
-                    !isDownloadAdmissionTicketCurrent(context, admissionTicket)
-            ) {
-                break
-            }
-            if (
-                index > 0 &&
-                    index % STARTUP_ARTIFACT_RECOVERY_YIELD_BATCH_SIZE == 0
-            ) {
-                yield()
-            }
-            attemptedAudioCount += 1
-            var itemResolved = false
-            val result = runCatching {
-                val metadata = if (sourceRootRecovery) {
-                    ManagedDownloadStorage.readDownloadedMetadataFromRoot(
-                        context = context,
-                        audio = pendingAudio,
-                        directoryUri = directoryUri,
-                        preferPendingMetadata = true,
-                        useDefaultRootWhenDirectoryUriMissing = sourceRootRecovery
-                    )
-                } else {
-                    readDownloadedMetadata(context, pendingAudio)
-                }
-                    ?: return@runCatching
-                val song = buildSongFromDurableMetadata(pendingAudio, metadata)
-                    ?: return@runCatching
-                val mutationAdmitted = admitArtifactRecoveryMutation(
-                    context = context,
-                    admissionTicket = admissionTicket
-                ) {
-                    withSongExecutionLock(song.stableKey()) {
-                    if (sourceRootRecovery) {
-                        val normalizedOperationId = metadata.operationId
-                            ?.trim()
-                            ?.takeIf(String::isNotBlank)
-                        val operationState = normalizedOperationId?.let { operationId ->
-                            DownloadExecutionRoomStore.state(context, operationId)
+        val attemptedAudioCount = AtomicInteger(0)
+        val failedAudioCount = AtomicInteger(cancelledSourceCleanupFailedCount)
+        val nextPendingAudioIndex = AtomicInteger(0)
+        val workerCount = pendingAudioWrites.size.coerceAtMost(
+            PENDING_AUDIO_RECOVERY_PARALLELISM
+        )
+        coroutineScope {
+            List(workerCount) {
+                async(Dispatchers.IO) {
+                    while (true) {
+                        val index = nextPendingAudioIndex.getAndIncrement()
+                        if (index >= pendingAudioWrites.size) break
+                        if (
+                            admissionTicket != null &&
+                                !isDownloadAdmissionTicketCurrent(context, admissionTicket)
+                        ) {
+                            break
                         }
                         if (
-                            operationState == "CANCEL_REQUESTED" ||
-                                operationState == "CANCELLED" ||
-                                operationState == "STOPPED"
+                            index > 0 &&
+                                index % STARTUP_ARTIFACT_RECOVERY_YIELD_BATCH_SIZE == 0
                         ) {
-                            NPLogger.d(
-                                TAG,
-                                "迁移前 pending 收尾遇到取消状态，保留半成品等待取消清理: " +
-                                    "song=${song.name}, operationId=$normalizedOperationId, " +
-                                    "state=$operationState"
-                            )
-                            return@withSongExecutionLock
+                            yield()
                         }
-                        if (normalizedOperationId != null && operationState != null) {
-                            val journalReady = if (
-                                operationState == "CORE_COMMITTED" ||
-                                    operationState == "ASSETS_ENRICHING" ||
-                                    operationState == "DEGRADED_COMPLETE" ||
-                                    operationState == "COMPLETED"
+                        val pendingAudio = pendingAudioWrites[index]
+                        attemptedAudioCount.incrementAndGet()
+                        var itemResolved = false
+                        val result = runCatching {
+                            val metadata = if (sourceRootRecovery) {
+                                ManagedDownloadStorage.readDownloadedMetadataFromRoot(
+                                    context = context,
+                                    audio = pendingAudio,
+                                    directoryUri = directoryUri,
+                                    preferPendingMetadata = true,
+                                    useDefaultRootWhenDirectoryUriMissing = sourceRootRecovery
+                                )
+                            } else {
+                                readDownloadedMetadata(context, pendingAudio)
+                            } ?: return@runCatching
+                            val song = buildSongFromDurableMetadata(pendingAudio, metadata)
+                                ?: return@runCatching
+                            val mutationAdmitted = admitArtifactRecoveryMutation(
+                                context = context,
+                                admissionTicket = admissionTicket
                             ) {
-                                true
-                            } else {
-                                DownloadExecutionRoomStore.markCommitting(
-                                    context = context,
-                                    operationId = normalizedOperationId
-                                )
-                                val recovery =
-                                    DownloadExecutionRoomStore.reconcileCoreCommitJournal(
-                                        context = context,
-                                        operationId = normalizedOperationId,
-                                        stableKey = song.stableKey(),
-                                        coreMetadataDurable = true
+                                withSongExecutionLock(song.stableKey()) {
+                                    if (sourceRootRecovery) {
+                                        val normalizedOperationId = metadata.operationId
+                                            ?.trim()
+                                            ?.takeIf(String::isNotBlank)
+                                        val operationState = normalizedOperationId?.let { operationId ->
+                                            DownloadExecutionRoomStore.state(context, operationId)
+                                        }
+                                        if (
+                                            operationState == "CANCEL_REQUESTED" ||
+                                                operationState == "CANCELLED" ||
+                                                operationState == "STOPPED"
+                                        ) {
+                                            NPLogger.d(
+                                                TAG,
+                                                "迁移前 pending 收尾遇到取消状态，保留半成品等待取消清理: " +
+                                                    "song=${song.name}, operationId=$normalizedOperationId, " +
+                                                    "state=$operationState"
+                                            )
+                                            return@withSongExecutionLock
+                                        }
+                                        if (normalizedOperationId != null && operationState != null) {
+                                            val journalReady = if (
+                                                operationState == "CORE_COMMITTED" ||
+                                                    operationState == "ASSETS_ENRICHING" ||
+                                                    operationState == "DEGRADED_COMPLETE" ||
+                                                    operationState == "COMPLETED"
+                                            ) {
+                                                true
+                                            } else {
+                                                DownloadExecutionRoomStore.markCommitting(
+                                                    context = context,
+                                                    operationId = normalizedOperationId
+                                                )
+                                                val recovery =
+                                                    DownloadExecutionRoomStore.reconcileCoreCommitJournal(
+                                                        context = context,
+                                                        operationId = normalizedOperationId,
+                                                        stableKey = song.stableKey(),
+                                                        coreMetadataDurable = true
+                                                    )
+                                                recovery.outcome ==
+                                                    DownloadExecutionRoomStore.CoreCommitJournalRecovery.Outcome.COMMITTED
+                                            }
+                                            if (!journalReady) {
+                                                NPLogger.w(
+                                                    TAG,
+                                                    "迁移前 pending core journal 未确认，保留半成品等待恢复: " +
+                                                        "song=${song.name}, operationId=$normalizedOperationId, " +
+                                                        "state=$operationState"
+                                                )
+                                                return@withSongExecutionLock
+                                            }
+                                        }
+                                        val promoted = ManagedDownloadStorage.promoteCoreCommittedPendingAudio(
+                                            context = context,
+                                            audio = pendingAudio,
+                                            directoryUri = directoryUri,
+                                            promotePendingMetadata = true,
+                                            useDefaultRootWhenDirectoryUriMissing = sourceRootRecovery
+                                        )
+                                        if (promoted == null || promoted.isPendingAudioWrite) {
+                                            NPLogger.w(
+                                                TAG,
+                                                "迁移前源目录 pending 音频未能原子提升，保留凭据: " +
+                                                    "song=${song.name}, file=${pendingAudio.name}"
+                                            )
+                                        } else {
+                                            val artifactLeaseId = normalizedOperationId
+                                                ?.let { operationId ->
+                                                    DownloadExecutionRoomStore.read(context, operationId)
+                                                        ?.artifactLeaseId
+                                                }
+                                                ?: managedDownloadArtifactCoordinator.currentLeaseId(
+                                                    context = context,
+                                                    song = song,
+                                                    rootKeyOverride = sourceArtifactRootKey
+                                                )
+                                            val artifactCommitted = runCatching {
+                                                managedDownloadArtifactCoordinator.markCoreCommitted(
+                                                    context = context,
+                                                    song = song,
+                                                    storedAudio = promoted,
+                                                    expectedLeaseId = artifactLeaseId,
+                                                    rootKeyOverride = sourceArtifactRootKey
+                                                )
+                                            }.getOrElse { error ->
+                                                NPLogger.w(
+                                                    TAG,
+                                                    "迁移前 pending 提升后写入 artifact 状态失败，保留恢复入口: " +
+                                                        "song=${song.name}, error=${error.message}",
+                                                    error
+                                                )
+                                                false
+                                            }
+                                            if (artifactCommitted) {
+                                                itemResolved = true
+                                            } else {
+                                                NPLogger.w(
+                                                    TAG,
+                                                    "迁移前 pending 提升后的 artifact 状态未确认，保留恢复入口: " +
+                                                        "song=${song.name}"
+                                                )
+                                            }
+                                        }
+                                        return@withSongExecutionLock
+                                    }
+                                    val currentMetadata = readDownloadedMetadata(context, pendingAudio)
+                                        ?: return@withSongExecutionLock
+                                    if (
+                                        metadataPostProcessingEnabled &&
+                                            !directoryMutationLeaseOwned &&
+                                            currentMetadata.metadataEmbeddingState ==
+                                                DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
+                                    ) {
+                                        NPLogger.d(
+                                            TAG,
+                                            "跳过不支持内嵌标签的 pending 音频自动恢复: " +
+                                                "song=${song.name}, file=${pendingAudio.name}"
+                                        )
+                                        return@withSongExecutionLock
+                                    }
+                                    val artifactLeaseId = currentMetadata.operationId
+                                        ?.let { operationId ->
+                                            DownloadExecutionRoomStore.read(context, operationId)
+                                                ?.artifactLeaseId
+                                        }
+                                        ?: managedDownloadArtifactCoordinator.currentLeaseId(context, song)
+                                    if (isFinalizedDownloadedMetadata(currentMetadata)) {
+                                        val published = publishFinalizedDownload(
+                                            context = context,
+                                            song = song,
+                                            storedAudio = pendingAudio,
+                                            sidecarReferences = null,
+                                            expectedAttemptId = null,
+                                            operationId = currentMetadata.operationId,
+                                            expectedArtifactLeaseId = artifactLeaseId,
+                                            refreshCatalog = false,
+                                            allowMissingTask = true,
+                                            admissionTicket = admissionTicket
+                                        )
+                                        if (!published) {
+                                            NPLogger.w(
+                                                TAG,
+                                                "pending 音频已有完成凭据但提升未确认，保留等待恢复: " +
+                                                    "song=${song.name}, file=${pendingAudio.name}"
+                                            )
+                                        } else {
+                                            itemResolved = true
+                                        }
+                                        return@withSongExecutionLock
+                                    }
+                                    NPLogger.d(
+                                        TAG,
+                                        "从 pending 音频恢复元信息收尾: " +
+                                            "song=${song.name}, file=${pendingAudio.name}"
                                     )
-                                recovery.outcome ==
-                                    DownloadExecutionRoomStore.CoreCommitJournalRecovery.Outcome.COMMITTED
-                            }
-                            if (!journalReady) {
-                                NPLogger.w(
-                                    TAG,
-                                    "迁移前 pending core journal 未确认，保留半成品等待恢复: " +
-                                        "song=${song.name}, operationId=$normalizedOperationId, " +
-                                        "state=$operationState"
-                                )
-                                return@withSongExecutionLock
-                            }
-                        }
-                        val promoted = ManagedDownloadStorage.promoteCoreCommittedPendingAudio(
-                            context = context,
-                            audio = pendingAudio,
-                            directoryUri = directoryUri,
-                            promotePendingMetadata = true,
-                            useDefaultRootWhenDirectoryUriMissing = sourceRootRecovery
-                        )
-                        if (promoted == null || promoted.isPendingAudioWrite) {
-                            NPLogger.w(
-                                TAG,
-                                "迁移前源目录 pending 音频未能原子提升，保留凭据: " +
-                                    "song=${song.name}, file=${pendingAudio.name}"
-                            )
-                        } else {
-                            val artifactLeaseId = normalizedOperationId
-                                ?.let { operationId ->
-                                    DownloadExecutionRoomStore.read(context, operationId)
-                                        ?.artifactLeaseId
+                                    finalizeCompletedDownload(
+                                        context = context,
+                                        song = song,
+                                        refreshCatalog = false,
+                                        operationId = currentMetadata.operationId,
+                                        expectedArtifactLeaseId = artifactLeaseId,
+                                        storedAudioHint = pendingAudio,
+                                        allowMissingTask = true,
+                                        directoryMutationLeaseOwned = directoryMutationLeaseOwned,
+                                        directoryUri = directoryUri,
+                                        admissionTicket = admissionTicket,
+                                        admissionAlreadyHeld = true
+                                    )
+                                    itemResolved = true
                                 }
-                                ?: managedDownloadArtifactCoordinator.currentLeaseId(
-                                    context = context,
-                                    song = song,
-                                    rootKeyOverride = sourceArtifactRootKey
-                                )
-                            val artifactCommitted = runCatching {
-                                managedDownloadArtifactCoordinator.markCoreCommitted(
-                                    context = context,
-                                    song = song,
-                                    storedAudio = promoted,
-                                    expectedLeaseId = artifactLeaseId,
-                                    rootKeyOverride = sourceArtifactRootKey
-                                )
-                            }.getOrElse { error ->
-                                NPLogger.w(
-                                    TAG,
-                                    "迁移前 pending 提升后写入 artifact 状态失败，保留恢复入口: " +
-                                        "song=${song.name}, error=${error.message}",
-                                    error
-                                )
-                                false
                             }
-                            if (artifactCommitted) {
-                                itemResolved = true
-                            } else {
-                                NPLogger.w(
-                                    TAG,
-                                    "迁移前 pending 提升后的 artifact 状态未确认，保留恢复入口: " +
-                                        "song=${song.name}"
-                                )
-                            }
-                        }
-                        return@withSongExecutionLock
-                    }
-                    val currentMetadata = readDownloadedMetadata(context, pendingAudio)
-                        ?: return@withSongExecutionLock
-                    if (
-                        metadataPostProcessingEnabled &&
-                            !directoryMutationLeaseOwned &&
-                            currentMetadata.metadataEmbeddingState ==
-                                DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
-                    ) {
-                        NPLogger.d(
-                            TAG,
-                            "跳过不支持内嵌标签的 pending 音频自动恢复: " +
-                                "song=${song.name}, file=${pendingAudio.name}"
-                        )
-                        return@withSongExecutionLock
-                    }
-                    val artifactLeaseId = currentMetadata.operationId
-                        ?.let { operationId ->
-                            DownloadExecutionRoomStore.read(context, operationId)?.artifactLeaseId
-                        }
-                        ?: managedDownloadArtifactCoordinator.currentLeaseId(context, song)
-                    if (isFinalizedDownloadedMetadata(currentMetadata)) {
-                        val published = publishFinalizedDownload(
-                            context = context,
-                            song = song,
-                            storedAudio = pendingAudio,
-                            sidecarReferences = null,
-                            expectedAttemptId = null,
-                            operationId = currentMetadata.operationId,
-                            expectedArtifactLeaseId = artifactLeaseId,
-                            refreshCatalog = false,
-                            allowMissingTask = true,
-                            admissionTicket = admissionTicket
-                        )
-                        if (!published) {
+                            if (!mutationAdmitted) return@runCatching
+                        }.onFailure { error ->
+                            if (error is CancellationException) throw error
                             NPLogger.w(
                                 TAG,
-                                "pending 音频已有完成凭据但提升未确认，保留等待恢复: " +
-                                "song=${song.name}, file=${pendingAudio.name}"
+                                "恢复 pending 音频失败，保留等待重试: " +
+                                    "file=${pendingAudio.name}, error=${error.message}"
                             )
-                        } else {
-                            itemResolved = true
                         }
-                        return@withSongExecutionLock
-                    }
-                    NPLogger.d(
-                        TAG,
-                        "从 pending 音频恢复元信息收尾: " +
-                            "song=${song.name}, file=${pendingAudio.name}"
-                    )
-                    finalizeCompletedDownload(
-                        context = context,
-                        song = song,
-                        refreshCatalog = false,
-                        operationId = currentMetadata.operationId,
-                        expectedArtifactLeaseId = artifactLeaseId,
-                        storedAudioHint = pendingAudio,
-                        allowMissingTask = true,
-                        directoryMutationLeaseOwned = directoryMutationLeaseOwned,
-                        directoryUri = directoryUri,
-                        admissionTicket = admissionTicket,
-                        admissionAlreadyHeld = true
-                    )
-                    itemResolved = true
+                        if (result.isFailure || !itemResolved) {
+                            failedAudioCount.incrementAndGet()
+                        }
                     }
                 }
-                if (!mutationAdmitted) {
-                    return@runCatching
-                }
-            }.onFailure { error ->
-                if (error is CancellationException) {
-                    throw error
-                }
-                NPLogger.w(
-                    TAG,
-                    "恢复 pending 音频失败，保留等待重试: " +
-                    "file=${pendingAudio.name}, error=${error.message}"
-                )
-            }
-            if (result.isFailure || !itemResolved) {
-                failedAudioCount += 1
-            }
+            }.awaitAll()
         }
         return PendingDownloadRecoverySummary(
             leaseAcquired = directoryMutationLeaseOwned,
             initialScanComplete = pendingScan.isComplete,
             discoveredAudioCount = pendingAudioWrites.size,
-            attemptedAudioCount = attemptedAudioCount,
-            failedAudioCount = failedAudioCount
+            attemptedAudioCount = attemptedAudioCount.get(),
+            failedAudioCount = failedAudioCount.get()
         )
     }
 

@@ -91,13 +91,6 @@ internal object ManagedDownloadMigrationEntryCollector {
         return classifyPendingArtifacts(rootEntries, temporaryEntries).allNames
     }
 
-    fun blockingPendingArtifactNames(
-        rootEntries: Collection<ManagedDownloadStorage.StoredEntry>,
-        temporaryEntries: Collection<ManagedDownloadStorage.StoredEntry> = emptyList()
-    ): List<String> {
-        return classifyPendingArtifacts(rootEntries, temporaryEntries).blockingNames
-    }
-
     fun hasPendingArtifacts(
         rootEntries: Collection<ManagedDownloadStorage.StoredEntry>,
         temporaryEntries: Collection<ManagedDownloadStorage.StoredEntry> = emptyList()
@@ -149,12 +142,10 @@ internal object ManagedDownloadMigrationEntryCollector {
             return true
         }
         val coverEntryNames = coverEntries
-            .asSequence()
             .mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
         val lyricEntryNames = lyricEntries
-            .asSequence()
             .mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
-        return rootEntries.asSequence().any { entry ->
+        return rootEntries.any { entry ->
             !entry.isDirectory &&
                 entry.extension in audioExtensions &&
                 ManagedDownloadManagedAudioPolicy.shouldTreatAudioAsManaged(
