@@ -227,6 +227,7 @@ private fun JSONObject.putNullable(key: String, value: Any?) {
 }
 
 private fun JSONObject.optNullableString(key: String): String? {
+    if (!has(key) || isNull(key)) return null
     return optString(key).normalizedDescriptorValue()
 }
 
