@@ -341,7 +341,7 @@ class DownloadExecutionHostTest {
             }
         )
 
-        assertEquals(DownloadExecutionPumpResult.Retry, host.pump(context))
+        assertEquals(DownloadExecutionPumpResult.ContinueSoon, host.pump(context))
         assertEquals(listOf(runnableRequest.operationId), executedOperationIds)
         assertEquals(
             "COMPLETED",

@@ -73,7 +73,8 @@ class ForegroundDownloadWorker(
                 markPumpFinished(
                     context = applicationContext,
                     generation = pumpGeneration,
-                    workWillRetry = pumpResult == DownloadExecutionPumpResult.Retry
+                    workWillRetry = pumpResult == DownloadExecutionPumpResult.Retry,
+                    continueSoon = pumpResult == DownloadExecutionPumpResult.ContinueSoon
                 )
                 return@withContext workerResult
             }
@@ -222,23 +223,33 @@ class ForegroundDownloadWorker(
         private fun markPumpFinished(
             context: Context,
             generation: Long,
-            workWillRetry: Boolean
+            workWillRetry: Boolean,
+            continueSoon: Boolean = false
         ) {
-            if (
+            val completion = if (continueSoon) {
+                pumpScheduleCoordinator.completeWithSuccessor(generation)
+            } else {
                 pumpScheduleCoordinator.complete(
                     generation = generation,
                     workWillRetry = workWillRetry
-                ) == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
-            ) {
-                schedulePumpSuccessor(context)
+                )
+            }
+            if (completion == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR) {
+                schedulePumpSuccessor(
+                    context = context,
+                    initialDelayMs = if (continueSoon) UIDT_SHARED_PUMP_GRACE_MS else 0L
+                )
             }
         }
 
-        private fun schedulePumpSuccessor(context: Context): Boolean {
+        private fun schedulePumpSuccessor(
+            context: Context,
+            initialDelayMs: Long = 0L
+        ): Boolean {
             return schedulePumpWithPolicy(
                 context = context,
                 existingWorkPolicy = PUMP_SUCCESSOR_WORK_POLICY,
-                initialDelayMs = 0L
+                initialDelayMs = initialDelayMs
             )
         }
 
@@ -461,6 +472,17 @@ internal class DownloadPumpScheduleCoordinator {
         }
     }
 
+    fun completeWithSuccessor(generation: Long): DownloadPumpCompletion = synchronized(lock) {
+        if (activeGeneration != generation) {
+            return@synchronized DownloadPumpCompletion.IGNORED
+        }
+        // 当前 worker 只是遇到 UIDT/并行 host 竞争，不属于真实失败。
+        // 释放本代并把运行期间的新请求折叠进一个短延迟 successor。
+        activeGeneration = null
+        successorRequested = false
+        DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+    }
+
     fun failEnqueue(generation: Long): Boolean = synchronized(lock) {
         if (activeGeneration != generation) {
             return@synchronized false
@@ -560,7 +582,8 @@ internal fun DownloadExecutionResult.toWorkerResult(): ListenableWorker.Result {
 
 internal fun DownloadExecutionPumpResult.toWorkerResult(): ListenableWorker.Result {
     return when (this) {
-        DownloadExecutionPumpResult.Completed -> ListenableWorker.Result.success()
+        DownloadExecutionPumpResult.Completed,
+        DownloadExecutionPumpResult.ContinueSoon -> ListenableWorker.Result.success()
         DownloadExecutionPumpResult.Retry -> ListenableWorker.Result.retry()
     }
 }
