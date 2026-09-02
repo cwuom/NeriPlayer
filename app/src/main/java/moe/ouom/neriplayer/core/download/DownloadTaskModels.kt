@@ -446,6 +446,20 @@ internal fun resolveBatchOperationScheduleAction(
     return BatchOperationScheduleAction.SETTLED
 }
 
+internal fun shouldPreserveBatchPreparationForHandedOffOperation(
+    operationState: String?,
+    requestMatchesSong: Boolean,
+    attemptId: Long?,
+    requestGenerationCurrent: Boolean
+): Boolean {
+    return attemptId != null &&
+        requestGenerationCurrent &&
+        resolveBatchOperationScheduleAction(
+            operationState = operationState,
+            requestMatchesSong = requestMatchesSong
+        ) == BatchOperationScheduleAction.HANDED_OFF
+}
+
 internal fun canScheduleRecoveredDownloadOperation(operationState: String?): Boolean {
     return operationState in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES ||
         operationState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES

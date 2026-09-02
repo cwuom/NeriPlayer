@@ -139,6 +139,85 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
+    fun `batch preparation preserves an attempt that becomes in flight`() {
+        listOf(
+            "RUNNING",
+            "COMMITTING",
+            "CORE_COMMITTED",
+            "ASSETS_ENRICHING",
+            "DEGRADED_COMPLETE"
+        ).forEach { state ->
+            assertTrue(
+                shouldPreserveBatchPreparationForHandedOffOperation(
+                    operationState = state,
+                    requestMatchesSong = true,
+                    attemptId = 42L,
+                    requestGenerationCurrent = true
+                )
+            )
+        }
+        assertFalse(
+            shouldPreserveBatchPreparationForHandedOffOperation(
+                operationState = "QUEUED",
+                requestMatchesSong = true,
+                attemptId = 42L,
+                requestGenerationCurrent = true
+            )
+        )
+        assertFalse(
+            shouldPreserveBatchPreparationForHandedOffOperation(
+                operationState = "RUNNING",
+                requestMatchesSong = true,
+                attemptId = null,
+                requestGenerationCurrent = true
+            )
+        )
+        assertFalse(
+            shouldPreserveBatchPreparationForHandedOffOperation(
+                operationState = "RUNNING",
+                requestMatchesSong = true,
+                attemptId = 42L,
+                requestGenerationCurrent = false
+            )
+        )
+    }
+
+    @Test
+    fun `batch preparation never tears down an operation that raced into the OS host`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val preparationBody = methodBody(source, "prepareAndScheduleBatchDownloadSession")
+        val prepareTasksBody = methodBody(source, "prepareBatchDownloadTasks")
+        val claimableBody = methodBody(source, "findClaimableBatchDownloadSongs")
+        val artifactBody = methodBody(source, "claimAndPrepareBatchArtifact")
+        val clearPresentationBody = methodBody(
+            source,
+            "clearBatchDownloadPresentationWithoutOutstandingWork"
+        )
+
+        assertTrue(prepareTasksBody.contains("HOST_ADMISSION_HANDOFF_STATES"))
+        assertTrue(claimableBody.contains("HOST_ADMISSION_HANDOFF_STATES"))
+        assertTrue(
+            artifactBody.indexOf("shouldPreserveBatchPreparationForHandedOffOperation(") <
+                artifactBody.indexOf("managedDownloadArtifactCoordinator.claim(")
+        )
+        assertTrue(artifactBody.contains("session.handedOffSongKeys += songKey"))
+        assertTrue(artifactBody.contains("session.scheduledSongKeys += songKey"))
+        assertTrue(
+            preparationBody.contains(
+                "val settledAttemptIds = session.settledAttemptIds.filterKeys"
+            )
+        )
+        assertTrue(
+            preparationBody.contains("songKey in session.settledSongKeys")
+        )
+        assertTrue(
+            clearPresentationBody.contains("session.handedOffSongKeys.isNotEmpty()")
+        )
+    }
+
+    @Test
     fun `batch scheduling delegates every operation to the durable host admission`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

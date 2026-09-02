@@ -11624,7 +11624,10 @@ object GlobalDownloadManager {
                 admissionTicket = session.admissionTicket,
                 stableKeys = session.settledSongKeys
             ) { _ ->
-                removeDownloadTasks(session.settledAttemptIds)
+                val settledAttemptIds = session.settledAttemptIds.filterKeys { songKey ->
+                    songKey in session.settledSongKeys
+                }
+                removeDownloadTasks(settledAttemptIds)
                 publishOptimisticDownloadedSongs(session.context, session.optimisticDownloadedSongs)
                 forgetPendingDownloadQueueEntriesIfCurrent(
                     context = session.context,
@@ -11702,16 +11705,16 @@ object GlobalDownloadManager {
             admissionTicket = session.admissionTicket,
             stableKeys = songs.map(SongItem::stableKey)
         ) batchTaskAdmission@{ _ ->
-            val reusableRequests = DownloadExecutionRoomStore.listByStates(
+            val preparableRequests = DownloadExecutionRoomStore.listByStates(
                 context = session.context,
-                states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+                states = DownloadExecutionRoomStore.HOST_ADMISSION_HANDOFF_STATES
             ).associateBy { entry -> entry.request.operationId }
             val durableAttemptIds = linkedMapOf<String, Long>()
             val taskSongs = songs.filter songFilter@{ song ->
                 val songKey = song.stableKey()
                 val operationId = session.operationIdsBySongKey[songKey]
                     ?: return@songFilter false
-                val entry = reusableRequests[operationId]
+                val entry = preparableRequests[operationId]
                     ?: return@songFilter false
                 if (
                     !isDownloadRequestGenerationCurrent(songKey, session.requestGeneration) ||
@@ -11761,7 +11764,7 @@ object GlobalDownloadManager {
             val operationId = session.operationIdsBySongKey[song.stableKey()]
             operationId != null &&
                 DownloadExecutionRoomStore.state(session.context, operationId) in
-                DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+                DownloadExecutionRoomStore.HOST_ADMISSION_HANDOFF_STATES
         }
         if (claimableSongs.isEmpty()) {
             NPLogger.d(TAG, "批量下载 operation 已在 claim 前被其他执行接管")
@@ -11975,6 +11978,38 @@ object GlobalDownloadManager {
             operationId = operationId
         )?.takeIf { request -> request.song.stableKey() == songKey }
             ?: throw IllegalStateException("batch item has no readable durable operation")
+        val attemptId = session.preparedAttemptIds[songKey]
+        val preClaimRequestGenerationCurrent = isDownloadRequestGenerationCurrent(
+            songKey,
+            session.requestGeneration
+        )
+        val preClaimOperationState = DownloadExecutionRoomStore.state(
+            context = session.context,
+            operationId = operationId
+        )
+        if (
+            shouldPreserveBatchPreparationForHandedOffOperation(
+                operationState = preClaimOperationState,
+                requestMatchesSong = true,
+                attemptId = attemptId,
+                requestGenerationCurrent = preClaimRequestGenerationCurrent
+            )
+        ) {
+            session.handedOffSongKeys += songKey
+            session.scheduledSongKeys += songKey
+            NPLogger.d(
+                TAG,
+                "批量下载准备发现 operation 已由 OS 宿主接管，保留现有 attempt: " +
+                    "song=${song.name}, operationId=$operationId, state=$preClaimOperationState"
+            )
+            return PreparedBatchArtifact(
+                operationId = operationId,
+                artifactClaim = null,
+                requiresFinalizationRecovery = false,
+                acquiredLeaseId = null,
+                attemptId = null
+            )
+        }
         val artifactClaim = try {
             managedDownloadArtifactCoordinator.claim(
                 context = session.context,
@@ -12007,19 +12042,53 @@ object GlobalDownloadManager {
             requiresFinalizationRecovery &&
                 claim.artifact.leaseId == operationRequest.artifactLeaseId
         }?.artifact?.leaseId
-        val attemptId = session.preparedAttemptIds[songKey]
         val requiresTask = artifactClaim !is ManagedDownloadArtifactClaim.AlreadyDownloaded ||
             requiresFinalizationRecovery
-        val operationStillReusable = DownloadExecutionRoomStore.state(
+        val requestGenerationCurrent = isDownloadRequestGenerationCurrent(
+            songKey,
+            session.requestGeneration
+        )
+        val operationState = DownloadExecutionRoomStore.state(
             context = session.context,
             operationId = operationId
-        ) in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+        )
+        val operationScheduleAction = resolveBatchOperationScheduleAction(
+            operationState = operationState,
+            requestMatchesSong = true
+        )
+        if (
+            requiresTask &&
+                shouldPreserveBatchPreparationForHandedOffOperation(
+                    operationState = operationState,
+                    requestMatchesSong = true,
+                    attemptId = attemptId,
+                    requestGenerationCurrent = requestGenerationCurrent
+                )
+        ) {
+            // operation 在 artifact claim 期间进入 RUNNING/COMMITTING 等状态时，
+            // 批量准备不再释放同一 execution owner 的 lease，也不能移除它的 task
+            session.handedOffSongKeys += songKey
+            session.scheduledSongKeys += songKey
+            session.artifactClaims.remove(songKey)
+            NPLogger.d(
+                TAG,
+                "批量下载准备期间 operation 已由 OS 宿主接管，保留现有 attempt: " +
+                    "song=${song.name}, operationId=$operationId, state=$operationState"
+            )
+            return PreparedBatchArtifact(
+                operationId = operationId,
+                artifactClaim = null,
+                requiresFinalizationRecovery = false,
+                acquiredLeaseId = null,
+                attemptId = null
+            )
+        }
         if (
             requiresTask &&
                 (
                     attemptId == null ||
-                        !isDownloadRequestGenerationCurrent(songKey, session.requestGeneration) ||
-                        !operationStillReusable
+                        !requestGenerationCurrent ||
+                        operationScheduleAction != BatchOperationScheduleAction.SCHEDULE
                     )
         ) {
             acquiredLeaseId?.let { leaseId ->
@@ -12037,7 +12106,8 @@ object GlobalDownloadManager {
             NPLogger.d(
                 TAG,
                 "跳过已过期批量任务: song=${song.name}, " +
-                    "generation=${session.requestGeneration}, reusable=$operationStillReusable"
+                    "generation=${session.requestGeneration}, state=$operationState, " +
+                    "action=$operationScheduleAction"
             )
             return PreparedBatchArtifact(
                 operationId = operationId,
@@ -13586,7 +13656,11 @@ object GlobalDownloadManager {
     private fun clearBatchDownloadPresentationWithoutOutstandingWork(
         session: BatchDownloadSession
     ) {
-        if (session.pendingSongs.isNotEmpty() || session.settledSongKeys.isNotEmpty()) {
+        if (
+            session.pendingSongs.isNotEmpty() ||
+                session.settledSongKeys.isNotEmpty() ||
+                session.handedOffSongKeys.isNotEmpty()
+        ) {
             return
         }
         clearBatchDownloadPresentation(session.batchPresentationId)
