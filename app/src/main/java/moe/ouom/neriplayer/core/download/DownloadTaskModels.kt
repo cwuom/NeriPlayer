@@ -38,6 +38,8 @@ internal data class BatchDownloadOverallProgress(
     val hasPendingSongs: Boolean
 )
 
+private const val INCOMPLETE_BATCH_PROGRESS_CEILING = 0.99f
+
 internal fun aggregateBatchDownloadProgress(
     presentation: BatchDownloadPresentationState,
     tasks: List<DownloadTask>
@@ -80,8 +82,10 @@ internal fun aggregateBatchDownloadProgress(
                     }
                 when (task?.status) {
                     DownloadStatus.COMPLETED -> {
-                        completedSongs++
-                        completedFraction += 1f
+                        // 批量完成只认 terminalStates。core 音频先完成时任务可能已经是
+                        // COMPLETED，但最终发布还没有确认，不能提前增加完成歌曲数
+                        completedFraction += retainedFraction
+                        hasPendingSongs = true
                     }
 
                     DownloadStatus.DOWNLOADING -> {
@@ -115,11 +119,17 @@ internal fun aggregateBatchDownloadProgress(
     }
 
     val totalSongs = presentation.memberAttemptIds.size
-    val fraction = (completedFraction / totalSongs.toFloat()).coerceIn(0f, 1f)
+    val rawFraction = (completedFraction / totalSongs.toFloat()).coerceIn(0f, 1f)
+    val allSongsCompleted = completedSongs == totalSongs
+    val fraction = if (allSongsCompleted) {
+        1f
+    } else {
+        rawFraction.coerceAtMost(INCOMPLETE_BATCH_PROGRESS_CEILING)
+    }
     return BatchDownloadOverallProgress(
         totalSongs = totalSongs,
         completedSongs = completedSongs,
-        percentage = floor(fraction * 100f).toInt(),
+        percentage = if (allSongsCompleted) 100 else floor(fraction * 100f).toInt(),
         fraction = fraction,
         activeSongCount = activeSongCount,
         hasPendingSongs = hasPendingSongs

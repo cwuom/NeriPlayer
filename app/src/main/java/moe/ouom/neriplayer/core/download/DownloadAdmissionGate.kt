@@ -344,8 +344,12 @@ internal class DownloadClearVisibility {
     }
 
     fun finish(token: DownloadAdmissionGate.ClearToken) {
+        finishGeneration(token.generation)
+    }
+
+    fun finishGeneration(generation: Long) {
         synchronized(stateLock) {
-            if (activeGeneration == token.generation) {
+            if (activeGeneration == generation) {
                 activeGeneration = null
                 _isTaskPresentationCleared.value = false
                 _isClearing.value = false

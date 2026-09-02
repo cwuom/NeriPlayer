@@ -226,6 +226,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         assertTrue(failureBody.contains("errorCode = \"CORE_ARTIFACT_COMMIT_FAILED\""))
         assertTrue(failureBody.contains("scheduleRetry = false"))
         assertTrue(failureBody.contains("admissionTicket = admissionTicket"))
+        assertTrue(failureBody.contains("coreAudioCommitted = false"))
         assertTrue(failureBody.contains("保留 core 音频"))
         assertTrue(leaseReleaseIndex > settleIndex)
         assertTrue(recoveryScheduleIndex > leaseReleaseIndex)

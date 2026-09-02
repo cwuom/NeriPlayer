@@ -5464,7 +5464,8 @@ object GlobalDownloadManager {
                 expectedAttemptId = expectedAttemptId,
                 errorCode = "CORE_ARTIFACT_COMMIT_FAILED",
                 scheduleRetry = false,
-                admissionTicket = admissionTicket
+                admissionTicket = admissionTicket,
+                coreAudioCommitted = false
             )
             artifactLeaseForCommit?.let { leaseId ->
                 managedDownloadArtifactLeases.remove(songKey, leaseId)
@@ -5496,12 +5497,13 @@ object GlobalDownloadManager {
             )
         }
 
-        // core 音频已经可读，任务先进入完成态，任务对象要保留到收尾终态
-        // 这样清空和进程恢复仍能看到同一个 operation 的所有权
+        // core 音频已经可读，任务可以先进入完成态，但批量进度必须等最终发布
+        // 或明确的降级终态后才能把这一首计为完成
         updateTaskStatus(
             songKey = songKey,
             status = DownloadStatus.COMPLETED,
-            expectedAttemptId = expectedAttemptId
+            expectedAttemptId = expectedAttemptId,
+            settleBatchPresentation = false
         )
 
         // core 音频已经逐项校验并写入操作日志后，先发布可播放目录条目
@@ -5708,7 +5710,8 @@ object GlobalDownloadManager {
         errorCode: String,
         error: Throwable? = null,
         scheduleRetry: Boolean = true,
-        admissionTicket: Long? = null
+        admissionTicket: Long? = null,
+        coreAudioCommitted: Boolean = true
     ) {
         val appContext = context.applicationContext
         if (
@@ -5774,7 +5777,7 @@ object GlobalDownloadManager {
         }
 
         val taskStatus = resolvePostCoreEnrichmentTaskStatus(
-            coreAudioCommitted = true
+            coreAudioCommitted = coreAudioCommitted
         )
         updateTaskStatus(
             songKey = song.stableKey(),
@@ -13205,14 +13208,15 @@ object GlobalDownloadManager {
     fun updateTaskStatus(
         songKey: String,
         status: DownloadStatus,
-        expectedAttemptId: Long? = null
+        expectedAttemptId: Long? = null,
+        settleBatchPresentation: Boolean = true
     ) {
         val updated = taskStore.updateTaskStatus(
             songKey = songKey,
             status = status,
             expectedAttemptId = expectedAttemptId
         )
-        if (!updated) {
+        if (!updated || !settleBatchPresentation) {
             return
         }
         when (status) {
@@ -14571,19 +14575,8 @@ object GlobalDownloadManager {
                                     "songs=${clearSongKeys.size}"
                             )
                             taskStore.clearAllTasks()
-                            val finalItemCount = downloadClearVisibility.progress.value
-                                ?.totalItemCount
-                                ?: 0
-                            downloadClearVisibility.update(
-                                token = clearToken,
-                                phase = DownloadClearVisibility.ClearPhase.PURGING,
-                                completedSteps = 4,
-                                affectedItemCount = clearSongKeys.size,
-                                failedItemCount = 0,
-                                completedItemCount = finalItemCount,
-                                totalItemCount = finalItemCount
-                            )
-                            persistDownloadClearProgress(appContext, clearToken)
+                            // 3/4 表示文件与 Room 已经清理完成。4/4 必须等 durable fence
+                            // 真正释放后再发布，避免留下“4/4 + fence 仍激活”的持久死状态
                             return@runClear
                         } catch (cancellation: CancellationException) {
                             throw cancellation
@@ -14682,6 +14675,20 @@ object GlobalDownloadManager {
                     )
                     return@launch
                 }
+                val finalProgress = downloadClearVisibility.progress.value
+                val finalItemCount = finalProgress?.totalItemCount ?: 0
+                downloadClearVisibility.update(
+                    token = clearToken,
+                    phase = DownloadClearVisibility.ClearPhase.PURGING,
+                    completedSteps = 4,
+                    affectedItemCount = finalProgress?.affectedItemCount
+                        ?: preClearedTasks?.size
+                        ?: 0,
+                    failedItemCount = 0,
+                    completedItemCount = finalItemCount,
+                    totalItemCount = finalItemCount
+                )
+                // 4/4 只保留在内存里用于本帧收尾，不能再持久化；finally 会立即结束横幅
                 clearPersistedDownloadClearProgress(appContext)
                 // 栅栏释放后只登记一次后台对账，清空交互路径不等待目录扫描
                 scheduleCatalogReconcile(appContext, forceRefresh = true)
@@ -14853,17 +14860,12 @@ object GlobalDownloadManager {
         scope.launch {
             try {
                 delay(100L)
+                if (finishReleasedTaskClearState(appContext)) {
+                    return@launch
+                }
                 var attempt = 0
                 while (PersistentDownloadClearFenceStore.isActive(appContext)) {
                     attempt++
-                    if (!PersistentDownloadClearFenceStore.isActive(appContext)) {
-                        taskStore.currentClearPresentationToken()?.let { token ->
-                            taskStore.finishClearPresentation(token) {
-                                !PersistentDownloadClearFenceStore.isActive(appContext)
-                            }
-                        }
-                        return@launch
-                    }
                     NPLogger.d(
                         TAG,
                         "开始后台收敛下载清空: attempt=$attempt"
@@ -14889,16 +14891,12 @@ object GlobalDownloadManager {
                         delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
                         continue
                     }
-                    if (!PersistentDownloadClearFenceStore.isActive(appContext)) {
-                        taskStore.currentClearPresentationToken()?.let { token ->
-                            taskStore.finishClearPresentation(token) {
-                                !PersistentDownloadClearFenceStore.isActive(appContext)
-                            }
-                        }
+                    if (finishReleasedTaskClearState(appContext)) {
                         return@launch
                     }
                     delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
                 }
+                finishReleasedTaskClearState(appContext)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Throwable) {
@@ -14911,6 +14909,21 @@ object GlobalDownloadManager {
                 deferredTaskClearRecoveryScheduled.set(false)
             }
         }
+    }
+
+    private fun finishReleasedTaskClearState(context: Context): Boolean {
+        if (PersistentDownloadClearFenceStore.isActive(context)) {
+            return false
+        }
+        val openGeneration = downloadAdmissionGate.openTicketOrNull() ?: return false
+        downloadClearVisibility.finishGeneration(openGeneration)
+        taskStore.currentClearPresentationToken()?.let { token ->
+            taskStore.finishClearPresentation(token) {
+                !PersistentDownloadClearFenceStore.isActive(context) &&
+                    downloadAdmissionGate.openTicketOrNull() == openGeneration
+            }
+        }
+        return true
     }
 
     private suspend fun awaitDownloadClearFenceRelease(context: Context): Boolean {

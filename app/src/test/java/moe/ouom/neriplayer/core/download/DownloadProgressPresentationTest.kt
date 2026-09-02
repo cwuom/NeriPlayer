@@ -257,7 +257,7 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(0, aggregate.completedSongs)
-        assertEquals(100, aggregate.percentage)
+        assertEquals(99, aggregate.percentage)
         assertEquals(1, aggregate.activeSongCount)
         assertTrue(aggregate.hasPendingSongs)
     }
