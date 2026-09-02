@@ -491,7 +491,94 @@ internal fun isDownloadTaskCancellationCandidate(task: DownloadTask): Boolean {
 }
 
 internal fun visibleDownloadProgressTasks(tasks: List<DownloadTask>): List<DownloadTask> {
-    return tasks.filter { task -> task.status == DownloadStatus.DOWNLOADING }
+    return tasks
+        .asSequence()
+        .filter { task ->
+            task.status == DownloadStatus.QUEUED ||
+                task.status == DownloadStatus.DOWNLOADING ||
+                task.status == DownloadStatus.WAITING_NETWORK
+        }
+        .sortedWith(
+            compareBy<DownloadTask> { downloadTaskPresentationPriority(it) }
+                .thenBy(DownloadTask::attemptId)
+        )
+        .toList()
+}
+
+/**
+ * true after the host has started source, storage, transfer, or post-transfer work
+ * so host waits cannot hide an operation that is already being processed
+ */
+internal fun hasDownloadTaskStartedWork(task: DownloadTask): Boolean {
+    val stage = currentTaskProgress(task)?.stage ?: return false
+    return stage == AudioDownloadManager.DownloadStage.RESOLVING_SOURCE ||
+        stage == AudioDownloadManager.DownloadStage.PREPARING_STORAGE ||
+        stage == AudioDownloadManager.DownloadStage.TRANSFERRING ||
+        stage == AudioDownloadManager.DownloadStage.VERIFYING_AUDIO ||
+        stage == AudioDownloadManager.DownloadStage.COMMITTING_CORE ||
+        stage == AudioDownloadManager.DownloadStage.ASSETS_ENRICHING ||
+        stage == AudioDownloadManager.DownloadStage.FINALIZING
+}
+
+private fun downloadTaskPresentationPriority(task: DownloadTask): Int {
+    val stage = currentTaskProgress(task)?.stage
+    return when (task.status) {
+        DownloadStatus.DOWNLOADING -> when (stage) {
+            AudioDownloadManager.DownloadStage.TRANSFERRING,
+            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
+            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
+            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+            AudioDownloadManager.DownloadStage.FINALIZING -> 0
+
+            AudioDownloadManager.DownloadStage.RESOLVING_SOURCE,
+            AudioDownloadManager.DownloadStage.PREPARING_STORAGE -> 1
+
+            AudioDownloadManager.DownloadStage.WAITING_RETRY,
+            AudioDownloadManager.DownloadStage.WAITING_HOST,
+            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
+            null -> 2
+        }
+
+        DownloadStatus.WAITING_NETWORK -> when (stage) {
+            AudioDownloadManager.DownloadStage.TRANSFERRING,
+            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
+            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
+            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+            AudioDownloadManager.DownloadStage.FINALIZING -> 3
+
+            AudioDownloadManager.DownloadStage.WAITING_RETRY -> 4
+            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP -> 5
+            else -> 6
+        }
+
+        DownloadStatus.QUEUED -> when (stage) {
+            AudioDownloadManager.DownloadStage.TRANSFERRING,
+            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
+            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
+            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+            AudioDownloadManager.DownloadStage.FINALIZING -> 3
+
+            AudioDownloadManager.DownloadStage.RESOLVING_SOURCE,
+            AudioDownloadManager.DownloadStage.PREPARING_STORAGE -> 4
+
+            AudioDownloadManager.DownloadStage.WAITING_RETRY -> 5
+            AudioDownloadManager.DownloadStage.WAITING_HOST,
+            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP -> 6
+            null -> 7
+        }
+
+        DownloadStatus.COMPLETED,
+        DownloadStatus.FAILED,
+        DownloadStatus.CANCELLED -> 8
+    }
+}
+
+private fun currentTaskProgress(
+    task: DownloadTask
+): AudioDownloadManager.DownloadProgress? {
+    return task.progress?.takeIf { progress ->
+        progress.attemptId == null || progress.attemptId == task.attemptId
+    }
 }
 
 internal fun activeDownloadTaskWithProgress(tasks: List<DownloadTask>): DownloadTask? {

@@ -5412,6 +5412,24 @@ internal object ManagedDownloadStorage {
         if (!isDurableCoreMetadata(metadata)) {
             return@withContext null
         }
+        val finalAudioName = if (promotePendingMetadata) {
+            resolvePendingCorePromotionFinalName(
+                context = context,
+                root = root,
+                audio = audio,
+                metadataEntry = metadataEntry,
+                metadata = metadata
+            ) ?: run {
+                NPLogger.w(
+                    TAG,
+                    "迁移前无法安全解析 pending 音频最终名称，保留凭据: " +
+                        "audio=${audio.logicalName}"
+                )
+                return@withContext null
+            }
+        } else {
+            audio.logicalName
+        }
         if (
             promotePendingMetadata &&
                 !promotePendingCoreMetadata(
@@ -5420,7 +5438,8 @@ internal object ManagedDownloadStorage {
                     audio = audio,
                     metadataEntry = metadataEntry,
                     rawMetadata = rawMetadata,
-                    metadata = metadata
+                    metadata = metadata,
+                    finalAudioName = finalAudioName
                 )
         ) {
             NPLogger.w(
@@ -5433,10 +5452,19 @@ internal object ManagedDownloadStorage {
         val promoted = promotePendingAudio(
             context = context,
             root = root,
-            audio = audio
+            audio = audio,
+            finalAudioName = finalAudioName
         ) ?: return@withContext null
         if (promoted.isPendingAudioWrite) {
             return@withContext null
+        }
+        if (promotePendingMetadata) {
+            cleanupPendingCoreMetadataAfterAudioPromotion(
+                context = context,
+                root = root,
+                audio = audio,
+                metadataEntry = metadataEntry
+            )
         }
         if (!updateSnapshotCacheAfterStoredEntryWrite(
                 context = context,
@@ -5455,12 +5483,34 @@ internal object ManagedDownloadStorage {
         audio: StoredEntry,
         metadataEntry: StoredEntry,
         rawMetadata: String,
-        metadata: DownloadedAudioMetadata
+        metadata: DownloadedAudioMetadata,
+        finalAudioName: String
     ): Boolean {
-        if (!ManagedDownloadTreeNaming.isPendingMetadataName(metadataEntry.name, audio.logicalName)) {
-            return true
-        }
-        val finalMetadataName = "${audio.logicalName}$METADATA_SUFFIX"
+        val rewrittenMetadata = rewritePendingMetadataAudioFileName(
+            rawMetadata = rawMetadata,
+            finalAudioName = finalAudioName
+        ) ?: return false
+        val expectedMetadata = parseDownloadedAudioMetadataJson(rewrittenMetadata)
+            ?.takeIf(::isDurableCoreMetadata)
+            ?.takeIf { candidate ->
+                resolveStagedPendingPromotionFinalName(
+                    requestedName = audio.logicalName,
+                    stagedMetadata = candidate,
+                    expectedStableKey = metadata.stableKey,
+                    expectedOperationId = metadata.operationId
+                ) == finalAudioName
+            }
+            ?: return false
+        val finalMetadataName = "$finalAudioName$METADATA_SUFFIX"
+        val sourceIsFinalMetadata =
+            !ManagedDownloadTreeNaming.isPendingMetadataName(
+                metadataEntry.name,
+                audio.logicalName
+            ) &&
+                ManagedDownloadTreeNaming.isExactTreeStoredName(
+                    metadataEntry.name,
+                    finalMetadataName
+                )
         val existingLookup = findExactEntryInRoot(
             context = context,
             root = root,
@@ -5474,14 +5524,26 @@ internal object ManagedDownloadStorage {
             )
             return false
         }
-        val existing = existingLookup.entry
+        val existing = if (sourceIsFinalMetadata) metadataEntry else existingLookup.entry
         if (existing != null) {
             val existingMetadata = readTextInternal(context, existing.reference)
                 ?.let(::parseDownloadedAudioMetadataJson)
             if (
                 existingMetadata == null ||
-                    existingMetadata.stableKey?.isNotBlank() != true ||
-                    existingMetadata.stableKey != metadata.stableKey
+                    !matchesPendingPromotionIdentity(
+                        stagedMetadata = existingMetadata,
+                        expectedStableKey = metadata.stableKey,
+                        expectedOperationId = metadata.operationId
+                    ) ||
+                    (
+                        !sourceIsFinalMetadata &&
+                            resolveStagedPendingPromotionFinalName(
+                                requestedName = audio.logicalName,
+                                stagedMetadata = existingMetadata,
+                                expectedStableKey = metadata.stableKey,
+                                expectedOperationId = metadata.operationId
+                            ) != finalAudioName
+                        )
             ) {
                 NPLogger.w(
                     TAG,
@@ -5495,14 +5557,57 @@ internal object ManagedDownloadStorage {
             context = context,
             root = root,
             displayName = finalMetadataName,
-            content = rawMetadata,
+            content = rewrittenMetadata,
+            expectedAbsent = existing == null,
             knownTargetEntry = existing
         ) ?: return false
-        val verified = readTextInternal(context, written.reference)
-            ?.let(::parseDownloadedAudioMetadataJson)
-            ?.takeIf(::isDurableCoreMetadata)
-            ?.takeIf { candidate -> candidate.stableKey == metadata.stableKey }
-            ?: return false
+        if (!ManagedDownloadTreeNaming.isExactTreeStoredName(written.name, finalMetadataName)) {
+            NPLogger.w(
+                TAG,
+                "迁移前 metadata 写入返回非目标名称，保留 pending 凭据: " +
+                    "expected=$finalMetadataName, actual=${written.name}"
+            )
+            invalidateSnapshotCache(context)
+            return false
+        }
+        if (
+            readTextInternal(context, written.reference)
+                ?.let(::parseDownloadedAudioMetadataJson)
+                ?.takeIf(::isDurableCoreMetadata)
+                ?.takeIf { candidate ->
+                    candidate.audioFileName == finalAudioName &&
+                        resolveStagedPendingPromotionFinalName(
+                            requestedName = audio.logicalName,
+                            stagedMetadata = candidate,
+                            expectedStableKey = metadata.stableKey,
+                            expectedOperationId = metadata.operationId
+                        ) == finalAudioName &&
+                        isMetadataWriteVerified(expectedMetadata, candidate)
+                } == null
+        ) {
+            return false
+        }
+        invalidateSnapshotCache(context)
+        return true
+    }
+
+    private suspend fun cleanupPendingCoreMetadataAfterAudioPromotion(
+        context: Context,
+        root: RootHandle,
+        audio: StoredEntry,
+        metadataEntry: StoredEntry
+    ) {
+        if (!ManagedDownloadTreeNaming.isPendingMetadataName(metadataEntry.name, audio.logicalName)) {
+            return
+        }
+        if (!isPendingAudioPromotionSourceReleased(context, root, audio)) {
+            NPLogger.w(
+                TAG,
+                "迁移前音频已提升但 pending 音频清理未确认，保留配对 metadata: " +
+                    "audio=${audio.name}"
+            )
+            return
+        }
         val deletedReferences = deleteReferencesInternal(
             context = context,
             references = listOf(metadataEntry.reference),
@@ -5513,14 +5618,336 @@ internal object ManagedDownloadStorage {
         if (metadataEntry.reference !in deletedReferences) {
             NPLogger.w(
                 TAG,
-                "迁移前正式 metadata 已写入但 pending metadata 清理未确认: " +
+                "迁移前音频已提升但 pending metadata 清理未确认，保留后续恢复: " +
                     "name=${metadataEntry.name}"
             )
-            return false
+            return
         }
         forgetDeletedReferencesFromCaches(setOf(metadataEntry.reference))
         invalidateSnapshotCache(context)
-        return true
+    }
+
+    private suspend fun isPendingAudioPromotionSourceReleased(
+        context: Context,
+        root: RootHandle,
+        audio: StoredEntry
+    ): Boolean {
+        return when (root) {
+            is RootHandle.FileRoot -> {
+                val pending = File(audio.reference)
+                !pending.exists()
+            }
+
+            is RootHandle.TreeRoot -> {
+                val reference = runCatching { StorageReference.SafRef(audio.reference.toUri()) }
+                    .getOrNull() ?: return false
+                when (val stat = SafStorageBackend(context).stat(reference)) {
+                    StorageLookupResult.Missing -> true
+                    is StorageLookupResult.Found -> {
+                        !stat.value.isDirectory &&
+                            !ManagedDownloadPendingAudioWriteNames.isArtifactName(
+                                stat.value.displayName
+                            )
+                    }
+
+                    StorageLookupResult.PermissionLost,
+                    is StorageLookupResult.ProviderFailure,
+                    StorageLookupResult.OutOfScope,
+                    is StorageLookupResult.Unsupported -> false
+                }
+            }
+        }
+    }
+
+    private suspend fun resolvePendingCorePromotionFinalName(
+        context: Context,
+        root: RootHandle,
+        audio: StoredEntry,
+        metadataEntry: StoredEntry,
+        metadata: DownloadedAudioMetadata
+    ): String? {
+        val rootRefresh = treeDirectories.refreshRootEntries(context, root)
+        if (!rootRefresh.isComplete) {
+            return null
+        }
+        val expectedStableKey = metadata.stableKey?.trim()?.takeIf(String::isNotBlank)
+            ?: return null
+        val expectedSizeBytes = pendingAudioPromotionExpectedSizeForPlanning(
+            context = context,
+            root = root,
+            audio = audio
+        )
+        val directTargets = rootRefresh.entries.filter { entry ->
+            !entry.isDirectory &&
+                ManagedDownloadTreeNaming.isExactTreeStoredName(
+                    entry.name,
+                    audio.logicalName
+                )
+        }
+        val directTarget = directTargets.singleOrNull()
+        val directTargetConflicts = directTarget == null && directTargets.isNotEmpty() ||
+            directTarget?.let { entry ->
+                entry.extension !in audioExtensions ||
+                    expectedSizeBytes == null ||
+                    entry.sizeBytes <= 0L ||
+                    entry.sizeBytes != expectedSizeBytes
+            } == true
+        val stagedNames = rootRefresh.entries
+            .asSequence()
+            .filterNot(StoredEntry::isDirectory)
+            .mapNotNull { entry ->
+                val stagedAudioName = ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+                    ?: return@mapNotNull null
+                if (ManagedDownloadTreeNaming.isPendingMetadataName(entry.name, stagedAudioName)) {
+                    return@mapNotNull null
+                }
+                val stagedMetadata = readTextInternal(context, entry.reference)
+                    ?.let(::parseDownloadedAudioMetadataJson)
+                    ?.takeIf(::isDurableCoreMetadata)
+                    ?: return@mapNotNull null
+                val finalAudioName = resolveStagedPendingPromotionFinalName(
+                    requestedName = audio.logicalName,
+                    stagedMetadata = stagedMetadata,
+                    expectedStableKey = expectedStableKey,
+                    expectedOperationId = metadata.operationId
+                ) ?: return@mapNotNull null
+                finalAudioName.takeIf { candidate ->
+                    ManagedDownloadTreeNaming.isExactTreeStoredName(
+                        stagedAudioName,
+                        candidate
+                    )
+                }
+            }
+            .distinct()
+            .toList()
+        val renamedStagedNames = stagedNames.filterNot { candidate ->
+            ManagedDownloadTreeNaming.isExactTreeStoredName(
+                candidate,
+                audio.logicalName
+            )
+        }
+        if (renamedStagedNames.size > 1) {
+            NPLogger.w(
+                TAG,
+                "迁移前发现同一 pending 凭据对应多个最终名称，保留等待恢复: " +
+                    "audio=${audio.logicalName}, candidates=$renamedStagedNames"
+            )
+            return null
+        }
+        renamedStagedNames.singleOrNull()?.let { return it }
+        if (!directTargetConflicts) {
+            return audio.logicalName
+        }
+        val temporary = readTemporaryDirectoryEntries(
+            context = context,
+            root = root,
+            forceRefresh = true,
+            rootAlreadyRefreshed = true
+        )
+        if (!temporary.isComplete) {
+            return null
+        }
+        val sourceReferences = setOf(audio.reference, metadataEntry.reference)
+        return resolvePendingAudioPromotionFinalName(
+            enumerationComplete = true,
+            existingNames = (rootRefresh.entries + temporary.entries)
+                .asSequence()
+                .filterNot(StoredEntry::isDirectory)
+                .filterNot { entry -> entry.reference in sourceReferences }
+                .map(StoredEntry::name)
+                .toList(),
+            requestedName = audio.logicalName
+        )
+    }
+
+    private suspend fun pendingAudioPromotionExpectedSizeForPlanning(
+        context: Context,
+        root: RootHandle,
+        audio: StoredEntry
+    ): Long? {
+        return when (root) {
+            is RootHandle.FileRoot -> File(audio.reference)
+                .takeIf(File::isFile)
+                ?.length()
+                ?.takeIf { size -> size > 0L }
+
+            is RootHandle.TreeRoot -> {
+                val reference = runCatching { StorageReference.SafRef(audio.reference.toUri()) }
+                    .getOrNull() ?: return null
+                val backend = SafStorageBackend(context)
+                when (val stat = backend.stat(reference)) {
+                    is StorageLookupResult.Found -> stat.value
+                        .takeUnless(StorageStat::isDirectory)
+                        ?.let { current ->
+                            try {
+                                resolveCurrentTreePendingAudioSize(
+                                    backend = backend,
+                                    reference = reference,
+                                    reportedSizeBytes = current.sizeBytes,
+                                    description = audio.name
+                                )
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                NPLogger.w(
+                                    TAG,
+                                    "迁移前 pending 音频大小读回失败，保留凭据: " +
+                                        "audio=${audio.logicalName}, error=${error.message}",
+                                    error
+                                )
+                                null
+                            }
+                        }
+
+                    StorageLookupResult.Missing,
+                    StorageLookupResult.PermissionLost,
+                    is StorageLookupResult.ProviderFailure,
+                    StorageLookupResult.OutOfScope,
+                    is StorageLookupResult.Unsupported -> null
+                }
+            }
+        }
+    }
+
+    internal fun resolveStagedPendingPromotionFinalName(
+        requestedName: String,
+        stagedMetadata: DownloadedAudioMetadata,
+        expectedStableKey: String?,
+        expectedOperationId: String?
+    ): String? {
+        if (!matchesPendingPromotionIdentity(
+                stagedMetadata = stagedMetadata,
+                expectedStableKey = expectedStableKey,
+                expectedOperationId = expectedOperationId
+            )
+        ) {
+            return null
+        }
+        return stagedMetadata.audioFileName?.takeIf { candidate ->
+            isPendingAudioPromotionFinalNameCandidate(
+                requestedName = requestedName,
+                candidateName = candidate
+            )
+        }
+    }
+
+    internal fun resolvePendingAudioPromotionFinalName(
+        enumerationComplete: Boolean,
+        existingNames: Collection<String>,
+        requestedName: String
+    ): String? {
+        if (
+            !enumerationComplete ||
+                requestedName.isBlank() ||
+                requestedName != requestedName.trim() ||
+                requestedName == "." ||
+                requestedName == ".." ||
+                '/' in requestedName ||
+                '\\' in requestedName
+        ) {
+            return null
+        }
+        if (existingNames.any { actualName ->
+                isTreePromotionBackupName(actualName, requestedName)
+            }
+        ) {
+            return null
+        }
+        val baseName = requestedName.substringBeforeLast('.', requestedName)
+        val extension = requestedName.substringAfterLast('.', "")
+        for (index in 0 until 10_000) {
+            val candidate = when (index) {
+                0 -> requestedName
+                else -> if (extension.isBlank()) {
+                    "$baseName ($index)"
+                } else {
+                    "$baseName ($index).$extension"
+                }
+            }
+            if (existingNames.none { actualName ->
+                    isPendingAudioPromotionNameOccupied(
+                        actualName = actualName,
+                        candidateName = candidate
+                    )
+                }
+            ) {
+                return candidate
+            }
+        }
+        return null
+    }
+
+    internal fun rewritePendingMetadataAudioFileName(
+        rawMetadata: String,
+        finalAudioName: String
+    ): String? {
+        if (
+            finalAudioName.isBlank() ||
+                finalAudioName != finalAudioName.trim() ||
+                finalAudioName == "." ||
+                finalAudioName == ".." ||
+                '/' in finalAudioName ||
+                '\\' in finalAudioName
+        ) {
+            return null
+        }
+        return runCatching {
+            JSONObject(rawMetadata)
+                .put("audioFileName", finalAudioName)
+                .toString()
+        }.getOrNull()
+    }
+
+    private fun matchesPendingPromotionIdentity(
+        stagedMetadata: DownloadedAudioMetadata,
+        expectedStableKey: String?,
+        expectedOperationId: String?
+    ): Boolean {
+        val normalizedStableKey = expectedStableKey?.trim()?.takeIf(String::isNotBlank)
+            ?: return false
+        if (stagedMetadata.stableKey?.trim() != normalizedStableKey) {
+            return false
+        }
+        val normalizedOperationId = expectedOperationId?.trim()?.takeIf(String::isNotBlank)
+            ?: return true
+        return stagedMetadata.operationId?.trim() == normalizedOperationId
+    }
+
+    private fun isPendingAudioPromotionFinalNameCandidate(
+        requestedName: String,
+        candidateName: String
+    ): Boolean {
+        if (
+            candidateName.isBlank() ||
+                candidateName != candidateName.trim() ||
+                candidateName == "." ||
+                candidateName == ".." ||
+                '/' in candidateName ||
+                '\\' in candidateName
+        ) {
+            return false
+        }
+        return ManagedDownloadTreeNaming.isExactTreeStoredName(candidateName, requestedName) ||
+            ManagedDownloadTreeNaming.matchesProviderNumberedName(candidateName, requestedName)
+    }
+
+    private fun isPendingAudioPromotionNameOccupied(
+        actualName: String,
+        candidateName: String
+    ): Boolean {
+        if (isTreePromotionBackupName(actualName, candidateName)) {
+            return true
+        }
+        val pendingAudioName = actualName
+            .takeIf(ManagedDownloadPendingAudioWriteNames::isArtifactName)
+            ?.let(pendingAudioWriteNames::logicalAudioName)
+        val metadataAudioName = ManagedDownloadTreeNaming.metadataAudioName(actualName)
+        return sequenceOf(actualName, pendingAudioName, metadataAudioName)
+            .filterNotNull()
+            .any { name ->
+                ManagedDownloadTreeNaming.isExactTreeStoredName(name, candidateName) ||
+                    ManagedDownloadTreeNaming.matchesProviderNumberedName(name, candidateName)
+            }
     }
 
     private data class ExactRootEntryLookup(
@@ -7628,10 +8055,18 @@ internal object ManagedDownloadStorage {
     private suspend fun promotePendingAudio(
         context: Context,
         root: RootHandle,
-        audio: StoredEntry
+        audio: StoredEntry,
+        finalAudioName: String = audio.logicalName
     ): StoredEntry? {
         if (!audio.isPendingAudioWrite) return audio
-        val finalName = audio.logicalName.takeIf(String::isNotBlank) ?: return null
+        val finalName = finalAudioName.takeIf(String::isNotBlank)
+            ?.takeIf { candidate ->
+                isPendingAudioPromotionFinalNameCandidate(
+                    requestedName = audio.logicalName,
+                    candidateName = candidate
+                )
+            }
+            ?: return null
         return when (root) {
             is RootHandle.FileRoot -> {
                 val pendingFile = File(audio.reference)
@@ -8288,12 +8723,24 @@ internal object ManagedDownloadStorage {
 
     private fun isTreePromotionBackupName(actualName: String, targetName: String): Boolean {
         val directBackupName = ".${targetName}.backup"
-        if (actualName == directBackupName) return true
-        val prefix = ".${targetName}."
-        if (!actualName.startsWith(prefix) || !actualName.endsWith(".backup")) {
+        if (ManagedDownloadTreeNaming.isExactTreeStoredName(actualName, directBackupName)) {
+            return true
+        }
+        if (!actualName.startsWith('.') || !actualName.endsWith(".backup", ignoreCase = true)) {
             return false
         }
-        val identifier = actualName.removePrefix(prefix).removeSuffix(".backup")
+        val baseWithIdentifier = actualName
+            .drop(1)
+            .dropLast(".backup".length)
+        val separatorIndex = baseWithIdentifier.lastIndexOf('.')
+        if (separatorIndex <= 0) {
+            return false
+        }
+        val backedUpName = baseWithIdentifier.substring(0, separatorIndex)
+        if (!ManagedDownloadTreeNaming.isExactTreeStoredName(backedUpName, targetName)) {
+            return false
+        }
+        val identifier = baseWithIdentifier.substring(separatorIndex + 1)
         return runCatching { UUID.fromString(identifier) }.isSuccess
     }
 

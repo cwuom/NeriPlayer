@@ -48,15 +48,17 @@ internal class AssetEnrichmentCoordinator(
             }
             val timeoutCallbackFailure = AtomicReference<Throwable?>(null)
             val job = scope.launch(start = CoroutineStart.LAZY) {
-                semaphore.withPermit {
-                    try {
-                        withTimeout(timeoutMs) { block() }
-                    } catch (error: TimeoutCancellationException) {
-                        runCatching { onTimeout(error) }
-                            .onFailure(timeoutCallbackFailure::set)
-                    } catch (error: CancellationException) {
-                        throw error
+                try {
+                    withTimeout(timeoutMs) {
+                        semaphore.withPermit {
+                            block()
+                        }
                     }
+                } catch (error: TimeoutCancellationException) {
+                    runCatching { onTimeout(error) }
+                        .onFailure(timeoutCallbackFailure::set)
+                } catch (error: CancellationException) {
+                    throw error
                 }
             }
             jobsByOperationId[normalizedId] = job

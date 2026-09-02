@@ -52,6 +52,69 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         assertTrue(source.contains("ManagedDownloadStorage.currentSnapshotCacheKey(appContext)"))
     }
 
+    @Test
+    fun `full delete does not treat its intent as an already active fence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val cancellationBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        assertTrue(cancellationBody.contains("hasPersistedFence(appContext)"))
+        assertTrue(
+            source.contains("private suspend fun replayFullLibraryDeleteWithoutCatalog")
+        )
+        assertTrue(
+            source.substringAfter("private suspend fun replayFullLibraryDeleteWithoutCatalog")
+                .substringBefore("private suspend fun activateDownloadClearFence")
+                .contains("buildFullLibraryDeletePlan(appContext)")
+        )
+    }
+
+    @Test
+    fun `full delete uses managed snapshot fallback and keeps intent for residual references`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val deleteBody = source.substringAfter(
+            "private suspend fun deleteDownloadedSongsOnIo"
+        ).substringBefore("/**\n     * 旧目录路径")
+
+        assertTrue(deleteBody.contains("buildFullLibraryDeletePlan(appContext)"))
+        val remainingIndex = deleteBody.indexOf(
+            "val remainingReferences = requestedReferences - deletedReferences"
+        )
+        val clearIndex = deleteBody.indexOf(
+            "PersistentDownloadedSongDeleteIntentStore.clear(appContext)"
+        )
+        assertTrue(remainingIndex >= 0)
+        assertTrue(clearIndex > remainingIndex)
+        assertTrue(deleteBody.contains("remainingReferences.isEmpty()"))
+    }
+
+    @Test
+    fun `full delete deferred and failed paths schedule durable recovery`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val recoveryBody = source.substringAfter(
+            "private fun scheduleFullLibraryDeleteRecoveryIfNeeded"
+        ).substringBefore("private fun restoreDeferredDownloadedSongDeleteSession")
+        val asyncDeleteBody = source.substringAfter(
+            "fun deleteDownloadedSongs(context: Context, songs: List<DownloadedSong>)"
+        ).substringBefore("suspend fun deleteDownloadedSongsWithResult")
+        val resultDeleteBody = source.substringAfter(
+            "suspend fun deleteDownloadedSongsWithResult("
+        ).substringBefore("private fun scheduleFullLibraryDeleteRecoveryIfNeeded")
+
+        assertTrue(recoveryBody.contains("session.fullLibraryDelete"))
+        assertTrue(recoveryBody.contains("session.deleteIntentDurable"))
+        assertTrue(recoveryBody.contains("scheduleDeferredFullLibraryDeleteRecovery(context)"))
+        assertTrue(asyncDeleteBody.contains("scheduleFullLibraryDeleteRecoveryIfNeeded("))
+        assertTrue(resultDeleteBody.contains("scheduleFullLibraryDeleteRecoveryIfNeeded("))
+        assertTrue(resultDeleteBody.contains("deleteLease.close()"))
+    }
+
     private fun locateProjectFile(path: String): File {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {

@@ -222,6 +222,35 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
     }
 
     @Test
+    fun `owned core finalization preserves migration metadata promotion`() {
+        val storageSource = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
+        )
+        assertTrue(storageSource.contains("promotePendingMetadata: Boolean = false"))
+
+        val managerSource = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        )
+        val completionBody = managerSource.substringAfter(
+            "private suspend fun completeCoreDownloadAndEnqueueEnrichment("
+        ).substringBefore("private suspend fun settlePostCoreEnrichmentFailure(")
+        val promotion = completionBody.substringAfter(
+            "val committedAudio = if (directoryMutationLeaseOwned"
+        ).substringBefore("val artifactCommitted")
+
+        assertTrue(
+            completionBody.contains(
+                "val committedAudio = if (directoryMutationLeaseOwned && storedAudio.isPendingAudioWrite)"
+            )
+        )
+        assertTrue(
+            promotion.contains(
+                "promotePendingMetadata = directoryMutationLeaseOwned"
+            )
+        )
+    }
+
+    @Test
     fun `source pending recovery settles operation journal before artifact promotion`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

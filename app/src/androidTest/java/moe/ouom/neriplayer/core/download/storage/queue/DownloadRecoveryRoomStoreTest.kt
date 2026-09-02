@@ -638,6 +638,80 @@ class DownloadRecoveryRoomStoreTest {
     }
 
     @Test
+    fun largeLyricPayloadDoesNotBlockSiblingBatchOperations() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val largeLyric = "lyric-line\n".repeat(220_000)
+            assertTrue(largeLyric.length >= 2_200_000)
+            val largeSong = song(76L, "batch-readable-large")
+                .copy(originalLyric = largeLyric)
+            val normalSong = song(77L, "batch-readable-normal")
+            val store = DownloadRecoveryRoomStore(context, database)
+
+            val operationIds = withTimeout(15_000L) {
+                store.upsertPendingDownloadQueue(
+                    songs = listOf(largeSong, normalSong),
+                    userInitiated = true
+                )
+            }
+            assertEquals(2, operationIds.size)
+            val largeOperationId = operationIds[0]
+            val normalOperationId = operationIds[1]
+
+            val snapshots = withTimeout(15_000L) {
+                DownloadExecutionRoomStore.readOperationSnapshots(
+                    context = context,
+                    operationIds = operationIds,
+                    database = database
+                )
+            }
+            assertEquals(operationIds.toSet(), snapshots.keys)
+            assertEquals(
+                largeLyric,
+                snapshots[largeOperationId]?.request?.song?.originalLyric
+            )
+            assertEquals(
+                normalSong.stableKey(),
+                snapshots[normalOperationId]?.request?.song?.stableKey()
+            )
+
+            val operations = withTimeout(15_000L) {
+                DownloadExecutionRoomStore.findReadableOperationsBySongKeys(
+                    context = context,
+                    songKeys = listOf(largeSong.stableKey(), normalSong.stableKey()),
+                    states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
+                    excludeUserStoppedOperations = true,
+                    database = database
+                )
+            }
+            assertEquals(
+                setOf(largeSong.stableKey(), normalSong.stableKey()),
+                operations.keys
+            )
+            assertEquals(largeOperationId, operations[largeSong.stableKey()]?.operationId)
+            assertEquals(normalOperationId, operations[normalSong.stableKey()]?.operationId)
+            assertEquals(
+                largeLyric,
+                operations[largeSong.stableKey()]?.song?.originalLyric
+            )
+
+            val refreshedOperationIds = withTimeout(15_000L) {
+                store.upsertPendingDownloadQueue(
+                    songs = listOf(largeSong, normalSong),
+                    userInitiated = true
+                )
+            }
+            assertEquals(operationIds, refreshedOperationIds)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun batchReadableLookupPagesPastSqliteInClauseLimit() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(

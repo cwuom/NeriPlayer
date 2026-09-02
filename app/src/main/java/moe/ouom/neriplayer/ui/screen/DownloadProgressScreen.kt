@@ -75,6 +75,7 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -83,6 +84,13 @@ private const val INITIAL_DOWNLOAD_PROGRESS_PROBE_ATTEMPTS = 3
 private const val INITIAL_DOWNLOAD_PROGRESS_PROBE_DELAY_MS = 250L
 private const val DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_INITIAL_DELAY_MS = 750L
 private const val DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_MAX_DELAY_MS = 5_000L
+
+internal val DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES =
+    DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES + listOf(
+        "RUNNING",
+        "COMMITTING",
+        WAITING_STORAGE_MUTATION_OPERATION_STATE
+    )
 
 internal data class DownloadProgressBootstrapState(
     val durablePendingSongKeys: Set<String> = emptySet(),
@@ -105,14 +113,78 @@ internal enum class DownloadProgressInitialProbeState {
     UNAVAILABLE
 }
 
-/** 快速清空先移除任务展示，Provider 清理在后台继续 */
+/** 只有物理清理和记录整理都完成后才结束清空展示 */
 internal fun isLogicalDownloadTaskClearComplete(
     progress: DownloadClearVisibility.ClearProgress?
 ): Boolean {
-    return progress?.phase == DownloadClearVisibility.ClearPhase.CLEANING &&
-        progress.completedSteps >= 2 &&
-        progress.totalItemCount == 0 &&
-        progress.failedItemCount == 0
+    if (progress == null || progress.phase != DownloadClearVisibility.ClearPhase.PURGING) {
+        return false
+    }
+    if (progress.totalSteps <= 0 || progress.completedSteps < progress.totalSteps) {
+        return false
+    }
+    if (progress.failedItemCount > 0) {
+        return false
+    }
+    val totalItems = progress.totalItemCount.coerceAtLeast(0)
+    val completedItems = progress.completedItemCount.coerceAtLeast(0)
+    return totalItems == 0 || completedItems >= totalItems
+}
+
+internal fun isEffectiveDownloadClearInProgress(
+    clearFenceActive: Boolean,
+    progress: DownloadClearVisibility.ClearProgress?
+): Boolean = clearFenceActive && !isLogicalDownloadTaskClearComplete(progress)
+
+/** keeps background cleanup visible without blocking a new task generation */
+internal fun shouldShowDownloadClearProgressCard(
+    clearFenceActive: Boolean,
+    progress: DownloadClearVisibility.ClearProgress?
+): Boolean {
+    return clearFenceActive && progress != null
+}
+
+/** keeps the task count visible while clear presentation removes its task cards */
+internal fun resolveDownloadClearPresentationProgress(
+    progress: DownloadClearVisibility.ClearProgress?,
+    taskCountHint: Int
+): DownloadClearVisibility.ClearProgress? {
+    return progress?.copy(
+        affectedItemCount = maxOf(
+            progress.affectedItemCount,
+            taskCountHint.coerceAtLeast(0)
+        )
+    )
+}
+
+/** durable fence 先于进度文件恢复时，仍以已知任务数建立可见高水位 */
+internal fun resolveDownloadClearProgressOrFallback(
+    progress: DownloadClearVisibility.ClearProgress?,
+    clearFenceActive: Boolean,
+    fallbackItemCount: Int
+): DownloadClearVisibility.ClearProgress? {
+    val normalizedFallback = fallbackItemCount.coerceAtLeast(0)
+    if (progress != null) {
+        return progress.copy(
+            affectedItemCount = maxOf(progress.affectedItemCount, normalizedFallback)
+        )
+    }
+    if (!clearFenceActive) return null
+    return DownloadClearVisibility.ClearProgress(
+        phase = DownloadClearVisibility.ClearPhase.PREPARING,
+        completedSteps = 0,
+        totalSteps = 4,
+        affectedItemCount = normalizedFallback,
+        totalItemCount = 0
+    )
+}
+
+internal fun shouldPrioritizeDownloadBackgroundCleanup(
+    logicalClearComplete: Boolean,
+    hasVisibleTasks: Boolean,
+    pendingTaskCount: Int
+): Boolean {
+    return logicalClearComplete && !hasVisibleTasks && pendingTaskCount <= 0
 }
 
 internal fun resolveDownloadProgressPagePresentation(
@@ -122,14 +194,18 @@ internal fun resolveDownloadProgressPagePresentation(
     isClearing: Boolean,
     isClearPresentationCleared: Boolean
 ): DownloadProgressPagePresentation {
+    // 清空期间已切换到新 generation 的任务仍需保留可见卡片
+    if (isClearing && !hasVisibleContent) {
+        return DownloadProgressPagePresentation.CLEARING
+    }
+    if (hasVisibleContent || hasKnownPendingTasks) {
+        return DownloadProgressPagePresentation.CONTENT
+    }
     if (isClearing) {
         return DownloadProgressPagePresentation.CLEARING
     }
     if (isClearPresentationCleared) {
         return DownloadProgressPagePresentation.EMPTY
-    }
-    if (hasVisibleContent || hasKnownPendingTasks) {
-        return DownloadProgressPagePresentation.CONTENT
     }
     return when (initialProbeState) {
         DownloadProgressInitialProbeState.LOADING -> DownloadProgressPagePresentation.LOADING
@@ -141,15 +217,25 @@ internal fun resolveDownloadProgressPagePresentation(
 internal fun shouldRecheckDownloadProgressBootstrap(
     initialProbeState: DownloadProgressInitialProbeState,
     clearFenceActive: Boolean,
+    hasUnhydratedDurableTasks: Boolean,
     isClearing: Boolean,
     isClearPresentationCleared: Boolean
 ): Boolean {
-    return !isClearing &&
-        !isClearPresentationCleared &&
-        (
-            initialProbeState == DownloadProgressInitialProbeState.UNAVAILABLE ||
-                clearFenceActive
-            )
+    if (isClearing) return false
+    if (clearFenceActive) return true
+    if (isClearPresentationCleared) return false
+    return initialProbeState == DownloadProgressInitialProbeState.UNAVAILABLE ||
+        hasUnhydratedDurableTasks
+}
+
+/** refreshes the durable fallback after in-memory task rows have already settled */
+internal fun hasUnhydratedDurableDownloadTasks(
+    activeSongKeys: Set<String>,
+    durablePendingSongKeys: Set<String>,
+    explicitResumeSongKeys: Set<String>
+): Boolean {
+    return activeSongKeys.isEmpty() &&
+        (durablePendingSongKeys - explicitResumeSongKeys).isNotEmpty()
 }
 
 private sealed interface DownloadProgressBootstrapProbeResult {
@@ -203,9 +289,7 @@ private suspend fun readDownloadProgressBootstrapState(
         .map { entry -> entry.song.stableKey() }
     durablePendingSongKeys += DownloadExecutionRoomStore.listByStates(
         context = appContext,
-        states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES +
-            DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES +
-            WAITING_STORAGE_MUTATION_OPERATION_STATE,
+        states = DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES,
         excludeUserStoppedOperations = true
     ).map { entry -> entry.request.song.stableKey() }
 
@@ -250,6 +334,9 @@ fun DownloadProgressScreen(
     var explicitResumeCandidates by remember {
         mutableStateOf<List<ExplicitDownloadResumeCandidate>>(emptyList())
     }
+    var clearTriggeredFromScreen by remember { mutableStateOf(false) }
+    var clearTaskCountHint by remember { mutableIntStateOf(0) }
+    var clearTaskCountHighWater by remember { mutableIntStateOf(0) }
     val taskPresenceKey = remember(downloadTasks) {
         downloadTasks
             .filter { task ->
@@ -300,29 +387,76 @@ fun DownloadProgressScreen(
     val clearFenceActive = isClearingDownloadTasks ||
         isDownloadTaskClearPresentationActive ||
         bootstrapState?.clearFenceActive == true
-    // 进程在清空期间被杀时，内存进度会丢失，但持久化栅栏仍然有效
-    // 先显示可确定的零阶段进度，避免页面退回无进度的无限加载状态
-    val effectiveClearProgress = downloadClearProgress
-        ?: bootstrapState?.clearProgress
-        ?: if (clearFenceActive) {
-            DownloadClearVisibility.ClearProgress(
-                phase = DownloadClearVisibility.ClearPhase.PREPARING,
-                completedSteps = 0,
-                totalSteps = 4,
-                affectedItemCount = 0
-            )
-        } else {
-            null
+    LaunchedEffect(clearFenceActive) {
+        if (!clearFenceActive) {
+            clearTriggeredFromScreen = false
+            clearTaskCountHint = 0
+            clearTaskCountHighWater = 0
         }
+    }
+    val explicitResumeSongKeys = remember(explicitResumeCandidates) {
+        explicitResumeCandidates.mapTo(linkedSetOf()) { candidate ->
+            candidate.song.stableKey()
+        }
+    }
+    val hasUnhydratedDurableTasks = hasUnhydratedDurableDownloadTasks(
+        activeSongKeys = taskPresenceKey,
+        durablePendingSongKeys = bootstrapState?.durablePendingSongKeys.orEmpty(),
+        explicitResumeSongKeys = explicitResumeSongKeys
+    )
+    val pendingTaskCount = remember(
+        taskPresenceKey,
+        bootstrapProbeResult,
+        explicitResumeSongKeys
+    ) {
+        (taskPresenceKey +
+            (bootstrapState?.durablePendingSongKeys.orEmpty() - explicitResumeSongKeys))
+            .size
+    }
+    val visibleBatchProgress = batchDownloadProgress
+    val visibleTasks = visibleDownloadProgressTasks(downloadTasks)
+    val displayedPendingTaskCount = pendingTaskCount + explicitResumeCandidates.size
+    val observedClearTaskCount = maxOf(
+        downloadTasks.size,
+        taskPresenceKey.size,
+        displayedPendingTaskCount,
+        visibleBatchProgress?.totalSongs ?: 0
+    )
+    LaunchedEffect(observedClearTaskCount, clearFenceActive) {
+        if (!clearFenceActive) {
+            clearTaskCountHighWater = maxOf(
+                clearTaskCountHighWater,
+                observedClearTaskCount
+            )
+        }
+    }
+    // 进程在清空期间被杀时，内存进度会丢失，但持久化栅栏仍然有效
+    // 先用任务高水位建立可见进度，避免页面退回 0% (0项)
+    val clearProgressFallbackCount = maxOf(
+        clearTaskCountHint,
+        clearTaskCountHighWater,
+        downloadTasks.size,
+        taskPresenceKey.size,
+        bootstrapState?.durablePendingSongKeys?.size ?: 0
+    )
+    val effectiveClearProgress = resolveDownloadClearProgressOrFallback(
+        progress = downloadClearProgress ?: bootstrapState?.clearProgress,
+        clearFenceActive = clearFenceActive,
+        fallbackItemCount = clearProgressFallbackCount
+    )
     val logicalClearComplete = isLogicalDownloadTaskClearComplete(effectiveClearProgress)
-    val effectiveIsClearing = clearFenceActive && !logicalClearComplete
+    val effectiveIsClearing = isEffectiveDownloadClearInProgress(
+        clearFenceActive = clearFenceActive,
+        progress = effectiveClearProgress
+    )
     val effectivePresentationCleared = isDownloadTaskClearPresentationActive ||
         isDownloadTaskClearPresentationCleared ||
         logicalClearComplete
     val shouldRecheckBootstrap = shouldRecheckDownloadProgressBootstrap(
         initialProbeState = initialProbeState,
-        clearFenceActive = bootstrapState?.clearFenceActive == true,
-        isClearing = isClearingDownloadTasks || isDownloadTaskClearPresentationActive,
+        clearFenceActive = clearFenceActive,
+        hasUnhydratedDurableTasks = hasUnhydratedDurableTasks,
+        isClearing = effectiveIsClearing,
         isClearPresentationCleared = effectivePresentationCleared
     )
     LaunchedEffect(
@@ -332,9 +466,7 @@ fun DownloadProgressScreen(
         effectivePresentationCleared,
         isDownloadTaskClearPresentationActive
     ) {
-        if (!shouldRecheckBootstrap) {
-            return@LaunchedEffect
-        }
+        if (!shouldRecheckBootstrap) return@LaunchedEffect
         var delayMs = DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_INITIAL_DELAY_MS
         while (true) {
             kotlinx.coroutines.delay(delayMs)
@@ -342,10 +474,13 @@ fun DownloadProgressScreen(
             bootstrapProbeResult = nextBootstrapProbeResult
             val nextBootstrapState = (nextBootstrapProbeResult as?
                 DownloadProgressBootstrapProbeResult.Resolved)?.state
-            explicitResumeCandidates = visibleExplicitResumeCandidates(
+            val nextExplicitResumeCandidates = visibleExplicitResumeCandidates(
                 candidates = nextBootstrapState?.explicitResumeCandidates.orEmpty(),
                 activeSongKeys = taskPresenceKey
             )
+            explicitResumeCandidates = nextExplicitResumeCandidates
+            val nextExplicitResumeSongKeys = nextExplicitResumeCandidates
+                .mapTo(linkedSetOf()) { candidate -> candidate.song.stableKey() }
             if (!shouldRecheckDownloadProgressBootstrap(
                     initialProbeState = when (nextBootstrapProbeResult) {
                         is DownloadProgressBootstrapProbeResult.Resolved ->
@@ -355,46 +490,42 @@ fun DownloadProgressScreen(
                             DownloadProgressInitialProbeState.UNAVAILABLE
                     },
                     clearFenceActive = nextBootstrapState?.clearFenceActive == true,
-                    isClearing = isClearingDownloadTasks ||
-                        isDownloadTaskClearPresentationActive,
+                    hasUnhydratedDurableTasks = hasUnhydratedDurableDownloadTasks(
+                        activeSongKeys = taskPresenceKey,
+                        durablePendingSongKeys =
+                            nextBootstrapState?.durablePendingSongKeys.orEmpty(),
+                        explicitResumeSongKeys = nextExplicitResumeSongKeys
+                    ),
+                    isClearing = effectiveIsClearing,
                     isClearPresentationCleared = effectivePresentationCleared
                 )
-            ) {
-                return@LaunchedEffect
-            }
+            ) return@LaunchedEffect
             delayMs = (delayMs * 2).coerceAtMost(
                 DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_MAX_DELAY_MS
             )
         }
     }
-    val explicitResumeSongKeys = remember(explicitResumeCandidates) {
-        explicitResumeCandidates.mapTo(linkedSetOf()) { candidate ->
-            candidate.song.stableKey()
-        }
-    }
-    val pendingTaskCount = remember(
-        taskPresenceKey,
-        bootstrapProbeResult,
-        explicitResumeSongKeys,
-        effectivePresentationCleared
-    ) {
-        if (effectivePresentationCleared) {
-            0
+    val clearTaskCountAtConfirmation = maxOf(
+        downloadTasks.size,
+        taskPresenceKey.size,
+        displayedPendingTaskCount,
+        visibleBatchProgress?.totalSongs ?: 0,
+        clearTaskCountHighWater
+    )
+    val presentedClearProgress = resolveDownloadClearPresentationProgress(
+        progress = effectiveClearProgress,
+        taskCountHint = if (clearTriggeredFromScreen) {
+            maxOf(clearTaskCountHint, clearTaskCountHighWater)
         } else {
-            (taskPresenceKey +
-                (bootstrapState?.durablePendingSongKeys.orEmpty() - explicitResumeSongKeys))
-                .size
+            clearTaskCountHighWater
         }
-    }
-    val visibleBatchProgress = batchDownloadProgress?.takeUnless {
-        effectivePresentationCleared
-    }
-    val visibleTasks = if (effectivePresentationCleared) {
-        emptyList()
-    } else {
-        visibleDownloadProgressTasks(downloadTasks)
-    }
-    val displayedPendingTaskCount = pendingTaskCount + explicitResumeCandidates.size
+    )
+    val prioritizeBackgroundCleanup = clearFenceActive &&
+        shouldPrioritizeDownloadBackgroundCleanup(
+            logicalClearComplete = logicalClearComplete,
+            hasVisibleTasks = visibleTasks.isNotEmpty(),
+            pendingTaskCount = displayedPendingTaskCount
+        )
     val pagePresentation = resolveDownloadProgressPagePresentation(
         initialProbeState = initialProbeState,
         hasVisibleContent = visibleBatchProgress != null ||
@@ -416,6 +547,8 @@ fun DownloadProgressScreen(
                 TextButton(
                     onClick = {
                         context.performHapticFeedback()
+                        clearTriggeredFromScreen = true
+                        clearTaskCountHint = clearTaskCountAtConfirmation
                         bootstrapProbeResult = DownloadProgressBootstrapProbeResult.Resolved(
                             DownloadProgressBootstrapState()
                         )
@@ -456,14 +589,15 @@ fun DownloadProgressScreen(
                             pagePresentation == DownloadProgressPagePresentation.UNAVAILABLE ->
                                 stringResource(R.string.download_loading_tasks_recovering)
 
-                            logicalClearComplete ->
+                            prioritizeBackgroundCleanup ->
                                 stringResource(R.string.download_clear_background_cleanup)
 
                             effectiveIsClearing -> effectiveClearProgress?.let { progress ->
                                 stringResource(
                                     R.string.download_clearing_tasks_with_progress,
                                     progress.displayPercentage,
-                                    progress.affectedItemCount
+                                    presentedClearProgress?.affectedItemCount
+                                        ?: progress.affectedItemCount
                                 )
                             } ?: stringResource(R.string.download_clearing_tasks)
 
@@ -524,7 +658,8 @@ fun DownloadProgressScreen(
                 DownloadProgressPagePresentation.CLEARING -> {
                 DownloadProgressEmptyContent(
                     isClearing = pagePresentation == DownloadProgressPagePresentation.CLEARING,
-                    clearProgress = effectiveClearProgress
+                    clearProgress = presentedClearProgress,
+                    showBackgroundCleanup = prioritizeBackgroundCleanup
                 )
             }
 
@@ -540,6 +675,18 @@ fun DownloadProgressScreen(
                         bottom = 16.dp + miniPlayerHeight
                     )
                 ) {
+                    if (shouldShowDownloadClearProgressCard(
+                            clearFenceActive = clearFenceActive,
+                            progress = presentedClearProgress
+                        )
+                    ) {
+                        item(key = "download-clear-background-progress") {
+                            DownloadClearProgressCard(
+                                progress = requireNotNull(presentedClearProgress),
+                                backgroundCleanup = prioritizeBackgroundCleanup
+                            )
+                        }
+                    }
                     visibleBatchProgress?.let { progress ->
                         item(key = "batch-overall-progress") {
                             BatchDownloadOverallProgressCard(progress = progress)
@@ -648,8 +795,11 @@ private fun DownloadProgressBootstrapUnavailableContent() {
 @Composable
 private fun DownloadProgressEmptyContent(
     isClearing: Boolean,
-    clearProgress: DownloadClearVisibility.ClearProgress?
+    clearProgress: DownloadClearVisibility.ClearProgress?,
+    showBackgroundCleanup: Boolean
 ) {
+    val showClearProgress = clearProgress != null &&
+        (isClearing || showBackgroundCleanup)
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -665,58 +815,127 @@ private fun DownloadProgressEmptyContent(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(16.dp))
-            if (isClearing && clearProgress != null) {
-                LinearProgressIndicator(
-                    progress = { clearProgress.displayFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
+            if (showClearProgress) {
+                DownloadClearProgressSummary(
+                    progress = requireNotNull(clearProgress),
+                    backgroundCleanup = showBackgroundCleanup
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-            Text(
-                text = if (isClearing && clearProgress != null) {
-                    val phase = when (clearProgress.phase) {
-                        DownloadClearVisibility.ClearPhase.PREPARING ->
-                            R.string.download_clear_phase_preparing
-
-                        DownloadClearVisibility.ClearPhase.CANCELLING ->
-                            R.string.download_clear_phase_cancelling
-
-                        DownloadClearVisibility.ClearPhase.CLEANING ->
-                            R.string.download_clear_phase_cleaning
-
-                        DownloadClearVisibility.ClearPhase.PURGING ->
-                            R.string.download_clear_phase_purging
-                    }
-                    stringResource(
-                        R.string.download_clearing_tasks_with_progress,
-                        clearProgress.displayPercentage,
-                        clearProgress.affectedItemCount
-                    ) + " · " + stringResource(phase) +
-                        if (clearProgress.totalItemCount > 0) {
-                            " · " + stringResource(
-                                R.string.download_clear_item_progress,
-                                clearProgress.completedItemCount,
-                                clearProgress.totalItemCount
-                            )
-                        } else {
-                            ""
-                        }
-                } else {
-                    stringResource(
+            } else {
+                Text(
+                    text = stringResource(
                         if (isClearing) {
                             R.string.download_clearing_tasks
                         } else {
                             R.string.download_no_tasks
                         }
-                    )
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun DownloadClearProgressCard(
+    progress: DownloadClearVisibility.ClearProgress,
+    backgroundCleanup: Boolean
+) {
+    val shape = RoundedCornerShape(12.dp)
+    val baseColor = MaterialTheme.colorScheme.surfaceVariant
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        fallbackColor = baseColor.copy(alpha = 0.3f),
+        tintColor = baseColor
+    ) {
+        DownloadClearProgressSummary(
+            progress = progress,
+            backgroundCleanup = backgroundCleanup,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}
+
+@Composable
+private fun DownloadClearProgressSummary(
+    progress: DownloadClearVisibility.ClearProgress,
+    backgroundCleanup: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val phaseResource = when (progress.phase) {
+        DownloadClearVisibility.ClearPhase.PREPARING ->
+            R.string.download_clear_phase_preparing
+
+        DownloadClearVisibility.ClearPhase.CANCELLING ->
+            R.string.download_clear_phase_cancelling
+
+        DownloadClearVisibility.ClearPhase.CLEANING ->
+            R.string.download_clear_phase_cleaning
+
+        DownloadClearVisibility.ClearPhase.PURGING ->
+            R.string.download_clear_phase_purging
+    }
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = if (backgroundCleanup) {
+                stringResource(R.string.download_clear_background_cleanup)
+            } else {
+                stringResource(R.string.download_clearing_tasks)
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = stringResource(
+                R.string.download_clearing_tasks_with_progress,
+                progress.displayPercentage,
+                progress.affectedItemCount
+            ) + " · " + stringResource(phaseResource),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = stringResource(
+                R.string.download_clear_stage_progress,
+                progress.completedSteps.coerceIn(0, progress.totalSteps.coerceAtLeast(0)),
+                progress.totalSteps.coerceAtLeast(0)
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        LinearProgressIndicator(
+            progress = { progress.displayFraction },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+        )
+        Text(
+            text = if (progress.totalItemCount > 0) {
+                stringResource(
+                    R.string.download_clear_item_progress,
+                    progress.completedItemCount,
+                    progress.totalItemCount
+                )
+            } else if (progress.phase == DownloadClearVisibility.ClearPhase.PURGING &&
+                progress.completedSteps >= progress.totalSteps
+            ) {
+                stringResource(R.string.download_clear_item_progress_empty)
+            } else if (progress.phase == DownloadClearVisibility.ClearPhase.CLEANING) {
+                stringResource(R.string.download_clear_item_progress_scanning)
+            } else {
+                stringResource(R.string.download_clear_item_progress_pending)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -1026,8 +1245,9 @@ private fun DownloadTaskActionButton(
 private fun DownloadTaskProgressSection(task: DownloadTask) {
     when (task.status) {
         DownloadStatus.QUEUED -> {
+            val stageLabel = task.progress?.stage?.let(::downloadStageLabelResource)
             Text(
-                text = stringResource(R.string.download_queued_status),
+                text = stringResource(stageLabel ?: R.string.download_queued_status),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1035,7 +1255,12 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
 
         DownloadStatus.WAITING_NETWORK -> {
             Text(
-                text = stringResource(R.string.download_waiting_network_recovery),
+                text = stringResource(
+                    task.progress?.stage
+                        ?.takeIf { it == AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP }
+                        ?.let(::downloadStageLabelResource)
+                        ?: R.string.download_waiting_network_recovery
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1047,6 +1272,12 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
         DownloadStatus.DOWNLOADING -> {
             val progress = task.progress
             if (progress == null) {
+                Text(
+                    text = stringResource(R.string.download_waiting_host),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
                 DownloadTaskIndeterminateProgress()
                 return
             }
@@ -1067,6 +1298,16 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 DownloadTaskIndeterminateProgress()
+                return
+            }
+            progress.stage.let(::downloadStageLabelResource)?.let { stageLabel ->
+                Text(
+                    text = stringResource(stageLabel),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                DownloadTaskRetainedProgress(progress)
                 return
             }
             Text(

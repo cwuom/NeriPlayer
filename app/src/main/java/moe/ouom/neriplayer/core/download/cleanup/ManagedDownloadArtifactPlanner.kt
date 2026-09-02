@@ -12,6 +12,36 @@ import moe.ouom.neriplayer.core.download.naming.sanitizeManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 
 internal object ManagedDownloadArtifactPlanner {
+    /**
+     * builds a complete reference set for an explicit full-library delete
+     * using only entries already proven to be managed by the current snapshot
+     */
+    fun collectFullLibraryArtifactReferences(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): Set<String> {
+        val deletingAudioNames = snapshot.audioEntries
+            .mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
+        return linkedSetOf<String>().apply {
+            // 全库删除不能只依赖歌曲 catalog 关联的音频。完整目录快照中的
+            // metadata、封面、歌词和孤儿条目同样属于托管下载产物
+            addAll(snapshot.knownReferences)
+            snapshot.audioEntries.forEach { audio ->
+                val metadata = ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
+                addAll(
+                    collectArtifactReferences(
+                        snapshot = snapshot,
+                        storedAudio = audio,
+                        songId = metadata?.songId ?: 0L,
+                        candidateBaseNames = candidateManagedDownloadBaseNames(
+                            audio.nameWithoutExtension
+                        ),
+                        deletingAudioNames = deletingAudioNames
+                    )
+                )
+            }
+        }
+    }
+
     fun collectArtifactReferences(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         storedAudio: ManagedDownloadStorage.StoredEntry?,

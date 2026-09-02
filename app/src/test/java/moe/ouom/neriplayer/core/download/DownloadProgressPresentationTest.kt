@@ -12,7 +12,7 @@ import org.junit.Test
 class DownloadProgressPresentationTest {
 
     @Test
-    fun `progress page renders only songs currently transferring`() {
+    fun `progress page renders queued waiting and transferring songs`() {
         val tasks = DownloadStatus.entries.mapIndexed { index, status ->
             DownloadTask(
                 song = song(index.toLong() + 1L),
@@ -23,8 +23,120 @@ class DownloadProgressPresentationTest {
         }
 
         assertEquals(
-            listOf(DownloadStatus.DOWNLOADING),
+            listOf(
+                DownloadStatus.DOWNLOADING,
+                DownloadStatus.WAITING_NETWORK,
+                DownloadStatus.QUEUED
+            ),
             visibleDownloadProgressTasks(tasks).map(DownloadTask::status)
+        )
+    }
+
+    @Test
+    fun `visible tasks keep real transfer ahead of waits and queue`() {
+        val waitingSong = song(2L)
+        val queuedBeforeActive = DownloadTask(
+            song = song(1L),
+            progress = null,
+            status = DownloadStatus.QUEUED,
+            attemptId = 1L
+        )
+        val waitingWithProgress = DownloadTask(
+            song = waitingSong,
+            progress = progress(waitingSong.stableKey(), 2L, bytesRead = 20L),
+            status = DownloadStatus.WAITING_NETWORK,
+            attemptId = 2L
+        )
+        val active = DownloadTask(
+            song = song(3L),
+            progress = progress(song(3L).stableKey(), 3L, bytesRead = 0L),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 3L
+        )
+        val resolving = DownloadTask(
+            song = song(5L),
+            progress = progress(
+                songKey = song(5L).stableKey(),
+                attemptId = 5L,
+                bytesRead = 0L
+            ).copy(stage = AudioDownloadManager.DownloadStage.RESOLVING_SOURCE),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 5L
+        )
+        val queuedAfterActive = DownloadTask(
+            song = song(4L),
+            progress = null,
+            status = DownloadStatus.QUEUED,
+            attemptId = 4L
+        )
+
+        val visible = visibleDownloadProgressTasks(
+            listOf(queuedBeforeActive, waitingWithProgress, active, resolving, queuedAfterActive)
+        )
+
+        assertEquals(
+            listOf(active, resolving, waitingWithProgress, queuedBeforeActive, queuedAfterActive),
+            visible
+        )
+    }
+
+    @Test
+    fun `downloading without a stage does not outrank real transfer`() {
+        val transfer = DownloadTask(
+            song = song(1L),
+            progress = progress(song(1L).stableKey(), 1L, bytesRead = 1L),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 1L
+        )
+        val unhydrated = DownloadTask(
+            song = song(2L),
+            progress = null,
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 2L
+        )
+
+        assertEquals(
+            listOf(transfer, unhydrated),
+            visibleDownloadProgressTasks(listOf(unhydrated, transfer))
+        )
+        assertTrue(hasDownloadTaskStartedWork(transfer))
+        assertFalse(hasDownloadTaskStartedWork(unhydrated))
+    }
+
+    @Test
+    fun `every downloading task stays ahead of queued and network waiting tasks`() {
+        val unhydrated = DownloadTask(
+            song = song(1L),
+            progress = null,
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 1L
+        )
+        val sourceResolving = DownloadTask(
+            song = song(2L),
+            progress = progress(song(2L).stableKey(), 2L, bytesRead = 0L).copy(
+                stage = AudioDownloadManager.DownloadStage.RESOLVING_SOURCE
+            ),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 2L
+        )
+        val networkWaiting = DownloadTask(
+            song = song(3L),
+            progress = null,
+            status = DownloadStatus.WAITING_NETWORK,
+            attemptId = 3L
+        )
+        val queued = DownloadTask(
+            song = song(4L),
+            progress = null,
+            status = DownloadStatus.QUEUED,
+            attemptId = 4L
+        )
+
+        assertEquals(
+            listOf(sourceResolving, unhydrated, networkWaiting, queued),
+            visibleDownloadProgressTasks(
+                listOf(networkWaiting, queued, sourceResolving, unhydrated)
+            )
         )
     }
 

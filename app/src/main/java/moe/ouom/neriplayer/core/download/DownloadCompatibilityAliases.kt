@@ -463,6 +463,11 @@ internal suspend fun resolveUndeletedManagedReferences(
 ): Set<String> = resolveUndeletedManagedReferencesDelegate(requestedReferences, deletedReferences, exists)
 
 internal object ManagedDownloadArtifactPlanner {
+    fun collectFullLibraryArtifactReferences(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): Set<String> = ManagedDownloadArtifactPlannerDelegate
+        .collectFullLibraryArtifactReferences(snapshot)
+
     fun collectArtifactReferences(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         storedAudio: ManagedDownloadStorage.StoredEntry?,

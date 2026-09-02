@@ -1036,14 +1036,14 @@ class AudioDownloadManagerTest {
 
     @Test
     fun `parallelism cache uses a conservative fallback until the persisted setting is readable`() {
-        assertEquals(1, INITIAL_SAFE_DOWNLOAD_PARALLELISM)
+        assertEquals(DEFAULT_DOWNLOAD_PARALLELISM, INITIAL_DOWNLOAD_PARALLELISM)
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/DownloadParallelism.kt"
         ).readText()
 
         assertFalse(source.contains("runBlocking"))
         assertFalse(source.contains("resolveDownloadParallelismBlocking"))
-        assertTrue(source.contains("AtomicInteger(INITIAL_SAFE_DOWNLOAD_PARALLELISM)"))
+        assertTrue(source.contains("AtomicInteger(INITIAL_DOWNLOAD_PARALLELISM)"))
         assertTrue(source.contains("readBootstrapDownloadParallelism("))
         assertTrue(source.contains("warmBootstrapSettingsSnapshot("))
         assertTrue(source.contains("scope.launch"))

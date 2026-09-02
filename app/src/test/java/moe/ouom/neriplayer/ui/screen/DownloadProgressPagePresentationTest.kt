@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
 import moe.ouom.neriplayer.core.download.DownloadClearVisibility
+import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -9,7 +10,7 @@ import org.junit.Test
 class DownloadProgressPagePresentationTest {
 
     @Test
-    fun `detached clear is considered logically complete before provider cleanup`() {
+    fun `cleaning clear is not logically complete before provider cleanup`() {
         val progress = DownloadClearVisibility.ClearProgress(
             phase = DownloadClearVisibility.ClearPhase.CLEANING,
             completedSteps = 2,
@@ -18,7 +19,147 @@ class DownloadProgressPagePresentationTest {
             totalItemCount = 0
         )
 
+        assertFalse(isLogicalDownloadTaskClearComplete(progress))
+    }
+
+    @Test
+    fun `purging clear is complete only after every item is accounted for`() {
+        val progress = DownloadClearVisibility.ClearProgress(
+            phase = DownloadClearVisibility.ClearPhase.PURGING,
+            completedSteps = 4,
+            totalSteps = 4,
+            affectedItemCount = 539,
+            completedItemCount = 12,
+            totalItemCount = 12
+        )
+
         assertTrue(isLogicalDownloadTaskClearComplete(progress))
+    }
+
+    @Test
+    fun `purging clear with residual item is still visible`() {
+        val progress = DownloadClearVisibility.ClearProgress(
+            phase = DownloadClearVisibility.ClearPhase.PURGING,
+            completedSteps = 4,
+            totalSteps = 4,
+            affectedItemCount = 539,
+            completedItemCount = 11,
+            totalItemCount = 12
+        )
+
+        assertFalse(isLogicalDownloadTaskClearComplete(progress))
+    }
+
+    @Test
+    fun `background cleanup keeps its progress card visible after task presentation clears`() {
+        val progress = DownloadClearVisibility.ClearProgress(
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            totalSteps = 4,
+            affectedItemCount = 539
+        )
+
+        assertTrue(
+            shouldShowDownloadClearProgressCard(
+                clearFenceActive = true,
+                progress = progress
+            )
+        )
+        assertFalse(
+            shouldShowDownloadClearProgressCard(
+                clearFenceActive = false,
+                progress = progress
+            )
+        )
+    }
+
+    @Test
+    fun `clear presentation keeps the pre-clear task count after task cards are hidden`() {
+        val progress = DownloadClearVisibility.ClearProgress(
+            phase = DownloadClearVisibility.ClearPhase.PREPARING,
+            completedSteps = 0,
+            totalSteps = 4,
+            affectedItemCount = 0
+        )
+
+        val presented = requireNotNull(
+            resolveDownloadClearPresentationProgress(
+                progress = progress,
+                taskCountHint = 846
+            )
+        )
+
+        assertEquals(846, presented.affectedItemCount)
+        assertEquals(0, presented.completedSteps)
+    }
+
+    @Test
+    fun `clear presentation never lowers a durable affected item count`() {
+        val progress = DownloadClearVisibility.ClearProgress(
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            totalSteps = 4,
+            affectedItemCount = 900
+        )
+
+        val presented = requireNotNull(
+            resolveDownloadClearPresentationProgress(
+                progress = progress,
+                taskCountHint = 846
+            )
+        )
+
+        assertEquals(900, presented.affectedItemCount)
+    }
+
+    @Test
+    fun `active clear fence uses a known task count when progress restore is missing`() {
+        val progress = resolveDownloadClearProgressOrFallback(
+            progress = null,
+            clearFenceActive = true,
+            fallbackItemCount = 846
+        )
+
+        assertEquals(0, progress?.displayPercentage)
+        assertEquals(846, progress?.affectedItemCount)
+        assertEquals(0, progress?.totalItemCount)
+    }
+
+    @Test
+    fun `restored clear progress keeps its item denominator when new tasks are visible`() {
+        val progress = resolveDownloadClearProgressOrFallback(
+            progress = DownloadClearVisibility.ClearProgress(
+                phase = DownloadClearVisibility.ClearPhase.CLEANING,
+                completedSteps = 2,
+                totalSteps = 4,
+                affectedItemCount = 846,
+                completedItemCount = 4,
+                totalItemCount = 12
+            ),
+            clearFenceActive = true,
+            fallbackItemCount = 3
+        )
+
+        assertEquals(12, progress?.totalItemCount)
+        assertEquals(4, progress?.completedItemCount)
+    }
+
+    @Test
+    fun `new generation tasks take priority over old background cleanup`() {
+        assertFalse(
+            shouldPrioritizeDownloadBackgroundCleanup(
+                logicalClearComplete = true,
+                hasVisibleTasks = true,
+                pendingTaskCount = 1
+            )
+        )
+        assertTrue(
+            shouldPrioritizeDownloadBackgroundCleanup(
+                logicalClearComplete = true,
+                hasVisibleTasks = false,
+                pendingTaskCount = 0
+            )
+        )
     }
 
     @Test
@@ -106,6 +247,20 @@ class DownloadProgressPagePresentationTest {
     }
 
     @Test
+    fun `active clear still renders a new generation task`() {
+        assertEquals(
+            DownloadProgressPagePresentation.CONTENT,
+            resolveDownloadProgressPagePresentation(
+                initialProbeState = DownloadProgressInitialProbeState.RESOLVED,
+                hasVisibleContent = true,
+                hasKnownPendingTasks = false,
+                isClearing = true,
+                isClearPresentationCleared = true
+            )
+        )
+    }
+
+    @Test
     fun `unavailable storage probe never falls through to no tasks`() {
         assertEquals(
             DownloadProgressPagePresentation.UNAVAILABLE,
@@ -126,6 +281,7 @@ class DownloadProgressPagePresentationTest {
             shouldRecheckDownloadProgressBootstrap(
                 initialProbeState = DownloadProgressInitialProbeState.UNAVAILABLE,
                 clearFenceActive = false,
+                hasUnhydratedDurableTasks = false,
                 isClearing = false,
                 isClearPresentationCleared = false
             )
@@ -135,6 +291,7 @@ class DownloadProgressPagePresentationTest {
             shouldRecheckDownloadProgressBootstrap(
                 initialProbeState = DownloadProgressInitialProbeState.RESOLVED,
                 clearFenceActive = true,
+                hasUnhydratedDurableTasks = false,
                 isClearing = false,
                 isClearPresentationCleared = false
             )
@@ -147,7 +304,56 @@ class DownloadProgressPagePresentationTest {
             false,
             shouldRecheckDownloadProgressBootstrap(
                 initialProbeState = DownloadProgressInitialProbeState.UNAVAILABLE,
+                clearFenceActive = false,
+                hasUnhydratedDurableTasks = false,
+                isClearing = false,
+                isClearPresentationCleared = true
+            )
+        )
+    }
+
+    @Test
+    fun `completed clear keeps polling while durable fence remains active`() {
+        val progress = DownloadClearVisibility.ClearProgress(
+            phase = DownloadClearVisibility.ClearPhase.PURGING,
+            completedSteps = 4,
+            totalSteps = 4,
+            affectedItemCount = 0,
+            completedItemCount = 0,
+            totalItemCount = 0
+        )
+
+        assertTrue(isLogicalDownloadTaskClearComplete(progress))
+        assertFalse(
+            isEffectiveDownloadClearInProgress(
                 clearFenceActive = true,
+                progress = progress
+            )
+        )
+        assertTrue(
+            shouldRecheckDownloadProgressBootstrap(
+                initialProbeState = DownloadProgressInitialProbeState.RESOLVED,
+                clearFenceActive = true,
+                hasUnhydratedDurableTasks = false,
+                isClearing = false,
+                isClearPresentationCleared = true
+            )
+        )
+        assertFalse(
+            shouldRecheckDownloadProgressBootstrap(
+                initialProbeState = DownloadProgressInitialProbeState.RESOLVED,
+                clearFenceActive = false,
+                hasUnhydratedDurableTasks = false,
+                isClearing = false,
+                isClearPresentationCleared = true
+            )
+        )
+        assertEquals(
+            DownloadProgressPagePresentation.EMPTY,
+            resolveDownloadProgressPagePresentation(
+                initialProbeState = DownloadProgressInitialProbeState.RESOLVED,
+                hasVisibleContent = false,
+                hasKnownPendingTasks = false,
                 isClearing = false,
                 isClearPresentationCleared = true
             )
@@ -161,9 +367,69 @@ class DownloadProgressPagePresentationTest {
             shouldRecheckDownloadProgressBootstrap(
                 initialProbeState = DownloadProgressInitialProbeState.UNAVAILABLE,
                 clearFenceActive = true,
+                hasUnhydratedDurableTasks = false,
                 isClearing = true,
                 isClearPresentationCleared = false
             )
         )
+    }
+
+    @Test
+    fun `durable fallback is retried after its in-memory task row settles`() {
+        assertTrue(
+            hasUnhydratedDurableDownloadTasks(
+                activeSongKeys = emptySet(),
+                durablePendingSongKeys = setOf("song"),
+                explicitResumeSongKeys = emptySet()
+            )
+        )
+        assertFalse(
+            hasUnhydratedDurableDownloadTasks(
+                activeSongKeys = setOf("song"),
+                durablePendingSongKeys = setOf("song"),
+                explicitResumeSongKeys = emptySet()
+            )
+        )
+        assertFalse(
+            hasUnhydratedDurableDownloadTasks(
+                activeSongKeys = emptySet(),
+                durablePendingSongKeys = setOf("song"),
+                explicitResumeSongKeys = setOf("song")
+            )
+        )
+        assertTrue(
+            shouldRecheckDownloadProgressBootstrap(
+                initialProbeState = DownloadProgressInitialProbeState.RESOLVED,
+                clearFenceActive = false,
+                hasUnhydratedDurableTasks = true,
+                isClearing = false,
+                isClearPresentationCleared = false
+            )
+        )
+    }
+
+    @Test
+    fun `download page excludes post core operation states from pending count`() {
+        listOf(
+            "CORE_COMMITTED",
+            "ASSETS_ENRICHING",
+            "DEGRADED_COMPLETE"
+        ).forEach { state ->
+            assertFalse(state in DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES)
+        }
+    }
+
+    @Test
+    fun `download page keeps transferable operation states in pending count`() {
+        listOf(
+            "PENDING_QUEUE",
+            "QUEUED",
+            "RETRYABLE",
+            "RUNNING",
+            "COMMITTING",
+            WAITING_STORAGE_MUTATION_OPERATION_STATE
+        ).forEach { state ->
+            assertTrue(state in DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES)
+        }
     }
 }

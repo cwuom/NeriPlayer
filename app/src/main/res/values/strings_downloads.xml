@@ -19,7 +19,11 @@
     <string name="download_clear_phase_cancelling">停止下载中</string>
     <string name="download_clear_phase_cleaning">清理临时文件中</string>
     <string name="download_clear_phase_purging">整理记录中</string>
+    <string name="download_clear_stage_progress">阶段 %1$d/%2$d</string>
     <string name="download_clear_item_progress">已处理 %1$d/%2$d 个文件</string>
+    <string name="download_clear_item_progress_scanning">正在扫描待清理文件…</string>
+    <string name="download_clear_item_progress_pending">待扫描清理文件数量</string>
+    <string name="download_clear_item_progress_empty">没有发现待清理文件</string>
     <string name="download_empty">暂无已下载歌曲</string>
     <string name="download_desc">管理下载任务和本地文件</string>
     <string name="download_manage_desc">管理音乐下载和本地文件</string>
@@ -40,6 +44,13 @@
     <string name="download_queued_status">等待开始</string>
     <string name="download_finalizing">音频已写入，正在整理歌词、封面和元信息</string>
     <string name="download_waiting_network_recovery">网络切换中，恢复后会自动继续</string>
+    <string name="download_waiting_host">等待系统下载主机调度</string>
+    <string name="download_waiting_delete_cleanup">等待旧文件清理完成</string>
+    <string name="download_resolving_source">正在解析下载来源</string>
+    <string name="download_preparing_storage">正在准备本地存储</string>
+    <string name="download_verifying_audio">正在校验音频</string>
+    <string name="download_committing_core">正在提交可播放音频</string>
+    <string name="download_assets_enriching">正在整理歌词、封面和元信息</string>
     <string name="download_explicit_resume_summary">系统停止了用户发起的下载，不会自动重新调度</string>
     <string name="download_explicit_resume_status">系统已暂停，点击继续下载</string>
     <string name="download_search_hint">搜索已下载的歌曲…</string>

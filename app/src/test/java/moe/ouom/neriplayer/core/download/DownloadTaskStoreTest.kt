@@ -149,6 +149,40 @@ class DownloadTaskStoreTest {
     }
 
     @Test
+    fun `progress updates remain visible while waiting for network cleanup`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(3L)
+            val attemptId = store.prepareDownloadTask(downloadSong)
+                ?: error("download task was not prepared")
+            store.updateTaskStatus(
+                songKey = downloadSong.stableKey(),
+                status = DownloadStatus.WAITING_NETWORK,
+                expectedAttemptId = attemptId
+            )
+
+            val waitingProgress = progress(
+                song = downloadSong,
+                attemptId = attemptId,
+                bytesRead = 128L,
+                stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
+            )
+
+            assertTrue(store.updateProgress(waitingProgress))
+            assertEquals(
+                waitingProgress,
+                store.findTask(downloadSong.stableKey())?.progress
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `durable progress restores before transfer starts and rejects stale attempt`() {
         val scope = CoroutineScope(SupervisorJob())
         try {
@@ -557,6 +591,17 @@ class DownloadTaskStoreTest {
             assertTrue(store.isClearPresentationActive.value)
             assertTrue(store.currentTasks().isEmpty())
             assertTrue(store.currentClearPresentationToken() === clearToken)
+            val otherSong = song(8L)
+            val otherAttemptId = store.prepareDownloadTask(otherSong)
+                ?: error("non-owner task was not prepared")
+            assertEquals(listOf(otherSong), store.currentTasks().map(DownloadTask::song))
+            assertTrue(
+                store.updateProgress(
+                    progress(otherSong, otherAttemptId, bytesRead = 24L)
+                )
+            )
+            store.clearAllTasks()
+            assertEquals(listOf(otherSong), store.currentTasks().map(DownloadTask::song))
             assertTrue(store.prepareDownloadTask(downloadSong) == null)
             assertTrue(store.prepareDownloadTasks(listOf(downloadSong)).isEmpty())
             assertTrue(store.ensureDownloadTasks(listOf(downloadSong)).isEmpty())
@@ -574,7 +619,7 @@ class DownloadTaskStoreTest {
                 )
             )
             store.registerActiveDownloadTask(downloadSong, attemptId)
-            assertTrue(store.currentTasks().isEmpty())
+            assertEquals(listOf(otherSong), store.currentTasks().map(DownloadTask::song))
 
             assertTrue(store.finishClearPresentation(clearToken))
             assertTrue(store.currentClearPresentationToken() == null)
@@ -595,15 +640,18 @@ class DownloadTaskStoreTest {
             )
             val firstToken = store.beginClearPresentation()
             assertTrue(store.finishClearPresentation(firstToken))
+            val ownedSong = song(8L)
+            assertTrue(store.prepareDownloadTask(ownedSong) != null)
             val secondToken = store.beginClearPresentation()
 
             assertFalse(store.finishClearPresentation(firstToken))
             assertTrue(store.currentClearPresentationToken() === secondToken)
-            assertTrue(store.prepareDownloadTask(song(8L)) == null)
+            assertTrue(store.prepareDownloadTask(ownedSong) == null)
+            assertTrue(store.prepareDownloadTask(song(9L)) != null)
             assertFalse(store.finishClearPresentation(secondToken) { false })
             assertTrue(store.currentClearPresentationToken() === secondToken)
             assertTrue(store.finishClearPresentation(secondToken))
-            assertTrue(store.prepareDownloadTask(song(8L)) != null)
+            assertTrue(store.prepareDownloadTask(ownedSong) != null)
         } finally {
             scope.cancel()
         }

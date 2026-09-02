@@ -165,11 +165,45 @@ class BatchDownloadOperationRecoveryTest {
             startBody.indexOf("beginBatchDownloadPresentation(requestedSongs)") <
                 startBody.indexOf("scope.launch")
         )
-        assertTrue(preparationBody.contains("selectBatchRequestsForEarlyHandoff("))
-        assertTrue(preparationBody.contains("BATCH_DOWNLOAD_EARLY_HANDOFF_LIMIT"))
+        assertTrue(preparationBody.contains("readyRequests"))
+        assertFalse(preparationBody.contains("BATCH_DOWNLOAD_EARLY_HANDOFF_LIMIT"))
+        val earlyHandoffIndex = preparationBody.indexOf("readyRequests.forEach")
+        val batchSchedulingIndex = preparationBody.indexOf("schedulePendingBatchDownloads(")
+        assertTrue(earlyHandoffIndex >= 0)
+        assertTrue(batchSchedulingIndex >= 0)
         assertTrue(
-            preparationBody.indexOf("earlyRequests.forEach") <
-                preparationBody.indexOf("schedulePendingBatchDownloads(")
+            earlyHandoffIndex < batchSchedulingIndex
+        )
+    }
+
+    @Test
+    fun `batch clears a preloaded presentation when no task can be prepared`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val preparationBody = methodBody(source, "prepareAndScheduleBatchDownloadSession")
+
+        assertTrue(
+            preparationBody.contains(
+                "if (claimableSongs.isEmpty()) {\n" +
+                    "            clearBatchDownloadPresentation(session.batchPresentationId)"
+            )
+        )
+        assertTrue(
+            preparationBody.contains(
+                "if (!prepareBatchDownloadTasks(session, claimableSongs)) {\n" +
+                    "            clearBatchDownloadPresentation(session.batchPresentationId)"
+            )
+        )
+        assertTrue(
+            preparationBody.contains(
+                "val settledAdmitted = if (session.settledSongKeys.isEmpty())"
+            )
+        )
+        assertTrue(
+            preparationBody.contains(
+                "clearBatchDownloadPresentationWithoutOutstandingWork(session)"
+            )
         )
     }
 
@@ -221,12 +255,14 @@ class BatchDownloadOperationRecoveryTest {
         val waitingUpsertBody = methodBody(recoveryStoreSource, "upsertWaitingStorageMutation")
 
         assertTrue(stagingBody.contains("readOperationSnapshots("))
+        assertTrue(stagingBody.contains("readOperationIdentities("))
+        assertTrue(stagingBody.contains("continue"))
         assertTrue(batchBody.contains("val operationSnapshots"))
         assertTrue(roomStoreSource.contains("normalizedOperationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE)"))
         assertTrue(pendingUpsertBody.contains("rehydrateMalformedReusableOperations("))
         assertFalse(pendingUpsertBody.contains("rehydrateMalformedReusableOperation("))
-        assertTrue(waitingUpsertBody.contains("findAllByStableKeys("))
-        assertTrue(waitingUpsertBody.contains("findAllByOperationIds("))
+        assertTrue(waitingUpsertBody.contains("findAllHeadersByStableKeys("))
+        assertTrue(waitingUpsertBody.contains("findAllHeadersByOperationIds("))
     }
 
     @Test
@@ -252,10 +288,14 @@ class BatchDownloadOperationRecoveryTest {
 
         listOf(singleBody, batchBody).forEach { body ->
             val deletionBarrierIndex = body.indexOf("awaitDownloadedSongDeletion(")
-            val ticketIndex = body.indexOf("awaitDownloadAdmissionTicket(appContext)")
-            val admissionIndex = body.indexOf(
-                "admitDownloadMutation(appContext, admissionTicket)"
-            )
+            val ticketIndex = listOf(
+                body.indexOf("awaitDownloadAdmissionTicket("),
+                body.indexOf("awaitDownloadAdmissionTicketForStableKeys(")
+            ).filter { index -> index >= 0 }.minOrNull() ?: -1
+            val admissionIndex = listOf(
+                body.indexOf("admitDownloadMutation("),
+                body.indexOf("admitDownloadMutationForStableKeys(")
+            ).filter { index -> index >= 0 }.minOrNull() ?: -1
             val stagingIndex = body.indexOf("stageAndPromotePendingDownloadQueue(")
 
             assertTrue(deletionBarrierIndex >= 0)
@@ -339,14 +379,15 @@ class BatchDownloadOperationRecoveryTest {
         assertTrue(recoveryBody.contains("awaitAdmissionWhenUnavailable = false"))
         assertTrue(source.contains("val admissionTicket: Long,"))
         assertTrue(
-            prepareTasksBody.contains(
-                "admitDownloadMutation(\n            context = session.context,\n            admissionTicket = session.admissionTicket"
-            )
+            prepareTasksBody.contains("admitDownloadMutationForStableKeys(") &&
+                prepareTasksBody.contains("context = session.context") &&
+                prepareTasksBody.contains("admissionTicket = session.admissionTicket")
         )
-        assertTrue(
-            prepareTasksBody.indexOf("admitDownloadMutation(") <
-                prepareTasksBody.indexOf("taskStore.ensureDownloadTasks(")
-        )
+        val admissionIndex = prepareTasksBody.indexOf("admitDownloadMutationForStableKeys(")
+        val taskCreationIndex = prepareTasksBody.indexOf("taskStore.ensureDownloadTasks(")
+        assertTrue(admissionIndex >= 0)
+        assertTrue(taskCreationIndex >= 0)
+        assertTrue(admissionIndex < taskCreationIndex)
         assertTrue(artifactBody.contains("session.artifactClaims.remove(songKey)"))
         assertTrue(artifactBody.contains("releaseDownloadArtifactAfterExecutionOwnershipLoss("))
     }

@@ -388,7 +388,7 @@ class ForegroundDownloadWorker(
             return WORK_NAME_PREFIX + "fallback_" + operationId
         }
 
-        private const val UIDT_START_GRACE_MS = 3_000L
+        private const val UIDT_START_GRACE_MS = 250L
     }
 }
 

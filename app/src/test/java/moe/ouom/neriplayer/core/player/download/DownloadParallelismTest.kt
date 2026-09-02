@@ -6,10 +6,10 @@ import org.junit.Test
 class DownloadParallelismTest {
 
     @Test
-    fun `missing bootstrap parallelism uses the minimum safe limit`() {
-        assertEquals(1, INITIAL_SAFE_DOWNLOAD_PARALLELISM)
+    fun `missing bootstrap parallelism uses the product default`() {
+        assertEquals(DEFAULT_DOWNLOAD_PARALLELISM, INITIAL_DOWNLOAD_PARALLELISM)
         assertEquals(
-            INITIAL_SAFE_DOWNLOAD_PARALLELISM,
+            DEFAULT_DOWNLOAD_PARALLELISM,
             resolveInitialDownloadParallelism(null)
         )
     }

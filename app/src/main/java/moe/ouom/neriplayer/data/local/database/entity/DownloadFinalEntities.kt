@@ -40,9 +40,37 @@ internal data class DownloadOperationEntity(
     @ColumnInfo(name = "host_admitted_at_ms") val hostAdmittedAtMs: Long? = null
 )
 
+/** 表头查询不携带可能包含完整歌词的 source_hint_json */
+internal data class DownloadOperationHeaderRow(
+    @ColumnInfo(name = "operation_id") val operationId: String,
+    @ColumnInfo(name = "stable_key") val stableKey: String,
+    @ColumnInfo(name = "library_id") val libraryId: String,
+    val state: String,
+    @ColumnInfo(name = "queue_order") val queueOrder: Int,
+    @ColumnInfo(name = "staging_dir_name") val stagingDirName: String,
+    @ColumnInfo(name = "bytes_written") val bytesWritten: Long,
+    @ColumnInfo(name = "total_bytes") val totalBytes: Long?,
+    @ColumnInfo(name = "retry_count") val retryCount: Int,
+    @ColumnInfo(name = "next_retry_at_ms") val nextRetryAtMs: Long?,
+    @ColumnInfo(name = "last_error_code") val lastErrorCode: String?,
+    @ColumnInfo(name = "stop_requested_by_user") val stopRequestedByUser: Boolean,
+    @ColumnInfo(name = "created_at_ms") val createdAtMs: Long,
+    @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long,
+    @ColumnInfo(name = "host_process_token") val hostProcessToken: String?,
+    @ColumnInfo(name = "host_admitted_at_ms") val hostAdmittedAtMs: Long?
+)
+
 internal data class DownloadOperationIdentityRow(
     @ColumnInfo(name = "operation_id") val operationId: String,
     @ColumnInfo(name = "stable_key") val stableKey: String
+)
+
+internal data class DownloadCancellationIdentityRow(
+    @ColumnInfo(name = "operation_id") val operationId: String,
+    @ColumnInfo(name = "stable_key") val stableKey: String,
+    val state: String,
+    @ColumnInfo(name = "created_at_ms") val createdAtMs: Long,
+    @ColumnInfo(name = "stop_requested_by_user") val stopRequestedByUser: Boolean
 )
 
 @Entity(

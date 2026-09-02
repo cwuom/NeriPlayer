@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -244,7 +245,7 @@ class DownloadExecutionHostTest {
     }
 
     @Test
-    fun `host admission uses the configured download parallelism`() = runTest {
+    fun `host admission uses the independent dispatch window`() = runTest {
         val context = mockContext()
         val journal = InMemoryDownloadExecutionOperationJournal()
         val store = DownloadExecutionOperationStore { journal }
@@ -266,7 +267,7 @@ class DownloadExecutionHostTest {
             DownloadExecutionResult.Accepted,
             host.execute(context, request.operationId)
         )
-        assertEquals(3, journal.lastHostAdmissionCapacity)
+        assertEquals(resolveDownloadDispatchWindow(3), journal.lastHostAdmissionCapacity)
     }
 
     @Test
@@ -514,7 +515,7 @@ class DownloadExecutionHostTest {
     fun `UIDT fallback work waits briefly before claiming the operation`() {
         val request = ForegroundDownloadWorker.buildFallbackRequest("operation-fallback")
 
-        assertEquals(3_000L, request.workSpec.initialDelay)
+        assertEquals(250L, request.workSpec.initialDelay)
         assertEquals(
             NetworkType.CONNECTED,
             request.workSpec.constraints.requiredNetworkType
@@ -791,6 +792,70 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `batch cancellation keeps active admission until execution finally`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-cancel-active",
+            song = sampleSong()
+        )
+        store.save(context, request)
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                started.complete(Unit)
+                finish.await()
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28
+        )
+
+        val execution = async { host.execute(context, request.operationId) }
+        started.await()
+        host.cancelAll(context, listOf(request.operationId))
+
+        assertEquals(0, journal.hostAdmissionReleaseCount)
+        finish.complete(Unit)
+        assertEquals(DownloadExecutionResult.Accepted, execution.await())
+        assertEquals(1, journal.hostAdmissionReleaseCount)
+    }
+
+    @Test
+    fun `owned batch cancellation keeps active admission until execution finally`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-cancel-owned-active",
+            song = sampleSong()
+        )
+        store.save(context, request)
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                started.complete(Unit)
+                finish.await()
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28
+        )
+
+        val execution = async { host.execute(context, request.operationId) }
+        started.await()
+        host.cancelAllOwned(context)
+
+        assertEquals(0, journal.hostAdmissionReleaseCount)
+        finish.complete(Unit)
+        assertEquals(DownloadExecutionResult.Accepted, execution.await())
+        assertEquals(1, journal.hostAdmissionReleaseCount)
+    }
+
+    @Test
     fun `execution persists the operation scoped entry point result`() = runTest {
         val store = DownloadExecutionOperationStore { testJournal }
         val context = mockContext()
@@ -987,6 +1052,95 @@ class DownloadExecutionHostTest {
         )
         assertEquals(0, executions)
         assertEquals("CANCEL_REQUESTED", store.currentState(context, request.operationId))
+    }
+
+    @Test
+    fun `unowned execution survives scoped clear fence release`() = runTest {
+        val context = statefulMockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val owner = DownloadExecutionRequest(
+            operationId = "operation-clear-owner",
+            song = sampleSong()
+        )
+        val request = DownloadExecutionRequest(
+            operationId = "operation-clear-unowned",
+            song = sampleSong().copy(id = 43L)
+        )
+        store.save(context, request)
+        val ownership = DownloadClearOwnership(
+            operationIds = setOf(owner.operationId),
+            stableKeys = setOf(owner.song.stableKey())
+        )
+        val clearEpoch = PersistentDownloadClearFenceStore.beginClear(
+            purpose = DownloadClearPurpose.TASK_PROGRESS,
+            ownership = ownership
+        )
+
+        try {
+            assertTrue(
+                PersistentDownloadClearFenceStore.activate(
+                    context = context,
+                    ownership = ownership
+                )
+            )
+            assertTrue(
+                PersistentDownloadClearFenceStore.setOwnership(
+                    context = context,
+                    expectedEpoch = clearEpoch,
+                    ownership = ownership
+                )
+            )
+            assertFalse(
+                PersistentDownloadClearFenceStore.isBlocked(
+                    context = context,
+                    stableKey = request.song.stableKey(),
+                    operationId = request.operationId
+                )
+            )
+
+            var executions = 0
+            var fenceReleased = false
+            journal.afterStateUpdate = { operationId, state ->
+                if (operationId == request.operationId && state == "RUNNING") {
+                    assertEquals(
+                        DownloadClearFenceReleaseResult.RELEASED,
+                        PersistentDownloadClearFenceStore.clearIfCurrent(
+                            context = context,
+                            expectedEpoch = clearEpoch
+                        )
+                    )
+                    assertEquals(
+                        clearEpoch,
+                        PersistentDownloadClearFenceStore.currentEpoch(context)
+                    )
+                    fenceReleased = true
+                    journal.afterStateUpdate = null
+                }
+            }
+            val host = DefaultDownloadExecutionHost(
+                operationStore = store,
+                entryPoint = DownloadOperationEntryPoint { _, _ ->
+                    executions++
+                    DownloadExecutionResult.Accepted
+                },
+                sdkInt = 28
+            )
+
+            assertEquals(
+                DownloadExecutionResult.Accepted,
+                host.execute(context, request.operationId)
+            )
+            assertTrue(fenceReleased)
+            assertEquals(1, executions)
+            assertEquals("COMPLETED", store.currentState(context, request.operationId))
+            assertFalse(PersistentDownloadClearFenceStore.isActive(context))
+        } finally {
+            PersistentDownloadClearFenceStore.clearIfCurrent(
+                context = context,
+                expectedEpoch = clearEpoch
+            )
+        }
     }
 
     @Test
@@ -1262,6 +1416,21 @@ class DownloadExecutionHostTest {
         }
     }
 
+    private fun statefulMockContext(): Context {
+        return mock(Context::class.java).also { context ->
+            `when`(context.applicationContext).thenReturn(context)
+            `when`(context.filesDir).thenReturn(
+                File(
+                    System.getProperty("java.io.tmpdir") ?: ".",
+                    "neriplayer-download-host-test-${System.nanoTime()}"
+                )
+            )
+            `when`(context.getSharedPreferences(anyString(), anyInt())).thenReturn(
+                StatefulSharedPreferences()
+            )
+        }
+    }
+
     private fun sampleSong(): SongItem {
         return SongItem(
             id = 42L,
@@ -1282,6 +1451,113 @@ class DownloadExecutionHostTest {
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")
+    }
+
+    private class StatefulSharedPreferences : SharedPreferences {
+        private val values = linkedMapOf<String, Any?>()
+
+        override fun contains(key: String): Boolean = synchronized(values) {
+            values.containsKey(key)
+        }
+
+        override fun edit(): SharedPreferences.Editor = Editor()
+
+        override fun getAll(): MutableMap<String, *> = synchronized(values) {
+            values.toMutableMap()
+        }
+
+        override fun getBoolean(key: String, defValue: Boolean): Boolean = synchronized(values) {
+            values[key] as? Boolean ?: defValue
+        }
+
+        override fun getFloat(key: String, defValue: Float): Float = synchronized(values) {
+            values[key] as? Float ?: defValue
+        }
+
+        override fun getInt(key: String, defValue: Int): Int = synchronized(values) {
+            values[key] as? Int ?: defValue
+        }
+
+        override fun getLong(key: String, defValue: Long): Long = synchronized(values) {
+            values[key] as? Long ?: defValue
+        }
+
+        override fun getString(key: String, defValue: String?): String? = synchronized(values) {
+            values[key] as? String ?: defValue
+        }
+
+        override fun getStringSet(
+            key: String,
+            defValues: MutableSet<String>?
+        ): MutableSet<String>? = synchronized(values) {
+            when (val value = values[key]) {
+                is Set<*> -> value.filterIsInstance<String>().toMutableSet()
+                else -> defValues?.toMutableSet()
+            }
+        }
+
+        override fun registerOnSharedPreferenceChangeListener(
+            listener: SharedPreferences.OnSharedPreferenceChangeListener
+        ) = Unit
+
+        override fun unregisterOnSharedPreferenceChangeListener(
+            listener: SharedPreferences.OnSharedPreferenceChangeListener
+        ) = Unit
+
+        private inner class Editor : SharedPreferences.Editor {
+            private val updates = linkedMapOf<String, Any?>()
+            private val removals = linkedSetOf<String>()
+            private var clearAll = false
+
+            override fun apply() {
+                commit()
+            }
+
+            override fun clear(): SharedPreferences.Editor = apply {
+                clearAll = true
+                updates.clear()
+                removals.clear()
+            }
+
+            override fun commit(): Boolean {
+                synchronized(values) {
+                    if (clearAll) values.clear()
+                    removals.forEach(values::remove)
+                    values.putAll(updates)
+                }
+                return true
+            }
+
+            override fun putBoolean(key: String, value: Boolean): SharedPreferences.Editor =
+                put(key, value)
+
+            override fun putFloat(key: String, value: Float): SharedPreferences.Editor =
+                put(key, value)
+
+            override fun putInt(key: String, value: Int): SharedPreferences.Editor =
+                put(key, value)
+
+            override fun putLong(key: String, value: Long): SharedPreferences.Editor =
+                put(key, value)
+
+            override fun putString(key: String, value: String?): SharedPreferences.Editor =
+                put(key, value)
+
+            override fun putStringSet(
+                key: String,
+                values: MutableSet<String>?
+            ): SharedPreferences.Editor = put(key, values?.toMutableSet())
+
+            override fun remove(key: String): SharedPreferences.Editor = apply {
+                removals += key
+                updates.remove(key)
+            }
+
+            private fun put(key: String, value: Any?): SharedPreferences.Editor = apply {
+                updates[key] = value
+                removals.remove(key)
+            }
+        }
     }
 
 }

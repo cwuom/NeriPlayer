@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
@@ -184,6 +185,10 @@ class DefaultDownloadExecutionHost(
     private val systemRetryStopOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val explicitSchedulerStopOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val executionAdmissionLock = Any()
+    private val backendOwnershipLock = Any()
+    private val hostAdmissionOwners = ConcurrentHashMap<String, ScheduleTicket>()
+    private val backendOwners = ConcurrentHashMap<String, BackendOwner>()
+    private val scheduleOwners = ConcurrentHashMap<String, ScheduleTicket>()
     private val deferredRequests = DeferredDownloadScheduleQueue()
     private val deferredSchedulingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val deferredSchedulingRunning = AtomicBoolean(false)
@@ -194,106 +199,523 @@ class DefaultDownloadExecutionHost(
         val shortestPendingUidtGraceDelayMs: Long?
     )
 
+    /** 调度期间绑定的清空代次和 operation 身份，避免长 I/O 返回后越过新代次 */
+    private data class ScheduleTicket(
+        val operationId: String,
+        val stableKey: String,
+        val attemptId: Long?,
+        val attemptBound: Boolean,
+        val clearEpoch: Long
+    )
+
+    private data class BackendOwner(
+        val ticket: ScheduleTicket,
+        val backend: DownloadExecutionSchedule.Backend
+    )
+
     override fun schedule(
         context: Context,
         request: DownloadExecutionRequest
     ): DownloadExecutionSchedule {
         val appContext = context.applicationContext
+        val ticket = captureScheduleTicket(appContext, request)
+            ?: return DownloadExecutionSchedule.Rejected(
+                "download clear is in progress"
+            )
         return PersistentDownloadClearFenceStore.withSchedulingPermit(
             context = appContext,
             onFenceActive = {
                 DownloadExecutionSchedule.Rejected("download clear is in progress")
-            }
+            },
+            stableKey = request.song.stableKey(),
+            operationId = request.operationId
         ) {
-            runCatching {
-                val songKey = request.song.stableKey()
-                // Room 日志负责按根目录调度，内存状态可能跨目录切换残留
-                val existingOperationId = operationStore.findOperationIdForSong(
-                    appContext,
-                    songKey
-                )
-                val existingState = existingOperationId?.let { id ->
-                    operationStore.currentState(appContext, id)
-                }
-                val existingReadable = existingOperationId?.let { id ->
-                    operationStore.read(appContext, id) != null
-                } == true
-                if (existingOperationId != null &&
-                    existingOperationId != request.operationId &&
-                    existingState in BLOCKING_SCHEDULING_STATES &&
-                    existingReadable
-                ) {
-                    return@runCatching DownloadExecutionSchedule.Rejected(
-                        "download operation already scheduled"
-                    )
-                }
-                val currentState = operationStore.currentState(appContext, request.operationId)
-                if (!canScheduleDownloadOperation(currentState)) {
-                    return@runCatching DownloadExecutionSchedule.Rejected(
-                        "operation is no longer schedulable: $currentState"
-                    )
-                }
-                operationStore.save(appContext, request)
-                val configuredParallelism = configuredDownloadParallelism(appContext)
-                if (!tryAcquireHostAdmission(
-                        context = appContext,
-                        operationId = request.operationId,
-                        capacity = configuredParallelism
-                    )
-                ) {
-                    enqueueDeferredSchedule(appContext, request)
-                    return@runCatching DownloadExecutionSchedule.Deferred(
-                        "download host admission window is full"
-                    )
-                }
-                val selectedBackend = selectDownloadExecutionBackend(
-                    sdkInt = sdkInt,
-                    userInitiated = request.userInitiated
-                )
-                val scheduledBackend = when (selectedBackend) {
-                    DownloadExecutionSchedule.Backend.UIDT_JOB -> {
-                        if (
-                            scheduleUidtIfSupported(
-                                context = appContext,
-                                operationId = request.operationId,
-                                sdkInt = sdkInt,
-                                pendingJobLimit = configuredParallelism
-                            )
-                        ) {
-                            DownloadExecutionSchedule.Backend.UIDT_JOB
-                        } else if (ForegroundDownloadWorker.schedule(appContext, request.operationId)) {
-                            DownloadExecutionSchedule.Backend.FOREGROUND_WORK
-                        } else {
-                            null
-                        }
-                    }
+            scheduleWithTicket(
+                context = appContext,
+                request = request,
+                ticket = ticket
+            )
+        }
+    }
 
-                    DownloadExecutionSchedule.Backend.FOREGROUND_WORK -> {
-                        ForegroundDownloadWorker.schedule(appContext, request.operationId)
-                            .takeIf { it }
-                            ?.let { DownloadExecutionSchedule.Backend.FOREGROUND_WORK }
+    private fun scheduleWithTicket(
+        context: Context,
+        request: DownloadExecutionRequest,
+        ticket: ScheduleTicket
+    ): DownloadExecutionSchedule {
+        var hostAdmissionAcquired = false
+        var scheduledBackend: DownloadExecutionSchedule.Backend? = null
+        var currentTicket = ticket
+        try {
+            if (!isScheduleTicketCurrent(context, ticket)) {
+                return rejectStaleSchedule(
+                    context,
+                    request,
+                    hostAdmissionAcquired,
+                    ticket = ticket
+                )
+            }
+            val songKey = request.song.stableKey()
+            // Room 日志负责按根目录调度，内存状态可能跨目录切换残留
+            val existingOperationId = operationStore.findOperationIdForSong(context, songKey)
+            if (!isScheduleTicketCurrent(context, ticket)) {
+                return rejectStaleSchedule(
+                    context,
+                    request,
+                    hostAdmissionAcquired,
+                    ticket = ticket
+                )
+            }
+            val existingState = existingOperationId?.let { id ->
+                operationStore.currentState(context, id)
+            }
+            val existingReadable = existingOperationId?.let { id ->
+                operationStore.read(context, id) != null
+            } == true
+            if (existingOperationId != null &&
+                existingOperationId != request.operationId &&
+                existingState in BLOCKING_SCHEDULING_STATES &&
+                existingReadable
+            ) {
+                return DownloadExecutionSchedule.Rejected(
+                    "download operation already scheduled"
+                )
+            }
+            val currentState = operationStore.currentState(context, request.operationId)
+            if (!canScheduleDownloadOperation(currentState)) {
+                return DownloadExecutionSchedule.Rejected(
+                    "operation is no longer schedulable: $currentState"
+                )
+            }
+            if (!isScheduleTicketCurrent(context, ticket)) {
+                return rejectStaleSchedule(
+                    context = context,
+                    request = request,
+                    hostAdmissionAcquired = hostAdmissionAcquired,
+                    ticket = ticket
+                )
+            }
+            operationStore.save(context, request)
+            // save 可能跨越清空代次，先把持久 attempt 绑定到本次 ticket
+            val boundTicket = bindPersistedScheduleTicket(context, ticket)
+                ?: return rejectStaleSchedule(
+                    context = context,
+                    request = request,
+                    hostAdmissionAcquired = hostAdmissionAcquired,
+                    ticket = ticket
+                )
+            currentTicket = boundTicket
+            val previousScheduleOwner = scheduleOwners.putIfAbsent(
+                request.operationId,
+                boundTicket
+            )
+            if (previousScheduleOwner != null && previousScheduleOwner != boundTicket) {
+                return rejectStaleSchedule(
+                    context = context,
+                    request = request,
+                    hostAdmissionAcquired = hostAdmissionAcquired,
+                    ticket = boundTicket
+                )
+            }
+            if (!isScheduleTicketCurrent(context, boundTicket)) {
+                return rejectStaleSchedule(context, request, hostAdmissionAcquired, boundTicket)
+            }
+            val dispatchWindow = configuredDispatchWindow(context)
+            if (!isScheduleTicketCurrent(context, boundTicket)) {
+                return rejectStaleSchedule(context, request, hostAdmissionAcquired, boundTicket)
+            }
+            if (!tryAcquireHostAdmission(
+                    context = context,
+                    operationId = request.operationId,
+                    capacity = dispatchWindow
+                )
+            ) {
+                if (!isScheduleTicketCurrent(context, boundTicket)) {
+                    return rejectStaleSchedule(context, request, hostAdmissionAcquired, boundTicket)
+                }
+                scheduleOwners.remove(request.operationId, boundTicket)
+                enqueueDeferredSchedule(
+                    context = context,
+                    request = request,
+                    ticket = boundTicket
+                )
+                return DownloadExecutionSchedule.Deferred(
+                    "download host admission window is full"
+                )
+            }
+            hostAdmissionAcquired = true
+            val previousAdmissionOwner = synchronized(executionAdmissionLock) {
+                hostAdmissionOwners.putIfAbsent(request.operationId, boundTicket)
+            }
+            if (previousAdmissionOwner != null && previousAdmissionOwner != boundTicket) {
+                return rejectStaleSchedule(
+                    context = context,
+                    request = request,
+                    hostAdmissionAcquired = hostAdmissionAcquired,
+                    ticket = boundTicket
+                )
+            }
+            if (!isScheduleTicketCurrent(context, boundTicket) ||
+                !isPersistedScheduleTicketCurrent(context, boundTicket)
+            ) {
+                return rejectStaleSchedule(
+                    context = context,
+                    request = request,
+                    hostAdmissionAcquired = hostAdmissionAcquired,
+                    ticket = boundTicket
+                )
+            }
+            val selectedBackend = selectDownloadExecutionBackend(
+                sdkInt = sdkInt,
+                userInitiated = request.userInitiated
+            )
+            scheduledBackend = when (selectedBackend) {
+                DownloadExecutionSchedule.Backend.UIDT_JOB -> {
+                    if (!isScheduleTicketCurrent(context, boundTicket)) {
+                        return rejectStaleSchedule(
+                            context = context,
+                            request = request,
+                            hostAdmissionAcquired = hostAdmissionAcquired,
+                            ticket = boundTicket
+                        )
+                    }
+                    if (
+                        scheduleUidtIfSupported(
+                            context = context,
+                            operationId = request.operationId,
+                            sdkInt = sdkInt,
+                            pendingJobLimit = dispatchWindow
+                        )
+                    ) {
+                        DownloadExecutionSchedule.Backend.UIDT_JOB
+                    } else if (
+                        isScheduleTicketCurrent(context, boundTicket) &&
+                        ForegroundDownloadWorker.schedule(context, request.operationId)
+                    ) {
+                        DownloadExecutionSchedule.Backend.FOREGROUND_WORK
+                    } else {
+                        null
                     }
                 }
-                if (scheduledBackend == null) {
-                    releaseHostAdmissionIfIdle(appContext, request.operationId)
-                    enqueueDeferredSchedule(appContext, request)
-                    return@runCatching DownloadExecutionSchedule.Deferred(
-                        "${selectedBackend.name} host temporarily rejected operation"
+
+                DownloadExecutionSchedule.Backend.FOREGROUND_WORK -> {
+                    if (!isScheduleTicketCurrent(context, boundTicket)) {
+                        return rejectStaleSchedule(
+                            context = context,
+                            request = request,
+                            hostAdmissionAcquired = hostAdmissionAcquired,
+                            ticket = boundTicket
+                        )
+                    }
+                    ForegroundDownloadWorker.schedule(context, request.operationId)
+                        .takeIf { it }
+                        ?.let { DownloadExecutionSchedule.Backend.FOREGROUND_WORK }
+                }
+            }
+            if (scheduledBackend == null) {
+                scheduleOwners.remove(request.operationId, boundTicket)
+                releaseHostAdmissionIfIdle(
+                    context = context,
+                    operationId = request.operationId,
+                    ticket = boundTicket
+                )
+                hostAdmissionAcquired = false
+                if (!isScheduleTicketCurrent(context, boundTicket)) {
+                    return rejectStaleSchedule(
+                        context = context,
+                        request = request,
+                        hostAdmissionAcquired = hostAdmissionAcquired,
+                        ticket = boundTicket
                     )
                 }
-                operationIdsBySongKey[songKey] = request.operationId
-                deferredRequests.remove(request)
-                DownloadExecutionSchedule.Scheduled(
-                    scheduledBackend
+                enqueueDeferredSchedule(
+                    context = context,
+                    request = request,
+                    ticket = boundTicket
                 )
-            }.getOrElse { error ->
-                releaseHostAdmissionIfIdle(appContext, request.operationId)
-                enqueueDeferredSchedule(appContext, request)
-                DownloadExecutionSchedule.Deferred(
-                    error.message ?: error.javaClass.simpleName
+                return DownloadExecutionSchedule.Deferred(
+                    "${selectedBackend.name} host temporarily rejected operation"
                 )
+            }
+            val backendOwnerRegistered = synchronized(backendOwnershipLock) {
+                val existingOwner = backendOwners[request.operationId]
+                if (existingOwner == null || existingOwner.ticket == boundTicket) {
+                    backendOwners[request.operationId] = BackendOwner(
+                        ticket = boundTicket,
+                        backend = requireNotNull(scheduledBackend)
+                    )
+                    true
+                } else {
+                    false
+                }
+            }
+            if (!backendOwnerRegistered) {
+                return rejectStaleSchedule(
+                    context = context,
+                    request = request,
+                    hostAdmissionAcquired = hostAdmissionAcquired,
+                    ticket = boundTicket
+                )
+            }
+            // 后端 API 返回后再次复核，避免清空刚好发生在发布调用期间
+            if (!isScheduleTicketCurrent(context, boundTicket) ||
+                !isPersistedScheduleTicketCurrent(context, boundTicket)
+            ) {
+                return rejectStaleSchedule(context, request, hostAdmissionAcquired, boundTicket)
+            }
+            operationIdsBySongKey[songKey] = request.operationId
+            deferredRequests.remove(request)
+            return DownloadExecutionSchedule.Scheduled(scheduledBackend)
+        } catch (error: Throwable) {
+            if (!isScheduleTicketCurrent(context, ticket)) {
+                return rejectStaleSchedule(
+                    context = context,
+                    request = request,
+                    hostAdmissionAcquired = hostAdmissionAcquired,
+                    ticket = currentTicket
+                )
+            }
+            if (hostAdmissionAcquired) {
+                releaseHostAdmissionIfIdle(
+                    context = context,
+                    operationId = request.operationId,
+                    ticket = currentTicket
+                )
+            }
+            enqueueDeferredSchedule(
+                context = context,
+                request = request,
+                ticket = currentTicket
+            )
+            return DownloadExecutionSchedule.Deferred(
+                error.message ?: error.javaClass.simpleName
+            )
+        }
+    }
+
+    private fun captureScheduleTicket(
+        context: Context,
+        request: DownloadExecutionRequest
+    ): ScheduleTicket? {
+        val stableKey = request.song.stableKey().trim().takeIf(String::isNotBlank)
+            ?: return null
+        val operationId = normalizeDownloadOperationId(request.operationId) ?: return null
+        val normalizedAttemptId = request.attemptId?.takeIf { it > 0L }
+        val ticket = ScheduleTicket(
+            operationId = operationId,
+            stableKey = stableKey,
+            attemptId = normalizedAttemptId,
+            attemptBound = normalizedAttemptId != null,
+            clearEpoch = PersistentDownloadClearFenceStore.currentEpoch(context)
+        )
+        return ticket.takeIf { isScheduleTicketCurrent(context, it) }
+    }
+
+    private fun bindPersistedScheduleTicket(
+        context: Context,
+        ticket: ScheduleTicket,
+        allowAttemptRebind: Boolean = false
+    ): ScheduleTicket? {
+        if (!isScheduleTicketCurrent(context, ticket)) return null
+        val persisted = operationStore.read(context, ticket.operationId) ?: return null
+        if (
+            persisted.operationId != ticket.operationId ||
+            persisted.song.stableKey() != ticket.stableKey ||
+            !allowAttemptRebind &&
+                ticket.attemptId != null && persisted.attemptId != ticket.attemptId
+        ) {
+            return null
+        }
+        return ticket.copy(
+            attemptId = if (allowAttemptRebind) {
+                persisted.attemptId?.takeIf { it > 0L }
+            } else {
+                ticket.attemptId ?: persisted.attemptId?.takeIf { it > 0L }
+            },
+            attemptBound = true
+        )
+    }
+
+    private fun isPersistedScheduleTicketCurrent(
+        context: Context,
+        ticket: ScheduleTicket
+    ): Boolean {
+        val persisted = operationStore.read(context, ticket.operationId) ?: return false
+        return persisted.operationId == ticket.operationId &&
+            persisted.song.stableKey() == ticket.stableKey &&
+            if (ticket.attemptBound) {
+                persisted.attemptId == ticket.attemptId
+            } else {
+                persisted.attemptId == null
+            }
+    }
+
+    private fun isScheduleTicketCurrent(
+        context: Context,
+        ticket: ScheduleTicket
+    ): Boolean {
+        if (
+            normalizeDownloadOperationId(ticket.operationId) != ticket.operationId ||
+            ticket.stableKey.isBlank()
+        ) {
+            return false
+        }
+        if (
+            PersistentDownloadClearFenceStore.isBlocked(
+                context = context,
+                stableKey = ticket.stableKey,
+                operationId = ticket.operationId
+            )
+        ) {
+            return false
+        }
+        return PersistentDownloadClearFenceStore.currentEpoch(context) == ticket.clearEpoch
+    }
+
+    private fun rejectStaleSchedule(
+        context: Context,
+        request: DownloadExecutionRequest,
+        hostAdmissionAcquired: Boolean,
+        ticket: ScheduleTicket? = null
+    ): DownloadExecutionSchedule.Rejected {
+        if (hostAdmissionAcquired) {
+            releaseHostAdmissionIfIdle(
+                context = context,
+                operationId = request.operationId,
+                ticket = ticket
+            )
+        }
+        if (ticket != null) {
+            if (scheduleOwners.remove(request.operationId, ticket)) {
+                operationIdsBySongKey.remove(request.song.stableKey(), request.operationId)
+            }
+        } else {
+            operationIdsBySongKey.remove(request.song.stableKey(), request.operationId)
+        }
+        deferredRequests.remove(request)
+        val persistedIdentityMatches = ticket?.let {
+            it.attemptBound && isPersistedScheduleTicketCurrent(context, it)
+        } ?: isPersistedRequestIdentityCurrent(context, request)
+        if (persistedIdentityMatches) {
+            runCatching {
+                operationStore.requestCancel(context, request.operationId)
             }
         }
+        ticket?.let { cancelBackendIfOwned(context, request.operationId, it) }
+        return DownloadExecutionSchedule.Rejected(
+            reason = "download schedule superseded by clear",
+            retryable = false
+        )
+    }
+
+    /**
+     * 已取得 durable claim 的执行可以采用同一 operation 的最新 attempt，
+     * 但清空代次、operationId 和 stableKey 仍必须保持不变
+     */
+    private fun rebindExecutionOwners(
+        operationId: String,
+        previous: ScheduleTicket,
+        next: ScheduleTicket
+    ): Boolean {
+        if (previous.operationId != operationId || next.operationId != operationId) {
+            return false
+        }
+        val admissionRebound = synchronized(executionAdmissionLock) {
+            val owner = hostAdmissionOwners[operationId] ?: return@synchronized false
+            if (owner != previous) return@synchronized false
+            hostAdmissionOwners[operationId] = next
+            true
+        }
+        if (!admissionRebound) return false
+        scheduleOwners.replace(operationId, previous, next)
+        return synchronized(backendOwnershipLock) {
+            val owner = backendOwners[operationId]
+            when {
+                owner == null || owner.ticket == next -> true
+                owner.ticket != previous -> false
+                else -> {
+                    backendOwners[operationId] = owner.copy(ticket = next)
+                    true
+                }
+            }
+        }
+    }
+
+    /** 删除与当前执行 ticket 对应的后端 owner */
+    private fun removeBackendOwnerIfMatches(
+        operationId: String,
+        ticket: ScheduleTicket
+    ): Boolean {
+        return synchronized(backendOwnershipLock) {
+            val owner = backendOwners[operationId] ?: return@synchronized false
+            if (owner.ticket != ticket) return@synchronized false
+            backendOwners.remove(operationId, owner)
+        }
+    }
+
+    /** 失效 ticket 不再进入下载入口，并释放仍属于它的内存和持久准入 */
+    private fun rejectStaleExecution(
+        context: Context,
+        request: DownloadExecutionRequest,
+        ticket: ScheduleTicket
+    ): DownloadExecutionResult {
+        val operationId = request.operationId
+        scheduleOwners.remove(operationId, ticket)
+        synchronized(executionAdmissionLock) {
+            executingOperationIds.remove(operationId)
+        }
+        val backendOwned = removeBackendOwnerIfMatches(operationId, ticket)
+        val persistedIdentityMatches = isPersistedScheduleTicketCurrent(context, ticket)
+        if (persistedIdentityMatches) {
+            runCatching { operationStore.requestCancel(context, operationId) }
+        }
+        if (backendOwned) {
+            scheduledBackendCancellation(context, operationId)
+        }
+        releaseHostAdmissionIfIdle(
+            context = context,
+            operationId = operationId,
+            ticket = ticket
+        )
+        return DownloadExecutionResult.Cancelled
+    }
+
+    private fun isPersistedRequestIdentityCurrent(
+        context: Context,
+        request: DownloadExecutionRequest
+    ): Boolean {
+        val persisted = operationStore.read(context, request.operationId) ?: return false
+        return persisted.operationId == request.operationId &&
+            persisted.song.stableKey() == request.song.stableKey() &&
+            request.attemptId?.takeIf { it > 0L } != null &&
+            persisted.attemptId == request.attemptId
+    }
+
+    private fun cancelBackendIfOwned(
+        context: Context,
+        operationId: String,
+        ticket: ScheduleTicket
+    ): Boolean {
+        val owned = synchronized(backendOwnershipLock) {
+            val owner = backendOwners[operationId] ?: return@synchronized false
+            if (owner.ticket != ticket || !backendOwners.remove(operationId, owner)) {
+                return@synchronized false
+            }
+            true
+        }
+        if (owned) {
+            scheduledBackendCancellation(context, operationId)
+        }
+        return owned
+    }
+
+    private fun scheduledBackendCancellation(context: Context, operationId: String) {
+        if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+        ) {
+            runCatching { cancelUidt(context, operationId) }
+        }
+        runCatching { ForegroundDownloadWorker.cancel(context, operationId) }
     }
 
     private companion object {
@@ -316,6 +738,10 @@ class DefaultDownloadExecutionHost(
     ) {
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return
         val appContext = context.applicationContext
+        scheduleOwners.remove(normalizedId)
+        synchronized(backendOwnershipLock) {
+            backendOwners.remove(normalizedId)
+        }
         deferredRequests.remove(normalizedId)
         WifiBoundDownloadWakeWorker.cancel(appContext, normalizedId)
         val request = operationStore.read(appContext, normalizedId)
@@ -362,9 +788,19 @@ class DefaultDownloadExecutionHost(
         }
         ForegroundDownloadWorker.cancelAll(appContext, normalizedIds)
         WifiBoundDownloadWakeWorker.cancelAll(appContext, normalizedIds)
+        normalizedIds.forEach { operationId ->
+            scheduleOwners.remove(operationId)
+            synchronized(backendOwnershipLock) {
+                backendOwners.remove(operationId)
+            }
+        }
+        val idleOperationIds = synchronized(executionAdmissionLock) {
+            normalizedIds.filterNot(executingOperationIds::contains).also { idleIds ->
+                idleIds.forEach(hostAdmissionOwners::remove)
+            }
+        }
         operationIdsBySongKey.entries.removeIf { entry -> entry.value in normalizedIds }
         deferredRequests.removeAll(normalizedIds)
-        val idleOperationIds = normalizedIds.filterNot(executingOperationIds::contains)
         if (idleOperationIds.isNotEmpty()) {
             operationStore.releaseHostAdmissions(appContext, idleOperationIds)
             triggerDeferredSchedules(appContext)
@@ -381,9 +817,23 @@ class DefaultDownloadExecutionHost(
         }
         ForegroundDownloadWorker.cancelAllOwned(appContext)
         WifiBoundDownloadWakeWorker.cancelAllOwned(appContext)
-        val ownedOperationIds = operationIdsBySongKey.values + deferredRequests.operationIds()
-        val idleOperationIds = ownedOperationIds.filterNot(executingOperationIds::contains)
+        val ownedOperationIds = buildSet {
+            addAll(operationIdsBySongKey.values)
+            addAll(deferredRequests.operationIds())
+            synchronized(executionAdmissionLock) {
+                addAll(hostAdmissionOwners.keys)
+            }
+        }
+        val idleOperationIds = synchronized(executionAdmissionLock) {
+            ownedOperationIds.filterNot(executingOperationIds::contains).also { idleIds ->
+                idleIds.forEach(hostAdmissionOwners::remove)
+            }
+        }
         operationStore.releaseHostAdmissions(appContext, idleOperationIds)
+        scheduleOwners.clear()
+        synchronized(backendOwnershipLock) {
+            backendOwners.clear()
+        }
         operationIdsBySongKey.clear()
         deferredRequests.clear()
     }
@@ -458,7 +908,9 @@ class DefaultDownloadExecutionHost(
             context = appContext,
             onFenceActive = {
                 cancel(appContext, normalizedId)
-            }
+            },
+            stableKey = request.song.stableKey(),
+            operationId = normalizedId
         ) {
             val currentState = operationStore.currentState(appContext, normalizedId)
             if (!shouldHandleHostStop(currentState)) {
@@ -637,13 +1089,6 @@ class DefaultDownloadExecutionHost(
         val normalizedId = normalizeDownloadOperationId(operationId)
             ?: return@withContext DownloadExecutionResult.MissingOperation
         val appContext = context.applicationContext
-        if (PersistentDownloadClearFenceStore.isActive(appContext)) {
-            runCatching {
-                operationStore.requestCancel(appContext, normalizedId)
-            }
-            releaseHostAdmissionIfIdle(appContext, normalizedId)
-            return@withContext DownloadExecutionResult.Cancelled
-        }
         val initialRequest = operationStore.read(appContext, normalizedId)
             ?: run {
                 operationStore.updateState(
@@ -659,6 +1104,31 @@ class DefaultDownloadExecutionHost(
                 releaseHostAdmissionIfIdle(appContext, normalizedId)
                 return@withContext DownloadExecutionResult.MissingOperation
             }
+        if (
+            PersistentDownloadClearFenceStore.isBlocked(
+                context = appContext,
+                stableKey = initialRequest.song.stableKey(),
+                operationId = normalizedId
+            )
+        ) {
+            runCatching {
+                operationStore.requestCancel(appContext, normalizedId)
+            }
+            releaseHostAdmissionIfIdle(appContext, normalizedId)
+            return@withContext DownloadExecutionResult.Cancelled
+        }
+        val initialTicket = captureScheduleTicket(appContext, initialRequest)
+            ?: run {
+                releaseHostAdmissionIfIdle(appContext, normalizedId)
+                return@withContext DownloadExecutionResult.Cancelled
+            }
+        var executionTicket = bindPersistedScheduleTicket(
+            context = appContext,
+            ticket = initialTicket
+        ) ?: run {
+            releaseHostAdmissionIfIdle(appContext, normalizedId)
+            return@withContext DownloadExecutionResult.Retry
+        }
         if (operationStore.isStopped(appContext, normalizedId)) {
             releaseHostAdmissionIfIdle(appContext, normalizedId)
             return@withContext DownloadExecutionResult.UserStopped
@@ -669,16 +1139,41 @@ class DefaultDownloadExecutionHost(
             releaseHostAdmissionIfIdle(appContext, normalizedId)
             return@withContext result
         }
+        if (
+            !isScheduleTicketCurrent(appContext, executionTicket) ||
+            !isPersistedScheduleTicketCurrent(appContext, executionTicket)
+        ) {
+            return@withContext rejectStaleExecution(
+                context = appContext,
+                request = initialRequest,
+                ticket = executionTicket
+            )
+        }
+        // Room 访问必须发生在短内存临界区之外，避免清空或进度回调被
+        // 一个挂起的数据库操作长期阻塞
+        val hostAdmissionAcquired = tryAcquireHostAdmission(appContext, normalizedId)
+        val stateBeforeClaim = operationStore.currentState(appContext, normalizedId)
         val claimResult = synchronized(executionAdmissionLock) {
             when {
-                !tryAcquireHostAdmission(appContext, normalizedId) ->
-                    resolvePreExecutionResult(
-                        operationStore.currentState(appContext, normalizedId)
-                    ) ?: DownloadExecutionResult.Retry
+                !hostAdmissionAcquired -> resolvePreExecutionResult(stateBeforeClaim)
+                    ?: DownloadExecutionResult.Retry
                 !executingOperationIds.add(normalizedId) -> resolveConcurrentExecutionResult(
                     systemRetryStopPending = systemRetryStopOperationIds.contains(normalizedId)
                 )
-                else -> null
+                else -> {
+                    val existingOwner = hostAdmissionOwners[normalizedId]
+                    when {
+                        existingOwner == null -> {
+                            hostAdmissionOwners[normalizedId] = executionTicket
+                            null
+                        }
+                        existingOwner == executionTicket -> null
+                        else -> {
+                            executingOperationIds.remove(normalizedId)
+                            DownloadExecutionResult.Cancelled
+                        }
+                    }
+                }
             }
         }
         if (claimResult != null) {
@@ -699,6 +1194,38 @@ class DefaultDownloadExecutionHost(
                         latest.song.stableKey() == initialRequest.song.stableKey()
                 }
                 ?: return@withContext DownloadExecutionResult.MissingOperation
+            val reboundTicket = bindPersistedScheduleTicket(
+                context = appContext,
+                ticket = executionTicket,
+                allowAttemptRebind = true
+            ) ?: return@withContext rejectStaleExecution(
+                context = appContext,
+                request = request,
+                ticket = executionTicket
+            )
+            if (
+                !isScheduleTicketCurrent(appContext, reboundTicket) ||
+                !isPersistedScheduleTicketCurrent(appContext, reboundTicket)
+            ) {
+                return@withContext rejectStaleExecution(
+                    context = appContext,
+                    request = request,
+                    ticket = reboundTicket
+                )
+            }
+            if (!rebindExecutionOwners(
+                    operationId = normalizedId,
+                    previous = executionTicket,
+                    next = reboundTicket
+                )
+            ) {
+                return@withContext rejectStaleExecution(
+                    context = appContext,
+                    request = request,
+                    ticket = reboundTicket
+                )
+            }
+            executionTicket = reboundTicket
             if (operationStore.isStopped(appContext, normalizedId)) {
                 return@withContext DownloadExecutionResult.UserStopped
             }
@@ -710,6 +1237,16 @@ class DefaultDownloadExecutionHost(
                 "ASSETS_ENRICHING",
                 "DEGRADED_COMPLETE" -> Unit
                 else -> return@withContext DownloadExecutionResult.AlreadyHandled
+            }
+            if (
+                !isScheduleTicketCurrent(appContext, executionTicket) ||
+                !isPersistedScheduleTicketCurrent(appContext, executionTicket)
+            ) {
+                return@withContext rejectStaleExecution(
+                    context = appContext,
+                    request = request,
+                    ticket = executionTicket
+                )
             }
             operationIdsBySongKey[request.song.stableKey()] = normalizedId
             val result = entryPoint.start(
@@ -725,7 +1262,9 @@ class DefaultDownloadExecutionHost(
                     runCatching {
                         operationStore.requestCancel(appContext, normalizedId)
                     }
-                }
+                },
+                stableKey = request.song.stableKey(),
+                operationId = normalizedId
             ) {
                 when (result) {
                     DownloadExecutionResult.Accepted -> {
@@ -845,7 +1384,9 @@ class DefaultDownloadExecutionHost(
                                 operationStore.requestCancel(appContext, normalizedId)
                             }
                             false
-                        }
+                        },
+                        stableKey = initialRequest.song.stableKey(),
+                        operationId = normalizedId
                     ) {
                         operationStore.updateState(
                             context = context.applicationContext,
@@ -875,7 +1416,9 @@ class DefaultDownloadExecutionHost(
                     runCatching {
                         operationStore.requestCancel(appContext, normalizedId)
                     }
-                }
+                },
+                stableKey = initialRequest.song.stableKey(),
+                operationId = normalizedId
             ) {
                 operationStore.updateState(
                     context = context.applicationContext,
@@ -890,12 +1433,19 @@ class DefaultDownloadExecutionHost(
                 DownloadExecutionResult.Failed(error)
             }
         } finally {
+            val finishedTicket = executionTicket
+            scheduleOwners.remove(normalizedId, finishedTicket)
+            removeBackendOwnerIfMatches(normalizedId, finishedTicket)
             synchronized(executionAdmissionLock) {
                 executingOperationIds.remove(normalizedId)
                 systemRetryStopOperationIds.remove(normalizedId)
                 explicitSchedulerStopOperationIds.remove(normalizedId)
             }
-            releaseHostAdmissionIfIdle(appContext, normalizedId)
+            releaseHostAdmissionIfIdle(
+                context = appContext,
+                operationId = normalizedId,
+                ticket = executionTicket
+            )
         }
     }
 
@@ -908,10 +1458,10 @@ class DefaultDownloadExecutionHost(
         var waitedForPendingUidtGrace = false
         val attemptedOperationIds = mutableSetOf<String>()
         while (completedBatches < PUMP_MAX_BATCHES_PER_RUN) {
-            val configuredParallelism = configuredDownloadParallelism(appContext)
+            val dispatchWindow = configuredDispatchWindow(appContext)
             val selection = collectPumpCandidates(
                 context = appContext,
-                capacity = configuredParallelism,
+                capacity = dispatchWindow,
                 attemptedOperationIds = attemptedOperationIds
             )
             val candidates = selection.requests
@@ -1018,7 +1568,7 @@ class DefaultDownloadExecutionHost(
     private fun tryAcquireHostAdmission(
         context: Context,
         operationId: String,
-        capacity: Int = configuredDownloadParallelism(context)
+        capacity: Int = configuredDispatchWindow(context)
     ): Boolean {
         return operationStore.tryAcquireHostAdmission(
             context = context,
@@ -1031,12 +1581,26 @@ class DefaultDownloadExecutionHost(
         return downloadParallelismProvider(context).coerceIn(1, MAX_DOWNLOAD_PARALLELISM)
     }
 
+    private fun configuredDispatchWindow(context: Context): Int {
+        return resolveDownloadDispatchWindow(configuredDownloadParallelism(context))
+    }
+
     private fun enqueueDeferredSchedule(
         context: Context,
-        request: DownloadExecutionRequest
-    ) {
+        request: DownloadExecutionRequest,
+        ticket: ScheduleTicket? = null
+    ): Boolean {
+        if (ticket != null && !isScheduleTicketCurrent(context, ticket)) {
+            deferredRequests.remove(request)
+            return false
+        }
         deferredRequests.enqueue(request)
+        if (ticket != null && !isScheduleTicketCurrent(context, ticket)) {
+            deferredRequests.remove(request)
+            return false
+        }
         triggerDeferredSchedules(context.applicationContext)
+        return true
     }
 
     private fun triggerDeferredSchedules(context: Context) {
@@ -1102,18 +1666,25 @@ class DefaultDownloadExecutionHost(
         releaseHostAdmissionIfIdle(context.applicationContext, operationId)
     }
 
-    private fun releaseHostAdmissionIfIdle(context: Context, operationId: String) {
+    private fun releaseHostAdmissionIfIdle(
+        context: Context,
+        operationId: String,
+        ticket: ScheduleTicket? = null
+    ) {
         val released = synchronized(executionAdmissionLock) {
             if (executingOperationIds.contains(operationId)) {
                 false
+            } else if (ticket != null) {
+                hostAdmissionOwners.remove(operationId, ticket)
             } else {
-                runCatching {
-                    operationStore.releaseHostAdmission(context, operationId)
-                }
+                hostAdmissionOwners.remove(operationId)
                 true
             }
         }
         if (released) {
+            runCatching {
+                operationStore.releaseHostAdmission(context, operationId)
+            }
             triggerDeferredSchedules(context.applicationContext)
         }
     }

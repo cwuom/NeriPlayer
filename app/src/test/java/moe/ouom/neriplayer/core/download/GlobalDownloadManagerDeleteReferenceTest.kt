@@ -304,6 +304,77 @@ class GlobalDownloadManagerDeleteReferenceTest {
         )
     }
 
+    @Test
+    fun `full-library artifact fallback includes managed audio absent from catalog`() {
+        val catalogAudio = ManagedDownloadStorage.StoredEntry(
+            name = "catalog.mp3",
+            reference = "content://downloads/audio/catalog.mp3",
+            mediaUri = "content://downloads/audio/catalog.mp3",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val orphanAudio = ManagedDownloadStorage.StoredEntry(
+            name = "orphan.mp3",
+            reference = "content://downloads/audio/orphan.mp3",
+            mediaUri = "content://downloads/audio/orphan.mp3",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val catalogMetadata = ManagedDownloadStorage.StoredEntry(
+            name = "catalog.mp3.npmeta.json",
+            reference = "content://downloads/meta/catalog.mp3.npmeta.json",
+            mediaUri = "content://downloads/meta/catalog.mp3.npmeta.json",
+            localFilePath = null,
+            sizeBytes = 64L,
+            lastModifiedMs = 1L
+        )
+        val orphanMetadata = ManagedDownloadStorage.StoredEntry(
+            name = "orphan.mp3.npmeta.json",
+            reference = "content://downloads/meta/orphan.mp3.npmeta.json",
+            mediaUri = "content://downloads/meta/orphan.mp3.npmeta.json",
+            localFilePath = null,
+            sizeBytes = 64L,
+            lastModifiedMs = 1L
+        )
+        val orphanSidecar = ManagedDownloadStorage.StoredEntry(
+            name = "orphan-cover.jpg",
+            reference = "content://downloads/covers/orphan-cover.jpg",
+            mediaUri = "content://downloads/covers/orphan-cover.jpg",
+            localFilePath = null,
+            sizeBytes = 64L,
+            lastModifiedMs = 1L
+        )
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = listOf(catalogAudio, orphanAudio),
+            audioEntriesByLookupKey = mapOf(
+                catalogAudio.reference to catalogAudio,
+                orphanAudio.reference to orphanAudio
+            ),
+            metadataEntriesByAudioName = mapOf(
+                catalogAudio.name to catalogMetadata,
+                orphanAudio.name to orphanMetadata
+            ),
+            knownReferences = setOf(
+                catalogAudio.reference,
+                orphanAudio.reference,
+                catalogMetadata.reference,
+                orphanMetadata.reference,
+                orphanSidecar.reference
+            )
+        )
+
+        val references = ManagedDownloadArtifactPlanner
+            .collectFullLibraryArtifactReferences(snapshot)
+
+        assertTrue(references.contains(catalogAudio.reference))
+        assertTrue(references.contains(orphanAudio.reference))
+        assertTrue(references.contains(catalogMetadata.reference))
+        assertTrue(references.contains(orphanMetadata.reference))
+        assertTrue(references.contains(orphanSidecar.reference))
+    }
+
     private fun downloadedSong(
         id: Long,
         name: String,

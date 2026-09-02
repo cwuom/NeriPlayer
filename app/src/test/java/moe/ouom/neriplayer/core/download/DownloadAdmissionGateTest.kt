@@ -29,7 +29,7 @@ class DownloadAdmissionGateTest {
     }
 
     @Test
-    fun `clear waits for admitted work and rejects its stale ticket`() = runTest {
+    fun `clear does not wait for admitted work and rejects its stale ticket`() = runTest {
         val gate = DownloadAdmissionGate()
         val staleTicket = gate.ticket()
         val admitted = CompletableDeferred<Unit>()
@@ -50,13 +50,44 @@ class DownloadAdmissionGateTest {
             }
         }
 
-        assertFalse(cleared.isCompleted)
+        // 清空只切换代次并执行自己的短阶段，不应等待旧 I/O
+        cleared.await()
+        assertFalse(oldRequest.isCompleted)
         release.complete(Unit)
         oldRequest.await()
         clear.await()
 
         assertTrue(cleared.isCompleted)
         assertFalse(gate.admit(staleTicket) {})
+    }
+
+    @Test
+    fun `admitted suspend blocks do not serialize behind one another`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val ticket = gate.ticket()
+        val firstEntered = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+
+        val first = async {
+            gate.admit(ticket) {
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+            }
+        }
+        firstEntered.await()
+
+        val second = async {
+            gate.admit(ticket) {
+                secondEntered.complete(Unit)
+            }
+        }
+        secondEntered.await()
+        assertTrue(second.await())
+        assertFalse(first.isCompleted)
+
+        releaseFirst.complete(Unit)
+        assertTrue(first.await())
     }
 
     @Test
@@ -207,6 +238,43 @@ class DownloadAdmissionGateTest {
     }
 
     @Test
+    fun `clear visibility publishes the affected high water mark at begin`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+
+        visibility.begin(
+            token = token,
+            affectedItemCount = 846,
+            totalItemCount = 0
+        )
+
+        val progress = requireNotNull(visibility.progress.value)
+        assertEquals(0, progress.displayPercentage)
+        assertEquals(846, progress.affectedItemCount)
+        assertEquals(0, progress.totalItemCount)
+        assertEquals(0, progress.completedItemCount)
+    }
+
+    @Test
+    fun `clear visibility never lowers the affected high water mark`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+
+        visibility.begin(token, affectedItemCount = 846)
+        visibility.update(
+            token = token,
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            affectedItemCount = 12,
+            totalItemCount = 12
+        )
+
+        assertEquals(846, visibility.progress.value?.affectedItemCount)
+    }
+
+    @Test
     fun `clear visibility keeps item watermark across a retry`() = runTest {
         val gate = DownloadAdmissionGate()
         val visibility = DownloadClearVisibility()
@@ -264,7 +332,7 @@ class DownloadAdmissionGateTest {
     }
 
     @Test
-    fun `artifact progress treats a complete residual scan as checked work`() {
+    fun `artifact progress keeps complete residual scan as retryable work`() {
         val visibility = DownloadClearVisibility()
         val checkedProgress = DownloadClearVisibility.ClearProgress(
             phase = DownloadClearVisibility.ClearPhase.CLEANING,
@@ -280,7 +348,7 @@ class DownloadAdmissionGateTest {
 
         assertEquals(
             DownloadClearVisibility.ArtifactProgress(
-                completedItemCount = 25,
+                completedItemCount = 0,
                 totalItemCount = 25,
                 failedItemCount = 25
             ),
@@ -314,7 +382,7 @@ class DownloadAdmissionGateTest {
         )
         assertEquals(
             DownloadClearVisibility.ArtifactProgress(
-                completedItemCount = 3,
+                completedItemCount = 0,
                 totalItemCount = 3,
                 failedItemCount = 3
             ),

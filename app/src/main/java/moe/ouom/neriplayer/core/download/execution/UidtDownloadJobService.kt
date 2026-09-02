@@ -26,12 +26,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_DISPATCH_WINDOW
+import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
-internal const val UIDT_SHARED_PUMP_GRACE_MS = 3_000L
+internal const val UIDT_SHARED_PUMP_GRACE_MS = 250L
 
  /** 把 API 34 的用户发起任务接入共享下载宿主 */
  // 任务编号保留在宿主专用范围，WorkManager 使用另一段编号
@@ -222,7 +223,7 @@ class UidtDownloadJobService : JobService() {
          * 缓存保留所有已占用 ID，包括附加数据损坏的任务，真正调度前仍会做最后碰撞检查
          */
         private const val PENDING_JOB_INDEX_TTL_MS = 500L
-        private const val UIDT_PENDING_JOB_LIMIT = MAX_DOWNLOAD_PARALLELISM
+        private const val UIDT_PENDING_JOB_LIMIT = MAX_DOWNLOAD_DISPATCH_WINDOW
         private data class PendingJobIndex(
             val jobIdsByOperation: Map<String, Set<Int>> = emptyMap(),
             val occupiedJobIds: Set<Int> = emptySet(),
@@ -533,8 +534,9 @@ class UidtDownloadJobService : JobService() {
                     }
                     .filter { job -> job.service == component }
                     .sortedBy { job -> job.id }
-                val pendingJobLimit = currentDownloadParallelism(context)
-                    .coerceIn(1, UIDT_PENDING_JOB_LIMIT)
+                val pendingJobLimit = resolveDownloadDispatchWindow(
+                    currentDownloadParallelism(context)
+                ).coerceIn(1, UIDT_PENDING_JOB_LIMIT)
                 if (pendingJobs.size <= pendingJobLimit) return@synchronized 0
                 var cancelled = 0
                 pendingJobs.drop(pendingJobLimit).forEach { job ->

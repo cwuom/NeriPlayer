@@ -107,7 +107,9 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
         initializeNormalComponents()
         if (shouldTrimUidtPendingJobs(runningInMainProcess, Build.VERSION.SDK_INT)) {
             AppContainer.launchBackgroundIo {
-                UidtDownloadJobService.trimPendingJobs(this@NeriPlayerApplication)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    UidtDownloadJobService.trimPendingJobs(this@NeriPlayerApplication)
+                }
             }
         }
     }

@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -48,7 +49,8 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                 context,
                 (reference.reference as StorageReference.SafRef).uri.toString()
             )
-        }
+        },
+    private val workerDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     init {
         require(referenceDeleteParallelism > 0)
@@ -179,9 +181,9 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         val uri = storageReference.uri
         val candidateUris = documentUriAliases(uri)
         var deletedByProvider = false
-        var confirmed: StorageMutationResult? = null
+        var missingAliasObserved = false
+        var firstFailure: StorageMutationResult? = null
         for (candidateUri in candidateUris) {
-            if (confirmed != null) break
             try {
                 val providerResult = contentReferenceDeleteOperation(
                     context,
@@ -192,40 +194,50 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                     SAF_DELETE_MAX_ATTEMPTS,
                     SAF_DELETE_RETRY_DELAY_MS
                 )
-                val providerDeleted = providerResult.isConfirmedMutation()
-                deletedByProvider = deletedByProvider || providerDeleted
-                if (providerDeleted) {
-                    // 删除接口已经返回确认结果，再做一次 stat 只会增加延迟并引入刷新竞态
-                    confirmed = StorageMutationResult.Deleted
-                    break
-                }
-                confirmed = when {
-                    isReferenceGone(
-                        context,
-                        TrustedManagedRef(
-                            reference = StorageReference.SafRef(candidateUri),
-                            externalReference = reference.externalReference
-                        )
-                    ) -> StorageMutationResult.Deleted
-                    providerResult is StorageMutationResult.PermissionLost -> {
-                        StorageMutationResult.PermissionLost
+                when (providerResult) {
+                    StorageMutationResult.Deleted -> {
+                        // 删除接口已经返回确认结果，再做一次 stat 只会增加延迟并引入刷新竞态
+                        deletedByProvider = true
+                        break
                     }
-                    providerResult is StorageMutationResult.ProviderFailure -> {
-                        providerResult
+                    StorageMutationResult.Missing -> {
+                        // tree 和 single-document alias 可能只有一个能定位真实对象
+                        missingAliasObserved = true
                     }
-                    providerDeleted -> StorageMutationResult.Deleted
-                    else -> null
+                    else -> {
+                        if (firstFailure == null) {
+                            firstFailure = providerResult
+                        }
+                    }
                 }
             } catch (error: SecurityException) {
-                confirmed = StorageMutationResult.PermissionLost
+                if (firstFailure == null) {
+                    firstFailure = StorageMutationResult.PermissionLost
+                }
             }
         }
+        val goneAfterFailure = !deletedByProvider &&
+            firstFailure != null &&
+            isReferenceGone(context, reference)
+        val confirmedGone = deletedByProvider ||
+            goneAfterFailure ||
+            (missingAliasObserved && firstFailure == null)
         NPLogger.d(
             tag,
             "SAF 删除结果: reference=${reference.externalReference}, " +
-                "provider=$deletedByProvider, confirmed=${confirmed != null}"
+                "provider=$deletedByProvider, confirmed=$confirmedGone"
         )
-        return confirmed ?: StorageMutationResult.ProviderFailure(
+        if (deletedByProvider) {
+            return StorageMutationResult.Deleted
+        }
+        if (goneAfterFailure) {
+            return StorageMutationResult.Deleted
+        }
+        firstFailure?.let { return it }
+        if (confirmedGone) {
+            return StorageMutationResult.Missing
+        }
+        return StorageMutationResult.ProviderFailure(
             IllegalStateException("SAF delete was not confirmed")
         )
     }
@@ -271,10 +283,37 @@ internal class ManagedDownloadReferenceDeleteExecutor(
             }
 
             is StorageReference.SafRef -> {
-                contentReferenceDeleteOperation(context, reference, 1, 0L)
-                    .isConfirmedMutation()
+                deleteSafReferenceOnceWithAliases(context, reference)
             }
         }
+    }
+
+    /**
+     * 部分 DocumentsProvider 只接受 single-document URI
+     * 快照可能保留 tree-scoped URI, 每次尝试都要覆盖等价别名
+     */
+    private fun deleteSafReferenceOnceWithAliases(
+        context: Context,
+        reference: TrustedManagedRef
+    ): Boolean {
+        val uri = (reference.reference as StorageReference.SafRef).uri
+        var missingAliasObserved = false
+        var firstFailure: StorageMutationResult? = null
+        documentUriAliases(uri).forEach { candidateUri ->
+            val candidate = TrustedManagedRef(
+                reference = StorageReference.SafRef(candidateUri),
+                externalReference = reference.externalReference
+            )
+            val result = contentReferenceDeleteOperation(context, candidate, 1, 0L)
+            when (result) {
+                StorageMutationResult.Deleted -> return true
+                StorageMutationResult.Missing -> missingAliasObserved = true
+                else -> if (firstFailure == null) {
+                    firstFailure = result
+                }
+            }
+        }
+        return firstFailure == null && missingAliasObserved
     }
 
     private fun filterAllowedReferences(
@@ -348,7 +387,7 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         val workerCount = minOf(parallelism, references.size)
         coroutineScope {
             repeat(workerCount) {
-                launch(Dispatchers.IO) {
+                launch(workerDispatcher) {
                     while (isActive && cancellation.get() == null) {
                         val index = nextIndex.getAndIncrement()
                         if (index >= references.size) {
@@ -393,9 +432,13 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                 storageReference.logicalPath
             )
             is StorageReference.SafRef -> {
-                when (contentReferenceGoneOperation(context, reference)) {
-                    ManagedDownloadReferenceIo.AccessResult.Missing -> true
-                    else -> false
+                documentUriAliases(storageReference.uri).all { candidateUri ->
+                    val candidate = TrustedManagedRef(
+                        reference = StorageReference.SafRef(candidateUri),
+                        externalReference = reference.externalReference
+                    )
+                    contentReferenceGoneOperation(context, candidate) ==
+                        ManagedDownloadReferenceIo.AccessResult.Missing
                 }
             }
         }

@@ -5,7 +5,27 @@ import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 
+internal data class ManagedDownloadFullDeletePlan(
+    val requestedReferences: Set<String>,
+    val snapshotComplete: Boolean
+)
+
 internal class ManagedDownloadDeletePlanner {
+
+    suspend fun buildFullLibraryDeletePlan(
+        context: Context
+    ): ManagedDownloadFullDeletePlan {
+        val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+            context = context,
+            forceRefresh = true
+        )
+        return ManagedDownloadFullDeletePlan(
+            requestedReferences = ManagedDownloadArtifactPlanner
+                .collectFullLibraryArtifactReferences(snapshot),
+            snapshotComplete = snapshot.rootEntriesComplete &&
+                snapshot.sidecarEntriesComplete
+        )
+    }
 
     suspend fun buildDeletePlans(
         context: Context,

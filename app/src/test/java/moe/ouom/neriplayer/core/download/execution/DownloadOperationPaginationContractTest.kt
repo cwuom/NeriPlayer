@@ -35,7 +35,7 @@ class DownloadOperationPaginationContractTest {
         assertTrue(stateReader.contains("nextOperationId <= afterOperationId"))
         assertTrue(stateReader.contains("entries.sortWith"))
         assertTrue(progressReader.contains("afterOperationId"))
-        assertTrue(progressReader.contains("queueOrder = entity.queueOrder"))
+        assertTrue(progressReader.contains("queueOrder = header.queueOrder"))
         assertTrue(progressReader.contains("entries.sortWith"))
         assertFalse(stateReader.contains("OFFSET"))
         assertFalse(progressReader.contains("OFFSET"))
@@ -48,7 +48,7 @@ class DownloadOperationPaginationContractTest {
                 "DownloadOperationDao.kt"
         )
         val functionIndex = source.indexOf(
-            "suspend fun findByStatesInLibraryAfterOperationId"
+            "suspend fun findByStatesInLibraryAfterOperationId("
         )
         val queryIndex = source.lastIndexOf("@Query(", functionIndex)
         val keysetBody = source.substring(queryIndex, functionIndex)
@@ -64,7 +64,7 @@ class DownloadOperationPaginationContractTest {
                 "DownloadOperationDao.kt"
         )
         val functionIndex = daoSource.indexOf(
-            "suspend fun findSchedulableForPumpAfterCursor"
+            "suspend fun findSchedulableForPumpAfterCursorHeaders"
         )
         val queryIndex = daoSource.lastIndexOf("@Query(", functionIndex)
         val query = daoSource.substring(queryIndex, functionIndex)
@@ -82,13 +82,28 @@ class DownloadOperationPaginationContractTest {
         val pumpReader = roomStoreSource.substringAfter(
             "suspend fun listSchedulableForPumpPage("
         ).substringBefore("suspend fun listByStates(")
-        val nextCursorIndex = pumpReader.indexOf("val nextCursor = entities.lastOrNull()")
-        val requestMappingIndex = pumpReader.indexOf("val requests = entities.mapNotNull")
+        val transactionIndex = pumpReader.indexOf("database.withTransaction {")
+        val headerQueryIndex = pumpReader.indexOf(
+            "findSchedulableForPumpAfterCursorHeaders("
+        )
+        val payloadReadIndex = pumpReader.indexOf("readRequestFromHeader(dao, header)")
+        val transactionalRead = pumpReader.substringAfter(
+            "val (headers, decodedRequests) = database.withTransaction {"
+        ).substringBefore("\n        }")
+        val nextCursorIndex = pumpReader.indexOf("val nextCursor = headers.lastOrNull()")
+        val requestMappingIndex = pumpReader.indexOf("val requests = decodedRequests.mapNotNull")
 
+        assertTrue(transactionIndex >= 0)
+        assertTrue(headerQueryIndex > transactionIndex)
+        assertTrue(payloadReadIndex > headerQueryIndex)
+        assertTrue(
+            transactionalRead.contains("findSchedulableForPumpAfterCursorHeaders(")
+        )
+        assertTrue(transactionalRead.contains("readRequestFromHeader(dao, header)"))
         assertTrue(nextCursorIndex >= 0)
         assertTrue(requestMappingIndex > nextCursorIndex)
-        assertTrue(pumpReader.contains("entities.size == boundedLimit"))
-        assertTrue(pumpReader.contains("malformedEntities.forEach"))
+        assertTrue(pumpReader.contains("headers.size == boundedLimit"))
+        assertTrue(pumpReader.contains("malformedHeaders.forEach"))
     }
 
     @Test

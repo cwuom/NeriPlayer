@@ -218,23 +218,26 @@ internal class DownloadRecoveryRoomStore(
                 .mapValues { (_, request) -> request.operationId }
             val blockedOperationIds = linkedMapOf<String, String>()
             songKeys.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).forEach { stableKeyChunk ->
-                dao.findAllByStableKeys(
+                dao.findAllHeadersByStableKeys(
                     libraryId = libraryId,
                     stableKeys = stableKeyChunk,
                     states = WAITING_STORAGE_MUTATION_BLOCKING_STATES
-                ).forEach { entity ->
-                    blockedOperationIds.putIfAbsent(entity.stableKey, entity.operationId)
+                ).forEach { header ->
+                    blockedOperationIds.putIfAbsent(header.stableKey, header.operationId)
                 }
             }
             val stoppedWaitingOperationIds = linkedMapOf<String, String>()
             songKeys.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).forEach { stableKeyChunk ->
-                dao.findAllByStableKeys(
+                dao.findAllHeadersByStableKeys(
                     libraryId = libraryId,
                     stableKeys = stableKeyChunk,
                     states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE)
-                ).forEach { entity ->
-                    if (entity.stopRequestedByUser) {
-                        stoppedWaitingOperationIds.putIfAbsent(entity.stableKey, entity.operationId)
+                ).forEach { header ->
+                    if (header.stopRequestedByUser) {
+                        stoppedWaitingOperationIds.putIfAbsent(
+                            header.stableKey,
+                            header.operationId
+                        )
                     }
                 }
             }
@@ -245,8 +248,8 @@ internal class DownloadRecoveryRoomStore(
             deterministicOperationIdsBySongKey.values
                 .chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE)
                 .forEach { operationIdChunk ->
-                    dao.findAllByOperationIds(operationIdChunk).forEach { entity ->
-                        deterministicOperationsById[entity.operationId] = entity.state
+                    dao.findAllHeadersByOperationIds(operationIdChunk).forEach { header ->
+                        deterministicOperationsById[header.operationId] = header.state
                     }
                 }
             var nextOrder = (

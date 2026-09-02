@@ -54,6 +54,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.asStateFlow
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
@@ -207,6 +208,8 @@ object AudioDownloadManager {
     private const val BILI_REFERER = "https://www.bilibili.com"
     internal const val DEFAULT_MAX_CONCURRENT_DOWNLOADS = DEFAULT_DOWNLOAD_PARALLELISM
     internal const val MAX_CONCURRENT_DOWNLOADS_LIMIT = MAX_DOWNLOAD_PARALLELISM
+    internal const val SOURCE_RESOLVE_PARALLELISM = 10
+    internal const val CORE_COMMIT_PARALLELISM = 2
     private const val BATCH_COMPLETION_CALLBACK_PARALLELISM = 2
     private const val PROGRESS_EMIT_INTERVAL_NS = 180_000_000L
     private const val PROGRESS_EMIT_MIN_BYTES_DELTA = 256L * 1024L
@@ -272,12 +275,21 @@ object AudioDownloadManager {
     private val _isCancelled = MutableStateFlow(false)
     val isCancelledFlow: StateFlow<Boolean> = _isCancelled
     private val downloadSemaphore = Semaphore(MAX_CONCURRENT_DOWNLOADS_LIMIT)
+    private val sourceResolveSemaphore = Semaphore(SOURCE_RESOLVE_PARALLELISM)
+    private val coreCommitSemaphore = Semaphore(CORE_COMMIT_PARALLELISM)
     private val downloadPermitLock = Mutex()
     private var activeDownloadPermitCount = 0
+    private val _activeNetworkTransfers = MutableStateFlow(0)
+    internal val activeNetworkTransfers: StateFlow<Int> = _activeNetworkTransfers.asStateFlow()
     private val progressPublishLock = Any()
     private val lastPublishedProgressBySongKey = mutableMapOf<String, PublishedProgressState>()
     /** 保留节流或事件缓冲丢弃前的最新值，供恢复绑定时补偿 */
-    private val latestProgressBySongKey = mutableMapOf<String, DownloadProgress>()
+    private val latestProgressByOperationValues = mutableMapOf<String, DownloadProgress>()
+    private val _latestProgressByOperation = MutableStateFlow<Map<String, DownloadProgress>>(
+        emptyMap()
+    )
+    internal val latestProgressByOperation: StateFlow<Map<String, DownloadProgress>> =
+        _latestProgressByOperation
     private val completedAudioReferencesBySongKey =
         ConcurrentHashMap<String, CompletedAudioReference>()
     private val completedAudioReferencesByReference =
@@ -631,7 +643,14 @@ object AudioDownloadManager {
     }
 
     enum class DownloadStage {
+        WAITING_HOST,
+        WAITING_DELETE_CLEANUP,
+        RESOLVING_SOURCE,
+        PREPARING_STORAGE,
         TRANSFERRING,
+        VERIFYING_AUDIO,
+        COMMITTING_CORE,
+        ASSETS_ENRICHING,
         WAITING_RETRY,
         FINALIZING
     }
@@ -644,7 +663,8 @@ object AudioDownloadManager {
         val totalBytes: Long,
         val speedBytesPerSec: Long,
         val stage: DownloadStage = DownloadStage.TRANSFERRING,
-        val attemptId: Long? = null
+        val attemptId: Long? = null,
+        val operationId: String? = null
     ) {
         val percentage: Int
             get() = when {
@@ -688,6 +708,7 @@ object AudioDownloadManager {
 
     internal data class PublishedProgressState(
         val attemptId: Long?,
+        val operationId: String? = null,
         val bytesRead: Long,
         val totalBytes: Long,
         val percentage: Int,
@@ -1628,11 +1649,13 @@ object AudioDownloadManager {
         val nowNs = System.nanoTime()
         var effectiveProgress = progress
         val shouldEmit = synchronized(progressPublishLock) {
-            val previousLatest = latestProgressBySongKey[progress.songKey]
+            val progressKey = progressOperationKey(progress)
+            val previousLatest = latestProgressByOperationValues[progressKey]
             val accepted = shouldReplaceLatestProgress(previousLatest, progress)
             effectiveProgress = mergeLatestProgress(previousLatest, progress)
             if (accepted) {
-                latestProgressBySongKey[progress.songKey] = effectiveProgress
+                latestProgressByOperationValues[progressKey] = effectiveProgress
+                _latestProgressByOperation.value = latestProgressByOperationValues.toMap()
             }
             if (
                 previousLatest != null &&
@@ -1652,6 +1675,7 @@ object AudioDownloadManager {
             if (shouldPublishNow) {
                 lastPublishedProgressBySongKey[progress.songKey] = PublishedProgressState(
                     attemptId = effectiveProgress.attemptId,
+                    operationId = effectiveProgress.operationId,
                     bytesRead = effectiveProgress.bytesRead,
                     totalBytes = effectiveProgress.totalBytes,
                     percentage = effectiveProgress.percentage,
@@ -1668,26 +1692,72 @@ object AudioDownloadManager {
         }
     }
 
-    private fun clearPublishedProgress(songKey: String) {
+    private fun clearPublishedProgress(
+        songKey: String,
+        expectedAttemptId: Long? = null,
+        expectedOperationId: String? = null
+    ) {
+        val normalizedOperationId = expectedOperationId?.trim()
+            ?.takeIf(String::isNotBlank)
         synchronized(progressPublishLock) {
-            lastPublishedProgressBySongKey.remove(songKey)
-            latestProgressBySongKey.remove(songKey)
+            val published = lastPublishedProgressBySongKey[songKey]
+            if (
+                published != null &&
+                    progressOwnershipMatches(
+                        attemptId = published.attemptId,
+                        operationId = published.operationId,
+                        expectedAttemptId = expectedAttemptId,
+                        expectedOperationId = normalizedOperationId
+                    )
+            ) {
+                lastPublishedProgressBySongKey.remove(songKey)
+            }
+            latestProgressByOperationValues.entries.removeIf { (_, progress) ->
+                progress.songKey == songKey &&
+                    progressOwnershipMatches(
+                        attemptId = progress.attemptId,
+                        operationId = progress.operationId,
+                        expectedAttemptId = expectedAttemptId,
+                        expectedOperationId = normalizedOperationId
+                    )
+            }
+            _latestProgressByOperation.value = latestProgressByOperationValues.toMap()
         }
+    }
+
+    private fun progressOwnershipMatches(
+        attemptId: Long?,
+        operationId: String?,
+        expectedAttemptId: Long?,
+        expectedOperationId: String?
+    ): Boolean {
+        return (expectedAttemptId == null || attemptId == expectedAttemptId) &&
+            (expectedOperationId == null || operationId == expectedOperationId)
     }
 
     internal fun latestProgressForSong(
         songKey: String,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        operationId: String? = null
     ): DownloadProgress? {
         synchronized(progressPublishLock) {
-            val progress = latestProgressBySongKey[songKey] ?: return null
-            return progress.takeIf { attemptId == null || it.attemptId == attemptId }
+            return latestProgressByOperationValues.values
+                .asSequence()
+                .filter { progress -> progress.songKey == songKey }
+                .filter { progress ->
+                    operationId == null || progress.operationId == operationId
+                }
+                .filter { progress -> attemptId == null || progress.attemptId == attemptId }
+                .maxWithOrNull(
+                    compareBy<DownloadProgress> { it.attemptId ?: Long.MIN_VALUE }
+                        .thenBy { it.operationId.orEmpty() }
+                )
         }
     }
 
     internal fun latestProgressSnapshot(): List<DownloadProgress> {
         synchronized(progressPublishLock) {
-            return latestProgressBySongKey.values.toList()
+            return latestProgressByOperationValues.values.toList()
         }
     }
 
@@ -1700,8 +1770,17 @@ object AudioDownloadManager {
     private fun clearAllPublishedProgress() {
         synchronized(progressPublishLock) {
             lastPublishedProgressBySongKey.clear()
-            latestProgressBySongKey.clear()
+            latestProgressByOperationValues.clear()
+            _latestProgressByOperation.value = emptyMap()
         }
+    }
+
+    private fun progressOperationKey(progress: DownloadProgress): String {
+        val operationId = progress.operationId?.trim().orEmpty()
+        if (operationId.isNotBlank()) {
+            return operationId
+        }
+        return "${progress.songKey}#${progress.attemptId ?: 0L}"
     }
 
     private fun startBatchSession(): Long {
@@ -2248,7 +2327,8 @@ object AudioDownloadManager {
         fileName: String,
         bytesRead: Long,
         totalBytes: Long,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        operationId: String? = null
     ) {
         publishProgress(
             DownloadProgress(
@@ -2259,7 +2339,8 @@ object AudioDownloadManager {
                 totalBytes = totalBytes,
                 speedBytesPerSec = 0L,
                 stage = DownloadStage.FINALIZING,
-                attemptId = attemptId
+                attemptId = attemptId,
+                operationId = operationId
             ),
             force = true
         )
@@ -2271,7 +2352,8 @@ object AudioDownloadManager {
         fileName: String,
         bytesRead: Long,
         totalBytes: Long,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        operationId: String? = null
     ) {
         publishProgress(
             DownloadProgress(
@@ -2282,7 +2364,34 @@ object AudioDownloadManager {
                 totalBytes = totalBytes.coerceAtLeast(0L),
                 speedBytesPerSec = 0L,
                 stage = DownloadStage.WAITING_RETRY,
-                attemptId = attemptId
+                attemptId = attemptId,
+                operationId = operationId
+            ),
+            force = true
+        )
+    }
+
+    internal fun publishStageProgress(
+        songId: Long,
+        songKey: String,
+        fileName: String,
+        stage: DownloadStage,
+        attemptId: Long? = null,
+        operationId: String? = null,
+        bytesRead: Long = 0L,
+        totalBytes: Long = 0L
+    ) {
+        publishProgress(
+            DownloadProgress(
+                songKey = songKey,
+                songId = songId,
+                fileName = fileName,
+                bytesRead = bytesRead.coerceAtLeast(0L),
+                totalBytes = totalBytes.coerceAtLeast(0L),
+                speedBytesPerSec = 0L,
+                stage = stage,
+                attemptId = attemptId,
+                operationId = operationId
             ),
             force = true
         )
@@ -2379,16 +2488,14 @@ object AudioDownloadManager {
         operationId: String? = null,
         downloadAudioQuality: DownloadAudioQualitySelection? = null
     ) {
-        withConfiguredDownloadPermit(context) {
-            downloadSongOnIo(
-                context = context,
-                song = song,
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                operationId = operationId,
-                downloadAudioQuality = downloadAudioQuality
-            )
-        }
+        downloadSongOnIo(
+            context = context,
+            song = song,
+            batchSessionId = batchSessionId,
+            attemptId = attemptId,
+            operationId = operationId,
+            downloadAudioQuality = downloadAudioQuality
+        )
     }
 
     private suspend fun downloadSongOnIo(
@@ -2466,22 +2573,38 @@ object AudioDownloadManager {
                     var avoidYouTubeDirectSource = false
                     while (true) {
                         ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
+                        publishStageProgress(
+                            songId = song.id,
+                            songKey = songKey,
+                            fileName = activeWorkingFileName
+                                ?: ManagedDownloadStorage.buildDisplayBaseName(song),
+                            stage = DownloadStage.RESOLVING_SOURCE,
+                            attemptId = attemptId,
+                            operationId = effectiveOperationId,
+                            bytesRead = resolveWorkingFileBytes(tempFile),
+                            totalBytes = _progressFlow.value
+                                ?.takeIf { it.songKey == songKey }
+                                ?.totalBytes
+                                ?: 0L
+                        )
                         try {
-                            val resolved = when {
-                                isYouTubeMusic -> resolveYouTubeMusic(
-                                    song = song,
-                                    preferredQuality = resolvedDownloadAudioQuality.youtubeQuality,
-                                    forceRefresh = forceRefreshYouTubeSource,
-                                    avoidDirect = avoidYouTubeDirectSource
-                                )
-                                isBili -> resolveBili(
-                                    song = song,
-                                    preferredQuality = resolvedDownloadAudioQuality.biliQuality
-                                )
-                                else -> resolveNetease(
-                                    songId = song.id,
-                                    preferredQuality = resolvedDownloadAudioQuality.neteaseQuality
-                                )
+                            val resolved = sourceResolveSemaphore.withPermit {
+                                when {
+                                    isYouTubeMusic -> resolveYouTubeMusic(
+                                        song = song,
+                                        preferredQuality = resolvedDownloadAudioQuality.youtubeQuality,
+                                        forceRefresh = forceRefreshYouTubeSource,
+                                        avoidDirect = avoidYouTubeDirectSource
+                                    )
+                                    isBili -> resolveBili(
+                                        song = song,
+                                        preferredQuality = resolvedDownloadAudioQuality.biliQuality
+                                    )
+                                    else -> resolveNetease(
+                                        songId = song.id,
+                                        preferredQuality = resolvedDownloadAudioQuality.neteaseQuality
+                                    )
+                                }
                             }
                             ensureSongDownloadNotCancelled(
                                 songKey = songKey,
@@ -2503,7 +2626,8 @@ object AudioDownloadManager {
                                             ?.takeIf { it.songKey == songKey }
                                             ?.totalBytes
                                             ?: 0L,
-                                        attemptId = attemptId
+                                        attemptId = attemptId,
+                                        operationId = effectiveOperationId
                                     )
                                     NPLogger.w(
                                         TAG,
@@ -2585,6 +2709,16 @@ object AudioDownloadManager {
                                 streamType = resolved.streamType,
                                 request = request
                             )
+                            publishStageProgress(
+                                songId = workingSong.id,
+                                songKey = songKey,
+                                fileName = fileName,
+                                stage = DownloadStage.PREPARING_STORAGE,
+                                attemptId = attemptId,
+                                operationId = effectiveOperationId,
+                                bytesRead = resolveWorkingFileBytes(tempFile),
+                                totalBytes = resolved.contentLength ?: 0L
+                            )
                             if (tempFile == null) {
                                 tempFile = ManagedDownloadStorage.findWorkingFileForResume(
                                     context = context,
@@ -2640,7 +2774,18 @@ object AudioDownloadManager {
                             // 只有确认即将开始新的网络传输后才清理旧桥接, 避免重复请求
                             // 在命中已有文件并提前返回时让刚提交音频失去播放兜底
                             clearCompletedAudioReference(songKey)
+                            publishStageProgress(
+                                songId = workingSong.id,
+                                songKey = songKey,
+                                fileName = fileName,
+                                stage = DownloadStage.TRANSFERRING,
+                                attemptId = attemptId,
+                                operationId = effectiveOperationId,
+                                bytesRead = resolveWorkingFileBytes(workingFile),
+                                totalBytes = resolved.contentLength ?: 0L
+                            )
                             val downloadedPayload = downloadPayloadForTransport(
+                                context = context,
                                 transportKind = transportKind,
                                 resolved = resolved,
                                 request = request,
@@ -2653,27 +2798,31 @@ object AudioDownloadManager {
                             )
                             resumeMetadataAvailable = resumeMetadataAvailable &&
                                 downloadedPayload.resumeMetadataAvailable
-                            val committedAudio = finalizeDownloadedAudio(
-                                context = context,
-                                songKey = songKey,
-                                workingSong = workingSong,
-                                fileName = fileName,
-                                mimeType = mime,
-                                workingFile = workingFile,
-                                payloadSummary = downloadedPayload,
-                                effectiveOperationId = effectiveOperationId,
-                                batchSessionId = batchSessionId,
-                                attemptId = attemptId,
-                                coreCommitTracker = coreCommitTracker
-                            )
+                            val committedAudio = coreCommitSemaphore.withPermit {
+                                finalizeDownloadedAudio(
+                                    context = context,
+                                    songKey = songKey,
+                                    workingSong = workingSong,
+                                    fileName = fileName,
+                                    mimeType = mime,
+                                    workingFile = workingFile,
+                                    payloadSummary = downloadedPayload,
+                                    effectiveOperationId = effectiveOperationId,
+                                    batchSessionId = batchSessionId,
+                                    attemptId = attemptId,
+                                    coreCommitTracker = coreCommitTracker
+                                )
+                            }
                             storedAudio = committedAudio.audio
-                            publishFinalizingProgress(
+                            publishStageProgress(
                                 songId = workingSong.id,
                                 songKey = workingSong.stableKey(),
                                 fileName = committedAudio.audio.name,
+                                stage = DownloadStage.ASSETS_ENRICHING,
                                 bytesRead = committedAudio.transferredBytes,
                                 totalBytes = committedAudio.transferredBytes,
-                                attemptId = attemptId
+                                attemptId = attemptId,
+                                operationId = effectiveOperationId
                             )
                             NPLogger.d(
                                 TAG,
@@ -2790,7 +2939,8 @@ object AudioDownloadManager {
                                         ?.takeIf { it.songKey == songKey }
                                         ?.totalBytes
                                         ?: 0L,
-                                    attemptId = attemptId
+                                    attemptId = attemptId,
+                                    operationId = effectiveOperationId
                                 )
                                 if (isYouTubeMusic && shouldRefreshYouTubeDownloadSourceOnFailure(error)) {
                                     forceRefreshYouTubeSource = true
@@ -2906,7 +3056,11 @@ object AudioDownloadManager {
                     clearPartialSidecarReferences(songKey)
                     throw e  // 重新抛出异常，让调用方知道下载失败
                 } finally {
-                    clearPublishedProgress(songKey)
+                    clearPublishedProgress(
+                        songKey = songKey,
+                        expectedAttemptId = attemptId,
+                        expectedOperationId = effectiveOperationId
+                    )
                     endSongDownloadOperation(songKey)
                 }
     }
@@ -2967,6 +3121,7 @@ object AudioDownloadManager {
     }
 
     private suspend fun downloadPayloadForTransport(
+        context: Context,
         transportKind: DownloadTransportKind,
         resolved: ResolvedDownloadSource,
         request: Request,
@@ -2977,31 +3132,34 @@ object AudioDownloadManager {
         attemptId: Long?,
         effectiveOperationId: String
     ): DownloadedPayloadSummary {
-        val client = backgroundDownloadClient
-        return when (transportKind) {
-            DownloadTransportKind.HLS -> singleThreadHlsDownload(
-                client = client,
-                playlistRequest = request,
-                destFile = workingFile,
-                displayFileName = fileName,
-                songId = workingSong.id,
-                songKey = workingSong.stableKey(),
-                totalBytesHint = resolved.contentLength ?: 0L,
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                operationId = effectiveOperationId
-            )
-            DownloadTransportKind.DIRECT,
-            DownloadTransportKind.CHUNKED_RANGE -> singleThreadDownload(
-                client = client,
-                request = request,
-                destFile = workingFile,
-                displayFileName = fileName,
-                songId = workingSong.id,
-                songKey = workingSong.stableKey(),
-                batchSessionId = batchSessionId,
-                attemptId = attemptId
-            )
+        return withConfiguredDownloadPermit(context) {
+            val client = backgroundDownloadClient
+            when (transportKind) {
+                DownloadTransportKind.HLS -> singleThreadHlsDownload(
+                    client = client,
+                    playlistRequest = request,
+                    destFile = workingFile,
+                    displayFileName = fileName,
+                    songId = workingSong.id,
+                    songKey = workingSong.stableKey(),
+                    totalBytesHint = resolved.contentLength ?: 0L,
+                    batchSessionId = batchSessionId,
+                    attemptId = attemptId,
+                    operationId = effectiveOperationId
+                )
+                DownloadTransportKind.DIRECT,
+                DownloadTransportKind.CHUNKED_RANGE -> singleThreadDownload(
+                    client = client,
+                    request = request,
+                    destFile = workingFile,
+                    displayFileName = fileName,
+                    songId = workingSong.id,
+                    songKey = workingSong.stableKey(),
+                    batchSessionId = batchSessionId,
+                    attemptId = attemptId,
+                    operationId = effectiveOperationId
+                )
+            }
         }
     }
 
@@ -3018,6 +3176,16 @@ object AudioDownloadManager {
         attemptId: Long?,
         coreCommitTracker: DownloadCoreCommitTracker
     ): CoreCommittedAudio {
+        publishStageProgress(
+            songId = workingSong.id,
+            songKey = songKey,
+            fileName = fileName,
+            stage = DownloadStage.VERIFYING_AUDIO,
+            attemptId = attemptId,
+            operationId = effectiveOperationId,
+            bytesRead = workingFile.length().coerceAtLeast(0L),
+            totalBytes = payloadSummary.expectedBytes ?: workingFile.length().coerceAtLeast(0L)
+        )
         ensureSongDownloadNotCancelled(
             songKey = songKey,
             stage = "audio_finalize_prepare",
@@ -3088,13 +3256,15 @@ object AudioDownloadManager {
         )
 
         val transferredBytes = workingFile.length().coerceAtLeast(0L)
-        publishFinalizingProgress(
+        publishStageProgress(
             songId = workingSong.id,
             songKey = workingSong.stableKey(),
             fileName = fileName,
+            stage = DownloadStage.COMMITTING_CORE,
+            attemptId = attemptId,
+            operationId = effectiveOperationId,
             bytesRead = transferredBytes,
-            totalBytes = transferredBytes,
-            attemptId = attemptId
+            totalBytes = transferredBytes
         )
         ensureSongDownloadNotCancelled(songKey, "audio_commit", batchSessionId, attemptId)
         coreCommitTracker.phase = DownloadCoreCommitPhase.COMMITTING
@@ -3166,6 +3336,16 @@ object AudioDownloadManager {
         if (coreOperationMarked) {
             ManagedDownloadStorage.deleteWorkingResumeMetadata(workingFile)
         }
+        publishStageProgress(
+            songId = workingSong.id,
+            songKey = songKey,
+            fileName = fileName,
+            stage = DownloadStage.ASSETS_ENRICHING,
+            attemptId = attemptId,
+            operationId = effectiveOperationId,
+            bytesRead = transferredBytes,
+            totalBytes = transferredBytes
+        )
         return CoreCommittedAudio(
             audio = committedAudio,
             transferredBytes = transferredBytes
@@ -3253,9 +3433,18 @@ object AudioDownloadManager {
         return downloadSemaphore.withPermit {
             acquireConfiguredDownloadPermit(context)
             try {
+                downloadPermitLock.withLock {
+                    _activeNetworkTransfers.value++
+                }
                 block()
             } finally {
-                releaseConfiguredDownloadPermit()
+                withContext(NonCancellable) {
+                    downloadPermitLock.withLock {
+                        _activeNetworkTransfers.value =
+                            (_activeNetworkTransfers.value - 1).coerceAtLeast(0)
+                    }
+                    releaseConfiguredDownloadPermit()
+                }
             }
         }
     }
@@ -3834,19 +4023,24 @@ object AudioDownloadManager {
                 )
 
                 val progressJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                    progressEvents.collect { progress ->
+                    latestProgressByOperation.collect { latestProgress ->
                         if (!isBatchSessionCurrent(batchSessionId)) {
                             return@collect
                         }
-                        if (!trackedSongByKey.containsKey(progress.songKey)) {
-                            return@collect
-                        }
-                        val expectedAttemptId = songAttemptIds[progress.songKey]
-                        if (expectedAttemptId != null && progress.attemptId != expectedAttemptId) {
-                            return@collect
-                        }
-                        progressMutex.withLock {
-                            latestProgressBySongKey[progress.songKey] = progress
+                        latestProgress.values.forEach { progress ->
+                            if (!trackedSongByKey.containsKey(progress.songKey)) {
+                                return@forEach
+                            }
+                            val expectedAttemptId = songAttemptIds[progress.songKey]
+                            if (
+                                expectedAttemptId != null &&
+                                    progress.attemptId != expectedAttemptId
+                            ) {
+                                return@forEach
+                            }
+                            progressMutex.withLock {
+                                latestProgressBySongKey[progress.songKey] = progress
+                            }
                         }
                         publishBatchProgress()
                     }
@@ -6021,7 +6215,8 @@ object AudioDownloadManager {
                                 bytesRead = downloadedBytes,
                                 totalBytes = totalBytesHint,
                                 speedBytesPerSec = (attemptTransferredBytes / elapsedSec).toLong(),
-                                attemptId = attemptId
+                                attemptId = attemptId,
+                                operationId = operationId
                             )
                         )
                     }
@@ -6173,7 +6368,8 @@ object AudioDownloadManager {
         songId: Long,
         songKey: String,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        operationId: String? = null
     ): DownloadedPayloadSummary = withContext(Dispatchers.IO) {
         ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
         if (YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(request) &&
@@ -6191,7 +6387,8 @@ object AudioDownloadManager {
                 songId = songId,
                 songKey = songKey,
                 batchSessionId = batchSessionId,
-                attemptId = attemptId
+                attemptId = attemptId,
+                chunkOperationId = operationId
             )
         }
 
@@ -6366,7 +6563,8 @@ object AudioDownloadManager {
                             bytesRead = readSoFar,
                             totalBytes = total,
                             speedBytesPerSec = speed,
-                            attemptId = attemptId
+                            attemptId = attemptId,
+                            operationId = operationId
                         )
                         publishProgress(progress)
                     }
@@ -6401,7 +6599,8 @@ object AudioDownloadManager {
         songId: Long,
         songKey: String,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        chunkOperationId: String? = null
     ): DownloadedPayloadSummary = withContext(Dispatchers.IO) {
         val startNs = System.nanoTime()
         NPLogger.d(TAG, "开始分块下载文件: ${destFile.name}, songId=$songId")
@@ -6486,7 +6685,8 @@ object AudioDownloadManager {
                             currentTotalBytes = totalBytes,
                             progressTotalBytesHint = queryTotalHint,
                             batchSessionId = batchSessionId,
-                            attemptId = attemptId
+                            attemptId = attemptId,
+                            operationId = chunkOperationId
                         )
                     }
                     downloadedBytes = chunkResult.value.downloadedBytes
@@ -6563,7 +6763,8 @@ object AudioDownloadManager {
         currentTotalBytes: Long,
         progressTotalBytesHint: Long,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        operationId: String? = null
     ): ChunkDownloadResult {
         val effectiveResumeFingerprint = resolveLatestResumeFingerprint(
             fallback = resumeFingerprint,
@@ -6695,7 +6896,8 @@ object AudioDownloadManager {
                             bytesRead = downloadedBytes,
                             totalBytes = totalBytes.takeIf { it > 0L } ?: progressTotalBytesHint,
                             speedBytesPerSec = speed,
-                            attemptId = attemptId
+                            attemptId = attemptId,
+                            operationId = operationId
                         )
                     )
                 }

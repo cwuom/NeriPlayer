@@ -31,7 +31,8 @@ internal class DownloadTaskStore(
 ) {
     internal data class ClearPresentationToken(
         val generation: Long,
-        val visibleTasks: List<DownloadTask>
+        val visibleTasks: List<DownloadTask>,
+        internal var blockedStableKeys: Set<String> = emptySet()
     )
 
     private val mutationLock = Any()
@@ -127,23 +128,52 @@ internal class DownloadTaskStore(
         return _downloadTasks.value
     }
 
-    /** 清空开始时一次性摘取并隐藏任务快照，旧回调不能在清理期间重新建卡片 */
-    fun beginClearPresentation(): ClearPresentationToken {
+    /** 清空开始时摘取并隐藏归属任务，不阻塞其他 stableKey 的新 generation */
+    fun beginClearPresentation(
+        cleanupStableKeys: Collection<String>? = null
+    ): ClearPresentationToken {
         return synchronized(mutationLock) {
             activeClearPresentation?.let { token ->
+                cleanupStableKeys?.let { stableKeys ->
+                    addClearOwnershipLocked(token, stableKeys)
+                }
                 return@synchronized token
+            }
+            val allTasks = _downloadTasks.value
+            val normalizedCleanupKeys = cleanupStableKeys
+                ?.mapNotNull(::normalizeSongKey)
+                ?.toSet()
+            val blockedKeys = normalizedCleanupKeys ?: allTasks.mapTo(linkedSetOf()) {
+                it.song.stableKey()
+            }
+            val visibleTasks = allTasks.filter { task ->
+                task.song.stableKey() in blockedKeys
             }
             val token = ClearPresentationToken(
                 generation = ++clearPresentationGeneration,
-                visibleTasks = _downloadTasks.value.toList()
+                visibleTasks = visibleTasks,
+                blockedStableKeys = blockedKeys
             )
             activeClearPresentation = token
             // 先发布隐藏标记，让界面不会在任务快照清空和清空横幅之间闪回旧数据
             _isClearPresentationActive.value = true
-            _downloadTasks.value = emptyList()
-            songKeyIndex = emptyMap()
+            removeTasksForClearOwnershipLocked(blockedKeys)
             progressPublishStates.clear()
             token
+        }
+    }
+
+    /** 清空后台发现持久 operation 后补齐 owner，不能影响清空期间的新任务 */
+    fun addClearPresentationOwnership(
+        token: ClearPresentationToken,
+        stableKeys: Collection<String>
+    ): Boolean {
+        return synchronized(mutationLock) {
+            if (activeClearPresentation?.generation != token.generation) {
+                return@synchronized false
+            }
+            addClearOwnershipLocked(token, stableKeys)
+            true
         }
     }
 
@@ -189,13 +219,14 @@ internal class DownloadTaskStore(
 
     fun updateProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
         return synchronized(mutationLock) {
-            if (activeClearPresentation != null) return@synchronized false
+            if (isClearKeyBlockedLocked(progress.songKey)) return@synchronized false
             val tasks = _downloadTasks.value
             val taskIndex = songKeyIndex[progress.songKey] ?: -1
             if (taskIndex < 0) return@synchronized false
             val currentTask = tasks[taskIndex]
             if (currentTask.status != DownloadStatus.QUEUED &&
-                currentTask.status != DownloadStatus.DOWNLOADING ||
+                currentTask.status != DownloadStatus.DOWNLOADING &&
+                currentTask.status != DownloadStatus.WAITING_NETWORK ||
                 !shouldApplyTaskProgressMutation(currentTask, progress.attemptId)
             ) {
                 return@synchronized false
@@ -228,7 +259,7 @@ internal class DownloadTaskStore(
      */
     fun restoreProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
         return synchronized(mutationLock) {
-            if (activeClearPresentation != null) return@synchronized false
+            if (isClearKeyBlockedLocked(progress.songKey)) return@synchronized false
             val taskIndex = songKeyIndex[progress.songKey] ?: -1
             if (taskIndex < 0) return@synchronized false
             val currentTask = _downloadTasks.value[taskIndex]
@@ -267,13 +298,13 @@ internal class DownloadTaskStore(
     ): Int {
         if (progresses.isEmpty()) return 0
         return synchronized(mutationLock) {
-            if (activeClearPresentation != null) return@synchronized 0
             val currentTasks = _downloadTasks.value
             val updatedTasks = currentTasks.toMutableList()
             var acceptedCount = 0
             var changed = false
             progresses.forEach { progress ->
                 val taskIndex = songKeyIndex[progress.songKey] ?: return@forEach
+                if (isClearKeyBlockedLocked(progress.songKey)) return@forEach
                 val currentTask = updatedTasks[taskIndex]
                 if (
                     currentTask.status !in RESTORABLE_PROGRESS_STATUSES ||
@@ -315,8 +346,11 @@ internal class DownloadTaskStore(
         status: DownloadStatus = DownloadStatus.DOWNLOADING
     ): Long? {
         val songKey = song.stableKey()
+        if (isClearKeyBlocked(songKey)) return null
         var preparedAttemptId: Long? = null
-        mutate { tasks ->
+        mutate(allowDuringClear = true, songKey = songKey) { tasks ->
+            // 外部检查和列表变更之间可能刚好开始清空，锁内必须再次确认 owner
+            if (isClearKeyBlockedLocked(songKey)) return@mutate tasks
             val existingIndex = songKeyIndex[songKey] ?: -1
             if (existingIndex < 0) {
                 val attemptId = nextAttemptId()
@@ -365,13 +399,16 @@ internal class DownloadTaskStore(
         if (songs.isEmpty()) {
             return emptyMap()
         }
-        val distinctSongs = songs.distinctBy { it.stableKey() }
+        val distinctSongs = songs
+            .distinctBy { it.stableKey() }
+            .filterNot { song -> isClearKeyBlocked(song.stableKey()) }
         val preparedAttemptIds = linkedMapOf<String, Long>()
-        mutate { tasks ->
+        mutate(allowDuringClear = true) { tasks ->
             val updatedTasks = tasks.toMutableList()
             val existingIndexesBySongKey = HashMap<String, Int>(songKeyIndex)
             distinctSongs.forEach { song ->
                 val songKey = song.stableKey()
+                if (isClearKeyBlockedLocked(songKey)) return@forEach
                 val existingIndex = existingIndexesBySongKey[songKey]
                 if (existingIndex == null) {
                     val attemptId = nextAttemptId()
@@ -435,11 +472,12 @@ internal class DownloadTaskStore(
             return emptyMap()
         }
         val attemptIds = linkedMapOf<String, Long>()
-        mutate { tasks ->
+        mutate(allowDuringClear = true) { tasks ->
             val updatedTasks = tasks.toMutableList()
             val existingIndexesBySongKey = HashMap<String, Int>(songKeyIndex)
             songs.distinctBy { it.stableKey() }.forEach { song ->
                 val songKey = song.stableKey()
+                if (isClearKeyBlockedLocked(songKey)) return@forEach
                 val existingIndex = existingIndexesBySongKey[songKey]
                 val existingTask = existingIndex?.let(updatedTasks::get)
                 if (existingTask != null && (
@@ -560,16 +598,32 @@ internal class DownloadTaskStore(
         activeTasks.forEach { task ->
             clearProgressPublishState(task.song.stableKey())
         }
-        mutate { tasks -> applyWaitingNetworkStatus(tasks, activeTasks) }
+        mutate(allowDuringClear = true) { tasks ->
+            applyWaitingNetworkStatus(
+                tasks,
+                activeTasks.filterNot { task ->
+                    isClearKeyBlockedLocked(task.song.stableKey())
+                }
+            )
+        }
     }
 
     fun clearAllTasks() {
-        mutate(allowDuringClear = true) { emptyList() }
+        mutate(allowDuringClear = true) { tasks ->
+            val token = activeClearPresentation
+            if (token == null) {
+                emptyList()
+            } else {
+                tasks.filterNot { task ->
+                    task.song.stableKey() in token.blockedStableKeys
+                }
+            }
+        }
         progressPublishStates.clear()
     }
 
     fun isDownloadAttemptCurrent(songKey: String, attemptId: Long?): Boolean {
-        if (isClearPresentationActive()) return false
+        if (isClearKeyBlocked(songKey)) return false
         if (attemptId == null) {
             return true
         }
@@ -630,6 +684,44 @@ internal class DownloadTaskStore(
         progressPublishStates.remove(songKey)
     }
 
+    private fun isClearKeyBlocked(songKey: String): Boolean {
+        return synchronized(mutationLock) {
+            isClearKeyBlockedLocked(songKey)
+        }
+    }
+
+    private fun isClearKeyBlockedLocked(songKey: String): Boolean {
+        val normalizedKey = normalizeSongKey(songKey) ?: return false
+        return activeClearPresentation?.blockedStableKeys?.contains(normalizedKey) == true
+    }
+
+    private fun addClearOwnershipLocked(
+        token: ClearPresentationToken,
+        stableKeys: Collection<String>
+    ) {
+        val normalizedKeys = stableKeys.mapNotNull(::normalizeSongKey).toSet()
+        if (normalizedKeys.isEmpty()) return
+        token.blockedStableKeys = token.blockedStableKeys + normalizedKeys
+        removeTasksForClearOwnershipLocked(normalizedKeys)
+    }
+
+    private fun removeTasksForClearOwnershipLocked(stableKeys: Set<String>) {
+        if (stableKeys.isEmpty()) return
+        val currentTasks = _downloadTasks.value
+        val updatedTasks = currentTasks.filterNot { task ->
+            task.song.stableKey() in stableKeys
+        }
+        if (updatedTasks != currentTasks) {
+            _downloadTasks.value = updatedTasks
+            songKeyIndex = buildSongKeyIndex(updatedTasks)
+        }
+        stableKeys.forEach(::clearProgressPublishState)
+    }
+
+    private fun normalizeSongKey(songKey: String): String? {
+        return songKey.trim().takeIf(String::isNotBlank)
+    }
+
     private fun nextAttemptId(): Long {
         return attemptIdGenerator.incrementAndGet()
     }
@@ -642,11 +734,16 @@ internal class DownloadTaskStore(
 
     private inline fun mutate(
         allowDuringClear: Boolean = false,
+        songKey: String? = null,
         transform: (List<DownloadTask>) -> List<DownloadTask>
     ): List<DownloadTask> {
         synchronized(mutationLock) {
             val currentTasks = _downloadTasks.value
-            if (!allowDuringClear && activeClearPresentation != null) {
+            if (
+                !allowDuringClear &&
+                    activeClearPresentation != null &&
+                    (songKey == null || isClearKeyBlockedLocked(songKey))
+            ) {
                 return currentTasks
             }
             val updatedTasks = transform(currentTasks)
@@ -682,7 +779,10 @@ internal class DownloadTaskStore(
         transform: (DownloadTask) -> DownloadTask
     ): Boolean {
         var applied = false
-        mutate(allowDuringClear = allowDuringClear) { tasks ->
+        mutate(
+            allowDuringClear = allowDuringClear,
+            songKey = songKey
+        ) { tasks ->
             val taskIndex = songKeyIndex[songKey] ?: -1
             if (taskIndex < 0) {
                 return@mutate tasks

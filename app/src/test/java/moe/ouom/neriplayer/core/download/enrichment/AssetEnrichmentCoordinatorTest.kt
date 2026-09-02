@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -125,6 +126,44 @@ class AssetEnrichmentCoordinatorTest {
         assertEquals(callbackFailure, completionError.get())
         assertEquals(0, unhandledFailures.get())
         scope.cancel()
+    }
+
+    @Test
+    fun `queued enrichment times out while waiting for a permit`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(
+            scope = scope,
+            parallelism = 1,
+            timeoutMs = 50L
+        )
+        val permitHeld = CompletableDeferred<Unit>()
+        val releasePermit = CompletableDeferred<Unit>()
+        val queuedRuns = AtomicInteger(0)
+        val timeout = AtomicReference<Throwable?>(null)
+
+        val blockingJob = coordinator.enqueue("permit-holder") {
+            permitHeld.complete(Unit)
+            releasePermit.await()
+        }
+        permitHeld.await()
+        val queuedJob = coordinator.enqueue(
+            operationId = "queued-operation",
+            onTimeout = { error -> timeout.set(error) }
+        ) {
+            queuedRuns.incrementAndGet()
+        }
+
+        try {
+            withTimeout(2_000L) { queuedJob.join() }
+            assertTrue(timeout.get() is kotlinx.coroutines.TimeoutCancellationException)
+            assertFalse(queuedJob.isCancelled)
+            assertEquals(0, queuedRuns.get())
+            assertFalse("queued-operation" in coordinator.activeOperationIds())
+        } finally {
+            releasePermit.complete(Unit)
+            withTimeout(2_000L) { blockingJob.join() }
+            scope.cancel()
+        }
     }
 
     @Test

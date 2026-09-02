@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -81,6 +83,192 @@ class ManagedDownloadStoragePendingAudioPromotionTest {
                 enumerationComplete = true,
                 existingNames = listOf("$targetName.npdl_pending.123.pending"),
                 targetName = targetName
+            )
+        )
+    }
+
+    @Test
+    fun `tree promotion allocates a unique audio name for audio metadata and pending conflicts`() {
+        assertEquals(
+            "song (1).mp3",
+            ManagedDownloadStorage.resolvePendingAudioPromotionFinalName(
+                enumerationComplete = true,
+                existingNames = listOf("song.mp3.npmeta.json"),
+                requestedName = "song.mp3"
+            )
+        )
+
+        val resolved = ManagedDownloadStorage.resolvePendingAudioPromotionFinalName(
+            enumerationComplete = true,
+            existingNames = listOf(
+                "song.mp3",
+                "song (1).mp3.npmeta.json",
+                "song (2).mp3.npmeta.pending.json",
+                "song (3).mp3.npdl_pending.recovery.pending"
+            ),
+            requestedName = "song.mp3"
+        )
+
+        assertEquals("song (4).mp3", resolved)
+    }
+
+    @Test
+    fun `tree promotion name allocation handles canonical names and blocks active backups`() {
+        assertEquals(
+            "Caf\u00e9 (1).mp3",
+            ManagedDownloadStorage.resolvePendingAudioPromotionFinalName(
+                enumerationComplete = true,
+                existingNames = listOf("Cafe\u0301.mp3"),
+                requestedName = "Caf\u00e9.mp3"
+            )
+        )
+        assertNull(
+            ManagedDownloadStorage.resolvePendingAudioPromotionFinalName(
+                enumerationComplete = true,
+                existingNames = listOf(".song.mp3.backup"),
+                requestedName = "song.mp3"
+            )
+        )
+        assertNull(
+            ManagedDownloadStorage.resolvePendingAudioPromotionFinalName(
+                enumerationComplete = true,
+                existingNames = listOf(".Cafe\u0301.mp3.backup"),
+                requestedName = "Caf\u00e9.mp3"
+            )
+        )
+    }
+
+    @Test
+    fun `tree promotion keeps requested name only when the complete directory has no conflict`() {
+        assertEquals(
+            "song.mp3",
+            ManagedDownloadStorage.resolvePendingAudioPromotionFinalName(
+                enumerationComplete = true,
+                existingNames = emptyList(),
+                requestedName = "song.mp3"
+            )
+        )
+        assertNull(
+            ManagedDownloadStorage.resolvePendingAudioPromotionFinalName(
+                enumerationComplete = false,
+                existingNames = emptyList(),
+                requestedName = "song.mp3"
+            )
+        )
+        assertNull(
+            ManagedDownloadStorage.resolvePendingAudioPromotionFinalName(
+                enumerationComplete = true,
+                existingNames = emptyList(),
+                requestedName = "../song.mp3"
+            )
+        )
+    }
+
+    @Test
+    fun `staged metadata reuses its final audio name for the same pending artifact`() {
+        val stagedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "42|netease|album",
+            operationId = "operation-42",
+            audioFileName = "song (1).mp3"
+        )
+
+        assertEquals(
+            "song (1).mp3",
+            ManagedDownloadStorage.resolveStagedPendingPromotionFinalName(
+                requestedName = "song.mp3",
+                stagedMetadata = stagedMetadata,
+                expectedStableKey = "42|netease|album",
+                expectedOperationId = "operation-42"
+            )
+        )
+    }
+
+    @Test
+    fun `staged metadata cannot redirect a pending promotion to another artifact`() {
+        val stagedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "42|netease|album",
+            operationId = "operation-42",
+            audioFileName = "song (1).mp3"
+        )
+
+        assertNull(
+            ManagedDownloadStorage.resolveStagedPendingPromotionFinalName(
+                requestedName = "song.mp3",
+                stagedMetadata = stagedMetadata,
+                expectedStableKey = "different-stable-key",
+                expectedOperationId = "operation-42"
+            )
+        )
+        assertNull(
+            ManagedDownloadStorage.resolveStagedPendingPromotionFinalName(
+                requestedName = "song.mp3",
+                stagedMetadata = stagedMetadata,
+                expectedStableKey = "42|netease|album",
+                expectedOperationId = "another-operation"
+            )
+        )
+        assertNull(
+            ManagedDownloadStorage.resolveStagedPendingPromotionFinalName(
+                requestedName = "song.mp3",
+                stagedMetadata = stagedMetadata.copy(audioFileName = "another.mp3"),
+                expectedStableKey = "42|netease|album",
+                expectedOperationId = "operation-42"
+            )
+        )
+        assertNull(
+            ManagedDownloadStorage.resolveStagedPendingPromotionFinalName(
+                requestedName = "song.mp3",
+                stagedMetadata = stagedMetadata.copy(audioFileName = " song (1).mp3 "),
+                expectedStableKey = "42|netease|album",
+                expectedOperationId = "operation-42"
+            )
+        )
+    }
+
+    @Test
+    fun `renamed pending metadata follows the resolved audio file name without losing identity`() {
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "42|netease|album",
+            operationId = "operation-42",
+            name = "Song",
+            artist = "Artist",
+            audioFileName = "song.mp3",
+            downloadFinalized = false
+        )
+        val rawMetadata = ManagedDownloadStorageJsonCodec
+            .downloadedAudioMetadataToJson(metadata)
+            .apply {
+                put("futureField", "preserve")
+                put("futureObject", JSONObject().put("revision", 7))
+            }
+            .toString()
+        val parsedBeforeRename = requireNotNull(
+            ManagedDownloadStorage.parseDownloadedAudioMetadataJson(rawMetadata)
+        )
+
+        val rewritten = requireNotNull(
+            ManagedDownloadStorage.rewritePendingMetadataAudioFileName(
+                rawMetadata = rawMetadata,
+                finalAudioName = "song (1).mp3"
+            )
+        )
+        val parsed = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(rewritten)
+        val rewrittenJson = JSONObject(rewritten)
+
+        assertEquals(parsedBeforeRename.copy(audioFileName = "song (1).mp3"), parsed)
+        assertEquals("preserve", rewrittenJson.getString("futureField"))
+        assertEquals(
+            7,
+            rewrittenJson.getJSONObject("futureObject").getInt("revision")
+        )
+    }
+
+    @Test
+    fun `invalid pending metadata cannot be rewritten for a renamed audio target`() {
+        assertNull(
+            ManagedDownloadStorage.rewritePendingMetadataAudioFileName(
+                rawMetadata = "{not-json",
+                finalAudioName = "song (1).mp3"
             )
         )
     }

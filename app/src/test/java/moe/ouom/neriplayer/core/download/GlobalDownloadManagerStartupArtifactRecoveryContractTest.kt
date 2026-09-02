@@ -195,7 +195,41 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         assertTrue(pendingBody.contains("admissionTicket = admissionTicket"))
         assertTrue(publishedBody.contains("admissionTicket = admissionTicket"))
         assertTrue(coreSignature.contains("admissionTicket: Long?"))
-        assertTrue(coreBody.contains("isDownloadAdmissionTicketCurrent(context, admissionTicket)"))
+        assertTrue(coreBody.contains("stableKey = songKey"))
+        assertTrue(coreBody.contains("operationId = operationId"))
+    }
+
+    @Test
+    fun `core artifact commit failure settles task and schedules in-process recovery`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val coreBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val failureIndex = coreBody.indexOf("if (!artifactCommitted)")
+
+        assertTrue(failureIndex >= 0)
+        val failureBodyStart = coreBody.indexOf('{', startIndex = failureIndex)
+        assertTrue(failureBodyStart > failureIndex)
+        val failureBody = coreBody.substring(
+            failureIndex,
+            findBodyEnd(coreBody, failureBodyStart, "artifactCommitted branch")
+        )
+        val settleIndex = failureBody.indexOf("settlePostCoreEnrichmentFailure(")
+        val leaseReleaseIndex = failureBody.indexOf(
+            "managedDownloadArtifactLeases.remove(songKey, leaseId)"
+        )
+        val recoveryScheduleIndex = failureBody.indexOf("scheduleStartupArtifactRecovery(context)")
+        val returnIndex = failureBody.lastIndexOf("return")
+
+        assertTrue(settleIndex >= 0)
+        assertTrue(failureBody.contains("operationId = recoveryOperationId"))
+        assertTrue(failureBody.contains("errorCode = \"CORE_ARTIFACT_COMMIT_FAILED\""))
+        assertTrue(failureBody.contains("scheduleRetry = false"))
+        assertTrue(failureBody.contains("admissionTicket = admissionTicket"))
+        assertTrue(failureBody.contains("保留 core 音频"))
+        assertTrue(leaseReleaseIndex > settleIndex)
+        assertTrue(recoveryScheduleIndex > leaseReleaseIndex)
+        assertTrue(returnIndex > recoveryScheduleIndex)
     }
 
     @Test

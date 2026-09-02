@@ -4,8 +4,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 internal class DownloadAdmissionGate {
     internal data class ClearToken(
@@ -19,10 +17,17 @@ internal class DownloadAdmissionGate {
         val generation: Long
     )
 
-    private val admissionMutex = Mutex()
+    private sealed interface AdmissionDecision {
+        data class Wait(val completion: CompletableDeferred<Unit>) : AdmissionDecision
+        data object Reject : AdmissionDecision
+        data object Entered : AdmissionDecision
+    }
+
     private val stateLock = Any()
     private var activeClear: CompletableDeferred<Unit>? = null
     private var generation = 0L
+    private var activeAdmissions = 0
+    private var idleCompletion = completedDeferred()
 
     fun ticket(): Long = synchronized(stateLock) { generation }
 
@@ -59,52 +64,41 @@ internal class DownloadAdmissionGate {
         token.completion.await()
     }
 
-    /** 清空快速阶段落盘前先等已经进入的 mutation 完成，避免漏掉尾部写入 */
+    /** 等待已登记的 mutation 完成，不持有准入状态锁 */
     suspend fun awaitIdle() {
-        admissionMutex.withLock { }
+        val completion = synchronized(stateLock) { idleCompletion }
+        completion.await()
     }
 
+    /** 只在内存状态中登记准入，挂起工作始终在状态锁外执行 */
     suspend fun admit(
         ticket: Long,
         block: suspend () -> Unit
     ): Boolean {
         while (true) {
-            val beforeLock = snapshot()
-            if (beforeLock.generation != ticket) {
-                return false
-            }
-            beforeLock.completion?.await()
-
-            var retryAfterClear = false
-            val admitted = admissionMutex.withLock {
-                val insideLock = snapshot()
-                when {
-                    insideLock.generation != ticket -> false
-                    insideLock.completion != null -> {
-                        retryAfterClear = true
-                        false
-                    }
-                    else -> {
+            when (val decision = tryEnter(ticket)) {
+                AdmissionDecision.Reject -> return false
+                is AdmissionDecision.Wait -> decision.completion.await()
+                AdmissionDecision.Entered -> {
+                    try {
                         block()
-                        true
+                        return true
+                    } finally {
+                        leave()
                     }
                 }
-            }
-            if (admitted || !retryAfterClear) {
-                return admitted
             }
         }
     }
 
+    /** 清空工作不持有状态锁，generation 负责阻止旧票据重新发布 */
     suspend fun runClear(
         token: ClearToken,
         block: suspend () -> Unit
     ) {
         require(token.ownsClear) { "clear token does not own the active clear" }
         try {
-            admissionMutex.withLock {
-                block()
-            }
+            block()
         } finally {
             synchronized(stateLock) {
                 if (activeClear === token.completion && generation == token.generation) {
@@ -115,8 +109,36 @@ internal class DownloadAdmissionGate {
         }
     }
 
-    /** 调用方确认持久栅栏未激活后，只释放内存闸门让下一次重试取得新的所有者令牌 */
-    fun releaseFailedClear(token: ClearToken): Boolean {
+    private fun tryEnter(ticket: Long): AdmissionDecision = synchronized(stateLock) {
+        if (generation != ticket) {
+            return@synchronized AdmissionDecision.Reject
+        }
+        activeClear?.let { completion ->
+            return@synchronized AdmissionDecision.Wait(completion)
+        }
+        if (activeAdmissions == 0) {
+            idleCompletion = CompletableDeferred()
+        }
+        activeAdmissions++
+        AdmissionDecision.Entered
+    }
+
+    private fun leave() {
+        val completion = synchronized(stateLock) {
+            check(activeAdmissions > 0) { "download admission underflow" }
+            activeAdmissions--
+            if (activeAdmissions == 0) idleCompletion else null
+        }
+        completion?.complete(Unit)
+    }
+
+    /**
+     * 持久栅栏和 owner 快照已经覆盖旧任务后，后台 I/O 不应继续占用全局内存闸门
+     *
+     * 旧票据已在 beginClear 时失效；新的不同 stableKey 仍会在持久栅栏处做 owner
+     * 复核，因此这里仅解除本进程的等待，不会让旧 generation 重新发布
+     */
+    fun detachClearForDurableRecovery(token: ClearToken): Boolean {
         require(token.ownsClear) { "clear token does not own the active clear" }
         val released = synchronized(stateLock) {
             if (activeClear === token.completion && generation == token.generation) {
@@ -131,6 +153,13 @@ internal class DownloadAdmissionGate {
         }
         return released
     }
+
+    /** 持久栅栏落盘失败时也要释放本进程 gate，兼容旧调用方 */
+    fun releaseFailedClear(token: ClearToken): Boolean =
+        detachClearForDurableRecovery(token)
+
+    private fun completedDeferred(): CompletableDeferred<Unit> =
+        CompletableDeferred<Unit>().also { it.complete(Unit) }
 
     private fun snapshot(): GateSnapshot = synchronized(stateLock) {
         GateSnapshot(
@@ -192,7 +221,7 @@ internal class DownloadClearVisibility {
             get() = displayPercentage / 100f
     }
 
-    /** 扫描结果中的条目都已检查，仍存在的条目计为待重试失败项 */
+    /** 扫描结果中的条目仍是待处理残留，不能同时计为已完成 */
     internal data class ArtifactProgress(
         val completedItemCount: Int,
         val totalItemCount: Int,
@@ -205,8 +234,7 @@ internal class DownloadClearVisibility {
         cleanupFailed: Boolean = false
     ): ArtifactProgress {
         val normalizedCount = artifactCount.coerceAtLeast(0)
-        val resultComplete = scanComplete && !(cleanupFailed && normalizedCount == 0)
-        if (!resultComplete) {
+        if (!scanComplete || cleanupFailed && normalizedCount == 0) {
             val unknownCount = normalizedCount.coerceAtLeast(1)
             return ArtifactProgress(
                 completedItemCount = 0,
@@ -215,7 +243,7 @@ internal class DownloadClearVisibility {
             )
         }
         return ArtifactProgress(
-            completedItemCount = normalizedCount,
+            completedItemCount = 0,
             totalItemCount = normalizedCount,
             failedItemCount = normalizedCount
         )
@@ -231,18 +259,25 @@ internal class DownloadClearVisibility {
     val progress: StateFlow<ClearProgress?> = _progress.asStateFlow()
     private var activeGeneration: Long? = null
 
-    fun begin(token: DownloadAdmissionGate.ClearToken) {
+    fun begin(
+        token: DownloadAdmissionGate.ClearToken,
+        affectedItemCount: Int = 0,
+        totalItemCount: Int = 0
+    ) {
         synchronized(stateLock) {
             val isNewGeneration = activeGeneration != token.generation
             activeGeneration = token.generation
             _isClearing.value = true
             if (isNewGeneration) {
+                val normalizedAffectedItemCount = affectedItemCount.coerceAtLeast(0)
+                val normalizedTotalItemCount = totalItemCount.coerceAtLeast(0)
                 _isTaskPresentationCleared.value = false
                 _progress.value = ClearProgress(
                     phase = ClearPhase.PREPARING,
                     completedSteps = 0,
                     totalSteps = CLEAR_PHASE_COUNT,
-                    affectedItemCount = 0
+                    affectedItemCount = normalizedAffectedItemCount,
+                    totalItemCount = normalizedTotalItemCount
                 )
             }
         }
@@ -266,13 +301,20 @@ internal class DownloadClearVisibility {
             if (activeGeneration != token.generation) return
             _isClearing.value = true
             _isTaskPresentationCleared.value = progress.completedSteps > 0
+            val previous = _progress.value
             _progress.value = progress.copy(
                 completedSteps = progress.completedSteps.coerceIn(0, CLEAR_PHASE_COUNT),
                 totalSteps = CLEAR_PHASE_COUNT,
-                affectedItemCount = progress.affectedItemCount.coerceAtLeast(0),
+                affectedItemCount = maxOf(
+                    previous?.affectedItemCount ?: 0,
+                    progress.affectedItemCount.coerceAtLeast(0)
+                ),
                 failedItemCount = progress.failedItemCount.coerceAtLeast(0),
                 completedItemCount = progress.completedItemCount.coerceAtLeast(0),
-                totalItemCount = progress.totalItemCount.coerceAtLeast(0)
+                totalItemCount = maxOf(
+                    previous?.totalItemCount ?: 0,
+                    progress.totalItemCount.coerceAtLeast(0)
+                )
             )
         }
     }
@@ -349,11 +391,15 @@ internal class DownloadClearVisibility {
                     completed
                 }
             }
+        val effectiveAffectedItemCount = maxOf(
+            previous?.affectedItemCount ?: 0,
+            affectedItemCount.coerceAtLeast(0)
+        )
         _progress.value = ClearProgress(
             phase = phase,
             completedSteps = completedSteps.coerceIn(0, CLEAR_PHASE_COUNT),
             totalSteps = CLEAR_PHASE_COUNT,
-            affectedItemCount = affectedItemCount.coerceAtLeast(0),
+            affectedItemCount = effectiveAffectedItemCount,
             failedItemCount = failedItemCount.coerceAtLeast(0),
             completedItemCount = effectiveCompletedItems,
             totalItemCount = effectiveTotalItems

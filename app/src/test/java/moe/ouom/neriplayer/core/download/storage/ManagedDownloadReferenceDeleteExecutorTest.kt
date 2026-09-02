@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteExecutor
@@ -119,6 +120,52 @@ class ManagedDownloadReferenceDeleteExecutorTest {
 
         assertEquals(StorageMutationResult.Deleted, result)
         assertEquals(0, goneProbeCalls.get())
+    }
+
+    @Test
+    fun `synchronous saf delete tries every alias after a missing result`() {
+        val sourceUri = mock(Uri::class.java)
+        val singleDocumentUri = mock(Uri::class.java)
+        val treeDocumentUri = mock(Uri::class.java)
+        `when`(sourceUri.scheme).thenReturn("content")
+        `when`(sourceUri.authority).thenReturn("documents.test")
+        `when`(sourceUri.pathSegments)
+            .thenReturn(listOf("tree", "root", "document", "root/song.mp3"))
+        val seenUris = mutableListOf<Uri>()
+        val reference = TrustedManagedRef(
+            reference = StorageReference.SafRef(sourceUri),
+            externalReference = "content://documents.test/document/song.mp3"
+        )
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceDeleteOperation = { _, candidate, _, _ ->
+                val candidateUri = (candidate.reference as StorageReference.SafRef).uri
+                seenUris += candidateUri
+                if (seenUris.size == 1) {
+                    StorageMutationResult.Missing
+                } else {
+                    StorageMutationResult.Deleted
+                }
+            }
+        )
+
+        val result = runBlocking {
+            withTreeAliases(
+                sourceUri,
+                singleDocumentUri,
+                treeDocumentUri
+            ) {
+                executor.deleteTrustedContentReference(
+                    context = mock(Context::class.java),
+                    reference = reference
+                )
+            }
+        }
+
+        assertTrue(seenUris.size >= 2)
+        assertEquals(sourceUri, seenUris.first())
+        assertEquals(StorageMutationResult.Deleted, result)
     }
 
     @Test
@@ -257,6 +304,61 @@ class ManagedDownloadReferenceDeleteExecutorTest {
         assertFalse(result.hasUnconfirmedDeletes)
         assertEquals(references.size, deleteCalls.get())
         assertEquals(0, goneProbeCalls.get())
+    }
+
+    @Test
+    fun `concurrent saf missing alias stays retryable after later alias failure`() = runBlocking {
+        val sourceUri = mock(Uri::class.java)
+        val singleDocumentUri = mock(Uri::class.java)
+        val treeDocumentUri = mock(Uri::class.java)
+        `when`(sourceUri.scheme).thenReturn("content")
+        `when`(sourceUri.authority).thenReturn("documents.test")
+        `when`(sourceUri.pathSegments)
+            .thenReturn(listOf("tree", "root", "document", "root/song.mp3"))
+        val deleteCalls = AtomicInteger(0)
+        val reference = TrustedManagedRef(
+            reference = StorageReference.SafRef(sourceUri),
+            externalReference = "content://documents.test/document/song.mp3"
+        )
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            referenceDeleteParallelism = 1,
+            contentReferenceDeleteOperation = { _, _, _, _ ->
+                if (deleteCalls.incrementAndGet() == 1) {
+                    StorageMutationResult.Missing
+                } else {
+                    StorageMutationResult.ProviderFailure(
+                        IllegalStateException("unavailable")
+                    )
+                }
+            },
+            contentReferenceGoneOperation = { _, _ ->
+                ManagedDownloadReferenceIo.AccessResult.Accessible
+            },
+            workerDispatcher = Dispatchers.Unconfined
+        )
+
+        val result = withTreeAliases(
+            sourceUri,
+            singleDocumentUri,
+            treeDocumentUri
+        ) {
+            executor.deleteReferencesConcurrently(
+                context = mock(Context::class.java),
+                references = listOf(reference),
+                deletePolicy = ManagedDownloadDeletePolicy(
+                    managedFileRoots = emptyList(),
+                    managedTreeRoots = emptyList(),
+                    trustedReferences = setOf(reference)
+                ),
+                parallelism = 1
+            )
+        }
+
+        assertTrue(deleteCalls.get() >= 2)
+        assertTrue(result.deletedReferences.isEmpty())
+        assertTrue(result.hasUnconfirmedDeletes)
     }
 
     @Test
@@ -575,6 +677,26 @@ class ManagedDownloadReferenceDeleteExecutorTest {
         assertFalse(result.hasUnconfirmedDeletes)
         assertEquals(references.size * SAF_DELETE_MAX_ATTEMPTS, deleteCalls.get())
         assertEquals(references.size, inspectedReferenceCount.get())
+    }
+
+    private suspend fun <T> withTreeAliases(
+        sourceUri: Uri,
+        singleDocumentUri: Uri,
+        treeDocumentUri: Uri,
+        block: suspend () -> T
+    ): T {
+        return mockStatic(DocumentsContract::class.java).use { documentsContract ->
+            documentsContract.`when`<String> {
+                DocumentsContract.getDocumentId(sourceUri)
+            }.thenReturn("root/song.mp3")
+            documentsContract.`when`<Uri> {
+                DocumentsContract.buildDocumentUri("documents.test", "root/song.mp3")
+            }.thenReturn(singleDocumentUri)
+            documentsContract.`when`<Uri> {
+                DocumentsContract.buildDocumentUriUsingTree(sourceUri, "root/song.mp3")
+            }.thenReturn(treeDocumentUri)
+            block()
+        }
     }
 
     private fun deletePolicyFor(references: List<String>): ManagedDownloadDeletePolicy {

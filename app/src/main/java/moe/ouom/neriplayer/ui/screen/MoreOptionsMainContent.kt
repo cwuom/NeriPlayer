@@ -75,6 +75,7 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.stats.TrackStat
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.album.isNeteaseAlbumNavigationSource
@@ -271,6 +272,32 @@ private fun downloadActionLabel(task: DownloadTask?): Int {
 internal fun DownloadProgressContent(task: DownloadTask?) {
     val progress = task?.progress
     when {
+        progress?.stage?.let(::downloadStageLabelResource) != null -> {
+            val stageLabel = requireNotNull(
+                progress.stage.let(::downloadStageLabelResource)
+            )
+            Column {
+                Text(stringResource(stageLabel))
+                Text(
+                    formatDownloadTransferProgress(
+                        progress = progress,
+                        showSpeed = false
+                    )
+                )
+                if (progress.totalBytes > 0L) {
+                    LinearProgressIndicator(
+                        progress = {
+                            (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+                                .coerceIn(0f, 1f)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+
         progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {
             Column {
                 Text(stringResource(R.string.download_finalizing))

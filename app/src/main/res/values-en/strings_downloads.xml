@@ -19,7 +19,11 @@
     <string name="download_clear_phase_cancelling">Stopping downloads</string>
     <string name="download_clear_phase_cleaning">Cleaning temporary files</string>
     <string name="download_clear_phase_purging">Finalizing records</string>
+    <string name="download_clear_stage_progress">Phase %1$d/%2$d</string>
     <string name="download_clear_item_progress">Processed %1$d/%2$d files</string>
+    <string name="download_clear_item_progress_scanning">Scanning files to clean…</string>
+    <string name="download_clear_item_progress_pending">Cleanup file count pending</string>
+    <string name="download_clear_item_progress_empty">No files to clean</string>
     <string name="download_empty">No Downloads</string>
     <string name="download_desc">Manage downloads</string>
     <string name="download_manage_desc">Manage downloads</string>
@@ -40,6 +44,13 @@
     <string name="download_queued_status">Waiting to start</string>
     <string name="download_finalizing">Audio has been written; lyrics, covers, and metadata are being sorted</string>
     <string name="download_waiting_network_recovery">Network is switching, download will resume automatically</string>
+    <string name="download_waiting_host">Waiting for system download host scheduling</string>
+    <string name="download_waiting_delete_cleanup">Waiting for old file cleanup</string>
+    <string name="download_resolving_source">Resolving download source</string>
+    <string name="download_preparing_storage">Preparing local storage</string>
+    <string name="download_verifying_audio">Verifying audio</string>
+    <string name="download_committing_core">Committing playable audio</string>
+    <string name="download_assets_enriching">Sorting lyrics, covers, and metadata</string>
     <string name="download_explicit_resume_summary">The system stopped these user-started downloads. They will not restart automatically.</string>
     <string name="download_explicit_resume_status">Paused by the system. Tap to continue.</string>
     <string name="download_search_hint">Search downloaded songs…</string>

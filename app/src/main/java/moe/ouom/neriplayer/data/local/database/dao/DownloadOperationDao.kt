@@ -5,6 +5,8 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadCancellationIdentityRow
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationIdentityRow
 
 @Dao
@@ -14,6 +16,165 @@ internal interface DownloadOperationDao {
 
     @Query("SELECT * FROM download_operation WHERE operation_id = :operationId LIMIT 1")
     suspend fun find(operationId: String): DownloadOperationEntity?
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation WHERE operation_id = :operationId LIMIT 1"
+    )
+    suspend fun findHeader(operationId: String): DownloadOperationHeaderRow?
+
+    @Query(
+        "SELECT substr(source_hint_json, :startOffset, :chunkLength) " +
+            "FROM download_operation WHERE operation_id = :operationId " +
+            "AND updated_at_ms = :updatedAtMs LIMIT 1"
+    )
+    suspend fun findSourceHintJsonChunk(
+        operationId: String,
+        startOffset: Int,
+        chunkLength: Int,
+        updatedAtMs: Long
+    ): String?
+
+    @Query(
+        "SELECT length(source_hint_json) FROM download_operation " +
+            "WHERE operation_id = :operationId AND updated_at_ms = :updatedAtMs " +
+            "LIMIT 1"
+    )
+    suspend fun findSourceHintJsonLength(
+        operationId: String,
+        updatedAtMs: Long
+    ): Int?
+
+    @Query(
+        "SELECT substr(resume_json, :startOffset, :chunkLength) " +
+            "FROM download_operation WHERE operation_id = :operationId " +
+            "AND updated_at_ms = :updatedAtMs LIMIT 1"
+    )
+    suspend fun findResumeJsonChunk(
+        operationId: String,
+        startOffset: Int,
+        chunkLength: Int,
+        updatedAtMs: Long
+    ): String?
+
+    @Query(
+        "SELECT length(resume_json) FROM download_operation " +
+            "WHERE operation_id = :operationId AND updated_at_ms = :updatedAtMs " +
+            "LIMIT 1"
+    )
+    suspend fun findResumeJsonLength(
+        operationId: String,
+        updatedAtMs: Long
+    ): Int?
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation " +
+            "WHERE library_id = :libraryId AND stable_key = :stableKey " +
+            "AND state IN (:states) " +
+            "ORDER BY updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
+    )
+    suspend fun findAllHeadersByStableKey(
+        libraryId: String,
+        stableKey: String,
+        states: List<String>
+    ): List<DownloadOperationHeaderRow>
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation WHERE stable_key = :stableKey " +
+            "AND state IN (:states) " +
+            "ORDER BY updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
+    )
+    suspend fun findAllHeadersByStableKeyAnyLibrary(
+        stableKey: String,
+        states: List<String>
+    ): List<DownloadOperationHeaderRow>
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation WHERE operation_id IN (:operationIds)"
+    )
+    suspend fun findAllHeadersByOperationIds(
+        operationIds: List<String>
+    ): List<DownloadOperationHeaderRow>
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation " +
+            "WHERE library_id = :libraryId AND stable_key IN (:stableKeys) " +
+            "AND state IN (:states) " +
+            "ORDER BY stable_key ASC, updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
+    )
+    suspend fun findAllHeadersByStableKeys(
+        libraryId: String,
+        stableKeys: List<String>,
+        states: List<String>
+    ): List<DownloadOperationHeaderRow>
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation WHERE stable_key IN (:stableKeys) " +
+            "AND state IN (:states) " +
+            "ORDER BY stable_key ASC, updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
+    )
+    suspend fun findAllHeadersByStableKeysAnyLibrary(
+        stableKeys: List<String>,
+        states: List<String>
+    ): List<DownloadOperationHeaderRow>
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation " +
+            "WHERE library_id = :libraryId AND state IN (:states) " +
+            "AND operation_id > :afterOperationId " +
+            "ORDER BY operation_id ASC LIMIT :limit"
+    )
+    suspend fun findByStatesInLibraryAfterOperationIdHeaders(
+        libraryId: String,
+        states: List<String>,
+        afterOperationId: String,
+        limit: Int
+    ): List<DownloadOperationHeaderRow>
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation WHERE state IN (:states) " +
+            "AND operation_id > :afterOperationId " +
+            "ORDER BY operation_id ASC LIMIT :limit"
+    )
+    suspend fun findByStatesAfterOperationIdHeaders(
+        states: List<String>,
+        afterOperationId: String,
+        limit: Int
+    ): List<DownloadOperationHeaderRow>
+
+    @Query("SELECT state FROM download_operation WHERE operation_id = :operationId LIMIT 1")
+    suspend fun findState(operationId: String): String?
 
     @Query("SELECT * FROM download_operation WHERE operation_id IN (:operationIds)")
     suspend fun findAllByOperationIds(operationIds: List<String>): List<DownloadOperationEntity>
@@ -164,6 +325,28 @@ internal interface DownloadOperationDao {
         limit: Int
     ): List<DownloadOperationEntity>
 
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation WHERE state IN (:states) " +
+            "AND stop_requested_by_user = 0 AND (" +
+            ":afterQueueOrder IS NULL OR queue_order > :afterQueueOrder OR " +
+            "(queue_order = :afterQueueOrder AND updated_at_ms > :afterUpdatedAtMs) OR " +
+            "(queue_order = :afterQueueOrder AND updated_at_ms = :afterUpdatedAtMs " +
+            "AND operation_id > :afterOperationId)) " +
+            "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
+            "LIMIT :limit"
+    )
+    suspend fun findSchedulableForPumpAfterCursorHeaders(
+        states: List<String>,
+        afterQueueOrder: Int?,
+        afterUpdatedAtMs: Long?,
+        afterOperationId: String?,
+        limit: Int
+    ): List<DownloadOperationHeaderRow>
+
     /** 跨目录恢复也必须使用稳定游标，不能依赖会变化的更新时间排序 */
     @Query(
         "SELECT * FROM download_operation " +
@@ -192,6 +375,25 @@ internal interface DownloadOperationDao {
         states: List<String>,
         limit: Int
     ): List<DownloadOperationEntity>
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation WHERE state IN (:states) AND (" +
+            "(state IN ('PENDING_QUEUE', 'QUEUED', 'WAITING_STORAGE_MUTATION', " +
+            "'RUNNING', 'RETRYABLE') AND stop_requested_by_user = 0) OR " +
+            "state = 'STOPPED' OR " +
+            "(state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 0)) " +
+            "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
+            "LIMIT :limit"
+    )
+    suspend fun findCancellationCandidatesPageHeaders(
+        states: List<String>,
+        limit: Int
+    ): List<DownloadOperationHeaderRow>
 
     @Query(
         "SELECT operation_id FROM download_operation " +
@@ -240,7 +442,25 @@ internal interface DownloadOperationDao {
     ): List<DownloadOperationIdentityRow>
 
     @Query(
-        "UPDATE download_operation SET state = :state, updated_at_ms = :updatedAtMs, " +
+        "SELECT operation_id, stable_key, state, created_at_ms, " +
+            "stop_requested_by_user FROM download_operation " +
+            "WHERE state IN (:states) AND operation_id > :afterOperationId " +
+            "AND ((state IN ('PENDING_QUEUE', 'QUEUED', " +
+            "'WAITING_STORAGE_MUTATION', 'RUNNING', 'RETRYABLE') " +
+            "AND stop_requested_by_user = 0) OR state = 'STOPPED' OR " +
+            "(state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 0)) " +
+            "ORDER BY operation_id ASC LIMIT :limit"
+    )
+    suspend fun findCancellationIdentitiesAfterOperationId(
+        states: List<String>,
+        afterOperationId: String,
+        limit: Int
+    ): List<DownloadCancellationIdentityRow>
+
+    @Query(
+        "UPDATE download_operation SET state = :state, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
             "last_error_code = :errorCode WHERE operation_id = :operationId"
     )
     suspend fun updateState(
@@ -252,7 +472,8 @@ internal interface DownloadOperationDao {
 
     @Query(
         "UPDATE download_operation SET state = :state, " +
-            "updated_at_ms = :updatedAtMs, last_error_code = :errorCode " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
+            "last_error_code = :errorCode " +
             "WHERE operation_id = :operationId AND state IN (:expectedStates) " +
             "AND stop_requested_by_user = 0"
     )
@@ -265,7 +486,8 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
-        "UPDATE download_operation SET state = 'INVALID', updated_at_ms = :updatedAtMs, " +
+        "UPDATE download_operation SET state = 'INVALID', " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
             "last_error_code = 'INVALID_OPERATION_PAYLOAD' WHERE operation_id = :operationId " +
             "AND state IN (:expectedStates)"
     )
@@ -276,8 +498,22 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
+        "UPDATE download_operation SET state = 'INVALID', " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :invalidatedAtMs), " +
+            "last_error_code = 'INVALID_OPERATION_PAYLOAD' WHERE operation_id = :operationId " +
+            "AND state = :expectedState AND updated_at_ms = :expectedUpdatedAtMs"
+    )
+    suspend fun invalidateMalformedPayloadAtVersion(
+        operationId: String,
+        expectedState: String,
+        expectedUpdatedAtMs: Long,
+        invalidatedAtMs: Long
+    ): Int
+
+    @Query(
         "UPDATE download_operation SET state = :state, " +
-            "updated_at_ms = :updatedAtMs, last_error_code = :errorCode " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
+            "last_error_code = :errorCode " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +
             "AND state IN (:expectedStates) AND stop_requested_by_user = 0"
     )
@@ -292,7 +528,8 @@ internal interface DownloadOperationDao {
 
     @Query(
         "UPDATE download_operation SET library_id = :libraryId, state = 'QUEUED', " +
-            "updated_at_ms = :updatedAtMs, last_error_code = NULL " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
+            "last_error_code = NULL " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +
             "AND state = 'WAITING_STORAGE_MUTATION' " +
             "AND stop_requested_by_user = 0"
@@ -306,7 +543,7 @@ internal interface DownloadOperationDao {
 
     @Query(
         "UPDATE download_operation SET library_id = :libraryId, " +
-            "updated_at_ms = :updatedAtMs, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
             "last_error_code = CASE WHEN last_error_code = 'ROOT_CHANGED' " +
             "THEN NULL ELSE last_error_code END, " +
             "host_process_token = NULL, host_admitted_at_ms = NULL " +
@@ -324,7 +561,7 @@ internal interface DownloadOperationDao {
 
     @Query(
         "UPDATE download_operation SET library_id = :libraryId, " +
-            "updated_at_ms = :updatedAtMs, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
             "last_error_code = CASE WHEN last_error_code = 'ROOT_CHANGED' " +
             "THEN NULL ELSE last_error_code END, " +
             "host_process_token = NULL, host_admitted_at_ms = NULL " +
@@ -339,7 +576,8 @@ internal interface DownloadOperationDao {
 
     @Query(
         "UPDATE download_operation SET source_hint_json = :sourceHintJson, " +
-            "updated_at_ms = :updatedAtMs WHERE operation_id = :operationId " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
+            "WHERE operation_id = :operationId " +
             "AND stable_key = :stableKey"
     )
     suspend fun updateRequestPayload(
@@ -352,7 +590,8 @@ internal interface DownloadOperationDao {
     @Query(
         "UPDATE download_operation SET source_hint_json = :sourceHintJson, " +
             "bytes_written = 0, total_bytes = NULL, resume_json = NULL, retry_count = 0, " +
-            "next_retry_at_ms = NULL, last_error_code = NULL, updated_at_ms = :updatedAtMs " +
+            "next_retry_at_ms = NULL, last_error_code = NULL, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
             "WHERE operation_id = :operationId AND library_id = :libraryId " +
             "AND stable_key = :stableKey AND state IN (:expectedStates) " +
             "AND stop_requested_by_user = 0"
@@ -591,10 +830,31 @@ internal interface DownloadOperationDao {
     suspend fun findUserStopped(): List<DownloadOperationEntity>
 
     @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation WHERE stop_requested_by_user = 1"
+    )
+    suspend fun findUserStoppedHeaders(): List<DownloadOperationHeaderRow>
+
+    @Query(
         "SELECT * FROM download_operation " +
             "WHERE library_id = :libraryId AND stop_requested_by_user = 1"
     )
     suspend fun findUserStoppedInLibrary(libraryId: String): List<DownloadOperationEntity>
+
+    @Query(
+        "SELECT operation_id, stable_key, library_id, state, queue_order, " +
+            "staging_dir_name, bytes_written, total_bytes, retry_count, " +
+            "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "FROM download_operation " +
+            "WHERE library_id = :libraryId AND stop_requested_by_user = 1"
+    )
+    suspend fun findUserStoppedInLibraryHeaders(
+        libraryId: String
+    ): List<DownloadOperationHeaderRow>
 
     @Query(
         "UPDATE download_operation SET state = 'CORE_COMMITTED', " +
