@@ -1,11 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
-import androidx.core.app.NotificationCompat
 import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
 import androidx.work.Constraints
@@ -26,7 +23,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.security.MessageDigest
 import java.util.concurrent.Executor
@@ -145,7 +141,6 @@ class ForegroundDownloadWorker(
         private const val WORK_NAME_PREFIX = "download_execution_"
         private const val WORK_TAG_PREFIX = "download_execution_operation_"
         private const val ALL_DOWNLOAD_WORK_TAG = "download_execution_all"
-        private const val CHANNEL_ID = "download_execution"
         internal val fallbackExistingWorkPolicy = ExistingWorkPolicy.KEEP
         internal val pumpExistingWorkPolicy = ExistingWorkPolicy.APPEND_OR_REPLACE
         private val pumpScheduleCoordinator = DownloadPumpScheduleCoordinator()
@@ -540,27 +535,7 @@ private fun createForegroundInfo(
     context: Context,
     operationId: String
 ): ForegroundInfo {
-    val notificationManager =
-        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    notificationManager.createNotificationChannel(
-        NotificationChannel(
-            "download_execution",
-            context.getString(R.string.download_execution_notification_channel),
-            NotificationManager.IMPORTANCE_LOW
-        )
-    )
-    val notification = NotificationCompat.Builder(context, "download_execution")
-        .setSmallIcon(R.drawable.ic_notification_small)
-        .setContentTitle(context.getString(R.string.download_execution_notification_title))
-        .setContentText(
-            context.getString(
-                R.string.download_execution_notification_content,
-                operationId
-            )
-        )
-        .setOngoing(true)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
-        .build()
+    val notification = buildDownloadExecutionNotification(context)
     val notificationId = DownloadExecutionNotificationIds.foreground(operationId)
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         ForegroundInfo(

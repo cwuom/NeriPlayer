@@ -189,9 +189,10 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
 
         assertTrue(result.canSwitchDirectory)
         assertFalse(temporary.exists())
+        val targetRoot = treeRoot(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID)
         assertArrayEquals(
             fixture.audioBytes,
-            readDocument(requireTreeFile(treeRoot(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID), fixture.audio.name))
+            readDocument(requireTreeFile(targetRoot, fixture.audio.name))
         )
     }
 
@@ -206,8 +207,12 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
 
         val result = ManagedDownloadStorage.migrateManagedDownloads(
             context = appContext,
-            fromDirectoryUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.SOURCE_ROOT_ID).toString(),
-            toDirectoryUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.TARGET_ROOT_ID).toString()
+            fromDirectoryUri = treeUri(
+                ManagedDownloadMigrationTestDocumentProvider.SOURCE_ROOT_ID
+            ).toString(),
+            toDirectoryUri = treeUri(
+                ManagedDownloadMigrationTestDocumentProvider.TARGET_ROOT_ID
+            ).toString()
         )
 
         assertTrue(result.canSwitchDirectory)
@@ -260,7 +265,9 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
         val result = ManagedDownloadStorage.migrateManagedDownloads(
             context = context,
             fromDirectoryUri = null,
-            toDirectoryUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID).toString()
+            toDirectoryUri = treeUri(
+                ManagedDownloadMigrationTestDocumentProvider.ROOT_ID
+            ).toString()
         )
 
         assertTrue(result.canSwitchDirectory)

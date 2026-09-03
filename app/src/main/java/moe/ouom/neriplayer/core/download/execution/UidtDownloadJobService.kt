@@ -1,8 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.job.JobInfo
 import android.app.job.JobParameters
 import android.app.job.JobScheduler
@@ -13,7 +11,6 @@ import android.os.Build
 import android.os.PersistableBundle
 import android.os.SystemClock
 import androidx.annotation.RequiresApi
-import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
@@ -24,7 +21,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
 import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_DISPATCH_WINDOW
@@ -56,7 +52,7 @@ class UidtDownloadJobService : JobService() {
             setNotification(
                 params,
                 DownloadExecutionNotificationIds.uidt(operationId),
-                buildNotification(operationId),
+                buildNotification(),
                 JOB_END_NOTIFICATION_POLICY_REMOVE
             )
         } catch (error: Throwable) {
@@ -188,33 +184,12 @@ class UidtDownloadJobService : JobService() {
         super.onDestroy()
     }
 
-    private fun buildNotification(operationId: String): Notification {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.download_execution_notification_channel),
-                NotificationManager.IMPORTANCE_LOW
-            )
-        )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_small)
-            .setContentTitle(getString(R.string.download_execution_notification_title))
-            .setContentText(
-                getString(
-                    R.string.download_execution_notification_content,
-                    operationId
-                )
-            )
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-    }
+    private fun buildNotification(): Notification =
+        buildDownloadExecutionNotification(this)
 
     companion object {
         private const val TAG = "NERI-DownloadUidt"
         internal const val OPERATION_ID_KEY = "operation_id"
-        private const val CHANNEL_ID = "download_execution"
         internal const val UIDT_JOB_ID_MIN = 100_000
         internal const val UIDT_JOB_ID_MAX = 900_099_999
         internal const val UIDT_SCHEDULED_AT_ELAPSED_MS_KEY = "scheduled_at_elapsed_ms"

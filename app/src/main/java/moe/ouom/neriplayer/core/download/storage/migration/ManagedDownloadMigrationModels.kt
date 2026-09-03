@@ -335,7 +335,7 @@ internal data class StoredWriteResult(
     /**
      * 源文件仍是权威时保留确定性备份，等待替换目标校验完成
      * 备份最终由迁移日志负责删除
-    */
+     */
     val replacementBackup: ManagedDownloadStorage.StoredEntry? = null,
     val sourceAuthoritative: Boolean = false,
     /** 原子写入已完成且提交长度与实际输出一致，可复用源摘要 */

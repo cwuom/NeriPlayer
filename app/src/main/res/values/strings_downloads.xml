@@ -83,8 +83,8 @@
     <string name="download_cancelled_message">下载已取消</string>
     <string name="download_failed_message">下载失败</string>
     <string name="download_execution_notification_channel">下载任务</string>
-    <string name="download_execution_notification_title">正在下载</string>
-    <string name="download_execution_notification_content">操作 %1$s 正在执行</string>
+    <string name="download_execution_notification_title">下载中</string>
+    <string name="download_execution_notification_content">后台正在处理下载任务</string>
     <string name="download_progress_format" formatted="false">下载进度: %1$d/%2$d</string>
     <string name="download_progress_with_percentage" formatted="false">下载进度: %1$d/%2$d · %3$d%%</string>
     <string name="download_current_song">正在下载: %s</string>

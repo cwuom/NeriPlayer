@@ -84,7 +84,7 @@
     <string name="download_failed_message">Download failed</string>
     <string name="download_execution_notification_channel">Downloads</string>
     <string name="download_execution_notification_title">Downloading</string>
-    <string name="download_execution_notification_content">Operation %1$s is running</string>
+    <string name="download_execution_notification_content">Download tasks are running in the background</string>
     <string name="download_progress_format" formatted="false">Download progress: %1$d/%2$d</string>
     <string name="download_progress_with_percentage" formatted="false">Download progress: %1$d/%2$d · %3$d%%</string>
     <string name="download_current_song">Downloading: %s</string>
