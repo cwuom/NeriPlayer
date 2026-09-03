@@ -1031,6 +1031,7 @@ object GlobalDownloadManager {
     )
     private val downloadClearVisibility = DownloadClearVisibility()
     private val deferredTaskClearRecoveryScheduled = AtomicBoolean(false)
+    private val taskClearHardDeadlineScheduled = AtomicBoolean(false)
     private val deferredFullDeleteRecoveryScheduled = AtomicBoolean(false)
     private val deferredFullDeleteProviderCleanupRecoveryLock = Any()
     private var deferredFullDeleteProviderCleanup: Deferred<DownloadClearSettlement>? = null
@@ -1891,6 +1892,7 @@ object GlobalDownloadManager {
                         // 清空的是任务展示，不是已经提交的音频，先恢复 catalog
                         // 防止进程死亡后的瞬时空扫描把可播放歌曲变成白色条目
                         restorePersistedDownloadedSongs(appContext)
+                        scheduleTaskClearHardDeadline(appContext)
                         requestAllDownloadTaskCancellation(
                             purpose = clearPurpose,
                             forceConvergence = true
@@ -14478,6 +14480,9 @@ object GlobalDownloadManager {
                     downloadAdmissionGate.releaseFailedClear(clearToken)
                     return@launch
                 }
+                if (purpose == DownloadClearPurpose.TASK_PROGRESS) {
+                    scheduleTaskClearHardDeadline(appContext)
+                }
                 downloadClearVisibility.markFencePersisted(clearToken)
                 if (!startFastClearUndispatched) {
                     persistDownloadClearProgress(appContext, clearToken)
@@ -14721,6 +14726,20 @@ object GlobalDownloadManager {
                     }
 
                     while (true) {
+                        if (!PersistentDownloadClearFenceStore.isTaskClearActive(appContext)) {
+                            return@runClear
+                        }
+                        if (
+                            purpose == DownloadClearPurpose.TASK_PROGRESS &&
+                            hasDownloadClearExceededDeadline(
+                                requestedAtMs = PersistentDownloadClearFenceStore
+                                    .requestedAtMs(appContext),
+                                nowMs = System.currentTimeMillis()
+                            )
+                        ) {
+                            forceReleaseExpiredTaskClear(appContext)
+                            return@runClear
+                        }
                         try {
                             clearSongKeys += clearOwnerStableKeys
                             val lateVisibleTasks = taskStore.currentTasks().filter { task ->
@@ -15150,6 +15169,9 @@ object GlobalDownloadManager {
             .toSet()
         songKeys.forEach(::markSongCancelled)
         clearBatchDownloadPresentation()
+        runDownloadClearStopAction("取消共享下载泵") {
+            DownloadExecutionHosts.cancelAllOwned(context)
+        }
         // 先写入批量取消状态，让任务列表在交互预算内立即收敛。持久围栏
         // 已经生效，宿主即使有极短暂的尾部写入也只能留下可恢复凭据
         val persistedCancellationCount = withTimeoutOrNull(
@@ -15249,6 +15271,9 @@ object GlobalDownloadManager {
         context: Context,
         purpose: DownloadClearPurpose = DownloadClearPurpose.TASK_PROGRESS
     ) {
+        if (purpose == DownloadClearPurpose.TASK_PROGRESS) {
+            scheduleTaskClearHardDeadline(context)
+        }
         if (!deferredTaskClearRecoveryScheduled.compareAndSet(false, true)) {
             return
         }
@@ -15256,11 +15281,23 @@ object GlobalDownloadManager {
         scope.launch {
             try {
                 delay(100L)
+                if (
+                    purpose == DownloadClearPurpose.TASK_PROGRESS &&
+                    forceReleaseExpiredTaskClear(appContext)
+                ) {
+                    return@launch
+                }
                 if (finishReleasedTaskClearState(appContext)) {
                     return@launch
                 }
                 var attempt = 0
                 while (PersistentDownloadClearFenceStore.isActive(appContext)) {
+                    if (
+                        purpose == DownloadClearPurpose.TASK_PROGRESS &&
+                        forceReleaseExpiredTaskClear(appContext)
+                    ) {
+                        return@launch
+                    }
                     attempt++
                     NPLogger.d(
                         TAG,
@@ -15305,6 +15342,110 @@ object GlobalDownloadManager {
                 deferredTaskClearRecoveryScheduled.set(false)
             }
         }
+    }
+
+    private fun scheduleTaskClearHardDeadline(context: Context) {
+        if (!taskClearHardDeadlineScheduled.compareAndSet(false, true)) {
+            return
+        }
+        val appContext = context.applicationContext
+        scope.launch {
+            var stopRequested = false
+            try {
+                while (true) {
+                    if (
+                        !PersistentDownloadClearFenceStore.isTaskClearActive(appContext) ||
+                        PersistentDownloadClearFenceStore.activePurpose(appContext) !=
+                            DownloadClearPurpose.TASK_PROGRESS
+                    ) {
+                        return@launch
+                    }
+                    val requestedAtMs = PersistentDownloadClearFenceStore.requestedAtMs(
+                        appContext
+                    )
+                    val remainingMs = if (requestedAtMs == null) {
+                        0L
+                    } else {
+                        DOWNLOAD_CLEAR_HARD_DEADLINE_MS -
+                            (System.currentTimeMillis() - requestedAtMs)
+                    }
+                    if (remainingMs > 0L) {
+                        delay(remainingMs)
+                        continue
+                    }
+                    if (
+                        forceReleaseExpiredTaskClear(
+                            context = appContext,
+                            stopExecution = !stopRequested
+                        )
+                    ) {
+                        return@launch
+                    }
+                    stopRequested = true
+                    delay(100L)
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                NPLogger.w(
+                    TAG,
+                    "下载清空硬截止恢复失败，保留持久栅栏等待下次启动: ${error.message}",
+                    error
+                )
+            } finally {
+                taskClearHardDeadlineScheduled.set(false)
+            }
+        }
+    }
+
+    private fun forceReleaseExpiredTaskClear(
+        context: Context,
+        stopExecution: Boolean = true
+    ): Boolean {
+        val appContext = context.applicationContext
+        if (
+            !PersistentDownloadClearFenceStore.isTaskClearActive(appContext) ||
+            PersistentDownloadClearFenceStore.activePurpose(appContext) !=
+                DownloadClearPurpose.TASK_PROGRESS
+        ) {
+            return false
+        }
+        val requestedAtMs = PersistentDownloadClearFenceStore.requestedAtMs(appContext)
+        if (
+            requestedAtMs != null &&
+            !hasDownloadClearExceededDeadline(
+                requestedAtMs = requestedAtMs,
+                nowMs = System.currentTimeMillis()
+            )
+        ) {
+            return false
+        }
+        if (stopExecution) {
+            stopDownloadExecutionImmediately(
+                context = appContext,
+                reason = "download clear hard deadline"
+            )
+        }
+        if (!PersistentDownloadClearFenceStore.forceReleaseIfExpired(appContext)) {
+            return false
+        }
+        downloadAdmissionGate.forceReleaseClear()
+        taskStore.clearAllTasks()
+        val clearedSongCount = synchronized(cancelledSongKeys) {
+            val count = cancelledSongKeys.size
+            cancelledSongKeys.clear()
+            count
+        }
+        clearPersistedDownloadClearProgress(appContext)
+        finishReleasedTaskClearState(appContext)
+        scheduleCatalogReconcile(appContext, forceRefresh = true)
+        NPLogger.w(
+            TAG,
+            "下载清空达到 3 秒硬截止，先释放任务栅栏并恢复本地播放: " +
+                "cancelledSongs=$clearedSongCount, " +
+                "requestedAtMs=${requestedAtMs ?: 0L}"
+        )
+        return true
     }
 
     private fun finishReleasedTaskClearState(context: Context): Boolean {
@@ -16186,6 +16327,13 @@ object GlobalDownloadManager {
         awaitProviderCleanup: Boolean = true
     ): DownloadClearSettlement {
         val appContext = context.applicationContext
+        if (!PersistentDownloadClearFenceStore.isTaskClearActive(appContext)) {
+            return DownloadClearSettlement(
+                activeSongKeys = emptySet(),
+                activeOperationIds = emptySet(),
+                batchJobsSettled = true
+            )
+        }
         val persistedKeys = cancelledSongKeysSnapshot
             .filter(String::isNotBlank)
             .toMutableSet()

@@ -63,6 +63,17 @@ class ForegroundDownloadWorker(
         ) {
             return@withContext Result.success()
         }
+        if (
+            operationId == null &&
+            PersistentDownloadClearFenceStore.isActive(applicationContext)
+        ) {
+            markPumpFinished(
+                context = applicationContext,
+                generation = pumpGeneration,
+                workWillRetry = false
+            )
+            return@withContext Result.success()
+        }
         var enteredHostExecution = false
         try {
             setForeground(createForegroundInfo(applicationContext, executionId))
@@ -155,6 +166,9 @@ class ForegroundDownloadWorker(
             operationId: String
         ): Boolean {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+            if (PersistentDownloadClearFenceStore.isActive(context.applicationContext)) {
+                return false
+            }
             if (shouldRouteFallbackToSharedPump(Build.VERSION.SDK_INT)) {
                 return schedulePump(
                     context = context,
@@ -196,10 +210,19 @@ class ForegroundDownloadWorker(
             existingWorkPolicy: ExistingWorkPolicy,
             initialDelayMs: Long
         ): Boolean {
+            val appContext = context.applicationContext
+            if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+                pumpScheduleCoordinator.invalidate()
+                return false
+            }
             val generation = pumpScheduleCoordinator.request() ?: return true
+            if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+                pumpScheduleCoordinator.invalidate()
+                return false
+            }
             val delayMs = initialDelayMs.coerceAtLeast(0L)
             return runCatching {
-                val operation = WorkManager.getInstance(context.applicationContext)
+                val operation = WorkManager.getInstance(appContext)
                     .enqueueUniqueWork(
                         PUMP_WORK_NAME,
                         existingWorkPolicy,
@@ -209,14 +232,14 @@ class ForegroundDownloadWorker(
                         )
                     )
                 observePumpEnqueue(
-                    context = context.applicationContext,
+                    context = appContext,
                     generation = generation,
                     operation = operation
                 )
                 true
             }.onFailure { error ->
                 handlePumpEnqueueFailure(
-                    context = context.applicationContext,
+                    context = appContext,
                     generation = generation,
                     error = error
                 )

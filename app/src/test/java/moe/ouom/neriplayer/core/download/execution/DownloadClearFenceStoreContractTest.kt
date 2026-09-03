@@ -157,6 +157,23 @@ class DownloadClearFenceStoreContractTest {
         )
     }
 
+    @Test
+    fun `expired task fence has an explicit non blocking release path`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadClearFenceStore.kt"
+        ).readText()
+        val body = methodBody(source, "forceReleaseIfExpired")
+        assertTrue(body.contains("hasDownloadClearExceededDeadline"))
+        assertTrue(
+            body.contains(
+                "activePurposeLocked(context) != DownloadClearPurpose.TASK_PROGRESS"
+            )
+        )
+        assertTrue(body.contains("remove(ACTIVE_KEY)"))
+        assertTrue(body.contains("clearedRequestEpoch.accumulateAndGet"))
+    }
+
     private fun methodBody(
         source: String,
         methodName: String,

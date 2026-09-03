@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import java.util.concurrent.atomic.AtomicLong
+import moe.ouom.neriplayer.core.download.DOWNLOAD_CLEAR_HARD_DEADLINE_MS
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
+import moe.ouom.neriplayer.core.download.hasDownloadClearExceededDeadline
 
 /** 清空任务栅栏持有的 operation 和歌曲身份快照 */
 internal data class DownloadClearOwnership(
@@ -156,6 +158,57 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
                     ?.getLong(REQUESTED_AT_MS_KEY, 0L)
                     ?.takeIf { it > 0L }
             }.getOrNull()
+        }
+    }
+
+    /** 到达硬截止后释放任务栅栏，受保护的 pending 证据交给后台继续处理 */
+    internal fun forceReleaseIfExpired(
+        context: Context,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        return try {
+            synchronized(schedulingLock) {
+                hydratePersistedEpochLocked(context)
+                val preferences = preferencesOrNull(context)
+                    ?: return@synchronized false
+                if (
+                    !isPersistedFenceActive(context) ||
+                    activePurposeLocked(context) != DownloadClearPurpose.TASK_PROGRESS ||
+                    PersistentDownloadedSongDeleteIntentStore.hasPending(context)
+                ) {
+                    return@synchronized false
+                }
+                val requestedAt = preferences.getLong(REQUESTED_AT_MS_KEY, 0L)
+                if (
+                    requestedAt > 0L &&
+                    !hasDownloadClearExceededDeadline(
+                        requestedAtMs = requestedAt,
+                        nowMs = nowMs,
+                        deadlineMs = DOWNLOAD_CLEAR_HARD_DEADLINE_MS
+                    )
+                ) {
+                    return@synchronized false
+                }
+                val released = commitFenceEdit(preferences) {
+                    remove(ACTIVE_KEY)
+                    remove(REQUESTED_AT_MS_KEY)
+                    remove(PURPOSE_KEY)
+                    remove(OWNER_OPERATION_IDS_KEY)
+                    remove(OWNER_STABLE_KEYS_KEY)
+                    remove(OWNER_CAPTURE_COMPLETE_KEY)
+                }
+                if (released) {
+                    val releasedEpoch = maxOf(clearRequestEpoch.get(), persistedEpoch)
+                    clearedRequestEpoch.accumulateAndGet(releasedEpoch) {
+                        current, candidate -> maxOf(current, candidate)
+                    }
+                    requestedOwnership = null
+                    requestedPurpose = DownloadClearPurpose.TASK_PROGRESS
+                }
+                released
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 

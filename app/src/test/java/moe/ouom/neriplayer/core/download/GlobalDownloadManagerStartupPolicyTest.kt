@@ -30,6 +30,28 @@ import moe.ouom.neriplayer.data.model.SongItem
 class GlobalDownloadManagerStartupPolicyTest {
 
     @Test
+    fun `clear hard deadline is inclusive and unknown timestamps are not expired`() {
+        assertFalse(
+            hasDownloadClearExceededDeadline(
+                requestedAtMs = 1_000L,
+                nowMs = 3_999L
+            )
+        )
+        assertTrue(
+            hasDownloadClearExceededDeadline(
+                requestedAtMs = 1_000L,
+                nowMs = 4_000L
+            )
+        )
+        assertFalse(
+            hasDownloadClearExceededDeadline(
+                requestedAtMs = null,
+                nowMs = 9_000L
+            )
+        )
+    }
+
+    @Test
     fun `clear progress persistence is throttled but flushes boundaries`() {
         assertTrue(
             shouldPersistDownloadClearProgress(

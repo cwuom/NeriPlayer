@@ -158,6 +158,15 @@ internal class DownloadAdmissionGate {
     fun releaseFailedClear(token: ClearToken): Boolean =
         detachClearForDurableRecovery(token)
 
+    /** 持久清空到达硬截止后，解除仍在等待物理善后的本进程 gate */
+    fun forceReleaseClear(): Boolean {
+        val completion = synchronized(stateLock) {
+            activeClear?.also { activeClear = null }
+        } ?: return false
+        completion.complete(Unit)
+        return true
+    }
+
     private fun completedDeferred(): CompletableDeferred<Unit> =
         CompletableDeferred<Unit>().also { it.complete(Unit) }
 

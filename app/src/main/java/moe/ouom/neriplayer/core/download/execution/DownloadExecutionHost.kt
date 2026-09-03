@@ -1606,11 +1606,17 @@ class DefaultDownloadExecutionHost(
         context: Context
     ): DownloadExecutionPumpResult = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
+        if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+            return@withContext DownloadExecutionPumpResult.Completed
+        }
         var completedBatches = 0
         var sawRetry = false
         var waitedForPendingUidtGrace = false
         val attemptedOperationIds = mutableSetOf<String>()
         while (completedBatches < PUMP_MAX_BATCHES_PER_RUN) {
+            if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+                return@withContext DownloadExecutionPumpResult.Completed
+            }
             val dispatchWindow = configuredDispatchWindow(appContext)
             val selection = collectPumpCandidates(
                 context = appContext,
