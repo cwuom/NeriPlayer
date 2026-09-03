@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.filled.Usb
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -29,7 +30,9 @@ import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +57,7 @@ import moe.ouom.neriplayer.core.player.audio.requiresDisconnectConfirmation
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.playWhenReadyChangeReasonName
+import moe.ouom.neriplayer.core.player.debug.playbackSuppressionReasonName
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.engine.PlaybackVolumeNormalizationState
@@ -134,6 +138,8 @@ import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
+import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackRuntimeWatchdog
+import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidateForRecovery
 import moe.ouom.neriplayer.data.model.sameIdentityAs
@@ -147,6 +153,37 @@ import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
 import java.io.File
 
 private const val MEDIA_CACHE_DIRECTORY_NAME = "media_cache"
+
+private fun PlayerManager.logPlaybackStateTransition(event: String) {
+    val playerSnapshot = if (isPlayerInitialized()) {
+        val positionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
+            .getOrDefault(-1L)
+        val bufferedMs = runCatching { player.totalBufferedDuration }
+            .getOrDefault(-1L)
+        "state=${playbackStateName(player.playbackState)}, " +
+            "isPlaying=${player.isPlaying}, playWhenReady=${player.playWhenReady}, " +
+            "suppression=${playbackSuppressionReasonName(player.playbackSuppressionReason)}, " +
+            "positionMs=$positionMs, bufferedMs=$bufferedMs"
+    } else {
+        "state=UNINITIALIZED"
+    }
+    NPLogger.d(
+        "NERI-PlaybackState",
+        "event=$event, requestToken=$playbackRequestToken, " +
+            "loadedToken=$loadedMediaRequestToken, " +
+            "resumeRequested=$resumePlaybackRequested, " +
+            "pending=${isPendingMediaLoadActive()}, " +
+            "routeMute=${audioRouteMuteSuppressedFlow.value}, $playerSnapshot"
+    )
+}
+
+private fun Throwable.playbackDiagnosticSummary(): String {
+    return message
+        ?.replace(Regex("https?://\\S+"), "<redacted-url>")
+        ?.replace('\n', ' ')
+        ?.take(240)
+        .orEmpty()
+}
 
 private fun Throwable.isSimpleCacheFolderLocked(): Boolean {
     return generateSequence(this) { it.cause }
@@ -447,6 +484,79 @@ internal fun PlayerManager.initializeImpl(
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(buildAudioLoadControl())
             .build()
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onAudioInputFormatChanged(
+                eventTime: AnalyticsListener.EventTime,
+                format: Format,
+                decoderReuseEvaluation: DecoderReuseEvaluation?
+            ) {
+                NPLogger.i(
+                    "NERI-PlaybackDecoder",
+                    "audio input format: sampleMimeType=${format.sampleMimeType}, " +
+                        "containerMimeType=${format.containerMimeType}, codecs=${format.codecs}, " +
+                        "sampleRate=${format.sampleRate}, channels=${format.channelCount}, " +
+                        "pcmEncoding=${format.pcmEncoding}"
+                )
+            }
+
+            override fun onAudioDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long
+            ) {
+                NPLogger.i(
+                    "NERI-PlaybackDecoder",
+                    "audio decoder initialized: name=$decoderName, " +
+                        "durationMs=$initializationDurationMs"
+                )
+            }
+
+            override fun onAudioUnderrun(
+                eventTime: AnalyticsListener.EventTime,
+                bufferSize: Int,
+                bufferSizeMs: Long,
+                elapsedSinceLastFeedMs: Long
+            ) {
+                NPLogger.w(
+                    "NERI-PlaybackDecoder",
+                    "audio underrun: bufferSize=$bufferSize, bufferMs=$bufferSizeMs, " +
+                        "elapsedSinceFeedMs=$elapsedSinceLastFeedMs"
+                )
+            }
+
+            override fun onAudioSinkError(
+                eventTime: AnalyticsListener.EventTime,
+                audioSinkError: Exception
+            ) {
+                NPLogger.e(
+                    "NERI-PlaybackDecoder",
+                    "audio sink error: type=${audioSinkError::class.java.simpleName}, " +
+                        "message=${audioSinkError.playbackDiagnosticSummary()}"
+                )
+            }
+
+            override fun onAudioCodecError(
+                eventTime: AnalyticsListener.EventTime,
+                audioCodecError: Exception
+            ) {
+                NPLogger.e(
+                    "NERI-PlaybackDecoder",
+                    "audio codec error: type=${audioCodecError::class.java.simpleName}, " +
+                        "message=${audioCodecError.playbackDiagnosticSummary()}"
+                )
+            }
+
+            override fun onAudioDecoderReleased(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String
+            ) {
+                NPLogger.i(
+                    "NERI-PlaybackDecoder",
+                    "audio decoder released: name=$decoderName"
+                )
+            }
+        })
         applyInitialPlaybackWakeMode()
         _playbackSoundState.value = playbackEffectsController.attachPlayer(player)
         applyPlaybackSoundConfig(playbackSoundConfig, persist = false)
@@ -496,7 +606,6 @@ internal fun PlayerManager.initializeImpl(
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 NPLogger.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
-                cancelPlaybackStartupWatchdog(reason = "player_error")
 
                 if (!shouldAcceptPlayerCallback(
                         playbackRequestToken,
@@ -510,6 +619,9 @@ internal fun PlayerManager.initializeImpl(
                     )
                     return
                 }
+
+                cancelPlaybackStartupWatchdog(reason = "player_error")
+                resetPlaybackRuntimeWatchdog(reason = "player_error")
 
                 if (shouldAdvanceAfterStuckTrackEnd(error, resumePlaybackRequested)) {
                     NPLogger.w(
@@ -549,7 +661,8 @@ internal fun PlayerManager.initializeImpl(
                     shouldResumeAfterRecovery &&
                     trySwitchToNextPlaybackCandidateForRecovery(
                         reason = "player_error_${error.errorCodeName}",
-                        invalidateCurrentCache = shouldInvalidateCache
+                        invalidateCurrentCache = shouldInvalidateCache,
+                        expectedRequestToken = playbackRequestToken
                     )
                 ) {
                     return
@@ -671,9 +784,11 @@ internal fun PlayerManager.initializeImpl(
                     )
                     return
                 }
+                logPlaybackStateTransition("playback_state_changed:${playbackStateName(state)}")
                 _playerPlaybackStateFlow.value = state
                 if (state == Player.STATE_BUFFERING && player.playWhenReady) {
                     schedulePlaybackStartupWatchdog(reason = "state_buffering")
+                    schedulePlaybackRuntimeWatchdog(reason = "state_buffering")
                 }
                 if (state == Player.STATE_READY) {
                     val accepted = shouldAcceptPlayerCallback(
@@ -688,18 +803,48 @@ internal fun PlayerManager.initializeImpl(
                     if (player.playWhenReady || player.isPlaying) {
                         startProgressUpdates()
                         schedulePlaybackStartupWatchdog(reason = "state_ready")
+                        schedulePlaybackRuntimeWatchdog(reason = "state_ready")
                     }
                 }
                 if (state == Player.STATE_ENDED) {
-                    cancelPlaybackStartupWatchdog(reason = "state_ended")
                     if (shouldAcceptPlayerCallback(
                             playbackRequestToken,
                             loadedMediaRequestToken,
                             isPendingMediaLoadActive()
                         )
                     ) {
+                        cancelPlaybackStartupWatchdog(reason = "state_ended")
+                        resetPlaybackRuntimeWatchdog(reason = "state_ended")
                         handleTrackEndedIfNeeded(source = "playback_state_changed")
                     }
+                }
+            }
+
+            override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
+                if (!isPlayerInitialized()) return
+                if (!shouldExposePlayerCallbackState(
+                        playbackRequestToken,
+                        loadedMediaRequestToken,
+                        isPendingMediaLoadActive()
+                    )
+                ) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Ignoring stale playback suppression callback during pending media load: " +
+                            "requestToken=$playbackRequestToken, " +
+                            "loadedToken=$loadedMediaRequestToken, " +
+                            "suppression=${playbackSuppressionReasonName(playbackSuppressionReason)}"
+                    )
+                    return
+                }
+                logPlaybackStateTransition(
+                    "playback_suppression_changed:" +
+                        playbackSuppressionReasonName(playbackSuppressionReason)
+                )
+                if (playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE) {
+                    resetPlaybackRuntimeWatchdog(reason = "playback_suppression_entered")
+                } else if (player.playWhenReady && playbackProgressAdvanceReported) {
+                    schedulePlaybackRuntimeWatchdog(reason = "suppression_cleared")
                 }
             }
 
@@ -712,6 +857,7 @@ internal fun PlayerManager.initializeImpl(
                 ) {
                     return
                 }
+                logPlaybackStateTransition("is_playing_changed:$isPlaying")
                 _isPlayingFlow.value = isPlaying
                 LyriconManager.setPlaybackState(isPlaying)
                 if (!isPlaying) {
@@ -723,8 +869,12 @@ internal fun PlayerManager.initializeImpl(
                 if (isPlaying) {
                     startProgressUpdates()
                     schedulePlaybackStartupWatchdog(reason = "is_playing_true")
-                } else if (!player.playWhenReady) {
+                    schedulePlaybackRuntimeWatchdog(reason = "is_playing_true")
+                } else if (player.playWhenReady) {
+                    schedulePlaybackRuntimeWatchdog(reason = "is_playing_false")
+                } else {
                     stopProgressUpdates()
+                    resetPlaybackRuntimeWatchdog(reason = "is_playing_false_without_intent")
                 }
                 val positionMs = resolveDisplayedPlaybackPosition(player.currentPosition)
                 val shouldResumePlayback = shouldResumePlaybackSnapshot()
@@ -747,13 +897,21 @@ internal fun PlayerManager.initializeImpl(
                     )
                     return
                 }
+                logPlaybackStateTransition(
+                    "play_when_ready_changed:$playWhenReady:" +
+                        playWhenReadyChangeReasonName(reason)
+                )
                 _playWhenReadyFlow.value = playWhenReady
                 if (playWhenReady) {
                     startProgressUpdates()
                     schedulePlaybackStartupWatchdog(reason = "play_when_ready_true")
-                } else if (!player.isPlaying) {
+                    schedulePlaybackRuntimeWatchdog(reason = "play_when_ready_true")
+                } else {
                     cancelPlaybackStartupWatchdog(reason = "play_when_ready_false")
-                    stopProgressUpdates()
+                    resetPlaybackRuntimeWatchdog(reason = "play_when_ready_false")
+                    if (!player.isPlaying) {
+                        stopProgressUpdates()
+                    }
                 }
                 if (!playWhenReady) {
                     NPLogger.d(
@@ -791,6 +949,12 @@ internal fun PlayerManager.initializeImpl(
                         updateResumePlaybackRequested(false)
                     }
                 }
+                if (!playWhenReady && !resumePlaybackRequested) {
+                    PlaybackTransitionWakeLock.release(
+                        playbackRequestToken,
+                        "play_when_ready_false"
+                    )
+                }
                 if (
                     !playWhenReady &&
                     reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
@@ -807,6 +971,9 @@ internal fun PlayerManager.initializeImpl(
 
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
                 maybeBackfillCurrentSongDurationFromPlayer()
+                if (timeline.isEmpty) {
+                    resetPlaybackRuntimeWatchdog(reason = "timeline_empty")
+                }
                 if (player.playWhenReady || player.isPlaying) {
                     startProgressUpdates()
                 }
@@ -814,6 +981,7 @@ internal fun PlayerManager.initializeImpl(
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 PlaybackVolumeNormalizationState.resetForNewTrack()
+                resetPlaybackRuntimeWatchdog(reason = "media_item_transition")
                 _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
                 maybeBackfillCurrentSongDurationFromPlayer()
                 if (player.playWhenReady || player.isPlaying) {
@@ -3770,6 +3938,7 @@ internal fun PlayerManager.releaseImpl() {
         updateResumePlaybackRequested(false)
         lastAutoTrackAdvanceAtMs = 0L
         cancelPlaybackStartupWatchdog(reason = "release")
+        resetPlaybackRuntimeWatchdog(reason = "release")
         clearActivePlaybackCandidates()
         StartupAudioFocusController.release("player_release")
 

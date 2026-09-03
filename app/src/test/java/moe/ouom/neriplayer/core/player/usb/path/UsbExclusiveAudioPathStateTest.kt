@@ -86,4 +86,17 @@ class UsbExclusiveAudioPathStateTest {
         assertTrue(state.skipSilence)
         assertEquals(0.35f, state.requestedVolume, 0f)
     }
+
+    @Test
+    fun `service comparison ignores bookkeeping generation but keeps path changes`() {
+        val first = UsbExclusiveAudioPathState(generation = 4L)
+        val samePath = first.copy(generation = 9L)
+        val changedPath = first.copy(
+            effectivePath = UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB,
+            generation = 10L
+        )
+
+        assertTrue(sameUsbExclusiveAudioPathConfiguration(first, samePath))
+        assertFalse(sameUsbExclusiveAudioPathConfiguration(first, changedPath))
+    }
 }

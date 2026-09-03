@@ -87,8 +87,9 @@ import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirect
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.engine.datasource.ChunkRequestIOException
+import moe.ouom.neriplayer.core.player.engine.datasource.ResumableHttpRangeSupport
 import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
-import moe.ouom.neriplayer.core.player.resolver.youtube.ChunkRequestIOException
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -926,7 +927,7 @@ object AudioDownloadManager {
         }
         return if (
             YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(request) &&
-            !YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(headers)
+            !ResumableHttpRangeSupport.hasExplicitRangeHeader(headers)
         ) {
             DownloadTransportKind.CHUNKED_RANGE
         } else {
@@ -6373,7 +6374,7 @@ object AudioDownloadManager {
     ): DownloadedPayloadSummary = withContext(Dispatchers.IO) {
         ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
         if (YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(request) &&
-            !YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(
+            !ResumableHttpRangeSupport.hasExplicitRangeHeader(
                 request.headers.names().associateWith { headerName ->
                     request.header(headerName).orEmpty()
                 }
@@ -6664,7 +6665,7 @@ object AudioDownloadManager {
                 }
 
                 try {
-                    val chunkResult = YouTubeGoogleVideoRangeSupport.executeChunkLengthFallback(
+                    val chunkResult = ResumableHttpRangeSupport.executeChunkLengthFallback(
                         requestLength = remainingRequestLength,
                         preferredChunkSize = YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES
                     ) { chunkLength ->
@@ -6696,7 +6697,7 @@ object AudioDownloadManager {
                         chunkResult.value.resumeMetadataAvailable
                     if (
                         chunkResult.chunkLength !=
-                        YouTubeGoogleVideoRangeSupport.candidateChunkLengths(
+                        ResumableHttpRangeSupport.candidateChunkLengths(
                             requestLength = remainingRequestLength,
                             preferredChunkSize = YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES
                         ).first()

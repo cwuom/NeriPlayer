@@ -116,7 +116,7 @@ class CachedPlaybackDescriptorTest {
     }
 
     @Test
-    fun `legacy descriptor without representation identity remains readable`() {
+    fun `descriptor with nullable fields survives round trip`() {
         val descriptor = cachedPlaybackDescriptorFromAudioInfo(
             audioInfo = PlaybackAudioInfo(
                 source = PlaybackAudioSource.NETEASE,
@@ -127,7 +127,11 @@ class CachedPlaybackDescriptorTest {
             representationIdentity = null
         )
 
-        assertNotNull(descriptor.toPlaybackAudioInfo { it.toString() })
+        val decoded = decodeCachedPlaybackDescriptor(encodeCachedPlaybackDescriptor(descriptor))
+
+        assertNotNull(decoded?.toPlaybackAudioInfo { it.toString() })
+        assertNull(decoded?.representationIdentity)
+        assertNull(decoded?.codecLabel)
     }
 
     @Test

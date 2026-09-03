@@ -25,6 +25,9 @@ package moe.ouom.neriplayer.core.player.debug
 
 import androidx.media3.common.Player
 
+// keep the deprecated Media3 value without compiling a deprecated reference
+private const val LEGACY_UNSUITABLE_AUDIO_ROUTE_REASON = 2
+
 internal fun playbackStateName(state: Int): String {
     return when (state) {
         Player.STATE_IDLE -> "IDLE"
@@ -43,6 +46,20 @@ internal fun playWhenReadyChangeReasonName(reason: Int): String {
         Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "REMOTE"
         Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "END_OF_MEDIA_ITEM"
         Player.PLAY_WHEN_READY_CHANGE_REASON_SUPPRESSED_TOO_LONG -> "SUPPRESSED_TOO_LONG"
+        else -> "UNKNOWN($reason)"
+    }
+}
+
+internal fun playbackSuppressionReasonName(reason: Int): String {
+    return when (reason) {
+        Player.PLAYBACK_SUPPRESSION_REASON_NONE -> "NONE"
+        Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS ->
+            "TRANSIENT_AUDIO_FOCUS_LOSS"
+        LEGACY_UNSUITABLE_AUDIO_ROUTE_REASON ->
+            "UNSUITABLE_AUDIO_ROUTE"
+        Player.PLAYBACK_SUPPRESSION_REASON_UNSUITABLE_AUDIO_OUTPUT ->
+            "UNSUITABLE_AUDIO_OUTPUT"
+        Player.PLAYBACK_SUPPRESSION_REASON_SCRUBBING -> "SCRUBBING"
         else -> "UNKNOWN($reason)"
     }
 }

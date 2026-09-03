@@ -105,7 +105,6 @@ class YouTubeGoogleVideoRangeSupportTest {
         assertTrue(YouTubeGoogleVideoRangeSupport.supportsSeekingWithoutUrlRefresh(url))
         assertTrue(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
     }
-
     @Test
     fun resolveQueryContentLength_readsClenFromUrl() {
         val url =

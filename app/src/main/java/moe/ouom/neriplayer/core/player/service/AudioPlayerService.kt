@@ -109,6 +109,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveP
 import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
+import moe.ouom.neriplayer.core.player.usb.path.sameUsbExclusiveAudioPathConfiguration
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveBackgroundAudioAnchor
@@ -1676,11 +1677,13 @@ class AudioPlayerService : Service() {
                 }
         }
         serviceScope.launch {
-            UsbExclusiveAudioPathTracker.state.collectSafely("usbExclusiveAudioPathState") { pathState ->
-                updateMediaSessionVolumeRouting(pathState)
-                updateUsbExclusiveServiceKeepAlive("usb_path_state")
-                refreshIdleShutdown("usb_path_state")
-            }
+            UsbExclusiveAudioPathTracker.state
+                .distinctUntilChanged(::sameUsbExclusiveAudioPathConfiguration)
+                .collectSafely("usbExclusiveAudioPathState") { pathState ->
+                    updateMediaSessionVolumeRouting(pathState)
+                    updateUsbExclusiveServiceKeepAlive("usb_path_state")
+                    refreshIdleShutdown("usb_path_state")
+                }
         }
         serviceScope.launch {
             PlayerManager.playbackPositionFlow
