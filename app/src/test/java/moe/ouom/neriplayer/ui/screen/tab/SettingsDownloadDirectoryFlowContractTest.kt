@@ -231,6 +231,34 @@ class SettingsDownloadDirectoryFlowContractTest {
     }
 
     @Test
+    fun `migration cancel keeps the current directory and releases only the new grant`() {
+        val source = settingsSource()
+        val dialogs = source.substringAfter("private fun DownloadDirectoryDialogs(")
+        val cancelFlow = controllerFlow(source)
+            .substringAfter("onCancelPendingChange = {")
+            .substringBefore("onSkipPendingChange =")
+
+        assertTrue(source.contains("val onCancelPendingChange:"))
+        assertTrue(dialogs.contains("controller.onCancelPendingChange(change)"))
+        assertTrue(
+            dialogs.contains(
+                "R.string.settings_download_directory_migrate_cancel"
+            )
+        )
+        assertTrue(cancelFlow.contains("pendingChange = null"))
+        assertTrue(cancelFlow.contains("releasePersistedDirectoryPermission"))
+        assertFalse(cancelFlow.contains("applyDirectoryChange("))
+    }
+
+    @Test
+    fun `private target does not show the external folder conflict warning`() {
+        val source = settingsSource()
+
+        assertTrue(source.contains("targetNonEmpty && !targetUri.isNullOrBlank()"))
+        assertTrue(source.contains("change.shouldShowTargetConflictWarning"))
+    }
+
+    @Test
     fun `migration preflight enumerates each root once without reading every sidecar`() {
         val storageSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"

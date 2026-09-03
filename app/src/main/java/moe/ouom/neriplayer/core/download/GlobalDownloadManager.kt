@@ -1458,7 +1458,7 @@ object GlobalDownloadManager {
         context: Context,
         songs: List<SongItem>,
         userInitiated: Boolean
-    ): StagedPendingDownloadQueue? {
+    ): StagedPendingDownloadQueue {
         val distinctSongs = songs.distinctBy(SongItem::stableKey)
         if (distinctSongs.isEmpty()) {
             return StagedPendingDownloadQueue(
@@ -2250,6 +2250,11 @@ object GlobalDownloadManager {
                 NPLogger.i(
                     TAG,
                     "迁移状态占位前先收敛 pending 音频，使用独占目录租约"
+                )
+                // 迁移不需要保留下载中的中间产物，先整体删除 .tmp 再做状态检查
+                ManagedDownloadStorage.discardMigrationTemporaryDirectory(
+                    context = appContext,
+                    directoryUri = sourceDirectoryUri
                 )
                 val recovery = recoverPendingAudioWritesFromRoot(
                     context = appContext,

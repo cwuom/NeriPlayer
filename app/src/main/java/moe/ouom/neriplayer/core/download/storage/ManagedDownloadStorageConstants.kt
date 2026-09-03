@@ -31,13 +31,14 @@ internal const val PENDING_METADATA_SUFFIX = ".npmeta.pending.json"
 internal const val MANAGED_LIBRARY_MANIFEST_FILE_NAME = "NeriLibrary.json"
 internal const val MANAGED_LIBRARY_INDEX_DIR_NAME = "NeriIndex"
 internal const val OPERATION_MANIFEST_NAME = "operation.json"
-internal const val MIGRATION_COPY_PARALLELISM = 8
-internal const val MIGRATION_TREE_COPY_PARALLELISM = 2
-internal const val MIGRATION_REWRITE_PARALLELISM = 4
-internal const val MIGRATION_TREE_REWRITE_PARALLELISM = 2
-internal const val MIGRATION_DELETE_PARALLELISM = 8
+// 迁移 I/O 有界并发，避免大曲库被单文件调度开销拖慢
+internal const val MIGRATION_COPY_PARALLELISM = 16
+internal const val MIGRATION_TREE_COPY_PARALLELISM = 8
+internal const val MIGRATION_REWRITE_PARALLELISM = 8
+internal const val MIGRATION_TREE_REWRITE_PARALLELISM = 8
+internal const val MIGRATION_DELETE_PARALLELISM = 16
 // SAF 删除是独立文档操作，使用与普通引用删除相同的有界并发
-internal const val MIGRATION_TREE_DELETE_PARALLELISM = 8
+internal const val MIGRATION_TREE_DELETE_PARALLELISM = 16
 internal const val MIGRATION_PENDING_ARTIFACT_LOG_SAMPLE_SIZE = 4
 /** 迁移被未收敛下载临时文件阻断时使用的稳定原因标识 */
 internal const val MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE =

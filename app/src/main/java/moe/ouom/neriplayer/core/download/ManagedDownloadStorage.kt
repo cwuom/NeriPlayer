@@ -34,11 +34,9 @@ import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadPendingArtifactC
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadUnfinalizedCleanupPlanner
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_TEMPORARY_DIR_NAME
-import moe.ouom.neriplayer.core.download.storage.MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE
 import moe.ouom.neriplayer.core.download.storage.FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
-import moe.ouom.neriplayer.core.download.storage.MIGRATION_PENDING_ARTIFACT_LOG_SAMPLE_SIZE
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
@@ -1311,6 +1309,16 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    /** 迁移持有目录租约时直接移除应用自己的临时目录 */
+    internal suspend fun discardMigrationTemporaryDirectory(
+        context: Context,
+        directoryUri: String?
+    ): Boolean = withContext(Dispatchers.IO) {
+        val root = resolveRoot(context, directoryUri)
+            ?: return@withContext false
+        discardMigrationTemporaryDirectory(context, root)
+    }
+
     suspend fun migrateManagedDownloads(
         context: Context,
         fromDirectoryUri: String?,
@@ -1427,9 +1435,10 @@ internal object ManagedDownloadStorage {
                 return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
             }
 
-            // pending 音频和 metadata 不是可迁移的正式媒体，旧版本可能把
-            // 它们写在根目录，新版本写在 .tmp；在源目录仍有这些产物时先
-            // 让恢复流程收敛，避免迁移后释放旧授权导致半成品永久失联
+            // 目标目录也可能留有上次中断的临时目录，迁移前一并整体移除
+            discardMigrationTemporaryDirectory(context, targetRoot)
+            // pending 音频和 metadata 不是可迁移的正式媒体，迁移前直接移除
+            // 应用自己的 .tmp 目录，避免半成品把目录变更卡在重试状态
             if (pendingArtifactsPreflightVerified) {
                 NPLogger.d(
                     TAG,
@@ -10667,10 +10676,15 @@ internal object ManagedDownloadStorage {
             .asSequence()
             .filter { entry -> entry.extension in audioExtensions }
             .associate { entry -> entry.name to entry.lastModifiedMs }
-        val parsedMetadataByAudioName = metadataEntriesByAudioName.mapNotNull { (audioName, entry) ->
-            parseDownloadedAudioMetadata(context, entry)?.let { metadata ->
+        val parsedMetadataByAudioName = parseDownloadedAudioMetadataBatch(
+            context = context,
+            entries = metadataEntriesByAudioName.map { (audioName, entry) ->
+                audioName to entry
+            }
+        ).mapNotNull { (audioName, metadata) ->
+            metadata?.let {
                 audioName to enrichMigrationMetadataTemporalFields(
-                    metadata = metadata,
+                    metadata = it,
                     audioLastModifiedMs = audioLastModifiedByName[audioName]
                 )
             }
@@ -10719,68 +10733,99 @@ internal object ManagedDownloadStorage {
         context: Context,
         sourceRoot: RootHandle
     ) {
-        val rootRefresh = try {
-            treeDirectories.refreshRootEntries(context, sourceRoot)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            throw ManagedDownloadMigrationException.transient(
-                "迁移前无法检查源目录临时文件",
-                error
-            )
-        }
-        if (!rootRefresh.isComplete) {
-            throw ManagedDownloadMigrationException.transient(
-                "迁移前源目录枚举不完整，暂缓处理临时文件"
-            )
-        }
-        val temporary = try {
-            readTemporaryDirectoryEntries(
-                context = context,
-                root = sourceRoot,
-                forceRefresh = true,
-                rootAlreadyRefreshed = true
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            throw ManagedDownloadMigrationException.transient(
-                "迁移前无法检查源目录 .tmp",
-                error
-            )
-        }
-        if (!temporary.isComplete) {
-            throw ManagedDownloadMigrationException.transient(
-                "迁移前源目录 .tmp 枚举不完整，暂缓处理临时文件"
-            )
-        }
-        val pendingArtifacts = ManagedDownloadMigrationEntryCollector.classifyPendingArtifacts(
-            rootEntries = rootRefresh.entries,
-            temporaryEntries = temporary.entries
-        )
-        val pendingNames = pendingArtifacts.blockingNames
-        if (pendingNames.isEmpty()) {
-            if (pendingArtifacts.metadataOnlyNames.isNotEmpty()) {
-                NPLogger.i(
-                    TAG,
-                    "迁移前保留无同名 pending 音频的 metadata 凭据: " +
-                        "count=${pendingArtifacts.metadataOnlyNames.size}"
-                )
+        discardMigrationTemporaryDirectory(context, sourceRoot)
+    }
+
+    private fun discardMigrationTemporaryDirectory(
+        context: Context,
+        root: RootHandle
+    ): Boolean {
+        val deletedReferences = linkedSetOf<String>()
+        when (root) {
+            is RootHandle.FileRoot -> {
+                val children = root.dir.listFiles()
+                    ?: throw ManagedDownloadMigrationException.transient(
+                        "迁移前无法检查源目录临时文件"
+                    )
+                children
+                    .asSequence()
+                    .filter(File::isDirectory)
+                    .filter { directory ->
+                        ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                            directory.name,
+                            DOWNLOAD_TEMPORARY_DIR_NAME
+                        )
+                    }
+                    .forEach { directory ->
+                        if (!directory.deleteRecursively() && directory.exists()) {
+                            throw ManagedDownloadMigrationException.transient(
+                                "迁移前无法删除源目录 .tmp"
+                            )
+                        }
+                        deletedReferences += directory.absolutePath
+                    }
             }
-            return
+
+            is RootHandle.TreeRoot -> {
+                val refresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = root.tree
+                )
+                if (!refresh.isComplete) {
+                    throw ManagedDownloadMigrationException.transient(
+                        "迁移前源目录枚举不完整，暂缓处理临时文件"
+                    )
+                }
+                refresh.children
+                    .asSequence()
+                    .filter(QueriedTreeChild::isDirectory)
+                    .filter { child ->
+                        ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                            child.name,
+                            DOWNLOAD_TEMPORARY_DIR_NAME
+                        )
+                    }
+                    .forEach { child ->
+                        val directory = treeChildRegistry.toDocumentFile(
+                            context,
+                            root.tree,
+                            child
+                        ) ?: throw ManagedDownloadMigrationException.transient(
+                            "迁移前无法读取源目录 .tmp"
+                        )
+                        when (
+                            deleteTrustedReference(
+                                context,
+                                TrustedManagedRef(
+                                    reference = StorageReference.SafRef(directory.uri),
+                                    externalReference = directory.uri.toString()
+                                )
+                            )
+                        ) {
+                            StorageMutationResult.Deleted,
+                            StorageMutationResult.Missing -> {
+                                deletedReferences += directory.uri.toString()
+                            }
+                            StorageMutationResult.OutOfScope,
+                            StorageMutationResult.PermissionLost,
+                            is StorageMutationResult.ProviderFailure,
+                            is StorageMutationResult.Unsupported -> {
+                                throw ManagedDownloadMigrationException.transient(
+                                    "迁移前无法删除源目录 .tmp"
+                                )
+                            }
+                        }
+                    }
+            }
         }
-        val sample = pendingNames.take(MIGRATION_PENDING_ARTIFACT_LOG_SAMPLE_SIZE)
-            .joinToString(separator = "|")
-        NPLogger.w(
-            TAG,
-            "迁移前发现未收敛下载临时文件，保留源目录并等待恢复: " +
-                "count=${pendingNames.size}, sample=$sample"
-        )
-        throw ManagedDownloadMigrationException.transient(
-            "[$MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE] " +
-                "迁移源目录存在未完成下载临时文件，等待恢复: " +
-                "count=${pendingNames.size}"
-        )
+        forgetDeletedReferencesFromCaches(deletedReferences)
+        if (deletedReferences.isNotEmpty()) {
+            NPLogger.i(
+                TAG,
+                "迁移前已整体删除 .tmp 目录: count=${deletedReferences.size}"
+            )
+        }
+        return true
     }
 
     private fun listSubdirectoryEntries(context: Context, root: RootHandle, subdirectory: String): List<StoredEntry> {
@@ -11363,14 +11408,44 @@ internal object ManagedDownloadStorage {
             root = targetRoot,
             isComplete = refresh.isComplete
         )
+        val parsedMetadataByAudioName = if (skipMetadataParsing) {
+            null
+        } else {
+            val metadataEntries = refresh.rootEntries
+                .asSequence()
+                .filterNot(StoredEntry::isDirectory)
+                .filter { entry -> ManagedDownloadTreeNaming.isMetadataName(entry.name) }
+                .mapNotNull { entry ->
+                    ManagedDownloadTreeNaming.metadataAudioName(entry.name)?.let { audioName ->
+                        audioName to entry
+                    }
+                }
+                .groupBy({ (audioName, _) -> audioName }, { (_, entry) -> entry })
+                .mapNotNull { (audioName, entries) ->
+                    entries.minWithOrNull(
+                        compareBy<StoredEntry>(
+                            { candidate ->
+                                ManagedDownloadTreeNaming.metadataNameOrdinal(
+                                    candidate.name,
+                                    audioName
+                                ) ?: Int.MAX_VALUE
+                            },
+                            StoredEntry::name
+                        )
+                    )?.let { entry -> audioName to entry }
+                }
+            parseDownloadedAudioMetadataBatch(
+                context = context,
+                entries = metadataEntries
+            ).mapNotNull { (audioName, metadata) ->
+                metadata?.let { audioName to it }
+            }.toMap()
+        }
         return ManagedDownloadMigrationTargetIndexBuilder.build(
             rootEntries = refresh.rootEntries,
             coverEntries = refresh.coverEntries,
             lyricEntries = refresh.lyricEntries,
-            readText = if (skipMetadataParsing) null else { entry ->
-                readTextInternal(context, entry.reference)
-            },
-            parseMetadata = if (skipMetadataParsing) null else ::parseDownloadedAudioMetadataJson
+            parsedMetadataByAudioName = parsedMetadataByAudioName
         )
     }
 

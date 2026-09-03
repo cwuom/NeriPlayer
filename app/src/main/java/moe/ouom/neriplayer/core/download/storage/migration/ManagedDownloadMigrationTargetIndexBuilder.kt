@@ -11,12 +11,14 @@ internal object ManagedDownloadMigrationTargetIndexBuilder {
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
         readText: ((ManagedDownloadStorage.StoredEntry) -> String?)? = null,
-        parseMetadata: ((String) -> ManagedDownloadStorage.DownloadedAudioMetadata?)? = null
+        parseMetadata: ((String) -> ManagedDownloadStorage.DownloadedAudioMetadata?)? = null,
+        parsedMetadataByAudioName:
+            Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>? = null
     ): ManagedMigrationTargetIndex {
         val (rootEntriesByName, ambiguousRootNames) = buildNameIndex(rootEntries)
         val (coverEntriesByName, ambiguousCoverNames) = buildNameIndex(coverEntries)
         val (lyricEntriesByName, ambiguousLyricNames) = buildNameIndex(lyricEntries)
-        val metadataByAudioName = if (readText != null && parseMetadata != null) {
+        val metadataByAudioName = parsedMetadataByAudioName ?: if (readText != null && parseMetadata != null) {
             rootEntriesByName.values
                 .asSequence()
                 .filter { entry -> ManagedDownloadTreeNaming.isMetadataName(entry.name) }

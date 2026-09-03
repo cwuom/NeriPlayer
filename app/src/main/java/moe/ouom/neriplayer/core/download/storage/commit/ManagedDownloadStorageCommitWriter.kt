@@ -638,7 +638,8 @@ internal class ManagedDownloadStorageCommitWriter(
                 .copy(sizeBytes = verifiedSize),
             createdNew = backupEntry == null,
             replacementBackup = backupEntry,
-            sourceAuthoritative = true
+            sourceAuthoritative = true,
+            targetContentMatchesSource = true
         )
     }
 
@@ -835,7 +836,8 @@ internal class ManagedDownloadStorageCommitWriter(
             entry = entry,
             createdNew = backupEntry == null,
             replacementBackup = backupEntry,
-            sourceAuthoritative = true
+            sourceAuthoritative = true,
+            targetContentMatchesSource = true
         )
     }
 
@@ -888,7 +890,8 @@ internal class ManagedDownloadStorageCommitWriter(
             ?.let { targetFile.setLastModified(it) }
         return StoredWriteResult(
             entry = ManagedDownloadStoredEntryMapper.fromFile(targetFile).copy(sizeBytes = verifiedSize),
-            createdNew = true
+            createdNew = true,
+            targetContentMatchesSource = true
         )
     }
 
@@ -1191,7 +1194,8 @@ internal class ManagedDownloadStorageCommitWriter(
             ?.let { targetFile.setLastModified(it) }
         return StoredWriteResult(
             entry = ManagedDownloadStoredEntryMapper.fromFile(targetFile).copy(sizeBytes = verifiedSize),
-            createdNew = true
+            createdNew = true,
+            targetContentMatchesSource = true
         )
     }
 
@@ -1310,7 +1314,11 @@ internal class ManagedDownloadStorageCommitWriter(
             lastModifiedMs = stat.lastModifiedMs ?: sourceEntry.lastModifiedMs
         )
         treeChildRegistry.rememberTreeChild(parent, entry)
-        return StoredWriteResult(entry = entry, createdNew = true)
+        return StoredWriteResult(
+            entry = entry,
+            createdNew = true,
+            targetContentMatchesSource = true
+        )
     }
 
     private fun findMigrationReplacementParents(

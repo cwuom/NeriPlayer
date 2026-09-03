@@ -330,6 +330,9 @@ private data class PendingDownloadDirectoryChange(
     val shouldReleasePreviousPermission: Boolean
         get() = !previousUri.isNullOrBlank() &&
             !ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)
+
+    val shouldShowTargetConflictWarning: Boolean
+        get() = targetNonEmpty && !targetUri.isNullOrBlank()
 }
 
 private enum class DownloadDirectoryPreparationResult {
@@ -2796,10 +2799,13 @@ private class DownloadDirectorySettingsController(
     val onCancelPreparation: () -> Unit,
     val onDismissSwitchWarning: () -> Unit,
     val onConfirmSwitchWarning: () -> Unit,
-    val onDismissPendingChange: (PendingDownloadDirectoryChange) -> Unit,
+    val onCancelPendingChange: (PendingDownloadDirectoryChange) -> Unit,
     val onSkipPendingChange: (PendingDownloadDirectoryChange) -> Unit,
     val onConfirmPendingChange: (PendingDownloadDirectoryChange) -> Unit
 ) {
+    val onDismissPendingChange: (PendingDownloadDirectoryChange) -> Unit
+        get() = onCancelPendingChange
+
     val currentSummary: String
         get() = currentSummaryState.value
 
@@ -3716,17 +3722,17 @@ private fun rememberDownloadDirectorySettingsController(
                 directoryLauncher.launch(null)
             }
         },
-        onDismissPendingChange = { change ->
+        onCancelPendingChange = { change ->
             if (change.targetUri.isNullOrBlank()) {
-                applyPendingChangeWithoutMigration(change)
+                pendingChange = null
             } else {
                 pendingChange = null
-            }
-            if (!change.targetUri.isNullOrBlank() && change.releaseTargetPermissionOnCancel) {
-                ManagedDownloadStorage.releasePersistedDirectoryPermission(
-                    context,
-                    change.targetUri
-                )
+                if (change.releaseTargetPermissionOnCancel) {
+                    ManagedDownloadStorage.releasePersistedDirectoryPermission(
+                        context,
+                        change.targetUri
+                    )
+                }
             }
         },
         onSkipPendingChange = { change ->
@@ -3915,7 +3921,7 @@ private fun DownloadDirectoryDialogs(
 
     controller.pendingChange?.let { change ->
         MiuixSettingsDialog(
-            onDismissRequest = { controller.onDismissPendingChange(change) },
+            onDismissRequest = { controller.onCancelPendingChange(change) },
             title = { Text(stringResource(R.string.settings_download_directory_migrate_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3925,7 +3931,7 @@ private fun DownloadDirectoryDialogs(
                             change.targetSummary
                         )
                     )
-                    if (change.targetNonEmpty) {
+                    if (change.shouldShowTargetConflictWarning) {
                         Text(
                             text = stringResource(
                                 R.string.settings_download_directory_migrate_conflict_warning
@@ -3944,8 +3950,18 @@ private fun DownloadDirectoryDialogs(
                 }
             },
             dismissButton = {
-                MiuixSettingsTextButton(onClick = { controller.onSkipPendingChange(change) }) {
-                    Text(stringResource(R.string.settings_download_directory_migrate_skip))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MiuixSettingsTextButton(
+                        onClick = { controller.onCancelPendingChange(change) }
+                    ) {
+                        Text(stringResource(R.string.settings_download_directory_migrate_cancel))
+                    }
+                    MiuixSettingsTextButton(onClick = { controller.onSkipPendingChange(change) }) {
+                        Text(stringResource(R.string.settings_download_directory_migrate_skip))
+                    }
                 }
             }
         )

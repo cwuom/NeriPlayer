@@ -318,9 +318,10 @@
     <string name="settings_download_directory_switch_warning_confirm">Continue</string>
     <string name="settings_download_directory_migrate_title">Move Existing Downloads</string>
     <string name="settings_download_directory_migrate_message">Move your downloaded songs, lyrics, and covers to \"%1$s\"?</string>
-    <string name="settings_download_directory_migrate_conflict_warning">The target already contains downloads, so matching tracks may conflict. For confirmed matches, this migration\'s source data takes precedence; distinct files that cannot be confirmed as the same track are both kept.</string>
+    <string name="settings_download_directory_migrate_conflict_warning">Files in the target folder may be overwritten or deleted. An empty folder is recommended. For matching tracks, the source copied by this migration takes precedence.</string>
     <string name="settings_download_directory_migrate_confirm">Move Files</string>
     <string name="settings_download_directory_migrate_skip">Keep Old Files</string>
+    <string name="settings_download_directory_migrate_cancel">Cancel</string>
     <string name="settings_download_directory_preparing">Checking Download Directory</string>
     <string name="settings_download_directory_preparing_desc">Checking existing download files. Please wait.</string>
     <string name="managed_library_processing_upgrade_title">Upgrading Download Database</string>

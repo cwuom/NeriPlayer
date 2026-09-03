@@ -171,6 +171,115 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     }
 
     @Test
+    fun privateMigrationDeletesTemporaryDirectoryAsOneTree() = runBlocking {
+        val context = isolatedPrivateContext()
+        val fixture = writePrivateFixture(context)
+        val temporary = File(defaultRoot(context), ".tmp").apply { mkdirs() }
+        File(temporary, "nested/deep/unfinished.part").apply {
+            parentFile?.mkdirs()
+            writeBytes(ByteArray(32) { 7 })
+        }
+        val treeUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID)
+
+        val result = ManagedDownloadStorage.migrateManagedDownloads(
+            context = context,
+            fromDirectoryUri = null,
+            toDirectoryUri = treeUri.toString()
+        )
+
+        assertTrue(result.canSwitchDirectory)
+        assertFalse(temporary.exists())
+        assertArrayEquals(
+            fixture.audioBytes,
+            readDocument(requireTreeFile(treeRoot(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID), fixture.audio.name))
+        )
+    }
+
+    @Test
+    fun safMigrationDeletesTemporaryDirectoryAsOneTree() = runBlocking {
+        val sourceRoot = treeRoot(ManagedDownloadMigrationTestDocumentProvider.SOURCE_ROOT_ID)
+        val targetRoot = treeRoot(ManagedDownloadMigrationTestDocumentProvider.TARGET_ROOT_ID)
+        writeTreeFixture(sourceRoot)
+        val temporary = requireNotNull(sourceRoot.createDirectory(".tmp"))
+        val nested = requireNotNull(temporary.createDirectory("nested"))
+        writeDocument(nested, "unfinished.part", "application/octet-stream", ByteArray(32) { 9 })
+
+        val result = ManagedDownloadStorage.migrateManagedDownloads(
+            context = appContext,
+            fromDirectoryUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.SOURCE_ROOT_ID).toString(),
+            toDirectoryUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.TARGET_ROOT_ID).toString()
+        )
+
+        assertTrue(result.canSwitchDirectory)
+        assertNull(sourceRoot.findFile(".tmp"))
+        assertArrayEquals(
+            "audio-payload".encodeToByteArray(),
+            readDocument(requireTreeFile(targetRoot, "RoundTrip.mp3"))
+        )
+    }
+
+    @Test
+    fun sameSongInTargetIsOverwrittenBySourceAudioAndMetadata() = runBlocking {
+        val context = isolatedPrivateContext()
+        val root = defaultRoot(context).apply { mkdirs() }
+        val sourceBytes = "source-audio".encodeToByteArray()
+        val sourceAudio = File(root, "Overwrite.mp3").apply { writeBytes(sourceBytes) }
+        val sourceMetadata = File(root, "${sourceAudio.name}.npmeta.json").apply {
+            writeText(
+                metadataJson(
+                    stableKey = "overwrite-song",
+                    mediaUri = sourceAudio.toURI().toString(),
+                    coverPath = null,
+                    lyricPath = null,
+                    translatedLyricPath = null,
+                    romanizedLyricPath = null
+                )
+            )
+        }
+        val targetRoot = treeRoot(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID)
+        val oldAudio = writeDocument(
+            targetRoot,
+            sourceAudio.name,
+            "audio/mpeg",
+            "old-target".encodeToByteArray()
+        )
+        writeDocument(
+            targetRoot,
+            sourceMetadata.name,
+            "application/json",
+            metadataJson(
+                stableKey = "overwrite-song",
+                mediaUri = oldAudio.uri.toString(),
+                coverPath = null,
+                lyricPath = null,
+                translatedLyricPath = null,
+                romanizedLyricPath = null
+            ).encodeToByteArray()
+        )
+
+        val result = ManagedDownloadStorage.migrateManagedDownloads(
+            context = context,
+            fromDirectoryUri = null,
+            toDirectoryUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID).toString()
+        )
+
+        assertTrue(result.canSwitchDirectory)
+        assertFalse(sourceAudio.exists())
+        assertFalse(sourceMetadata.exists())
+        val migratedAudio = requireTreeFile(targetRoot, sourceAudio.name)
+        assertArrayEquals(sourceBytes, readDocument(migratedAudio))
+        val migratedMetadata = JSONObject(
+            readDocument(requireTreeFile(targetRoot, sourceMetadata.name)).decodeToString()
+        )
+        assertSameDocument(migratedAudio.uri, migratedMetadata.getString("mediaUri"))
+        assertTrue(
+            targetRoot.listFiles().none { file ->
+                file.name.orEmpty().startsWith(".np-migration-backup-")
+            }
+        )
+    }
+
+    @Test
     fun manifestOnlySafRootDoesNotRequireMigration() = runBlocking {
         val rootId = ManagedDownloadMigrationTestDocumentProvider.ROOT_ID
         val treeRoot = treeRoot(rootId)

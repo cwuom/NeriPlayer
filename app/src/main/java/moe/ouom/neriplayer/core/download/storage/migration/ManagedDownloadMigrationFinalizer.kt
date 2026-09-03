@@ -725,6 +725,7 @@ internal class ManagedDownloadMigrationFinalizer(
     ): MetadataRewriteOutcome {
         progressTracker?.startRewrite(copied.copiedEntry.name)
         try {
+            val sourceAuthoritativeCopy = copied.createdNew || copied.sourceAuthoritative
             val rewriteInput = try {
                 val sourceMetadata = measureMetadataRewriteIo(
                     stage = "read_source",
@@ -733,13 +734,19 @@ internal class ManagedDownloadMigrationFinalizer(
                     readText(context, copied.original.entry.reference)
                 }
                     ?: throw IllegalStateException("无法读取源 metadata: ${copied.original.entry.name}")
-                val targetMetadata = measureMetadataRewriteIo(
-                    stage = "read_target",
-                    copied = copied
-                ) {
-                    readText(context, copied.copiedEntry.reference)
+                val targetMetadata = if (sourceAuthoritativeCopy) {
+                    null
+                } else {
+                    measureMetadataRewriteIo(
+                        stage = "read_target",
+                        copied = copied
+                    ) {
+                        readText(context, copied.copiedEntry.reference)
+                    }
+                        ?: throw IllegalStateException(
+                            "无法读取已迁移 metadata: ${copied.copiedEntry.name}"
+                        )
                 }
-                    ?: throw IllegalStateException("无法读取已迁移 metadata: ${copied.copiedEntry.name}")
                 MetadataRewriteInput(
                     sourceMetadata = sourceMetadata,
                     targetMetadata = targetMetadata,
@@ -769,7 +776,10 @@ internal class ManagedDownloadMigrationFinalizer(
                     )
                 )
             }
-            if (rewriteInput.rewrittenMetadata == rewriteInput.targetMetadata) {
+            if (
+                !sourceAuthoritativeCopy &&
+                    rewriteInput.rewrittenMetadata == rewriteInput.targetMetadata
+            ) {
                 return MetadataRewriteOutcome(copied = copied, failed = false)
             }
             if (
@@ -814,7 +824,15 @@ internal class ManagedDownloadMigrationFinalizer(
                     )
                 )
             }
-            val rewrittenCopied = copied.copy(copiedEntry = rewrittenEntry)
+            val rewrittenCopied = copied.copy(
+                copiedEntry = rewrittenEntry,
+                verifiedTargetDigest = sha256MigrationContent(
+                    java.io.ByteArrayInputStream(
+                        rewriteInput.rewrittenMetadata.toByteArray(Charsets.UTF_8)
+                    )
+                ),
+                targetContentMatchesSource = sourceAuthoritativeCopy
+            )
             val restoreError = runCatching {
                 measureMetadataRewriteIo(stage = "restore_timestamp", copied = copied) {
                     restoreLastModified(
@@ -846,7 +864,7 @@ internal class ManagedDownloadMigrationFinalizer(
 
     private data class MetadataRewriteInput(
         val sourceMetadata: String,
-        val targetMetadata: String,
+        val targetMetadata: String?,
         val rewrittenMetadata: String
     )
 
@@ -911,6 +929,18 @@ internal class ManagedDownloadMigrationFinalizer(
     ): MigrationVerificationEvidence {
         val sourceEntry = migrationEntry.original.entry
         if (ManagedDownloadTreeNaming.isMetadataName(sourceEntry.name)) {
+            val committedTargetDigest = migrationEntry.verifiedTargetDigest
+                ?.takeIf(String::isNotBlank)
+            if (
+                migrationEntry.targetContentMatchesSource &&
+                    committedTargetDigest != null
+            ) {
+                onProgress(migrationEntry.copiedEntry.sizeBytes.coerceAtLeast(0L))
+                return MigrationVerificationEvidence(
+                    verified = true,
+                    targetDigest = committedTargetDigest
+                )
+            }
             val metadata = readEquivalentMigratedMetadata(
                 context = context,
                 migrationEntry = migrationEntry,
@@ -925,6 +955,20 @@ internal class ManagedDownloadMigrationFinalizer(
             )
         }
         val persistedSourceDigest = migrationEntry.sourceDigest?.takeIf(String::isNotBlank)
+        val committedTargetDigest = migrationEntry.verifiedTargetDigest
+            ?.takeIf(String::isNotBlank)
+        if (
+            migrationEntry.targetContentMatchesSource &&
+                persistedSourceDigest != null &&
+                committedTargetDigest != null &&
+                persistedSourceDigest.equals(committedTargetDigest, ignoreCase = true)
+        ) {
+            onProgress(migrationEntry.copiedEntry.sizeBytes.coerceAtLeast(0L))
+            return MigrationVerificationEvidence(
+                verified = true,
+                targetDigest = committedTargetDigest
+            )
+        }
         var sourceVerifiedBytes = 0L
         val sourceDigest = persistedSourceDigest
             ?: sha256ForEntry(context, sourceEntry) { verifiedBytes ->

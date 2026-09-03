@@ -209,9 +209,14 @@ internal class ManagedDownloadMigrationCopyWorker(
                 copiedEntry = copiedEntry.result.entry,
                 createdNew = copiedEntry.result.createdNew,
                 sourceDigest = copiedEntry.sourceDigest,
-                verifiedTargetDigest = copiedEntry.verifiedTargetDigest,
+                verifiedTargetDigest = copiedEntry.verifiedTargetDigest
+                    ?: copiedEntry.sourceDigest?.takeIf {
+                        copiedEntry.result.targetContentMatchesSource &&
+                            !ManagedDownloadTreeNaming.isMetadataName(migrationEntry.entry.name)
+                    },
                 replacementBackup = copiedEntry.result.replacementBackup,
                 sourceAuthoritative = copiedEntry.result.sourceAuthoritative,
+                targetContentMatchesSource = copiedEntry.result.targetContentMatchesSource,
                 reusedFromReceipt = copiedEntry.reusedFromReceipt
             ),
             sourceReference = migrationEntry.entry.reference
