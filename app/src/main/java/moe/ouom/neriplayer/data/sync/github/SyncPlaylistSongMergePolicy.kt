@@ -185,7 +185,7 @@ internal object SyncPlaylistSongMergePolicy {
     )
 
     private class SongMergeIndex {
-        private val membershipTokenIndices = mutableMapOf<SyncCausalToken, Int>()
+        private val membershipTokenIndices = mutableListOf<Pair<SyncCausalToken, Int>>()
         private val identityIndices = mutableMapOf<SongIdentity, Int>()
         private val channelAudioIndices = mutableMapOf<String, Int>()
         private val fallbackSourcesByKey = mutableMapOf<FallbackKey, SourceBucket>()
@@ -194,7 +194,10 @@ internal object SyncPlaylistSongMergePolicy {
             val candidate = song.toMergeCandidate()
             return buildSet {
                 song.syncMembershipTokens.orEmpty().forEach { token ->
-                    membershipTokenIndices[token]?.let(::add)
+                    membershipTokenIndices
+                        .asSequence()
+                        .filter { (indexedToken, _) -> indexedToken.overlaps(token) }
+                        .forEach { (_, index) -> add(index) }
                 }
                 identityIndices[candidate.identity]?.let(::add)
 
@@ -214,7 +217,12 @@ internal object SyncPlaylistSongMergePolicy {
         fun register(song: SyncSong, index: Int) {
             val candidate = song.toMergeCandidate()
             song.syncMembershipTokens.orEmpty().forEach { token ->
-                membershipTokenIndices.putIfAbsent(token, index)
+                if (membershipTokenIndices.none { (indexedToken, indexedIndex) ->
+                        indexedIndex == index && indexedToken == token
+                    }
+                ) {
+                    membershipTokenIndices += token to index
+                }
             }
             identityIndices.putIfAbsent(candidate.identity, index)
             candidate.channelAudioKey?.let { channelAudioKey ->

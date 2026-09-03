@@ -1193,7 +1193,7 @@ class WebDavSyncManager private constructor(context: Context) {
         }
         NPLogger.d(
             TAG,
-            "Upload data size: ${SyncDataSerializer.getDataSize(data, useDataSaver)} bytes (DataSaver: $useDataSaver, WebDAV)"
+            "Upload data size: ${content.size} bytes (DataSaver: $useDataSaver, WebDAV)"
         )
 
         val uploadResult = uploadFileWithConcurrencyFallback(

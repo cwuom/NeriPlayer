@@ -94,6 +94,54 @@ class SyncDataChangeDetectorTest {
     }
 
     @Test
+    fun `equivalent causal range does not trigger a sync echo`() {
+        val remote = syncData(
+            playlists = listOf(
+                playlist(
+                    song(1).copy(
+                        syncMembershipTokens = listOf(token(1L), token(2L), token(3L))
+                    )
+                )
+            )
+        )
+        val merged = syncData(
+            playlists = listOf(
+                playlist(
+                    song(1).copy(
+                        syncMembershipTokens = listOf(
+                            SyncCausalToken("device", 1L, counterEnd = 3L)
+                        )
+                    )
+                )
+            )
+        )
+
+        assertFalse(SyncDataChangeDetector.hasDataChanged(remote, merged))
+    }
+
+    @Test
+    fun `equivalent deletion range does not trigger a sync echo`() {
+        val remote = syncData(
+            playlistSongDeletions = listOf(
+                playlistSongDeletion(1).copy(
+                    removedMembershipTokens = listOf(token(1L), token(2L), token(3L))
+                )
+            )
+        )
+        val merged = syncData(
+            playlistSongDeletions = listOf(
+                playlistSongDeletion(1).copy(
+                    removedMembershipTokens = listOf(
+                        SyncCausalToken("device", 1L, counterEnd = 3L)
+                    )
+                )
+            )
+        )
+
+        assertFalse(SyncDataChangeDetector.hasDataChanged(remote, merged))
+    }
+
+    @Test
     fun `detects sync metadata version upgrade`() {
         val remote = syncData(
             playlists = listOf(

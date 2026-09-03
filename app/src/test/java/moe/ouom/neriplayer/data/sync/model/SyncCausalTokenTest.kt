@@ -53,4 +53,61 @@ class SyncCausalTokenTest {
             tokens.normalizedSyncCausalTokens()
         )
     }
+
+    @Test
+    fun `normalization compacts contiguous counters without widening gaps`() {
+        val tokens = listOf(
+            SyncCausalToken("device", 4L),
+            SyncCausalToken("device", 1L),
+            SyncCausalToken("device", 2L),
+            SyncCausalToken("device", 3L),
+            SyncCausalToken("device", 7L),
+            SyncCausalToken("device", 5L)
+        )
+
+        assertEquals(
+            listOf(
+                SyncCausalToken("device", 1L, counterEnd = 5L),
+                SyncCausalToken("device", 7L)
+            ),
+            tokens.compactedSyncCausalTokens()
+        )
+    }
+
+    @Test
+    fun `range containment preserves exact observed remove semantics`() {
+        val range = SyncCausalToken("device", 10L, counterEnd = 12L)
+
+        assertTrue(range.contains(SyncCausalToken("device", 10L)))
+        assertTrue(range.contains(SyncCausalToken("device", 12L)))
+        assertFalse(range.contains(SyncCausalToken("device", 13L)))
+        assertFalse(range.contains(SyncCausalToken("other", 11L)))
+    }
+
+    @Test
+    fun `legacy expansion preserves every observed counter`() {
+        val tokens = listOf(
+            SyncCausalToken("device", 1L, counterEnd = 3L),
+            SyncCausalToken("device", 7L)
+        )
+
+        assertEquals(
+            listOf(
+                SyncCausalToken("device", 1L),
+                SyncCausalToken("device", 2L),
+                SyncCausalToken("device", 3L),
+                SyncCausalToken("device", 7L)
+            ),
+            tokens.expandedLegacyCompatibleSyncCausalTokens()
+        )
+    }
+
+    @Test
+    fun `legacy expansion rejects a range beyond the compatibility budget`() {
+        val tokens = listOf(SyncCausalToken("device", 1L, counterEnd = 8_193L))
+
+        assertFalse(runCatching {
+            tokens.expandedLegacyCompatibleSyncCausalTokens()
+        }.isSuccess)
+    }
 }
