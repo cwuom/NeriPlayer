@@ -30,6 +30,76 @@ import moe.ouom.neriplayer.data.model.SongItem
 class GlobalDownloadManagerStartupPolicyTest {
 
     @Test
+    fun `clear progress persistence is throttled but flushes boundaries`() {
+        assertTrue(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 0,
+                totalItemCount = 100,
+                lastPersistedItemCount = -1,
+                nowMs = 0L,
+                lastPersistedAtMs = Long.MIN_VALUE,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertFalse(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 4,
+                totalItemCount = 100,
+                lastPersistedItemCount = 4,
+                nowMs = 100L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertTrue(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 36,
+                totalItemCount = 100,
+                lastPersistedItemCount = 4,
+                nowMs = 100L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertFalse(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 0,
+                totalItemCount = 100,
+                lastPersistedItemCount = 0,
+                nowMs = 100L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertTrue(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 5,
+                totalItemCount = 100,
+                lastPersistedItemCount = 4,
+                nowMs = 500L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertTrue(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 100,
+                totalItemCount = 100,
+                lastPersistedItemCount = 68,
+                nowMs = 100L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+    }
+
+    @Test
     fun `complete pending scan replaces stale task total`() {
         assertEquals(
             50,
@@ -1483,6 +1553,26 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(launchBody.contains("PersistentDownloadClearFenceStore.activate("))
         assertTrue(markIndex < firstRunClearIndex)
         assertTrue(persistIndex < firstRunClearIndex)
+    }
+
+    @Test
+    fun `fast clear cancels captured batch jobs before owner capture`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val fastBody = clearBody.substringAfter("if (startFastClearUndispatched) {")
+            .substringBefore("if (clearToken.ownsClear && !startFastClearUndispatched)")
+        val cancelIndex = fastBody.indexOf("cancelBatchDownloadJobsForClear(")
+        val taskClearIndex = fastBody.indexOf("taskStore.clearAllTasks()")
+        val ownerCaptureIndex = clearBody.indexOf("captureDownloadClearOwnership(")
+
+        assertTrue(cancelIndex >= 0)
+        assertTrue(taskClearIndex > cancelIndex)
+        assertTrue(ownerCaptureIndex > cancelIndex)
+        assertTrue(fastBody.contains("batchJobs = activeBatchJobsAtClearStart"))
     }
 
     @Test

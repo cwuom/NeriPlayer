@@ -91,6 +91,19 @@ class NeriAppProcessingBannerLayoutPolicyTest {
     }
 
     @Test
+    fun processingBannerUsesOverallMigrationFractionWithoutStageReset() {
+        val source = source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
+        val banner = source
+            .substringAfter("private fun ManagedLibraryProcessingBanner(")
+            .substringBefore("@Composable\nfun NeriApp(")
+
+        assertTrue(banner.contains("migrationProgress?.fraction"))
+        assertTrue(banner.contains("val stageProgressFraction"))
+        assertTrue(banner.contains("val animatedProgressFraction by animateFloatAsState("))
+        assertTrue(banner.contains("progress = { animatedProgressFraction }"))
+    }
+
+    @Test
     fun collapsedRevealGestureOnlyConsumesARealTopDownDrag() {
         val source = source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
         val gesture = source

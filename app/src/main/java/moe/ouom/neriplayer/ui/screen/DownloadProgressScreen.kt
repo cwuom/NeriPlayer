@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screen
  */
 
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -865,6 +866,11 @@ private fun DownloadClearProgressSummary(
     backgroundCleanup: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val animatedProgressFraction by animateFloatAsState(
+        targetValue = progress.displayFraction,
+        animationSpec = tween(durationMillis = 220),
+        label = "download clear progress"
+    )
     val phaseResource = when (progress.phase) {
         DownloadClearVisibility.ClearPhase.PREPARING ->
             R.string.download_clear_phase_preparing
@@ -911,7 +917,7 @@ private fun DownloadClearProgressSummary(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         LinearProgressIndicator(
-            progress = { progress.displayFraction },
+            progress = { animatedProgressFraction },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(4.dp)

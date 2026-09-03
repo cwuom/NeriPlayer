@@ -303,6 +303,50 @@ class DownloadAdmissionGateTest {
     }
 
     @Test
+    fun `clear visibility ignores stale phase and step updates`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+
+        visibility.begin(token)
+        visibility.markFencePersisted(token)
+        visibility.update(
+            token = token,
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            affectedItemCount = 10,
+            completedItemCount = 4,
+            totalItemCount = 10
+        )
+        visibility.update(
+            token = token,
+            phase = DownloadClearVisibility.ClearPhase.CANCELLING,
+            completedSteps = 1,
+            affectedItemCount = 10,
+            completedItemCount = 0,
+            totalItemCount = 10
+        )
+        visibility.restore(
+            token = token,
+            progress = DownloadClearVisibility.ClearProgress(
+                phase = DownloadClearVisibility.ClearPhase.CANCELLING,
+                completedSteps = 1,
+                totalSteps = 4,
+                affectedItemCount = 10,
+                completedItemCount = 0,
+                totalItemCount = 10
+            )
+        )
+
+        assertEquals(
+            DownloadClearVisibility.ClearPhase.CLEANING,
+            visibility.progress.value?.phase
+        )
+        assertEquals(2, visibility.progress.value?.completedSteps)
+        assertEquals(4, visibility.progress.value?.completedItemCount)
+    }
+
+    @Test
     fun `complete provider scan may replace stale item watermark`() = runTest {
         val gate = DownloadAdmissionGate()
         val visibility = DownloadClearVisibility()

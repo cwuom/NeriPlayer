@@ -702,6 +702,31 @@ private fun isLocalRestorableCoverReference(reference: String): Boolean {
         reference.startsWith("content:", ignoreCase = true)
 }
 
+internal fun shouldPersistDownloadClearProgress(
+    completedItemCount: Int,
+    totalItemCount: Int,
+    lastPersistedItemCount: Int,
+    nowMs: Long,
+    lastPersistedAtMs: Long,
+    minIntervalMs: Long,
+    batchSize: Int
+): Boolean {
+    val normalizedTotal = totalItemCount.coerceAtLeast(0)
+    val normalizedCompleted = completedItemCount.coerceAtLeast(0).let { completed ->
+        if (normalizedTotal > 0) {
+            completed.coerceAtMost(normalizedTotal)
+        } else {
+            completed
+        }
+    }
+    if (lastPersistedItemCount < 0) return true
+    if (normalizedTotal > 0 && normalizedCompleted >= normalizedTotal) return true
+    if (normalizedCompleted - lastPersistedItemCount >= batchSize.coerceAtLeast(1)) {
+        return true
+    }
+    return nowMs - lastPersistedAtMs >= minIntervalMs.coerceAtLeast(0L)
+}
+
 /**
  * 全局下载管理器, 统一维护下载任务和本地下载列表
  */
@@ -730,6 +755,8 @@ object GlobalDownloadManager {
     private const val DOWNLOAD_CANCEL_CLEANUP_PARALLELISM = 4
     private const val DOWNLOAD_CLEAR_PROGRESS_UPDATE_INTERVAL_MS = 100L
     private const val DOWNLOAD_CLEAR_PROGRESS_UPDATE_BATCH_SIZE = 8
+    private const val DOWNLOAD_CLEAR_PROGRESS_PERSIST_INTERVAL_MS = 500L
+    private const val DOWNLOAD_CLEAR_PROGRESS_PERSIST_BATCH_SIZE = 32
     private const val DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS = 25L
     /** 删除屏障只允许短暂等待，超时由持久恢复流程重试 */
     internal const val DOWNLOADED_SONG_DELETE_BARRIER_TIMEOUT_MS = 1_500L
@@ -4089,6 +4116,19 @@ object GlobalDownloadManager {
                 return@withLock
             }
             val existingRequest = _mobileDataDownloadInterruptionRequest.value
+            val normalizedFallbackTaskCount = fallbackTaskCount.coerceAtLeast(1)
+            if (
+                existingRequest != null &&
+                    authoritativeTaskCount == null &&
+                    !forceAuthoritativeRecount &&
+                    existingRequest.networkType == networkType &&
+                    normalizedFallbackTaskCount <= existingRequest.taskCount
+            ) {
+                if (onWifiBoundDownloadNetworkRestored(context, "dialog_recheck_$reason")) {
+                    return@withLock
+                }
+                return@withLock
+            }
             if (
                 existingRequest == null &&
                     !AppContainer.settingsRepo.mobileDataHighRiskPromptEnabledFlow.first()
@@ -5600,13 +5640,12 @@ object GlobalDownloadManager {
             )
         }
 
-        // core 音频已经可读，任务可以先进入完成态，但批量进度必须等最终发布
-        // 或明确的降级终态后才能把这一首计为完成
+        // core 音频已经可读，批次先进入完成态，元信息补全在后台继续
         updateTaskStatus(
             songKey = songKey,
             status = DownloadStatus.COMPLETED,
             expectedAttemptId = expectedAttemptId,
-            settleBatchPresentation = false
+            settleBatchPresentation = true
         )
 
         // core 音频已经逐项校验并写入操作日志后，先发布可播放目录条目
@@ -14372,6 +14411,10 @@ object GlobalDownloadManager {
                     downloadAdmissionGate.runClear(clearToken) {
                         val visibleTasks = preClearedTasks ?: taskStore.currentTasks()
                         preClearedTasks = visibleTasks
+                        cancelBatchDownloadJobsForClear(
+                            batchJobs = activeBatchJobsAtClearStart,
+                            reason = "cancel all download tasks"
+                        )
                         clearBatchDownloadPresentation()
                         taskStore.clearAllTasks()
                         downloadClearVisibility.markFencePersisted(clearToken)
@@ -14816,9 +14859,10 @@ object GlobalDownloadManager {
                                         operationIds = clearOperationIds
                                     )
                                 }
-                            clearBatchJobs.forEach { job ->
-                                job.cancel(CancellationException("cancel all download tasks"))
-                            }
+                            cancelBatchDownloadJobsForClear(
+                                batchJobs = clearBatchJobs,
+                                reason = "cancel all download tasks"
+                            )
                             clearSongKeys.forEach(AudioDownloadManager::cancelSongDownload)
                             taskStore.clearAllTasks()
                             downloadClearVisibility.update(
@@ -15551,6 +15595,17 @@ object GlobalDownloadManager {
         PersistentDownloadClearProgressStore.clear(context)
     }
 
+    private fun cancelBatchDownloadJobsForClear(
+        batchJobs: Collection<Job>,
+        reason: String
+    ) {
+        batchJobs.forEach { job ->
+            runDownloadClearStopAction("取消批量下载协程") {
+                job.cancel(CancellationException(reason))
+            }
+        }
+    }
+
     private fun stopDownloadExecutionImmediately(
         context: Context,
         reason: String,
@@ -15586,11 +15641,10 @@ object GlobalDownloadManager {
             }
         }
         if (ownedKeys == null && ownedOperationIds == null) {
-            activeBatchDownloadJobs.toList().forEach { job ->
-            runDownloadClearStopAction("取消批量下载协程") {
-                job.cancel(CancellationException(reason))
-            }
-            }
+            cancelBatchDownloadJobsForClear(
+                batchJobs = activeBatchDownloadJobs.toList(),
+                reason = reason
+            )
         }
         runDownloadClearStopAction("取消音频下载") {
             when {
@@ -16045,6 +16099,8 @@ object GlobalDownloadManager {
         val progressLock = Any()
         var lastReportedItems = -1
         var lastReportedAtMs = 0L
+        var lastPersistedItems = -1
+        var lastPersistedAtMs = Long.MIN_VALUE
         return { completedItems, totalItems ->
             val normalizedTotal = totalItems.coerceAtLeast(0)
             val normalizedCompleted = completedItems
@@ -16058,7 +16114,7 @@ object GlobalDownloadManager {
                 }
             val nowMs = System.currentTimeMillis()
             synchronized(progressLock) {
-                val shouldReport = normalizedCompleted == 0 ||
+                val shouldReport = lastReportedItems < 0 ||
                     normalizedCompleted >= normalizedTotal && normalizedTotal > 0 ||
                     normalizedCompleted - lastReportedItems >=
                         DOWNLOAD_CLEAR_PROGRESS_UPDATE_BATCH_SIZE ||
@@ -16076,10 +16132,23 @@ object GlobalDownloadManager {
                     completedItemCount = normalizedCompleted,
                     totalItemCount = normalizedTotal
                 )
-                persistDownloadClearProgress(
-                    context = AppContainer.applicationContext,
-                    token = token
-                )
+                if (shouldPersistDownloadClearProgress(
+                        completedItemCount = normalizedCompleted,
+                        totalItemCount = normalizedTotal,
+                        lastPersistedItemCount = lastPersistedItems,
+                        nowMs = nowMs,
+                        lastPersistedAtMs = lastPersistedAtMs,
+                        minIntervalMs = DOWNLOAD_CLEAR_PROGRESS_PERSIST_INTERVAL_MS,
+                        batchSize = DOWNLOAD_CLEAR_PROGRESS_PERSIST_BATCH_SIZE
+                    )
+                ) {
+                    persistDownloadClearProgress(
+                        context = AppContainer.applicationContext,
+                        token = token
+                    )
+                    lastPersistedItems = normalizedCompleted
+                    lastPersistedAtMs = nowMs
+                }
             }
         }
     }

@@ -1541,11 +1541,22 @@ private fun ManagedLibraryProcessingBanner(
     val processed = stageProgress?.first ?: state.processed?.coerceAtLeast(0)
     val total = stageProgress?.second?.takeIf { it > 0 }
         ?: state.total?.takeIf { it > 0 }
-    val progressFraction = if (processed != null && total != null) {
+    val stageProgressFraction = if (processed != null && total != null) {
         (processed.toFloat() / total.toFloat()).coerceIn(0f, 1f)
     } else {
         null
     }
+    val progressFraction = migrationProgress?.fraction
+        ?.coerceIn(0f, 1f)
+        ?: stageProgressFraction
+    val animatedProgressFraction by animateFloatAsState(
+        targetValue = progressFraction ?: 0f,
+        animationSpec = tween(
+            durationMillis = 220,
+            easing = FastOutSlowInEasing
+        ),
+        label = "managed library processing progress"
+    )
     val currentFileSummary = migrationProgress?.currentFileName
         ?.takeIf(String::isNotBlank)
         ?.let { fileName ->
@@ -1687,7 +1698,7 @@ private fun ManagedLibraryProcessingBanner(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 } else {
                     LinearProgressIndicator(
-                        progress = { progressFraction },
+                        progress = { animatedProgressFraction },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

@@ -4,8 +4,10 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 internal class ManagedDownloadTreeChildCache {
+    private val reservationLeaseMs = 10 * 60 * 1000L
     private val namesByParent = ConcurrentHashMap<String, CachedChildNames>()
     private val childrenByParent = ConcurrentHashMap<String, CachedTreeChildren>()
+    private val reservationsByParent = mutableMapOf<String, MutableMap<String, Long>>()
     private val oversizedParents = ConcurrentHashMap.newKeySet<String>()
     private val cachedChildrenCount = AtomicInteger(0)
     private val mutationLock = Any()
@@ -18,6 +20,9 @@ internal class ManagedDownloadTreeChildCache {
     ): Set<String>? {
         if (maxCacheAgeMs <= 0L) return null
         if (cacheKey in oversizedParents) return null
+        synchronized(mutationLock) {
+            pruneExpiredReservationsLocked(cacheKey, nowMs)
+        }
         val cachedNames = namesByParent[cacheKey] ?: return null
         val cachedEntries = childrenByParent[cacheKey]
         val namesFresh = nowMs - cachedNames.refreshedAtMs <= maxCacheAgeMs
@@ -65,11 +70,27 @@ internal class ManagedDownloadTreeChildCache {
         isComplete: Boolean
     ): Set<String> {
         synchronized(mutationLock) {
+            val refreshedNameSet = children.mapTo(hashSetOf(), QueriedTreeChild::name)
+            if (isComplete) {
+                discardMaterializedReservationsLocked(cacheKey, refreshedNameSet)
+            }
+            pruneExpiredReservationsLocked(cacheKey, refreshedAtMs)
             val cachedNames = namesByParent[cacheKey]
+            val liveReservations = reservationsByParent[cacheKey].orEmpty().keys
+            val cachedNamesForMerge = if (isComplete) {
+                liveReservations
+            } else {
+                cachedNames?.names
+            }
+            val cachedNamesCompleteForMerge = if (isComplete) {
+                liveReservations.isEmpty()
+            } else {
+                cachedNames?.isComplete
+            }
             val refreshedNames = TreeChildNameRefreshMerger.mergeAfterRefresh(
                 refreshedNames = children.map(QueriedTreeChild::name),
-                cachedNames = cachedNames?.names,
-                cachedNamesComplete = cachedNames?.isComplete,
+                cachedNames = cachedNamesForMerge,
+                cachedNamesComplete = cachedNamesCompleteForMerge,
                 refreshedComplete = isComplete
             )
             val previousChildren = if (cacheKey in oversizedParents) {
@@ -171,11 +192,19 @@ internal class ManagedDownloadTreeChildCache {
                 cached.names += childName
                 cached.refreshedAtMs = refreshedAtMs
                 if (isReservation) {
+                    reservationsByParent
+                        .getOrPut(cacheKey) { linkedMapOf() }[childName] = refreshedAtMs
                     cached.isComplete = false
+                } else {
+                    reservationsByParent[cacheKey]?.remove(childName)
                 }
                 return
             }
             ensureParentCapacityLocked(cacheKey)
+            if (isReservation) {
+                reservationsByParent
+                    .getOrPut(cacheKey) { linkedMapOf() }[childName] = refreshedAtMs
+            }
             namesByParent[cacheKey] = CachedChildNames(
                 initialNames = listOf(childName),
                 initialRefreshedAtMs = refreshedAtMs,
@@ -191,6 +220,7 @@ internal class ManagedDownloadTreeChildCache {
     ) {
         synchronized(mutationLock) {
             if (cacheKey in oversizedParents) return
+            reservationsByParent[cacheKey]?.remove(child.name)
             var cached = childrenByParent[cacheKey]
             if (cached == null) {
                 if (!canCache(
@@ -277,6 +307,7 @@ internal class ManagedDownloadTreeChildCache {
 
     fun forgetChildName(cacheKey: String, childName: String, refreshedAtMs: Long) {
         synchronized(mutationLock) {
+            reservationsByParent[cacheKey]?.remove(childName)
             namesByParent[cacheKey]?.let { cached ->
                 cached.names -= childName
                 cached.refreshedAtMs = refreshedAtMs
@@ -311,6 +342,7 @@ internal class ManagedDownloadTreeChildCache {
         synchronized(mutationLock) {
             namesByParent.clear()
             childrenByParent.clear()
+            reservationsByParent.clear()
             oversizedParents.clear()
             cachedChildrenCount.set(0)
         }
@@ -351,6 +383,36 @@ internal class ManagedDownloadTreeChildCache {
             cachedChildrenCount.addAndGet(-removed.childrenByName.size)
         }
         namesByParent.remove(cacheKey)
+        reservationsByParent.remove(cacheKey)
+    }
+
+    private fun pruneExpiredReservationsLocked(cacheKey: String, nowMs: Long) {
+        val reservations = reservationsByParent[cacheKey] ?: return
+        val names = namesByParent[cacheKey]
+        reservations.entries.removeIf { (name, reservedAtMs) ->
+            if (nowMs - reservedAtMs <= reservationLeaseMs) {
+                false
+            } else {
+                if (name !in childrenByParent[cacheKey]?.childrenByName.orEmpty()) {
+                    names?.names?.remove(name)
+                }
+                true
+            }
+        }
+        if (reservations.isEmpty()) {
+            reservationsByParent.remove(cacheKey)
+        }
+    }
+
+    private fun discardMaterializedReservationsLocked(
+        cacheKey: String,
+        refreshedNames: Set<String>
+    ) {
+        val reservations = reservationsByParent[cacheKey] ?: return
+        reservations.entries.removeIf { (name, _) -> name in refreshedNames }
+        if (reservations.isEmpty()) {
+            reservationsByParent.remove(cacheKey)
+        }
     }
 
     private fun markOversizedParentLocked(cacheKey: String) {

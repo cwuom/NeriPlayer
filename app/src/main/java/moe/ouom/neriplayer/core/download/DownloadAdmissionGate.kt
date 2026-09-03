@@ -300,22 +300,16 @@ internal class DownloadClearVisibility {
         synchronized(stateLock) {
             if (activeGeneration != token.generation) return
             _isClearing.value = true
-            _isTaskPresentationCleared.value = progress.completedSteps > 0
-            val previous = _progress.value
-            _progress.value = progress.copy(
-                completedSteps = progress.completedSteps.coerceIn(0, CLEAR_PHASE_COUNT),
-                totalSteps = CLEAR_PHASE_COUNT,
-                affectedItemCount = maxOf(
-                    previous?.affectedItemCount ?: 0,
-                    progress.affectedItemCount.coerceAtLeast(0)
-                ),
-                failedItemCount = progress.failedItemCount.coerceAtLeast(0),
-                completedItemCount = progress.completedItemCount.coerceAtLeast(0),
-                totalItemCount = maxOf(
-                    previous?.totalItemCount ?: 0,
-                    progress.totalItemCount.coerceAtLeast(0)
-                )
+            updateProgressLocked(
+                phase = progress.phase,
+                completedSteps = progress.completedSteps,
+                affectedItemCount = progress.affectedItemCount,
+                failedItemCount = progress.failedItemCount,
+                completedItemCount = progress.completedItemCount,
+                totalItemCount = progress.totalItemCount
             )
+            _isTaskPresentationCleared.value =
+                (_progress.value?.completedSteps ?: 0) > 0
         }
     }
 
@@ -368,6 +362,11 @@ internal class DownloadClearVisibility {
         resetItemWatermark: Boolean = false
     ) {
         val previous = _progress.value
+        if (previous != null && phase.ordinal < previous.phase.ordinal) return
+        val effectiveCompletedSteps = maxOf(
+            previous?.completedSteps ?: 0,
+            completedSteps.coerceIn(0, CLEAR_PHASE_COUNT)
+        )
         val requestedTotalItems = (totalItemCount ?: previous?.totalItemCount ?: 0)
             .coerceAtLeast(0)
         // 不完整的 Provider 扫描沿用旧分母，完整扫描才可以把分母收敛到残留数量
@@ -401,7 +400,7 @@ internal class DownloadClearVisibility {
         )
         _progress.value = ClearProgress(
             phase = phase,
-            completedSteps = completedSteps.coerceIn(0, CLEAR_PHASE_COUNT),
+            completedSteps = effectiveCompletedSteps,
             totalSteps = CLEAR_PHASE_COUNT,
             affectedItemCount = effectiveAffectedItemCount,
             failedItemCount = failedItemCount.coerceAtLeast(0),

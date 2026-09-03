@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen
 
+import java.io.File
 import moe.ouom.neriplayer.core.download.DownloadClearVisibility
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import org.junit.Assert.assertEquals
@@ -8,6 +9,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadProgressPagePresentationTest {
+
+    @Test
+    fun `clear progress bar animates between durable updates`() {
+        val source = source("app/src/main/java/moe/ouom/neriplayer/ui/screen/DownloadProgressScreen.kt")
+        val summary = source
+            .substringAfter("private fun DownloadClearProgressSummary(")
+            .substringBefore("@OptIn(ExperimentalMaterial3Api::class)")
+
+        assertTrue(summary.contains("animateFloatAsState("))
+        assertTrue(summary.contains("targetValue = progress.displayFraction"))
+        assertTrue(summary.contains("progress = { animatedProgressFraction }"))
+    }
 
     @Test
     fun `cleaning clear is not logically complete before provider cleanup`() {
@@ -431,5 +444,15 @@ class DownloadProgressPagePresentationTest {
         ).forEach { state ->
             assertTrue(state in DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES)
         }
+    }
+
+    private fun source(path: String): String {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return candidate.readText()
+            directory = directory.parentFile ?: return@repeat
+        }
+        error("project source file not found: $path")
     }
 }
