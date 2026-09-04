@@ -27,6 +27,16 @@ internal val INTERRUPTED_DOWNLOAD_OPERATION_STATES = setOf(
     "DEGRADED_COMPLETE"
 )
 
+internal fun resolveProcessExitRecoveryState(state: String?): String? {
+    return when (state) {
+        "PENDING_QUEUE",
+        "QUEUED",
+        "RUNNING",
+        "RETRYABLE" -> "RETRYABLE"
+        else -> null
+    }
+}
+
 internal interface DownloadExecutionOperationJournal {
     fun save(context: Context, request: DownloadExecutionRequest)
 

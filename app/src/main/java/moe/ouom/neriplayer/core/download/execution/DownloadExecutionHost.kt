@@ -16,8 +16,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
@@ -194,6 +197,8 @@ class DefaultDownloadExecutionHost(
     private val deferredRequests = DeferredDownloadScheduleQueue()
     private val deferredSchedulingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val deferredSchedulingRunning = AtomicBoolean(false)
+    /** WorkManager、UIDT 和进程内唤醒可能同时触发泵，统一串行读取和接管队列 */
+    private val pumpMutex = Mutex()
 
     private data class PumpCandidateSelection(
         val requests: List<DownloadExecutionRequest>,
@@ -274,10 +279,16 @@ class DefaultDownloadExecutionHost(
             val existingReadable = existingOperationId?.let { id ->
                 operationStore.read(context, id) != null
             } == true
-            if (existingOperationId != null &&
-                existingOperationId != request.operationId &&
-                existingState in BLOCKING_SCHEDULING_STATES &&
-                existingReadable
+            val existingCancellationRequested = existingOperationId?.let { id ->
+                operationStore.isUserCancellationRequested(context, id)
+            } == true
+            if (shouldBlockExistingDownloadOperation(
+                    existingOperationId = existingOperationId,
+                    requestedOperationId = request.operationId,
+                    existingState = existingState,
+                    existingReadable = existingReadable,
+                    cancellationRequested = existingCancellationRequested
+                )
             ) {
                 return DownloadExecutionSchedule.Rejected(
                     "download operation already scheduled"
@@ -874,10 +885,6 @@ class DefaultDownloadExecutionHost(
             "QUEUED",
             "RETRYABLE"
         )
-        private val ACTIVE_SCHEDULING_STATES = SCHEDULABLE_OPERATION_STATES +
-            INTERRUPTED_DOWNLOAD_OPERATION_STATES
-        private val BLOCKING_SCHEDULING_STATES = ACTIVE_SCHEDULING_STATES +
-            WAITING_STORAGE_MUTATION_OPERATION_STATE
     }
 
     override fun cancel(
@@ -900,7 +907,10 @@ class DefaultDownloadExecutionHost(
         }
         ForegroundDownloadWorker.cancel(appContext, normalizedId)
         if (cancelAccepted) {
-            request.song.stableKey().let(GlobalDownloadManager::cancelDownloadOperationFromHost)
+            GlobalDownloadManager.cancelDownloadOperationFromHost(
+                songKey = request.song.stableKey(),
+                operationId = normalizedId
+            )
         }
         request?.song?.stableKey()?.let { songKey ->
             operationIdsBySongKey.remove(songKey, normalizedId)
@@ -1041,6 +1051,8 @@ class DefaultDownloadExecutionHost(
                 systemRetryStopOperationIds.add(normalizedId)
             }
         }
+        // 先于 Job/Worker 的取消建立保留标记，避免宿主回调与下载收尾并发时删除 staging
+        AudioDownloadManager.pauseOperationDownloadForExecutionHost(normalizedId)
     }
 
     private fun stopInternal(
@@ -1099,7 +1111,8 @@ class DefaultDownloadExecutionHost(
                 context = appContext,
                 songKey = request.song.stableKey(),
                 expectedAttemptId = request.attemptId,
-                rememberForRetry = retryPrepared
+                rememberForRetry = retryPrepared,
+                operationId = normalizedId
             )
             if (rescheduleBlocked || !retryPrepared) {
                 operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
@@ -1186,7 +1199,11 @@ class DefaultDownloadExecutionHost(
             INTERRUPTED_DOWNLOAD_OPERATION_STATES
         val entries = try {
             kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                DownloadExecutionRoomStore.listByStatesAnyLibrary(context, activeStates)
+                DownloadExecutionRoomStore.listByStatesAnyLibrary(
+                    context = context,
+                    states = activeStates,
+                    excludeUserStoppedOperations = true
+                )
             }
         } catch (error: CancellationException) {
             throw error
@@ -1199,7 +1216,7 @@ class DefaultDownloadExecutionHost(
             )
             return emptySet()
         }
-        val stoppedKeys = try {
+        val recoveredKeys = try {
             kotlinx.coroutines.runBlocking(Dispatchers.IO) {
                 DownloadExecutionRoomStore.markUserRequestedProcessExitOperations(
                     context = context.applicationContext,
@@ -1216,18 +1233,23 @@ class DefaultDownloadExecutionHost(
             )
             return emptySet()
         }
-        val expectedUserInitiatedCount = entries.count { it.request.userInitiated }
-        if (stoppedKeys.size < expectedUserInitiatedCount) {
+        val expectedUserInitiatedCount = entries
+            .asSequence()
+            .filter { it.request.userInitiated }
+            .map { it.request.song.stableKey() }
+            .toSet()
+            .size
+        if (recoveredKeys.size < expectedUserInitiatedCount) {
             moe.ouom.neriplayer.core.logging.NPLogger.w(
                 "DownloadExecutionHost",
-                "部分下载 operation 未写入用户停止标记，保留退出时间戳待下次重试"
+                "部分下载 operation 未完成进程退出恢复，保留退出时间戳待下次重试"
             )
             return emptySet()
         }
         preferences.edit {
             putLong(PROCESS_EXIT_TIMESTAMP_KEY, latestExit.timestamp)
         }
-        return stoppedKeys
+        return recoveredKeys
     }
 
     override suspend fun execute(
@@ -1339,7 +1361,10 @@ class DefaultDownloadExecutionHost(
                     allowExistingRunning = true
                 )
             ) {
-                return@withContext DownloadExecutionResult.AlreadyHandled
+                return@withContext resolveClaimFailureResult(
+                    currentState = operationStore.currentState(appContext, normalizedId),
+                    userStopped = operationStore.isStopped(appContext, normalizedId)
+                )
             }
             val request = operationStore.read(appContext, normalizedId)
                 ?.takeIf { latest ->
@@ -1556,7 +1581,8 @@ class DefaultDownloadExecutionHost(
                     context = context.applicationContext,
                     songKey = initialRequest.song.stableKey(),
                     expectedAttemptId = initialRequest.attemptId,
-                    rememberForRetry = retryPrepared
+                    rememberForRetry = retryPrepared,
+                    operationId = normalizedId
                 )
             }
             throw cancellation
@@ -1604,71 +1630,78 @@ class DefaultDownloadExecutionHost(
 
     override suspend fun pump(
         context: Context
-    ): DownloadExecutionPumpResult = withContext(Dispatchers.IO) {
-        val appContext = context.applicationContext
-        if (PersistentDownloadClearFenceStore.isActive(appContext)) {
-            return@withContext DownloadExecutionPumpResult.Completed
-        }
-        var completedBatches = 0
-        var sawRetry = false
-        var waitedForPendingUidtGrace = false
-        val attemptedOperationIds = mutableSetOf<String>()
-        while (completedBatches < PUMP_MAX_BATCHES_PER_RUN) {
-            if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+    ): DownloadExecutionPumpResult = pumpMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val appContext = context.applicationContext
+            if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
                 return@withContext DownloadExecutionPumpResult.Completed
             }
-            val dispatchWindow = configuredDispatchWindow(appContext)
-            val selection = collectPumpCandidates(
-                context = appContext,
-                capacity = dispatchWindow,
-                attemptedOperationIds = attemptedOperationIds
-            )
-            val candidates = selection.requests
-            if (candidates.isEmpty() && !selection.hasSchedulableRequest) {
-                return@withContext if (sawRetry) {
-                    // 单个 operation 的可恢复失败已经写回 RETRYABLE。共享泵本身没有失败，
-                    // 不应返回 WorkManager Result.retry() 触发至少 10 秒的系统 backoff。
-                    DownloadExecutionPumpResult.ContinueAfterRetry
-                } else {
-                    DownloadExecutionPumpResult.Completed
+            var completedBatches = 0
+            var sawRetry = false
+            var waitedForPendingUidtGrace = false
+            val attemptedOperationIds = mutableSetOf<String>()
+            val attemptedStableKeys = mutableSetOf<String>()
+            while (completedBatches < PUMP_MAX_BATCHES_PER_RUN) {
+                if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
+                    return@withContext DownloadExecutionPumpResult.Completed
                 }
-            }
-            if (candidates.isEmpty()) {
-                val graceDelayMs = selection.shortestPendingUidtGraceDelayMs
-                if (graceDelayMs != null && !waitedForPendingUidtGrace) {
-                    waitedForPendingUidtGrace = true
-                    delay(graceDelayMs)
-                    continue
-                }
-                if (sawRetry) {
-                    return@withContext DownloadExecutionPumpResult.ContinueAfterRetry
-                }
-                // 已尝试的 operation 或仍在 UIDT 队列的 operation 只需要短间隔继续泵，
-                // 不能走 WorkManager retry，否则会被最小 10 秒 backoff 放大成启动停顿
-                return@withContext DownloadExecutionPumpResult.ContinueSoon
-            }
-            waitedForPendingUidtGrace = false
-            attemptedOperationIds += candidates.map(DownloadExecutionRequest::operationId)
-            val results = coroutineScope {
-                candidates.map { request ->
-                    async(Dispatchers.IO) {
-                        execute(appContext, request.operationId)
+                val dispatchWindow = configuredDispatchWindow(appContext)
+                val selection = collectPumpCandidates(
+                    context = appContext,
+                    capacity = dispatchWindow,
+                    attemptedOperationIds = attemptedOperationIds,
+                    attemptedStableKeys = attemptedStableKeys
+                )
+                val candidates = selection.requests
+                if (candidates.isEmpty() && !selection.hasSchedulableRequest) {
+                    return@withContext if (sawRetry) {
+                        // 单个 operation 的可恢复失败已经写回 RETRYABLE。共享泵本身没有失败，
+                        // 不应返回 WorkManager Result.retry() 触发至少 10 秒的系统 backoff。
+                        DownloadExecutionPumpResult.ContinueAfterRetry
+                    } else {
+                        DownloadExecutionPumpResult.Completed
                     }
-                }.awaitAll()
+                }
+                if (candidates.isEmpty()) {
+                    val graceDelayMs = selection.shortestPendingUidtGraceDelayMs
+                    if (graceDelayMs != null && !waitedForPendingUidtGrace) {
+                        waitedForPendingUidtGrace = true
+                        delay(graceDelayMs)
+                        continue
+                    }
+                    if (sawRetry) {
+                        return@withContext DownloadExecutionPumpResult.ContinueAfterRetry
+                    }
+                    // 已尝试的 operation 或仍在 UIDT 队列的 operation 只需要短间隔继续泵，
+                    // 不能走 WorkManager retry，否则会被最小 10 秒 backoff 放大成启动停顿
+                    return@withContext DownloadExecutionPumpResult.ContinueSoon
+                }
+                waitedForPendingUidtGrace = false
+                attemptedOperationIds += candidates.map(DownloadExecutionRequest::operationId)
+                attemptedStableKeys += candidates.map { request -> request.song.stableKey() }
+                val results = coroutineScope {
+                    candidates.map { request ->
+                        async(Dispatchers.IO) {
+                            execute(appContext, request.operationId)
+                        }
+                    }.awaitAll()
+                }
+                completedBatches++
+                sawRetry = sawRetry || results.any(::requiresPumpRetry)
             }
-            completedBatches++
-            sawRetry = sawRetry || results.any(::requiresPumpRetry)
+            DownloadExecutionPumpResult.ContinueSoon
         }
-        DownloadExecutionPumpResult.ContinueSoon
     }
 
     private fun collectPumpCandidates(
         context: Context,
         capacity: Int,
-        attemptedOperationIds: Set<String>
+        attemptedOperationIds: Set<String>,
+        attemptedStableKeys: Set<String>
     ): PumpCandidateSelection {
         val candidates = mutableListOf<DownloadExecutionRequest>()
         val observedOperationIds = mutableSetOf<String>()
+        val observedStableKeys = mutableSetOf<String>()
         var hasSchedulableRequest = false
         var shortestPendingUidtGraceDelayMs: Long? = null
         var cursor: DownloadExecutionPumpCursor? = null
@@ -1682,7 +1715,9 @@ class DefaultDownloadExecutionHost(
                 hasSchedulableRequest = true
                 if (
                     request.operationId in attemptedOperationIds ||
-                        !observedOperationIds.add(request.operationId)
+                        request.song.stableKey() in attemptedStableKeys ||
+                        !observedOperationIds.add(request.operationId) ||
+                        !observedStableKeys.add(request.song.stableKey())
                 ) {
                     return@forEach
                 }
@@ -1871,6 +1906,30 @@ internal fun canScheduleDownloadOperation(currentState: String?): Boolean {
         currentState in INTERRUPTED_DOWNLOAD_OPERATION_STATES
 }
 
+internal fun shouldBlockExistingDownloadOperation(
+    existingOperationId: String?,
+    requestedOperationId: String,
+    existingState: String?,
+    existingReadable: Boolean,
+    cancellationRequested: Boolean
+): Boolean {
+    return existingOperationId != null &&
+        existingOperationId != requestedOperationId &&
+        existingState in setOf(
+            "PENDING_QUEUE",
+            "QUEUED",
+            "RETRYABLE",
+            "RUNNING",
+            "COMMITTING",
+            "CORE_COMMITTED",
+            "ASSETS_ENRICHING",
+            "DEGRADED_COMPLETE",
+            WAITING_STORAGE_MUTATION_OPERATION_STATE
+        ) &&
+        existingReadable &&
+        !cancellationRequested
+}
+
 internal fun shouldBlockHostReschedule(
     preventReschedule: Boolean,
     alreadyStoppedByUser: Boolean
@@ -1904,6 +1963,24 @@ internal fun resolvePreExecutionResult(
         "COMPLETED" -> DownloadExecutionResult.AlreadyHandled
 
         else -> null
+    }
+}
+
+/** 争抢失败时保留仍可调度的 operation，等待赢家收尾后再次接管 */
+internal fun resolveClaimFailureResult(
+    currentState: String?,
+    userStopped: Boolean
+): DownloadExecutionResult {
+    if (userStopped || currentState == "STOPPED") {
+        return DownloadExecutionResult.UserStopped
+    }
+    resolvePreExecutionResult(currentState)?.let { return it }
+    return when (currentState) {
+        "PENDING_QUEUE",
+        "QUEUED",
+        "RETRYABLE" -> DownloadExecutionResult.Retry
+
+        else -> DownloadExecutionResult.AlreadyHandled
     }
 }
 

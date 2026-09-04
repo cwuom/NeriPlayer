@@ -66,6 +66,12 @@ internal object DownloadExecutionRoomStore {
         val requestedAtMs: Long
     )
 
+    /** 取消入口固定的时间边界，避免替代 operation 被旧收敛误触碰 */
+    internal data class CancellationBoundary(
+        val stableKey: String,
+        val createdAtMsAtMost: Long
+    )
+
     internal data class OperationIdentity(
         val operationId: String,
         val stableKey: String,
@@ -837,6 +843,33 @@ internal object DownloadExecutionRoomStore {
         )
     }
 
+    /** 只返回带用户取消凭据的 operation，避免新请求被旧 stableKey 误取消 */
+    suspend fun findUserCancellationOperationIdsForSong(
+        context: Context,
+        songKey: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        createdAtMsAtMost: Long? = null
+    ): List<String> {
+        val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return emptyList()
+        return database.downloadOperationDao()
+            .findAllHeadersByStableKeyAnyLibrary(
+                stableKey = normalizedKey,
+                states = CANCELLATION_CANDIDATE_OPERATION_STATES
+            )
+            .asSequence()
+            .filter { header ->
+                createdAtMsAtMost == null || header.createdAtMs <= createdAtMsAtMost
+            }
+            .filter { header ->
+                header.state in setOf("CANCEL_REQUESTED", "CANCELLED", "STOPPED") ||
+                    header.stopRequestedByUser ||
+                    header.lastErrorCode == "USER_CANCELLED"
+            }
+            .map(DownloadOperationHeaderRow::operationId)
+            .distinct()
+            .toList()
+    }
+
     /** 清空 owner 捕获只读取身份列，避免把大段 sourceHintJson 装入 CursorWindow */
     suspend fun listCancellationIdentitiesAnyLibrary(
         context: Context,
@@ -1188,7 +1221,7 @@ internal object DownloadExecutionRoomStore {
             ) ?: dao.findAllHeadersByStableKeyAnyLibrary(
                 stableKey = normalizedSongKey,
                 states = states
-            ).firstOrNull()?.also { header ->
+            ).firstOrNull { header -> !header.stopRequestedByUser }?.also { header ->
                 rehomeOperationToCurrentLibrary(
                     context = context,
                     operationId = header.operationId,
@@ -1203,28 +1236,31 @@ internal object DownloadExecutionRoomStore {
         context: Context,
         songKey: String,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
-        states: List<String> = CANCELLATION_CANDIDATE_OPERATION_STATES
+        states: List<String> = CANCELLATION_CANDIDATE_OPERATION_STATES,
+        createdAtMsAtMost: Long? = null
     ): List<String> {
         val normalizedSongKey = songKey.trim().takeIf(String::isNotEmpty) ?: return emptyList()
         val libraryId = currentLibraryId(context)
         val dao = database.downloadOperationDao()
-        val current = dao.findAllHeadersByStableKey(libraryId, normalizedSongKey, states)
-        val rows = if (current.isNotEmpty()) {
-            current
-        } else {
-            dao.findAllHeadersByStableKeyAnyLibrary(normalizedSongKey, states).also { headers ->
-                headers.forEach { header ->
-                    rehomeOperationToCurrentLibrary(
-                        context = context,
-                        operationId = header.operationId,
-                        stableKey = normalizedSongKey,
-                        states = states,
-                        database = database
-                    )
-                }
-            }
+        // 目录迁移可能在新根目录先写入一行，而旧根目录仍保留活动行。
+        // 取消必须覆盖两边，否则旧宿主和旧 lease 会继续挡住下一次下载
+        val rows = (
+            dao.findAllHeadersByStableKey(libraryId, normalizedSongKey, states) +
+                dao.findAllHeadersByStableKeyAnyLibrary(normalizedSongKey, states)
+            ).distinctBy(DownloadOperationHeaderRow::operationId)
+        val eligibleRows = rows.filter { header ->
+            createdAtMsAtMost == null || header.createdAtMs <= createdAtMsAtMost
         }
-        return rows.map(DownloadOperationHeaderRow::operationId).distinct()
+        eligibleRows.filter { header -> header.libraryId != libraryId }.forEach { header ->
+            rehomeOperationToCurrentLibrary(
+                context = context,
+                operationId = header.operationId,
+                stableKey = normalizedSongKey,
+                states = states,
+                database = database
+            )
+        }
+        return eligibleRows.map(DownloadOperationHeaderRow::operationId).distinct()
     }
 
     suspend fun findReadableOperationIdForSong(
@@ -1252,6 +1288,7 @@ internal object DownloadExecutionRoomStore {
         states: List<String>,
         excludeUserCancelledStops: Boolean = false,
         excludeUserStoppedOperations: Boolean = false,
+        excludedOperationIds: Collection<String> = emptySet(),
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Map<String, DownloadExecutionRequest> {
         val normalizedKeys = songKeys
@@ -1263,6 +1300,11 @@ internal object DownloadExecutionRoomStore {
         if (normalizedKeys.isEmpty() || states.isEmpty()) {
             return emptyMap()
         }
+        val excludedIds = excludedOperationIds
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
         val libraryId = currentLibraryId(context)
         val dao = database.downloadOperationDao()
         val readableOperations = linkedMapOf<String, DownloadExecutionRequest>()
@@ -1273,6 +1315,9 @@ internal object DownloadExecutionRoomStore {
                 states = states
             ).forEach headerLoop@{ header ->
                 val entitySongKey = header.stableKey
+                if (header.operationId in excludedIds) {
+                    return@headerLoop
+                }
                 if (entitySongKey in readableOperations) {
                     return@headerLoop
                 }
@@ -1301,6 +1346,9 @@ internal object DownloadExecutionRoomStore {
                 states = states
             ).forEach headerLoop@{ header ->
                 val entitySongKey = header.stableKey
+                if (header.operationId in excludedIds) {
+                    return@headerLoop
+                }
                 if (entitySongKey in readableOperations) {
                     return@headerLoop
                 }
@@ -1365,6 +1413,7 @@ internal object DownloadExecutionRoomStore {
         requiresWifiNetwork: Boolean,
         updatedAtMs: Long,
         downloadAudioQuality: DownloadAudioQualitySelection? = null,
+        excludedOperationIds: Collection<String> = emptySet(),
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Set<String> {
         val songsByStableKey = linkedMapOf<String, SongItem>()
@@ -1375,6 +1424,11 @@ internal object DownloadExecutionRoomStore {
         if (songsByStableKey.isEmpty()) {
             return emptySet()
         }
+        val excludedIds = excludedOperationIds
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
         val libraryId = currentLibraryId(context)
         return database.withTransaction {
             val dao = database.downloadOperationDao()
@@ -1385,6 +1439,7 @@ internal object DownloadExecutionRoomStore {
                     stableKeys = stableKeyChunk,
                     states = REUSABLE_OPERATION_STATES
                 ).forEach { header ->
+                    if (header.operationId in excludedIds) return@forEach
                     candidatesByStableKey.getOrPut(header.stableKey) { mutableListOf() } += header
                 }
             }
@@ -1689,15 +1744,15 @@ internal object DownloadExecutionRoomStore {
             ).filterNot(DownloadOperationHeaderRow::stopRequestedByUser)
             val validContenders = buildList {
                 for (header in contenders) {
-                val decoded = readRequestFromHeader(dao, header)
-                val request = decoded.request
-                if (request == null) {
-                    if (decoded.payloadWasRead) {
-                        invalidateMalformedPayloadInTransaction(database, header)
+                    val decoded = readRequestFromHeader(dao, header)
+                    val request = decoded.request
+                    if (request == null) {
+                        if (decoded.payloadWasRead) {
+                            invalidateMalformedPayloadInTransaction(database, header)
+                        }
+                    } else {
+                        add(header to request)
                     }
-                } else {
-                    add(header to request)
-                }
                 }
             }
             val leasedIds = validContenders
@@ -1718,19 +1773,26 @@ internal object DownloadExecutionRoomStore {
                     .thenBy { (header, _) -> header.operationId }
             ) ?: return@withTransaction false
 
-            validContenders.forEach { (header, _) ->
-                if (header.operationId == winner.first.operationId) return@forEach
-                dao.transitionState(
-                    operationId = header.operationId,
-                    expectedStates = listOf(header.state),
-                    state = "INVALID",
-                    updatedAtMs = System.currentTimeMillis(),
-                    errorCode = "DUPLICATE_STABLE_KEY_OPERATION"
-                )
-            }
             if (winner.first.operationId != operationId) {
+                // 另一个宿主可能正在收尾。此时不能把刚排队的替代请求
+                // 提前标成 INVALID，否则取消竞态会永久吞掉新任务
                 return@withTransaction false
             }
+            // 只有当前 operation 已赢得稳定键仲裁时，才清理尚未开始的重复行
+            validContenders
+                .filter { (header, _) ->
+                    header.operationId != winner.first.operationId &&
+                        header.state in REUSABLE_OPERATION_STATES
+                }
+                .forEach { (header, _) ->
+                    dao.transitionState(
+                        operationId = header.operationId,
+                        expectedStates = listOf(header.state),
+                        state = "INVALID",
+                        updatedAtMs = System.currentTimeMillis(),
+                        errorCode = "DUPLICATE_STABLE_KEY_OPERATION"
+                    )
+                }
             if (target.state in DURABLE_CORE_EXECUTION_STATES) {
                 return@withTransaction true
             }
@@ -1806,6 +1868,76 @@ internal object DownloadExecutionRoomStore {
         ) > 0
     }
 
+    /** 在新请求落库后，按取消时刻原子标记仍残留的旧 operation */
+    suspend fun requestCancelForStableKeysBefore(
+        context: Context,
+        boundaries: Collection<CancellationBoundary>,
+        excludedOperationIds: Collection<String> = emptySet(),
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Set<String> {
+        val boundaryByKey = boundaries.asSequence()
+            .map { boundary ->
+                boundary.stableKey.trim() to boundary.createdAtMsAtMost.coerceAtLeast(0L)
+            }
+            .filter { (stableKey, _) -> stableKey.isNotBlank() }
+            .groupBy({ (stableKey, _) -> stableKey }, { (_, cutoff) -> cutoff })
+            .mapValues { (_, cutoffs) -> cutoffs.maxOrNull() ?: 0L }
+        if (boundaryByKey.isEmpty()) return emptySet()
+        val excludedIds = excludedOperationIds
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val headers = boundaryByKey.keys
+                .toList()
+                .chunked(SQLITE_IN_QUERY_CHUNK_SIZE)
+                .flatMap { stableKeyChunk ->
+                    dao.findAllHeadersByStableKeysAnyLibrary(
+                        stableKeys = stableKeyChunk,
+                        states = CANCELLATION_CANDIDATE_OPERATION_STATES
+                    )
+                }
+            val eligibleHeaders = headers.filter { header ->
+                header.operationId !in excludedIds &&
+                    header.createdAtMs <= (boundaryByKey[header.stableKey] ?: -1L)
+            }
+            val cancelIds = eligibleHeaders
+                .filter { header ->
+                    header.state in setOf(
+                        "PENDING_QUEUE",
+                        "QUEUED",
+                        WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                        "RUNNING",
+                        "STOPPED",
+                        "RETRYABLE"
+                    ) && !header.stopRequestedByUser
+                }
+                .map(DownloadOperationHeaderRow::operationId)
+                .distinct()
+            val commitBoundaryIds = eligibleHeaders
+                .filter { header ->
+                    header.state in setOf(
+                        "COMMITTING",
+                        "CORE_COMMITTED",
+                        "ASSETS_ENRICHING",
+                        "DEGRADED_COMPLETE"
+                    ) && !header.stopRequestedByUser
+                }
+                .map(DownloadOperationHeaderRow::operationId)
+                .distinct()
+            val updatedAtMs = System.currentTimeMillis()
+            cancelIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { chunk ->
+                dao.requestCancellations(chunk, updatedAtMs)
+            }
+            commitBoundaryIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { chunk ->
+                dao.requestCommitBoundaryCancellations(chunk, updatedAtMs)
+            }
+            (cancelIds + commitBoundaryIds).toSet()
+        }
+    }
+
     suspend fun purgeCancelled(
         context: Context,
         stableKeys: Collection<String>,
@@ -1821,6 +1953,23 @@ internal object DownloadExecutionRoomStore {
                 database = database
             )
         }
+    }
+
+    /** 按固定 operation 身份清理取消终态，避免删除替代请求的取消凭据 */
+    suspend fun purgeCancelledOperationIds(
+        context: Context,
+        operationIds: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Int {
+        val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (ids.isEmpty()) return 0
+        val eligibleIds = ids.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).flatMap { chunk ->
+            database.downloadOperationDao()
+                .findAllHeadersByOperationIds(chunk)
+                .filter { header -> header.state in setOf("CANCEL_REQUESTED", "CANCELLED") }
+                .map(DownloadOperationHeaderRow::operationId)
+        }
+        return deleteOperationsWithAdmissions(database, eligibleIds)
     }
 
     suspend fun purgeAllCancelled(
@@ -2141,7 +2290,7 @@ internal object DownloadExecutionRoomStore {
             ) > 0
     }
 
-    /** 在退出标记推进前，用一笔事务标记所有用户主动停止的记录 */
+    /** 进程退出后释放旧宿主租约并恢复用户发起的下载 */
     suspend fun markUserRequestedProcessExitOperations(
         context: Context,
         entries: Collection<StateEntry>,
@@ -2152,19 +2301,34 @@ internal object DownloadExecutionRoomStore {
             .distinctBy { entry -> entry.request.operationId }
         if (requests.isEmpty()) return emptySet()
         val nowMs = System.currentTimeMillis()
-        val markedCount = database.withTransaction {
+        return database.withTransaction {
             val dao = database.downloadOperationDao()
-            requests.sumOf { entry ->
-                dao.requestUserStop(
-                    operationId = entry.request.operationId,
+            requests.mapNotNullTo(linkedSetOf()) { entry ->
+                val operationId = entry.request.operationId
+                val stableKey = entry.request.song.stableKey()
+                val header = dao.findHeader(operationId)
+                    ?.takeIf { it.stableKey == stableKey }
+                    ?.takeUnless { it.stopRequestedByUser }
+                    ?: return@mapNotNullTo null
+                val requeueState = resolveProcessExitRecoveryState(header.state)
+                val requeued = requeueState != null && dao.requeueAfterProcessExit(
+                    operationId = operationId,
+                    stableKey = stableKey,
                     updatedAtMs = nowMs
-                )
+                ) > 0
+                val released = if (requeued) {
+                    true
+                } else if (header.state in IN_FLIGHT_OPERATION_STATES) {
+                    dao.releaseAfterProcessExit(
+                        operationId = operationId,
+                        stableKey = stableKey,
+                        updatedAtMs = nowMs
+                    ) > 0
+                } else {
+                    false
+                }
+                stableKey.takeIf { released }
             }
-        }
-        return if (markedCount == requests.size) {
-            requests.mapTo(linkedSetOf()) { entry -> entry.request.song.stableKey() }
-        } else {
-            emptySet()
         }
     }
 

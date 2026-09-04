@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingBusyException
 import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingState
@@ -1533,10 +1534,26 @@ class ManagedDownloadMigrationWorker(
                 } else {
                     requested
                 }
+                val processingStateBeforePersist =
+                    ManagedLibraryProcessingCoordinator.restore(appContext)
+                if (
+                    processingStateBeforePersist != ManagedLibraryProcessingState.Idle &&
+                    processingStateBeforePersist.reason !=
+                        ManagedLibraryProcessingReason.DIRECTORY_CHANGE
+                ) {
+                    throw ManagedLibraryProcessingBusyException(
+                        processingStateBeforePersist.reason
+                    )
+                }
                 if (rootsChanged) {
                     // 新目录必须接管活动请求，旧 Worker 的回写会因所有权变化被丢弃
                     checkpointStore.replaceActiveRequestForDifferentRoots(durableRequest)
+                } else {
+                    // 在 WorkManager 入队前先落盘完整请求，后续任何异常都能由启动恢复
+                    // 重新接管，目录处理状态不会留下没有凭据的永久栅栏
+                    checkpointStore.recordRequest(durableRequest)
                 }
+                ensureDirectoryChangeProcessingFence(appContext)
                 val workManager = WorkManager.getInstance(appContext)
                 val active = activeMigrationWorkInfo(
                     workManager = workManager,
@@ -1576,10 +1593,6 @@ class ManagedDownloadMigrationWorker(
                         fallback = (persisted ?: durableRequest).copy(autoResume = true)
                     )
                     return@withLock active.id.toString()
-                }
-                // 入队前立即写入意图，入队失败时启动流程可以不打开目录就重试
-                if (!rootsChanged) {
-                    checkpointStore.recordRequest(durableRequest)
                 }
                 enqueueDurableRequestLocked(
                     workManager = workManager,
@@ -1820,6 +1833,39 @@ class ManagedDownloadMigrationWorker(
                 val journal = store.readReplacementJournal()
                 shouldBlockStartupForMigrationRecovery(request, journal)
             }
+
+        /** 共享下载泵的同步入口只读取小型检查点，不能在入队窗口放行迁移中的下载 */
+        fun hasPersistedMigrationRecoveryFast(context: Context): Boolean {
+            return runCatching {
+                val store = ManagedDownloadMigrationCheckpointStore(context.applicationContext)
+                shouldBlockStartupForMigrationRecovery(
+                    request = store.readRequest(),
+                    journal = store.readReplacementJournal()
+                )
+            }.getOrElse { error ->
+                NPLogger.w(
+                    TAG,
+                    "同步读取迁移检查点失败，保守阻止共享下载泵: ${error.message}",
+                    error
+                )
+                true
+            }
+        }
+
+        /** 在 Worker 启动前建立持久等待态，避免入队和 closeAndDrain 之间放行下载泵 */
+        private suspend fun ensureDirectoryChangeProcessingFence(context: Context): String? {
+            val state = ManagedLibraryProcessingCoordinator.restore(context)
+            return when {
+                state == ManagedLibraryProcessingState.Idle ->
+                    ManagedLibraryProcessingCoordinator.ensureWaitingForRetry(
+                        context = context,
+                        reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE
+                    )
+                state.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE ->
+                    state.operationId
+                else -> throw ManagedLibraryProcessingBusyException(state.reason)
+            }
+        }
 
         private fun enqueueDurableRequestLocked(
             workManager: WorkManager,

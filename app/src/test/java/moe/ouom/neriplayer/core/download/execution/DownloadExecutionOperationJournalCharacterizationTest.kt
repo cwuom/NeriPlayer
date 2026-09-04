@@ -298,8 +298,8 @@ class DownloadExecutionOperationJournalCharacterizationTest {
             .substringBefore("suspend fun isStopped")
         assertTrue(rawLookup.contains("findLatestOperationIdByStableKey"))
         assertTrue(!rawLookup.contains("requestFromEntity"))
-        assertTrue(readableLookup.contains("requestFromEntity"))
-        assertTrue(readableLookup.contains("invalidateMalformedPayload(database, entity)"))
+        assertTrue(readableLookup.contains("readRequestFromHeader(dao, header)"))
+        assertTrue(readableLookup.contains("invalidateMalformedPayload(database, header)"))
     }
 }
 

@@ -85,6 +85,10 @@
     <string name="download_execution_notification_channel">下载任务</string>
     <string name="download_execution_notification_title">下载中</string>
     <string name="download_execution_notification_content">后台正在处理下载任务</string>
+    <string name="download_execution_notification_progress" formatted="false">已完成 %1$d/%2$d · 剩余 %3$d 首</string>
+    <string name="download_execution_notification_progress_with_percentage" formatted="false">已完成 %1$d/%2$d · 剩余 %3$d 首 · 总进度 %4$d%%</string>
+    <string name="download_execution_notification_current_detail">正在下载：%1$s · %2$s</string>
+    <string name="download_execution_notification_current_unknown">正在下载：%s</string>
     <string name="download_progress_format" formatted="false">下载进度: %1$d/%2$d</string>
     <string name="download_progress_with_percentage" formatted="false">下载进度: %1$d/%2$d · %3$d%%</string>
     <string name="download_current_song">正在下载: %s</string>

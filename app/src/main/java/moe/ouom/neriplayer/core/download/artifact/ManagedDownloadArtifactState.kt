@@ -251,3 +251,21 @@ internal fun resolveArtifactStateUpdate(
         else -> requested
     }
 }
+
+/** 单调状态拒绝取消降级时仍要释放旧租约，持久音频引用不能被覆盖 */
+internal fun shouldReleaseLeaseAfterMonotonicArtifactUpdate(
+    current: ManagedDownloadArtifactState,
+    requested: ManagedDownloadArtifactState,
+    clearLease: Boolean
+): Boolean {
+    if (!clearLease) return false
+    if (requested != ManagedDownloadArtifactState.CANCELLED &&
+        requested != ManagedDownloadArtifactState.FAILED_RETRYABLE
+    ) {
+        return false
+    }
+    return current == ManagedDownloadArtifactState.CORE_COMMITTED ||
+        current == ManagedDownloadArtifactState.ASSETS_ENRICHING ||
+        current == ManagedDownloadArtifactState.DEGRADED_COMPLETE ||
+        current == ManagedDownloadArtifactState.FINALIZED
+}

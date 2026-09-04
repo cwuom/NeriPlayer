@@ -37,6 +37,7 @@ class UidtDownloadJobService : JobService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val runningJobs = ConcurrentHashMap<Int, Job>()
     private val completionGates = ConcurrentHashMap<Int, UidtJobCompletionGate>()
+    private val notificationOwners = ConcurrentHashMap.newKeySet<Int>()
 
     override fun onStartJob(params: JobParameters): Boolean {
         val operationId = params.extras
@@ -47,13 +48,18 @@ class UidtDownloadJobService : JobService() {
             return false
         }
         markJobStarted(operationId, params.jobId)
+        notificationOwners += params.jobId
+        DownloadExecutionNotificationController.acquire(
+            context = applicationContext,
+            owner = notificationOwner(params.jobId)
+        )
         NPLogger.d(TAG, "UIDT 下载任务开始: operationId=$operationId, jobId=${params.jobId}")
         try {
             setNotification(
                 params,
                 DownloadExecutionNotificationIds.uidt(operationId),
                 buildNotification(),
-                JOB_END_NOTIFICATION_POLICY_REMOVE
+                JOB_END_NOTIFICATION_POLICY_DETACH
             )
         } catch (error: Throwable) {
             NPLogger.e(
@@ -74,6 +80,7 @@ class UidtDownloadJobService : JobService() {
                         runningJobs.remove(params.jobId, failureJob)
                         completionGates.remove(params.jobId, completionGate)
                         markJobFinished(operationId, params.jobId)
+                        releaseNotification(params.jobId)
                         if (completionGate.shouldReportCompletion()) {
                             jobFinished(params, true)
                         }
@@ -121,6 +128,7 @@ class UidtDownloadJobService : JobService() {
                     runningJobs.remove(params.jobId, job)
                     completionGates.remove(params.jobId, completionGate)
                     markJobFinished(operationId, params.jobId)
+                    releaseNotification(params.jobId)
                     if (completionGate.shouldReportCompletion()) {
                         jobFinished(params, wantsReschedule)
                     }
@@ -154,6 +162,7 @@ class UidtDownloadJobService : JobService() {
         completionGates[params.jobId]?.markSchedulerStopped()
         runningJobs.remove(params.jobId)?.cancel(CancellationException("UIDT job stopped"))
         operationId?.let { markJobFinished(it, params.jobId) }
+        releaseNotification(params.jobId)
         if (operationId != null) {
             if (stopAction == UidtStopAction.STOP_AND_CANCEL_BACKENDS) {
                 ForegroundDownloadWorker.cancelFallback(
@@ -178,14 +187,26 @@ class UidtDownloadJobService : JobService() {
 
     override fun onDestroy() {
         sealUidtCompletionGates(completionGates.values)
+        notificationOwners.toList().forEach(::releaseNotification)
         serviceScope.cancel()
         runningJobs.clear()
         completionGates.clear()
+        notificationOwners.clear()
         super.onDestroy()
     }
 
     private fun buildNotification(): Notification =
         buildDownloadExecutionNotification(this)
+
+    private fun releaseNotification(jobId: Int) {
+        if (!notificationOwners.remove(jobId)) return
+        DownloadExecutionNotificationController.release(
+            context = applicationContext,
+            owner = notificationOwner(jobId)
+        )
+    }
+
+    private fun notificationOwner(jobId: Int): String = "uidt:$jobId"
 
     companion object {
         private const val TAG = "NERI-DownloadUidt"

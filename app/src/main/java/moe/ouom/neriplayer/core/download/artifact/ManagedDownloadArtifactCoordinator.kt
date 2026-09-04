@@ -37,7 +37,14 @@ internal class ManagedDownloadArtifactCoordinator {
             val dao = database.managedDownloadArtifactDao()
             val existingKeys = linkedSetOf<String>()
             songsByStableKey.keys.chunked(BATCH_ARTIFACT_QUERY_CHUNK_SIZE).forEach { chunk ->
-                dao.findAllByRootKeyAndStableKeys(rootKey, chunk)
+                dao.findAllByStableKeys(chunk)
+                    .filterNot { artifact ->
+                        ManagedDownloadArtifactState.fromPersisted(artifact.state) in setOf(
+                            ManagedDownloadArtifactState.CANCELLED,
+                            ManagedDownloadArtifactState.FAILED_RETRYABLE,
+                            ManagedDownloadArtifactState.MISSING_CONFIRMED
+                        ) && artifact.leaseId == null
+                    }
                     .forEach { artifact -> existingKeys += artifact.stableKey }
             }
             val missing = songsByStableKey
@@ -82,6 +89,36 @@ internal class ManagedDownloadArtifactCoordinator {
         val nowMs = System.currentTimeMillis()
         val dao = database.managedDownloadArtifactDao()
         val current = dao.find(rootKey, stableKey)
+        // 根目录切换不会同步改写旧 artifact 行。先复用旧根的活动或已提交行，
+        // 防止新根在迁移窗口内再创建第二个 lease
+        val foreign = dao.findAllByStableKey(stableKey)
+            .asSequence()
+            .filter { artifact -> artifact.rootKey != rootKey }
+            .sortedWith(
+                compareByDescending<ManagedDownloadArtifactEntity> {
+                    crossRootArtifactPriority(it)
+                }.thenByDescending { it.updatedAtMs }
+            )
+            .firstOrNull()
+            ?.takeIf { artifact ->
+                val state = ManagedDownloadArtifactState.fromPersisted(artifact.state)
+                state in CROSS_ROOT_AUTHORITATIVE_STATES ||
+                    artifact.leaseId != null && state in CROSS_ROOT_LEASE_STATES
+            }
+        if (
+            foreign != null &&
+                (current == null || !isCrossRootAuthoritative(current))
+        ) {
+            return resolveExistingClaim(
+                context = appContext,
+                database = database,
+                current = foreign,
+                nowMs = nowMs,
+                rootKey = foreign.rootKey,
+                stableKey = stableKey,
+                leaseOwnerId = normalizedLeaseOwnerId
+            )
+        }
         val discovered = if (current == null && reconcileStorage) {
             val discovered = discoverExistingAudio(appContext, song)
             discovered?.let {
@@ -265,7 +302,9 @@ internal class ManagedDownloadArtifactCoordinator {
         val database = database(appContext)
         database.withTransaction {
             val dao = database.managedDownloadArtifactDao()
-            val existingKeys = dao.findAllByRootKey(rootKey)
+            val existingKeys = dao.findAllByStableKeys(
+                candidates.map { (stableKey, _) -> stableKey }
+            )
                 .asSequence()
                 .map(ManagedDownloadArtifactEntity::stableKey)
                 .toSet()
@@ -284,11 +323,21 @@ internal class ManagedDownloadArtifactCoordinator {
     ): List<SongItem> {
         if (songs.isEmpty()) return emptyList()
         val appContext = context.applicationContext
-        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
         val dao = database(appContext).managedDownloadArtifactDao()
-        val artifactsByStableKey = dao.findAllByRootKey(rootKey).associateBy(
-            ManagedDownloadArtifactEntity::stableKey
-        )
+        val stableKeys = songs.mapNotNull { song ->
+            song.stableKey().trim().takeIf(String::isNotBlank)
+        }.distinct()
+        val artifactsByStableKey = stableKeys
+            .chunked(BATCH_ARTIFACT_QUERY_CHUNK_SIZE)
+            .flatMap { chunk -> dao.findAllByStableKeys(chunk) }
+            .groupBy(ManagedDownloadArtifactEntity::stableKey)
+            .mapValues { (_, artifacts) ->
+                artifacts.maxWithOrNull(
+                    compareBy<ManagedDownloadArtifactEntity> {
+                        crossRootArtifactPriority(it)
+                    }.thenBy { it.updatedAtMs }
+                )
+            }
         val snapshot = loadLiveFinalizationSnapshot(appContext)
         return songs.filter { song ->
             val stableKey = song.stableKey().trim()
@@ -317,16 +366,115 @@ internal class ManagedDownloadArtifactCoordinator {
             ?.leaseId
     }
 
+    suspend fun currentLeaseIdAnyRoot(
+        context: Context,
+        song: SongItem
+    ): String? {
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return null
+        return database(context.applicationContext).managedDownloadArtifactDao()
+            .findAllByStableKey(stableKey)
+            .asSequence()
+            .filter { artifact -> artifact.leaseId != null }
+            .maxWithOrNull(compareBy<ManagedDownloadArtifactEntity> { it.updatedAtMs })
+            ?.leaseId
+    }
+
     suspend fun currentState(
         context: Context,
         song: SongItem
     ): ManagedDownloadArtifactState? {
         val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return null
         val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(context.applicationContext)
-        return database(context.applicationContext).managedDownloadArtifactDao()
-            .find(rootKey, stableKey)
+        val dao = database(context.applicationContext).managedDownloadArtifactDao()
+        return (dao.find(rootKey, stableKey)
+            ?: dao.findAllByStableKey(stableKey).firstOrNull())
             ?.state
             ?.let(ManagedDownloadArtifactState::fromPersisted)
+    }
+
+    suspend fun currentStateAnyRoot(
+        context: Context,
+        song: SongItem,
+        expectedLeaseId: String? = null
+    ): ManagedDownloadArtifactState? {
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return null
+        val artifacts = database(context.applicationContext).managedDownloadArtifactDao()
+            .findAllByStableKey(stableKey)
+        val normalizedLeaseId = expectedLeaseId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val selected = normalizedLeaseId?.let { leaseId ->
+            artifacts.firstOrNull { artifact -> artifact.leaseId == leaseId }
+        } ?: artifacts.maxWithOrNull(
+            compareBy<ManagedDownloadArtifactEntity> {
+                crossRootArtifactPriority(it)
+            }.thenBy { it.updatedAtMs }
+        )
+        return selected
+            ?.state
+            ?.let(ManagedDownloadArtifactState::fromPersisted)
+    }
+
+    /** 在目录迁移或取消竞态中，按 stableKey 跨根释放同一个 owner 的 lease */
+    suspend fun settleLeaseAnyRoot(
+        context: Context,
+        song: SongItem,
+        expectedLeaseId: String,
+        requestedState: ManagedDownloadArtifactState =
+            ManagedDownloadArtifactState.CANCELLED,
+        errorCode: String? = null
+    ): Boolean {
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return false
+        val normalizedLeaseId = expectedLeaseId.trim().takeIf(String::isNotBlank)
+            ?: return false
+        val database = database(context.applicationContext)
+        val nowMs = System.currentTimeMillis()
+        return database.withTransaction {
+            val dao = database.managedDownloadArtifactDao()
+            val matches = dao.findAllByStableKey(stableKey)
+                .filter { artifact -> artifact.leaseId == normalizedLeaseId }
+            if (matches.isEmpty()) return@withTransaction false
+            matches.forEach { current ->
+                val currentState = ManagedDownloadArtifactState.fromPersisted(current.state)
+                val nextState = resolveArtifactStateUpdate(
+                    current = currentState,
+                    requested = requestedState
+                )
+                val releaseAfterMonotonicUpdate =
+                    shouldReleaseLeaseAfterMonotonicArtifactUpdate(
+                        current = currentState,
+                        requested = requestedState,
+                        clearLease = true
+                    )
+                if (nextState != currentState &&
+                    nextState != requestedState &&
+                    !releaseAfterMonotonicUpdate
+                ) {
+                    return@forEach
+                }
+                val persistedState = if (releaseAfterMonotonicUpdate) {
+                    currentState
+                } else {
+                    nextState
+                }
+                dao.upsert(
+                    current.copy(
+                        state = persistedState.name,
+                        leaseId = null,
+                        updatedAtMs = nowMs,
+                        needsReconcile = persistedState !=
+                            ManagedDownloadArtifactState.FINALIZED,
+                        lastErrorCode = errorCode
+                            ?: if (releaseAfterMonotonicUpdate) {
+                                "CANCELLED_AFTER_CORE_COMMIT"
+                            } else {
+                                null
+                            }
+                    )
+                )
+            }
+            true
+        }
     }
 
     suspend fun markCoreCommitted(
@@ -348,6 +496,10 @@ internal class ManagedDownloadArtifactCoordinator {
         database.withTransaction {
             val dao = database.managedDownloadArtifactDao()
             val current = dao.find(rootKey, stableKey)
+                ?: expectedLeaseId?.let { leaseId ->
+                    dao.findAllByStableKey(stableKey)
+                        .firstOrNull { artifact -> artifact.leaseId == leaseId }
+                }
             if (current == null && expectedLeaseId != null) return@withTransaction
             if (current != null && !matchesLease(current, expectedLeaseId)) return@withTransaction
             val base = current ?: newLeaseArtifact(
@@ -432,7 +584,12 @@ internal class ManagedDownloadArtifactCoordinator {
         val database = database(appContext)
         val nowMs = System.currentTimeMillis()
         database.withTransaction {
-            val current = database.managedDownloadArtifactDao().find(rootKey, stableKey)
+            val dao = database.managedDownloadArtifactDao()
+            val current = dao.find(rootKey, stableKey)
+                ?: expectedLeaseId?.let { leaseId ->
+                    dao.findAllByStableKey(stableKey)
+                        .firstOrNull { artifact -> artifact.leaseId == leaseId }
+                }
             if (current == null && expectedLeaseId != null) {
                 return@withTransaction
             }
@@ -447,7 +604,7 @@ internal class ManagedDownloadArtifactCoordinator {
                 nowMs = nowMs,
                 leaseOwnerId = expectedLeaseId
             ).copy(leaseId = expectedLeaseId)
-            database.managedDownloadArtifactDao().upsert(
+            dao.upsert(
                 base.copy(
                     state = ManagedDownloadArtifactState.FINALIZED.name,
                     leaseId = null,
@@ -1129,7 +1286,12 @@ internal class ManagedDownloadArtifactCoordinator {
         val database = database(appContext)
         val nowMs = System.currentTimeMillis()
         database.withTransaction {
-            val current = database.managedDownloadArtifactDao().find(rootKey, stableKey)
+            val dao = database.managedDownloadArtifactDao()
+            val current = dao.find(rootKey, stableKey)
+                ?: expectedLeaseId?.let { leaseId ->
+                    dao.findAllByStableKey(stableKey)
+                        .firstOrNull { artifact -> artifact.leaseId == leaseId }
+                }
                 ?: return@withTransaction
             if (!matchesLease(current, expectedLeaseId)) {
                 return@withTransaction
@@ -1138,18 +1300,33 @@ internal class ManagedDownloadArtifactCoordinator {
                 current = ManagedDownloadArtifactState.fromPersisted(current.state),
                 requested = state
             )
-            if (nextState == ManagedDownloadArtifactState.fromPersisted(current.state) &&
-                nextState != state
+            val currentState = ManagedDownloadArtifactState.fromPersisted(current.state)
+            val releaseLeaseAfterMonotonicUpdate =
+                shouldReleaseLeaseAfterMonotonicArtifactUpdate(
+                    current = currentState,
+                    requested = state,
+                    clearLease = clearLease
+                )
+            if (nextState == currentState && nextState != state &&
+                !releaseLeaseAfterMonotonicUpdate
             ) {
                 return@withTransaction
             }
-            database.managedDownloadArtifactDao().upsert(
+            dao.upsert(
                 current.copy(
                     state = nextState.name,
-                    leaseId = if (clearLease) null else current.leaseId,
+                    leaseId = if (clearLease || releaseLeaseAfterMonotonicUpdate) {
+                        null
+                    } else {
+                        current.leaseId
+                    },
                     updatedAtMs = nowMs,
                     needsReconcile = nextState != ManagedDownloadArtifactState.FINALIZED,
-                    lastErrorCode = errorCode
+                    lastErrorCode = errorCode ?: if (releaseLeaseAfterMonotonicUpdate) {
+                        "CANCELLED_AFTER_CORE_COMMIT"
+                    } else {
+                        null
+                    }
                 )
             )
         }
@@ -1210,6 +1387,32 @@ internal class ManagedDownloadArtifactCoordinator {
         )
     }
 
+    private fun isCrossRootAuthoritative(entity: ManagedDownloadArtifactEntity): Boolean {
+        val state = ManagedDownloadArtifactState.fromPersisted(entity.state)
+        return state in CROSS_ROOT_AUTHORITATIVE_STATES ||
+            entity.leaseId != null && state in CROSS_ROOT_LEASE_STATES
+    }
+
+    private fun crossRootArtifactPriority(entity: ManagedDownloadArtifactEntity): Int {
+        return when (ManagedDownloadArtifactState.fromPersisted(entity.state)) {
+            ManagedDownloadArtifactState.DOWNLOADING,
+            ManagedDownloadArtifactState.VERIFYING,
+            ManagedDownloadArtifactState.COMMITTING,
+            ManagedDownloadArtifactState.QUEUED -> 4
+
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+            ManagedDownloadArtifactState.FINALIZED -> 3
+
+            ManagedDownloadArtifactState.REPAIR_REQUIRED,
+            ManagedDownloadArtifactState.MISSING_CONFIRMED -> 2
+
+            ManagedDownloadArtifactState.FAILED_RETRYABLE,
+            ManagedDownloadArtifactState.CANCELLED -> 1
+        }
+    }
+
     private fun newLeaseArtifact(
         rootKey: String,
         stableKey: String,
@@ -1256,6 +1459,24 @@ internal class ManagedDownloadArtifactCoordinator {
     private companion object {
         private const val BATCH_ARTIFACT_QUERY_CHUNK_SIZE = 900
         private const val BATCH_ARTIFACT_INSERT_CHUNK_SIZE = 128
+        private val CROSS_ROOT_AUTHORITATIVE_STATES = setOf(
+            ManagedDownloadArtifactState.QUEUED,
+            ManagedDownloadArtifactState.DOWNLOADING,
+            ManagedDownloadArtifactState.VERIFYING,
+            ManagedDownloadArtifactState.COMMITTING,
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+            ManagedDownloadArtifactState.FINALIZED
+        )
+        private val CROSS_ROOT_LEASE_STATES = setOf(
+            ManagedDownloadArtifactState.QUEUED,
+            ManagedDownloadArtifactState.DOWNLOADING,
+            ManagedDownloadArtifactState.VERIFYING,
+            ManagedDownloadArtifactState.COMMITTING,
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING
+        )
     }
 
     private fun database(context: Context): NeriUserDataDatabase {

@@ -290,6 +290,42 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `system cancellation preserves staging while explicit cancellation may clean it`() {
+        assertTrue(
+            shouldPreserveWorkingArtifactsAfterCancellation(
+                cancellation = true,
+                allDownloadsCancelled = false,
+                songCancelled = false,
+                networkPolicyPaused = false
+            )
+        )
+        assertFalse(
+            shouldPreserveWorkingArtifactsAfterCancellation(
+                cancellation = true,
+                allDownloadsCancelled = true,
+                songCancelled = false,
+                networkPolicyPaused = false
+            )
+        )
+        assertFalse(
+            shouldPreserveWorkingArtifactsAfterCancellation(
+                cancellation = true,
+                allDownloadsCancelled = false,
+                songCancelled = true,
+                networkPolicyPaused = false
+            )
+        )
+        assertTrue(
+            shouldPreserveWorkingArtifactsAfterCancellation(
+                cancellation = false,
+                allDownloadsCancelled = true,
+                songCancelled = true,
+                networkPolicyPaused = true
+            )
+        )
+    }
+
+    @Test
     fun `network policy pause keeps unrelated batch state and gates working file mutations`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"

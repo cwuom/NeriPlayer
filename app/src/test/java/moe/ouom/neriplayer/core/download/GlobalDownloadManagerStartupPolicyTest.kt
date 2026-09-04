@@ -20,6 +20,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
+import moe.ouom.neriplayer.core.download.policy.recoveryOperationIdsForKeys
+import moe.ouom.neriplayer.core.download.policy.shouldRecoverDownloadCandidateWithBatch
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -28,6 +30,121 @@ import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 
 class GlobalDownloadManagerStartupPolicyTest {
+
+    @Test
+    fun `cancellation convergence uses bounded monotonic backoff`() {
+        assertEquals(
+            listOf(0L, 150L, 300L, 1_000L, 2_000L, null),
+            listOf(1, 2, 3, 5, 7, 8).map(::cancellationConvergenceDelayMs)
+        )
+    }
+
+    @Test
+    fun `replacement operation timestamp is strictly after every cancellation cutoff`() {
+        assertEquals(
+            1_001L,
+            nextDownloadOperationCreatedAtMs(
+                requestedAtMs = 1_000L,
+                cancellationCutoffs = listOf(1_000L)
+            )
+        )
+        assertEquals(
+            2_001L,
+            nextDownloadOperationCreatedAtMs(
+                requestedAtMs = 1_500L,
+                cancellationCutoffs = listOf(1_000L, 2_000L)
+            )
+        )
+        assertEquals(
+            1_500L,
+            nextDownloadOperationCreatedAtMs(
+                requestedAtMs = 1_500L,
+                cancellationCutoffs = emptyList()
+            )
+        )
+    }
+
+    @Test
+    fun `unresolved cancellation snapshot cannot fall back to stable key cleanup`() {
+        assertTrue(
+            shouldRetainUnresolvedCancellationSnapshot(
+                snapshotBoundary = true,
+                snapshotResolved = false,
+                operationIds = emptySet()
+            )
+        )
+        assertFalse(
+            shouldRetainUnresolvedCancellationSnapshot(
+                snapshotBoundary = true,
+                snapshotResolved = true,
+                operationIds = emptySet()
+            )
+        )
+        assertFalse(
+            shouldRetainUnresolvedCancellationSnapshot(
+                snapshotBoundary = true,
+                snapshotResolved = false,
+                operationIds = setOf("old-operation")
+            )
+        )
+        assertFalse(
+            shouldRetainUnresolvedCancellationSnapshot(
+                snapshotBoundary = false,
+                snapshotResolved = false,
+                operationIds = emptySet()
+            )
+        )
+    }
+
+    @Test
+    fun `empty resolved cancellation snapshot still schedules convergence`() {
+        assertTrue(
+            shouldScheduleCancellationConvergence(
+                operationIds = emptySet(),
+                snapshotBoundary = true
+            )
+        )
+        assertFalse(
+            shouldScheduleCancellationConvergence(
+                operationIds = emptySet(),
+                snapshotBoundary = false
+            )
+        )
+        assertTrue(
+            shouldScheduleCancellationConvergence(
+                operationIds = setOf("old-operation"),
+                snapshotBoundary = false
+            )
+        )
+    }
+
+    @Test
+    fun `only recovery with a working file enters batch`() {
+        val key = "song-recovery"
+        val antiJoined = setOf(key)
+
+        assertFalse(
+            shouldRecoverDownloadCandidateWithBatch(
+                songKey = key,
+                antiJoinedKeys = antiJoined,
+                hasWorkingFile = false
+            )
+        )
+        assertFalse(
+            shouldRecoverDownloadCandidateWithBatch(
+                songKey = key,
+                antiJoinedKeys = antiJoined,
+                hasWorkingFile = false
+            )
+        )
+        assertTrue(
+            shouldRecoverDownloadCandidateWithBatch(
+                songKey = key,
+                antiJoinedKeys = antiJoined,
+                hasWorkingFile = true
+            )
+        )
+    }
 
     @Test
     fun `clear hard deadline is inclusive and unknown timestamps are not expired`() {
@@ -386,27 +503,30 @@ class GlobalDownloadManagerStartupPolicyTest {
         val recoveryBody = source.substringAfter(
             "private fun scheduleDeferredTaskClearRecovery"
         ).substringBefore("private fun scheduleDeferredFullLibraryDeleteRecovery")
-        val firstFenceCheck = recoveryBody.indexOf(
-            "if (!PersistentDownloadClearFenceStore.isActive(appContext))"
+        val initialFenceReleaseCheck = recoveryBody.indexOf(
+            "if (finishReleasedTaskClearState(appContext))"
+        )
+        val recoveryLoopIndex = recoveryBody.indexOf(
+            "while (PersistentDownloadClearFenceStore.isActive(appContext))"
         )
         val joinIndex = recoveryBody.indexOf(
             "requestAllDownloadTaskCancellation("
         )
         val joinedRetryIndex = recoveryBody.indexOf(").join()", joinIndex)
-        val secondFenceCheck = recoveryBody.indexOf(
-            "if (!PersistentDownloadClearFenceStore.isActive(appContext))",
-            firstFenceCheck + 1
+        val finalFenceReleaseCheck = recoveryBody.lastIndexOf(
+            "finishReleasedTaskClearState(appContext)"
         )
 
-        assertTrue(firstFenceCheck >= 0)
-        assertTrue(joinIndex > firstFenceCheck)
+        assertTrue(initialFenceReleaseCheck >= 0)
+        assertTrue(recoveryLoopIndex > initialFenceReleaseCheck)
+        assertTrue(joinIndex > recoveryLoopIndex)
         assertTrue(joinedRetryIndex > joinIndex)
-        assertTrue(secondFenceCheck > joinedRetryIndex)
+        assertTrue(finalFenceReleaseCheck > joinedRetryIndex)
         assertTrue(recoveryBody.contains("forceConvergence = true"))
         assertTrue(recoveryBody.contains("while (PersistentDownloadClearFenceStore.isActive(appContext))"))
         assertFalse(recoveryBody.contains("repeat(3)"))
         assertTrue(recoveryBody.contains("deferredTaskClearRecoveryScheduled.set(false)"))
-        assertFalse(recoveryBody.contains("downloadClearVisibility.finish"))
+        assertFalse(recoveryBody.contains("downloadClearVisibility.finish(clearToken)"))
         assertTrue(recoveryBody.contains("val retryCompleted = try"))
         assertTrue(recoveryBody.contains("if (!retryCompleted)"))
     }
@@ -1259,7 +1379,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             "taskStore.finishClearPresentation(taskPresentationToken)"
         )
         val fenceStateIndex = finallyBody.indexOf(
-            "PersistentDownloadClearFenceStore.isActive(appContext)"
+            "PersistentDownloadClearFenceStore.isTaskClearActive(appContext)"
         )
 
         assertTrue(beginIndex >= 0)
@@ -4419,6 +4539,74 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `settled recovery cleanup selects only matching operation identities`() {
+        val settledSong = recoverySong(id = 914L, name = "Settled")
+        val unrelatedSong = recoverySong(id = 915L, name = "Unrelated")
+        val candidates = listOf(
+            PendingDownloadRecoveryCandidate(
+                song = settledSong,
+                workingFile = null,
+                order = 0,
+                cancelled = true,
+                operationId = "settled-operation"
+            ),
+            PendingDownloadRecoveryCandidate(
+                song = unrelatedSong,
+                workingFile = null,
+                order = 1,
+                cancelled = false,
+                operationId = "unrelated-operation"
+            ),
+            PendingDownloadRecoveryCandidate(
+                song = settledSong.copy(name = "Settled duplicate"),
+                workingFile = null,
+                order = 2,
+                cancelled = true,
+                operationId = "   "
+            )
+        )
+
+        assertEquals(
+            setOf("settled-operation"),
+            recoveryOperationIdsForKeys(candidates, setOf(settledSong.stableKey()))
+        )
+    }
+
+    @Test
+    fun `download recovery keeps first queued order when room and legacy entries overlap`() {
+        val firstSong = recoverySong(id = 907L, name = "First queued")
+        val secondSong = recoverySong(id = 908L, name = "Second queued")
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = listOf(
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = secondSong.stableKey(),
+                    song = secondSong,
+                    order = 0,
+                    queuedAtMs = 10L,
+                    operationId = "legacy-second"
+                ),
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = firstSong.stableKey(),
+                    song = firstSong,
+                    order = 1,
+                    queuedAtMs = 10L,
+                    operationId = "legacy-first"
+                )
+            ),
+            resumableDownloads = emptyList()
+        )
+
+        assertEquals(
+            listOf(secondSong.stableKey(), firstSong.stableKey()),
+            merged.map(PendingDownloadRecoveryCandidate::song).map(SongItem::stableKey)
+        )
+        assertEquals(
+            listOf("legacy-second", "legacy-first"),
+            merged.map(PendingDownloadRecoveryCandidate::operationId)
+        )
+    }
+
+    @Test
     fun `taskless finalization recovery keeps its publication permission through enrichment`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
@@ -4521,6 +4709,35 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertEquals(listOf(true, false), merged.map { it.cancelled })
         assertEquals(partialFile, merged.first().workingFile)
         assertEquals(listOf(cancelledSong.stableKey(), queuedSong.stableKey()), merged.map { it.song.stableKey() })
+    }
+
+    @Test
+    fun `download recovery keeps a replacement operation after an old cancellation`() {
+        val song = recoverySong(id = 913L, name = "Replacement")
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = listOf(
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = song.stableKey(),
+                    song = song,
+                    order = 0,
+                    queuedAtMs = 10L,
+                    operationId = "replacement-operation"
+                )
+            ),
+            resumableDownloads = listOf(
+                ManagedDownloadStorage.PendingResumableDownload(
+                    song = song,
+                    workingFile = File("old-operation.partial"),
+                    operationId = "old-operation"
+                )
+            ),
+            cancelledKeys = setOf(song.stableKey()),
+            cancelledOperationIds = setOf("old-operation")
+        )
+
+        assertFalse(merged.single().cancelled)
+        assertEquals("replacement-operation", merged.single().operationId)
+        assertNull(merged.single().workingFile)
     }
 
     private fun recoverySong(id: Long, name: String): SongItem {

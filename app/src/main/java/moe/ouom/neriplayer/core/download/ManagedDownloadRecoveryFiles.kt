@@ -206,6 +206,15 @@ internal object ManagedDownloadRecoveryFiles {
         }
     }
 
+    fun removePendingDownloadQueueOperationIds(
+        context: Context,
+        operationIds: Collection<String>
+    ) {
+        runBlocking(Dispatchers.IO) {
+            roomStore(context).removePendingDownloadQueueOperationIds(operationIds)
+        }
+    }
+
     fun clearPendingDownloadQueue(context: Context) {
         runBlocking(Dispatchers.IO) {
             roomStore(context).clearPendingDownloadQueue()

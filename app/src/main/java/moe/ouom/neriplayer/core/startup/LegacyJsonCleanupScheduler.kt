@@ -82,12 +82,18 @@ internal object LegacyJsonCleanupScheduler {
                             }
                         }
                     }
-                    runCatching {
+                    val queueBootstrapSucceeded = runCatching {
                         DownloadRecoveryRoomStore(appContext).bootstrapLegacyFilesOnce()
+                        true
                     }.onFailure { error ->
                         NPLogger.w(
                             TAG,
                             "Legacy download queue bootstrap pending: ${error.message}"
+                        )
+                    }.getOrDefault(false)
+                    if (queueBootstrapSucceeded) {
+                        GlobalDownloadManager.wakeDownloadExecutionPumpAfterLegacyQueueBootstrap(
+                            appContext
                         )
                     }
                     val plan = coordinator.buildPlan()

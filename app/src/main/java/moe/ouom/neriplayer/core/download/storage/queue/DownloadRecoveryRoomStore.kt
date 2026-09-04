@@ -21,6 +21,20 @@ internal fun isLegacyQueueImportSuppressed(cutoverState: String?): Boolean {
     return cutoverState == DownloadRecoveryRoomStore.USER_CLEARED_STATE
 }
 
+private fun Collection<String>.normalizedOperationIds(): Set<String> {
+    return asSequence()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .toSet()
+}
+
+private fun Collection<String>.normalizedStableKeys(): Set<String> {
+    return asSequence()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .toSet()
+}
+
 /** compatibility facade for v15 queue files; operation journal owns new work */
 internal class DownloadRecoveryRoomStore(
     private val context: Context,
@@ -38,11 +52,18 @@ internal class DownloadRecoveryRoomStore(
         nowMs: Long = System.currentTimeMillis(),
         userInitiated: Boolean = false,
         requiresWifiNetwork: Boolean = true,
-        downloadAudioQuality: DownloadAudioQualitySelection? = null
+        downloadAudioQuality: DownloadAudioQualitySelection? = null,
+        excludedOperationIds: Collection<String> = emptySet(),
+        forceNewOperationForStableKeys: Collection<String> = emptySet()
     ): List<String> {
+        val requestedExcludedIds = excludedOperationIds.normalizedOperationIds()
+        val forceNewKeys = forceNewOperationForStableKeys.normalizedStableKeys()
         return database.withTransaction {
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
             if (distinctSongs.isEmpty()) return@withTransaction emptyList()
+            val excludedIds = requestedExcludedIds + operationIdsForStableKeysInTransaction(
+                forceNewKeys
+            )
             val songKeys = distinctSongs.map(SongItem::stableKey)
             val inFlightOperationIds = DownloadExecutionRoomStore
                 .findReadableOperationsBySongKeys(
@@ -50,7 +71,8 @@ internal class DownloadRecoveryRoomStore(
                     songKeys = songKeys,
                     database = database,
                     states = DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES,
-                    excludeUserCancelledStops = true
+                    excludeUserCancelledStops = true,
+                    excludedOperationIds = excludedIds
                 )
                 .mapValues { (_, request) -> request.operationId }
             DownloadExecutionRoomStore.rehydrateMalformedReusableOperations(
@@ -61,6 +83,7 @@ internal class DownloadRecoveryRoomStore(
                 userInitiated = userInitiated,
                 requiresWifiNetwork = requiresWifiNetwork,
                 downloadAudioQuality = downloadAudioQuality,
+                excludedOperationIds = excludedIds,
                 updatedAtMs = nowMs,
                 database = database
             )
@@ -69,7 +92,8 @@ internal class DownloadRecoveryRoomStore(
                 states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
                 excludeUserStoppedOperations = true,
                 invalidateDuplicates = true,
-                nowMs = nowMs
+                nowMs = nowMs,
+                excludedOperationIds = excludedIds
             )
             val existingOperationIds = existing.mapValues { (_, candidate) ->
                 candidate.metadata.operationId
@@ -135,14 +159,21 @@ internal class DownloadRecoveryRoomStore(
         nowMs: Long = System.currentTimeMillis(),
         userInitiated: Boolean = false,
         requiresWifiNetwork: Boolean = true,
-        downloadAudioQuality: DownloadAudioQualitySelection? = null
+        downloadAudioQuality: DownloadAudioQualitySelection? = null,
+        excludedOperationIds: Collection<String> = emptySet(),
+        forceNewOperationForStableKeys: Collection<String> = emptySet()
     ): List<String> {
+        // the shared transaction batches findAllHeadersByStableKeys(...) and
+        // findAllHeadersByOperationIds(...) so this compatibility facade adds no
+        // per-song database round trips
         return upsertWaitingStorageMutationWithRequests(
             songs = songs,
             nowMs = nowMs,
             userInitiated = userInitiated,
             requiresWifiNetwork = requiresWifiNetwork,
-            downloadAudioQuality = downloadAudioQuality
+            downloadAudioQuality = downloadAudioQuality,
+            excludedOperationIds = excludedOperationIds,
+            forceNewOperationForStableKeys = forceNewOperationForStableKeys
         ).operationIds
     }
 
@@ -151,7 +182,9 @@ internal class DownloadRecoveryRoomStore(
         nowMs: Long = System.currentTimeMillis(),
         userInitiated: Boolean = false,
         requiresWifiNetwork: Boolean = true,
-        downloadAudioQuality: DownloadAudioQualitySelection? = null
+        downloadAudioQuality: DownloadAudioQualitySelection? = null,
+        excludedOperationIds: Collection<String> = emptySet(),
+        forceNewOperationForStableKeys: Collection<String> = emptySet()
     ): WaitingStorageMutationBatchResult {
         if (songs.isEmpty()) {
             return WaitingStorageMutationBatchResult(
@@ -159,6 +192,8 @@ internal class DownloadRecoveryRoomStore(
                 requestsByOperationId = emptyMap()
             )
         }
+        val requestedExcludedIds = excludedOperationIds.normalizedOperationIds()
+        val forceNewKeys = forceNewOperationForStableKeys.normalizedStableKeys()
         return database.withTransaction {
             val dao = database.downloadOperationDao()
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
@@ -168,6 +203,9 @@ internal class DownloadRecoveryRoomStore(
                     requestsByOperationId = emptyMap()
                 )
             }
+            val excludedIds = requestedExcludedIds + operationIdsForStableKeysInTransaction(
+                forceNewKeys
+            )
             val songKeys = distinctSongs.map(SongItem::stableKey)
             val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(appContext)
             val waitingWinners = readLatestOperationCandidates(
@@ -175,7 +213,8 @@ internal class DownloadRecoveryRoomStore(
                 states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE),
                 excludeUserStoppedOperations = true,
                 invalidateDuplicates = true,
-                nowMs = nowMs
+                nowMs = nowMs,
+                excludedOperationIds = excludedIds
             )
             val inFlightOperationIds = DownloadExecutionRoomStore
                 .findReadableOperationsBySongKeys(
@@ -183,7 +222,8 @@ internal class DownloadRecoveryRoomStore(
                     songKeys = songKeys,
                     database = database,
                     states = DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES,
-                    excludeUserCancelledStops = true
+                    excludeUserCancelledStops = true,
+                    excludedOperationIds = excludedIds
                 )
                 .mapValues { (_, request) -> request.operationId }
             val reusableOperationIds = DownloadExecutionRoomStore
@@ -192,7 +232,8 @@ internal class DownloadRecoveryRoomStore(
                     songKeys = songKeys,
                     database = database,
                     states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
-                    excludeUserStoppedOperations = true
+                    excludeUserStoppedOperations = true,
+                    excludedOperationIds = excludedIds
                 )
                 .mapValues { (_, request) -> request.operationId }
             val blockedOperationIds = linkedMapOf<String, String>()
@@ -202,7 +243,9 @@ internal class DownloadRecoveryRoomStore(
                     stableKeys = stableKeyChunk,
                     states = WAITING_STORAGE_MUTATION_BLOCKING_STATES
                 ).forEach { header ->
-                    blockedOperationIds.putIfAbsent(header.stableKey, header.operationId)
+                    if (header.operationId !in excludedIds) {
+                        blockedOperationIds.putIfAbsent(header.stableKey, header.operationId)
+                    }
                 }
             }
             val stoppedWaitingOperationIds = linkedMapOf<String, String>()
@@ -212,7 +255,7 @@ internal class DownloadRecoveryRoomStore(
                     stableKeys = stableKeyChunk,
                     states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE)
                 ).forEach { header ->
-                    if (header.stopRequestedByUser) {
+                    if (header.stopRequestedByUser && header.operationId !in excludedIds) {
                         stoppedWaitingOperationIds.putIfAbsent(
                             header.stableKey,
                             header.operationId
@@ -259,36 +302,50 @@ internal class DownloadRecoveryRoomStore(
                     deterministicOperationId
                 ]
                 val mustReplaceDeterministicOperation =
-                    deterministicOperationState in WAITING_STORAGE_MUTATION_REPLACED_TERMINAL_STATES
-                val operationId = existing?.metadata?.operationId
-                    ?: if (mustReplaceDeterministicOperation) {
-                        UUID.randomUUID().toString()
-                    } else {
-                        deterministicOperationId
-                    }
+                    key in forceNewKeys ||
+                        deterministicOperationId in excludedIds ||
+                        deterministicOperationState in
+                        WAITING_STORAGE_MUTATION_REPLACED_TERMINAL_STATES
+                val existingOperationId = existing?.metadata?.operationId
+                val mustCreateReplacement = key in forceNewKeys ||
+                    existingOperationId in excludedIds ||
+                    (existingOperationId == null && mustReplaceDeterministicOperation)
+                val operationId = if (mustCreateReplacement) {
+                    UUID.randomUUID().toString()
+                } else {
+                    existingOperationId ?: deterministicOperationId
+                }
+                val reusableMetadata = existing?.takeUnless { mustCreateReplacement }
                 val effectiveRequiresWifiNetwork = if (userInitiated) {
                     requiresWifiNetwork
                 } else {
-                    existing?.metadata?.requiresWifiNetwork ?: requiresWifiNetwork
+                    reusableMetadata?.metadata?.requiresWifiNetwork ?: requiresWifiNetwork
                 }
                 val request = DownloadExecutionRequest(
                     operationId = operationId,
                     song = song,
-                    preserveStaging = existing?.metadata?.preserveStaging ?: false,
+                    preserveStaging = reusableMetadata?.metadata?.preserveStaging ?: false,
                     requiresWifiNetwork = effectiveRequiresWifiNetwork,
-                    attemptId = existing?.metadata?.attemptId,
-                    artifactLeaseId = existing?.metadata?.artifactLeaseId
+                    attemptId = reusableMetadata?.metadata?.attemptId,
+                    artifactLeaseId = reusableMetadata?.metadata?.artifactLeaseId
                         ?: UUID.randomUUID().toString(),
-                    userInitiated = existing?.metadata?.userInitiated == true || userInitiated,
-                    downloadAudioQuality = existing?.metadata?.downloadAudioQuality
+                    userInitiated = reusableMetadata?.metadata?.userInitiated == true ||
+                        userInitiated,
+                    downloadAudioQuality = reusableMetadata?.metadata?.downloadAudioQuality
                         ?: downloadAudioQuality
                 )
                 DownloadExecutionRoomStore.upsert(
                     context = appContext,
                     request = request,
                     state = WAITING_STORAGE_MUTATION_OPERATION_STATE,
-                    queueOrder = existing?.header?.queueOrder ?: nextOrder++,
-                    createdAtMs = existing?.header?.createdAtMs ?: nowMs,
+                    queueOrder = if (mustCreateReplacement) nextOrder++ else {
+                        existing?.header?.queueOrder ?: nextOrder++
+                    },
+                    createdAtMs = if (mustCreateReplacement) {
+                        nowMs
+                    } else {
+                        existing?.header?.createdAtMs ?: nowMs
+                    },
                     database = database
                 )
                 requestsByOperationId[operationId] = request
@@ -363,13 +420,30 @@ internal class DownloadRecoveryRoomStore(
         val metadata: DownloadExecutionRoomStore.OperationRequestMetadata
     )
 
+    private suspend fun operationIdsForStableKeysInTransaction(
+        stableKeys: Set<String>
+    ): Set<String> {
+        if (stableKeys.isEmpty()) return emptySet()
+        val operationIds = linkedSetOf<String>()
+        for (keyChunk in stableKeys.toList().chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE)) {
+            database.downloadOperationDao()
+                .findAllHeadersByStableKeysAnyLibrary(
+                    stableKeys = keyChunk,
+                    states = REPLACEMENT_OPERATION_STATES
+                )
+                .forEach { header -> operationIds += header.operationId }
+        }
+        return operationIds
+    }
+
     /** 只读取请求歌曲对应的表头和调度字段，避免扫描整张 operation 表 */
     private suspend fun readLatestOperationCandidates(
         songKeys: Collection<String>,
         states: List<String>,
         excludeUserStoppedOperations: Boolean,
         invalidateDuplicates: Boolean,
-        nowMs: Long
+        nowMs: Long,
+        excludedOperationIds: Set<String> = emptySet()
     ): Map<String, ReadableOperationCandidate> {
         val normalizedKeys = songKeys
             .map(String::trim)
@@ -409,6 +483,7 @@ internal class DownloadRecoveryRoomStore(
             return headersByStableKey[key]
                 .orEmpty()
                 .asSequence()
+                .filterNot { header -> header.operationId in excludedOperationIds }
                 .filterNot { header ->
                     excludeUserStoppedOperations && header.stopRequestedByUser
                 }
@@ -470,7 +545,9 @@ internal class DownloadRecoveryRoomStore(
         if (invalidateDuplicates) {
             headersByStableKey.forEach { (key, headers) ->
                 val winnerId = selected[key]?.header?.operationId
-                headers.filterNot { header -> header.operationId == winnerId }
+                headers.filterNot { header ->
+                    header.operationId == winnerId || header.operationId in excludedOperationIds
+                }
                     .filter { header ->
                         !excludeUserStoppedOperations || !header.stopRequestedByUser
                     }
@@ -497,6 +574,27 @@ internal class DownloadRecoveryRoomStore(
                 stableKeys = keys,
                 database = database
             )
+        }
+    }
+
+    /** 取消清理只删除快照中的 operation，不能按 stable key 抹掉替代请求 */
+    suspend fun removePendingDownloadQueueOperationIds(operationIds: Collection<String>) {
+        val ids = operationIds
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+        if (ids.isEmpty()) return
+        ids.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).forEach { chunk ->
+            database.withTransaction {
+                val dao = database.downloadOperationDao()
+                val removableIds = dao.findAllHeadersByOperationIds(chunk)
+                    .filter { header -> header.state in CLEARABLE_PENDING_QUEUE_STATES }
+                    .map(DownloadOperationHeaderRow::operationId)
+                if (removableIds.isNotEmpty()) {
+                    dao.deleteHostAdmissions(removableIds)
+                    dao.deleteOperations(removableIds)
+                }
+            }
         }
     }
 
@@ -670,6 +768,19 @@ internal class DownloadRecoveryRoomStore(
             "COMPLETED",
             "FINALIZED",
             "INVALID"
+        )
+        private val REPLACEMENT_OPERATION_STATES = listOf(
+            "PENDING_QUEUE",
+            "QUEUED",
+            WAITING_STORAGE_MUTATION_OPERATION_STATE,
+            "RUNNING",
+            "COMMITTING",
+            "CORE_COMMITTED",
+            "ASSETS_ENRICHING",
+            "DEGRADED_COMPLETE",
+            "CANCEL_REQUESTED",
+            "STOPPED",
+            "RETRYABLE"
         )
         private val PENDING_QUEUE_VISIBLE_STATES = listOf(
             PENDING_QUEUE_STATE,

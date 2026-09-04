@@ -246,4 +246,21 @@ class UidtDownloadJobPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `process exit recovery requeues only pre commit states`() {
+        listOf("PENDING_QUEUE", "QUEUED", "RUNNING", "RETRYABLE").forEach { state ->
+            assertEquals("RETRYABLE", resolveProcessExitRecoveryState(state))
+        }
+        listOf(
+            "COMMITTING",
+            "CORE_COMMITTED",
+            "ASSETS_ENRICHING",
+            "DEGRADED_COMPLETE",
+            "STOPPED",
+            "CANCELLED"
+        ).forEach { state ->
+            assertEquals(null, resolveProcessExitRecoveryState(state))
+        }
+    }
 }

@@ -438,12 +438,14 @@ fun upsertDownloadedSongCatalog(currentSongs: List<DownloadedSong>, updatedSong:
 internal fun mergePendingDownloadRecoveryCandidates(
     queuedDownloads: List<ManagedDownloadStorage.PendingDownloadQueueEntry>,
     resumableDownloads: List<ManagedDownloadStorage.PendingResumableDownload>,
-    cancelledKeys: Set<String> = emptySet()
+    cancelledKeys: Set<String> = emptySet(),
+    cancelledOperationIds: Set<String> = emptySet()
 ): List<PendingDownloadRecoveryCandidate> =
     moe.ouom.neriplayer.core.download.policy.mergePendingDownloadRecoveryCandidates(
         queuedDownloads,
         resumableDownloads,
-        cancelledKeys
+        cancelledKeys,
+        cancelledOperationIds
     )
 
 internal fun mergeManagedRequestedReferences(

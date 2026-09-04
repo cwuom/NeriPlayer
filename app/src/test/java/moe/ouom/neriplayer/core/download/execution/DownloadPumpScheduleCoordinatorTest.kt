@@ -67,4 +67,57 @@ class DownloadPumpScheduleCoordinatorTest {
         assertFalse(coordinator.canRetry(failedGeneration))
         assertTrue(coordinator.claimWorker(replacementGeneration))
     }
+
+    @Test
+    fun `immediate reservation excludes a duplicate worker until it completes`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.reserveImmediate()!!
+
+        assertFalse(coordinator.cancelUnclaimed(generation))
+        assertFalse(coordinator.claimWorker(generation))
+        assertFalse(coordinator.failEnqueue(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED,
+            coordinator.complete(generation, workWillRetry = false)
+        )
+        assertTrue(coordinator.claimWorker(generation))
+    }
+
+    @Test
+    fun `late enqueue failure cannot release an immediate retry generation`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.reserveImmediate()!!
+
+        assertEquals(
+            DownloadPumpCompletion.RETRYING,
+            coordinator.complete(generation, workWillRetry = true)
+        )
+        assertFalse(coordinator.failEnqueue(generation))
+        assertTrue(coordinator.claimWorker(generation))
+    }
+
+    @Test
+    fun `immediate pump retry releases its generation for a successor`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.reserveImmediate()!!
+
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR,
+            coordinator.completeImmediate(
+                generation,
+                DownloadExecutionPumpResult.Retry
+            )
+        )
+        assertTrue(coordinator.request() != null)
+    }
+
+    @Test
+    fun `blocked unclaimed worker releases only its pending generation`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.request()!!
+
+        assertTrue(coordinator.cancelUnclaimed(generation))
+        assertFalse(coordinator.cancelUnclaimed(generation))
+        assertTrue(coordinator.request() != null)
+    }
 }

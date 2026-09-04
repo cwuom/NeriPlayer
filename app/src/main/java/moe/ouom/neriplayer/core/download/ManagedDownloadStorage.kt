@@ -3131,6 +3131,16 @@ internal object ManagedDownloadStorage {
         ManagedDownloadRecoveryFiles.removePendingDownloadQueueEntries(context, songKeys)
     }
 
+    internal fun removePendingDownloadQueueOperationIds(
+        context: Context,
+        operationIds: Collection<String>
+    ) {
+        ManagedDownloadRecoveryFiles.removePendingDownloadQueueOperationIds(
+            context,
+            operationIds
+        )
+    }
+
     internal fun clearPendingDownloadQueue(context: Context) {
         ManagedDownloadRecoveryFiles.clearPendingDownloadQueue(context)
     }
@@ -5613,7 +5623,28 @@ internal object ManagedDownloadStorage {
         if (!ManagedDownloadTreeNaming.isPendingMetadataName(metadataEntry.name, audio.logicalName)) {
             return
         }
-        if (!isPendingAudioPromotionSourceReleased(context, root, audio)) {
+        val sourceReleased = isPendingAudioPromotionSourceReleased(
+            context = context,
+            root = root,
+            audio = audio
+        )
+        cleanupPendingCoreMetadataAfterAudioPromotion(
+            context = context,
+            root = root,
+            audio = audio,
+            metadataEntry = metadataEntry,
+            sourceReleased = sourceReleased
+        )
+    }
+
+    private fun cleanupPendingCoreMetadataAfterAudioPromotion(
+        context: Context,
+        root: RootHandle,
+        audio: StoredEntry,
+        metadataEntry: StoredEntry,
+        sourceReleased: Boolean
+    ) {
+        if (!sourceReleased) {
             NPLogger.w(
                 TAG,
                 "迁移前音频已提升但 pending 音频清理未确认，保留配对 metadata: " +

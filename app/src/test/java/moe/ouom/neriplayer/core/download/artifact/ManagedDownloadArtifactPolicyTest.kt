@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEnt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ManagedDownloadArtifactPolicyTest {
@@ -250,6 +251,49 @@ class ManagedDownloadArtifactPolicyTest {
             resolveArtifactStateUpdate(
                 current = ManagedDownloadArtifactState.REPAIR_REQUIRED,
                 requested = ManagedDownloadArtifactState.FAILED_RETRYABLE
+            )
+        )
+    }
+
+    @Test
+    fun `cancellation releases a stale lease without downgrading committed audio`() {
+        listOf(
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+            ManagedDownloadArtifactState.FINALIZED
+        ).forEach { current ->
+            assertTrue(
+                shouldReleaseLeaseAfterMonotonicArtifactUpdate(
+                    current = current,
+                    requested = ManagedDownloadArtifactState.CANCELLED,
+                    clearLease = true
+                )
+            )
+            assertEquals(
+                current,
+                resolveArtifactStateUpdate(
+                    current = current,
+                    requested = ManagedDownloadArtifactState.CANCELLED
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `a non terminal update never clears a committed artifact lease`() {
+        assertFalse(
+            shouldReleaseLeaseAfterMonotonicArtifactUpdate(
+                current = ManagedDownloadArtifactState.CORE_COMMITTED,
+                requested = ManagedDownloadArtifactState.REPAIR_REQUIRED,
+                clearLease = true
+            )
+        )
+        assertFalse(
+            shouldReleaseLeaseAfterMonotonicArtifactUpdate(
+                current = ManagedDownloadArtifactState.CORE_COMMITTED,
+                requested = ManagedDownloadArtifactState.CANCELLED,
+                clearLease = false
             )
         )
     }

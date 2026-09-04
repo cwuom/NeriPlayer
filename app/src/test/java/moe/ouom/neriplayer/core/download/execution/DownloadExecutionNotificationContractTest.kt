@@ -24,14 +24,17 @@ class DownloadExecutionNotificationContractTest {
     }
 
     @Test
-    fun `both execution hosts use a quiet indeterminate progress notification`() {
+    fun `both execution hosts use one shared progress notification`() {
         val notificationSource = source(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
                 "DownloadExecutionNotification.kt"
         )
         assertTrue(notificationSource.contains("CATEGORY_PROGRESS"))
         assertTrue(notificationSource.contains("setOnlyAlertOnce(true)"))
-        assertTrue(notificationSource.contains("setProgress(0, 0, true)"))
+        assertTrue(notificationSource.contains("setProgress(100, percentage ?: 0, percentage == null)"))
+        assertTrue(notificationSource.contains("DOWNLOAD_EXECUTION_NOTIFICATION_ID"))
+        assertTrue(notificationSource.contains("DownloadExecutionNotificationController"))
+        assertTrue(notificationSource.contains("cancelLegacyNotificationsIfDue"))
 
         val workerSource = source(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
@@ -43,8 +46,20 @@ class DownloadExecutionNotificationContractTest {
         )
         assertTrue(workerSource.contains("buildDownloadExecutionNotification(context)"))
         assertTrue(uidtSource.contains("buildDownloadExecutionNotification(this)"))
+        assertTrue(uidtSource.contains("JOB_END_NOTIFICATION_POLICY_DETACH"))
         assertFalse(workerSource.contains("download_execution_notification_content,"))
         assertFalse(uidtSource.contains("download_execution_notification_content,"))
+    }
+
+    @Test
+    fun `notification progress resources expose counts and current song details`() {
+        notificationResourcePaths().forEach { path ->
+            val content = source(path)
+            assertTrue(content.contains("download_execution_notification_progress"))
+            assertTrue(content.contains("download_execution_notification_progress_with_percentage"))
+            assertTrue(content.contains("download_execution_notification_current_detail"))
+            assertTrue(content.contains("download_execution_notification_current_unknown"))
+        }
     }
 
     private fun notificationResourcePaths(): List<String> = listOf(

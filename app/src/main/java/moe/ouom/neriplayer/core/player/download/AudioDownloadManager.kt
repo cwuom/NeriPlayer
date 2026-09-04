@@ -307,10 +307,17 @@ object AudioDownloadManager {
     private val retryWakeSignalVersion = MutableStateFlow(0L)
     private val activeCallsBySongKey =
         ConcurrentHashMap<String, MutableSet<okhttp3.Call>>()
+    /** 网络调用按 operation 归属，取消旧请求时不能误伤同曲目的替代请求 */
+    private val activeCallsByOperationId =
+        ConcurrentHashMap<String, MutableSet<okhttp3.Call>>()
     private val networkPolicyPausedSongKeys =
         Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
     private val networkPolicyMutationLock = Any()
     private val activeSongOperationCounts = ConcurrentHashMap<String, Int>()
+    private val activeOperationCounts = ConcurrentHashMap<String, Int>()
+    /** 宿主停止回调需要在取消 Job 前找到对应歌曲并先封存 staging */
+    private val activeSongKeyByOperationId = ConcurrentHashMap<String, String>()
+    private val executionHostPausedOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val batchSessionLock = Any()
     private val networkRecoveryMonitorLock = Any()
     private var lastConfirmedInternetAccess = false
@@ -390,6 +397,11 @@ object AudioDownloadManager {
 
     fun isSongDownloadActive(songKey: String): Boolean {
         return (activeSongOperationCounts[songKey] ?: 0) > 0
+    }
+
+    internal fun isOperationDownloadActive(operationId: String): Boolean {
+        val normalizedId = operationId.trim()
+        return normalizedId.isNotBlank() && (activeOperationCounts[normalizedId] ?: 0) > 0
     }
 
     fun initialize(context: Context) {
@@ -1834,13 +1846,17 @@ object AudioDownloadManager {
         _batchProgressFlow.value = progress
     }
 
-    private fun beginSongDownloadOperation(songKey: String) {
+    private fun beginSongDownloadOperation(songKey: String, operationId: String) {
         activeSongOperationCounts.compute(songKey) { _, current ->
             (current ?: 0) + 1
         }
+        activeOperationCounts.compute(operationId) { _, current ->
+            (current ?: 0) + 1
+        }
+        activeSongKeyByOperationId[operationId] = songKey
     }
 
-    private fun endSongDownloadOperation(songKey: String) {
+    private fun endSongDownloadOperation(songKey: String, operationId: String) {
         activeSongOperationCounts.computeIfPresent(songKey) { _, current ->
             val nextCount = current - 1
             if (nextCount <= 0) {
@@ -1849,23 +1865,53 @@ object AudioDownloadManager {
                 nextCount
             }
         }
+        val remainingOperationCount = activeOperationCounts.computeIfPresent(operationId) { _, current ->
+            val nextCount = current - 1
+            if (nextCount <= 0) null else nextCount
+        } ?: 0
+        if (remainingOperationCount <= 0) {
+            activeSongKeyByOperationId.remove(operationId, songKey)
+            executionHostPausedOperationIds.remove(operationId)
+        }
     }
 
-    private fun registerActiveCall(songKey: String, call: okhttp3.Call) {
+    private fun registerActiveCall(
+        songKey: String,
+        call: okhttp3.Call,
+        operationId: String?
+    ) {
         activeCallsBySongKey.compute(songKey) { _, current ->
             val calls = current ?: Collections.newSetFromMap(ConcurrentHashMap<okhttp3.Call, Boolean>())
             calls.add(call)
             calls
         }
+        operationId?.trim()?.takeIf(String::isNotBlank)?.let { normalizedId ->
+            activeCallsByOperationId.compute(normalizedId) { _, current ->
+                val calls = current
+                    ?: Collections.newSetFromMap(ConcurrentHashMap<okhttp3.Call, Boolean>())
+                calls.add(call)
+                calls
+            }
+        }
     }
 
-    private fun unregisterActiveCall(songKey: String, call: okhttp3.Call) {
+    private fun unregisterActiveCall(
+        songKey: String,
+        call: okhttp3.Call,
+        operationId: String?
+    ) {
         activeCallsBySongKey.computeIfPresent(songKey) { _, current ->
             current.remove(call)
             if (current.isEmpty()) {
                 null
             } else {
                 current
+            }
+        }
+        operationId?.trim()?.takeIf(String::isNotBlank)?.let { normalizedId ->
+            activeCallsByOperationId.computeIfPresent(normalizedId) { _, current ->
+                current.remove(call)
+                if (current.isEmpty()) null else current
             }
         }
     }
@@ -1875,6 +1921,89 @@ object AudioDownloadManager {
             activeCallsBySongKey.values.flatMap { calls -> calls.toList() }
         } else {
             activeCallsBySongKey[songKey]?.toList().orEmpty()
+        }
+    }
+
+    private fun snapshotActiveCalls(operationIds: Collection<String>): List<okhttp3.Call> {
+        return operationIds.asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .flatMap { operationId ->
+                activeCallsByOperationId[operationId].orEmpty().asSequence()
+            }
+            .distinct()
+            .toList()
+    }
+
+    /** 只取消指定 operation 的网络调用，保留同一歌曲的新代次 */
+    internal fun cancelOperationDownload(
+        songKey: String,
+        operationIds: Collection<String>
+    ): Int {
+        val normalizedIds = operationIds
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        if (normalizedIds.isEmpty()) return 0
+        val calls = synchronized(networkPolicyMutationLock) {
+            // 先封存 operation，再取消当前调用，防止旧协程在取消窗口内新建请求
+            normalizedIds.forEach(executionHostPausedOperationIds::add)
+            snapshotActiveCalls(normalizedIds)
+        }
+        calls.forEach(okhttp3.Call::cancel)
+        normalizedIds.forEach { operationId ->
+            clearPublishedProgress(
+                songKey = songKey,
+                expectedOperationId = operationId
+            )
+        }
+        val visibleOperationId = _progressFlow.value
+            ?.takeIf { progress -> progress.songKey == songKey }
+            ?.operationId
+        if (visibleOperationId in normalizedIds) {
+            clearVisibleProgressForSong(songKey)
+        }
+        normalizedIds.forEach { operationId ->
+            if ((activeOperationCounts[operationId] ?: 0) <= 0) {
+                executionHostPausedOperationIds.remove(operationId)
+            }
+        }
+        return calls.size
+    }
+
+    /** 在系统取消协程前建立保留标记，避免取消异常先删除可续传文件 */
+    internal fun pauseOperationDownloadForExecutionHost(operationId: String): Boolean {
+        val normalizedId = operationId.trim().takeIf(String::isNotBlank) ?: return false
+        val songKey = activeSongKeyByOperationId[normalizedId] ?: return false
+        val calls = synchronized(networkPolicyMutationLock) {
+            executionHostPausedOperationIds.add(normalizedId)
+            snapshotActiveCalls(listOf(normalizedId))
+        }
+        calls.forEach(okhttp3.Call::cancel)
+        clearPublishedProgress(
+            songKey = songKey,
+            expectedOperationId = normalizedId
+        )
+        val visibleProgress = _progressFlow.value
+        if (
+            visibleProgress?.songKey == songKey &&
+                visibleProgress.operationId == normalizedId
+        ) {
+            clearVisibleProgressForSong(songKey)
+        }
+        return true
+    }
+
+    internal fun isOperationPausedForExecutionHost(operationId: String): Boolean {
+        val normalizedId = operationId.trim()
+        return normalizedId.isNotBlank() &&
+            executionHostPausedOperationIds.contains(normalizedId)
+    }
+
+    internal fun clearOperationPauseForExecutionHost(operationId: String) {
+        val normalizedId = operationId.trim()
+        if (normalizedId.isNotBlank()) {
+            executionHostPausedOperationIds.remove(normalizedId)
         }
     }
 
@@ -1894,18 +2023,31 @@ object AudioDownloadManager {
         client: okhttp3.OkHttpClient,
         request: Request,
         songKey: String,
+        operationId: String? = null,
         block: (okhttp3.Response) -> T
     ): T {
         val call = client.newCall(request)
+        val normalizedOperationId = operationId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
         val pausedBeforeExecution = synchronized(networkPolicyMutationLock) {
-            registerActiveCall(songKey, call)
-            shouldPreserveArtifactsForNetworkPolicy(songKey)
+            registerActiveCall(songKey, call, normalizedOperationId)
+            shouldPreserveArtifactsForNetworkPolicy(songKey) ||
+                normalizedOperationId?.let(executionHostPausedOperationIds::contains) == true
         }
         try {
             if (pausedBeforeExecution) {
                 call.cancel()
                 throw java.util.concurrent.CancellationException(
-                    "Download paused for network policy"
+                    if (
+                        normalizedOperationId?.let(
+                            executionHostPausedOperationIds::contains
+                        ) == true
+                    ) {
+                        "Download execution host paused"
+                    } else {
+                        "Download paused for network policy"
+                    }
                 )
             }
             return call.execute().use(block)
@@ -1924,7 +2066,7 @@ object AudioDownloadManager {
             throw error
         } finally {
             synchronized(networkPolicyMutationLock) {
-                unregisterActiveCall(songKey, call)
+                unregisterActiveCall(songKey, call, normalizedOperationId)
             }
         }
     }
@@ -2535,7 +2677,7 @@ object AudioDownloadManager {
                 var tempFile: File? = null
                 val coreCommitTracker = DownloadCoreCommitTracker()
                 var cancellationCleanupAttempted = false
-                beginSongDownloadOperation(songKey)
+                beginSongDownloadOperation(songKey, effectiveOperationId)
                 clearPartialSidecarReferences(songKey)
                 try {
                     ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
@@ -2843,6 +2985,13 @@ object AudioDownloadManager {
                                 throw error
                             }
                             val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
+                            val preserveCancellationArtifacts =
+                                shouldPreserveWorkingArtifactsAfterCancellation(
+                                    cancellation = error is java.util.concurrent.CancellationException,
+                                    allDownloadsCancelled = _isCancelled.value,
+                                    songCancelled = GlobalDownloadManager.isSongCancelled(songKey),
+                                    networkPolicyPaused = preserveArtifacts
+                                )
                             if (
                                 error is java.util.concurrent.CancellationException ||
                                 _isCancelled.value ||
@@ -2853,7 +3002,7 @@ object AudioDownloadManager {
                                     ?.retainCreatedOnly()
                                 NPLogger.d(TAG, "下载已取消: ${song.name}")
                                 if (
-                                    !preserveArtifacts &&
+                                    !preserveCancellationArtifacts &&
                                     shouldRollbackCancelledAudio(coreCommitTracker.phase)
                                 ) {
                                     cancellationCleanupAttempted = true
@@ -2894,19 +3043,23 @@ object AudioDownloadManager {
                                     }
                                 }
                                 if (
-                                    !preserveArtifacts &&
+                                    !preserveCancellationArtifacts &&
                                         deleteWorkingFileUnlessNetworkPolicyPaused(songKey, tempFile)
                                 ) {
                                     tempFile = null
                                 }
                                 clearVisibleProgressForSong(songKey)
-                                if (!preserveArtifacts) {
+                                if (!preserveCancellationArtifacts) {
                                     clearSongCancelled(songKey)
                                 }
                                 clearCompletedAudioReference(songKey)
                                 clearPartialSidecarReferences(songKey)
                                 throw java.util.concurrent.CancellationException(
-                                    if (preserveArtifacts) "Download paused for network policy" else "Download cancelled"
+                                    if (preserveCancellationArtifacts) {
+                                        "Download cancellation deferred for recovery"
+                                    } else {
+                                        "Download cancelled"
+                                    }
                                 )
                             }
 
@@ -2994,8 +3147,15 @@ object AudioDownloadManager {
                             ?.retainCreatedOnly()
                         NPLogger.d(TAG, "下载已取消: ${song.name}")
                         val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
+                        val preserveCancellationArtifacts =
+                            shouldPreserveWorkingArtifactsAfterCancellation(
+                                cancellation = e is java.util.concurrent.CancellationException,
+                                allDownloadsCancelled = _isCancelled.value,
+                                songCancelled = GlobalDownloadManager.isSongCancelled(songKey),
+                                networkPolicyPaused = preserveArtifacts
+                            )
                         if (
-                            !preserveArtifacts &&
+                            !preserveCancellationArtifacts &&
                             shouldRollbackCancelledAudio(coreCommitTracker.phase)
                         ) {
                             if (!cancellationCleanupAttempted) {
@@ -3037,17 +3197,21 @@ object AudioDownloadManager {
                                 }
                             }
                         }
-                        if (!preserveArtifacts) {
+                        if (!preserveCancellationArtifacts) {
                             deleteWorkingFileUnlessNetworkPolicyPaused(songKey, tempFile)
                         }
                         clearVisibleProgressForSong(songKey)
-                        if (!preserveArtifacts) {
+                        if (!preserveCancellationArtifacts) {
                             clearSongCancelled(songKey)
                         }
                         clearCompletedAudioReference(songKey)
                         clearPartialSidecarReferences(songKey)
                         throw java.util.concurrent.CancellationException(
-                            if (preserveArtifacts) "Download paused for network policy" else "Download cancelled"
+                            if (preserveCancellationArtifacts) {
+                                "Download cancellation deferred for recovery"
+                            } else {
+                                "Download cancelled"
+                            }
                         )
                     }
                     NPLogger.e(TAG, "下载失败: ${song.name}, 错误: ${e.javaClass.simpleName} - ${e.message}", e)
@@ -3062,7 +3226,7 @@ object AudioDownloadManager {
                         expectedAttemptId = attemptId,
                         expectedOperationId = effectiveOperationId
                     )
-                    endSongDownloadOperation(songKey)
+                    endSongDownloadOperation(songKey, effectiveOperationId)
                 }
     }
 
@@ -3359,7 +3523,8 @@ object AudioDownloadManager {
     internal suspend fun downloadSidecarsForCompletedAudio(
         context: Context,
         song: SongItem,
-        storedAudio: ManagedDownloadStorage.StoredEntry
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        operationId: String? = null
     ): DownloadedSidecarReferences = withContext(Dispatchers.IO) {
         val songKey = song.stableKey()
         val expectedCover = buildCoverDownloadCandidateUrls(song).isNotEmpty()
@@ -3371,7 +3536,8 @@ object AudioDownloadManager {
                 songKey = songKey,
                 baseName = storedAudio.nameWithoutExtension,
                 storedAudio = storedAudio,
-                requireActiveAttempt = false
+                requireActiveAttempt = false,
+                operationId = operationId
             )
         }.getOrElse { error ->
             if (error is java.util.concurrent.CancellationException) {
@@ -3482,7 +3648,8 @@ object AudioDownloadManager {
         storedAudio: ManagedDownloadStorage.StoredEntry,
         batchSessionId: Long? = null,
         attemptId: Long? = null,
-        requireActiveAttempt: Boolean = true
+        requireActiveAttempt: Boolean = true,
+        operationId: String? = null
     ): DownloadedSidecarReferences {
         ensureSongDownloadNotCancelled(
             songKey = songKey,
@@ -3516,7 +3683,8 @@ object AudioDownloadManager {
                 batchSessionId = batchSessionId,
                 attemptId = attemptId,
                 requireActiveAttempt = requireActiveAttempt,
-                allowIndexedLookup = allowIndexedSidecarLookup
+                allowIndexedLookup = allowIndexedSidecarLookup,
+                operationId = operationId
             )
             DownloadedSidecarReferences(
                 coverReference = cachedCover?.reference,
@@ -3556,7 +3724,8 @@ object AudioDownloadManager {
                         batchSessionId = batchSessionId,
                         attemptId = attemptId,
                         requireActiveAttempt = requireActiveAttempt,
-                        allowIndexedLookup = allowIndexedSidecarLookup
+                        allowIndexedLookup = allowIndexedSidecarLookup,
+                        operationId = operationId
                     )
                 }
                 val lyricReferences = lyricJob.await()
@@ -3592,7 +3761,8 @@ object AudioDownloadManager {
         batchSessionId: Long? = null,
         attemptId: Long? = null,
         requireActiveAttempt: Boolean = true,
-        allowIndexedLookup: Boolean = true
+        allowIndexedLookup: Boolean = true,
+        operationId: String? = null
     ): CachedCoverReference? {
         val coverFileName = buildCoverSidecarFileName(baseName, songKey)
         val cachedCover = coverDownloadSingleFlight.run(
@@ -3610,7 +3780,8 @@ object AudioDownloadManager {
                 batchSessionId = batchSessionId,
                 attemptId = attemptId,
                 requireActiveAttempt = requireActiveAttempt,
-                allowIndexedLookup = allowIndexedLookup
+                allowIndexedLookup = allowIndexedLookup,
+                operationId = operationId
             )
         }
         if (cachedCover != null) {
@@ -3641,7 +3812,8 @@ object AudioDownloadManager {
         batchSessionId: Long?,
         attemptId: Long?,
         requireActiveAttempt: Boolean,
-        allowIndexedLookup: Boolean
+        allowIndexedLookup: Boolean,
+        operationId: String?
     ): CachedCoverReference? {
         val indexedCover = ManagedDownloadStorage.peekCoverReference(storedAudio)
             ?: if (allowIndexedLookup && ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
@@ -3693,7 +3865,8 @@ object AudioDownloadManager {
                             coverFileName = coverFileName,
                             batchSessionId = batchSessionId,
                             attemptId = attemptId,
-                            requireActiveAttempt = requireActiveAttempt
+                            requireActiveAttempt = requireActiveAttempt,
+                            operationId = operationId
                         )
                     }.getOrElse { error ->
                         if (error is java.util.concurrent.CancellationException) {
@@ -3769,13 +3942,15 @@ object AudioDownloadManager {
         coverFileName: String,
         batchSessionId: Long? = null,
         attemptId: Long? = null,
-        requireActiveAttempt: Boolean = true
+        requireActiveAttempt: Boolean = true,
+        operationId: String? = null
     ): String? {
         val req = Request.Builder().url(coverUrl).build()
         return executeTrackedCall(
             client = backgroundDownloadClient,
             request = req,
-            songKey = songKey
+            songKey = songKey,
+            operationId = operationId
         ) { response ->
             if (!response.isSuccessful) {
                 throw IOException("封面请求失败: HTTP ${response.code}")
@@ -4186,6 +4361,13 @@ object AudioDownloadManager {
     fun cancelSongDownload(songKey: String) {
         val calls = synchronized(networkPolicyMutationLock) {
             networkPolicyPausedSongKeys.remove(songKey)
+            activeSongKeyByOperationId.entries
+                .filter { entry -> entry.value == songKey }
+                .forEach { entry ->
+                    if ((activeOperationCounts[entry.key] ?: 0) <= 0) {
+                        executionHostPausedOperationIds.remove(entry.key)
+                    }
+                }
             snapshotActiveCalls(songKey)
         }
         calls.forEach { call ->
@@ -4199,6 +4381,11 @@ object AudioDownloadManager {
     fun cancelDownload() {
         val calls = synchronized(networkPolicyMutationLock) {
             networkPolicyPausedSongKeys.clear()
+            executionHostPausedOperationIds.toList().forEach { operationId ->
+                if ((activeOperationCounts[operationId] ?: 0) <= 0) {
+                    executionHostPausedOperationIds.remove(operationId)
+                }
+            }
             snapshotActiveCalls()
         }
         _isCancelled.value = true
@@ -6038,7 +6225,8 @@ object AudioDownloadManager {
         val playlistText = executeTrackedCall(
             client = client,
             request = playlistRequest,
-            songKey = songKey
+            songKey = songKey,
+            operationId = operationId
         ) { response ->
             if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
             response.body.byteStream().use { input ->
@@ -6152,7 +6340,8 @@ object AudioDownloadManager {
                         downloadedBytes += executeTrackedCall(
                             client = client,
                             request = segmentRequest,
-                            songKey = songKey
+                            songKey = songKey,
+                            operationId = operationId
                         ) { response ->
                             if (!response.isSuccessful) {
                                 throw IllegalStateException("HTTP ${response.code}")
@@ -6429,7 +6618,8 @@ object AudioDownloadManager {
         return@withContext executeTrackedCall(
             client = client,
             request = effectiveRequest,
-            songKey = songKey
+            songKey = songKey,
+            operationId = operationId
         ) { resp ->
             val responseHeaders = resp.headers.toMultimap()
             if (resumedBytes > 0L && resp.code == 416) {
@@ -6783,7 +6973,8 @@ object AudioDownloadManager {
             return executeTrackedCall(
                 client = client,
                 request = chunkRequest,
-                songKey = songKey
+                songKey = songKey,
+                operationId = operationId
             ) { response ->
                 val responseHeaders = response.headers.toMultimap()
                 if (response.code == 416) {
@@ -6945,7 +7136,16 @@ object AudioDownloadManager {
         }
         if (shouldAbort) {
             NPLogger.d(TAG, "下载被取消，停止分块下载: songId=$songId")
-            deleteWorkingFileUnlessNetworkPolicyPaused(songKey, destFile)
+            val preserveCancellationArtifacts =
+                shouldPreserveWorkingArtifactsAfterCancellation(
+                    cancellation = true,
+                    allDownloadsCancelled = _isCancelled.value,
+                    songCancelled = GlobalDownloadManager.isSongCancelled(songKey),
+                    networkPolicyPaused = shouldPreserveArtifactsForNetworkPolicy(songKey)
+                )
+            if (!preserveCancellationArtifacts) {
+                deleteWorkingFileUnlessNetworkPolicyPaused(songKey, destFile)
+            }
             clearVisibleProgressForSong(songKey)
             throw java.util.concurrent.CancellationException("Download cancelled")
         }
@@ -6964,6 +7164,20 @@ internal fun shouldAbortDownloadWork(
         songCancelled ||
         networkPolicyPaused ||
         !attemptAllowsWork
+}
+
+/** system and stale-attempt cancellation must leave a resumable staging file behind */
+internal fun shouldPreserveWorkingArtifactsAfterCancellation(
+    cancellation: Boolean,
+    allDownloadsCancelled: Boolean,
+    songCancelled: Boolean,
+    networkPolicyPaused: Boolean
+): Boolean {
+    return networkPolicyPaused || (
+        cancellation &&
+            !allDownloadsCancelled &&
+            !songCancelled
+        )
 }
 
 /** 只有网络从未确认切换为已确认时才唤醒一次恢复流程 */

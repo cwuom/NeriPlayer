@@ -89,6 +89,28 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `a cancellation-marked predecessor does not block a fresh operation`() {
+        assertFalse(
+            shouldBlockExistingDownloadOperation(
+                existingOperationId = "old-operation",
+                requestedOperationId = "new-operation",
+                existingState = "RUNNING",
+                existingReadable = true,
+                cancellationRequested = true
+            )
+        )
+        assertTrue(
+            shouldBlockExistingDownloadOperation(
+                existingOperationId = "old-operation",
+                requestedOperationId = "new-operation",
+                existingState = "RUNNING",
+                existingReadable = true,
+                cancellationRequested = false
+            )
+        )
+    }
+
+    @Test
     fun `stopped operation is durable and included in the stopped song index`() {
         val context = mockContext()
         val store = DownloadExecutionOperationStore { testJournal }
@@ -350,7 +372,7 @@ class DownloadExecutionHostTest {
     }
 
     @Test
-    fun `download notification ids are stable and partitioned per backend`() {
+    fun `download notification ids are shared across operations and backends`() {
         val firstOperation = "operation-notification-01"
         val secondOperation = "operation-notification-02"
         val firstForegroundId = DownloadExecutionNotificationIds.foreground(firstOperation)
@@ -363,17 +385,29 @@ class DownloadExecutionHostTest {
             DownloadExecutionNotificationIds.foreground(firstOperation)
         )
         assertEquals(firstUidtId, DownloadExecutionNotificationIds.uidt(firstOperation))
+        assertEquals(DOWNLOAD_EXECUTION_NOTIFICATION_ID, firstForegroundId)
+        assertEquals(DOWNLOAD_EXECUTION_NOTIFICATION_ID, firstUidtId)
+        assertEquals(firstForegroundId, secondForegroundId)
+        assertEquals(firstUidtId, secondUidtId)
+        assertEquals(firstForegroundId, firstUidtId)
+    }
+
+    @Test
+    fun `legacy notification ranges are isolated from current and unrelated ids`() {
         assertTrue(
-            firstForegroundId in DownloadExecutionNotificationIds.FOREGROUND_MIN..
-                DownloadExecutionNotificationIds.FOREGROUND_MAX
+            isLegacyDownloadExecutionNotificationId(
+                DownloadExecutionNotificationIds.FOREGROUND_MIN
+            )
         )
         assertTrue(
-            firstUidtId in DownloadExecutionNotificationIds.UIDT_MIN..
+            isLegacyDownloadExecutionNotificationId(
                 DownloadExecutionNotificationIds.UIDT_MAX
+            )
         )
-        assertTrue(firstForegroundId != secondForegroundId)
-        assertTrue(firstUidtId != secondUidtId)
-        assertTrue(firstForegroundId != firstUidtId)
+        assertFalse(
+            isLegacyDownloadExecutionNotificationId(DOWNLOAD_EXECUTION_NOTIFICATION_ID)
+        )
+        assertFalse(isLegacyDownloadExecutionNotificationId(1001))
     }
 
     @Test
@@ -439,6 +473,42 @@ class DownloadExecutionHostTest {
         assertEquals(
             ListenableWorker.Result.success()::class,
             DownloadExecutionResult.UserActionRequired.toWorkerResult()::class
+        )
+    }
+
+    @Test
+    fun `claim loss keeps a queued replacement available for a later pump`() {
+        assertEquals(
+            DownloadExecutionResult.Retry,
+            resolveClaimFailureResult(
+                currentState = "QUEUED",
+                userStopped = false
+            )
+        )
+        assertEquals(
+            DownloadExecutionResult.Retry,
+            resolveClaimFailureResult(
+                currentState = "RETRYABLE",
+                userStopped = false
+            )
+        )
+    }
+
+    @Test
+    fun `claim loss honors cancellation and user stop before retry`() {
+        assertEquals(
+            DownloadExecutionResult.Cancelled,
+            resolveClaimFailureResult(
+                currentState = "CANCEL_REQUESTED",
+                userStopped = false
+            )
+        )
+        assertEquals(
+            DownloadExecutionResult.UserStopped,
+            resolveClaimFailureResult(
+                currentState = "QUEUED",
+                userStopped = true
+            )
         )
     }
 

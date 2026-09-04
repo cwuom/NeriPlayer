@@ -680,6 +680,37 @@ internal interface DownloadOperationDao {
     )
     suspend fun requestUserStop(operationId: String, updatedAtMs: Long): Int
 
+    /** 进程被系统用户结束后，把尚未提交的 operation 重新交给共享下载泵 */
+    @Query(
+        "UPDATE download_operation SET state = 'RETRYABLE', " +
+            "stop_requested_by_user = 0, last_error_code = 'PROCESS_EXIT_RECOVERY', " +
+            "host_process_token = NULL, host_admitted_at_ms = NULL, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND state IN ('PENDING_QUEUE', 'QUEUED', 'RUNNING', 'RETRYABLE') " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun requeueAfterProcessExit(
+        operationId: String,
+        stableKey: String,
+        updatedAtMs: Long
+    ): Int
+
+    /** 已跨过提交边界的 operation 只释放旧宿主租约，保留其持久状态 */
+    @Query(
+        "UPDATE download_operation SET host_process_token = NULL, " +
+            "host_admitted_at_ms = NULL, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 0"
+    )
+    suspend fun releaseAfterProcessExit(
+        operationId: String,
+        stableKey: String,
+        updatedAtMs: Long
+    ): Int
+
     @Query(
         "UPDATE download_operation SET stop_requested_by_user = 1, " +
             "updated_at_ms = :updatedAtMs, last_error_code = 'USER_CANCELLED' " +
@@ -756,9 +787,10 @@ internal interface DownloadOperationDao {
     suspend fun isUserStopped(operationId: String): Boolean?
 
     @Query(
-        "SELECT EXISTS(SELECT 1 FROM download_operation " +
-            "WHERE operation_id = :operationId AND stop_requested_by_user = 1 " +
-            "AND last_error_code = 'USER_CANCELLED')"
+            "SELECT EXISTS(SELECT 1 FROM download_operation " +
+            "WHERE operation_id = :operationId AND (" +
+            "state = 'CANCEL_REQUESTED' OR " +
+            "(stop_requested_by_user = 1 AND last_error_code = 'USER_CANCELLED')))"
     )
     suspend fun isUserCancellationRequested(operationId: String): Boolean
 
@@ -816,7 +848,8 @@ internal interface DownloadOperationDao {
         "UPDATE download_operation SET stop_requested_by_user = 0, " +
             "last_error_code = CASE WHEN last_error_code = 'USER_CANCELLED' " +
             "THEN NULL ELSE last_error_code END, " +
-            "updated_at_ms = :updatedAtMs WHERE stable_key IN (:stableKeys)"
+            "updated_at_ms = :updatedAtMs WHERE stable_key IN (:stableKeys) " +
+            "AND (last_error_code IS NULL OR last_error_code != 'USER_CANCELLED')"
     )
     suspend fun clearUserStopForStableKeysAnyLibrary(
         stableKeys: List<String>,

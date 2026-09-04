@@ -1620,6 +1620,168 @@ class DownloadRecoveryRoomStoreTest {
     }
 
     @Test
+    fun forcedReplacementKeepsAFreshRequestWhenThePredecessorIsStillRunning() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(805L, "forced-replacement")
+            val predecessorId = "forced-replacement-old"
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = predecessorId,
+                    song = song,
+                    userInitiated = true
+                ),
+                state = "RUNNING",
+                database = database
+            )
+
+            val result = DownloadRecoveryRoomStore(context, database)
+                .upsertWaitingStorageMutationWithRequests(
+                    songs = listOf(song),
+                    userInitiated = true,
+                    excludedOperationIds = setOf(predecessorId),
+                    forceNewOperationForStableKeys = setOf(song.stableKey())
+                )
+            val replacementId = result.operationIds.single()
+
+            assertNotEquals(predecessorId, replacementId)
+            assertEquals(
+                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                database.downloadOperationDao().find(replacementId)?.state
+            )
+            assertEquals(
+                "RUNNING",
+                database.downloadOperationDao().find(predecessorId)?.state
+            )
+            assertEquals(song.stableKey(), result.requestsByOperationId[replacementId]
+                ?.song
+                ?.stableKey())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun forcedReplacementDoesNotReuseAnOlderWaitingLease() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(807L, "forced-replacement-waiting")
+            val predecessorId = "forced-replacement-waiting-old"
+            val predecessorLeaseId = "forced-replacement-waiting-lease"
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = predecessorId,
+                    song = song,
+                    preserveStaging = true,
+                    attemptId = 42L,
+                    artifactLeaseId = predecessorLeaseId,
+                    userInitiated = true
+                ),
+                state = WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                queueOrder = 3,
+                createdAtMs = 100L,
+                database = database
+            )
+
+            val result = DownloadRecoveryRoomStore(context, database)
+                .upsertWaitingStorageMutationWithRequests(
+                    songs = listOf(song),
+                    nowMs = 200L,
+                    userInitiated = true,
+                    forceNewOperationForStableKeys = setOf(song.stableKey())
+                )
+            val replacementId = result.operationIds.single()
+            val replacementRequest = checkNotNull(result.requestsByOperationId[replacementId])
+            val replacement = database.downloadOperationDao().find(replacementId)
+
+            assertNotEquals(predecessorId, replacementId)
+            assertEquals(
+                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                replacement?.state
+            )
+            assertFalse(replacementRequest.preserveStaging)
+            assertEquals(null, replacementRequest.attemptId)
+            assertNotEquals(predecessorLeaseId, replacementRequest.artifactLeaseId)
+            assertTrue(replacement?.queueOrder ?: 0 > 3)
+            assertTrue(replacement?.createdAtMs ?: 0L >= 200L)
+            assertEquals(
+                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                database.downloadOperationDao().find(predecessorId)?.state
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun cancellationBoundaryMarksOnlyThePredecessorAcrossLibraries() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(806L, "cancellation-boundary")
+            val predecessorId = "cancellation-boundary-old"
+            val replacementId = "cancellation-boundary-new"
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = predecessorId,
+                    song = song,
+                    userInitiated = true
+                ),
+                state = "RUNNING",
+                createdAtMs = 100L,
+                database = database
+            )
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = replacementId,
+                    song = song,
+                    userInitiated = true
+                ),
+                state = "QUEUED",
+                createdAtMs = 200L,
+                database = database
+            )
+
+            val cancelledIds = DownloadExecutionRoomStore
+                .requestCancelForStableKeysBefore(
+                    context = context,
+                    boundaries = listOf(
+                        DownloadExecutionRoomStore.CancellationBoundary(
+                            stableKey = song.stableKey(),
+                            createdAtMsAtMost = 100L
+                        )
+                    ),
+                    excludedOperationIds = setOf(replacementId),
+                    database = database
+                )
+
+            assertEquals(setOf(predecessorId), cancelledIds)
+            assertEquals(
+                "CANCEL_REQUESTED",
+                database.downloadOperationDao().find(predecessorId)?.state
+            )
+            assertEquals("QUEUED", database.downloadOperationDao().find(replacementId)?.state)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun cancelledOrStoppedWaitingStorageMutationCannotBeSilentlyRevived() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(

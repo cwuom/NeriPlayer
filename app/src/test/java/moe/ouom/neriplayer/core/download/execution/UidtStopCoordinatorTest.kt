@@ -47,6 +47,20 @@ class UidtStopCoordinatorTest {
         assertFalse(prepareStop.contains("runBlocking"))
         assertFalse(prepareStop.contains("operationStore"))
         assertFalse(prepareStop.contains("GlobalDownloadManager"))
+        assertTrue(
+            prepareStop.contains("AudioDownloadManager.pauseOperationDownloadForExecutionHost")
+        )
+
+        val workerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "ForegroundDownloadWorker.kt"
+        ).readText()
+        assertTrue(
+            workerSource.contains("pauseOperationDownloadForExecutionHost")
+        )
+        assertTrue(
+            workerSource.contains("currentCoroutineContext()[Job]?.invokeOnCompletion")
+        )
     }
 
     @Test
