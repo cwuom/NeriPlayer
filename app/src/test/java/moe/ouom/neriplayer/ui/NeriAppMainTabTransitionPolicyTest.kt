@@ -34,11 +34,20 @@ class NeriAppMainTabTransitionPolicyTest {
     }
 
     @Test
-    fun `startup waits for the persisted default route before selecting a tab`() {
-        assertNull(
+    fun `missing persisted startup route falls back to an available tab`() {
+        assertEquals(
+            Destinations.Home.route,
             resolveMainStartDestination(
                 preferredRoute = null,
                 showHomeTab = true,
+                devModeEnabled = false
+            )
+        )
+        assertEquals(
+            Destinations.Explore.route,
+            resolveMainStartDestination(
+                preferredRoute = null,
+                showHomeTab = false,
                 devModeEnabled = false
             )
         )
@@ -60,6 +69,34 @@ class NeriAppMainTabTransitionPolicyTest {
                 )
             )
         }
+    }
+
+    @Test
+    fun `late persisted route replaces only the untouched fallback tab`() {
+        assertTrue(
+            shouldApplyPersistedStartupDestination(
+                awaitingPersistedRoute = true,
+                currentRoute = Destinations.Home.route,
+                initialFallbackRoute = Destinations.Home.route,
+                resolvedPersistedRoute = Destinations.Settings.route
+            )
+        )
+        assertFalse(
+            shouldApplyPersistedStartupDestination(
+                awaitingPersistedRoute = true,
+                currentRoute = Destinations.Library.route,
+                initialFallbackRoute = Destinations.Home.route,
+                resolvedPersistedRoute = Destinations.Settings.route
+            )
+        )
+        assertFalse(
+            shouldApplyPersistedStartupDestination(
+                awaitingPersistedRoute = false,
+                currentRoute = Destinations.Home.route,
+                initialFallbackRoute = Destinations.Home.route,
+                resolvedPersistedRoute = Destinations.Settings.route
+            )
+        )
     }
 
     @Test

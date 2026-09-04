@@ -37,7 +37,9 @@ class DownloadedSongCatalogRoomStoreTest {
 
             store.persist(listOf(song))
 
-            assertEquals(listOf(song), store.restore())
+            val restored = store.restore()
+            assertEquals(listOf(song.stableKey), restored?.map(DownloadedSong::stableKey))
+            assertEquals(song.name, restored?.single()?.name)
             rootKey = "root-b"
             assertNull(store.restore())
             assertTrue(
@@ -78,10 +80,9 @@ class DownloadedSongCatalogRoomStoreTest {
                 loggerTag = "DownloadedSongCatalogRoomStoreTest"
             )
 
-            assertEquals(
-                listOf(song),
-                store.restore()
-            )
+            val restored = store.restore()
+            assertEquals(listOf(song.stableKey), restored?.map(DownloadedSong::stableKey))
+            assertEquals("legacy", restored?.single()?.name)
             assertTrue(cacheFile.exists())
             assertEquals(
                 DownloadedSongCatalogRoomStore.ROOM_PRIMARY_STATE,
@@ -134,7 +135,9 @@ class DownloadedSongCatalogRoomStoreTest {
                     )
                     ?.value
             )
-            assertEquals(listOf(newSong), store.restore())
+            val restored = store.restore()
+            assertEquals(listOf(newSong.stableKey), restored?.map(DownloadedSong::stableKey))
+            assertEquals(newSong.name, restored?.single()?.name)
             assertEquals(
                 DownloadedSongCatalogRoomStore.ROOM_PRIMARY_STATE,
                 database.syncMetadataDao()

@@ -1,11 +1,14 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,12 +17,394 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotPersistenceStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomMapper
 import moe.ouom.neriplayer.data.model.SongItem
 import org.mockito.Mockito
 
 class ManagedDownloadStorageSnapshotCacheTest {
+
+    @Test
+    fun `playback cover rebinding prefers the cached sidecar refresh`() {
+        assertTrue(
+            ManagedDownloadStorage.shouldUseSidecarRefreshForCoverLookup(
+                forceRefresh = true,
+                preferSidecarRefresh = true,
+                hasCachedSnapshot = true
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.shouldUseSidecarRefreshForCoverLookup(
+                forceRefresh = true,
+                preferSidecarRefresh = true,
+                hasCachedSnapshot = false
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.shouldUseSidecarRefreshForCoverLookup(
+                forceRefresh = false,
+                preferSidecarRefresh = true,
+                hasCachedSnapshot = true
+            )
+        )
+    }
+
+    @Test
+    fun `core metadata replaces pending credentials before immediate playback`() {
+        val audioName = "Artist - Song.mp3"
+        val pendingAudio = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npdl_pending.operation.pending",
+            reference = "content://provider/pending/audio",
+            mediaUri = "content://provider/pending/audio",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val pendingMetadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npmeta.pending.json",
+            reference = "content://provider/pending/metadata",
+            mediaUri = "content://provider/pending/metadata",
+            localFilePath = null,
+            sizeBytes = 32L,
+            lastModifiedMs = 1L
+        )
+        val canonicalMetadataEntry = pendingMetadataEntry.copy(
+            name = "$audioName.npmeta.json",
+            reference = "content://provider/metadata"
+        )
+        val pendingMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "pending|netease|",
+            downloadFinalized = false,
+            artifactState = "CORE_COMMITTED"
+        )
+        val coreMetadata = pendingMetadata.copy(
+            stableKey = "core|netease|",
+            downloadFinalized = true
+        )
+        val beforeCore = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = emptyList(),
+            metadataEntries = listOf(pendingMetadataEntry),
+            metadataByAudioName = mapOf(audioName to pendingMetadata),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList(),
+            pendingAudioEntries = listOf(pendingAudio),
+            pendingMetadataByAudioName = mapOf(audioName to pendingMetadata)
+        )
+
+        val afterCore = ManagedDownloadSnapshotIndex.applyMetadataWrite(
+            snapshot = beforeCore,
+            metadataEntry = canonicalMetadataEntry,
+            metadata = coreMetadata
+        )
+
+        assertEquals(coreMetadata, ManagedDownloadStorage.metadataForAudioEntry(afterCore, pendingAudio))
+        assertEquals(coreMetadata, afterCore.metadataByAudioName[audioName])
+
+        val promotedAudio = pendingAudio.copy(
+            name = audioName,
+            reference = "content://provider/audio",
+            mediaUri = "content://provider/audio"
+        )
+        val afterPromotion = ManagedDownloadSnapshotIndex.applyStoredEntryWrite(
+            snapshot = afterCore,
+            storedEntry = promotedAudio,
+            bucket = ManagedDownloadStorage.SnapshotEntryBucket.AUDIO
+        )
+        assertTrue(afterPromotion.pendingMetadataByAudioName.isEmpty())
+    }
+
+    @Test
+    fun `pending metadata does not overwrite an existing formal song`() {
+        val audioName = "Artist - Song.mp3"
+        val formalMetadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npmeta.json",
+            reference = "content://provider/formal-metadata",
+            mediaUri = "content://provider/formal-metadata",
+            localFilePath = null,
+            sizeBytes = 32L,
+            lastModifiedMs = 1L
+        )
+        val pendingMetadataEntry = formalMetadataEntry.copy(
+            name = "$audioName.npmeta.pending.json",
+            reference = "content://provider/pending-metadata"
+        )
+        val pendingAudio = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npdl_pending.other.pending",
+            reference = "content://provider/pending-audio",
+            mediaUri = "content://provider/pending-audio",
+            localFilePath = null,
+            sizeBytes = 64L,
+            lastModifiedMs = 2L
+        )
+        val formalMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "formal|netease|",
+            downloadFinalized = true
+        )
+        val pendingMetadata = formalMetadata.copy(
+            stableKey = "new|netease|",
+            downloadFinalized = false,
+            artifactState = "CORE_COMMITTED"
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = emptyList(),
+            metadataEntries = listOf(formalMetadataEntry),
+            metadataByAudioName = mapOf(audioName to formalMetadata),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList(),
+            pendingAudioEntries = listOf(pendingAudio)
+        )
+
+        val updated = ManagedDownloadSnapshotIndex.applyMetadataWrite(
+            snapshot = snapshot,
+            metadataEntry = pendingMetadataEntry,
+            metadata = pendingMetadata
+        )
+
+        assertEquals(formalMetadata, updated.metadataByAudioName[audioName])
+        assertEquals(pendingMetadata, updated.pendingMetadataByAudioName[audioName])
+        assertEquals(formalMetadataEntry, updated.metadataEntriesByAudioName[audioName])
+    }
+
+    @Test
+    fun `orphan pending metadata cannot hide formal metadata during compose`() {
+        val audioName = "Artist - Song.mp3"
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = audioName,
+            reference = "content://provider/audio",
+            mediaUri = "content://provider/audio",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val formalMetadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npmeta.json",
+            reference = "content://provider/formal-metadata",
+            mediaUri = "content://provider/formal-metadata",
+            localFilePath = null,
+            sizeBytes = 32L,
+            lastModifiedMs = 1L
+        )
+        val orphanPendingMetadataEntry = formalMetadataEntry.copy(
+            name = "$audioName.npmeta.pending.json",
+            reference = "content://provider/orphan-pending-metadata"
+        )
+        val formalMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "formal|netease|",
+            downloadFinalized = true
+        )
+
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(audioEntry),
+            metadataEntries = listOf(formalMetadataEntry, orphanPendingMetadataEntry),
+            metadataByAudioName = mapOf(audioName to formalMetadata),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        assertEquals(formalMetadata, snapshot.metadataByAudioName[audioName])
+        assertEquals(formalMetadataEntry, snapshot.metadataEntriesByAudioName[audioName])
+        assertTrue(snapshot.audioEntriesWithoutMetadata.isEmpty())
+    }
+
+    @Test
+    fun `managed MediaStore relative path recognizes configured and legacy download roots`() {
+        assertTrue(
+            ManagedDownloadStorage.isManagedDownloadRelativePath(
+                relativePath = "neriplayer-download/Albums/",
+                treeDocumentId = "primary:neriplayer-download"
+            )
+        )
+        assertTrue(
+            ManagedDownloadStorage.isManagedDownloadRelativePath(
+                relativePath = "neriplayer-download/",
+                treeDocumentId = null
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.isManagedDownloadRelativePath(
+                relativePath = "Music/Albums/",
+                treeDocumentId = "primary:neriplayer-download"
+            )
+        )
+    }
+
+    @Test
+    fun `opaque document ids require exact identity evidence`() {
+        assertFalse(
+            ManagedDownloadStorage.isKnownManagedDownloadDocumentId(
+                documentId = "primary:neriplayer-download/Lyrics/song.lrc",
+                treeDocumentId = "primary:neriplayer-download"
+            )
+        )
+        assertTrue(
+            ManagedDownloadStorage.isKnownManagedDownloadDocumentId(
+                documentId = "primary:custom-root",
+                treeDocumentId = "primary:custom-root"
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.isKnownManagedDownloadDocumentId(
+                documentId = "primary:Music/song.mp3",
+                treeDocumentId = null
+            )
+        )
+    }
+
+    @Test
+    fun `unchanged metadata entry reuses its parsed snapshot value`() {
+        val cachedEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 512L,
+            lastModifiedMs = 100L
+        )
+
+        assertTrue(
+            ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
+                cachedEntry = cachedEntry,
+                currentEntry = cachedEntry,
+                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+            )
+        )
+    }
+
+    @Test
+    fun `force refresh can reuse metadata when the entry fingerprint is unchanged`() {
+        val entry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 1_024L,
+            lastModifiedMs = 100L
+        )
+
+        assertTrue(
+            ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
+                cachedEntry = entry,
+                currentEntry = entry,
+                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+            )
+        )
+    }
+
+    @Test
+    fun `legacy upgrade snapshot reuses only unchanged cached metadata`() {
+        val unchangedEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 1_024L,
+            lastModifiedMs = 100L
+        )
+        val changedEntry = unchangedEntry.copy(
+            name = "Artist - Changed.mp3.npmeta.json",
+            reference = "/music/Artist - Changed.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Changed.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Changed.mp3.npmeta.json",
+            lastModifiedMs = 101L
+        )
+        val cachedChangedEntry = changedEntry.copy(lastModifiedMs = 100L)
+        val unchangedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+        val changedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 43L)
+        val cachedSnapshot = emptySnapshot().copy(
+            metadataEntriesByAudioName = mapOf(
+                "Artist - Song.mp3" to unchangedEntry,
+                "Artist - Changed.mp3" to cachedChangedEntry
+            ),
+            metadataByAudioName = mapOf(
+                "Artist - Song.mp3" to unchangedMetadata,
+                "Artist - Changed.mp3" to changedMetadata
+            )
+        )
+
+        val reused = ManagedDownloadStorage.selectReusableCachedDownloadedMetadata(
+            currentEntries = mapOf(
+                "Artist - Song.mp3" to unchangedEntry,
+                "Artist - Changed.mp3" to changedEntry
+            ),
+            cachedSnapshot = cachedSnapshot
+        )
+
+        assertEquals(mapOf("Artist - Song.mp3" to unchangedMetadata), reused)
+    }
+
+    @Test
+    fun `legacy upgrade snapshot does not trust a missing cache`() {
+        val entry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 1_024L,
+            lastModifiedMs = 100L
+        )
+
+        assertTrue(
+            ManagedDownloadStorage.selectReusableCachedDownloadedMetadata(
+                currentEntries = mapOf("Artist - Song.mp3" to entry),
+                cachedSnapshot = null
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun `forced sidecar refresh skips the snapshot that was just published`() {
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+
+        assertTrue(
+            ManagedDownloadStorage.shouldSkipRedundantForcedSidecarRefresh(
+                requestedSnapshot = snapshot,
+                activeSnapshot = snapshot,
+                respectThrottle = false
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.shouldSkipRedundantForcedSidecarRefresh(
+                requestedSnapshot = snapshot,
+                activeSnapshot = snapshot,
+                respectThrottle = true
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.shouldSkipRedundantForcedSidecarRefresh(
+                requestedSnapshot = snapshot,
+                activeSnapshot = snapshot.copy(),
+                respectThrottle = false
+            )
+        )
+    }
+
+    @Test
+    fun `metadata refresh reparses entries without a stable fingerprint`() {
+        val cachedEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 512L,
+            lastModifiedMs = 0L
+        )
+
+        assertFalse(
+            ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
+                cachedEntry = cachedEntry,
+                currentEntry = cachedEntry,
+                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
+                cachedEntry = cachedEntry.copy(lastModifiedMs = 100L),
+                currentEntry = cachedEntry.copy(lastModifiedMs = 101L),
+                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+            )
+        )
+    }
 
     @Test
     fun `snapshot cache payload round trips entries and metadata`() {
@@ -62,6 +447,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             name = "Song",
             artist = "Artist",
             coverUrl = "https://example.com/cover.jpg",
+            matchedRomanizedLyric = "[00:01.00]yi",
             matchedLyricSource = "CLOUD_MUSIC",
             matchedSongId = "123",
             userLyricOffsetMs = 321L,
@@ -71,6 +457,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             originalName = "Original Song",
             originalArtist = "Original Artist",
             originalCoverUrl = "https://example.com/original.jpg",
+            originalRomanizedLyric = "[00:01.00]yuan",
             mediaUri = "https://example.com/audio.mp3",
             channelId = "ytmusic",
             audioId = "video-id",
@@ -119,7 +506,9 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertNotNull(restored)
         assertEquals("tree:test", restored?.first)
         assertEquals(listOf(audioEntry), restored?.second?.audioEntries)
-        assertEquals(metadata, restored?.second?.metadataByAudioName?.get("Artist - Song.mp3"))
+        val restoredMetadata = restored?.second?.metadataByAudioName?.get("Artist - Song.mp3")
+        assertEquals(metadata, restoredMetadata?.copy(restorableMetadata = null))
+        assertNotNull(restoredMetadata?.restorableMetadata)
         assertEquals(coverEntry, restored?.second?.coverEntriesByName?.get(coverEntry.name))
         assertEquals(lyricEntry, restored?.second?.lyricEntriesByName?.get(lyricEntry.name))
     }
@@ -148,6 +537,8 @@ class ManagedDownloadStorageSnapshotCacheTest {
             identityAlbum = "NeteaseAlbum",
             name = "Room Song",
             artist = "Artist",
+            matchedRomanizedLyric = "[00:01.00]room yi",
+            originalRomanizedLyric = "[00:01.00]room yuan",
             mediaUri = "https://example.com/room.flac",
             channelId = "netease",
             audioId = "44",
@@ -236,6 +627,99 @@ class ManagedDownloadStorageSnapshotCacheTest {
     }
 
     @Test
+    fun `invalidation serializes an in flight persist before clear`() {
+        val context = Mockito.mock(Context::class.java)
+        Mockito.`when`(context.applicationContext).thenReturn(context)
+        val persistenceStore = BlockingPersistAndClearStore()
+        val scope = CoroutineScope(Dispatchers.Default)
+        val cacheStore = ManagedDownloadSnapshotCacheStore(
+            scope = scope,
+            cacheKeyProvider = { "root" },
+            persistenceStoreProvider = { persistenceStore }
+        )
+
+        try {
+            cacheStore.putSnapshot(context, "root", emptySnapshot())
+            assertTrue(persistenceStore.persistStarted.await(5, TimeUnit.SECONDS))
+
+            cacheStore.invalidate(context)
+            assertFalse(persistenceStore.clearStarted.await(150, TimeUnit.MILLISECONDS))
+
+            persistenceStore.releasePersist.countDown()
+            assertTrue(persistenceStore.clearStarted.await(5, TimeUnit.SECONDS))
+            persistenceStore.releaseClear.countDown()
+            assertTrue(persistenceStore.clearFinished.await(5, TimeUnit.SECONDS))
+
+            assertEquals(
+                listOf("persist-start", "persist-end", "clear-start", "clear-end"),
+                persistenceStore.events
+            )
+        } finally {
+            persistenceStore.releasePersist.countDown()
+            persistenceStore.releaseClear.countDown()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `concurrent cover cache writes retain every managed entry`() {
+        val context = Mockito.mock(Context::class.java)
+        Mockito.`when`(context.applicationContext).thenReturn(context)
+        val cacheStore = ManagedDownloadSnapshotCacheStore(
+            scope = CoroutineScope(Dispatchers.Unconfined),
+            cacheKeyProvider = { "root" },
+            persistenceStoreProvider = { NoOpSnapshotPersistenceStore }
+        )
+        cacheStore.putSnapshot(context, "root", emptySnapshot())
+        val ready = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val entries = listOf(
+            ManagedDownloadStorage.StoredEntry(
+                name = "first-12345678.jpg",
+                reference = "/music/Covers/first-12345678.jpg",
+                mediaUri = "file:///music/Covers/first-12345678.jpg",
+                localFilePath = "/music/Covers/first-12345678.jpg",
+                sizeBytes = 1L,
+                lastModifiedMs = 1L
+            ),
+            ManagedDownloadStorage.StoredEntry(
+                name = "second-87654321.jpg",
+                reference = "/music/Covers/second-87654321.jpg",
+                mediaUri = "file:///music/Covers/second-87654321.jpg",
+                localFilePath = "/music/Covers/second-87654321.jpg",
+                sizeBytes = 1L,
+                lastModifiedMs = 1L
+            )
+        )
+
+        try {
+            val writes = entries.map { entry ->
+                executor.submit<Boolean> {
+                    ready.countDown()
+                    assertTrue(release.await(5, TimeUnit.SECONDS))
+                    cacheStore.updateAfterStoredEntryWrite(
+                        context = context,
+                        storedEntry = entry,
+                        bucket = ManagedDownloadStorage.SnapshotEntryBucket.COVER
+                    )
+                }
+            }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            release.countDown()
+            writes.forEach { write -> assertTrue(write.get(5, TimeUnit.SECONDS)) }
+
+            assertEquals(
+                entries.mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name),
+                cacheStore.peekSnapshot()?.coverEntriesByName?.keys
+            )
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `empty snapshot keeps all lookup indexes empty`() {
         val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
 
@@ -278,6 +762,29 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertNull(
             ManagedDownloadStorage.metadataReferenceForAudio(
                 audioEntry.copy(reference = "")
+            )
+        )
+    }
+
+    @Test
+    fun `encoded saf document ids resolve to the real audio file name`() {
+        assertEquals(
+            "track.mp3",
+            ManagedDownloadStorage.normalizeManagedAudioFileName(
+                "primary%3ANeriPlayer%2Ftrack.mp3"
+            )
+        )
+        assertEquals(
+            "track.mp3",
+            ManagedDownloadStorage.normalizeManagedAudioFileName(
+                "content://com.android.externalstorage.documents/document/" +
+                    "primary%3ANeriPlayer%2Ftrack.mp3"
+            )
+        )
+        assertEquals(
+            "track.mp3",
+            ManagedDownloadStorage.normalizeManagedAudioFileName(
+                "/storage/emulated/0/NeriPlayer/track.mp3"
             )
         )
     }
@@ -348,6 +855,37 @@ class ManagedDownloadStorageSnapshotCacheTest {
 
         assertEquals(setOf("confirmed.flac"), completeRefresh.names)
         assertTrue(completeRefresh.isComplete)
+    }
+
+    @Test
+    fun `incomplete tree refresh keeps previously confirmed names`() {
+        val refresh = ManagedDownloadStorage.mergeTreeChildNamesAfterRefresh(
+            refreshedNames = listOf("new.txt"),
+            cachedNames = listOf("old.txt"),
+            cachedNamesComplete = true,
+            refreshedComplete = false
+        )
+
+        assertEquals(setOf("new.txt", "old.txt"), refresh.names)
+        assertFalse(refresh.isComplete)
+    }
+
+    @Test
+    fun `provider numbered name is not an exact replace target`() {
+        assertFalse(
+            moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+                .isExactTreeStoredName(
+                    actualName = "song.npmeta.json (1)",
+                    expectedName = "song.npmeta.json"
+                )
+        )
+        assertTrue(
+            moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+                .isExactTreeStoredName(
+                    actualName = "song.npmeta.json",
+                    expectedName = "song.npmeta.json"
+                )
+        )
     }
 
     @Test
@@ -550,6 +1088,328 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertEquals(listOf(audioEntry), updatedSnapshot.audioEntriesBySongId[7L])
     }
 
+    @Test
+    fun `sidecar refresh replaces external lyric and cover changes without rebuilding audio indexes`() {
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.flac",
+            reference = "/music/Artist - Song.flac",
+            mediaUri = "file:///music/Artist%20-%20Song.flac",
+            localFilePath = "/music/Artist - Song.flac",
+            sizeBytes = 1024L,
+            lastModifiedMs = 99L
+        )
+        val metadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.flac.npmeta.json",
+            reference = "/music/Artist - Song.flac.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.flac.npmeta.json",
+            localFilePath = "/music/Artist - Song.flac.npmeta.json",
+            sizeBytes = 128L,
+            lastModifiedMs = 100L
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable",
+            songId = 7L,
+            name = "Song",
+            artist = "Artist"
+        )
+        val oldCover = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.jpg",
+            reference = "/music/Covers/Artist - Song.jpg",
+            mediaUri = "file:///music/Covers/Artist%20-%20Song.jpg",
+            localFilePath = "/music/Covers/Artist - Song.jpg",
+            sizeBytes = 64L,
+            lastModifiedMs = 101L
+        )
+        val oldLyric = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.lrc",
+            reference = "/music/Lyrics/Artist - Song.lrc",
+            mediaUri = "file:///music/Lyrics/Artist%20-%20Song.lrc",
+            localFilePath = "/music/Lyrics/Artist - Song.lrc",
+            sizeBytes = 32L,
+            lastModifiedMs = 102L
+        )
+        val newLyric = oldLyric.copy(
+            reference = "/music/Lyrics/Artist - Song_roma.lrc",
+            mediaUri = "file:///music/Lyrics/Artist%20-%20Song_roma.lrc",
+            localFilePath = "/music/Lyrics/Artist - Song_roma.lrc",
+            name = "Artist - Song_roma.lrc",
+            sizeBytes = 48L,
+            lastModifiedMs = 103L
+        )
+        val newCover = oldCover.copy(
+            reference = "/music/Covers/Artist - Song.webp",
+            mediaUri = "file:///music/Covers/Artist%20-%20Song.webp",
+            localFilePath = "/music/Covers/Artist - Song.webp",
+            name = "Artist - Song.webp",
+            sizeBytes = 96L,
+            lastModifiedMs = 104L
+        )
+        val snapshot = ManagedDownloadStorage.DownloadLibrarySnapshot(
+            audioEntries = listOf(audioEntry),
+            audioEntriesByLookupKey = mapOf(
+                audioEntry.reference to audioEntry,
+                audioEntry.mediaUri to audioEntry,
+                audioEntry.localFilePath.orEmpty() to audioEntry
+            ),
+            metadataEntriesByAudioName = mapOf(audioEntry.name to metadataEntry),
+            metadataByAudioName = mapOf(audioEntry.name to metadata),
+            audioEntriesWithoutMetadata = emptyList(),
+            audioEntriesByStableKey = mapOf(metadata.stableKey.orEmpty() to listOf(audioEntry)),
+            audioEntriesBySongId = mapOf(7L to listOf(audioEntry)),
+            audioEntriesByMediaUri = mapOf(metadata.mediaUri.orEmpty() to listOf(audioEntry)),
+            audioEntriesByRemoteTrackKey = emptyMap(),
+            coverEntriesByName = mapOf(oldCover.name to oldCover),
+            lyricEntriesByName = mapOf(oldLyric.name to oldLyric),
+            knownReferences = setOf(
+                audioEntry.reference,
+                metadataEntry.reference,
+                oldCover.reference,
+                oldLyric.reference
+            )
+        )
+
+        val refreshed = ManagedDownloadStorage.applySidecarRefreshToSnapshot(
+            snapshot = snapshot,
+            coverEntries = listOf(newCover),
+            lyricEntries = listOf(newLyric)
+        )
+
+        assertEquals(listOf(audioEntry), refreshed.audioEntries)
+        assertEquals(metadata, refreshed.metadataByAudioName[audioEntry.name])
+        assertEquals(newCover, refreshed.coverEntriesByName[newCover.name])
+        assertEquals(newLyric, refreshed.lyricEntriesByName[newLyric.name])
+        assertFalse(refreshed.knownReferences.contains(oldCover.reference))
+        assertFalse(refreshed.knownReferences.contains(oldLyric.reference))
+        assertTrue(refreshed.knownReferences.contains(newCover.reference))
+        assertTrue(refreshed.knownReferences.contains(newLyric.reference))
+        assertEquals(listOf(audioEntry), refreshed.audioEntriesByStableKey[metadata.stableKey])
+        assertEquals(listOf(audioEntry), refreshed.audioEntriesBySongId[7L])
+    }
+
+    @Test
+    fun `lyrics bundle resolves original translated and romanized sidecars from one snapshot`() {
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3",
+            reference = "/music/Artist - Song.mp3",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3",
+            localFilePath = "/music/Artist - Song.mp3",
+            sizeBytes = 1024L,
+            lastModifiedMs = 10L
+        )
+        val originalEntry = audioEntry.lyricEntry("Artist - Song.lrc")
+        val translatedEntry = audioEntry.lyricEntry("Artist - Song_trans.lrc")
+        val romanizedEntry = audioEntry.lyricEntry("Artist - Song_roma.lrc")
+        val snapshot = ManagedDownloadStorage.DownloadLibrarySnapshot(
+            audioEntries = listOf(audioEntry),
+            audioEntriesByLookupKey = mapOf(audioEntry.reference to audioEntry),
+            metadataEntriesByAudioName = emptyMap(),
+            metadataByAudioName = emptyMap(),
+            audioEntriesWithoutMetadata = listOf(audioEntry),
+            audioEntriesByStableKey = emptyMap(),
+            audioEntriesBySongId = emptyMap(),
+            audioEntriesByMediaUri = emptyMap(),
+            audioEntriesByRemoteTrackKey = emptyMap(),
+            coverEntriesByName = emptyMap(),
+            lyricEntriesByName = mapOf(
+                originalEntry.name to originalEntry,
+                translatedEntry.name to translatedEntry,
+                romanizedEntry.name to romanizedEntry
+            ),
+            knownReferences = setOf(
+                audioEntry.reference,
+                originalEntry.reference,
+                translatedEntry.reference,
+                romanizedEntry.reference
+            )
+        )
+        val song = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioEntry.mediaUri,
+            localFilePath = audioEntry.localFilePath
+        )
+        val reads = AtomicInteger()
+        val bundle = ManagedDownloadStorage.resolveDownloadedLyricsBundle(
+            context = Mockito.mock(Context::class.java),
+            song = song,
+            snapshot = snapshot,
+            readText = { reference ->
+                reads.incrementAndGet()
+                when (reference) {
+                    originalEntry.reference -> "original"
+                    translatedEntry.reference -> "translated"
+                    romanizedEntry.reference -> "romanized"
+                    else -> null
+                }
+            },
+            exists = { _, _ -> true }
+        )
+
+        assertEquals(3, reads.get())
+        assertEquals("original", bundle.lyric)
+        assertEquals("translated", bundle.translatedLyric)
+        assertEquals("romanized", bundle.romanizedLyric)
+        assertTrue(bundle.hasOriginalSidecar)
+        assertTrue(bundle.hasTranslatedSidecar)
+        assertTrue(bundle.hasRomanizedSidecar)
+    }
+
+    @Test
+    fun `fast lyric entry resolver reads all sidecar variants without metadata scan`() {
+        val song = SongItem(
+            id = 7L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            localFileName = "Artist - Song.mp3",
+            matchedLyric = "embedded original"
+        )
+        val entries = listOf(
+            fastLyricEntry("Artist - Song.lrc"),
+            fastLyricEntry("Artist - Song_trans.lrc"),
+            fastLyricEntry("Artist - Song_roma.lrc")
+        )
+        val bundle = ManagedDownloadStorage.resolveLyricsBundleFromEntries(
+            song = song,
+            candidateBaseNames = listOf("Artist - Song"),
+            lyricEntries = entries,
+            readText = { reference ->
+                when (reference.substringAfterLast('/')) {
+                    "Artist - Song.lrc" -> "sidecar original"
+                    "Artist - Song_trans.lrc" -> "sidecar translation"
+                    "Artist - Song_roma.lrc" -> "sidecar romanized"
+                    else -> null
+                }
+            }
+        )
+
+        assertEquals("sidecar original", bundle.lyric)
+        assertEquals("sidecar translation", bundle.translatedLyric)
+        assertEquals("sidecar romanized", bundle.romanizedLyric)
+        assertTrue(bundle.hasOriginalSidecar)
+        assertTrue(bundle.hasTranslatedSidecar)
+        assertTrue(bundle.hasRomanizedSidecar)
+    }
+
+    @Test
+    fun `fast lyric entry resolver treats a deleted reference as absent`() {
+        val song = SongItem(
+            id = 7L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            localFileName = "Artist - Song.mp3"
+        )
+        val bundle = ManagedDownloadStorage.resolveLyricsBundleFromEntries(
+            song = song,
+            candidateBaseNames = listOf("Artist - Song"),
+            lyricEntries = listOf(fastLyricEntry("Artist - Song.lrc")),
+            readText = { null }
+        )
+
+        assertNull(bundle.lyric)
+        assertFalse(bundle.hasOriginalSidecar)
+    }
+
+    @Test
+    fun `fast lyric references read original translated and romanized sidecars together`() {
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            matchedLyric = "metadata original",
+            matchedTranslatedLyric = "metadata translated",
+            matchedRomanizedLyric = "metadata romanized"
+        )
+        val contents = mapOf(
+            "original" to "sidecar original",
+            "translated" to "sidecar translated",
+            "romanized" to "sidecar romanized"
+        )
+
+        val bundle = ManagedDownloadStorage.resolveLyricsBundleFromReferences(
+            metadata = metadata,
+            originalReference = "original",
+            translatedReference = "translated",
+            romanizedReference = "romanized",
+            readText = contents::get
+        )
+
+        assertEquals("sidecar original", bundle.lyric)
+        assertEquals("sidecar translated", bundle.translatedLyric)
+        assertEquals("sidecar romanized", bundle.romanizedLyric)
+        assertTrue(bundle.hasOriginalSidecar)
+        assertTrue(bundle.hasTranslatedSidecar)
+        assertTrue(bundle.hasRomanizedSidecar)
+    }
+
+    @Test
+    fun `fast lyric references fall back to metadata after the sidecar is deleted`() {
+        val bundle = ManagedDownloadStorage.resolveLyricsBundleFromReferences(
+            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                matchedLyric = "metadata original",
+                originalTranslatedLyric = "metadata translated",
+                originalRomanizedLyric = "metadata romanized"
+            ),
+            originalReference = "deleted-original",
+            translatedReference = "deleted-translated",
+            romanizedReference = "deleted-romanized",
+            readText = { null }
+        )
+
+        assertEquals("metadata original", bundle.lyric)
+        assertEquals("metadata translated", bundle.translatedLyric)
+        assertEquals("metadata romanized", bundle.romanizedLyric)
+        assertFalse(bundle.hasOriginalSidecar)
+        assertFalse(bundle.hasTranslatedSidecar)
+        assertFalse(bundle.hasRomanizedSidecar)
+    }
+
+    @Test(expected = SecurityException::class)
+    fun `fast lyric references do not hide a revoked SAF permission`() {
+        ManagedDownloadStorage.resolveLyricsBundleFromReferences(
+            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                matchedLyric = "metadata original"
+            ),
+            originalReference = "content://com.android.externalstorage.documents/document/" +
+                "primary%3Aneriplayer-download%2FLyrics%2FSong.lrc",
+            translatedReference = null,
+            romanizedReference = null,
+            readText = { throw SecurityException("permission revoked") }
+        )
+    }
+
+    private fun ManagedDownloadStorage.StoredEntry.lyricEntry(name: String):
+        ManagedDownloadStorage.StoredEntry {
+        return copy(
+            name = name,
+            reference = "/music/Lyrics/$name",
+            mediaUri = "file:///music/Lyrics/${name.replace(" ", "%20")}",
+            localFilePath = "/music/Lyrics/$name",
+            sizeBytes = 32L,
+            lastModifiedMs = 11L
+        )
+    }
+
+    private fun fastLyricEntry(name: String): ManagedDownloadStorage.StoredEntry {
+        return ManagedDownloadStorage.StoredEntry(
+            name = name,
+            reference = "/music/Lyrics/$name",
+            mediaUri = "file:///music/Lyrics/${name.replace(" ", "%20")}",
+            localFilePath = "/music/Lyrics/$name",
+            sizeBytes = 32L,
+            lastModifiedMs = 11L
+        )
+    }
+
     private fun emptySnapshot(): ManagedDownloadStorage.DownloadLibrarySnapshot {
         return ManagedDownloadStorage.DownloadLibrarySnapshot(
             audioEntries = emptyList(),
@@ -598,5 +1458,53 @@ class ManagedDownloadStorageSnapshotCacheTest {
                 clearFinished.countDown()
             }
         }
+    }
+
+    private class BlockingPersistAndClearStore : ManagedDownloadSnapshotPersistenceStore {
+        val persistStarted = CountDownLatch(1)
+        val releasePersist = CountDownLatch(1)
+        val clearStarted = CountDownLatch(1)
+        val releaseClear = CountDownLatch(1)
+        val clearFinished = CountDownLatch(1)
+        val events = Collections.synchronizedList(mutableListOf<String>())
+
+        override suspend fun restore(
+            expectedKey: String?
+        ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>? = null
+
+        override suspend fun persist(
+            cacheKey: String,
+            snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+        ): Boolean {
+            events += "persist-start"
+            persistStarted.countDown()
+            assertTrue(releasePersist.await(5, TimeUnit.SECONDS))
+            events += "persist-end"
+            return true
+        }
+
+        override suspend fun clear() {
+            events += "clear-start"
+            clearStarted.countDown()
+            try {
+                assertTrue(releaseClear.await(5, TimeUnit.SECONDS))
+            } finally {
+                events += "clear-end"
+                clearFinished.countDown()
+            }
+        }
+    }
+
+    private data object NoOpSnapshotPersistenceStore : ManagedDownloadSnapshotPersistenceStore {
+        override suspend fun restore(
+            expectedKey: String?
+        ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>? = null
+
+        override suspend fun persist(
+            cacheKey: String,
+            snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+        ): Boolean = true
+
+        override suspend fun clear() = Unit
     }
 }

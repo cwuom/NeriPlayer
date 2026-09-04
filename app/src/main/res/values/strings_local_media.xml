@@ -23,6 +23,9 @@
     <string name="local_playlist_scan_metadata_empty">没有带元数据的本地音频</string>
     <string name="local_playlist_scan_existing_empty">没有未添加的本地音频</string>
     <string name="local_playlist_scan_filtered_empty">没有符合筛选条件的本地音频</string>
+    <string name="local_playlist_scan_progress_traversing">已访问 %1$d 个目录，发现 %2$d 首歌曲</string>
+    <string name="local_playlist_scan_progress_building">正在建立歌曲索引（%1$d/%2$d）</string>
+    <string name="local_playlist_scan_progress_metadata">正在整理元信息（%1$d/%2$d）</string>
     <string name="local_playlist_import_audio_no_new">没有新的本地音频需要导入</string>
     <string name="local_playlist_add_scanned_no_new">所选歌曲已在目标歌单中</string>
     <string name="local_playlist_metadata_processing_title">正在处理歌曲信息</string>
@@ -54,6 +57,7 @@
     <string name="local_playlist_export_to">导出到歌单</string>
     <string name="local_playlist_import_audio">导入本地音频</string>
     <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d 首 · 播放 %3$s 次</string>
+    <string name="local_playlist_duration_loading">正在读取时长</string>
     <string name="local_artist_total_duration" formatted="false">%1$s · %2$d 首</string>
     <string name="local_playlist_play_next">接下来播放…</string>
     <string name="local_artist_detail_empty">这个歌手暂无可播放的本地歌曲</string>
@@ -97,14 +101,23 @@
     <string name="local_song_lyric_external">同目录歌词文件</string>
     <string name="local_song_open_details">歌曲信息详情</string>
     <string name="local_song_metadata_write_confirm_title">回写本地元数据？</string>
-    <string name="local_song_metadata_write_confirm_message">将当前标题、艺术家、封面、原文歌词和翻译歌词写入本地音频标签。音频格式或提供商不支持的字段可能无法回写。</string>
+    <string name="local_song_metadata_write_confirm_message">将当前标题、艺术家、封面、原文歌词、翻译歌词和罗马字写入本地音频标签。音频格式或提供商不支持的字段可能无法回写。</string>
     <string name="local_song_metadata_write_confirm_write">回写</string>
     <string name="local_song_metadata_write_confirm_app_only">仅应用内保存</string>
+    <string name="local_lyrics_source_choice_title">选择歌词来源</string>
+    <string name="local_lyrics_source_choice_message">当前歌曲同时存在侧载歌词和嵌入歌词，请选择本次编辑使用的来源</string>
+    <string name="local_lyrics_source_sidecar">侧载歌词优先</string>
+    <string name="local_lyrics_source_embedded">嵌入歌词优先</string>
+    <string name="local_lyrics_embedded_overwrite_title">覆盖侧载歌词？</string>
+    <string name="local_lyrics_embedded_overwrite_message">保存嵌入歌词会回写音频元信息，并覆盖当前原文、翻译和罗马字侧载歌词。是否继续？</string>
+    <string name="local_lyrics_embedded_overwrite_confirm">继续并覆盖</string>
+    <string name="local_lyrics_fill_write_confirm_message">歌词已保存到侧载文件。是否同时回写到本地音频元信息？</string>
     <string name="local_song_metadata_write_success">已回写本地音频标签</string>
     <string name="local_song_metadata_write_catalog_sync_failed">已回写本地音频标签，但下载列表同步失败</string>
     <string name="local_song_metadata_write_not_writable">无法写入本地音频标签，未保存本次修改</string>
     <string name="local_song_metadata_write_unsupported">此音频无法读取标签或不支持回写，未保存本次修改</string>
     <string name="local_song_metadata_write_failed">回写本地音频标签失败，未保存本次修改</string>
+    <string name="local_song_lyrics_write_failed">歌词侧载保存失败，未保存本次修改</string>
     <string name="local_song_sync_confirm_title">本地歌曲不会同步</string>
     <string name="local_song_sync_confirm_message">本地歌曲不会参与同步，确认%1$s吗？</string>
     <string name="local_song_share_failed">无法分享本地歌曲文件</string>

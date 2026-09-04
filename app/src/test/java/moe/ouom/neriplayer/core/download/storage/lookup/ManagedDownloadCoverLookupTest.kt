@@ -3,10 +3,98 @@ package moe.ouom.neriplayer.core.download.storage.lookup
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ManagedDownloadCoverLookupTest {
+
+    @Test
+    fun `stable cover candidates prefer short hash and retain legacy digest`() {
+        val baseName = "Artist - Song"
+        val stableKey = "1|netease|"
+        val shortSuffix = ManagedDownloadStorageNaming.coverStableKeySuffix(stableKey)
+        val legacyDigestSuffix = ManagedDownloadStorageNaming.stableKeySuffix(stableKey)
+        val candidates = ManagedDownloadStorageNaming
+            .buildStableCoverCandidateNames(baseName, stableKey)
+
+        assertEquals(8, shortSuffix.length)
+        assertEquals(32, legacyDigestSuffix.length)
+        assertEquals("$baseName-$shortSuffix.jpg", candidates.first())
+        assertTrue("$baseName-$legacyDigestSuffix.jpg" in candidates)
+    }
+
+    @Test
+    fun `stable cover lookup reads legacy 32 digit digest name`() {
+        val baseName = "Artist - Song"
+        val stableKey = "1|netease|"
+        val legacyCover = coverEntry(
+            "$baseName-${ManagedDownloadStorageNaming.stableKeySuffix(stableKey)}.jpg"
+        )
+        val audio = audioEntry("$baseName.mp3")
+        val snapshot = snapshot(
+            audioEntries = listOf(audio),
+            metadataByAudioName = mapOf(audio.name to metadata(stableKey = stableKey)),
+            coverEntries = listOf(legacyCover)
+        )
+
+        assertEquals(
+            legacyCover.reference,
+            ManagedDownloadCoverLookup.findCoverReference(snapshot, audio)
+        )
+    }
+
+    @Test
+    fun `metadata keeps reading an existing pure sha cover reference`() {
+        val baseName = "Artist - Song"
+        val hash = "a".repeat(64)
+        val contentAddressedCover = coverEntry("$hash.jpg")
+        val audio = audioEntry("$baseName.mp3")
+        val snapshot = snapshot(
+            audioEntries = listOf(audio),
+            metadataByAudioName = mapOf(
+                audio.name to metadata(
+                    stableKey = "1|netease|",
+                    coverPath = contentAddressedCover.reference
+                )
+            ),
+            coverEntries = listOf(contentAddressedCover)
+        )
+
+        assertEquals(
+            contentAddressedCover.reference,
+            ManagedDownloadCoverLookup.findCoverReference(snapshot, audio)
+        )
+    }
+
+    @Test
+    fun `stable cover lookup does not use colliding legacy hash names`() {
+        val baseName = "Artist - Song"
+        val firstKey = "FB"
+        val collidingKey = "Ea"
+        val legacyName = "$baseName-${ManagedDownloadStorageNaming.legacyStableKeySuffix(firstKey)}.jpg"
+        val legacyCover = coverEntry(legacyName)
+        val snapshot = snapshot(
+            audioEntries = listOf(audioEntry("$baseName.mp3")),
+            metadataByAudioName = mapOf(
+                "$baseName.mp3" to metadata(stableKey = collidingKey)
+            ),
+            coverEntries = listOf(legacyCover)
+        )
+
+        assertFalse(
+            ManagedDownloadStorageNaming
+                .buildStableCoverCandidateNames(baseName, collidingKey)
+                .contains(legacyName)
+        )
+        assertNull(
+            ManagedDownloadCoverLookup.findCoverReference(
+                snapshot,
+                snapshot.audioEntries.single()
+            )
+        )
+    }
 
     @Test
     fun `stable duplicate does not inherit the first legacy cover`() {

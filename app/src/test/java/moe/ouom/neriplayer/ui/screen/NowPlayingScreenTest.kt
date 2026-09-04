@@ -11,14 +11,260 @@ import org.junit.Test
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
+import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
 import kotlin.math.pow
 
 class NowPlayingScreenTest {
+
+    @Test
+    fun `download presence only accepts a published catalog entry`() {
+        val song = SongItem(
+            id = 40L,
+            name = "Pending",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/pending.mp3"
+        )
+
+        assertFalse(
+            hasPublishedManagedDownload(song) { false }
+        )
+        assertTrue(
+            hasPublishedManagedDownload(song) { true }
+        )
+    }
+
+    @Test
+    fun `edit song cover uses resolved local fallback when metadata has no cover`() {
+        val song = SongItem(
+            id = 41L,
+            name = "Local song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external/audio/media/41"
+        )
+
+        assertEquals(
+            "content://covers/41",
+            resolveEditSongInitialCoverUrl(song, "content://covers/41")
+        )
+    }
+
+    @Test
+    fun `edit song cover uses resolved fallback when stored cover is blank`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Local song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = "   ",
+            originalCoverUrl = "",
+            mediaUri = "content://media/external/audio/media/42"
+        )
+
+        assertEquals(
+            "content://covers/42",
+            resolveEditSongInitialCoverUrl(song, "content://covers/42")
+        )
+    }
+
+    @Test
+    fun `restore cover falls back to the durable baseline when fetched cover is blank`() {
+        assertEquals(
+            "content://covers/original",
+            resolveEditSongRestoredCoverUrl(
+                sourceCoverUrl = "   ",
+                baselineCoverUrl = "content://covers/original"
+            )
+        )
+        assertEquals(
+            "https://example.com/original.jpg",
+            resolveEditSongRestoredCoverUrl(
+                sourceCoverUrl = " https://example.com/original.jpg ",
+                baselineCoverUrl = "content://covers/original"
+            )
+        )
+    }
+
+    @Test
+    fun `restore cover clears the edited preview when no original cover exists`() {
+        assertEquals(
+            "",
+            resolveEditSongRestoredCoverUrl(
+                sourceCoverUrl = null,
+                baselineCoverUrl = ""
+            )
+        )
+    }
+
+    @Test
+    fun `resolved edit song cover never replaces manual input`() {
+        assertFalse(
+            shouldApplyResolvedEditSongCover(
+                userHasEdited = true,
+                currentCoverUrl = "https://example.com/manual.jpg",
+                resolvedDisplayCoverUrl = "content://covers/41"
+            )
+        )
+        assertTrue(
+            shouldApplyResolvedEditSongCover(
+                userHasEdited = false,
+                currentCoverUrl = "",
+                resolvedDisplayCoverUrl = "content://covers/41"
+            )
+        )
+    }
+
+    @Test
+    fun `late embedded lyric result is ignored after sidecar source was selected`() {
+        assertFalse(
+            shouldPublishPendingEmbeddedLyricsResult(
+                requestIsCurrent = true,
+                pendingSourceHasSidecar = false,
+                editorAlreadySelected = false
+            )
+        )
+        assertFalse(
+            shouldPublishPendingEmbeddedLyricsResult(
+                requestIsCurrent = true,
+                pendingSourceHasSidecar = true,
+                editorAlreadySelected = true
+            )
+        )
+        assertTrue(
+            shouldPublishPendingEmbeddedLyricsResult(
+                requestIsCurrent = true,
+                pendingSourceHasSidecar = true,
+                editorAlreadySelected = false
+            )
+        )
+    }
+
+    @Test
+    fun `local restore persists lyric sidecars unless metadata writeback is selected`() {
+        assertTrue(
+            shouldPersistEditedSongLyricsLocally(
+                isLocalSong = true,
+                writeLocalMetadata = false
+            )
+        )
+        assertFalse(
+            shouldPersistEditedSongLyricsLocally(
+                isLocalSong = true,
+                writeLocalMetadata = true
+            )
+        )
+        assertFalse(
+            shouldPersistEditedSongLyricsLocally(
+                isLocalSong = false,
+                writeLocalMetadata = false
+            )
+        )
+    }
+
+    @Test
+    fun `local lyric restore requests an explicit metadata writeback choice`() {
+        val localSong = SongItem(
+            id = 43L,
+            name = "Local song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = "content://covers/43",
+            mediaUri = "content://media/external/audio/media/43"
+        )
+
+        assertTrue(
+            shouldConfirmLocalMetadataWriteBack(
+                song = localSong,
+                title = localSong.name,
+                artist = localSong.artist,
+                coverUrl = localSong.coverUrl.orEmpty(),
+                hasPendingLyricsChange = true
+            )
+        )
+        assertFalse(
+            shouldConfirmLocalMetadataWriteBack(
+                song = localSong.copy(
+                    album = "Netease",
+                    albumId = 1L,
+                    mediaUri = null
+                ),
+                title = localSong.name,
+                artist = localSong.artist,
+                coverUrl = localSong.coverUrl.orEmpty(),
+                hasPendingLyricsChange = true
+            )
+        )
+    }
+
+    @Test
+    fun `immediate lyric state keeps current song metadata on the first composition`() {
+        val song = SongItem(
+            id = 41L,
+            name = "Immediate",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external/audio/media/41",
+            matchedLyric = "[00:01.00]first line",
+            matchedTranslatedLyric = "[00:01.00]translated line",
+            matchedRomanizedLyric = "[00:01.00]romanized line"
+        )
+
+        val state = buildNowPlayingImmediateLyricsState(song)
+
+        assertEquals("[00:01.00]first line", state.rawLyrics)
+        assertEquals("[00:01.00]translated line", state.rawTranslatedLyrics)
+        assertEquals("[00:01.00]romanized line", state.rawPhoneticLyrics)
+        assertEquals("first line", state.lyrics.single().text)
+        assertEquals("translated line", state.translatedLyrics.single().text)
+        assertEquals("romanized line", state.phoneticLyrics.single().text)
+    }
+
+    @Test
+    fun `now playing fast lyric stage does not inspect embedded audio metadata`() {
+        assertFalse(shouldReadEmbeddedLyricsForNowPlayingFastStage())
+    }
+
+    @Test
+    fun `empty refresh for the same song keeps existing lyrics`() {
+        assertFalse(
+            shouldReplaceLyricsAfterRefresh(
+                sameSong = true,
+                loadedHasLyrics = false
+            )
+        )
+        assertTrue(
+            shouldReplaceLyricsAfterRefresh(
+                sameSong = true,
+                loadedHasLyrics = true
+            )
+        )
+        assertTrue(
+            shouldReplaceLyricsAfterRefresh(
+                sameSong = false,
+                loadedHasLyrics = false
+            )
+        )
+    }
 
     @Test
     fun `collapsed stored lyrics bypass direct renderer parsing`() {
@@ -35,6 +281,188 @@ class NowPlayingScreenTest {
             )
         )
         assertFalse(shouldBypassCollapsedStoredLyric(null))
+    }
+
+    @Test
+    fun `fast lyrics state renders normal LRC before enhanced hydration`() {
+        val state = buildNowPlayingFastLyricsState(
+            rawLyrics = "[00:01.00]first line\n[00:02.00]second line",
+            rawTranslatedLyrics = "[00:01.00]translated line",
+            rawPhoneticLyrics = null
+        )
+
+        assertEquals(2, state.lyrics.size)
+        assertEquals("first line", state.lyrics.first().text)
+        assertEquals(1, state.translatedLyrics.size)
+        assertEquals("translated line", state.translatedLyrics.first().text)
+        assertEquals(state.lyrics, state.plainLyrics)
+    }
+
+    @Test
+    fun `managed download fast lyrics keep root sidecar ahead of local fallback`() {
+        val local = LocalLyricsScanMetadata(
+            lyric = "",
+            translatedLyric = "local translation",
+            romanizedLyric = "local romanized",
+            hasOriginalSidecar = true,
+            hasTranslatedSidecar = true,
+            hasRomanizedSidecar = true,
+            sourceResolved = true
+        )
+        val indexed = ManagedDownloadStorage.DownloadedLyricsBundle(
+            lyric = "indexed original",
+            translatedLyric = "indexed translation",
+            romanizedLyric = "indexed romanized",
+            hasOriginalSidecar = true,
+            hasTranslatedSidecar = true,
+            hasRomanizedSidecar = true
+        )
+
+        assertEquals(
+            "indexed original",
+            resolveManagedDownloadFastLyricText(
+                localLyrics = local,
+                downloadedLyrics = indexed,
+                storedLyric = "stored original",
+                variant = ManagedLyricVariant.ORIGINAL
+            )
+        )
+        assertEquals(
+            "indexed translation",
+            resolveManagedDownloadFastLyricText(
+                localLyrics = local,
+                downloadedLyrics = indexed,
+                storedLyric = "stored translation",
+                variant = ManagedLyricVariant.TRANSLATED
+            )
+        )
+    }
+
+    @Test
+    fun `managed download fast lyrics use indexed sidecar then metadata fallback`() {
+        val indexedSidecar = ManagedDownloadStorage.DownloadedLyricsBundle(
+            lyric = "indexed original",
+            translatedLyric = null,
+            romanizedLyric = null,
+            hasOriginalSidecar = true
+        )
+        assertEquals(
+            "indexed original",
+            resolveManagedDownloadFastLyricText(
+                localLyrics = null,
+                downloadedLyrics = indexedSidecar,
+                storedLyric = "stored original",
+                variant = ManagedLyricVariant.ORIGINAL
+            )
+        )
+        assertEquals(
+            "stored translation",
+            resolveManagedDownloadFastLyricText(
+                localLyrics = null,
+                downloadedLyrics = indexedSidecar,
+                storedLyric = "stored translation",
+                variant = ManagedLyricVariant.TRANSLATED
+            )
+        )
+    }
+
+    @Test
+    fun `managed download fast lyric miss requests a one shot backfill`() {
+        assertTrue(
+            shouldBackfillDownloadedLyricsAfterFastMiss(
+                isManagedLocalDownload = true,
+                canReadManagedDownloadLyrics = true,
+                fastLyrics = ManagedDownloadStorage.DownloadedLyricsBundle(
+                    lyric = null,
+                    translatedLyric = null,
+                    romanizedLyric = null
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `non managed song skips downloaded lyric backfill`() {
+        assertFalse(
+            shouldBackfillDownloadedLyricsAfterFastMiss(
+                isManagedLocalDownload = false,
+                canReadManagedDownloadLyrics = true,
+                fastLyrics = ManagedDownloadStorage.DownloadedLyricsBundle(
+                    lyric = "[00:00.00]sidecar",
+                    translatedLyric = null,
+                    romanizedLyric = null,
+                    hasOriginalSidecar = true
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `managed download partial fast bundle backfills missing lyric variants`() {
+        assertTrue(
+            shouldBackfillDownloadedLyricsAfterFastMiss(
+                isManagedLocalDownload = true,
+                canReadManagedDownloadLyrics = true,
+                fastLyrics = ManagedDownloadStorage.DownloadedLyricsBundle(
+                    lyric = "[00:00.00]sidecar",
+                    translatedLyric = null,
+                    romanizedLyric = null,
+                    hasOriginalSidecar = true
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `managed download complete fast lyric bundle skips a backfill`() {
+        assertFalse(
+            shouldBackfillDownloadedLyricsAfterFastMiss(
+                isManagedLocalDownload = true,
+                canReadManagedDownloadLyrics = true,
+                fastLyrics = ManagedDownloadStorage.DownloadedLyricsBundle(
+                    lyric = "[00:00.00]sidecar",
+                    translatedLyric = "[00:00.00]translation",
+                    romanizedLyric = "[00:00.00]romanized",
+                    hasOriginalSidecar = true,
+                    hasTranslatedSidecar = true,
+                    hasRomanizedSidecar = true
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `local playback uri changes do not cancel lyric reload`() {
+        val localSong = SongItem(
+            id = 1L,
+            name = "Local",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio",
+            localFileName = "audio.mp3"
+        )
+
+        assertEquals(
+            null,
+            resolveNowPlayingLyricsMediaReloadKey(
+                song = localSong,
+                currentMediaUrl = "file:///storage/emulated/0/audio.mp3"
+            )
+        )
+        assertEquals(
+            "https://example.com/audio.mp3",
+            resolveNowPlayingLyricsMediaReloadKey(
+                song = localSong.copy(
+                    album = "netease",
+                    mediaUri = "https://example.com/audio.mp3",
+                    localFileName = null
+                ),
+                currentMediaUrl = "https://example.com/audio.mp3"
+            )
+        )
     }
 
     @Test

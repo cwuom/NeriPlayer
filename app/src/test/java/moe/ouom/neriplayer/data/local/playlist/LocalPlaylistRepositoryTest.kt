@@ -95,6 +95,30 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `fast playlist preview reads only the requested playlist object`() = runTest {
+        val first = playlistJson(id = 301L, name = "first")
+            .trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+        val second = playlistJson(id = 302L, name = "target")
+            .trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+        val storage = RecordingStorage(primary = "[$first,$second]")
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "fast_preview.json"),
+            autoSyncEnabled = false,
+            storage = storage
+        )
+
+        val preview = repository.readFastPlaylist(302L)
+
+        assertEquals("target", preview?.name)
+        assertEquals(302L, preview?.id)
+    }
+
+    @Test
     fun `failed async initial load remains read only`() = runTest {
         val storage = RecordingStorage(
             primary = playlistJson(id = 202L, name = "persisted")
@@ -149,7 +173,7 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
-    fun `scanned adds skip local metadata duplicates in regular playlist`() = runTest {
+    fun `scanned adds keep distinct files with matching local metadata`() = runTest {
         val playlistId = 43L
         val repository = LocalPlaylistRepository.createForTest(
             context = mockContext(),
@@ -174,10 +198,45 @@ class LocalPlaylistRepositoryTest {
         val playlist = repository.playlists.value.single { it.id == playlistId }
 
         assertEquals(1, firstAdd)
-        assertEquals(0, secondAdd)
-        assertEquals(1, playlist.songs.size)
-        assertEquals(contentAlias.mediaUri, playlist.songs.single().mediaUri)
-        assertEquals(contentAlias.localFileName, playlist.songs.single().localFileName)
+        assertEquals(1, secondAdd)
+        assertEquals(2, playlist.songs.size)
+        assertEquals(
+            setOf(contentAlias.mediaUri, pathAlias.mediaUri),
+            playlist.songs.map { it.mediaUri }.toSet()
+        )
+    }
+
+    @Test
+    fun `scanned adds to a regular playlist retain source creation time`() = runTest {
+        val playlistId = 44L
+        val sourceSong = localSong(index = 9, name = "source-time").copy(
+            addedAt = 123L,
+            logicalCreatedAtMs = 123L,
+            createdAtSource = "FILESYSTEM_BIRTH",
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "regular_scanned_creation_time.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "普通歌单"))
+        )
+
+        assertEquals(
+            1,
+            repository.addScannedSongsToPlaylistAndCount(playlistId, listOf(sourceSong))
+        )
+
+        val stored = repository.playlists.value
+            .single { it.id == playlistId }
+            .songs
+            .single()
+        assertEquals(123L, stored.addedAt)
+        assertEquals(123L, stored.logicalCreatedAtMs)
+        assertTrue((stored.membershipAddedAtMs ?: 0L) > 123L)
     }
 
     @Test
@@ -857,6 +916,134 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `scanned metadata clears invalid covers without restoring them from persistence merge`() = runTest {
+        val playlistId = 160L
+        val storage = RecordingStorage(primary = null)
+        val audioFile = tempFolder.newFile("invalid-cover-song.mp3")
+        val invalidCover = tempFolder.newFile("invalid-cover.jpg").apply {
+            writeText("not an image")
+        }
+        val song = SongItem(
+            id = 161L,
+            name = "Local song",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = invalidCover.toURI().toString(),
+            originalCoverUrl = invalidCover.toURI().toString(),
+            mediaUri = audioFile.toURI().toString(),
+            localFilePath = audioFile.absolutePath,
+            channelId = "local"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "invalid-cover-refresh.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            storage = storage
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "Local", songs = mutableListOf(song)))
+        )
+
+        repository.refreshScannedLocalSongMetadata(listOf(song))
+
+        val refreshed = repository.playlists.value.single().songs.single()
+        assertNull(refreshed.coverUrl)
+        assertNull(refreshed.originalCoverUrl)
+
+        val restoredRepository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "invalid-cover-refresh.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            storage = storage
+        )
+        val restored = restoredRepository.playlists.value.single().songs.single()
+        assertNull(restored.coverUrl)
+        assertNull(restored.originalCoverUrl)
+    }
+
+    @Test
+    fun `scanned alias clears invalid covers while keeping the existing playback source`() = runTest {
+        val playlistId = 164L
+        val existingAudio = tempFolder.newFile("retained-source.mp3")
+        val scannedAliasAudio = tempFolder.newFile("scanned-alias.mp3")
+        val invalidExistingCover = tempFolder.newFile("invalid-existing-cover.jpg").apply {
+            writeText("not an image")
+        }
+        val invalidScannedCover = tempFolder.newFile("invalid-scanned-cover.jpg").apply {
+            writeText("not an image")
+        }
+        val existing = SongItem(
+            id = 165L,
+            name = "Local song",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = invalidExistingCover.toURI().toString(),
+            originalCoverUrl = invalidExistingCover.toURI().toString(),
+            mediaUri = existingAudio.toURI().toString(),
+            localFilePath = existingAudio.absolutePath,
+            channelId = "local",
+            audioId = "shared-local-audio-id"
+        )
+        val scannedAlias = existing.copy(
+            id = 166L,
+            coverUrl = invalidScannedCover.toURI().toString(),
+            originalCoverUrl = invalidScannedCover.toURI().toString(),
+            mediaUri = scannedAliasAudio.toURI().toString(),
+            localFilePath = scannedAliasAudio.absolutePath
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "invalid-cover-alias-refresh.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "Local", songs = mutableListOf(existing)))
+        )
+
+        repository.refreshScannedLocalSongMetadata(listOf(scannedAlias))
+
+        val refreshed = repository.playlists.value.single().songs.single()
+        assertEquals(existing.mediaUri, refreshed.mediaUri)
+        assertEquals(existing.localFilePath, refreshed.localFilePath)
+        assertNull(refreshed.coverUrl)
+        assertNull(refreshed.originalCoverUrl)
+    }
+
+    @Test
+    fun `ordinary metadata update still preserves existing covers when new values are absent`() = runTest {
+        val playlistId = 162L
+        val original = localSong(163).copy(
+            coverUrl = "file:///persisted-cover.jpg",
+            originalCoverUrl = "file:///persisted-original-cover.jpg"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "preserve-cover-update.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "Local", songs = mutableListOf(original)))
+        )
+
+        repository.updateSongMetadata(
+            originalSong = original,
+            newSongInfo = original.copy(coverUrl = null, originalCoverUrl = null)
+        )
+
+        val updated = repository.playlists.value.single().songs.single()
+        assertEquals(original.coverUrl, updated.coverUrl)
+        assertEquals(original.originalCoverUrl, updated.originalCoverUrl)
+    }
+
+    @Test
     fun `user metadata update schedules auto sync when requested`() = runTest {
         val playlistId = 156L
         val original = remoteNeteaseSong(id = 157L)
@@ -1290,6 +1477,252 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `scanned metadata merge keeps the first matching scanned alias`() = runTest {
+        val existing = legacyLocalSong(index = 720, name = "same")
+        val firstAlias = legacyLocalSong(index = 721, name = "same").copy(
+            customName = "first alias"
+        )
+        val secondAlias = legacyLocalSong(index = 720, name = "same").copy(
+            customName = "identity alias"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "scanned_metadata_alias_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+        assertEquals(
+            1,
+            repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(existing))
+        )
+
+        assertEquals(
+            0,
+            repository.addScannedSongsToLocalFilesPlaylistAndCount(
+                listOf(firstAlias, secondAlias)
+            )
+        )
+
+        val stored = repository.playlists.value
+            .single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+            .songs
+            .single()
+        assertEquals("first alias", stored.customName)
+    }
+
+    @Test
+    fun `scanned local song keeps source creation time and records membership time`() = runTest {
+        val sourceSong = localSong(index = 703, name = "old source").copy(
+            addedAt = 1L,
+            logicalCreatedAtMs = 1L
+        )
+        val context = mockContext()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = context,
+            file = File(tempFolder.root, "local_files_membership_time.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        assertEquals(
+            1,
+            repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(sourceSong))
+        )
+
+        val stored = repository.playlists.value
+            .single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+            .songs
+            .single()
+        assertEquals(1L, stored.addedAt)
+        assertTrue((stored.membershipAddedAtMs ?: 0L) > 1L)
+    }
+
+    @Test
+    fun `scanned timestamp helper falls back to membership for unknown source`() {
+        val song = localSong(index = 704)
+        assertEquals(
+            99L,
+            resolvePlaylistSongAddedAt(
+                song = song,
+                membershipAddedAt = 100L,
+                index = 1,
+                preserveScannedSourceAddedAt = true
+            )
+        )
+    }
+
+    @Test
+    fun `scanned local files preserve the visible discovery order`() = runTest {
+        val older = localSong(index = 705, name = "older").copy(
+            addedAt = 10L,
+            logicalCreatedAtMs = 10L,
+            createdAtConfidence = "EXACT"
+        )
+        val newer = localSong(index = 706, name = "newer").copy(
+            addedAt = 20L,
+            logicalCreatedAtMs = 20L,
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_files_creation_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(older, newer))
+
+        assertEquals(
+            listOf(older.id, newer.id),
+            repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+                .songs
+                .map { it.id }
+        )
+    }
+
+    @Test
+    fun `single local import is placed first even when source file is old`() = runTest {
+        val old = localSong(index = 709, name = "old").copy(
+            addedAt = 10L,
+            logicalCreatedAtMs = 10L,
+            createdAtConfidence = "EXACT"
+        )
+        val newlyImported = localSong(index = 710, name = "new").copy(
+            addedAt = 1L,
+            logicalCreatedAtMs = 1L,
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_files_single_import_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(old))
+        repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(newlyImported))
+
+        assertEquals(
+            listOf(newlyImported.id, old.id),
+            repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+                .songs
+                .map { it.id }
+        )
+    }
+
+    @Test
+    fun `batch scanned local import preserves discovery order`() = runTest {
+        val older = localSong(index = 711, name = "older").copy(
+            addedAt = 10L,
+            logicalCreatedAtMs = 10L,
+            createdAtConfidence = "EXACT"
+        )
+        val newer = localSong(index = 712, name = "newer").copy(
+            addedAt = 20L,
+            logicalCreatedAtMs = 20L,
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_files_batch_import_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(older, newer))
+
+        assertEquals(
+            listOf(older.id, newer.id),
+            repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+                .songs
+                .map { it.id }
+        )
+    }
+
+    @Test
+    fun `manual local file adds are sorted by logical creation time`() = runTest {
+        val older = localSong(index = 707, name = "older").copy(
+            addedAt = 10L,
+            logicalCreatedAtMs = 10L,
+            createdAtConfidence = "EXACT"
+        )
+        val newer = localSong(index = 708, name = "newer").copy(
+            addedAt = 20L,
+            logicalCreatedAtMs = 20L,
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_files_manual_creation_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        repository.addSongsToLocalFilesPlaylist(listOf(older, newer))
+
+        assertEquals(
+            listOf(newer.id, older.id),
+            repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+                .songs
+                .map { it.id }
+        )
+    }
+
+    @Test
     fun `restored playlist id is committed before external sync is scheduled`() = runTest {
         val syncStore = RecordingSyncMutationStore()
         var autoSyncTriggerCount = 0
@@ -1467,6 +1900,20 @@ class LocalPlaylistRepositoryTest {
             coverUrl = null,
             mediaUri = path,
             localFilePath = path
+        )
+    }
+
+    private fun legacyLocalSong(index: Long, name: String): SongItem {
+        return SongItem(
+            id = index,
+            name = name,
+            artist = "artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 269_000L,
+            coverUrl = null,
+            localFileName = "$name.mp3",
+            channelId = "local"
         )
     }
 

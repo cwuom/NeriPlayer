@@ -25,16 +25,20 @@ package moe.ouom.neriplayer
 
 import android.app.Application
 import android.content.res.Configuration
+import android.os.Build
 import android.webkit.WebView
+import androidx.work.Configuration as WorkConfiguration
 import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.execution.UidtDownloadJobService
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
-import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
+import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
 import moe.ouom.neriplayer.core.startup.app.AppImageLoaderInitializer
 import moe.ouom.neriplayer.core.startup.app.AppProcessClassifier
 import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
@@ -50,9 +54,26 @@ import moe.ouom.neriplayer.util.crash.NativeCrashHandler
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 
-class NeriPlayerApplication : Application() {
+class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
     @Volatile
     private var normalComponentsInitialized = false
+
+    override val workManagerConfiguration: WorkConfiguration
+        get() = WorkConfiguration.Builder()
+            .setJobSchedulerJobIdRange(
+                WORK_MANAGER_JOB_ID_MIN,
+                WORK_MANAGER_JOB_ID_MAX
+            )
+            // 系统可能在重启恢复旧任务时拒绝调度，不能让库异常穿透到进程
+            .setSchedulingExceptionHandler { error ->
+                NPLogger.e(
+                    "NERI-WorkManager",
+                    "系统暂时拒绝后台任务调度，保留持久下载队列等待恢复: " +
+                        error.message,
+                    error
+                )
+            }
+            .build()
 
     override fun onCreate() {
         super.onCreate()
@@ -84,6 +105,13 @@ class NeriPlayerApplication : Application() {
             return
         }
         initializeNormalComponents()
+        if (shouldTrimUidtPendingJobs(runningInMainProcess, Build.VERSION.SDK_INT)) {
+            AppContainer.launchBackgroundIo {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    UidtDownloadJobService.trimPendingJobs(this@NeriPlayerApplication)
+                }
+            }
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -112,19 +140,23 @@ class NeriPlayerApplication : Application() {
 
             // 后台预热收藏仓库: 首次构造会同步 loadFromDisk, 放到 IO 线程避免首个 UI 触达在主线程读盘
             AppContainer.launchBackgroundIo {
+                AppStartupWorkGate.awaitInteractiveContentOrTimeout()
                 FavoritePlaylistRepository.getInstance(this@NeriPlayerApplication)
             }
             AppContainer.launchBackgroundIo {
+                AppStartupWorkGate.awaitInteractiveContentOrTimeout()
                 AppContainer.playHistoryRepo
             }
             // 这些统计仓库首次创建会读取完整快照，预热后详情页不会在主线程首次读盘
             AppContainer.launchBackgroundIo {
+                AppStartupWorkGate.awaitInteractiveContentOrTimeout()
                 AppContainer.playlistUsageRepo
                 AppContainer.localPlaylistPlaybackStatsRepo
                 AppContainer.playbackStatsRepo
                 AppContainer.trafficStatsRepo
             }
             AppContainer.launchBackgroundIo {
+                AppStartupWorkGate.awaitInteractiveContentOrTimeout()
                 AppContainer.neteasePlaylistCacheRepo.importLegacyCaches()
                 AppContainer.biliFavoriteFolderCacheRepo.importLegacyCaches()
                 AppContainer.biliArchiveCacheRepo.importLegacyCaches()
@@ -150,7 +182,6 @@ class NeriPlayerApplication : Application() {
 
             // 初始化全局下载管理器
             GlobalDownloadManager.initialize(this)
-            LegacyJsonCleanupScheduler.schedule(this, "app-init")
 
             // 初始化 LyriconManager, 如果用户启用了 Lyricon 功能
             if (readPlaybackPreferenceSnapshotSync(this).lyriconEnabled) {
@@ -161,4 +192,11 @@ class NeriPlayerApplication : Application() {
             normalComponentsInitialized = true
         }
     }
+}
+
+private const val WORK_MANAGER_JOB_ID_MIN = 1_000
+private const val WORK_MANAGER_JOB_ID_MAX = 99_999
+
+internal fun shouldTrimUidtPendingJobs(runningInMainProcess: Boolean, sdkInt: Int): Boolean {
+    return runningInMainProcess && sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
 }

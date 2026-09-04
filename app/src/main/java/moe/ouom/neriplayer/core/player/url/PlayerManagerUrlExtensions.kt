@@ -13,6 +13,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -21,6 +22,7 @@ import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.LocalPlaybackReferenceResolution
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
@@ -62,6 +64,7 @@ import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.listentogether.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
 import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
 import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
@@ -72,6 +75,10 @@ import java.io.File
 internal const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"
 internal const val YOUTUBE_PLAYBACK_PREFER_M4A = false
 internal const val YOUTUBE_STABLE_RECOVERY_QUALITY = "high"
+
+private const val LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT = 6
+private const val LOCAL_PLAYBACK_RESOLUTION_RETRY_DELAY_MS = 50L
+private const val LOCAL_PLAYBACK_RESOLUTION_RETRY_MAX_DELAY_MS = 250L
 
 internal data class CachedResourceIntegrity(
     val isComplete: Boolean,
@@ -165,18 +172,13 @@ internal suspend fun PlayerManager.resolveSongUrl(
         shouldPreferListenTogetherSourceBeforeNeteaseFallback(
             listenerAudioLinkSharingActive = isListenTogetherAudioLinkFallbackEnabled()
         )
-    if (
-        shouldUseDirectStreamShortcut(
-            forceRefresh = forceRefresh,
-            hasListenTogetherFallback = initialListenTogetherFallback != null
-        ) && isDirectStreamUrl(song.streamUrl)
-    ) {
-        prepareBiliPlaybackSkipsForResolvedPlayback(song, playbackRequestTokenOverride)
-        return SongUrlResult.Success(song.streamUrl.orEmpty())
-    }
     if (isLocalSong(song)) {
-        val localMediaUri = localMediaSource(song)
-        if (localMediaUri != null && isReadableLocalMediaUri(localMediaUri)) {
+        val localResolution = resolvePermittedLocalPlaybackWithRetry(
+            song = song,
+            rawLocalReference = localMediaSource(song)
+        )
+        if (localResolution is LocalPlaybackReferenceResolution.Playable) {
+            val localMediaUri = localResolution.reference
             val playbackAudioInfo = localMediaUri.toLocalPlaybackUri()
                 ?.let { buildLocalPlaybackAudioInfo(it, application) }
                 ?: buildLocalPlaybackAudioInfo(song, application)
@@ -186,20 +188,28 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 audioInfo = playbackAudioInfo
             )
         }
-        song.recoverNeteaseRemoteSourceFromStaleLocalCopy()?.let { recoveredSong ->
+        if (localResolution is LocalPlaybackReferenceResolution.Missing) {
+            song.recoverNeteaseRemoteSourceFromStaleLocalCopy()?.let { recoveredSong ->
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "Downloaded reference is explicitly missing, retry as Netease: " +
+                        "song=${song.name}, stale=${localMediaSource(song)}"
+                )
+                return resolveSongUrl(
+                    song = recoveredSong,
+                    forceRefresh = forceRefresh,
+                    youtubeRecoveryStrategy = youtubeRecoveryStrategy,
+                    sideEffects = sideEffects,
+                    allowGenericPrefetchCache = allowGenericPrefetchCache,
+                    playbackRequestTokenOverride = playbackRequestTokenOverride,
+                    shouldApplyCacheMutation = shouldApplyCacheMutation
+                )
+            }
+        } else {
             NPLogger.w(
                 "NERI-PlayerManager",
-                "Deleted downloaded reference found in remote entry, retry as Netease: " +
-                    "song=${song.name}, stale=$localMediaUri"
-            )
-            return resolveSongUrl(
-                song = recoveredSong,
-                forceRefresh = forceRefresh,
-                youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-                sideEffects = sideEffects,
-                allowGenericPrefetchCache = allowGenericPrefetchCache,
-                playbackRequestTokenOverride = playbackRequestTokenOverride,
-                shouldApplyCacheMutation = shouldApplyCacheMutation
+                "Local reference is temporarily unavailable; remote fallback is blocked: " +
+                    "song=${song.name}, resolution=$localResolution"
             )
         }
         sideEffects.emitError {
@@ -220,6 +230,15 @@ internal suspend fun PlayerManager.resolveSongUrl(
             listenTogetherFallback = initialListenTogetherFallback,
             preferredQualityKey = listenTogetherPreferredQualityKey(song)
         )
+    }
+    if (
+        shouldUseDirectStreamShortcut(
+            forceRefresh = forceRefresh,
+            hasListenTogetherFallback = initialListenTogetherFallback != null
+        ) && isDirectStreamUrl(song.streamUrl)
+    ) {
+        prepareBiliPlaybackSkipsForResolvedPlayback(song, playbackRequestTokenOverride)
+        return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
     val isYouTubeTrack = isYouTubeMusicTrack(song)
     val cacheKey = computeCacheKey(
@@ -303,7 +322,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
     }
     if (!forceRefresh && allowGenericPrefetchCache && !isYouTubeTrack) {
-        consumeGenericUrlPrefetch(cacheKey)?.let { prefetchedResult ->
+        consumeGenericUrlPrefetch(cacheKey, song)?.let { prefetchedResult ->
             prepareBiliPlaybackSkipsForResolvedPlayback(song)
             return mergeListenTogetherFallbackResult(
                 localResult = prefetchedResult,
@@ -647,7 +666,11 @@ internal fun shouldAttemptCachedPlaybackRepair(
     isLocalSong: Boolean
 ): Boolean {
     if (isOfflineCache) return true
-    if (isLocalSong) return false
+    if (isLocalSong) {
+        // 迁移切根或源文件清理与 Media3 打开文件之间存在窄竞态。
+        // 仅对明确的文件不存在重绑本地引用，不能把网络或解码错误当成迁移问题
+        return error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
+    }
     if (isYouTubeTrack) {
         return shouldAttemptYouTubePlaybackRecovery(error, isOfflineCache)
     }
@@ -842,10 +865,11 @@ internal fun PlayerManager.refreshCurrentSongUrlImpl(
     resumePlaybackAfterRefresh: Boolean = true,
     resumedPlaybackCommandSource: PlaybackCommandSource? = null,
     youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
-    cacheKeyToInvalidateBeforeResolve: String? = null
+    cacheKeyToInvalidateBeforeResolve: String? = null,
+    allowLocalSongRecovery: Boolean = false
 ) {
     val song = _currentSongFlow.value ?: return
-    if (isLocalSong(song)) return
+    if (isLocalSong(song) && !allowLocalSongRecovery) return
     NPLogger.d(
         "NERI-PlayerManager",
         "refreshCurrentSongUrl: song=${song.name}, resumePositionMs=$resumePositionMs, allowFallback=$allowFallback, reason=$reason, bypassCooldown=$bypassCooldown, resumePlaybackAfterRefresh=$resumePlaybackAfterRefresh, commandSource=$resumedPlaybackCommandSource, stack=[${debugStackHint()}]"
@@ -1235,24 +1259,72 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
     return applied
 }
 
-private fun PlayerManager.checkLocalCache(
+private suspend fun PlayerManager.resolvePermittedLocalPlaybackWithRetry(
+    song: SongItem,
+    rawLocalReference: String?
+): LocalPlaybackReferenceResolution {
+    var resolution = AudioDownloadManager.resolvePermittedLocalPlayback(
+        context = application,
+        song = song,
+        rawLocalReference = rawLocalReference
+    )
+    repeat(LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT) { retryIndex ->
+        if (!shouldRetryLocalPlaybackResolution(song, resolution)) {
+            return resolution
+        }
+        val retryNumber = retryIndex + 1
+        val delayMs = (LOCAL_PLAYBACK_RESOLUTION_RETRY_DELAY_MS * retryNumber)
+            .coerceAtMost(LOCAL_PLAYBACK_RESOLUTION_RETRY_MAX_DELAY_MS)
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "本地播放引用暂未稳定，等待重试: song=${song.name}, " +
+                "retry=$retryNumber/$LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT, delayMs=$delayMs, " +
+                "resolution=$resolution"
+        )
+        delay(delayMs)
+        resolution = AudioDownloadManager.resolvePermittedLocalPlayback(
+            context = application,
+            song = song,
+            rawLocalReference = rawLocalReference
+        )
+    }
+    return resolution
+}
+
+private suspend fun PlayerManager.checkLocalCache(
     song: SongItem,
     sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
 ): SongUrlResult? {
     val context = application
-    if (!AudioDownloadManager.mayHaveIndexedLocalDownload(context, song)) {
-        return null
-    }
-    val localReference = AudioDownloadManager.getLocalPlaybackUri(context, song) ?: return null
-    if (!isReadableLocalMediaUri(localReference)) {
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "checkLocalCache: 命中不可读本地引用，回退远端解析 song=${song.name}, reference=$localReference"
-        )
-        sideEffects.scanLocalFiles {
-            GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
+    val localResolution = resolveIndexedLocalPlaybackWithRetry(context, song)
+    val localReference = when (localResolution) {
+        is LocalPlaybackReferenceResolution.Playable -> localResolution.reference
+        LocalPlaybackReferenceResolution.NotIndexed -> return null
+        LocalPlaybackReferenceResolution.Missing -> {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "checkLocalCache: indexed download is explicitly missing; allow remote fallback: " +
+                    "song=${song.name}"
+            )
+            sideEffects.scanLocalFiles {
+                GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
+            }
+            return null
         }
-        return null
+        is LocalPlaybackReferenceResolution.TemporarilyUnavailable -> {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "checkLocalCache: indexed download is temporarily unavailable; " +
+                    "remote fallback is blocked: song=${song.name}, " +
+                    "evidence=${localResolution.evidence}"
+            )
+            sideEffects.emitError {
+                postPlayerEvent(
+                    PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url))
+                )
+            }
+            return SongUrlResult.Failure
+        }
     }
     val durationMs = if (song.durationMs <= 0L) {
         val retriever = android.media.MediaMetadataRetriever()
@@ -1285,6 +1357,45 @@ private fun PlayerManager.checkLocalCache(
                 ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
         )
     )
+}
+
+private suspend fun resolveIndexedLocalPlaybackWithRetry(
+    context: android.content.Context,
+    song: SongItem
+): LocalPlaybackReferenceResolution {
+    var resolution = AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, song)
+    repeat(LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT) { retryIndex ->
+        if (!shouldRetryLocalPlaybackResolution(song, resolution)) {
+            return resolution
+        }
+        val retryNumber = retryIndex + 1
+        val delayMs = (LOCAL_PLAYBACK_RESOLUTION_RETRY_DELAY_MS * retryNumber)
+            .coerceAtMost(LOCAL_PLAYBACK_RESOLUTION_RETRY_MAX_DELAY_MS)
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "索引本地播放引用暂未稳定，等待重试: song=${song.name}, " +
+                "retry=$retryNumber/$LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT, delayMs=$delayMs, " +
+                "resolution=$resolution"
+        )
+        delay(delayMs)
+        resolution = AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, song)
+    }
+    return resolution
+}
+
+internal fun shouldRetryLocalPlaybackResolution(
+    song: SongItem,
+    resolution: LocalPlaybackReferenceResolution
+): Boolean {
+    return when (resolution) {
+        is LocalPlaybackReferenceResolution.TemporarilyUnavailable -> true
+        LocalPlaybackReferenceResolution.Missing ->
+            GlobalDownloadManager.hasDownloadedSongCached(song) ||
+                AudioDownloadManager.peekCompletedAudioReference(song) != null ||
+                AudioDownloadManager.isSongDownloadActive(song.stableKey())
+        LocalPlaybackReferenceResolution.NotIndexed,
+        is LocalPlaybackReferenceResolution.Playable -> false
+    }
 }
 
 internal fun PlayerManager.inspectExoPlayerCache(

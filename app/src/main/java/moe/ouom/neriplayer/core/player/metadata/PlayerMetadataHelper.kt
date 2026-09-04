@@ -5,15 +5,26 @@ import moe.ouom.neriplayer.core.api.search.SongDetails
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.data.model.SongItem
 
+internal fun shouldSkipSongMetadataMutation(
+    currentSong: SongItem,
+    updatedSong: SongItem,
+    writeLyrics: Boolean
+): Boolean {
+    return !writeLyrics && currentSong == updatedSong
+}
+
 internal fun SongItem.withUpdatedLyricsPreservingOriginal(
     newLyrics: String? = matchedLyric,
-    newTranslatedLyric: String? = matchedTranslatedLyric
+    newTranslatedLyric: String? = matchedTranslatedLyric,
+    newRomanizedLyric: String? = matchedRomanizedLyric
 ): SongItem {
     return copy(
         matchedLyric = newLyrics,
         matchedTranslatedLyric = newTranslatedLyric,
+        matchedRomanizedLyric = newRomanizedLyric,
         originalLyric = originalLyric ?: matchedLyric,
-        originalTranslatedLyric = originalTranslatedLyric ?: matchedTranslatedLyric
+        originalTranslatedLyric = originalTranslatedLyric ?: matchedTranslatedLyric,
+        originalRomanizedLyric = originalRomanizedLyric ?: matchedRomanizedLyric
     )
 }
 
@@ -46,8 +57,7 @@ internal fun shouldWriteLocalCoverMetadata(
     previousCustomCover: String?
 ): Boolean {
     return restoreBaseCover ||
-        nextCustomCover != previousCustomCover ||
-        !nextCustomCover.isNullOrBlank()
+        nextCustomCover != previousCustomCover
 }
 
 internal fun resolveLocalCoverWriteReference(
@@ -63,18 +73,53 @@ internal fun resolveLocalCoverWriteReference(
     return reference?.trim()?.takeIf(String::isNotBlank)
 }
 
+internal fun shouldMaterializeRemoteLocalCover(
+    isLocalSong: Boolean,
+    requestedCoverReference: String?,
+    restoreBaseCover: Boolean,
+    persistManualRemoteCover: Boolean
+): Boolean {
+    return isLocalSong &&
+        (restoreBaseCover || persistManualRemoteCover) &&
+        requestedCoverReference?.trim()?.isRemoteCoverReference() == true
+}
+
 internal fun resolveRestoredBaseCoverUrl(
     originalCoverUrl: String?,
     baseCoverUrl: String?,
-    currentCustomCoverUrl: String?
+    currentCustomCoverUrl: String?,
+    preferredLocalCoverUrl: String? = null,
+    requestedRestoreCoverUrl: String? = null,
+    localOnly: Boolean = false
 ): String? {
+    val requestedRestoreCover = requestedRestoreCoverUrl
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+    val preferredLocalCover = preferredLocalCoverUrl
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.isRemoteCoverReference() }
     val customCover = currentCustomCoverUrl?.trim()?.takeIf { it.isNotBlank() }
-    return originalCoverUrl
+    val originalCover = originalCoverUrl
         ?.trim()
         ?.takeIf { it.isNotBlank() && it != customCover }
-        ?: baseCoverUrl
-            ?.trim()
-            ?.takeIf { it.isNotBlank() && it != customCover }
+    val baseCover = baseCoverUrl
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && it != customCover }
+    if (localOnly) {
+        return requestedRestoreCover
+            ?.takeUnless(String::isRemoteCoverReference)
+            ?: preferredLocalCover ?: originalCover
+            ?.takeUnless(String::isRemoteCoverReference)
+            ?: baseCover?.takeUnless(String::isRemoteCoverReference)
+    }
+    return requestedRestoreCover ?: preferredLocalCover ?: originalCover ?: baseCover ?: customCover.takeIf {
+        originalCover == null && baseCover == null
+    }
+}
+
+private fun String.isRemoteCoverReference(): Boolean {
+    return startsWith("http://", ignoreCase = true) ||
+        startsWith("https://", ignoreCase = true)
 }
 
 internal enum class LocalMetadataWritePlaybackAction {
@@ -83,20 +128,8 @@ internal enum class LocalMetadataWritePlaybackAction {
     RELEASE_AND_RESUME
 }
 
-internal fun resolveLocalMetadataWritePlaybackAction(
-    isTargetCurrentSong: Boolean,
-    hasLoadedMedia: Boolean,
-    shouldResumePlayback: Boolean
-): LocalMetadataWritePlaybackAction {
-    if (!isTargetCurrentSong || !hasLoadedMedia) {
-        return LocalMetadataWritePlaybackAction.NONE
-    }
-    return if (shouldResumePlayback) {
-        LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME
-    } else {
-        LocalMetadataWritePlaybackAction.RELEASE_ONLY
-    }
-}
+internal fun resolveLocalMetadataWritePlaybackAction(): LocalMetadataWritePlaybackAction =
+    LocalMetadataWritePlaybackAction.NONE
 
 internal fun SongSearchInfo.toBasicSongDetails(): SongDetails {
     return SongDetails(

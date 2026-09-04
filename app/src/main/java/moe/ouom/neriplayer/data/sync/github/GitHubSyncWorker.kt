@@ -33,7 +33,9 @@ import androidx.work.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.sync.shouldDeferAutomaticSyncForPlayback
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.util.concurrent.TimeUnit
@@ -173,6 +175,16 @@ class GitHubSyncWorker(
             if (!storage.isConfigured()) {
                 NPLogger.d(TAG, "GitHub not configured")
                 return@withContext Result.success()
+            }
+            if (
+                shouldDeferAutomaticSyncForPlayback(
+                    forceSync = forceSync,
+                    triggerByUserAction = triggerByUserAction,
+                    playbackIntentActive = PlayerManager.playbackControlPlayingFlow.value
+                )
+            ) {
+                NPLogger.d(TAG, "Automatic sync deferred while playback has priority")
+                return@withContext Result.retry()
             }
             if (!hasValidatedNetwork()) {
                 NPLogger.d(TAG, "No validated network available, retry later")

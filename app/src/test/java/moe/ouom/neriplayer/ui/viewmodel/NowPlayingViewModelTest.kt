@@ -25,7 +25,8 @@ class NowPlayingViewModelTest {
             originalArtist = "原始歌手",
             originalCoverUrl = "origin-cover",
             originalLyric = "[00:00.00]原始歌词",
-            originalTranslatedLyric = "[00:00.00]原始翻译"
+            originalTranslatedLyric = "[00:00.00]原始翻译",
+            originalRomanizedLyric = "[00:00.00]原始罗马字"
         )
 
         val info = buildLocalOriginalSongInfo(song)
@@ -36,6 +37,7 @@ class NowPlayingViewModelTest {
         assertFalse(info.shouldClearLyrics)
         assertEquals("[00:00.00]原始歌词", info.lyric)
         assertEquals("[00:00.00]原始翻译", info.translatedLyric)
+        assertEquals("[00:00.00]原始罗马字", info.romanizedLyric)
     }
 
     @Test
@@ -56,6 +58,7 @@ class NowPlayingViewModelTest {
         assertTrue(info.shouldClearLyrics)
         assertNull(info.lyric)
         assertNull(info.translatedLyric)
+        assertNull(info.romanizedLyric)
     }
 
     @Test
@@ -70,7 +73,8 @@ class NowPlayingViewModelTest {
             coverUrl = "current-cover",
             mediaUri = "content://song",
             matchedLyric = "[00:00.00]旧版本保存的歌词",
-            matchedTranslatedLyric = "[00:00.00]旧版本保存的翻译"
+            matchedTranslatedLyric = "[00:00.00]旧版本保存的翻译",
+            matchedRomanizedLyric = "[00:00.00]旧版本保存的罗马字"
         )
 
         val info = buildLocalOriginalSongInfo(song)
@@ -78,6 +82,76 @@ class NowPlayingViewModelTest {
         assertFalse(info.shouldClearLyrics)
         assertEquals("[00:00.00]旧版本保存的歌词", info.lyric)
         assertEquals("[00:00.00]旧版本保存的翻译", info.translatedLyric)
+        assertEquals("[00:00.00]旧版本保存的罗马字", info.romanizedLyric)
+    }
+
+    @Test
+    fun `buildLocalOriginalSongInfo keeps a romanized-only original lyric`() {
+        val song = SongItem(
+            id = 4L,
+            name = "当前标题",
+            artist = "当前歌手",
+            album = "当前专辑",
+            albumId = 0L,
+            durationMs = 1000L,
+            coverUrl = "current-cover",
+            mediaUri = "content://song",
+            originalRomanizedLyric = "[00:00.00]仅罗马字"
+        )
+
+        val info = buildLocalOriginalSongInfo(song)
+
+        assertFalse(info.shouldClearLyrics)
+        assertEquals("[00:00.00]仅罗马字", info.romanizedLyric)
+    }
+
+    @Test
+    fun `buildLocalOriginalSongInfo uses nearby cover fallback when metadata cover is absent`() {
+        val song = SongItem(
+            id = 5L,
+            name = "当前标题",
+            artist = "当前歌手",
+            album = "当前专辑",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "content://song"
+        )
+
+        val info = buildLocalOriginalSongInfo(
+            song = song,
+            coverFallbackUrl = "file:///storage/emulated/0/neriplayer-download/Covers/Song.jpg"
+        )
+
+        assertEquals(
+            "file:///storage/emulated/0/neriplayer-download/Covers/Song.jpg",
+            info.coverUrl
+        )
+    }
+
+    @Test
+    fun `buildLocalOriginalSongInfo prefers local cover over stale remote metadata`() {
+        val song = SongItem(
+            id = 6L,
+            name = "当前标题",
+            artist = "当前歌手",
+            album = "当前专辑",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = "https://example.com/current.jpg",
+            originalCoverUrl = "https://example.com/original.jpg",
+            mediaUri = "file:///storage/emulated/0/neriplayer-download/Song.mp3"
+        )
+
+        val info = buildLocalOriginalSongInfo(
+            song = song,
+            coverFallbackUrl = "file:///storage/emulated/0/neriplayer-download/Covers/Song.jpg"
+        )
+
+        assertEquals(
+            "file:///storage/emulated/0/neriplayer-download/Covers/Song.jpg",
+            info.coverUrl
+        )
     }
 
     @Test

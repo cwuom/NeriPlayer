@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
+import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -29,6 +31,91 @@ class ManagedDownloadStorageLookupTest {
             ManagedDownloadStorageLookup.findAudioEntry(
                 audioEntries = entries,
                 baseNames = listOf("Artist - Song")
+            )
+        )
+    }
+
+    @Test
+    fun `audio lookup prefers canonical name over numbered duplicate`() {
+        val numbered = storedEntry(
+            name = "Artist - Song (2).flac",
+            reference = "/music/Artist - Song (2).flac",
+            mediaUri = "/music/Artist - Song (2).flac"
+        )
+        val canonical = storedEntry(
+            name = "Artist - Song.flac",
+            reference = "/music/Artist - Song.flac",
+            mediaUri = "/music/Artist - Song.flac"
+        )
+
+        assertEquals(
+            canonical,
+            ManagedDownloadStorageLookup.findAudioEntry(
+                audioEntries = listOf(numbered, canonical),
+                baseNames = listOf("Artist - Song")
+            )
+        )
+    }
+
+    @Test
+    fun `canonical selection keeps different stable identities`() {
+        val canonical = storedEntry(
+            name = "same.flac",
+            reference = "/music/same.flac",
+            mediaUri = "/music/same.flac"
+        )
+        val duplicate = storedEntry(
+            name = "same (1).flac",
+            reference = "/music/same (1).flac",
+            mediaUri = "/music/same (1).flac"
+        )
+        val metadata = mapOf(
+            canonical.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                stableKey = "1|netease|"
+            ),
+            duplicate.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                stableKey = "2|netease|"
+            )
+        )
+
+        assertEquals(
+            listOf(canonical, duplicate),
+            ManagedDownloadStorageLookup.selectCanonicalAudioEntries(
+                audioEntries = listOf(canonical, duplicate),
+                metadataByAudioName = metadata
+            )
+        )
+    }
+
+    @Test
+    fun `canonical selection prefers finalized canonical name for same stable identity`() {
+        val numbered = storedEntry(
+            name = "same (1).flac",
+            reference = "/music/same (1).flac",
+            mediaUri = "/music/same (1).flac"
+        )
+        val canonical = storedEntry(
+            name = "same.flac",
+            reference = "/music/same.flac",
+            mediaUri = "/music/same.flac"
+        )
+        val metadata = mapOf(
+            numbered.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                stableKey = "1|netease|",
+                downloadFinalized = true,
+                metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+            ),
+            canonical.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                stableKey = "1|netease|",
+                downloadFinalized = false
+            )
+        )
+
+        assertEquals(
+            listOf(numbered),
+            ManagedDownloadStorageLookup.selectCanonicalAudioEntries(
+                audioEntries = listOf(numbered, canonical),
+                metadataByAudioName = metadata
             )
         )
     }
@@ -74,6 +161,307 @@ class ManagedDownloadStorageLookupTest {
         assertEquals("localReference", result?.hitType)
     }
 
+    @Test
+    fun `remote lookup keeps SAF reference when playback uses MediaStore URI`() {
+        val sourceStableKey = "569212134|netease|"
+        val safReference =
+            "content://com.android.externalstorage.documents/tree/primary%3Aneriplayer-download/" +
+                "document/primary%3Aneriplayer-download%2Ftrack.flac"
+        val expected = storedEntry(
+            name = "春に落ちて - 鹿乃 - 春に落ちて - netease.flac",
+            reference = safReference,
+            mediaUri = safReference
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(expected),
+            metadataEntries = emptyList(),
+            metadataByAudioName = mapOf(
+                expected.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    stableKey = sourceStableKey
+                )
+            ),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+        val song = SongItem(
+            id = 1_007_996_349_999_556_163L,
+            name = "春に落ちて",
+            artist = "鹿乃",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external_primary/audio/media/60942",
+            channelId = "netease",
+            audioId = "569212134",
+            sourceStableKey = sourceStableKey,
+            customName = "编辑后的标题",
+            customArtist = "编辑后的歌手"
+        )
+
+        val result = ManagedDownloadStorageLookup.findAudioEntry(
+            snapshot = snapshot,
+            song = song,
+            fileNameTemplate = null
+        )
+
+        assertEquals(expected, result?.entry)
+        assertEquals(safReference, result?.entry?.reference)
+        assertEquals("stableKey", result?.hitType)
+    }
+
+    @Test
+    fun `durable lookup recovers a local shaped queue item through remote identity`() {
+        val sourceSong = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "NeteaseSong",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val reference =
+            "content://com.android.externalstorage.documents/tree/primary%3AMusic/" +
+                "document/primary%3AMusic%2FSong.flac"
+        val expected = storedEntry(
+            name = "Song.flac",
+            reference = reference,
+            mediaUri = reference
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(expected),
+            metadataEntries = emptyList(),
+            metadataByAudioName = mapOf(
+                expected.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    stableKey = sourceSong.stableKey()
+                )
+            ),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+        val localShapedSong = sourceSong.copy(
+            album = "__local_files__",
+            mediaUri = "content://stale-tree/document/Song.flac",
+            sourceStableKey = null
+        )
+
+        val result = ManagedDownloadStorageLookup.findAudioEntry(
+            snapshot = snapshot,
+            song = localShapedSong,
+            fileNameTemplate = null
+        )
+
+        assertEquals(expected, result?.entry)
+        assertEquals("stableKey", result?.hitType)
+    }
+
+    @Test
+    fun `durable lookup does not match an unrelated remote identity`() {
+        val reference = "/music/song.flac"
+        val expected = storedEntry(
+            name = "Song.flac",
+            reference = reference,
+            mediaUri = reference
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(expected),
+            metadataEntries = emptyList(),
+            metadataByAudioName = mapOf(
+                expected.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    stableKey = "42|netease|"
+                )
+            ),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+        val unrelatedSong = SongItem(
+            id = 43L,
+            name = "Other",
+            artist = "Artist",
+            album = "NeteaseOther",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "43"
+        )
+
+        val result = ManagedDownloadStorageLookup.findAudioEntry(
+            snapshot = snapshot,
+            song = unrelatedSong,
+            fileNameTemplate = null
+        )
+
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun `filename lookup accepts clean and historical source prefixed albums`() {
+        val song = SongItem(
+            id = 123L,
+            name = "茫",
+            artist = "李润祺",
+            album = "Netease茫",
+            albumId = 456L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "123"
+        )
+        val baseNames = candidateManagedDownloadBaseNames(song)
+        val cleanEntry = storedEntry(
+            name = "茫 - 李润祺 - 茫 - netease.flac",
+            reference = "/music/clean.flac",
+            mediaUri = "/music/clean.flac"
+        )
+        val historicalEntry = storedEntry(
+            name = "茫 - 李润祺 - Netease茫 - netease.flac",
+            reference = "/music/historical.flac",
+            mediaUri = "/music/historical.flac"
+        )
+
+        assertEquals(
+            cleanEntry,
+            ManagedDownloadStorageLookup.findAudioEntry(listOf(cleanEntry), baseNames)
+        )
+        assertEquals(
+            historicalEntry,
+            ManagedDownloadStorageLookup.findAudioEntry(listOf(historicalEntry), baseNames)
+        )
+    }
+
+    @Test
+    fun `pending audio lookup falls back to its logical filename`() {
+        val song = SongItem(
+            id = 123L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 456L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "123"
+        )
+        val baseName = candidateManagedDownloadBaseNames(song).first()
+        val pending = storedEntry(
+            name = "$baseName.flac$PENDING_AUDIO_WRITE_MARKER.pending",
+            reference = "/music/pending.audio",
+            mediaUri = "/music/pending.audio"
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(pending),
+            metadataEntries = emptyList(),
+            metadataByAudioName = emptyMap(),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        assertEquals(pending, ManagedDownloadStorage.findPendingDownloadedAudio(snapshot, song))
+    }
+
+    @Test
+    fun `pending audio lookup accepts provider numbered and case variant names`() {
+        val pending = storedEntry(
+            name = "Artist - Song (2).FLAC$PENDING_AUDIO_WRITE_MARKER.pending",
+            reference = "/music/pending-numbered.audio",
+            mediaUri = "/music/pending-numbered.audio"
+        )
+
+        assertEquals(
+            pending,
+            ManagedDownloadStorageLookup.findPendingAudioEntry(
+                audioEntries = listOf(pending),
+                baseNames = listOf("artist - song")
+            )
+        )
+    }
+
+    @Test
+    fun `strict lookup recovers a local song when only its filename remains`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = "content://old-tree/document/old%2FSong.flac",
+            localFileName = "Song - Artist - netease.flac",
+            channelId = "netease",
+            audioId = "42"
+        )
+        val baseName = candidateManagedDownloadBaseNames(song).first()
+        val expected = storedEntry(
+            name = "$baseName.flac",
+            reference = "content://new-tree/document/new%2F$baseName.flac",
+            mediaUri = "content://new-tree/document/new%2F$baseName.flac"
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(expected),
+            metadataEntries = emptyList(),
+            metadataByAudioName = emptyMap(),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        val result = ManagedDownloadStorageLookup.findAudioEntry(
+            snapshot = snapshot,
+            song = song,
+            fileNameTemplate = null
+        )
+
+        assertEquals(expected, result?.entry)
+        assertEquals("legacyLocalEvidence", result?.hitType)
+    }
+
+    @Test
+    fun `strict lookup refuses ambiguous legacy local filenames`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = "content://old-tree/document/old%2FSong.flac",
+            localFileName = "Song - Artist - netease.flac",
+            channelId = "netease",
+            audioId = "42"
+        )
+        val baseName = candidateManagedDownloadBaseNames(song).first()
+        val first = storedEntry(
+            name = "$baseName.flac",
+            reference = "content://tree-a/document/a%2F$baseName.flac",
+            mediaUri = "content://tree-a/document/a%2F$baseName.flac"
+        )
+        val second = first.copy(
+            reference = "content://tree-b/document/b%2F$baseName.flac",
+            mediaUri = "content://tree-b/document/b%2F$baseName.flac"
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(first, second),
+            metadataEntries = emptyList(),
+            metadataByAudioName = emptyMap(),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        assertEquals(
+            null,
+            ManagedDownloadStorageLookup.findAudioEntry(
+                snapshot = snapshot,
+                song = song,
+                fileNameTemplate = null
+            )
+        )
+    }
+
     private fun storedEntry(
         name: String,
         reference: String,
@@ -83,7 +471,7 @@ class ManagedDownloadStorageLookupTest {
             name = name,
             reference = reference,
             mediaUri = mediaUri,
-            localFilePath = reference,
+            localFilePath = reference.takeIf { it.startsWith('/') },
             sizeBytes = 1L,
             lastModifiedMs = 1L
         )

@@ -434,7 +434,7 @@ private fun AudioQualityListItem(
 }
 
 @Composable
-private fun QualityOptionsDialog(
+internal fun QualityOptionsDialog(
     title: String,
     selectedValue: String,
     options: List<Pair<String, String>>,

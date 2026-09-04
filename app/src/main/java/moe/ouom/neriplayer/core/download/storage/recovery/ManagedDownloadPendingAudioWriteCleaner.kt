@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.core.download.storage.recovery
 import android.content.Context
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
@@ -14,7 +16,8 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
         root: ManagedDownloadRootHandle,
         names: ManagedDownloadPendingAudioWriteNames,
         treeChildRegistry: ManagedDownloadTreeChildRegistry,
-        deleteTreeChild: (QueriedTreeChild) -> Boolean,
+        deleteTreeChild: (QueriedTreeChild) -> StorageMutationResult,
+        preserveEntry: (String) -> Boolean = { false },
         tag: String
     ): ManagedDownloadStorage.StartupRecoveryResult {
         return runCatching {
@@ -29,7 +32,7 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
                     .filter { child -> names.isPendingAudioWriteName(child.name) }
             }
 
-            val result = deletePendingEntries(pendingEntries, deleteTreeChild)
+            val result = deletePendingEntries(pendingEntries, deleteTreeChild, preserveEntry)
             if (result.cleanedCount > 0 || result.failedCount > 0) {
                 NPLogger.d(
                     tag,
@@ -44,17 +47,33 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
 
     private fun deletePendingEntries(
         pendingEntries: List<Any>,
-        deleteTreeChild: (QueriedTreeChild) -> Boolean
+        deleteTreeChild: (QueriedTreeChild) -> StorageMutationResult,
+        preserveEntry: (String) -> Boolean
     ): ManagedDownloadStorage.StartupRecoveryResult {
         var cleanedCount = 0
         var failedCount = 0
         pendingEntries.forEach { entry ->
-            val deleted = when (entry) {
-                is File -> runCatching { !entry.exists() || entry.delete() }.getOrDefault(false)
-                is QueriedTreeChild -> deleteTreeChild(entry)
-                else -> false
+            val name = when (entry) {
+                is File -> entry.name
+                is QueriedTreeChild -> entry.name
+                else -> ""
             }
-            if (deleted) {
+            if (name.isNotBlank() && preserveEntry(name)) {
+                return@forEach
+            }
+            val mutation = when (entry) {
+                is File -> ManagedDownloadReferenceIo.deleteFileReference(entry).toStorageMutationResult()
+                is QueriedTreeChild -> runCatching { deleteTreeChild(entry) }
+                    .getOrElse { error ->
+                        if (error is SecurityException) {
+                            StorageMutationResult.PermissionLost
+                        } else {
+                            StorageMutationResult.ProviderFailure(error)
+                        }
+                    }
+                else -> StorageMutationResult.OutOfScope
+            }
+            if (mutation is StorageMutationResult.Deleted || mutation is StorageMutationResult.Missing) {
                 cleanedCount++
             } else {
                 failedCount++
@@ -64,5 +83,16 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
             cleanedCount = cleanedCount,
             failedCount = failedCount
         )
+    }
+}
+
+private fun ManagedDownloadReferenceIo.DeleteResult.toStorageMutationResult(): StorageMutationResult {
+    return when (this) {
+        ManagedDownloadReferenceIo.DeleteResult.Deleted -> StorageMutationResult.Deleted
+        ManagedDownloadReferenceIo.DeleteResult.Missing -> StorageMutationResult.Missing
+        ManagedDownloadReferenceIo.DeleteResult.PermissionLost -> StorageMutationResult.PermissionLost
+        is ManagedDownloadReferenceIo.DeleteResult.ProviderFailure -> {
+            StorageMutationResult.ProviderFailure(error)
+        }
     }
 }

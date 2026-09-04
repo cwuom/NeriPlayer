@@ -32,6 +32,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -64,6 +65,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
@@ -82,6 +84,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -105,6 +108,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -119,8 +123,12 @@ import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveOutputDeviceClass
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.canUseDirectPlaybackServiceStart
+import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
 import moe.ouom.neriplayer.core.startup.StartupStage
 import moe.ouom.neriplayer.core.startup.StartupStageResolver
+import moe.ouom.neriplayer.core.startup.STARTUP_LOADING_INDICATOR_DELAY_MILLIS
+import moe.ouom.neriplayer.core.startup.shouldKeepSystemSplash
+import moe.ouom.neriplayer.core.startup.shouldShowStartupLoadingIndicator
 import moe.ouom.neriplayer.core.startup.crash.StartupCrashReportManager
 import moe.ouom.neriplayer.core.startup.download.StartupDownloadRecoveryCoordinator
 import moe.ouom.neriplayer.core.startup.logging.StartupLogInitializer
@@ -163,6 +171,9 @@ import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import moe.ouom.neriplayer.util.platform.applyOnePlusHighDensityDisplayCorrection
 import moe.ouom.neriplayer.util.platform.applyPreferredHighRefreshRate
 import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
+import java.util.concurrent.atomic.AtomicBoolean
+
+private const val STARTUP_SETTINGS_READ_TIMEOUT_MS = 3_000L
 
 private data class PendingAudioServiceStart(
     val requestToken: Long,
@@ -302,6 +313,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         safeModeActive = SafeModeManager.shouldEnterSafeMode(this)
+        val startupLoadingStartedAtMs = SystemClock.elapsedRealtime()
         val startupSettingsSnapshot = readBootstrapSettingsSnapshotSync(this)
         val startupThemeSnapshot = StartupThemeSnapshotProvider.read(
             context = this,
@@ -311,7 +323,11 @@ class MainActivity : ComponentActivity() {
             followSystemDark = startupThemeSnapshot.followSystemDark,
             forceDark = startupThemeSnapshot.forceDark
         )
-        installSplashScreen()
+        // 设置读取完成前继续使用系统启动页，避免再显示一个会阻塞首帧的中间页面
+        val startupContentReady = AtomicBoolean(safeModeActive)
+        installSplashScreen().setKeepOnScreenCondition {
+            !startupContentReady.get()
+        }
         super.onCreate(savedInstanceState)
         applyPreferredHighRefreshRate(startupSettingsSnapshot.preferHighRefreshRate)
         observePreferredHighRefreshRate()
@@ -380,10 +396,36 @@ class MainActivity : ComponentActivity() {
             val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsStateWithLifecycle(
                 initialValue = startupThemeSnapshot.followSystemDark
             )
-            val disclaimerAccepted by settingsRepository.disclaimerAcceptedFlow
+            val startupDisclaimerFlow = remember(settingsRepository) {
+                settingsRepository.disclaimerAcceptedFlow.catch { error ->
+                    NPLogger.w(
+                        "MainActivity",
+                        "启动免责声明状态读取失败，回退到未同意: ${error.message}"
+                    )
+                    emit(false)
+                }
+            }
+            val startupOnboardingFlow = remember(settingsRepository) {
+                settingsRepository.startupOnboardingCompletedFlow.catch { error ->
+                    NPLogger.w(
+                        "MainActivity",
+                        "启动引导状态读取失败，回退到未完成: ${error.message}"
+                    )
+                    emit(false)
+                }
+            }
+            val disclaimerAccepted by startupDisclaimerFlow
                 .collectAsStateWithLifecycle(initialValue = null)
-            val startupOnboardingCompleted by settingsRepository.startupOnboardingCompletedFlow
+            val startupOnboardingCompleted by startupOnboardingFlow
                 .collectAsStateWithLifecycle(initialValue = null)
+            var startupSettingsReadTimedOut by rememberSaveable { mutableStateOf(false) }
+            LaunchedEffect(disclaimerAccepted, startupOnboardingCompleted) {
+                if (disclaimerAccepted != null && startupOnboardingCompleted != null) {
+                    return@LaunchedEffect
+                }
+                delay(STARTUP_SETTINGS_READ_TIMEOUT_MS)
+                startupSettingsReadTimedOut = true
+            }
             var pendingDisclaimerAccepted by rememberSaveable {
                 mutableStateOf(false)
             }
@@ -467,28 +509,61 @@ class MainActivity : ComponentActivity() {
                             controller.isAppearanceLightNavigationBars = !useLightSystemBarIcons
                         }
 
-                // 入场动画状态
                 var playedEntrance by rememberSaveable { mutableStateOf(false) }
                 LaunchedEffect(Unit) { playedEntrance = true }
 
                 val stage = remember(
                     disclaimerAccepted,
                     startupOnboardingCompleted,
-                    pendingDisclaimerAccepted
+                    pendingDisclaimerAccepted,
+                    startupSettingsReadTimedOut
                 ) {
                     StartupStageResolver.resolve(
-                        disclaimerAccepted = disclaimerAccepted,
-                        startupOnboardingCompleted = startupOnboardingCompleted,
+                        disclaimerAccepted = resolveStartupSetting(
+                            disclaimerAccepted,
+                            startupSettingsReadTimedOut
+                        ),
+                        startupOnboardingCompleted = resolveStartupSetting(
+                            startupOnboardingCompleted,
+                            startupSettingsReadTimedOut
+                        ),
                         pendingDisclaimerAccepted = pendingDisclaimerAccepted
                     )
                 }
                 var hasDisplayedDisclaimer by rememberSaveable { mutableStateOf(false) }
                 var previousStartupStage by remember { mutableStateOf<StartupStage?>(null) }
+                var showStartupLoadingIndicator by rememberSaveable {
+                    mutableStateOf(false)
+                }
                 LaunchedEffect(stage) {
+                    if (stage == StartupStage.Loading) {
+                        val elapsedMs = SystemClock.elapsedRealtime() - startupLoadingStartedAtMs
+                        val remainingMs = (
+                            STARTUP_LOADING_INDICATOR_DELAY_MILLIS - elapsedMs
+                            ).coerceAtLeast(0L)
+                        if (remainingMs > 0L) {
+                            delay(remainingMs)
+                        }
+                        if (stage == StartupStage.Loading) {
+                            showStartupLoadingIndicator = shouldShowStartupLoadingIndicator(
+                                SystemClock.elapsedRealtime() - startupLoadingStartedAtMs
+                            )
+                            if (showStartupLoadingIndicator) {
+                                startupContentReady.set(true)
+                            }
+                        }
+                        return@LaunchedEffect
+                    }
+                    showStartupLoadingIndicator = false
                     if (stage == StartupStage.Disclaimer) {
                         hasDisplayedDisclaimer = true
                     }
                     previousStartupStage = stage
+                    if (!shouldKeepSystemSplash(stage)) {
+                        withFrameNanos { }
+                        startupContentReady.set(true)
+                        AppStartupWorkGate.markInteractiveContentReady()
+                    }
                 }
                 val pendingMobileDataDownloadInterruptionRequest by
                     GlobalDownloadManager.mobileDataDownloadInterruptionRequest.collectAsStateWithLifecycle()
@@ -563,12 +638,16 @@ class MainActivity : ComponentActivity() {
                     ) {
                     when (current) {
                         StartupStage.Loading -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .statusBarsPadding()
-                                    .navigationBarsPadding()
-                            )
+                            if (showStartupLoadingIndicator) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                }
+                            } else {
+                                Box(modifier = Modifier.fillMaxSize())
+                            }
                         }
                         StartupStage.Disclaimer -> {
                             val scope = rememberCoroutineScope()
@@ -1427,6 +1506,10 @@ fun NeriTheme(
         typography = Typography(),
         content = content
     )
+}
+
+internal fun resolveStartupSetting(value: Boolean?, readTimedOut: Boolean): Boolean? {
+    return value ?: false.takeIf { readTimedOut }
 }
 
 @Composable

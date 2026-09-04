@@ -43,3 +43,4 @@ AGENTS.md
 /ksp-annotations/build/
 /ksp-processor/build/
 /docs-private/
+.serena/

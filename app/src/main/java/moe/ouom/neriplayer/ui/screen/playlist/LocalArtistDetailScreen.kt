@@ -75,11 +75,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.displayAlbum
-import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
@@ -109,8 +105,7 @@ import moe.ouom.neriplayer.util.search.playlistSearchValues
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private fun hasCachedLocalArtistDownload(song: SongItem): Boolean {
-    return GlobalDownloadManager.hasDownloadedSongCached(song) ||
-        ManagedDownloadStorage.peekDownloadedAudio(song) != null
+    return GlobalDownloadManager.hasDownloadedSongCached(song)
 }
 
 private fun SongItem.localArtistSongSearchTokens(
@@ -241,15 +236,12 @@ fun LocalArtistDetailScreen(
     var showExportSheet by remember(artistKey) { mutableStateOf(false) }
     var showDownloadManager by remember(artistKey) { mutableStateOf(false) }
     val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
-    val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
+    val hasDownloadManagerEntry = downloadTaskSummary.hasDownloadManagerEntry
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
     val selectedSongsForAction by remember(songs, selectedKeys) {
         derivedStateOf {
-            songs.filter { it.stableKey() in selectedKeys }
+            selectedSongsInSourceOrder(songs, selectedKeys)
         }
-    }
-    val hasSelectedOnlineSongs by remember(selectedSongsForAction) {
-        derivedStateOf { selectedSongsForAction.any { !it.isLocalSong() } }
     }
 
     fun toggleSelect(song: SongItem) {
@@ -273,9 +265,8 @@ fun LocalArtistDetailScreen(
         keyboardController?.hide()
     }
 
-    LaunchedEffect(displayedSongs) {
-        val validKeys = displayedSongs.map { it.stableKey() }.toSet()
-        selectedKeys = selectedKeys.intersect(validKeys)
+    LaunchedEffect(songs) {
+        selectedKeys = retainExistingSongSelectionKeys(songs, selectedKeys)
         if (selectionMode && selectedKeys.isEmpty()) {
             selectionMode = false
         }
@@ -450,14 +441,17 @@ fun LocalArtistDetailScreen(
                             }
                             HapticIconButton(
                                 onClick = {
-                                    val onlineSongs = selectedSongsForAction.filterNot { it.isLocalSong() }
-                                    if (onlineSongs.isNotEmpty()) {
+                                    val selectedSongs = selectedSongsForAction
+                                    if (selectedSongs.isNotEmpty()) {
                                         showDownloadManager = true
                                         exitSelectionMode()
-                                        GlobalDownloadManager.startBatchDownload(context, onlineSongs)
+                                        GlobalDownloadManager.startBatchDownload(
+                                            context,
+                                            selectedSongs
+                                        )
                                     }
                                 },
-                                enabled = selectedSongsForAction.isNotEmpty() && hasSelectedOnlineSongs
+                                enabled = selectedSongsForAction.isNotEmpty()
                             ) {
                                 Icon(
                                     Icons.Outlined.Download,
@@ -627,28 +621,9 @@ fun LocalArtistDetailScreen(
         }
 
         if (showDownloadManager) {
-            val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
             val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-            val currentPendingTaskCount = remember(downloadTasks) {
-                countPendingDownloadTasks(downloadTasks)
-            }
-            val progress = batchDownloadProgress
             BatchDownloadManagerSheet(
-                batchDownloadProgress = progress,
                 downloadTasks = downloadTasks,
-                progressSummaryText = if (progress != null) {
-                    stringResource(
-                        R.string.bili_download_progress_format,
-                        progress.completedSongs,
-                        progress.totalSongs
-                    )
-                } else {
-                    pluralStringResource(
-                        R.plurals.download_tasks_count,
-                        currentPendingTaskCount,
-                        currentPendingTaskCount
-                    )
-                },
                 onDismiss = { showDownloadManager = false }
             )
         }

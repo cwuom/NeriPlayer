@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
 import android.content.Context
-import java.io.IOException
+import android.provider.DocumentsContract
+import androidx.core.net.toUri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -9,60 +11,692 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
+import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteArtifacts
+import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.StorageConfidence
+import moe.ouom.neriplayer.core.download.storage.backend.StorageDirectorySnapshot
+import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
+import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
+import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
+import moe.ouom.neriplayer.core.download.storage.backend.asTrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReferenceReplacement
+import moe.ouom.neriplayer.core.download.storage.metadata.prepareManagedMetadataReferenceReplacements
+import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.math.BigDecimal
+import java.net.URI
+import java.security.MessageDigest
+import java.util.Locale
+
+private const val SLOW_METADATA_REWRITE_IO_LOG_MS = 1_000L
+
+internal data class ManagedMigrationTargetLayoutEntry(
+    val subdirectory: String?,
+    val name: String,
+    val documentIdentity: String
+)
+
+internal fun validateMigrationTargetLayout(
+    expected: List<ManagedMigrationTargetLayoutEntry>,
+    observed: List<ManagedMigrationTargetLayoutEntry>
+): String? {
+    val expectedGroups = expected.groupBy(ManagedMigrationTargetLayoutEntry::layoutKey)
+    val observedGroups = observed.groupBy(ManagedMigrationTargetLayoutEntry::layoutKey)
+    for ((key, plannedEntries) in expectedGroups) {
+        val displayName = plannedEntries.first().name
+        val plannedIdentities = plannedEntries
+            .map(ManagedMigrationTargetLayoutEntry::documentIdentity)
+            .filter(String::isNotBlank)
+            .distinct()
+        if (
+            plannedEntries.size != 1 ||
+                plannedIdentities.size != 1 ||
+                plannedEntries.any { it.documentIdentity.isBlank() }
+        ) {
+            return "迁移计划名称指向多个目标文档: $displayName"
+        }
+        val matchingEntries = observedGroups[key].orEmpty()
+        if (matchingEntries.isEmpty()) {
+            return "SAF 迁移目标名称不唯一: $displayName, count=0"
+        }
+        if (matchingEntries.any { it.documentIdentity.isBlank() }) {
+            return "SAF 迁移目标文档身份不可解析: $displayName"
+        }
+        val expectedIdentity = plannedIdentities.single()
+        val matchingIdentityCount = matchingEntries.count { entry ->
+            entry.documentIdentity == expectedIdentity
+        }
+        if (matchingIdentityCount == 0) {
+            return "SAF 迁移目标文档已变化: $displayName"
+        }
+        if (matchingIdentityCount != 1) {
+            return "SAF 迁移目标名称对应多个相同文档: $displayName, " +
+                "count=$matchingIdentityCount"
+        }
+    }
+    return null
+}
+
+private data class ManagedMigrationTargetLayoutKey(
+    val subdirectory: String?,
+    val canonicalName: String
+)
+
+private fun ManagedMigrationTargetLayoutEntry.layoutKey(): ManagedMigrationTargetLayoutKey {
+    return ManagedMigrationTargetLayoutKey(
+        subdirectory = subdirectory,
+        canonicalName = ManagedDownloadStorageNaming.canonicalNameKey(name)
+    )
+}
+
+private data class SafMigrationTargetObservation(
+    val layoutEntry: ManagedMigrationTargetLayoutEntry,
+    val parent: StorageReference.SafRef
+)
+
+private fun ManagedDownloadStorage.StoredEntry.safDocumentIdentities(): Set<String> {
+    return sequenceOf(reference, mediaUri)
+        .mapNotNull { value ->
+            val uri = runCatching { value.toUri() }.getOrNull()
+                ?.takeIf { parsed ->
+                    parsed.scheme.equals("content", ignoreCase = true) &&
+                        !parsed.authority.isNullOrBlank()
+                }
+                ?: return@mapNotNull null
+            StorageReference.SafRef(uri).documentIdentity()
+        }
+        .toSet()
+}
+
+private fun StorageReference.SafRef.documentIdentity(): String? {
+    val authority = uri.authority?.lowercase(Locale.ROOT)?.takeIf(String::isNotBlank)
+        ?: return null
+    val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+        ?: uri.pathSegments.documentIdFromSafPath()
+        ?: uri.pathSegments
+            .takeIf { segments -> segments.firstOrNull() == "tree" }
+            ?.let { segments ->
+                runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+                    ?: segments.getOrNull(1)
+            }
+        ?: return null
+    return "$authority\u0000$documentId"
+}
+
+private fun List<String>.documentIdFromSafPath(): String? {
+    return when {
+        size >= 4 && this[0] == "tree" && this[2] == "document" -> this[3]
+        size >= 2 && this[0] == "document" -> this[1]
+        else -> null
+    }
+}
 
 internal class ManagedDownloadMigrationFinalizer(
     private val tag: String,
     private val rewriteParallelism: (ManagedDownloadRootHandle) -> Int,
     private val deleteParallelism: (ManagedDownloadRootHandle) -> Int,
     private val readText: (Context, String) -> String?,
+    private val entryReader: ManagedMigrationEntryReader,
     private val writeRootText: (Context, ManagedDownloadRootHandle, String, String) -> ManagedDownloadStorage.StoredEntry?,
-    private val deleteReference: (Context, String, ManagedDownloadRootHandle) -> Boolean,
-    private val rewriteMetadataReferences: (String, Map<String, String>) -> String
+    private val writeRootTextWithKnownEntry: (
+        Context,
+        ManagedDownloadRootHandle,
+        String,
+        String,
+        ManagedDownloadStorage.StoredEntry?
+    ) -> ManagedDownloadStorage.StoredEntry? = { context, root, name, content, _ ->
+        writeRootText(context, root, name, content)
+    },
+    private val restoreLastModified: (
+        Context,
+        ManagedDownloadStorage.StoredEntry,
+        Long
+    ) -> Unit = { _, _, _ -> },
+    private val deleteReference: suspend (
+        Context,
+        TrustedManagedRef,
+        ManagedDownloadRootHandle
+    ) -> StorageMutationResult,
+    private val rewriteMetadataReferences: (String, Map<String, String>) -> String,
+    private val rewriteMetadataReferencesPrepared: (
+        String,
+        Map<String, String>,
+        List<ManagedMetadataReferenceReplacement>
+    ) -> String = { rawJson, referenceMap, _ ->
+        rewriteMetadataReferences(rawJson, referenceMap)
+    },
+    private val deleteReferences: suspend (
+        Context,
+        Collection<TrustedManagedRef>,
+        ManagedDownloadRootHandle,
+        (TrustedManagedRef) -> Unit,
+        (TrustedManagedRef) -> Unit
+    ) -> Map<TrustedManagedRef, StorageMutationResult> = {
+            context,
+            references,
+            root,
+            onDeleteStarted,
+            onDeleteFinished ->
+        references.associateWith { reference ->
+            onDeleteStarted(reference)
+            try {
+                deleteReference(context, reference, root)
+            } finally {
+                onDeleteFinished(reference)
+            }
+        }
+    },
+    private val restoreReplacement: (
+        Context,
+        ManagedDownloadRootHandle,
+        CopiedMigrationEntry
+    ) -> Boolean = { _, _, copied -> copied.replacementBackup == null }
 ) {
     suspend fun rewriteMigratedMetadataReferences(
         context: Context,
         targetRoot: ManagedDownloadRootHandle,
         copiedEntries: List<CopiedMigrationEntry>,
         progressTracker: ManagedMigrationProgressReporter? = null
-    ): Int = coroutineScope {
-        if (copiedEntries.isEmpty()) return@coroutineScope 0
-        val referenceMap = copiedEntries.associate { copied ->
-            copied.original.entry.reference to copied.copiedEntry.reference
+    ): ManagedMigrationMetadataRewriteResult = coroutineScope {
+        if (copiedEntries.isEmpty()) {
+            return@coroutineScope ManagedMigrationMetadataRewriteResult(
+                copiedEntries = emptyList(),
+                failedFiles = 0
+            )
         }
+        val referenceMap = copiedEntries.migrationReferenceMap()
+        val sortedReferenceReplacements = prepareManagedMetadataReferenceReplacements(referenceMap)
         val rewriteLimiter = Semaphore(rewriteParallelism(targetRoot))
-        copiedEntries
-            .filter { it.original.entry.name.endsWith(METADATA_SUFFIX) }
-            .map { copied ->
+        val outcomesByIndex = copiedEntries
+            .mapIndexedNotNull { index, copied ->
+                if (!ManagedDownloadTreeNaming.isMetadataName(copied.original.entry.name)) {
+                    return@mapIndexedNotNull null
+                }
                 async(Dispatchers.IO) {
-                    rewriteLimiter.withPermit {
-                        rewriteMetadataEntry(context, targetRoot, copied, referenceMap, progressTracker)
+                    index to rewriteLimiter.withPermit {
+                        rewriteMetadataEntry(
+                            context,
+                            targetRoot,
+                            copied,
+                            referenceMap,
+                            sortedReferenceReplacements,
+                            progressTracker
+                        )
                     }
                 }
             }
             .awaitAll()
-            .sum()
+            .toMap()
+        ManagedMigrationMetadataRewriteResult(
+            copiedEntries = copiedEntries.mapIndexed { index, copied ->
+                outcomesByIndex[index]?.copied ?: copied
+            },
+            failedFiles = outcomesByIndex.values.count(MetadataRewriteOutcome::failed),
+            error = outcomesByIndex.values
+                .mapNotNull(MetadataRewriteOutcome::error)
+                .firstOrNull { error -> !error.retryable }
+                ?: outcomesByIndex.values.mapNotNull(MetadataRewriteOutcome::error).firstOrNull()
+        )
+    }
+
+    suspend fun verifyMigratedEntries(
+        context: Context,
+        targetRoot: ManagedDownloadRootHandle,
+        copiedEntries: List<CopiedMigrationEntry>,
+        progressTracker: ManagedMigrationProgressReporter? = null,
+        onEntryVerified: suspend (CopiedMigrationEntry) -> Unit = {}
+    ): Int {
+        return verifyMigratedEntriesDetailed(
+            context = context,
+            targetRoot = targetRoot,
+            copiedEntries = copiedEntries,
+            progressTracker = progressTracker,
+            onEntryVerified = onEntryVerified
+        ).failedFiles
+    }
+
+    suspend fun verifyMigratedEntriesDetailed(
+        context: Context,
+        targetRoot: ManagedDownloadRootHandle,
+        copiedEntries: List<CopiedMigrationEntry>,
+        progressTracker: ManagedMigrationProgressReporter? = null,
+        onEntryVerified: suspend (CopiedMigrationEntry) -> Unit = {}
+    ): ManagedMigrationVerificationResult = coroutineScope {
+        if (copiedEntries.isEmpty()) {
+            return@coroutineScope ManagedMigrationVerificationResult(failedFiles = 0)
+        }
+        progressTracker?.startVerification(copiedEntries)
+        val referenceMap = copiedEntries.migrationReferenceMap()
+        val sortedReferenceReplacements = prepareManagedMetadataReferenceReplacements(referenceMap)
+        val verificationLimiter = Semaphore(rewriteParallelism(targetRoot))
+        val outcomes = copiedEntries.map { migrationEntry ->
+            async(Dispatchers.IO) {
+                verificationLimiter.withPermit {
+                    progressTracker?.startVerificationEntry(migrationEntry)
+                    var verificationCompleted = false
+                    try {
+                        val verification = verifyMigrationTarget(
+                            context = context,
+                            migrationEntry = migrationEntry,
+                            referenceMap = referenceMap,
+                            sortedReferenceReplacements = sortedReferenceReplacements,
+                            onProgress = { verifiedBytes ->
+                                progressTracker?.onVerificationProgress(
+                                    migrationEntry,
+                                    verifiedBytes
+                                )
+                            }
+                        )
+                        val verifiedEntry = if (verification.verified) {
+                            migrationEntry.copy(
+                                verifiedTargetDigest = verification.targetDigest
+                                    ?: migrationEntry.verifiedTargetDigest
+                            )
+                        } else {
+                            null
+                        }
+                        val outcome = if (verifiedEntry != null) {
+                            onEntryVerified(verifiedEntry)
+                            VerificationOutcome(
+                                failed = false,
+                                targetDigest = verifiedEntry.verifiedTargetDigest
+                            )
+                        } else {
+                            NPLogger.w(
+                                tag,
+                                "迁移后目标校验失败，保留源文件: ${migrationEntry.original.entry.name}"
+                            )
+                            VerificationOutcome(failed = true)
+                        }
+                        verificationCompleted = true
+                        outcome
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        val migrationError = retryableMigrationIoFailure(
+                            message = "迁移后目标校验暂时失败: ${migrationEntry.original.entry.name}",
+                            error = error
+                        )
+                        NPLogger.w(
+                            tag,
+                            "迁移后目标校验失败，保留源文件: " +
+                                "${migrationEntry.original.entry.name}, ${error.message}",
+                            error
+                        )
+                        VerificationOutcome(
+                            failed = true,
+                            error = migrationError
+                        ).also { verificationCompleted = true }
+                    } finally {
+                        if (verificationCompleted) {
+                            progressTracker?.finishVerification(migrationEntry)
+                        }
+                    }
+                }
+            }
+        }.awaitAll()
+        val contentError = outcomes.mapNotNull(VerificationOutcome::error)
+            .firstOrNull { error -> !error.retryable }
+            ?: outcomes.firstNotNullOfOrNull(VerificationOutcome::error)
+        val contentFailedFiles = outcomes.count(VerificationOutcome::failed)
+        if (contentFailedFiles > 0) {
+            return@coroutineScope ManagedMigrationVerificationResult(
+                failedFiles = contentFailedFiles,
+                error = contentError
+            )
+        }
+        val layoutError = if (targetRoot is ManagedDownloadRootHandle.TreeRoot) {
+            try {
+                verifySafTargetLayoutAndCleanupTemporaryWrites(
+                    context = context,
+                    targetRoot = targetRoot,
+                    copiedEntries = copiedEntries
+                )
+                null
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: ManagedDownloadMigrationException) {
+                error
+            } catch (error: Throwable) {
+                ManagedDownloadMigrationException.transient(
+                    "SAF 迁移目标批量校验暂时失败",
+                    error
+                )
+            }
+        } else {
+            null
+        }
+        ManagedMigrationVerificationResult(
+            failedFiles = if (layoutError == null) 0 else copiedEntries.size,
+            error = layoutError,
+            verifiedEntries = if (layoutError == null) {
+                copiedEntries.mapIndexed { index, copied ->
+                    outcomes[index].targetDigest?.let { digest ->
+                        copied.copy(verifiedTargetDigest = digest)
+                    } ?: copied
+                }
+            } else {
+                copiedEntries
+            }
+        )
+    }
+
+    private suspend fun verifySafTargetLayoutAndCleanupTemporaryWrites(
+        context: Context,
+        targetRoot: ManagedDownloadRootHandle.TreeRoot,
+        copiedEntries: List<CopiedMigrationEntry>
+    ) {
+        val backend = SafStorageBackend(context)
+        val rootParent = StorageReference.SafRef(targetRoot.tree.uri)
+        val snapshotsByParent = linkedMapOf<StorageReference.SafRef, StorageDirectorySnapshot>()
+        val observations = mutableListOf<SafMigrationTargetObservation>()
+        val rootSnapshot = backend.list(rootParent)
+        requireCompleteSafMigrationSnapshot(rootSnapshot, "下载目录")
+        snapshotsByParent[rootParent] = rootSnapshot
+        rootSnapshot.entries.asSequence()
+            .filterNot(StorageStat::isDirectory)
+            .mapTo(observations) { stat -> stat.toSafMigrationObservation(null, rootParent) }
+
+        copiedEntries.asSequence()
+            .mapNotNull { copied -> copied.original.subdirectory }
+            .filter { subdirectory ->
+                subdirectory == COVER_SUBDIRECTORY || subdirectory == LYRIC_SUBDIRECTORY
+            }
+            .distinct()
+            .forEach { subdirectory ->
+                rootSnapshot.entries.asSequence()
+                    .filter(StorageStat::isDirectory)
+                    .filter { directory ->
+                        ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                            directory.displayName,
+                            subdirectory
+                        )
+                    }
+                    .forEach { directory ->
+                        val parent = directory.reference as? StorageReference.SafRef
+                            ?: throw ManagedDownloadMigrationException.targetChanged(
+                                "SAF 迁移子目录缺少可信文档引用: $subdirectory"
+                            )
+                        val snapshot = backend.list(parent)
+                        requireCompleteSafMigrationSnapshot(snapshot, subdirectory)
+                        snapshotsByParent[parent] = snapshot
+                        snapshot.entries.asSequence()
+                            .filterNot(StorageStat::isDirectory)
+                            .mapTo(observations) { stat ->
+                                stat.toSafMigrationObservation(subdirectory, parent)
+                            }
+                    }
+            }
+
+        val expectedLayout = copiedEntries.map { copied ->
+            ManagedMigrationTargetLayoutEntry(
+                subdirectory = copied.original.subdirectory,
+                name = copied.copiedEntry.name,
+                documentIdentity = copied.copiedEntry.safDocumentIdentities().singleOrNull().orEmpty()
+            )
+        }
+        validateMigrationTargetLayout(
+            expected = expectedLayout,
+            observed = observations.map(SafMigrationTargetObservation::layoutEntry)
+        )?.let { detail ->
+            throw ManagedDownloadMigrationException.targetChanged(detail)
+        }
+
+        val observationsByLayoutAndIdentity = observations.associateBy { observation ->
+            observation.layoutEntry.layoutKey() to observation.layoutEntry.documentIdentity
+        }
+        val expectedTargets = expectedLayout.map { expected ->
+            val observed = observationsByLayoutAndIdentity[
+                expected.layoutKey() to expected.documentIdentity
+            ] ?: throw ManagedDownloadMigrationException.targetChanged(
+                "SAF 迁移目标文档已变化: ${expected.name}"
+            )
+            observed.parent to StorageTarget.SafTarget(
+                parent = observed.parent,
+                displayName = expected.name,
+                mimeType = "application/octet-stream"
+            )
+        }.distinct()
+        val cleanupCandidates = expectedTargets.groupBy(
+            keySelector = { (parent, _) -> parent },
+            valueTransform = { (_, target) -> target }
+        ).flatMap { (parent, targets) ->
+            val snapshot = requireNotNull(snapshotsByParent[parent]) {
+                "missing verified SAF parent snapshot"
+            }
+            val plan = ManagedTemporaryWriteArtifacts.planTerminalCleanup(
+                parent = parent,
+                targets = targets,
+                snapshot = snapshot
+            )
+            plan.skipReason?.let { reason ->
+                throw ManagedDownloadMigrationException.transient(
+                    "SAF 迁移临时文件清理无法确认: $reason"
+                )
+            }
+            plan.candidates
+        }.distinctBy(StorageStat::reference)
+        cleanupCandidates.forEach { candidate ->
+            when (val result = backend.delete(candidate.asTrustedManagedRef())) {
+                StorageMutationResult.Deleted,
+                StorageMutationResult.Missing -> Unit
+                StorageMutationResult.OutOfScope,
+                StorageMutationResult.PermissionLost,
+                is StorageMutationResult.ProviderFailure,
+                is StorageMutationResult.Unsupported -> {
+                    throw ManagedDownloadMigrationException.transient(
+                        "SAF 迁移临时文件清理未确认: ${candidate.displayName}, result=$result"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun requireCompleteSafMigrationSnapshot(
+        snapshot: StorageDirectorySnapshot,
+        description: String
+    ) {
+        when (val confidence = snapshot.confidence) {
+            StorageConfidence.Complete -> Unit
+            StorageConfidence.Missing,
+            StorageConfidence.OutOfScope -> throw ManagedDownloadMigrationException.targetChanged(
+                "SAF 迁移目标目录已变化: $description"
+            )
+            StorageConfidence.PermissionLost -> throw ManagedDownloadMigrationException.transient(
+                "SAF 迁移目标目录权限暂时不可用: $description"
+            )
+            is StorageConfidence.ProviderFailure -> throw ManagedDownloadMigrationException.transient(
+                "SAF 迁移目标目录枚举失败: $description",
+                confidence.error
+            )
+        }
+    }
+
+    private fun StorageStat.toSafMigrationObservation(
+        subdirectory: String?,
+        parent: StorageReference.SafRef
+    ): SafMigrationTargetObservation {
+        val safReference = reference as? StorageReference.SafRef
+            ?: throw ManagedDownloadMigrationException.targetChanged(
+                "SAF 迁移目标缺少文档引用: $displayName"
+            )
+        val identity = safReference.documentIdentity()
+            ?: throw ManagedDownloadMigrationException.targetChanged(
+                "SAF 迁移目标文档身份不可解析: $displayName"
+            )
+        return SafMigrationTargetObservation(
+            layoutEntry = ManagedMigrationTargetLayoutEntry(
+                subdirectory = subdirectory,
+                name = displayName,
+                documentIdentity = identity
+            ),
+            parent = parent
+        )
     }
 
     suspend fun cleanupMigratedEntries(
         context: Context,
         copiedEntries: List<CopiedMigrationEntry>,
         sourceRoot: ManagedDownloadRootHandle,
+        targetsAlreadyVerified: Boolean = false,
         progressTracker: ManagedMigrationProgressReporter? = null
-    ): Int = coroutineScope {
-        if (copiedEntries.isEmpty()) return@coroutineScope 0
-        val cleanupLimiter = Semaphore(deleteParallelism(sourceRoot))
-        copiedEntries.map { migrationEntry ->
-            async(Dispatchers.IO) {
-                cleanupLimiter.withPermit {
-                    cleanupMigratedEntry(context, copiedEntries.size, migrationEntry, sourceRoot, progressTracker)
+    ): Int {
+        return cleanupMigratedEntriesDetailed(
+            context = context,
+            copiedEntries = copiedEntries,
+            sourceRoot = sourceRoot,
+            targetsAlreadyVerified = targetsAlreadyVerified,
+            progressTracker = progressTracker
+        ).failedFiles
+    }
+
+    suspend fun cleanupMigratedEntriesDetailed(
+        context: Context,
+        copiedEntries: List<CopiedMigrationEntry>,
+        sourceRoot: ManagedDownloadRootHandle,
+        targetsAlreadyVerified: Boolean = false,
+        progressTracker: ManagedMigrationProgressReporter? = null
+    ): ManagedMigrationCleanupResult = coroutineScope {
+        if (copiedEntries.isEmpty()) {
+            return@coroutineScope ManagedMigrationCleanupResult(
+                failedFiles = 0,
+                retryableFailedFiles = 0
+            )
+        }
+        progressTracker?.startCleanup(copiedEntries.size, null)
+        val referenceMap = if (targetsAlreadyVerified) {
+            emptyMap()
+        } else {
+            copiedEntries.migrationReferenceMap()
+        }
+        val sortedReferenceReplacements = prepareManagedMetadataReferenceReplacements(referenceMap)
+        val verifiedIndices = mutableSetOf<Int>()
+        for (index in copiedEntries.indices) {
+            val migrationEntry = copiedEntries[index]
+            val verified = targetsAlreadyVerified || isMigrationTargetVerified(
+                context = context,
+                migrationEntry = migrationEntry,
+                referenceMap = referenceMap,
+                sortedReferenceReplacements = sortedReferenceReplacements
+            )
+            if (!verified) {
+                NPLogger.w(
+                    tag,
+                    "迁移后目标校验失败，跳过删除源文件: ${migrationEntry.original.entry.name}"
+                )
+            }
+            if (verified) {
+                verifiedIndices += index
+            }
+        }
+        val deletionReferencesByIndex = verifiedIndices.mapNotNull { index ->
+            copiedEntries[index].original.entry.toTrustedManagedRef()?.let { reference ->
+                index to reference
+            }
+        }
+        val indicesByReference = deletionReferencesByIndex
+            .groupBy(
+                keySelector = { (_, reference) -> reference.externalReference },
+                valueTransform = { (index, _) -> index }
+            )
+        val progressLock = Any()
+        val startedIndices = mutableSetOf<Int>()
+        val finishedIndices = mutableSetOf<Int>()
+        fun startCleanup(index: Int) {
+            synchronized(progressLock) {
+                if (startedIndices.add(index)) {
+                    progressTracker?.startCleanup(
+                        copiedEntries.size,
+                        copiedEntries[index].original.entry.name
+                    )
                 }
             }
-        }.awaitAll().sum()
+        }
+        fun finishCleanup(index: Int) {
+            synchronized(progressLock) {
+                if (startedIndices.add(index)) {
+                    progressTracker?.startCleanup(
+                        copiedEntries.size,
+                        copiedEntries[index].original.entry.name
+                    )
+                }
+                if (finishedIndices.add(index)) {
+                    progressTracker?.finishCleanup(
+                        copiedEntries[index].original.entry.name
+                    )
+                }
+            }
+        }
+        fun startReference(reference: TrustedManagedRef) {
+            indicesByReference[reference.externalReference].orEmpty().forEach(::startCleanup)
+        }
+        fun finishReference(reference: TrustedManagedRef) {
+            indicesByReference[reference.externalReference].orEmpty().forEach(::finishCleanup)
+        }
+        val deletionReferences = deletionReferencesByIndex.map { (_, reference) -> reference }
+        val deletionResults = if (deletionReferences.isEmpty()) {
+            emptyMap()
+        } else {
+            try {
+                deleteReferences(
+                    context,
+                    deletionReferences,
+                    sourceRoot,
+                    ::startReference,
+                    ::finishReference
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val result = error.toStorageMutationResult()
+                deletionReferences.associateWith { result }
+            }
+        }
+        copiedEntries.indices.forEach(::finishCleanup)
+        val cleanupOutcomes = copiedEntries.mapIndexed { index, migrationEntry ->
+            val verified = index in verifiedIndices
+            if (!verified) {
+                CleanupOutcome(failed = true, retryable = false)
+            } else {
+                val reference = migrationEntry.original.entry.toTrustedManagedRef()
+                val result = reference?.let(deletionResults::get)
+                    ?: StorageMutationResult.OutOfScope
+                if (!result.isCleanupConfirmed()) {
+                    NPLogger.w(
+                        tag,
+                        "迁移后删除旧下载文件未确认: " +
+                            "name=${migrationEntry.original.entry.name}, " +
+                            "reference=${migrationEntry.original.entry.reference}, " +
+                            "result=$result"
+                    )
+                }
+                CleanupOutcome(
+                    failed = !result.isCleanupConfirmed(),
+                    retryable = result.isRetryableCleanupFailure()
+                )
+            }
+        }
+        ManagedMigrationCleanupResult(
+            failedFiles = cleanupOutcomes.count(CleanupOutcome::failed),
+            retryableFailedFiles = cleanupOutcomes.count { outcome ->
+                outcome.failed && outcome.retryable
+            }
+        )
     }
 
     suspend fun rollbackMigratedEntries(
@@ -86,79 +720,634 @@ internal class ManagedDownloadMigrationFinalizer(
         targetRoot: ManagedDownloadRootHandle,
         copied: CopiedMigrationEntry,
         referenceMap: Map<String, String>,
+        sortedReferenceReplacements: List<ManagedMetadataReferenceReplacement>,
         progressTracker: ManagedMigrationProgressReporter?
-    ): Int {
+    ): MetadataRewriteOutcome {
         progressTracker?.startRewrite(copied.copiedEntry.name)
-        val raw = readText(context, copied.copiedEntry.reference)
-        val rewritten = runCatching {
-            val metadataText = raw
-                ?: throw IOException("无法读取已迁移 metadata: ${copied.copiedEntry.name}")
-            rewriteMetadataReferences(metadataText, referenceMap)
-        }.onFailure {
-            NPLogger.w(tag, "迁移后重写 metadata 引用失败: ${copied.copiedEntry.reference}, ${it.message}")
-        }.getOrNull()
-        if (rewritten == null) {
+        try {
+            val sourceAuthoritativeCopy = copied.createdNew || copied.sourceAuthoritative
+            val rewriteInput = try {
+                val sourceMetadata = measureMetadataRewriteIo(
+                    stage = "read_source",
+                    copied = copied
+                ) {
+                    readText(context, copied.original.entry.reference)
+                }
+                    ?: throw IllegalStateException("无法读取源 metadata: ${copied.original.entry.name}")
+                val targetMetadata = if (sourceAuthoritativeCopy) {
+                    null
+                } else {
+                    measureMetadataRewriteIo(
+                        stage = "read_target",
+                        copied = copied
+                    ) {
+                        readText(context, copied.copiedEntry.reference)
+                    }
+                        ?: throw IllegalStateException(
+                            "无法读取已迁移 metadata: ${copied.copiedEntry.name}"
+                        )
+                }
+                MetadataRewriteInput(
+                    sourceMetadata = sourceMetadata,
+                    targetMetadata = targetMetadata,
+                    rewrittenMetadata = enrichMigratedMetadataTemporalFields(
+                        metadata = rewriteMetadataReferencesPrepared(
+                            sourceMetadata,
+                            referenceMap,
+                            sortedReferenceReplacements
+                        ),
+                        sourceEntry = copied.original
+                    )
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                NPLogger.w(
+                    tag,
+                    "迁移后重写 metadata 引用失败: " +
+                        "${copied.copiedEntry.reference}, ${error.message}"
+                )
+                return MetadataRewriteOutcome(
+                    copied = copied,
+                    failed = true,
+                    error = retryableMigrationIoFailure(
+                        message = "迁移后 metadata 读取暂时失败: ${copied.copiedEntry.name}",
+                        error = error
+                    )
+                )
+            }
+            if (
+                !sourceAuthoritativeCopy &&
+                    rewriteInput.rewrittenMetadata == rewriteInput.targetMetadata
+            ) {
+                return MetadataRewriteOutcome(copied = copied, failed = false)
+            }
+            if (
+                (
+                    copied.reusedFromReceipt ||
+                        !copied.createdNew && !copied.sourceAuthoritative
+                    ) &&
+                rewriteInput.targetMetadata != rewriteInput.sourceMetadata
+            ) {
+                NPLogger.d(
+                    tag,
+                    "迁移 metadata 冲突以源文件为准: " +
+                        "${copied.copiedEntry.reference}, reused=${copied.reusedFromReceipt}"
+                )
+            }
+            val rewrittenEntry = try {
+                measureMetadataRewriteIo(stage = "write_target", copied = copied) {
+                    writeRootTextWithKnownEntry(
+                        context,
+                        targetRoot,
+                        copied.copiedEntry.name,
+                        rewriteInput.rewrittenMetadata,
+                        copied.copiedEntry
+                    )
+                } ?: throw IllegalStateException(
+                    "无法读取回写后的 metadata: ${copied.copiedEntry.name}"
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                NPLogger.w(
+                    tag,
+                    "回写迁移后的 metadata 失败: " +
+                        "${copied.copiedEntry.reference}, ${error.message}"
+                )
+                return MetadataRewriteOutcome(
+                    copied = copied,
+                    failed = true,
+                    error = retryableMigrationIoFailure(
+                        message = "迁移后 metadata 回写暂时失败: ${copied.copiedEntry.name}",
+                        error = error
+                    )
+                )
+            }
+            val rewrittenCopied = copied.copy(
+                copiedEntry = rewrittenEntry,
+                verifiedTargetDigest = sha256MigrationContent(
+                    java.io.ByteArrayInputStream(
+                        rewriteInput.rewrittenMetadata.toByteArray(Charsets.UTF_8)
+                    )
+                ),
+                targetContentMatchesSource = sourceAuthoritativeCopy
+            )
+            val restoreError = runCatching {
+                measureMetadataRewriteIo(stage = "restore_timestamp", copied = copied) {
+                    restoreLastModified(
+                        context,
+                        rewrittenEntry,
+                        copied.original.entry.lastModifiedMs
+                    )
+                }
+            }.onFailure {
+                NPLogger.w(
+                    tag,
+                    "恢复迁移 metadata 时间失败: ${rewrittenEntry.reference}, ${it.message}"
+                )
+            }.exceptionOrNull()
+            return MetadataRewriteOutcome(
+                copied = rewrittenCopied,
+                failed = restoreError != null,
+                error = restoreError?.let { error ->
+                    retryableMigrationIoFailure(
+                        message = "恢复迁移 metadata 时间暂时失败: ${rewrittenEntry.name}",
+                        error = error
+                    )
+                }
+            )
+        } finally {
             progressTracker?.finishRewrite(copied.copiedEntry.name)
-            return 1
         }
-        if (rewritten == raw) {
-            progressTracker?.finishRewrite(copied.copiedEntry.name)
-            return 0
-        }
-        runCatching {
-            writeRootText(context, targetRoot, copied.copiedEntry.name, rewritten)
-        }.onFailure {
-            NPLogger.w(tag, "回写迁移后的 metadata 失败: ${copied.copiedEntry.reference}, ${it.message}")
-        }.getOrElse {
-            progressTracker?.finishRewrite(copied.copiedEntry.name)
-            return 1
-        }
-        progressTracker?.finishRewrite(copied.copiedEntry.name)
-        return 0
     }
 
-    private fun cleanupMigratedEntry(
+    private data class MetadataRewriteInput(
+        val sourceMetadata: String,
+        val targetMetadata: String?,
+        val rewrittenMetadata: String
+    )
+
+    private fun <T> measureMetadataRewriteIo(
+        stage: String,
+        copied: CopiedMigrationEntry,
+        block: () -> T
+    ): T {
+        val startedAtNs = System.nanoTime()
+        return try {
+            block()
+        } finally {
+            val elapsedMs = ((System.nanoTime() - startedAtNs) / 1_000_000L)
+                .coerceAtLeast(0L)
+            if (elapsedMs >= SLOW_METADATA_REWRITE_IO_LOG_MS) {
+                NPLogger.w(
+                    tag,
+                    "迁移 metadata 单项 I/O 较慢: " +
+                        "stage=$stage, name=${copied.copiedEntry.name}, elapsedMs=$elapsedMs"
+                )
+            }
+        }
+    }
+
+    private data class MetadataRewriteOutcome(
+        val copied: CopiedMigrationEntry,
+        val failed: Boolean,
+        val error: ManagedDownloadMigrationException? = null
+    )
+
+    private data class VerificationOutcome(
+        val failed: Boolean,
+        val error: ManagedDownloadMigrationException? = null,
+        val targetDigest: String? = null
+    )
+
+    private data class MigrationVerificationEvidence(
+        val verified: Boolean,
+        val targetDigest: String? = null
+    )
+
+    private suspend fun isMigrationTargetVerified(
         context: Context,
-        totalEntries: Int,
         migrationEntry: CopiedMigrationEntry,
-        sourceRoot: ManagedDownloadRootHandle,
-        progressTracker: ManagedMigrationProgressReporter?
-    ): Int {
-        progressTracker?.startCleanup(totalEntries, migrationEntry.original.entry.name)
-        val sourceSize = migrationEntry.original.entry.sizeBytes
-        val copiedSize = migrationEntry.copiedEntry.sizeBytes
-        if (shouldKeepSourceForSizeMismatch(sourceSize, copiedSize)) {
+        referenceMap: Map<String, String>,
+        sortedReferenceReplacements: List<ManagedMetadataReferenceReplacement>,
+        onProgress: (Long) -> Unit = {}
+    ): Boolean = verifyMigrationTarget(
+        context = context,
+        migrationEntry = migrationEntry,
+        referenceMap = referenceMap,
+        sortedReferenceReplacements = sortedReferenceReplacements,
+        onProgress = onProgress
+    ).verified
+
+    private suspend fun verifyMigrationTarget(
+        context: Context,
+        migrationEntry: CopiedMigrationEntry,
+        referenceMap: Map<String, String>,
+        sortedReferenceReplacements: List<ManagedMetadataReferenceReplacement>,
+        onProgress: (Long) -> Unit = {}
+    ): MigrationVerificationEvidence {
+        val sourceEntry = migrationEntry.original.entry
+        if (ManagedDownloadTreeNaming.isMetadataName(sourceEntry.name)) {
+            val committedTargetDigest = migrationEntry.verifiedTargetDigest
+                ?.takeIf(String::isNotBlank)
+            if (
+                migrationEntry.targetContentMatchesSource &&
+                    committedTargetDigest != null
+            ) {
+                onProgress(migrationEntry.copiedEntry.sizeBytes.coerceAtLeast(0L))
+                return MigrationVerificationEvidence(
+                    verified = true,
+                    targetDigest = committedTargetDigest
+                )
+            }
+            val metadata = readEquivalentMigratedMetadata(
+                context = context,
+                migrationEntry = migrationEntry,
+                referenceMap = referenceMap,
+                sortedReferenceReplacements = sortedReferenceReplacements
+            ) ?: return MigrationVerificationEvidence(verified = false)
+            return MigrationVerificationEvidence(
+                verified = true,
+                targetDigest = sha256MigrationContent(
+                    java.io.ByteArrayInputStream(metadata.target.toByteArray(Charsets.UTF_8))
+                )
+            )
+        }
+        val persistedSourceDigest = migrationEntry.sourceDigest?.takeIf(String::isNotBlank)
+        val committedTargetDigest = migrationEntry.verifiedTargetDigest
+            ?.takeIf(String::isNotBlank)
+        if (
+            migrationEntry.targetContentMatchesSource &&
+                persistedSourceDigest != null &&
+                committedTargetDigest != null &&
+                persistedSourceDigest.equals(committedTargetDigest, ignoreCase = true)
+        ) {
+            onProgress(migrationEntry.copiedEntry.sizeBytes.coerceAtLeast(0L))
+            return MigrationVerificationEvidence(
+                verified = true,
+                targetDigest = committedTargetDigest
+            )
+        }
+        var sourceVerifiedBytes = 0L
+        val sourceDigest = persistedSourceDigest
+            ?: sha256ForEntry(context, sourceEntry) { verifiedBytes ->
+                sourceVerifiedBytes = verifiedBytes
+                onProgress(verifiedBytes)
+            }
+            ?: return MigrationVerificationEvidence(verified = false)
+        val targetOffset = if (persistedSourceDigest != null) {
+            0L
+        } else {
+            maxOf(sourceVerifiedBytes, sourceEntry.sizeBytes.coerceAtLeast(0L))
+        }
+        val targetDigest = sha256ForEntry(context, migrationEntry.copiedEntry) { verifiedBytes ->
+            onProgress(saturatedMigrationByteSum(targetOffset, verifiedBytes))
+        } ?: return MigrationVerificationEvidence(verified = false)
+        return MigrationVerificationEvidence(
+            verified = sourceDigest == targetDigest,
+            targetDigest = targetDigest.takeIf { digest -> sourceDigest == digest }
+        )
+    }
+
+    private data class EquivalentMigratedMetadata(
+        val target: String
+    )
+
+    private fun readEquivalentMigratedMetadata(
+        context: Context,
+        migrationEntry: CopiedMigrationEntry,
+        referenceMap: Map<String, String>,
+        sortedReferenceReplacements: List<ManagedMetadataReferenceReplacement>
+    ): EquivalentMigratedMetadata? {
+        return try {
+            val sourceMetadata = measureMetadataRewriteIo(
+                stage = "verify_read_source",
+                copied = migrationEntry
+            ) {
+                readText(context, migrationEntry.original.entry.reference)
+            }
+                ?: return null
+            val targetMetadata = measureMetadataRewriteIo(
+                stage = "verify_read_target",
+                copied = migrationEntry
+            ) {
+                readText(context, migrationEntry.copiedEntry.reference)
+            }
+                ?: return null
+            val expectedTargetMetadata = enrichMigratedMetadataTemporalFields(
+                metadata = rewriteMetadataReferencesPrepared(
+                    sourceMetadata,
+                    referenceMap,
+                    sortedReferenceReplacements
+                ),
+                sourceEntry = migrationEntry.original
+            )
+            if (!areEquivalentJsonValues(
+                JSONObject(expectedTargetMetadata),
+                JSONObject(targetMetadata)
+            )) {
+                null
+            } else {
+                EquivalentMigratedMetadata(target = targetMetadata)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
             NPLogger.w(
                 tag,
-                "迁移后目标大小不匹配，跳过删除源文件: ${migrationEntry.original.entry.name}, source=$sourceSize, copied=$copiedSize"
+                "迁移 metadata 校验失败: ${migrationEntry.original.entry.reference}, ${error.message}"
             )
-            progressTracker?.finishCleanup(migrationEntry.original.entry.name)
-            return 1
+            retryableMigrationIoFailure(
+                message = "迁移 metadata 校验暂时失败: ${migrationEntry.original.entry.name}",
+                error = error
+            )?.let { migrationError -> throw migrationError }
+            null
         }
-        val deleted = runCatching {
-            deleteReference(context, migrationEntry.original.entry.reference, sourceRoot)
-        }.onFailure {
-            NPLogger.w(tag, "迁移后删除旧下载文件失败: ${migrationEntry.original.entry.reference}, ${it.message}")
-        }.getOrDefault(false)
-        progressTracker?.finishCleanup(migrationEntry.original.entry.name)
-        return if (deleted) 0 else 1
     }
 
-    private fun rollbackMigratedEntry(
+    private fun enrichMigratedMetadataTemporalFields(
+        metadata: String,
+        sourceEntry: ManagedMigrationEntry
+    ): String {
+        if (
+            sourceEntry.metadata == null &&
+            ManagedDownloadTreeNaming.isMetadataName(sourceEntry.entry.name)
+        ) {
+            return metadata
+        }
+        val timestampMs = sourceEntry.logicalCreatedAtMs()?.takeIf { it > 0L }
+            ?: return metadata
+        val source = sourceEntry.logicalCreatedAtSource()
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val confidence = sourceEntry.logicalCreatedAtConfidence()
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        if (!isValidMigrationCreatedAtMetadata(timestampMs, source, confidence)) {
+            return metadata
+        }
+        val json = JSONObject(metadata)
+        val existingTimestamp = json.optLong("createdAtMs", 0L)
+            .takeIf {
+                json.has("createdAtMs") && !json.isNull("createdAtMs") && it > 0L
+            }
+        if (existingTimestamp == null) {
+            json.put("createdAtMs", timestampMs)
+        }
+        val existingSource = json.optString("createdAtSource")
+            .trim()
+            .takeIf(String::isNotBlank)
+        if (existingSource == null && source != null) {
+            json.put("createdAtSource", source)
+        }
+        val existingConfidence = json.optString("createdAtConfidence")
+            .trim()
+            .takeIf(String::isNotBlank)
+        if (existingConfidence == null && confidence != null) {
+            json.put("createdAtConfidence", confidence)
+        }
+        return json.toString()
+    }
+
+    private fun areEquivalentJsonValues(expected: Any?, actual: Any?): Boolean {
+        if (isJsonNull(expected) || isJsonNull(actual)) {
+            return isJsonNull(expected) && isJsonNull(actual)
+        }
+        return when {
+            expected is JSONObject && actual is JSONObject -> {
+                expected.length() == actual.length() && expected.keys().asSequence().all { key ->
+                    actual.has(key) && areEquivalentJsonValues(expected.opt(key), actual.opt(key))
+                }
+            }
+
+            expected is JSONArray && actual is JSONArray -> {
+                expected.length() == actual.length() && (0 until expected.length()).all { index ->
+                    areEquivalentJsonValues(expected.opt(index), actual.opt(index))
+                }
+            }
+
+            expected is Number && actual is Number -> {
+                BigDecimal(expected.toString()).compareTo(BigDecimal(actual.toString())) == 0
+            }
+
+            else -> expected == actual
+        }
+    }
+
+    private fun isJsonNull(value: Any?): Boolean {
+        return value == null || value === JSONObject.NULL
+    }
+
+    private suspend fun sha256ForEntry(
+        context: Context,
+        entry: ManagedDownloadStorage.StoredEntry,
+        onProgress: (Long) -> Unit = {}
+    ): String? {
+        return try {
+            when (val result = entryReader.read(context, entry) { input ->
+                sha256Hex(input, onProgress)
+            }) {
+                is StorageLookupResult.Found -> result.value.getOrThrow()
+                is StorageLookupResult.ProviderFailure -> throw ManagedDownloadRootProviderException(
+                    entry.reference,
+                    result.error
+                )
+                StorageLookupResult.Missing,
+                StorageLookupResult.PermissionLost,
+                StorageLookupResult.OutOfScope,
+                is StorageLookupResult.Unsupported -> null
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.w(tag, "迁移文件 hash 校验失败: ${entry.reference}, ${error.message}")
+            retryableMigrationIoFailure(
+                message = "迁移文件 hash 校验暂时失败: ${entry.name}",
+                error = error
+            )?.let { migrationError -> throw migrationError }
+            null
+        }
+    }
+
+    private fun retryableMigrationIoFailure(
+        message: String,
+        error: Throwable
+    ): ManagedDownloadMigrationException? {
+        if (error is CancellationException) {
+            throw error
+        }
+        return when (error) {
+            is ManagedDownloadMigrationException -> error
+            is ManagedDownloadRootProviderException,
+            is IOException -> ManagedDownloadMigrationException.transient(message, error)
+            else -> null
+        }
+    }
+
+    private fun saturatedMigrationByteSum(left: Long, right: Long): Long {
+        val safeLeft = left.coerceAtLeast(0L)
+        val safeRight = right.coerceAtLeast(0L)
+        return if (safeLeft > Long.MAX_VALUE - safeRight) {
+            Long.MAX_VALUE
+        } else {
+            safeLeft + safeRight
+        }
+    }
+
+    private fun List<CopiedMigrationEntry>.migrationReferenceMap(): Map<String, String> {
+        return buildMap {
+            this@migrationReferenceMap.forEach { copied ->
+                val source = copied.original.entry
+                val target = copied.copiedEntry
+                source.reference.takeIf(String::isNotBlank)?.let { reference ->
+                    contentReferenceAliases(reference).forEach { alias ->
+                        put(alias, target.reference)
+                    }
+                }
+                source.localFilePath?.takeIf(String::isNotBlank)?.let { localPath ->
+                    put(localPath, target.localFilePath ?: target.reference)
+                }
+                source.mediaUri.takeIf(String::isNotBlank)?.let { mediaUri ->
+                    contentReferenceAliases(mediaUri).forEach { alias ->
+                        put(alias, target.metadataReference())
+                    }
+                }
+                source.localFileUriAliases(target).forEach { (sourceUri, targetUri) ->
+                    put(sourceUri, targetUri)
+                }
+            }
+        }
+    }
+
+    private fun contentReferenceAliases(reference: String): Set<String> {
+        val normalized = reference.trim().takeIf(String::isNotBlank) ?: return emptySet()
+        val uri = runCatching { normalized.toUri() }.getOrNull()
+            ?: return setOf(normalized)
+        if (!uri.scheme.equals("content", ignoreCase = true) || uri.authority.isNullOrBlank()) {
+            return setOf(normalized)
+        }
+        val documentId = try {
+            DocumentsContract.getDocumentId(uri)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return setOf(normalized)
+        val aliases = linkedSetOf(normalized)
+        runCatching {
+            DocumentsContract.buildDocumentUri(uri.authority, documentId).toString()
+        }.getOrNull()?.let(aliases::add)
+        if (uri.pathSegments.any { it == "tree" }) {
+            runCatching {
+                DocumentsContract.buildDocumentUriUsingTree(uri, documentId).toString()
+            }.getOrNull()?.let(aliases::add)
+        }
+        return aliases
+    }
+
+    private fun ManagedDownloadStorage.StoredEntry.localFileUriAliases(
+        target: ManagedDownloadStorage.StoredEntry
+    ): List<Pair<String, String>> {
+        val sourcePath = localFilePath
+            ?.takeIf(String::isNotBlank)
+            ?: reference.takeIf { it.startsWith('/') }
+            ?: mediaUri
+                .takeIf { it.startsWith("file:", ignoreCase = true) }
+                ?.let { value -> runCatching { URI(value).path }.getOrNull() }
+                ?.takeIf(String::isNotBlank)
+            ?: return emptyList()
+        val sourceFile = File(sourcePath)
+        val targetReference = target.metadataReference()
+        return listOf(
+            sourceFile.toURI().toString() to targetReference,
+            sourceFile.toFileUriWithAuthority() to targetReference
+        )
+    }
+
+    private fun File.toFileUriWithAuthority(): String {
+        return toURI().toString().replaceFirst("file:", "file://")
+    }
+
+    private fun ManagedDownloadStorage.StoredEntry.metadataReference(): String {
+        return localFilePathForMigrationTarget()
+            ?.let(::File)
+            ?.toURI()
+            ?.toString()
+            ?: mediaUri.takeIf(String::isNotBlank)
+            ?: reference
+    }
+
+    private fun ManagedDownloadStorage.StoredEntry.localFilePathForMigrationTarget(): String? {
+        return localFilePath
+            ?.takeIf(String::isNotBlank)
+            ?: reference.takeIf { it.startsWith('/') }
+    }
+
+    private suspend fun rollbackMigratedEntry(
         context: Context,
         migrationEntry: CopiedMigrationEntry,
         targetRoot: ManagedDownloadRootHandle
     ): Int {
-        if (!migrationEntry.createdNew) {
+        if (migrationEntry.reusedFromReceipt) {
             return 0
         }
-        val deleted = runCatching {
-            deleteReference(context, migrationEntry.copiedEntry.reference, targetRoot)
-        }.onFailure {
-            NPLogger.w(tag, "回滚迁移目标文件失败: ${migrationEntry.copiedEntry.reference}, ${it.message}")
-        }.getOrDefault(false)
-        return if (deleted) 0 else 1
+        if (!migrationEntry.createdNew && migrationEntry.replacementBackup == null) {
+            return 0
+        }
+        if (migrationEntry.replacementBackup != null) {
+            return if (restoreReplacement(context, targetRoot, migrationEntry)) 0 else 1
+        }
+        val targetReference = migrationEntry.copiedEntry.toTrustedManagedRef()
+        val result = targetReference?.let { reference ->
+            try {
+                deleteReference(context, reference, targetRoot)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(
+                    tag,
+                    "回滚迁移目标文件失败: " +
+                        "${migrationEntry.copiedEntry.reference}, ${error.message}"
+                )
+                error.toStorageMutationResult()
+            }
+        } ?: StorageMutationResult.OutOfScope
+        return if (result.isCleanupConfirmed()) 0 else 1
     }
+
+    private fun ManagedDownloadStorage.StoredEntry.toTrustedManagedRef(): TrustedManagedRef? {
+        val normalizedReference = reference.trim().takeIf(String::isNotBlank) ?: return null
+        val uri = runCatching { normalizedReference.toUri() }.getOrNull()
+        return when {
+            normalizedReference.startsWith("/") -> {
+                TrustedManagedRef(
+                    reference = StorageReference.FileRef(normalizedReference),
+                    externalReference = normalizedReference
+                )
+            }
+
+            uri != null &&
+                uri.scheme.equals("content", ignoreCase = true) &&
+                !uri.authority.isNullOrBlank() -> {
+                TrustedManagedRef(
+                    reference = StorageReference.SafRef(uri),
+                    externalReference = normalizedReference
+                )
+            }
+
+            uri != null && uri.scheme.equals("file", ignoreCase = true) -> {
+                val path = uri.path?.takeIf(String::isNotBlank) ?: return null
+                TrustedManagedRef(
+                    reference = StorageReference.FileRef(path),
+                    externalReference = normalizedReference
+                )
+            }
+
+            else -> null
+        }
+    }
+
+    private fun Throwable.toStorageMutationResult(): StorageMutationResult {
+        return if (this is SecurityException) {
+            StorageMutationResult.PermissionLost
+        } else {
+            StorageMutationResult.ProviderFailure(this)
+        }
+    }
+
+    private fun StorageMutationResult.isCleanupConfirmed(): Boolean {
+        return this is StorageMutationResult.Deleted || this is StorageMutationResult.Missing
+    }
+
+    private fun StorageMutationResult.isRetryableCleanupFailure(): Boolean {
+        return this is StorageMutationResult.ProviderFailure && error !is SecurityException
+    }
+
+    private data class CleanupOutcome(
+        val failed: Boolean,
+        val retryable: Boolean
+    )
 
     companion object {
         // 返回 true = 保留源文件 (跳过删除) ; false = 确认拷贝可信, 允许删源
@@ -177,5 +1366,59 @@ internal class ManagedDownloadMigrationFinalizer(
                 toleranceBytes = SAF_COMMITTED_SIZE_TOLERANCE_BYTES
             )
         }
+
+        internal fun shouldKeepSourceForMigrationSize(sourceSize: Long, copiedSize: Long): Boolean {
+            if (copiedSize <= 0L) {
+                return true
+            }
+            return sourceSize > 0L && shouldKeepSourceForSizeMismatch(sourceSize, copiedSize)
+        }
+
+        internal fun sha256Hex(input: InputStream): String {
+            return sha256Hex(input, onProgress = {})
+        }
+
+        internal fun sha256Hex(
+            input: InputStream,
+            onProgress: (Long) -> Unit
+        ): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val buffer = ByteArray(HASH_BUFFER_SIZE_BYTES)
+            var processedBytes = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) {
+                    return digest.digest().joinToString(separator = "") { byte ->
+                        (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+                    }
+                }
+                if (count > 0) {
+                    digest.update(buffer, 0, count)
+                    processedBytes += count
+                    onProgress(processedBytes)
+                }
+            }
+        }
+
+        internal fun hasCompatibleStableKeys(
+            sourceStableKey: String?,
+            targetStableKey: String?,
+            sourceReferences: Set<String>,
+            targetReferences: Set<String>
+        ): Boolean {
+            val sourceKey = sourceStableKey?.trim()?.takeIf(String::isNotBlank)
+            val targetKey = targetStableKey?.trim()?.takeIf(String::isNotBlank)
+            if (sourceKey == targetKey) {
+                return true
+            }
+            if (sourceKey == null || targetKey == null) {
+                return false
+            }
+            val sourceContainsLocalReference = sourceReferences.any(sourceKey::contains)
+            val targetContainsLocalReference = targetReferences.any(targetKey::contains)
+            return sourceContainsLocalReference && targetContainsLocalReference
+        }
+
+        private const val HASH_BUFFER_SIZE_BYTES = 64 * 1024
     }
 }

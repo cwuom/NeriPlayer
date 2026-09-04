@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.storage.sidecar
 import android.content.Context
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.data.model.SongItem
@@ -50,21 +51,23 @@ internal object ManagedDownloadLyricStore {
         fileNameTemplate: String?,
         exists: (Context, String?) -> Boolean
     ): String? {
-        resolvedMetadata?.romanizedLyricPath
-            ?.takeIf { exists(context, it) }
-            ?.let { return it }
         resolvedAudio?.let { audio ->
             findRomanizedLyricLocation(
                 snapshot = snapshot,
                 songId = resolvedMetadata?.songId ?: song.id,
                 candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
-            )?.let { return it }
+            )?.takeIf { exists(context, it) }?.let { return it }
         }
-        return findRomanizedLyricLocation(
+        findRomanizedLyricLocation(
             snapshot = snapshot,
             songId = song.id,
             candidateBaseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
+        )?.takeIf { exists(context, it) }?.let { return it }
+        return ManagedDownloadArtifactPlanner.trustedMetadataReference(
+            resolvedMetadata?.romanizedLyricPath,
+            snapshot
         )
+            ?.takeIf { exists(context, it) }
     }
 
     fun resolveManagedLyricReference(
@@ -77,15 +80,14 @@ internal object ManagedDownloadLyricStore {
         fileNameTemplate: String?,
         exists: (Context, String?) -> Boolean
     ): String? {
-        val metadataReference = if (translated) {
-            resolvedMetadata?.translatedLyricPath
-        } else {
-            resolvedMetadata?.lyricPath
-        }
-        if (exists(context, metadataReference)) {
-            return metadataReference
-        }
-
+        val metadataReference = ManagedDownloadArtifactPlanner.trustedMetadataReference(
+            if (translated) {
+                resolvedMetadata?.translatedLyricPath
+            } else {
+                resolvedMetadata?.lyricPath
+            },
+            snapshot
+        )
         resolvedAudio?.let { audio ->
             findIndexedLyricReference(
                 snapshot = snapshot,
@@ -96,10 +98,10 @@ internal object ManagedDownloadLyricStore {
                 } else {
                     ManagedDownloadStorageNaming.LyricKind.ORIGINAL
                 }
-            )?.let { return it }
+            )?.takeIf { exists(context, it) }?.let { return it }
         }
 
-        return findIndexedLyricReference(
+        findIndexedLyricReference(
             snapshot = snapshot,
             songId = song.id.takeIf { it > 0L },
             candidateBaseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate),
@@ -108,7 +110,8 @@ internal object ManagedDownloadLyricStore {
             } else {
                 ManagedDownloadStorageNaming.LyricKind.ORIGINAL
             }
-        )
+        )?.takeIf { exists(context, it) }?.let { return it }
+        return metadataReference?.takeIf { exists(context, it) }
     }
 
     fun fallbackEmbeddedLyric(
@@ -132,6 +135,16 @@ internal object ManagedDownloadLyricStore {
             metadata?.matchedLyric
         }
     }
+
+    fun fallbackEmbeddedRomanizedLyric(
+        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    ): String? {
+        return metadata?.matchedRomanizedLyric ?: metadata?.originalRomanizedLyric
+    }
+
+    fun selectedEmbeddedRomanizedLyric(
+        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    ): String? = metadata?.matchedRomanizedLyric
 
     private fun findIndexedLyricReference(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,

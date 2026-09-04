@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -77,7 +79,7 @@ class StorageCacheDetailsContentTest {
             }
         }
 
-        composeRule.onNodeWithText("/private/cache/audio").assertDoesNotExist()
+        composeRule.onAllNodesWithText("/private/cache/audio").assertCountEquals(0)
         composeRule.onNodeWithText("Audio cache").assertExists()
     }
 }

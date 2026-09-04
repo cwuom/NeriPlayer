@@ -1,12 +1,10 @@
 package moe.ouom.neriplayer.core.download.storage.delete
 
-import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import java.io.File
-
 internal data class ManagedDownloadDeletePolicy(
     val managedFileRoots: List<String>,
     val managedTreeRoots: List<String>,
-    val trustedReferences: Set<String>
+    val trustedReferences: Set<moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef>
 )
 
 internal object ManagedDownloadDeleteGuard {
@@ -28,16 +26,12 @@ internal object ManagedDownloadDeleteGuard {
             }
             return underRoot
         }
-        val underTree = managedTreeRoots.any { rootUri ->
-            ManagedDownloadDirectoryIdentity.isDocumentReferenceUnderManagedTree(
-                reference = normalizedReference,
-                managedTreeUri = rootUri
-            )
+        if (isTrusted) {
+            return true
         }
-        if (!underTree && isTrusted) {
-            onTrustedReferenceOutsideManagedRoot?.invoke(normalizedReference)
-        }
-        return underTree
+        // SAF document ids are opaque. A tree/document URI that merely looks nested
+        // under the configured root is not deletion evidence without enumeration.
+        return false
     }
 
     fun isFileReferenceUnderManagedRoot(reference: String, managedRootPath: String): Boolean {

@@ -30,6 +30,8 @@ import coil.request.ImageRequest
 import coil.request.CachePolicy
 import coil.transform.Transformation
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
+import androidx.compose.ui.graphics.ImageBitmap
+import java.util.LinkedHashMap
 
 private const val DEFAULT_LOCAL_IMAGE_REQUEST_SIZE_PX = 512
 private const val DEFAULT_IMAGE_CROSSFADE_DURATION_MILLIS = 180
@@ -44,7 +46,8 @@ fun offlineCachedImageRequest(
     allowHardware: Boolean = true,
     crossfade: Boolean = true,
     offlineMode: Boolean = context.isOfflineModeNow(),
-    transformations: List<Transformation> = emptyList()
+    transformations: List<Transformation> = emptyList(),
+    cacheKey: String? = null
 ): ImageRequest {
     val localSource = isLocalImageSource(data)
     val remoteSource = isRemoteImageSource(data)
@@ -56,6 +59,11 @@ fun offlineCachedImageRequest(
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .networkCachePolicy(if (offlineMode && remoteSource) CachePolicy.DISABLED else CachePolicy.ENABLED)
+    cacheKey?.trim()?.takeIf(String::isNotEmpty)?.let { resolvedCacheKey ->
+        builder
+            .memoryCacheKey(resolvedCacheKey)
+            .diskCacheKey(resolvedCacheKey)
+    }
     if (localSource && !resolvedAllowHardware) {
         builder.bitmapConfig(Bitmap.Config.RGB_565)
     }
@@ -80,7 +88,8 @@ fun fastScrollableImageRequest(
     data: Any?,
     sizePx: Int = 512,
     crossfade: Boolean = true,
-    offlineMode: Boolean = context.isOfflineModeNow()
+    offlineMode: Boolean = context.isOfflineModeNow(),
+    cacheKey: String? = null
 ): ImageRequest {
     val remoteSource = isRemoteImageSource(data)
     val builder = ImageRequest.Builder(context)
@@ -90,6 +99,11 @@ fun fastScrollableImageRequest(
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .networkCachePolicy(if (offlineMode && remoteSource) CachePolicy.DISABLED else CachePolicy.ENABLED)
+    cacheKey?.trim()?.takeIf(String::isNotEmpty)?.let { resolvedCacheKey ->
+        builder
+            .memoryCacheKey(resolvedCacheKey)
+            .diskCacheKey(resolvedCacheKey)
+    }
     if (isLocalImageSource(data)) {
         builder
             .allowHardware(false)
@@ -114,4 +128,77 @@ fun isLocalImageSource(data: Any?): Boolean {
         normalized.startsWith("file://") ||
         normalized.startsWith("android.resource://") ||
         normalized.startsWith("/")
+}
+
+// retained playback artwork outlives Coil's Drawable, so keep an independent bitmap
+internal fun copyBitmapForRetainedDisplay(source: Bitmap): Bitmap? {
+    if (source.isRecycled) return null
+    return source.copy(Bitmap.Config.ARGB_8888, false)
+}
+
+internal data class RetainedPlaybackCoverBitmap(
+    val ownerKey: String,
+    val coverUrl: String,
+    val cacheKey: String?,
+    val bitmap: ImageBitmap
+)
+
+/**
+ * 保留最近成功解码的封面, 让页面重建或快速切歌时可以先显示旧帧
+ */
+internal object RetainedPlaybackCoverBitmapCache {
+    private const val MAX_ENTRIES = 4
+    private val entries = LinkedHashMap<String, RetainedPlaybackCoverBitmap>(
+        MAX_ENTRIES,
+        0.75f,
+        true
+    )
+
+    fun put(
+        ownerKey: String?,
+        coverUrl: String?,
+        cacheKey: String?,
+        bitmap: ImageBitmap
+    ) {
+        val normalizedOwner = ownerKey?.trim()?.takeIf(String::isNotEmpty) ?: return
+        val normalizedCover = coverUrl?.trim()?.takeIf(String::isNotEmpty) ?: return
+        val entry = RetainedPlaybackCoverBitmap(
+            ownerKey = normalizedOwner,
+            coverUrl = normalizedCover,
+            cacheKey = cacheKey?.trim()?.takeIf(String::isNotEmpty),
+            bitmap = bitmap
+        )
+        synchronized(entries) {
+            entries[cacheEntryKey(normalizedOwner, normalizedCover)] = entry
+            while (entries.size > MAX_ENTRIES) {
+                val iterator = entries.entries.iterator()
+                if (!iterator.hasNext()) break
+                iterator.next()
+                iterator.remove()
+            }
+        }
+    }
+
+    fun getExact(ownerKey: String?, coverUrl: String?): RetainedPlaybackCoverBitmap? {
+        val normalizedOwner = ownerKey?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val normalizedCover = coverUrl?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        return synchronized(entries) {
+            entries[cacheEntryKey(normalizedOwner, normalizedCover)]
+        }
+    }
+
+    fun getLatestForOwner(ownerKey: String?): RetainedPlaybackCoverBitmap? {
+        val normalizedOwner = ownerKey?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        return synchronized(entries) {
+            entries.entries
+                .toList()
+                .asReversed()
+                .firstOrNull { it.value.ownerKey == normalizedOwner }
+                ?.value
+        }
+    }
+
+    private fun cacheEntryKey(ownerKey: String, coverUrl: String): String {
+        return "$ownerKey\u0000$coverUrl"
+    }
 }

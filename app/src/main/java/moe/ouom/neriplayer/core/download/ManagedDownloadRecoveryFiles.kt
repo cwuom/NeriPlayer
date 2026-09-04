@@ -5,27 +5,69 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.core.download.storage.queue.ManagedDownloadQueueStore
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import java.io.File
+import java.util.UUID
 
 internal object ManagedDownloadRecoveryFiles {
     private const val TAG = "ManagedDownloadStorage"
 
-    fun buildWorkingFileName(songKey: String, fileName: String): String {
-        return ManagedDownloadWorkingStore.buildWorkingFileName(songKey, fileName)
+    fun buildWorkingFileName(
+        songKey: String,
+        fileName: String,
+        operationId: String? = null
+    ): String {
+        return ManagedDownloadWorkingStore.buildWorkingFileName(songKey, fileName, operationId)
     }
 
     fun buildWorkingSongKeyHash(songKey: String): String {
         return ManagedDownloadWorkingStore.buildWorkingSongKeyHash(songKey)
     }
 
-    fun createWorkingFile(context: Context, songKey: String, fileName: String): File {
-        return ManagedDownloadWorkingStore.createWorkingFile(context.filesDir, songKey, fileName)
+    fun createWorkingFile(
+        context: Context,
+        songKey: String,
+        fileName: String,
+        operationId: String? = null
+    ): File {
+        return ManagedDownloadWorkingStore.createWorkingFile(
+            context.filesDir,
+            songKey,
+            fileName,
+            operationId
+        )
+    }
+
+    fun createSidecarStagingFile(
+        context: Context,
+        songKey: String,
+        suffix: String,
+        operationId: String? = null
+    ): File {
+        val directory = operationId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let { operation ->
+                val safeId = operation.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                File(stagingDir(context), safeId)
+            }
+            ?: stagingDir(context)
+        if (!directory.exists()) {
+            directory.mkdirs()
+        }
+        val safeSuffix = suffix
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .take(24)
+            .ifBlank { "artifact" }
+        return File(
+            directory,
+            "npdl_sidecar_${buildWorkingSongKeyHash(songKey)}_" +
+                "${UUID.randomUUID()}.$safeSuffix"
+        )
     }
 
     fun buildWorkingHlsCheckpointFile(workingFile: File): File {
@@ -57,8 +99,12 @@ internal object ManagedDownloadRecoveryFiles {
         return ManagedDownloadWorkingStore.shouldPreserveWorkingResumeMetadataForResume(entry, nowMs)
     }
 
-    fun saveWorkingResumeMetadata(workingFile: File, song: SongItem) {
-        ManagedDownloadWorkingStore.saveWorkingResumeMetadata(workingFile, song)
+    fun saveWorkingResumeMetadata(
+        workingFile: File,
+        song: SongItem,
+        operationId: String? = null
+    ): Boolean {
+        return ManagedDownloadWorkingStore.saveWorkingResumeMetadata(workingFile, song, operationId)
     }
 
     fun readWorkingResumeFingerprint(workingFile: File): ManagedDownloadStorage.WorkingResumeFingerprint? {
@@ -68,8 +114,8 @@ internal object ManagedDownloadRecoveryFiles {
     fun updateWorkingResumeFingerprint(
         workingFile: File,
         fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint
-    ) {
-        ManagedDownloadWorkingStore.updateWorkingResumeFingerprint(workingFile, fingerprint)
+    ): Boolean {
+        return ManagedDownloadWorkingStore.updateWorkingResumeFingerprint(workingFile, fingerprint)
     }
 
     fun deleteWorkingResumeMetadata(workingFile: File?) {
@@ -119,9 +165,20 @@ internal object ManagedDownloadRecoveryFiles {
         return ManagedDownloadWorkingStore.cleanupStagingFilesInDirectory(stagingDir, nowMs)
     }
 
-    fun upsertPendingDownloadQueue(context: Context, songs: List<SongItem>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).upsertPendingDownloadQueue(songs)
+    fun upsertPendingDownloadQueue(
+        context: Context,
+        songs: List<SongItem>,
+        userInitiated: Boolean = false,
+        requiresWifiNetwork: Boolean = true,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null
+    ): List<String> {
+        return runBlocking(Dispatchers.IO) {
+            roomStore(context).upsertPendingDownloadQueue(
+                songs = songs,
+                userInitiated = userInitiated,
+                requiresWifiNetwork = requiresWifiNetwork,
+                downloadAudioQuality = downloadAudioQuality
+            )
         }
     }
 
@@ -131,9 +188,30 @@ internal object ManagedDownloadRecoveryFiles {
         }
     }
 
+    fun countPendingQueuedDownloads(context: Context): Int {
+        return runBlocking(Dispatchers.IO) {
+            roomStore(context).countPendingQueuedDownloads()
+        }
+    }
+
+    fun findQueuedOperationIdForSong(context: Context, songKey: String): String? {
+        return runBlocking(Dispatchers.IO) {
+            roomStore(context).findQueuedOperationIdForSong(songKey)
+        }
+    }
+
     fun removePendingDownloadQueueEntries(context: Context, songKeys: Collection<String>) {
         runBlocking(Dispatchers.IO) {
             roomStore(context).removePendingDownloadQueueEntries(songKeys)
+        }
+    }
+
+    fun removePendingDownloadQueueOperationIds(
+        context: Context,
+        operationIds: Collection<String>
+    ) {
+        runBlocking(Dispatchers.IO) {
+            roomStore(context).removePendingDownloadQueueOperationIds(operationIds)
         }
     }
 
@@ -141,86 +219,6 @@ internal object ManagedDownloadRecoveryFiles {
         runBlocking(Dispatchers.IO) {
             roomStore(context).clearPendingDownloadQueue()
         }
-    }
-
-    fun markCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).markCancelledDownloadKeys(songKeys)
-        }
-    }
-
-    fun listCancelledDownloadKeys(context: Context): Set<String> {
-        return runBlocking(Dispatchers.IO) {
-            roomStore(context).listCancelledDownloadKeys()
-        }
-    }
-
-    fun removeCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).removeCancelledDownloadKeys(songKeys)
-        }
-    }
-
-    fun clearCancelledDownloadKeys(context: Context) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).clearCancelledDownloadKeys()
-        }
-    }
-
-    fun upsertPendingDownloadQueueInFile(
-        queueFile: File,
-        songs: List<SongItem>,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.upsertPendingDownloadQueueInFile(queueFile, songs, nowMs)
-    }
-
-    fun listPendingQueuedDownloadsFromFile(
-        queueFile: File
-    ): List<ManagedDownloadStorage.PendingDownloadQueueEntry> {
-        return ManagedDownloadQueueStore.listPendingQueuedDownloadsFromFile(queueFile)
-    }
-
-    fun removePendingDownloadQueueEntriesFromFile(
-        queueFile: File,
-        songKeys: Collection<String>,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.removePendingDownloadQueueEntriesFromFile(queueFile, songKeys, nowMs)
-    }
-
-    fun clearPendingDownloadQueueFile(
-        queueFile: File,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.clearPendingDownloadQueueFile(queueFile, nowMs)
-    }
-
-    fun markCancelledDownloadKeysInFile(
-        keysFile: File,
-        songKeys: Collection<String>,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.markCancelledDownloadKeysInFile(keysFile, songKeys, nowMs)
-    }
-
-    fun listCancelledDownloadKeysFromFile(keysFile: File): Set<String> {
-        return ManagedDownloadQueueStore.listCancelledDownloadKeysFromFile(keysFile)
-    }
-
-    fun removeCancelledDownloadKeysFromFile(
-        keysFile: File,
-        songKeys: Collection<String>,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.removeCancelledDownloadKeysFromFile(keysFile, songKeys, nowMs)
-    }
-
-    fun clearCancelledDownloadKeysFile(
-        keysFile: File,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.clearCancelledDownloadKeysFile(keysFile, nowMs)
     }
 
     fun parseWorkingResumeMetadataSong(rawJson: String): SongItem? {
@@ -276,8 +274,7 @@ internal object ManagedDownloadRecoveryFiles {
 
     private fun roomStore(context: Context): DownloadRecoveryRoomStore {
         return DownloadRecoveryRoomStore(
-            context = context.applicationContext,
-            database = NeriUserDataDatabase.getInstance(context.applicationContext)
+            context = context.applicationContext
         )
     }
 }

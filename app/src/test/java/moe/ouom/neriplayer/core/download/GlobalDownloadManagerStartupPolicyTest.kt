@@ -1,10 +1,17 @@
 package moe.ouom.neriplayer.core.download
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,11 +19,1182 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
+import moe.ouom.neriplayer.core.download.policy.recoveryOperationIdsForKeys
+import moe.ouom.neriplayer.core.download.policy.shouldRecoverDownloadCandidateWithBatch
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 
 class GlobalDownloadManagerStartupPolicyTest {
+
+    @Test
+    fun `cancellation convergence uses bounded monotonic backoff`() {
+        assertEquals(
+            listOf(0L, 150L, 300L, 1_000L, 2_000L, null),
+            listOf(1, 2, 3, 5, 7, 8).map(::cancellationConvergenceDelayMs)
+        )
+    }
+
+    @Test
+    fun `replacement operation timestamp is strictly after every cancellation cutoff`() {
+        assertEquals(
+            1_001L,
+            nextDownloadOperationCreatedAtMs(
+                requestedAtMs = 1_000L,
+                cancellationCutoffs = listOf(1_000L)
+            )
+        )
+        assertEquals(
+            2_001L,
+            nextDownloadOperationCreatedAtMs(
+                requestedAtMs = 1_500L,
+                cancellationCutoffs = listOf(1_000L, 2_000L)
+            )
+        )
+        assertEquals(
+            1_500L,
+            nextDownloadOperationCreatedAtMs(
+                requestedAtMs = 1_500L,
+                cancellationCutoffs = emptyList()
+            )
+        )
+    }
+
+    @Test
+    fun `unresolved cancellation snapshot cannot fall back to stable key cleanup`() {
+        assertTrue(
+            shouldRetainUnresolvedCancellationSnapshot(
+                snapshotBoundary = true,
+                snapshotResolved = false,
+                operationIds = emptySet()
+            )
+        )
+        assertFalse(
+            shouldRetainUnresolvedCancellationSnapshot(
+                snapshotBoundary = true,
+                snapshotResolved = true,
+                operationIds = emptySet()
+            )
+        )
+        assertFalse(
+            shouldRetainUnresolvedCancellationSnapshot(
+                snapshotBoundary = true,
+                snapshotResolved = false,
+                operationIds = setOf("old-operation")
+            )
+        )
+        assertFalse(
+            shouldRetainUnresolvedCancellationSnapshot(
+                snapshotBoundary = false,
+                snapshotResolved = false,
+                operationIds = emptySet()
+            )
+        )
+    }
+
+    @Test
+    fun `empty resolved cancellation snapshot still schedules convergence`() {
+        assertTrue(
+            shouldScheduleCancellationConvergence(
+                operationIds = emptySet(),
+                snapshotBoundary = true
+            )
+        )
+        assertFalse(
+            shouldScheduleCancellationConvergence(
+                operationIds = emptySet(),
+                snapshotBoundary = false
+            )
+        )
+        assertTrue(
+            shouldScheduleCancellationConvergence(
+                operationIds = setOf("old-operation"),
+                snapshotBoundary = false
+            )
+        )
+    }
+
+    @Test
+    fun `only recovery with a working file enters batch`() {
+        val key = "song-recovery"
+        val antiJoined = setOf(key)
+
+        assertFalse(
+            shouldRecoverDownloadCandidateWithBatch(
+                songKey = key,
+                antiJoinedKeys = antiJoined,
+                hasWorkingFile = false
+            )
+        )
+        assertFalse(
+            shouldRecoverDownloadCandidateWithBatch(
+                songKey = key,
+                antiJoinedKeys = antiJoined,
+                hasWorkingFile = false
+            )
+        )
+        assertTrue(
+            shouldRecoverDownloadCandidateWithBatch(
+                songKey = key,
+                antiJoinedKeys = antiJoined,
+                hasWorkingFile = true
+            )
+        )
+    }
+
+    @Test
+    fun `clear hard deadline is inclusive and unknown timestamps are not expired`() {
+        assertFalse(
+            hasDownloadClearExceededDeadline(
+                requestedAtMs = 1_000L,
+                nowMs = 3_999L
+            )
+        )
+        assertTrue(
+            hasDownloadClearExceededDeadline(
+                requestedAtMs = 1_000L,
+                nowMs = 4_000L
+            )
+        )
+        assertFalse(
+            hasDownloadClearExceededDeadline(
+                requestedAtMs = null,
+                nowMs = 9_000L
+            )
+        )
+    }
+
+    @Test
+    fun `clear progress persistence is throttled but flushes boundaries`() {
+        assertTrue(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 0,
+                totalItemCount = 100,
+                lastPersistedItemCount = -1,
+                nowMs = 0L,
+                lastPersistedAtMs = Long.MIN_VALUE,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertFalse(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 4,
+                totalItemCount = 100,
+                lastPersistedItemCount = 4,
+                nowMs = 100L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertTrue(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 36,
+                totalItemCount = 100,
+                lastPersistedItemCount = 4,
+                nowMs = 100L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertFalse(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 0,
+                totalItemCount = 100,
+                lastPersistedItemCount = 0,
+                nowMs = 100L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertTrue(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 5,
+                totalItemCount = 100,
+                lastPersistedItemCount = 4,
+                nowMs = 500L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+        assertTrue(
+            shouldPersistDownloadClearProgress(
+                completedItemCount = 100,
+                totalItemCount = 100,
+                lastPersistedItemCount = 68,
+                nowMs = 100L,
+                lastPersistedAtMs = 0L,
+                minIntervalMs = 500L,
+                batchSize = 32
+            )
+        )
+    }
+
+    @Test
+    fun `complete pending scan replaces stale task total`() {
+        assertEquals(
+            50,
+            resolveDownloadClearRetainedTotalItemCount(
+                currentTotalItemCount = 696,
+                artifactTotalItemCount = 50,
+                scanComplete = true
+            )
+        )
+    }
+
+    @Test
+    fun `incomplete pending scan retains the larger durable watermark`() {
+        assertEquals(
+            696,
+            resolveDownloadClearRetainedTotalItemCount(
+                currentTotalItemCount = 696,
+                artifactTotalItemCount = 50,
+                scanComplete = false
+            )
+        )
+        assertEquals(
+            50,
+            resolveDownloadClearRetainedTotalItemCount(
+                currentTotalItemCount = null,
+                artifactTotalItemCount = 50,
+                scanComplete = false
+            )
+        )
+    }
+
+    @Test
+    fun `protected pending artifacts do not block a complete clear`() {
+        assertFalse(
+            shouldBlockDownloadClearForPendingArtifacts(
+                scanComplete = true,
+                blockingArtifactCount = 0
+            )
+        )
+        assertTrue(
+            shouldBlockDownloadClearForPendingArtifacts(
+                scanComplete = true,
+                blockingArtifactCount = 1
+            )
+        )
+        assertTrue(
+            shouldBlockDownloadClearForPendingArtifacts(
+                scanComplete = false,
+                blockingArtifactCount = 0
+            )
+        )
+    }
+
+    @Test
+    fun `clear visibility remains while durable cleanup still needs recovery`() {
+        assertTrue(
+            shouldRetainDownloadClearVisibility(
+                retainInMemoryState = true,
+                durableFenceActive = false
+            )
+        )
+        assertTrue(
+            shouldRetainDownloadClearVisibility(
+                retainInMemoryState = false,
+                durableFenceActive = true
+            )
+        )
+        assertFalse(
+            shouldRetainDownloadClearVisibility(
+                retainInMemoryState = false,
+                durableFenceActive = false
+            )
+        )
+    }
+
+    @Test
+    fun `clear convergence defers only after its bounded round budget`() {
+        assertFalse(
+            shouldDeferDownloadClearAfterConvergenceRound(
+                round = DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS - 1
+            )
+        )
+        assertTrue(
+            shouldDeferDownloadClearAfterConvergenceRound(
+                round = DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS
+            )
+        )
+        assertTrue(
+            shouldDeferDownloadClearAfterConvergenceRound(
+                round = DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS + 1
+            )
+        )
+    }
+
+    @Test
+    fun `durable clear retries are bounded before a later recovery`() {
+        assertFalse(
+            shouldDeferDownloadClearAfterDurableRetry(
+                round = DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS - 1
+            )
+        )
+        assertTrue(
+            shouldDeferDownloadClearAfterDurableRetry(
+                round = DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS
+            )
+        )
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val releaseBody = source.substringAfter(
+            "private suspend fun clearDownloadClearFence"
+        ).substringBefore("private suspend fun requestAllDownloadOperationCancellation")
+        val cancellationBody = source.substringAfter(
+            "private suspend fun requestAllDownloadOperationCancellation"
+        ).substringBefore("fun interruptDownloadsForWifiDisconnected")
+        assertFalse(releaseBody.contains("while (true)"))
+        assertFalse(cancellationBody.contains("while (true)"))
+        assertTrue(source.contains("DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS"))
+        assertTrue(source.contains("private suspend fun activateDownloadClearFence(context: Context): Boolean"))
+        assertTrue(source.contains("下载清空栅栏未能持久化，未删除任务或文件并等待下次恢复"))
+    }
+
+    @Test
+    fun `clear Room timeout distinguishes a null query result from a blocked query`() = runBlocking {
+        val absentState: String? = withDownloadClearRoomTimeout(
+            operation = "read absent operation",
+            timeoutMs = 50L
+        ) {
+            null
+        }
+        assertNull(absentState)
+
+        val error = runCatching {
+            withDownloadClearRoomTimeout(
+                operation = "read blocked operation",
+                timeoutMs = 20L
+            ) {
+                delay(100L)
+                "unreachable"
+            }
+        }.exceptionOrNull()
+
+        assertTrue(error is DownloadClearRoomTimeoutException)
+    }
+
+    @Test
+    fun `provider cleanup wait timeout leaves the shared cleanup active`() = runBlocking {
+        val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        try {
+            val coordinator = DownloadClearProviderCleanupCoordinator<Long, String>(cleanupScope)
+            val handle = coordinator.getOrStart(key = 1L) {
+                started.complete(Unit)
+                release.await()
+                "settled"
+            }
+            started.await()
+
+            assertNull(
+                awaitDownloadClearProviderCleanup(
+                    cleanup = handle.operation,
+                    timeoutMs = 20L
+                )
+            )
+            assertTrue(handle.operation.isActive)
+            assertTrue(coordinator.activeOrNull()?.operation === handle.operation)
+
+            release.complete(Unit)
+            assertEquals("settled", handle.operation.await())
+            assertNull(coordinator.activeOrNull())
+        } finally {
+            cleanupScope.cancel()
+        }
+    }
+
+    @Test
+    fun `provider cleanup serializes a later recovery until the current cleanup completes`() = runBlocking {
+        val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var secondCleanupStarted = false
+        try {
+            val coordinator = DownloadClearProviderCleanupCoordinator<Long, String>(cleanupScope)
+            val first = coordinator.getOrStart(key = 1L) {
+                started.complete(Unit)
+                release.await()
+                "first"
+            }
+            started.await()
+
+            val coalesced = coordinator.getOrStart(key = 2L) {
+                secondCleanupStarted = true
+                "second"
+            }
+            assertEquals(1L, coalesced.key)
+            assertTrue(coalesced.operation === first.operation)
+            assertFalse(secondCleanupStarted)
+
+            release.complete(Unit)
+            assertEquals("first", first.operation.await())
+
+            val second = coordinator.getOrStart(key = 2L) {
+                secondCleanupStarted = true
+                "second"
+            }
+            assertEquals(2L, second.key)
+            assertEquals("second", second.operation.await())
+            assertTrue(secondCleanupStarted)
+        } finally {
+            cleanupScope.cancel()
+        }
+    }
+
+    @Test
+    fun `clear convergence bounds Room journals before it can purge`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val cancellationBody = source.substringAfter(
+            "private suspend fun requestAllDownloadOperationCancellation"
+        ).substringBefore("fun interruptDownloadsForWifiDisconnected")
+
+        assertTrue(clearBody.contains("withDownloadClearRoomTimeout("))
+        assertTrue(clearBody.contains("operation = \"purge cleared download operations\""))
+        assertTrue(clearBody.contains("failureReason = if"))
+        assertTrue(cancellationBody.contains("withDownloadClearRoomTimeout("))
+        assertTrue(cancellationBody.contains("operation = \"request clear cancellations\""))
+    }
+
+    @Test
+    fun `clear convergence exhaustion keeps the durable fence for a later retry`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val deferIndex = clearBody.indexOf("deferClearForRetry(")
+        val deferredBranchIndex = clearBody.indexOf("if (clearDeferredForRetry)")
+        val deferredReturnIndex = clearBody.indexOf("return@launch", deferredBranchIndex)
+        val fenceReleaseIndex = clearBody.indexOf("clearDownloadClearFence(")
+
+        assertTrue(deferIndex >= 0)
+        assertTrue(deferredBranchIndex > deferIndex)
+        assertTrue(deferredReturnIndex > deferIndex)
+        assertTrue(fenceReleaseIndex > deferredReturnIndex)
+        assertTrue(
+            clearBody.substring(deferredBranchIndex, fenceReleaseIndex)
+                .contains("持久栅栏保持生效")
+        )
+    }
+
+    @Test
+    fun `deferred task clear recovery keeps the presentation fence until a retry settles`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val recoveryBody = source.substringAfter(
+            "private fun scheduleDeferredTaskClearRecovery"
+        ).substringBefore("private fun scheduleDeferredFullLibraryDeleteRecovery")
+        val initialFenceReleaseCheck = recoveryBody.indexOf(
+            "if (finishReleasedTaskClearState(appContext))"
+        )
+        val recoveryLoopIndex = recoveryBody.indexOf(
+            "while (PersistentDownloadClearFenceStore.isActive(appContext))"
+        )
+        val joinIndex = recoveryBody.indexOf(
+            "requestAllDownloadTaskCancellation("
+        )
+        val joinedRetryIndex = recoveryBody.indexOf(").join()", joinIndex)
+        val finalFenceReleaseCheck = recoveryBody.lastIndexOf(
+            "finishReleasedTaskClearState(appContext)"
+        )
+
+        assertTrue(initialFenceReleaseCheck >= 0)
+        assertTrue(recoveryLoopIndex > initialFenceReleaseCheck)
+        assertTrue(joinIndex > recoveryLoopIndex)
+        assertTrue(joinedRetryIndex > joinIndex)
+        assertTrue(finalFenceReleaseCheck > joinedRetryIndex)
+        assertTrue(recoveryBody.contains("forceConvergence = true"))
+        assertTrue(recoveryBody.contains("while (PersistentDownloadClearFenceStore.isActive(appContext))"))
+        assertFalse(recoveryBody.contains("repeat(3)"))
+        assertTrue(recoveryBody.contains("deferredTaskClearRecoveryScheduled.set(false)"))
+        assertFalse(recoveryBody.contains("downloadClearVisibility.finish(clearToken)"))
+        assertTrue(recoveryBody.contains("val retryCompleted = try"))
+        assertTrue(recoveryBody.contains("if (!retryCompleted)"))
+    }
+
+    @Test
+    fun `full delete recovery resumes after a long provider cleanup`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val observerBody = source.substringAfter(
+            "private fun scheduleFullLibraryDeleteRecoveryAfterProviderCleanup"
+        ).substringBefore(
+            "private fun scheduleDeferredFullLibraryDeleteRecovery"
+        )
+        val recoveryBody = source.substringAfter(
+            "private fun scheduleDeferredFullLibraryDeleteRecovery"
+        ).substringBefore("private suspend fun replayFullLibraryDeleteWithoutCatalog")
+        val timeoutIndex = recoveryBody.indexOf("if (!cancellationSettled)")
+        val observerCallIndex = recoveryBody.indexOf(
+            "scheduleFullLibraryDeleteRecoveryAfterProviderCleanup(appContext)",
+            timeoutIndex
+        )
+        val returnIndex = recoveryBody.indexOf("return@launch", observerCallIndex)
+
+        assertTrue(observerBody.contains("activeOrNull()"))
+        assertTrue(observerBody.contains("cleanup.operation.invokeOnCompletion"))
+        assertTrue(observerBody.contains("scheduleDeferredFullLibraryDeleteRecovery(appContext)"))
+        assertTrue(observerBody.contains("PersistentDownloadClearFenceStore.isActive(appContext)"))
+        assertTrue(observerBody.contains("PersistentDownloadedSongDeleteIntentStore.hasPending(appContext)"))
+        assertTrue(recoveryBody.contains("repeat(3)"))
+        assertTrue(timeoutIndex >= 0)
+        assertTrue(observerCallIndex > timeoutIndex)
+        assertTrue(returnIndex > observerCallIndex)
+        assertTrue(recoveryBody.contains("providerCleanupObserved"))
+    }
+
+    @Test
+    fun `provider cleanup key follows the durable fence epoch across recovery generations`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val cleanupBody = source.substringAfter(
+            "private suspend fun cancelDownloadTasksInBackground"
+        ).substringBefore("private suspend fun releaseDownloadArtifactAfterExecutionOwnershipLoss")
+        val keyIndex = cleanupBody.indexOf("val providerCleanupKey")
+        assertTrue(keyIndex >= 0)
+        val keyExpression = cleanupBody.substring(keyIndex).lineSequence()
+            .take(3)
+            .joinToString("\n")
+        assertTrue(keyExpression.contains("PersistentDownloadClearFenceStore.currentEpoch(appContext)"))
+        assertFalse(keyExpression.contains("clearToken?.generation"))
+    }
+
+    @Test
+    fun `fence release failure preserves the durable clear progress watermark`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val releaseFailureBody = source.substringAfter("if (!fenceReleased)")
+            .substringBefore("clearPersistedDownloadClearProgress(appContext)")
+
+        assertTrue(releaseFailureBody.contains("val previousProgress"))
+        assertTrue(releaseFailureBody.contains("previousProgress?.totalItemCount"))
+        assertTrue(releaseFailureBody.contains("previousProgress?.affectedItemCount"))
+        assertTrue(releaseFailureBody.contains("totalItemCount = totalItemCount"))
+        assertFalse(releaseFailureBody.contains("totalItemCount = 1"))
+    }
+
+    @Test
+    fun `duplicate clear request waits for the existing durable recovery`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val guardIndex = clearBody.indexOf(
+            "if (hadPersistedClearFence && !forceConvergence)"
+        )
+        val gateIndex = clearBody.indexOf(
+            "val clearToken = downloadAdmissionGate.beginClear()"
+        )
+        val waitIndex = clearBody.indexOf(
+            "awaitDownloadClearFenceRelease(appContext)"
+        )
+
+        assertTrue(guardIndex >= 0)
+        assertTrue(gateIndex > guardIndex)
+        assertTrue(waitIndex > guardIndex)
+        assertTrue(
+            clearBody.substring(guardIndex, gateIndex)
+                .contains("scheduleDeferredTaskClearRecovery")
+        )
+        assertTrue(clearBody.contains("!forceConvergence"))
+    }
+
+    @Test
+    fun `failed clear fence activation abandons only an unpersisted epoch`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val failureIndex = clearBody.indexOf("if (!fenceActivated)")
+        val abandonIndex = clearBody.indexOf(
+            "abandonUnpersistedRequestIfCurrent",
+            failureIndex
+        )
+        val releaseIndex = clearBody.indexOf(
+            "downloadAdmissionGate.releaseFailedClear(clearToken)",
+            abandonIndex
+        )
+
+        assertTrue(failureIndex >= 0)
+        assertTrue(abandonIndex > failureIndex)
+        assertTrue(releaseIndex > abandonIndex)
+        assertTrue(
+            clearBody.substring(failureIndex, releaseIndex)
+                .contains("requestAbandoned")
+        )
+    }
+
+    @Test
+    fun `clear cancellation persists artifact state outside the cancellable job`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = source.substringAfter(
+            "private suspend fun releaseDownloadArtifactClaim("
+        ).substringBefore("private suspend fun releaseDownloadArtifactAfterExecutionOwnershipLoss")
+
+        assertTrue(body.contains("PersistentDownloadClearFenceStore.isActive(context)"))
+        assertTrue(body.contains("withContext(NonCancellable)"))
+        assertTrue(body.contains("persistCancellation()"))
+        assertTrue(body.contains("保留恢复凭据"))
+    }
+
+    @Test
+    fun `empty scan coverage reuses snapshot references instead of probing each song`() {
+        val audio = ManagedDownloadStorage.StoredEntry(
+            name = "song.mp3",
+            reference = "content://downloads/song.mp3",
+            mediaUri = "content://downloads/song.mp3",
+            localFilePath = null,
+            sizeBytes = 1L,
+            lastModifiedMs = 10L
+        )
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = listOf(audio),
+            pendingAudioEntries = emptyList()
+        )
+        val existingSongs = listOf(
+            DownloadedSong(
+                id = 1L,
+                name = "song",
+                artist = "artist",
+                album = "album",
+                filePath = "/stale/path/song.mp3",
+                fileSize = 1L,
+                downloadTime = 10L,
+                mediaUri = audio.mediaUri
+            ),
+            DownloadedSong(
+                id = 2L,
+                name = "missing",
+                artist = "artist",
+                album = "album",
+                filePath = "content://downloads/missing.mp3",
+                fileSize = 1L,
+                downloadTime = 9L
+            )
+        )
+
+        assertEquals(
+            DownloadedSongReferenceCoverage(
+                knownReferenceCount = 2,
+                missingReferenceCount = 1
+            ),
+            observeDownloadedSongReferencesFromSnapshot(existingSongs, snapshot)
+        )
+    }
+
+    @Test
+    fun `large refresh plan is partitioned without creating one deferred per song`() {
+        val items = (0 until 1_000).toList()
+        val batches = partitionForBoundedParallelism(items, maxParallelism = 4)
+
+        assertEquals(250, batches.size)
+        assertTrue(batches.all { batch -> batch.size in 1..4 })
+        assertEquals(items, batches.flatten())
+    }
+
+    @Test
+    fun `wifi recovery probe retries only while wifi and candidates remain`() {
+        assertTrue(
+            shouldContinueWifiRecoveryProbe(
+                networkType = TrafficNetworkType.WIFI,
+                hasPendingCandidates = true,
+                attempt = 0,
+                maxAttempts = 6
+            )
+        )
+        assertFalse(
+            shouldContinueWifiRecoveryProbe(
+                networkType = TrafficNetworkType.MOBILE,
+                hasPendingCandidates = true,
+                attempt = 0,
+                maxAttempts = 6
+            )
+        )
+        assertFalse(
+            shouldContinueWifiRecoveryProbe(
+                networkType = TrafficNetworkType.WIFI,
+                hasPendingCandidates = false,
+                attempt = 0,
+                maxAttempts = 6
+            )
+        )
+        assertFalse(
+            shouldContinueWifiRecoveryProbe(
+                networkType = TrafficNetworkType.WIFI,
+                hasPendingCandidates = true,
+                attempt = 5,
+                maxAttempts = 6
+            )
+        )
+    }
+
+    @Test
+    fun `cancelled operation is purged only after root cleanup succeeds`() {
+        assertTrue(
+            shouldPurgeCancelledDownloadOperation(
+                keepCancellationOperation = false,
+                cleanupSucceeded = true
+            )
+        )
+        assertFalse(
+            shouldPurgeCancelledDownloadOperation(
+                keepCancellationOperation = false,
+                cleanupSucceeded = false
+            )
+        )
+        assertFalse(
+            shouldPurgeCancelledDownloadOperation(
+                keepCancellationOperation = true,
+                cleanupSucceeded = true
+            )
+        )
+    }
+
+    @Test
+    fun `finalized temporary cleanup keeps audio and both metadata targets together`() {
+        assertEquals(
+            listOf(
+                "song.mp3",
+                "song.mp3.npmeta.json",
+                "song.mp3.npmeta.pending.json"
+            ),
+            finalizedTemporaryWriteTargetNames(" song.mp3 ")
+        )
+        assertTrue(finalizedTemporaryWriteTargetNames(" ").isEmpty())
+    }
+
+    @Test
+    fun `terminal temporary cleanup batch coalesces valid targets without duplicates`() {
+        val batch = TerminalTemporaryWriteCleanupBatch()
+
+        batch.addAll(listOf(" song.mp3 ", "", "song.mp3", "song.mp3.npmeta.json"))
+        assertEquals(
+            listOf("song.mp3", "song.mp3.npmeta.json"),
+            batch.takeAll()
+        )
+        assertTrue(batch.isEmpty())
+
+        batch.addAll(listOf("song.mp3.npmeta.pending.json"))
+        assertEquals(listOf("song.mp3.npmeta.pending.json"), batch.takeAll())
+    }
+
+    @Test
+    fun `wifi restoration invalidates stale wifi-bound pause work`() {
+        assertTrue(
+            isWifiBoundNetworkPolicyObservationCurrent(
+                snapshotEpoch = 8L,
+                currentEpoch = 8L,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+        assertTrue(
+            isWifiBoundNetworkPolicyObservationCurrent(
+                snapshotEpoch = 8L,
+                currentEpoch = 8L,
+                currentNetworkType = TrafficNetworkType.ROAMING
+            )
+        )
+        assertFalse(
+            isWifiBoundNetworkPolicyObservationCurrent(
+                snapshotEpoch = 8L,
+                currentEpoch = 8L,
+                currentNetworkType = TrafficNetworkType.WIFI
+            )
+        )
+        assertFalse(
+            isWifiBoundNetworkPolicyObservationCurrent(
+                snapshotEpoch = 8L,
+                currentEpoch = 9L,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+    }
+
+    @Test
+    fun `restorable cover reuses verified short name before legacy hash lookup`() = runBlocking {
+        val shortReference = "content://downloads/Covers/Artist-Song-12345678.jpg"
+        val assetHash = "a".repeat(64)
+        var legacyLookupCalled = false
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = "https://example.com/original.jpg"
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = assetHash,
+            baselineCoverAssetFileName = "Artist-Song-12345678.jpg"
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                if (reference == shortReference) {
+                    ManagedDownloadCoverAssetStore.MaterializedCover(
+                        reference = reference,
+                        assetHash = assetHash,
+                        fileName = "Artist-Song-12345678.jpg"
+                    )
+                } else {
+                    null
+                }
+            },
+            findManagedReferenceByName = { shortReference },
+            findContentAddressedReference = {
+                legacyLookupCalled = true
+                null
+            }
+        )
+
+        assertEquals(shortReference, resolved)
+        assertFalse(legacyLookupCalled)
+    }
+
+    @Test
+    fun `restorable cover retains legacy pure sha lookup fallback`() = runBlocking {
+        val assetHash = "b".repeat(64)
+        val pureHashReference = "/downloads/Covers/$assetHash.jpg"
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = "https://example.com/original.jpg"
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = assetHash
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                ManagedDownloadCoverAssetStore.MaterializedCover(
+                    reference = reference,
+                    assetHash = assetHash
+                ).takeIf { reference == pureHashReference }
+            },
+            findManagedReferenceByName = { null },
+            findContentAddressedReference = { hash ->
+                pureHashReference.takeIf { hash == assetHash }
+            }
+        )
+
+        assertEquals(pureHashReference, resolved)
+    }
+
+    @Test
+    fun `corrupted legacy pure sha cover falls back to source`() = runBlocking {
+        val assetHash = "b".repeat(64)
+        val sourceReference = "https://example.com/original.jpg"
+        val pureHashReference = "/downloads/Covers/$assetHash.jpg"
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = sourceReference
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = assetHash
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                ManagedDownloadCoverAssetStore.MaterializedCover(
+                    reference = reference,
+                    assetHash = "c".repeat(64)
+                ).takeIf { reference == pureHashReference }
+            },
+            findManagedReferenceByName = { null },
+            findContentAddressedReference = { pureHashReference }
+        )
+
+        assertEquals(sourceReference, resolved)
+    }
+
+    @Test
+    fun `baseline falls back to source after its short file is overwritten`() = runBlocking {
+        val sourceReference = "https://example.com/original.jpg"
+        val shortReference = "content://downloads/Covers/Artist-Song-12345678.jpg"
+        val baselineHash = "b".repeat(64)
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = sourceReference
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = baselineHash,
+            currentCoverAssetHash = "c".repeat(64),
+            baselineCoverAssetFileName = "Artist-Song-12345678.jpg",
+            currentCoverAssetFileName = "Artist-Song-12345678.jpg"
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                if (reference == shortReference) {
+                    ManagedDownloadCoverAssetStore.MaterializedCover(
+                        reference = reference,
+                        assetHash = "c".repeat(64)
+                    )
+                } else {
+                    null
+                }
+            },
+            findManagedReferenceByName = { shortReference },
+            findContentAddressedReference = { null }
+        )
+
+        assertEquals(sourceReference, resolved)
+    }
+
+    @Test
+    fun `SAF permission loss on stale reference still resolves the refreshed short file`() = runBlocking {
+        val staleReference = "content://old-root/Covers/Artist-Song-12345678.jpg"
+        val refreshedReference = "content://new-root/Covers/Artist-Song-12345678.jpg"
+        val assetHash = "d".repeat(64)
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = staleReference
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = assetHash,
+            baselineCoverAssetFileName = "Artist-Song-12345678.jpg"
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                if (reference == staleReference) {
+                    throw SecurityException("permission lost")
+                }
+                ManagedDownloadCoverAssetStore.MaterializedCover(
+                    reference = reference,
+                    assetHash = assetHash
+                )
+            },
+            findManagedReferenceByName = { refreshedReference },
+            findContentAddressedReference = { null }
+        )
+
+        assertEquals(refreshedReference, resolved)
+    }
+
+    @Test
+    fun `restorable cover lookup only fingerprints and never materializes a second copy`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val lookup = source.substringAfter("internal suspend fun resolveManagedRestorableCoverReference")
+            .substringBefore("internal suspend fun syncDownloadedSongMetadataNow")
+
+        assertTrue(lookup.contains("ManagedDownloadCoverAssetStore.inspect("))
+        assertFalse(lookup.contains("ManagedDownloadCoverAssetStore.materialize("))
+    }
+
+    @Test
+    fun `managed metadata editing and downloaded playback require strict snapshot evidence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val restorableLookup = source.substringAfter("internal suspend fun readManagedRestorableMetadata")
+            .substringBefore("internal suspend fun resolveManagedRestorableCoverReference")
+        val metadataSync = source.substringAfter("internal suspend fun syncDownloadedSongMetadataNow")
+            .substringBefore("private suspend fun publishDownloadedSongMetadataFallback")
+        val downloadedPlayback = source.substringAfter("fun playDownloadedSong")
+            .substringBefore("private fun hydrateDownloadedSidecarLyricsFast")
+
+        assertTrue(restorableLookup.contains("resolveFinalizedManagedAudioSnapshot"))
+        assertTrue(metadataSync.contains("resolveFinalizedManagedAudioSnapshot"))
+        assertTrue(
+            metadataSync.indexOf("resolveFinalizedManagedAudioSnapshot") <
+                metadataSync.indexOf("persistDownloadedMetadata(")
+        )
+        assertTrue(downloadedPlayback.contains("resolvePlayableManagedAudioSnapshot"))
+        assertFalse(downloadedPlayback.contains("ManagedDownloadStorage.toPlayableUri(playbackReference)"))
+    }
+
+    @Test
+    fun `existing unfinalized audio selects finalization only`() {
+        assertEquals(
+            PreExistingDownloadedAudioAction.FINALIZE_EXISTING,
+            resolvePreExistingDownloadedAudioAction(
+                hasExistingAudio = true,
+                needsFinalization = true
+            )
+        )
+        assertEquals(
+            PreExistingDownloadedAudioAction.DIRECT_SETTLE,
+            resolvePreExistingDownloadedAudioAction(
+                hasExistingAudio = true,
+                needsFinalization = false
+            )
+        )
+    }
+
+    @Test
+    fun `download playback hydration survives local reference normalization`() {
+        val quickSong = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/1",
+            localFileName = "song.mp3",
+            localFilePath = "/storage/emulated/0/neriplayer-download/song.mp3"
+        )
+        val normalizedSong = quickSong.copy(
+            mediaUri = "content://downloads/audio/2"
+        )
+
+        assertFalse(quickSong.stableKey() == normalizedSong.stableKey())
+        assertTrue(
+            shouldApplyDownloadedPlaybackHydration(
+                currentSong = normalizedSong,
+                quickSong = quickSong
+            )
+        )
+        assertFalse(
+            shouldApplyDownloadedPlaybackHydration(
+                currentSong = normalizedSong.copy(
+                    mediaUri = "content://downloads/audio/3",
+                    localFilePath = null
+                ),
+                quickSong = quickSong
+            )
+        )
+    }
+
+    @Test
+    fun `unfinalized recovery only rebuilds a snapshot after deleting an artifact`() {
+        assertFalse(shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount = 0))
+        assertTrue(shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount = 1))
+    }
+
+    @Test
+    fun `download with a network cover cannot finalize without an accessible sidecar`() {
+        assertFalse(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = null,
+                coverAccessible = false
+            )
+        )
+        assertFalse(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = "content://downloads/cover.jpg",
+                coverAccessible = false
+            )
+        )
+        assertTrue(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = "content://downloads/cover.jpg",
+                coverAccessible = true
+            )
+        )
+        assertTrue(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = false,
+                coverReference = null,
+                coverAccessible = false
+            )
+        )
+    }
+
+    @Test
+    fun `missing optional network cover can finalize as degraded`() {
+        assertTrue(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = null,
+                coverAccessible = false,
+                allowMissingOptionalCover = true
+            )
+        )
+    }
+
+    @Test
+    fun `post core enrichment failure remains completed when audio is committed`() {
+        assertEquals(
+            DownloadStatus.COMPLETED,
+            resolvePostCoreEnrichmentTaskStatus(coreAudioCommitted = true)
+        )
+        assertEquals(
+            DownloadStatus.FAILED,
+            resolvePostCoreEnrichmentTaskStatus(coreAudioCommitted = false)
+        )
+    }
+
+    @Test
+    fun `degraded core retry skips explicit metadata action and stopped operations`() {
+        assertTrue(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "DEGRADED_COMPLETE",
+                metadataActionRequired = false,
+                userStopped = false
+            )
+        )
+        assertFalse(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "DEGRADED_COMPLETE",
+                metadataActionRequired = true,
+                userStopped = false
+            )
+        )
+        assertFalse(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "DEGRADED_COMPLETE",
+                metadataActionRequired = false,
+                userStopped = true
+            )
+        )
+        assertFalse(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "ASSETS_ENRICHING",
+                metadataActionRequired = false,
+                userStopped = false
+            )
+        )
+    }
 
     @Test
     fun `runNonCancellableDownloadRollback still completes after coroutine cancellation`() = runBlocking {
@@ -39,14 +1217,1209 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `startup scan is skipped once lightweight catalog is ready`() {
-        assertEquals(false, shouldRunInitialDownloadScan(catalogReady = true))
+    fun `batch cancellation wait stops waiting at its fixed budget without cancelling cleanup`() = runBlocking {
+        val completed = launch { }
+        completed.join()
+        assertTrue(awaitBatchDownloadJobsSettled(listOf(completed), timeoutMs = 50L))
+
+        val blocker = CompletableDeferred<Unit>()
+        val waiting = launch { blocker.await() }
+        try {
+            assertFalse(awaitBatchDownloadJobsSettled(listOf(waiting), timeoutMs = 50L))
+            assertTrue(waiting.isActive)
+        } finally {
+            blocker.complete(Unit)
+            waiting.join()
+        }
+    }
+
+    @Test
+    fun `clear all routes the batch wait through the bounded cancellation helper`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+
+        assertFalse(source.contains("batchJobs.joinAll()"))
+        val backgroundCleanupBody = source.substringAfter(
+            "private suspend fun cancelDownloadTasksInBackground"
+        ).substringBefore("private suspend fun awaitDownloadCancellationsSettled")
+        assertTrue(backgroundCleanupBody.contains("awaitBatchDownloadJobsAfterCancellation("))
+        assertFalse(backgroundCleanupBody.contains("batchJobs.joinAll()"))
+        assertTrue(source.contains("DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS"))
+    }
+
+    @Test
+    fun `clear all persists cancellation before waiting for batch jobs`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearAllBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val journalIndex = clearAllBody.indexOf(
+            "requestAllDownloadOperationCancellation("
+        )
+        val immediateHostCancellationIndex = clearAllBody.indexOf(
+            "stopDownloadExecutionImmediately("
+        )
+        val finalizationIndex = clearAllBody.indexOf(
+            "DownloadExecutionRoomStore.finalizeRequestedCancellations("
+        )
+        val backgroundCleanupIndex = clearAllBody.indexOf(
+            "cancelDownloadTasksInBackground("
+        )
+
+        assertTrue(journalIndex >= 0)
+        assertTrue(
+            clearAllBody.substring(journalIndex, immediateHostCancellationIndex)
+                .contains("operationIds = clearOperationIds")
+        )
+        assertTrue(journalIndex in 0 until immediateHostCancellationIndex)
+        assertTrue(finalizationIndex > journalIndex)
+        assertTrue(backgroundCleanupIndex > finalizationIndex)
+        assertTrue(
+            source.contains("DownloadExecutionHosts.cancelAllOwned(appContext)")
+        )
+        assertTrue(
+            source.substringAfter("private suspend fun cancelDownloadTasksInBackground")
+                .contains("awaitBatchDownloadJobsAfterCancellation(")
+        )
+        assertTrue(source.contains("repeat(DOWNLOAD_CANCEL_JOURNAL_MAX_ATTEMPTS)"))
+        assertTrue(source.contains("DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS"))
+    }
+
+    @Test
+    fun `clear all suppresses explicit resume candidates before asynchronous journal cancellation`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val screenSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/DownloadProgressScreen.kt"
+        ).readText()
+        val clearAllBody = managerSource.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+
+        assertTrue(managerSource.contains("val isClearingDownloadTasks: StateFlow<Boolean>"))
+        assertTrue(
+            managerSource.contains(
+                "val isDownloadTaskClearPresentationActive: StateFlow<Boolean>"
+            )
+        )
+        assertTrue(
+            managerSource.contains(
+                "val isDownloadTaskClearPresentationCleared: StateFlow<Boolean>"
+            )
+        )
+        assertTrue(
+            clearAllBody.indexOf("downloadClearVisibility.begin(clearToken)") <
+                clearAllBody.indexOf("taskStore.clearAllTasks()")
+        )
+        assertTrue(managerSource.contains("downloadClearVisibility.finish(clearToken)"))
+        assertTrue(
+            screenSource.contains(
+                "GlobalDownloadManager.isDownloadTaskClearPresentationActive"
+            )
+        )
+        assertTrue(
+            screenSource.contains(
+                "val effectivePresentationCleared = " +
+                    "isDownloadTaskClearPresentationActive"
+            )
+        )
+        val bootstrapEffect = screenSource.substringAfter(
+            "LaunchedEffect(\n        context,\n        taskPresenceKey"
+        ).substringBefore("val bootstrapState")
+        assertTrue(
+            bootstrapEffect.contains("isClearingDownloadTasks")
+        )
+        assertTrue(
+            bootstrapEffect.contains("isDownloadTaskClearPresentationActive")
+        )
+        assertTrue(bootstrapEffect.contains("isDownloadTaskClearPresentationCleared"))
+        assertTrue(
+            bootstrapEffect.contains(
+                "isClearingDownloadTasks ||\n                isDownloadTaskClearPresentationActive ||"
+            )
+        )
+        assertTrue(
+            bootstrapEffect.indexOf("explicitResumeCandidates = emptyList()") <
+                bootstrapEffect.indexOf("loadDownloadProgressBootstrapState(context)")
+        )
+        assertFalse(
+            screenSource.contains(
+                "val visibleTasks = if (effectivePresentationCleared)"
+            )
+        )
+        assertFalse(screenSource.contains("val visibleTasks = if (isClearingDownloadTasks)"))
+        assertTrue(screenSource.contains("R.string.download_clearing_tasks"))
+        assertTrue(screenSource.contains("visibleDownloadProgressTasks(downloadTasks)"))
+        assertFalse(screenSource.contains("item(key = \"queued-summary\")"))
+        assertTrue(screenSource.contains("R.string.download_progress_with_percentage"))
+    }
+
+    @Test
+    fun `clear presentation gate starts before async work and releases after durable fence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val beginIndex = clearBody.indexOf("downloadAdmissionGate.beginClear()")
+        val presentationBeginIndex = clearBody.indexOf(
+            "taskStore.beginClearPresentation("
+        )
+        val coroutineLaunchIndex = clearBody.indexOf(
+            "return scope.launch",
+            presentationBeginIndex
+        )
+        val finallyBody = clearBody.substringAfter("} finally {")
+        val presentationFinishIndex = finallyBody.indexOf(
+            "taskStore.finishClearPresentation(taskPresentationToken)"
+        )
+        val fenceStateIndex = finallyBody.indexOf(
+            "PersistentDownloadClearFenceStore.isTaskClearActive(appContext)"
+        )
+
+        assertTrue(beginIndex >= 0)
+        assertTrue(presentationBeginIndex > beginIndex)
+        assertTrue(coroutineLaunchIndex > presentationBeginIndex)
+        assertTrue(presentationFinishIndex > fenceStateIndex)
+        assertTrue(source.contains("currentClearPresentationToken()"))
+        assertTrue(source.contains("finishClearPresentation(token)"))
+    }
+
+    @Test
+    fun `download requests keep the creation admission generation across clear`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val singleBody = source.substringAfter("private fun scheduleUserDownload(")
+            .substringBefore("internal suspend fun executeDownloadOperation")
+        val batchBody = source.substringAfter("private fun startBatchDownload(")
+            .substringBefore("private class BatchDownloadSession")
+
+        assertTrue(singleBody.contains("val capturedAdmissionTicket = requestedAdmissionTicket"))
+        assertTrue(
+            singleBody.contains("openDownloadAdmissionTicketOrNull(")
+        )
+        assertTrue(batchBody.contains("val capturedAdmissionTicket = requestedAdmissionTicket"))
+        assertTrue(singleBody.contains("capturedAdmissionTicket\n                ?: awaitDownloadAdmissionTicket"))
+        assertTrue(
+            batchBody.contains(
+                "capturedAdmissionTicket\n                ?: if (awaitAdmissionWhenUnavailable)"
+            )
+        )
+        assertTrue(batchBody.contains("清空期间跳过无票据批量下载请求"))
+        assertFalse(singleBody.contains("val admissionTicket = awaitDownloadAdmissionTicket(appContext)"))
+        assertFalse(batchBody.contains("val admissionTicket = awaitDownloadAdmissionTicket(appContext)"))
+    }
+
+    @Test
+    fun `resuming a task keeps its creation admission generation across clear`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val resumeBody = source.substringAfter("fun resumeDownloadTask(")
+            .substringBefore("private suspend fun awaitSongCancellationSettled")
+        val capturedTicketIndex = resumeBody.indexOf(
+            "val requestedAdmissionTicket = downloadAdmissionGate.openTicketOrNull()"
+        )
+        val scheduleIndex = resumeBody.indexOf("scheduleUserDownload(")
+        val forwardedTicketIndex = resumeBody.indexOf(
+            "requestedAdmissionTicket = requestedAdmissionTicket"
+        )
+
+        assertTrue(capturedTicketIndex >= 0)
+        assertTrue(scheduleIndex > capturedTicketIndex)
+        assertTrue(forwardedTicketIndex > scheduleIndex)
+        assertTrue(resumeBody.contains("replacingAttemptId = task.attemptId"))
+        assertTrue(
+            source.contains(
+                "requestedAdmissionTicket: Long? = null"
+            )
+        )
+    }
+
+    @Test
+    fun `download progress task recovery button invokes the durable resume entry point`() {
+        val screenSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/DownloadProgressScreen.kt"
+        ).readText()
+
+        assertTrue(
+            screenSource.contains(
+                "GlobalDownloadManager.resumeDownloadTask(context, songKey)"
+            )
+        )
+        assertFalse(screenSource.contains("onResume: () -> Unit = {}"))
+    }
+
+    @Test
+    fun `legacy download backfill is scheduled after startup catalog recovery`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val initializeBody = managerSource.substringAfter("fun initialize(context: Context)")
+            .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+
+        val catalogRestoreIndex = initializeBody.indexOf(
+            "val restoredCatalog = restorePersistedDownloadedSongs(appContext)"
+        )
+        val pendingRecoveryIndex = initializeBody.indexOf(
+            "recoverPendingDownloadsForStartup("
+        )
+        val coverRepairIndex = initializeBody.indexOf(
+            "repairFinalizedDownloadedCoversFromRoot("
+        )
+        val scheduleIndex = initializeBody.indexOf(
+            "LegacyJsonCleanupScheduler.schedule(appContext, \"download-startup\")"
+        )
+
+        assertTrue(catalogRestoreIndex >= 0)
+        assertTrue(pendingRecoveryIndex > catalogRestoreIndex)
+        assertTrue(coverRepairIndex > pendingRecoveryIndex)
+        assertTrue(scheduleIndex > coverRepairIndex)
+        assertFalse(initializeBody.contains("runDownloadUpgradeOnce(appContext)"))
+        assertTrue(
+            initializeBody.contains("旧下载数据库回填不得阻塞首屏")
+        )
+        assertTrue(initializeBody.contains("startupRecoveryMutex.withLock"))
+        assertTrue(initializeBody.contains("STARTUP_INITIAL_SCAN_WAIT_TIMEOUT_MS"))
+        assertTrue(initializeBody.contains("启动目录扫描超过交互等待预算"))
+        assertTrue(initializeBody.contains("scheduleCatalogReconcile(appContext, forceRefresh = true)"))
+        assertTrue(
+            managerSource.contains(
+                "internal suspend fun reconcileMaterializedLegacyDownloads(context: Context)"
+            )
+        )
+        val reconcileBody = managerSource
+            .substringAfter(
+                "internal suspend fun reconcileMaterializedLegacyDownloads(context: Context)"
+            )
+            .substringBefore("\n    private fun")
+        assertTrue(reconcileBody.contains("recoverPendingDownloadsForStartup("))
+        assertTrue(reconcileBody.contains("repairFinalizedDownloadedCoversFromRoot("))
+    }
+
+    @Test
+    fun `startup recovery avoids fixed multi second waits`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        assertFalse(source.contains("STARTUP_PROGRESS_RESTORE_WAIT_TIMEOUT_MS = 500L"))
+
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("internal suspend fun reconcileMaterializedLegacyDownloads")
+        assertTrue(initializeBody.contains("yield()"))
+        assertFalse(initializeBody.contains("INITIAL_SCAN_DELAY_MS"))
+
+        val startupRecoveryBody = source
+            .substringAfter("private suspend fun recoverPendingDownloadsForStartup")
+            .substringBefore("private fun loadPendingWorkingProgressSnapshotOnce")
+        assertTrue(startupRecoveryBody.contains("yield()"))
+        assertFalse(startupRecoveryBody.contains("delay(1_500L)"))
+    }
+
+    @Test
+    fun `new execution does not wait for startup progress restore`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val startBody = source.substringAfter("suspend fun startDownload(")
+            .substringBefore("private fun scheduleUserDownload")
+        assertFalse(startBody.contains("awaitStartupProgressRestore()"))
+    }
+
+    @Test
+    fun `clear and delete barriers never wait indefinitely`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val fastClearBody = source.substringAfter("private suspend fun runFastTaskClearPhase(")
+            .substringBefore("private fun scheduleImmediateDownloadExecutionStop")
+        assertFalse(fastClearBody.contains("downloadAdmissionGate.awaitIdle()"))
+        assertTrue(fastClearBody.contains("DOWNLOAD_CLEAR_FAST_DB_WAIT_MS"))
+        assertTrue(source.contains("withTimeoutOrNull(DOWNLOADED_SONG_DELETE_BARRIER_TIMEOUT_MS)"))
+        assertTrue(source.contains("WAITING_DELETE_CLEANUP"))
+        assertTrue(source.contains("markWaitingForStorageMutation"))
+    }
+
+    @Test
+    fun `retryable batch schedule rejection stays queued and wakes the shared pump`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = source.substringAfter(
+            "private suspend fun handleBatchDownloadScheduleFailure"
+        ).substringBefore("fun confirmTrafficRiskDownload")
+        val retryIndex = body.indexOf("if (retryMarked)")
+        val pumpIndex = body.indexOf("ForegroundDownloadWorker.schedule(")
+        val queuedIndex = body.indexOf("DownloadStatus.QUEUED")
+        val failedIndex = body.indexOf("DownloadStatus.FAILED")
+
+        assertTrue(retryIndex >= 0)
+        assertTrue(pumpIndex > retryIndex)
+        assertTrue(queuedIndex > pumpIndex)
+        assertTrue(failedIndex > queuedIndex)
+    }
+
+    @Test
+    fun `task clear presentation does not stay pinned by full library delete intent`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val finishBody = source.substringAfter(
+            "private fun finishReleasedTaskClearState"
+        ).substringBefore("private suspend fun awaitDownloadClearFenceRelease")
+
+        assertTrue(clearBody.contains("PersistentDownloadClearFenceStore.isTaskClearActive(appContext)"))
+        assertFalse(clearBody.contains("val durableFenceActive = PersistentDownloadClearFenceStore.isActive(appContext)"))
+        assertTrue(finishBody.contains("PersistentDownloadClearFenceStore.isTaskClearActive(context)"))
+        assertFalse(finishBody.contains("PersistentDownloadClearFenceStore.isActive(context)"))
+    }
+
+    @Test
+    fun `clear completion schedules coalesced reconcile instead of a forced scan`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        assertTrue(clearBody.contains("scheduleCatalogReconcile(appContext, forceRefresh = true)"))
+        assertFalse(clearBody.contains("refreshDownloadedSongsForManager(appContext, forceRefresh = true)"))
+    }
+
+    @Test
+    fun `clear fence is durable before task removal and blocks startup recovery`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearAllBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+
+        val clearVisibilityIndex = clearAllBody.indexOf("downloadClearVisibility.begin(")
+        val activateIndex = clearAllBody.indexOf("activateDownloadClearFence(appContext)")
+        val durableActivateIndex = clearAllBody.indexOf(
+            "PersistentDownloadClearFenceStore.activate("
+        )
+        val presentationClearedIndex = clearAllBody.indexOf(
+            "downloadClearVisibility.markFencePersisted(clearToken)"
+        )
+        val firstRunClearIndex = clearAllBody.indexOf(
+            "downloadAdmissionGate.runClear(clearToken)"
+        )
+        val firstPersistedProgressIndex = clearAllBody.indexOf(
+            "persistDownloadClearProgress(appContext, clearToken)"
+        )
+        val immediateStopIndex = clearAllBody.indexOf("stopDownloadExecutionImmediately(")
+        val firstTaskClearIndex = clearAllBody.indexOf("taskStore.clearAllTasks()")
+        val journalIndex = clearAllBody.indexOf(
+            "requestAllDownloadOperationCancellation("
+        )
+        val clearFenceIndex = clearAllBody.indexOf("clearDownloadClearFence(")
+        val clearRequestIndex = clearAllBody.indexOf(
+            "PersistentDownloadClearFenceStore.beginClear("
+        )
+
+        assertTrue(clearRequestIndex >= 0)
+        assertTrue(clearRequestIndex > clearAllBody.indexOf("downloadAdmissionGate.beginClear()"))
+        assertTrue(clearVisibilityIndex < clearRequestIndex)
+        assertTrue(durableActivateIndex > clearRequestIndex)
+        assertTrue(clearVisibilityIndex < durableActivateIndex)
+        assertTrue(activateIndex > clearVisibilityIndex)
+        assertTrue(presentationClearedIndex > durableActivateIndex)
+        assertTrue(firstRunClearIndex > durableActivateIndex)
+        assertTrue(presentationClearedIndex < firstRunClearIndex)
+        assertTrue(firstPersistedProgressIndex < firstRunClearIndex)
+        assertTrue(firstTaskClearIndex > durableActivateIndex)
+        assertTrue(clearAllBody.indexOf("val preClearTasks = taskStore.currentTasks()") >= 0)
+        assertTrue(clearAllBody.indexOf("clearBatchDownloadPresentation()") > durableActivateIndex)
+        assertTrue(immediateStopIndex > journalIndex)
+        assertTrue(journalIndex > firstTaskClearIndex)
+        assertTrue(
+            clearAllBody.substring(journalIndex, immediateStopIndex)
+                .contains("operationIds = clearOperationIds")
+        )
+        assertTrue(clearFenceIndex > journalIndex)
+        assertTrue(
+            clearAllBody.indexOf("return@runClear") < clearFenceIndex
+        )
+        assertTrue(
+            initializeBody.indexOf("PersistentDownloadClearFenceStore.isActive(appContext)") <
+                initializeBody.indexOf("recoverPendingAudioWritesFromRoot(")
+        )
+        assertTrue(source.contains("private suspend fun activateDownloadClearFence"))
+        assertTrue(source.contains("private fun stopDownloadExecutionImmediately"))
+        assertTrue(source.contains("private suspend fun clearDownloadClearFence"))
+        assertTrue(source.contains("DOWNLOAD_CLEAR_PRESENTATION_BUDGET_MS = 500L"))
+        assertFalse(clearAllBody.contains("CoroutineStart.UNDISPATCHED"))
+        assertTrue(source.contains("if (isDownloadClearFenceActive(appContext))"))
+        assertFalse(clearAllBody.contains("beginAndActivate"))
+        assertTrue(clearAllBody.contains("while (true)"))
+        assertTrue(clearAllBody.contains("下载清空流程失败，保持栅栏并重试"))
+        assertTrue(
+            clearAllBody.lastIndexOf("retrying failed download clear") <
+                clearAllBody.indexOf("clearDownloadClearFence(")
+        )
+    }
+
+    @Test
+    fun `activated clear publishes progress before waiting for admission mutex`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val launchBody = clearBody.substringAfter("return scope.launch {")
+        val firstRunClearIndex = clearBody.indexOf(
+            "downloadAdmissionGate.runClear(clearToken)"
+        )
+        val markIndex = clearBody.indexOf(
+            "downloadClearVisibility.markFencePersisted(clearToken)"
+        )
+        val persistIndex = clearBody.indexOf(
+            "persistDownloadClearProgress(appContext, clearToken)"
+        )
+
+        assertFalse(clearBody.contains("CoroutineStart.UNDISPATCHED"))
+        assertTrue(launchBody.contains("PersistentDownloadClearFenceStore.activate("))
+        assertTrue(markIndex < firstRunClearIndex)
+        assertTrue(persistIndex < firstRunClearIndex)
+    }
+
+    @Test
+    fun `fast clear cancels captured batch jobs before owner capture`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val fastBody = clearBody.substringAfter("if (startFastClearUndispatched) {")
+            .substringBefore("if (clearToken.ownsClear && !startFastClearUndispatched)")
+        val cancelIndex = fastBody.indexOf("cancelBatchDownloadJobsForClear(")
+        val taskClearIndex = fastBody.indexOf("taskStore.clearAllTasks()")
+        val ownerCaptureIndex = clearBody.indexOf("captureDownloadClearOwnership(")
+
+        assertTrue(cancelIndex >= 0)
+        assertTrue(taskClearIndex > cancelIndex)
+        assertTrue(ownerCaptureIndex > cancelIndex)
+        assertTrue(fastBody.contains("batchJobs = activeBatchJobsAtClearStart"))
+    }
+
+    @Test
+    fun `single cancellation removes presentation before durable cancellation work`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val entryBody = source.substringAfter("fun cancelDownloadTask(songKey: String)")
+            .substringBefore("private fun requestDownloadTaskCancellation")
+        val batchEntryBody = source.substringAfter("private fun requestDownloadTaskCancellation")
+            .substringBefore("private suspend fun cancelDownloadTasksDurably")
+        val durableBody = source.substringAfter("private suspend fun cancelDownloadTaskDurably")
+            .substringBefore("fun clearAllDownloadTasks()")
+
+        assertFalse(entryBody.contains("operationIdForSong("))
+        assertFalse(entryBody.contains("DownloadExecutionOperationStore().read("))
+        assertTrue(entryBody.contains("requestDownloadTaskCancellation(setOf(songKey))"))
+        assertTrue(batchEntryBody.contains("cancelDownloadTasksDurably("))
+        assertTrue(
+            batchEntryBody.indexOf("removeDownloadTask(") <
+                batchEntryBody.indexOf("return scope.launch")
+        )
+        assertTrue(durableBody.contains("operationIdForSong("))
+        assertTrue(durableBody.contains("requestOperationCancellation(setOf(songKey))"))
+    }
+
+    @Test
+    fun `batch Wi-Fi wait schedules one global wake instead of one work per operation`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val workerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/WifiBoundDownloadWakeWorker.kt"
+        ).readText()
+        val schedulingBody = managerSource.substringAfter(
+            "private suspend fun scheduleWifiBoundDownloadWakeups"
+        ).substringBefore("private suspend fun pauseActiveDownloadsForNetworkPolicyIfNeeded")
+
+        assertTrue(schedulingBody.contains("WifiBoundDownloadWakeWorker.scheduleAll("))
+        assertFalse(schedulingBody.contains("wakeupEntries.forEach"))
+        assertTrue(workerSource.contains("private const val GLOBAL_WORK_NAME"))
+        assertTrue(workerSource.contains("fun scheduleAll(context: Context)"))
+        assertFalse(workerSource.contains("fun rearmAll(context: Context)"))
+        assertTrue(workerSource.contains("recoverPendingDownloadsFromWifiWake(applicationContext)"))
+        assertTrue(
+            workerSource.contains("applicationContext.currentDownloadNetworkTypeOrNull()")
+        )
+        assertFalse(
+            workerSource.contains("applicationContext.currentTrafficNetworkTypeOrNull()")
+        )
+    }
+
+    @Test
+    fun `partial Wi-Fi cancellation does not cancel the global wake for other songs`() {
+        val workerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/WifiBoundDownloadWakeWorker.kt"
+        ).readText()
+        val partialCancelBody = workerSource.substringAfter(
+            "fun cancelAll("
+        ).substringBefore("fun cancelAllOwned(")
+
+        assertTrue(partialCancelBody.contains("cancelUniqueWork(uniqueWorkName(operationId))"))
+        assertFalse(partialCancelBody.contains("cancelAllWorkByTag(ALL_WIFI_WAKE_WORK_TAG)"))
+        assertTrue(
+            workerSource.substringAfter("fun cancelAllOwned(")
+                .contains("cancelAllWorkByTag(ALL_WIFI_WAKE_WORK_TAG)")
+        )
+    }
+
+    @Test
+    fun `recovery triggers share one suspending slot instead of dropping startup work`() = runBlocking {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        assertTrue(source.contains("private val pendingDownloadRecoverySlot = Mutex()"))
+        assertTrue(source.contains("withPendingDownloadRecoverySlot(\"startup\")"))
+        assertTrue(source.contains("withPendingDownloadRecoverySlot(\"network:"))
+        assertFalse(source.contains("pendingDownloadRecoveryActive"))
+        assertFalse(source.contains("跳过启动下载恢复: 已有恢复任务执行中"))
+
+        val slot = Mutex()
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+        val first = launch {
+            slot.withLock {
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+            }
+        }
+        firstEntered.await()
+        val second = launch {
+            slot.withLock {
+                secondEntered.complete(Unit)
+            }
+        }
+        delay(20L)
+        assertFalse(secondEntered.isCompleted)
+        releaseFirst.complete(Unit)
+        secondEntered.await()
+        joinAll(first, second)
+    }
+
+    @Test
+    fun `startup restores Room progress before interactive gate`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+        val progressIndex = initializeBody.indexOf("restorePersistedDownloadProgress(")
+        val gateIndex = initializeBody.indexOf("AppStartupWorkGate.awaitInteractiveContentOrTimeout()")
+
+        assertTrue(progressIndex >= 0)
+        assertTrue(gateIndex >= 0)
+        assertTrue(progressIndex < gateIndex)
+        assertEquals(1, initializeBody.split("restorePersistedDownloadProgress(").size - 1)
+    }
+
+    @Test
+    fun `startup progress backfill is admitted after the clear fence check`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val restoreBody = source.substringAfter(
+            "private suspend fun restorePersistedDownloadProgress(context: Context)"
+        ).substringBefore("private suspend fun reconcilePendingDownloadArtifacts")
+        val ticketIndex = restoreBody.indexOf(
+            "val capturedAdmissionTicket = admissionTicket"
+        )
+        val admissionIndex = restoreBody.indexOf(
+            "downloadAdmissionGate.admit(capturedAdmissionTicket)"
+        )
+        val fenceIndex = restoreBody.indexOf("if (isDownloadClearFenceActive(context))")
+        val taskBackfillIndex = restoreBody.indexOf("taskStore.ensureDownloadTasks(")
+        val progressBackfillIndex = restoreBody.indexOf("taskStore.restoreProgressBatch(")
+        val staleSnapshotIndex = restoreBody.indexOf("if (!admitted || blockedByDurableClear)")
+
+        assertTrue(ticketIndex >= 0)
+        assertTrue(admissionIndex > ticketIndex)
+        assertTrue(fenceIndex > admissionIndex)
+        assertTrue(taskBackfillIndex > fenceIndex)
+        assertTrue(progressBackfillIndex > taskBackfillIndex)
+        assertTrue(staleSnapshotIndex > progressBackfillIndex)
+        assertTrue(restoreBody.contains("跳过任务卡片回填"))
+    }
+
+    @Test
+    fun `startup recovery keeps the outer admission ticket`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("internal suspend fun reconcileMaterializedLegacyDownloads")
+        val recoveryBody = source.substringAfter(
+            "private suspend fun recoverPendingDownloadsForStartup("
+        ).substringBefore("/**\n     * 启动时先从 Room 恢复任务卡片")
+
+        val captureIndex = initializeBody.indexOf(
+            "val startupAdmissionTicket = downloadAdmissionGate.openTicketOrNull()"
+        )
+        val progressCallIndex = initializeBody.indexOf(
+            "restorePersistedDownloadProgress(\n                    context = appContext"
+        )
+        val recoveryCallIndex = initializeBody.indexOf(
+            "recoverPendingDownloadsForStartup(\n                    context = appContext"
+        )
+
+        assertTrue(captureIndex >= 0)
+        assertTrue(progressCallIndex > captureIndex)
+        assertTrue(recoveryCallIndex > captureIndex)
+        assertTrue(
+            initializeBody.substring(progressCallIndex, recoveryCallIndex)
+                .contains("admissionTicket = startupAdmissionTicket")
+        )
+        assertTrue(
+            initializeBody.substring(recoveryCallIndex)
+                .contains("admissionTicket = startupAdmissionTicket")
+        )
+        assertTrue(recoveryBody.contains("admissionTicket: Long?"))
+        assertTrue(recoveryBody.contains("capturedAdmissionTicket"))
+        assertFalse(recoveryBody.contains("openTicketOrNull()"))
+    }
+
+    @Test
+    fun `progress callbacks update latest state and queue durable checkpoints`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val progressBody = source.substringAfter(
+            "private suspend fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress)"
+        ).substringBefore("private suspend fun restoreTaskProgressCheckpoint")
+        val latestStateIndex = progressBody.indexOf(
+            "val latestProgress = recordLatestDownloadProgress(progress)"
+        )
+        val taskUpdateIndex = progressBody.indexOf("taskStore.updateProgress(latestProgress)")
+        val presentationIndex = progressBody.indexOf(
+            "updateBatchDownloadPresentationProgress(effectiveProgress)"
+        )
+        val checkpointIndex = progressBody.indexOf(
+            "enqueueProgressCheckpoint(appContext, effectiveProgress, currentBinding)"
+        )
+
+        assertTrue(latestStateIndex >= 0)
+        assertTrue(taskUpdateIndex > latestStateIndex)
+        assertTrue(presentationIndex > taskUpdateIndex)
+        assertTrue(checkpointIndex > presentationIndex)
+        assertTrue(progressBody.contains("latestProgress.attemptId"))
+        assertTrue(progressBody.contains("progress.operationId"))
+        assertFalse(progressBody.contains("ensureDownloadTasks("))
+        assertFalse(progressBody.contains("registerActiveDownloadTask("))
+        assertFalse(progressBody.contains("admitDownloadMutation("))
+    }
+
+    @Test
+    fun `progress checkpoint ticket validation keeps operation identity`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val flushBody = source.substringAfter(
+            "private suspend fun flushProgressCheckpoints()"
+        ).substringBefore("private suspend fun updateDownloadProgress")
+        val updateBody = source.substringAfter(
+            "private suspend fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress)"
+        ).substringBefore("private suspend fun restoreTaskProgressCheckpoint")
+
+        assertTrue(flushBody.contains("stableKey = checkpoint.progress.songKey"))
+        assertTrue(flushBody.contains("operationId = checkpoint.binding.operationId"))
+        assertTrue(updateBody.contains("stableKey = progress.songKey"))
+        assertTrue(updateBody.contains("operationId = binding.operationId"))
+        assertTrue(updateBody.contains("stableKey = effectiveProgress.songKey"))
+        assertTrue(updateBody.contains("operationId = currentBinding.operationId"))
+    }
+
+    @Test
+    fun `completed task retention and pending queue persistence keep the clear admission`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val completedRemovalBody = source.substringAfter(
+            "private fun scheduleCompletedTaskRemoval("
+        ).substringBefore("private fun scheduleCatalogReconcile")
+        val pendingQueueBody = source.substringAfter(
+            "private fun rememberPendingDownloadQueue("
+        ).substringBefore("private fun beginDownloadRequestGeneration")
+
+        val delayIndex = completedRemovalBody.indexOf(
+            "delay(DOWNLOAD_TASK_COMPLETED_RETENTION_MS)"
+        )
+        val admissionIndex = completedRemovalBody.indexOf(
+            "admitDownloadMutation("
+        )
+        val taskLookupIndex = completedRemovalBody.indexOf("taskStore.findTask(songKey)")
+        val removeIndex = completedRemovalBody.indexOf("removeDownloadTask(songKey")
+
+        assertTrue(completedRemovalBody.contains("admissionTicket: Long? = null"))
+        assertTrue(
+            completedRemovalBody.contains(
+                "val capturedAdmissionTicket = admissionTicket"
+            )
+        )
+        assertTrue(
+            completedRemovalBody.contains(
+                "openDownloadAdmissionTicketOrNull("
+            )
+        )
+        assertTrue(delayIndex >= 0)
+        assertTrue(admissionIndex > delayIndex)
+        assertTrue(taskLookupIndex > admissionIndex)
+        assertTrue(removeIndex > taskLookupIndex)
+
+        val permitIndex = pendingQueueBody.indexOf(
+            "PersistentDownloadClearFenceStore.withSchedulingPermit("
+        )
+        val rejectIndex = pendingQueueBody.indexOf("onFenceActive = { emptyList() }")
+        val upsertIndex = pendingQueueBody.indexOf(
+            "ManagedDownloadStorage.upsertPendingDownloadQueue("
+        )
+
+        assertTrue(permitIndex >= 0)
+        assertTrue(rejectIndex > permitIndex)
+        assertTrue(upsertIndex > rejectIndex)
+    }
+
+    @Test
+    fun `Wi-Fi wake keeps its current work retryable until recovery reaches a terminal state`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val wakeBody = source.substringAfter(
+            "internal suspend fun recoverPendingDownloadsFromWifiWake"
+        ).substringBefore("private suspend fun cancelDownloadTaskInBackground")
+
+        val activeBranchIndex = wakeBody.indexOf("if (hasBlockingActiveDownloadOperationsForRecovery())")
+        val acceptedIndex = wakeBody.indexOf("val accepted = recoverPendingResumableDownloads")
+
+        assertTrue(wakeBody.contains("withPendingDownloadRecoverySlot(\"wifi_wake\")"))
+        assertFalse(wakeBody.contains("tryBeginPendingDownloadRecovery"))
+        assertTrue(activeBranchIndex >= 0)
+        assertTrue(
+            wakeBody.substring(
+                activeBranchIndex,
+                wakeBody.indexOf("} else", activeBranchIndex)
+            ).contains("false")
+        )
+        assertTrue(acceptedIndex >= 0)
+        assertTrue(
+            wakeBody.substring(
+                acceptedIndex,
+                wakeBody.indexOf("} else {", acceptedIndex)
+            ).contains("if (!hasPendingRecoveryCandidates(appContext))")
+        )
+        assertFalse(wakeBody.contains("WifiBoundDownloadWakeWorker.rearmAll(appContext)"))
+        assertFalse(wakeBody.contains("rearmWifiWakeAfterCompletion"))
+        assertTrue(wakeBody.contains("WIFI 唤醒恢复尚未成为终态，保留 WorkManager 重试"))
+    }
+
+    @Test
+    fun `cover sidecar is checked before finalized metadata is written`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val enrichmentBody = source.substringAfter("private suspend fun enrichCoreCommittedDownload")
+            .substringBefore("private suspend fun publishFinalizedDownload")
+
+        val sidecarIndex = enrichmentBody.indexOf("downloadSidecarsForCompletedAudio(")
+        val coverGateIndex = enrichmentBody.indexOf("shouldFinalizeDownloadedSidecars(")
+        val finalizedMetadataIndex = enrichmentBody.indexOf("downloadFinalized = true")
+
+        assertTrue(sidecarIndex >= 0)
+        assertTrue(coverGateIndex > sidecarIndex)
+        assertTrue(finalizedMetadataIndex > coverGateIndex)
+        assertTrue(source.contains("repairFinalizedDownloadedCoversFromRoot(appContext)"))
+        assertTrue(source.contains("finalizedCoverRepairActive.compareAndSet(false, true)"))
+    }
+
+    @Test
+    fun `operation execution admits task creation before a clear can proceed`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val executionBody = source.substringAfter(
+            "internal suspend fun executeDownloadOperation"
+        ).substringBefore("private suspend fun executionResultForOperation")
+        val admissionIndex = executionBody.indexOf(
+            "admitDownloadMutation("
+        )
+        val ensureIndex = executionBody.indexOf("taskStore.ensureDownloadTasks(")
+        val upsertIndex = executionBody.indexOf("DownloadExecutionRoomStore.upsert(")
+        val generationIndex = executionBody.indexOf(
+            "admittedRequestGeneration = reuseOrBeginDownloadRequestGeneration"
+        )
+
+        assertTrue(
+            executionBody.indexOf(
+                "val capturedAdmissionTicket = admissionTicket"
+            ) >= 0
+        )
+        assertTrue(admissionIndex >= 0)
+        assertFalse(executionBody.contains("downloadAdmissionGate.admit(admissionTicket)"))
+        assertTrue(ensureIndex > admissionIndex)
+        assertTrue(upsertIndex > ensureIndex)
+        assertTrue(generationIndex > upsertIndex)
+        assertTrue(
+            executionBody.contains(
+                "taskStore.removeDownloadTask(\n                    songKey = songKey,\n                    expectedAttemptId = effectiveAttemptId"
+            )
+        )
+        val admissionHelperBody = source.substringAfter(
+            "private suspend fun admitDownloadMutation("
+        ).substringBefore("/** 队列持久化完成前")
+        assertTrue(
+            admissionHelperBody.contains(
+                "isDownloadClearFenceActive(appContext, stableKey, operationId)"
+            )
+        )
+        assertTrue(admissionHelperBody.contains("ranBlock = true"))
+    }
+
+    @Test
+    fun `artifact recovery never bypasses clear admission`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val helperBody = source.substringAfter(
+            "private suspend fun admitArtifactRecoveryMutation("
+        ).substringBefore("/** 队列持久化完成前")
+        val legacyBody = source.substringAfter(
+            "internal suspend fun reconcileMaterializedLegacyDownloads(context: Context)"
+        ).substringBefore("    /**")
+        val migrationBody = source.substringAfter(
+            "internal suspend fun reconcilePendingDownloadsBeforeMigrationDetailed("
+        ).substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+        val recoveryBody = source.substringAfter(
+            "private suspend fun recoverPendingAudioWritesFromRoot("
+        ).substringBefore("private suspend fun recoverUnfinalizedPublishedAudioFromRoot")
+        val sourceRootBody = recoveryBody.substringAfter("if (sourceRootRecovery) {")
+            .substringBefore("val metadataPostProcessingEnabled")
+        val networkBody = source.substringAfter(
+            "fun recoverPendingDownloadsForNetworkRestored(context: Context, reason: String)"
+        ).substringBefore("internal fun scheduleWifiRecoveryProbe")
+
+        assertTrue(helperBody.contains("if (admissionTicket == null)"))
+        assertTrue(helperBody.contains("return false"))
+        assertFalse(helperBody.contains("block()\n            return true"))
+        assertTrue(legacyBody.contains("admissionTicket = admissionTicket"))
+        assertTrue(
+            migrationBody.contains("val admissionTicket = downloadAdmissionGate.openTicketOrNull()")
+        )
+        assertTrue(migrationBody.contains("admissionTicket = admissionTicket"))
+        assertTrue(sourceRootBody.contains("admitArtifactRecoveryMutation("))
+        assertTrue(
+            sourceRootBody.indexOf("admitArtifactRecoveryMutation(") <
+                sourceRootBody.indexOf("cleanupCancelledPendingDownloadArtifacts(")
+        )
+        assertTrue(
+            networkBody.contains(
+                "recoverPendingAudioWritesFromRoot(\n                    context = appContext,\n                    admissionTicket = admissionTicket"
+            )
+        )
+        assertTrue(
+            networkBody.contains(
+                "recoverUnfinalizedPublishedAudioFromRoot(\n                    context = appContext,\n                    admissionTicket = admissionTicket"
+            )
+        )
+        assertFalse(
+            networkBody.contains(
+                "admitArtifactRecoveryMutation(appContext, admissionTicket) {\n" +
+                    "                        recoverPendingAudioWritesFromRoot"
+            )
+        )
+    }
+
+    @Test
+    fun `single transfer registration rechecks clear admission after preparation`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val helperBody = source.substringAfter(
+            "private suspend fun admitDownloadTransferStart("
+        ).substringBefore("private suspend fun startDownloadConfirmed(")
+        val startBody = source.substringAfter(
+            "private suspend fun startDownloadConfirmed("
+        ).substringBefore("    fun startBatchDownload(context: Context, songs: List<SongItem>)")
+
+        assertTrue(helperBody.contains("downloadAdmissionGate.admit(effectiveAdmissionTicket)"))
+        assertTrue(
+            helperBody.contains(
+                "isDownloadClearFenceActive(appContext, stableKey = songKey)"
+            )
+        )
+        assertTrue(
+            helperBody.contains(
+                "isDownloadRequestGenerationCurrent(songKey, requestGeneration)"
+            )
+        )
+        assertTrue(helperBody.contains("isSongCancelled(songKey)"))
+        val beginTransferIndex = helperBody.indexOf("taskStore.beginDownloadTransfer()")
+        val registerIndex = helperBody.indexOf("taskStore.registerActiveDownloadTask(")
+        val resetCancelFlagIndex = helperBody.indexOf("AudioDownloadManager.resetCancelFlag()")
+        assertTrue(beginTransferIndex >= 0)
+        assertTrue(registerIndex > beginTransferIndex)
+        assertTrue(resetCancelFlagIndex > registerIndex)
+        assertTrue(helperBody.contains("registeredTask.status != DownloadStatus.DOWNLOADING"))
+        assertTrue(startBody.contains("admissionTicket: Long? = null"))
+        assertTrue(startBody.contains("val transferAdmitted = admitDownloadTransferStart("))
+        assertTrue(
+            startBody.indexOf("if (!transferAdmitted)") <
+                startBody.indexOf("resumeBatchDownloadPresentationOnRetry(")
+        )
+        val secondAdmissionCheckIndex = startBody.indexOf("val transferStartStillCurrent")
+        val downloadSongIndex = startBody.indexOf("AudioDownloadManager.downloadSong(")
+        assertTrue(secondAdmissionCheckIndex >= 0)
+        assertTrue(downloadSongIndex > secondAdmissionCheckIndex)
+        assertTrue(
+            startBody.contains(
+                "!isDownloadClearFenceActive(\n                                    appContext,"
+            )
+        )
+        assertTrue(startBody.contains("!isSongCancelled(songKey)"))
+        assertTrue(startBody.contains("removeDownloadTask(songKey, expectedAttemptId = attemptId)"))
+        assertTrue(
+            source.substringAfter("internal suspend fun executeDownloadOperation(")
+                .substringBefore("private suspend fun executionResultForOperation(")
+                .contains("admissionTicket = capturedAdmissionTicket")
+        )
+    }
+
+    @Test
+    fun `batch preparation and post core recovery honor the admission ticket`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val batchPreparationBody = source
+            .substringAfter("private suspend fun prepareBatchDownloadSong(")
+            .substringBefore("private suspend fun prepareBatchDownloadSongAdmitted")
+        val settlementBody = source
+            .substringAfter("private suspend fun settlePostCoreEnrichmentFailure(")
+            .substringBefore("private suspend fun schedulePostCoreEnrichmentRetry")
+        val retryBody = source
+            .substringAfter("private suspend fun schedulePostCoreEnrichmentRetry(")
+            .substringBefore("private suspend fun enrichCoreCommittedDownload")
+
+        val preparationAdmissionIndex = batchPreparationBody.indexOf(
+            "admitDownloadMutation("
+        )
+        val preparationCallIndex = batchPreparationBody.indexOf(
+            "prepareBatchDownloadSongAdmitted("
+        )
+        assertTrue(preparationAdmissionIndex >= 0)
+        assertTrue(preparationCallIndex > preparationAdmissionIndex)
+        assertTrue(batchPreparationBody.contains("session.admissionTicket"))
+        assertTrue(batchPreparationBody.contains("stableKey = song.stableKey()"))
+        assertTrue(
+            batchPreparationBody.contains(
+                "operationId = session.operationIdsBySongKey[song.stableKey()]"
+            )
+        )
+
+        val taskUpdateIndex = settlementBody.indexOf("updateTaskStatus(")
+        val settlementTicketCheckIndex = settlementBody.lastIndexOf(
+            "isDownloadAdmissionTicketCurrent(",
+            startIndex = taskUpdateIndex
+        )
+        assertTrue(taskUpdateIndex >= 0)
+        assertTrue(settlementTicketCheckIndex >= 0)
+        assertTrue(settlementTicketCheckIndex < taskUpdateIndex)
+        assertTrue(settlementBody.contains("stableKey = song.stableKey()"))
+        assertTrue(settlementBody.contains("operationId = normalizedOperationId"))
+
+        val permitIndex = retryBody.indexOf(
+            "PersistentDownloadClearFenceStore.withSchedulingPermit("
+        )
+        val permitTicketCheckIndex = retryBody.indexOf(
+            "isDownloadAdmissionTicketCurrent(",
+            startIndex = permitIndex
+        )
+        val hostScheduleIndex = retryBody.indexOf(
+            "DownloadExecutionHosts.default.schedule(",
+            startIndex = permitIndex
+        )
+        assertTrue(permitIndex >= 0)
+        assertTrue(permitTicketCheckIndex > permitIndex)
+        assertTrue(hostScheduleIndex > permitTicketCheckIndex)
+        assertTrue(retryBody.contains("stableKey = song.stableKey()"))
+        assertTrue(retryBody.contains("operationId = operationId"))
+        assertTrue(retryBody.contains("stableKey = song.stableKey(),"))
+        assertTrue(retryBody.contains("operationId = operationId"))
+    }
+
+    @Test
+    fun `operation specific admission paths carry stable key and operation id`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+
+        val preserveBody = source.substringAfter(
+            "private suspend fun preserveUnsupportedMetadataEmbedding("
+        ).substringBefore("private suspend fun publishFinalizedDownload")
+        val publishBody = source.substringAfter(
+            "private suspend fun publishFinalizedDownload("
+        ).substringBefore("private suspend fun cleanupFinalizedPendingArtifacts")
+        val deferBody = source.substringAfter(
+            "private suspend fun deferDownloadForDeleteCleanup("
+        ).substringBefore("private suspend fun markDownloadWaitingForDeleteCleanup")
+        val waitingBody = source.substringAfter(
+            "private suspend fun markDownloadWaitingForDeleteCleanup("
+        ).substringBefore("private fun scheduleDeleteCleanupRetry")
+        val prepareBody = source.substringAfter(
+            "private suspend fun prepareConfirmedDownload("
+        ).substringBefore("private suspend fun startDownloadConfirmed")
+        val batchAdmittedBody = source.substringAfter(
+            "private suspend fun prepareBatchDownloadSongAdmitted("
+        ).substringBefore("private suspend fun claimAndPrepareBatchArtifact")
+        val scheduleBatchBody = source.substringAfter(
+            "private suspend fun schedulePendingBatchDownload("
+        ).substringBefore("private fun recoverInFlightDownloadOperations")
+
+        assertTrue(preserveBody.contains("stableKey = song.stableKey()"))
+        assertTrue(preserveBody.contains("operationId = operationId"))
+        assertTrue(publishBody.contains("stableKey = song.stableKey()"))
+        assertTrue(publishBody.contains("operationId = operationId"))
+        assertTrue(deferBody.contains("isDownloadAdmissionTicketCurrentForStableKeys("))
+        assertTrue(waitingBody.contains("stableKey = songKey"))
+        assertTrue(waitingBody.contains("operationId = operationId"))
+        assertTrue(prepareBody.contains("stableKey = songKey"))
+        assertTrue(prepareBody.contains("operationId = operationId"))
+        assertTrue(batchAdmittedBody.contains("stableKey = songKey"))
+        assertTrue(scheduleBatchBody.contains("stableKey = songKey"))
+        assertTrue(scheduleBatchBody.contains("operationId = request.operationId"))
+    }
+
+    @Test
+    fun `clear all keeps durable cancellation tombstones until a fresh request replaces them`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearAllBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val cleanupBody = source.substringAfter(
+            "private suspend fun cancelDownloadTasksInBackground"
+        ).substringBefore("private suspend fun awaitDownloadCancellationsSettled")
+
+        assertFalse(cleanupBody.contains("DownloadExecutionRoomStore.purgeCancelled("))
+        assertFalse(cleanupBody.contains("DownloadExecutionRoomStore.purgeClearedOperations("))
+        val operationIdentityIndex = clearAllBody.indexOf(
+            "DownloadExecutionRoomStore.listOperationIdentitiesForStableKeys("
+        )
+        assertTrue(operationIdentityIndex >= 0)
+        assertTrue(
+            clearAllBody.substring(operationIdentityIndex)
+                .contains("stableKeys = clearOwnerStableKeys")
+        )
+        assertTrue(clearAllBody.contains("workingFilesBySongKey = clearWorkingFilesBySongKey"))
+        assertTrue(clearAllBody.contains("executionOperationIds = clearOperationIds"))
+        assertTrue(
+            cleanupBody.contains(
+                "workingFiles.forEach(ManagedDownloadStorage::deleteWorkingDownloadArtifacts)"
+            )
+        )
+        assertTrue(cleanupBody.contains("hasWorkingDownloadArtifact"))
+        assertTrue(cleanupBody.contains("residualWorkingSongKeys"))
+        assertTrue(cleanupBody.contains("executionOperationIds"))
+        assertTrue(
+            clearAllBody.indexOf("if (!settlement.isSettled)") <
+                clearAllBody.indexOf("purgeFullyClearedOperations(")
+        )
+        assertTrue(source.contains("clearSongCancellationForFreshStart"))
+    }
+
+    @Test
+    fun `clear owner capture uses identity projection before storage cleanup`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val captureBody = managerSource.substringAfter(
+            "private suspend fun captureDownloadClearOwnership"
+        ).substringBefore("private suspend fun runFastTaskClearPhase")
+        assertTrue(captureBody.contains("listCancellationIdentitiesAnyLibrary"))
+        assertFalse(captureBody.contains("listCancellationCandidatesAnyLibrary"))
+        assertFalse(captureBody.contains("listPendingResumableDownloads"))
+        assertFalse(captureBody.contains("DOWNLOAD_CLEAR_OWNERSHIP_CAPTURE_TIMEOUT_MS"))
+        assertTrue(captureBody.contains("pendingWorkingDownloads = emptyList()"))
+    }
+
+    @Test
+    fun `clear host cancellation keeps executing admission owner for finally`() {
+        val hostSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadExecutionHost.kt"
+        ).readText()
+        val cancelAllBody = hostSource.substringAfter(
+            "override fun cancel(\n"
+        ).substringAfter("override fun cancelAll(")
+            .substringBefore("internal fun cancelAllOwned")
+        val cancelOwnedBody = hostSource.substringAfter(
+            "internal fun cancelAllOwned"
+        ).substringBefore("override fun stopForSong")
+        assertTrue(cancelAllBody.contains("filterNot(executingOperationIds::contains)"))
+        assertTrue(cancelOwnedBody.contains("filterNot(executingOperationIds::contains)"))
+        assertFalse(cancelAllBody.contains("hostAdmissionOwners.clear()"))
+        assertFalse(cancelOwnedBody.contains("hostAdmissionOwners.clear()"))
+    }
+
+    @Test
+    fun `startup reconciliation still runs when lightweight catalog is ready`() {
+        assertEquals(true, shouldRunInitialDownloadScan(catalogReady = true))
         assertEquals(true, shouldRunInitialDownloadScan(catalogReady = false))
         assertEquals(
             true,
             shouldRunInitialDownloadScan(
                 catalogReady = true,
                 hasRecoveredEntries = true
+            )
+        )
+    }
+
+    @Test
+    fun `legacy upgrade remains visible until a rebuilt catalog is published`() {
+        assertTrue(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.Running(
+                    operationId = "legacy",
+                    reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+                    phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+                )
+            )
+        )
+        assertFalse(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.Running(
+                    operationId = "legacy",
+                    reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+                    phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE
+                )
+            )
+        )
+        assertFalse(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.WaitingForRetry(
+                    operationId = "legacy",
+                    reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+                    phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE
+                )
             )
         )
     }
@@ -171,33 +2544,327 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `wifi admitted execution waits after transport moves to mobile until user continues`() {
+        assertTrue(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = true,
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = false
+            )
+        )
+        assertTrue(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = true,
+                networkType = TrafficNetworkType.ROAMING,
+                mobileDataOverrideAllowed = false
+            )
+        )
+        assertFalse(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = true,
+                networkType = TrafficNetworkType.WIFI,
+                mobileDataOverrideAllowed = false
+            )
+        )
+        assertFalse(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = true,
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = true
+            )
+        )
+        assertFalse(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = false,
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = false
+            )
+        )
+    }
+
+    @Test
+    fun `only Wi-Fi-bound durable work keeps network policy active before memory rehydrates`() {
+        assertFalse(
+            hasWifiBoundNetworkPolicyDownloads(
+                activeTaskCount = 0,
+                persistedQueuedCount = 0
+            )
+        )
+        assertTrue(
+            hasWifiBoundNetworkPolicyDownloads(
+                activeTaskCount = 0,
+                persistedQueuedCount = 1
+            )
+        )
+    }
+
+    @Test
+    fun `Wi-Fi waiting count is the stable-key union across active and durable work`() {
+        assertEquals(
+            4,
+            wifiBoundDownloadTaskCount(
+                activeSongKeys = listOf("active-a", "shared", "  "),
+                persistedSongKeys = listOf("shared", "persisted-c", "persisted-d", "")
+            )
+        )
+    }
+
+    @Test
+    fun `mobile interruption recount distinguishes unavailable data from an authoritative zero`() {
+        assertEquals(
+            843,
+            resolveMobileDataDownloadInterruptionTaskCount(
+                existingTaskCount = 843,
+                observedTaskCount = null,
+                fallbackTaskCount = 1
+            )
+        )
+        assertEquals(
+            0,
+            resolveMobileDataDownloadInterruptionTaskCount(
+                existingTaskCount = 843,
+                observedTaskCount = 0,
+                fallbackTaskCount = 1
+            )
+        )
+        assertEquals(
+            2,
+            resolveMobileDataDownloadInterruptionTaskCount(
+                existingTaskCount = 843,
+                observedTaskCount = 2,
+                fallbackTaskCount = 1
+            )
+        )
+        assertEquals(
+            3,
+            resolveMobileDataDownloadInterruptionTaskCount(
+                existingTaskCount = 1,
+                observedTaskCount = null,
+                fallbackTaskCount = 3
+            )
+        )
+    }
+
+    @Test
+    fun `mobile interruption snapshot cannot publish after a clear advances its epoch`() {
+        assertTrue(
+            isMobileDataDownloadInterruptionSnapshotCurrent(
+                snapshotEpoch = null,
+                currentEpoch = 5L
+            )
+        )
+        assertTrue(
+            isMobileDataDownloadInterruptionSnapshotCurrent(
+                snapshotEpoch = 5L,
+                currentEpoch = 5L
+            )
+        )
+        assertFalse(
+            isMobileDataDownloadInterruptionSnapshotCurrent(
+                snapshotEpoch = 5L,
+                currentEpoch = 6L
+            )
+        )
+    }
+
+    @Test
+    fun `authoritative mobile interruption counts carry their sampling epoch into publication`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val networkPolicyBody = source.substringAfter(
+            "private suspend fun pauseActiveDownloadsForNetworkPolicyIfNeeded"
+        ).substringBefore("private suspend fun deferQueuedDownloadStartForNetworkPolicyIfNeeded")
+        val wifiDisconnectBody = source.substringAfter(
+            "fun interruptDownloadsForWifiDisconnected"
+        ).substringBefore("fun continueDownloadsOnMobileData")
+        val publicationBody = source.substringAfter(
+            "private suspend fun publishMobileDataDownloadInterruptionRequestIfNeeded"
+        ).substringBefore("private suspend fun observeWifiBoundMobileDataTaskCount")
+
+        assertTrue(networkPolicyBody.contains("val interruptionSnapshotEpoch"))
+        assertTrue(networkPolicyBody.contains("interruptionSnapshotEpoch = interruptionSnapshotEpoch"))
+        assertTrue(wifiDisconnectBody.contains("val interruptionSnapshotEpoch"))
+        assertTrue(wifiDisconnectBody.contains("interruptionSnapshotEpoch = interruptionSnapshotEpoch"))
+        assertTrue(publicationBody.contains("interruptionSnapshotEpoch: Long? = null"))
+        assertTrue(
+            publicationBody.contains("isMobileDataDownloadInterruptionSnapshotCurrent(")
+        )
+    }
+
+    @Test
+    fun `known cancelled durable operation is not counted through a stale fallback queue entry`() {
+        assertNull(
+            resolvePersistedWifiBoundRequirement(
+                fallbackRequiresWifi = true,
+                hasKnownOperation = true,
+                durableRequiresWifi = null
+            )
+        )
+        assertEquals(
+            true,
+            resolvePersistedWifiBoundRequirement(
+                fallbackRequiresWifi = true,
+                hasKnownOperation = false,
+                durableRequiresWifi = null
+            )
+        )
+        assertEquals(
+            false,
+            resolvePersistedWifiBoundRequirement(
+                fallbackRequiresWifi = true,
+                hasKnownOperation = true,
+                durableRequiresWifi = false
+            )
+        )
+    }
+
+    @Test
+    fun `Wi-Fi disconnect revokes mobile override only while the current route remains non Wi-Fi`() {
+        assertFalse(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.WIFI,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+        assertFalse(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.MOBILE,
+                currentNetworkType = TrafficNetworkType.WIFI
+            )
+        )
+        assertFalse(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.ROAMING,
+                currentNetworkType = TrafficNetworkType.WIFI
+            )
+        )
+        assertTrue(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.MOBILE,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+        assertTrue(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.ROAMING,
+                currentNetworkType = TrafficNetworkType.ROAMING
+            )
+        )
+    }
+
+    @Test
+    fun `Wi-Fi disconnect skips stale callback after Wi-Fi is restored`() {
+        assertFalse(
+            shouldPauseDownloadsForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.MOBILE,
+                currentNetworkType = TrafficNetworkType.WIFI
+            )
+        )
+        assertTrue(
+            shouldPauseDownloadsForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.MOBILE,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+        assertFalse(
+            shouldPauseDownloadsForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.WIFI,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+    }
+
+    @Test
+    fun `explicit mobile permission is not paused by a later Wi-Fi disconnect`() {
+        assertTrue(shouldPauseDownloadForWifiDisconnect(requiresWifiNetwork = true))
+        assertFalse(shouldPauseDownloadForWifiDisconnect(requiresWifiNetwork = false))
+    }
+
+    @Test
+    fun `network pause marker survives an unsettled prior transfer`() {
+        assertFalse(
+            shouldClearNetworkPolicyPauseAfterCancellationSettled(
+                cancellationSettled = false
+            )
+        )
+        assertTrue(
+            shouldClearNetworkPolicyPauseAfterCancellationSettled(
+                cancellationSettled = true
+            )
+        )
+    }
+
+    @Test
+    fun `new execution keeps network pause until the prior transfer settles`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val startBody = source.substringAfter("private suspend fun startDownloadConfirmed")
+            .substringBefore("fun startBatchDownload(context")
+
+        val settleIndex = startBody.indexOf("val cancellationSettled = awaitSongCancellationSettled(")
+        val guardIndex = startBody.indexOf(
+            "shouldClearNetworkPolicyPauseAfterCancellationSettled(cancellationSettled)"
+        )
+        val clearIndex = startBody.indexOf("AudioDownloadManager.clearNetworkPolicyPause")
+
+        assertTrue(settleIndex >= 0)
+        assertTrue(guardIndex > settleIndex)
+        assertTrue(clearIndex > guardIndex)
+        assertTrue(startBody.contains("CANCELLATION_SETTLEMENT_PENDING"))
+    }
+
+    @Test
     fun `prepared recovery download start is blocked on mobile data until user confirms`() {
         assertFalse(
-            shouldDeferPreparedDownloadStartForNetwork(
+            shouldDeferQueuedDownloadStartForNetwork(
                 networkType = TrafficNetworkType.MOBILE,
                 mobileDataOverrideAllowed = false,
                 deferForNetworkPolicy = false
             )
         )
         assertTrue(
-            shouldDeferPreparedDownloadStartForNetwork(
+            shouldDeferQueuedDownloadStartForNetwork(
                 networkType = TrafficNetworkType.MOBILE,
                 mobileDataOverrideAllowed = false,
                 deferForNetworkPolicy = true
             )
         )
         assertFalse(
-            shouldDeferPreparedDownloadStartForNetwork(
+            shouldDeferQueuedDownloadStartForNetwork(
                 networkType = TrafficNetworkType.MOBILE,
                 mobileDataOverrideAllowed = true,
                 deferForNetworkPolicy = true
             )
         )
         assertFalse(
-            shouldDeferPreparedDownloadStartForNetwork(
+            shouldDeferQueuedDownloadStartForNetwork(
                 networkType = TrafficNetworkType.WIFI,
                 mobileDataOverrideAllowed = false,
                 deferForNetworkPolicy = true
+            )
+        )
+    }
+
+    @Test
+    fun `missing downloaded cover is repaired only when a network candidate exists`() {
+        assertTrue(
+            shouldRepairDownloadedCover(
+                coverReferenceAccessible = false,
+                hasNetworkCoverCandidate = true
+            )
+        )
+        assertFalse(
+            shouldRepairDownloadedCover(
+                coverReferenceAccessible = true,
+                hasNetworkCoverCandidate = true
+            )
+        )
+        assertFalse(
+            shouldRepairDownloadedCover(
+                coverReferenceAccessible = false,
+                hasNetworkCoverCandidate = false
             )
         )
     }
@@ -277,7 +2944,8 @@ class GlobalDownloadManagerStartupPolicyTest {
             listOf(
                 song.copy(
                     originalLyric = null,
-                    originalTranslatedLyric = null
+                    originalTranslatedLyric = null,
+                    originalRomanizedLyric = null
                 )
             ),
             restored
@@ -382,6 +3050,16 @@ class GlobalDownloadManagerStartupPolicyTest {
                 fileLyric = null,
                 embeddedMatchedLyric = null,
                 embeddedOriginalLyric = "",
+                localLyricContent = "[00:00.00]local",
+                indexedLyricContent = "[00:00.00]indexed"
+            )
+        )
+        assertEquals(
+            "",
+            resolveDownloadedLyricOverride(
+                fileLyric = "",
+                embeddedMatchedLyric = "[00:00.00]embedded",
+                embeddedOriginalLyric = "[00:00.00]original",
                 localLyricContent = "[00:00.00]local",
                 indexedLyricContent = "[00:00.00]indexed"
             )
@@ -511,6 +3189,29 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
 
         assertEquals(listOf(firstSong, thirdSong, secondSong), merged)
+    }
+
+    @Test
+    fun `catalog order is stable when download times are equal`() {
+        val first = DownloadedSong(
+            id = 1L,
+            name = "First",
+            artist = "Artist",
+            album = "Album",
+            filePath = "/music/z.flac",
+            fileSize = 1L,
+            downloadTime = 100L
+        )
+        val second = first.copy(
+            id = 2L,
+            name = "Second",
+            filePath = "/music/a.flac"
+        )
+
+        assertEquals(
+            listOf(second, first),
+            upsertDownloadedSongCatalog(listOf(first), second)
+        )
     }
 
     @Test
@@ -803,6 +3504,189 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
 
         assertEquals(legacyFallback, index.find(song))
+    }
+
+    @Test
+    fun `downloaded song catalog keeps legacy remote entries without source identity`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 3_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val legacyDownloaded = DownloadedSong(
+            id = song.id,
+            name = song.name,
+            artist = song.artist,
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(listOf(legacyDownloaded))
+
+        assertEquals(legacyDownloaded, index.find(song))
+        assertTrue(matchesDownloadedSong(song, legacyDownloaded))
+    }
+
+    @Test
+    fun `downloaded song catalog keeps a legacy local stable key entry for its remote song`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 3_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val legacyDownloaded = DownloadedSong(
+            id = song.id,
+            name = song.name,
+            artist = song.artist,
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L,
+            stableKey = "42|__local_files__|/music/song.flac"
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(listOf(legacyDownloaded))
+
+        assertEquals(legacyDownloaded, index.find(song))
+        assertTrue(matchesDownloadedSong(song, legacyDownloaded))
+    }
+
+    @Test
+    fun `downloaded catalog matches a local shaped queue item through its remote identity`() {
+        val remoteSong = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Netease",
+            albumId = 0L,
+            durationMs = 3_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val downloaded = DownloadedSong(
+            id = remoteSong.id,
+            name = remoteSong.name,
+            artist = remoteSong.artist,
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L,
+            stableKey = remoteSong.stableKey(),
+            sourceChannelId = "netease",
+            sourceAudioId = "42"
+        )
+        val localShapedQueueItem = remoteSong.copy(
+            mediaUri = "content://old-tree/song",
+            sourceStableKey = null
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(listOf(downloaded))
+
+        assertEquals(downloaded, index.find(localShapedQueueItem))
+        assertTrue(matchesDownloadedSong(localShapedQueueItem, downloaded))
+    }
+
+    @Test
+    fun `downloaded catalog recovers a legacy local row after its SAF uri changes`() {
+        val localSong = SongItem(
+            id = 0L,
+            name = "Song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://new-tree/document/primary%3AMusic%2FSong.flac",
+            localFileName = "Song.flac"
+        )
+        val legacyDownloaded = DownloadedSong(
+            id = 0L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = "/old-private/Song.flac",
+            fileSize = 1024L,
+            downloadTime = 10L,
+            durationMs = 180_000L,
+            coverPath = "/old-private/Covers/Song.jpg"
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(
+            listOf(legacyDownloaded)
+        )
+
+        assertEquals(legacyDownloaded, index.find(localSong))
+    }
+
+    @Test
+    fun `downloaded catalog refuses ambiguous legacy local filenames`() {
+        val localSong = SongItem(
+            id = 0L,
+            name = "Song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://new-tree/document/primary%3AMusic%2FSong.flac",
+            localFileName = "Song.flac"
+        )
+        val first = DownloadedSong(
+            id = 0L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = "/old-private/Song.flac",
+            fileSize = 1024L,
+            downloadTime = 10L,
+            durationMs = 180_000L
+        )
+        val second = first.copy(
+            filePath = "/other-private/Song.flac",
+            downloadTime = 11L
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(
+            listOf(first, second)
+        )
+
+        assertNull(index.find(localSong))
+    }
+
+    @Test
+    fun `catalog upsert replaces a legacy entry when the local file reference is unchanged`() {
+        val legacy = DownloadedSong(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L
+        )
+        val refreshed = legacy.copy(
+            sourceChannelId = "netease",
+            sourceAudioId = "42",
+            downloadTime = 20L
+        )
+
+        assertTrue(matchesDownloadedSongCatalogEntry(legacy, refreshed))
+        assertEquals(listOf(refreshed), upsertDownloadedSongCatalog(listOf(legacy), refreshed))
     }
 
     @Test
@@ -1338,7 +4222,7 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `lyric only downloaded playback hydration is deferred`() {
+    fun `lyric only downloaded playback hydration is immediate`() {
         val originalSong = SongItem(
             id = 1L,
             name = "Song",
@@ -1363,7 +4247,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             )
         )
         assertEquals(
-            4_000L,
+            0L,
             resolveDownloadedPlaybackHydrationDelayMs(
                 originalSong = originalSong,
                 hydratedSong = hydratedSong
@@ -1589,7 +4473,8 @@ class GlobalDownloadManagerStartupPolicyTest {
                 stableKey = firstSong.stableKey(),
                 song = firstSong,
                 order = 0,
-                queuedAtMs = 10L
+                queuedAtMs = 10L,
+                requiresWifiNetwork = false
             ),
             ManagedDownloadStorage.PendingDownloadQueueEntry(
                 stableKey = secondSong.stableKey(),
@@ -1613,7 +4498,182 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertEquals(listOf(firstSong.stableKey(), secondSong.stableKey()), merged.map { it.song.stableKey() })
         assertEquals(partialFile, merged.first().workingFile)
         assertEquals(2_000L, merged.first().song.durationMs)
+        assertFalse(merged.first().requiresWifiNetwork)
         assertNull(merged[1].workingFile)
+    }
+
+    @Test
+    fun `download recovery preserves resumable operation identity`() {
+        val song = recoverySong(id = 905L, name = "Operation")
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = emptyList(),
+            resumableDownloads = listOf(
+                ManagedDownloadStorage.PendingResumableDownload(
+                    song = song,
+                    workingFile = File("operation.partial"),
+                    operationId = "operation-905"
+                )
+            )
+        )
+
+        assertEquals("operation-905", merged.single().operationId)
+    }
+
+    @Test
+    fun `download recovery preserves queued operation identity when no partial exists`() {
+        val song = recoverySong(id = 906L, name = "Queued operation")
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = listOf(
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = song.stableKey(),
+                    song = song,
+                    order = 0,
+                    queuedAtMs = 10L,
+                    operationId = "operation-906"
+                )
+            ),
+            resumableDownloads = emptyList()
+        )
+
+        assertEquals("operation-906", merged.single().operationId)
+    }
+
+    @Test
+    fun `settled recovery cleanup selects only matching operation identities`() {
+        val settledSong = recoverySong(id = 914L, name = "Settled")
+        val unrelatedSong = recoverySong(id = 915L, name = "Unrelated")
+        val candidates = listOf(
+            PendingDownloadRecoveryCandidate(
+                song = settledSong,
+                workingFile = null,
+                order = 0,
+                cancelled = true,
+                operationId = "settled-operation"
+            ),
+            PendingDownloadRecoveryCandidate(
+                song = unrelatedSong,
+                workingFile = null,
+                order = 1,
+                cancelled = false,
+                operationId = "unrelated-operation"
+            ),
+            PendingDownloadRecoveryCandidate(
+                song = settledSong.copy(name = "Settled duplicate"),
+                workingFile = null,
+                order = 2,
+                cancelled = true,
+                operationId = "   "
+            )
+        )
+
+        assertEquals(
+            setOf("settled-operation"),
+            recoveryOperationIdsForKeys(candidates, setOf(settledSong.stableKey()))
+        )
+    }
+
+    @Test
+    fun `download recovery keeps first queued order when room and legacy entries overlap`() {
+        val firstSong = recoverySong(id = 907L, name = "First queued")
+        val secondSong = recoverySong(id = 908L, name = "Second queued")
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = listOf(
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = secondSong.stableKey(),
+                    song = secondSong,
+                    order = 0,
+                    queuedAtMs = 10L,
+                    operationId = "legacy-second"
+                ),
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = firstSong.stableKey(),
+                    song = firstSong,
+                    order = 1,
+                    queuedAtMs = 10L,
+                    operationId = "legacy-first"
+                )
+            ),
+            resumableDownloads = emptyList()
+        )
+
+        assertEquals(
+            listOf(secondSong.stableKey(), firstSong.stableKey()),
+            merged.map(PendingDownloadRecoveryCandidate::song).map(SongItem::stableKey)
+        )
+        assertEquals(
+            listOf("legacy-second", "legacy-first"),
+            merged.map(PendingDownloadRecoveryCandidate::operationId)
+        )
+    }
+
+    @Test
+    fun `taskless finalization recovery keeps its publication permission through enrichment`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val finalizationBody = source.substringAfter(
+            "private suspend fun finalizeCompletedDownload"
+        ).substringBefore("private suspend fun completeCoreDownloadAndEnqueueEnrichment")
+        val coreCommitBody = source.substringAfter(
+            "private suspend fun completeCoreDownloadAndEnqueueEnrichment"
+        ).substringBefore("private suspend fun enrichCoreCommittedDownload")
+        val enrichmentBody = source.substringAfter(
+            "private suspend fun enrichCoreCommittedDownload"
+        ).substringBefore("private suspend fun publishFinalizedDownload")
+        val networkRecoveryBody = source.substringAfter(
+            "fun recoverPendingDownloadsForNetworkRestored"
+        ).substringBefore("private fun tryBeginPendingDownloadRecovery")
+
+        assertTrue(finalizationBody.contains("allowMissingTask = allowMissingTask"))
+        assertTrue(coreCommitBody.contains("allowMissingTask = allowMissingTask"))
+        assertTrue(enrichmentBody.contains("allowMissingTask = allowMissingTask"))
+        assertTrue(
+            networkRecoveryBody.indexOf("recoverPendingAudioWritesFromRoot(") <
+                networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
+        )
+        assertTrue(
+            networkRecoveryBody.indexOf("recoverUnfinalizedPublishedAudioFromRoot(") <
+                networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
+        )
+        assertTrue(
+            networkRecoveryBody.indexOf("repairFinalizedDownloadedCoversFromRoot(") <
+                networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
+        )
+    }
+
+    @Test
+    fun `interrupted operations remain recoverable unless user explicitly stopped them`() {
+        listOf("RUNNING", "QUEUED", "RETRYABLE").forEach { state ->
+            assertFalse(
+                shouldRequireExplicitResume(
+                    userInitiated = true,
+                    state = state,
+                    hasPendingUidtJob = false
+                )
+            )
+        }
+        assertFalse(
+            shouldRequireExplicitResume(
+                userInitiated = true,
+                state = "RUNNING",
+                hasPendingUidtJob = true
+            )
+        )
+        assertFalse(
+            shouldRequireExplicitResume(
+                userInitiated = false,
+                state = "RUNNING",
+                hasPendingUidtJob = false
+            )
+        )
+        assertTrue(
+            shouldRequireExplicitResume(
+                userInitiated = true,
+                state = "RUNNING",
+                hasPendingUidtJob = true,
+                stopRequestedByUser = true
+            )
+        )
     }
 
     @Test
@@ -1651,6 +4711,35 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertEquals(listOf(cancelledSong.stableKey(), queuedSong.stableKey()), merged.map { it.song.stableKey() })
     }
 
+    @Test
+    fun `download recovery keeps a replacement operation after an old cancellation`() {
+        val song = recoverySong(id = 913L, name = "Replacement")
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = listOf(
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = song.stableKey(),
+                    song = song,
+                    order = 0,
+                    queuedAtMs = 10L,
+                    operationId = "replacement-operation"
+                )
+            ),
+            resumableDownloads = listOf(
+                ManagedDownloadStorage.PendingResumableDownload(
+                    song = song,
+                    workingFile = File("old-operation.partial"),
+                    operationId = "old-operation"
+                )
+            ),
+            cancelledKeys = setOf(song.stableKey()),
+            cancelledOperationIds = setOf("old-operation")
+        )
+
+        assertFalse(merged.single().cancelled)
+        assertEquals("replacement-operation", merged.single().operationId)
+        assertNull(merged.single().workingFile)
+    }
+
     private fun recoverySong(id: Long, name: String): SongItem {
         return SongItem(
             id = id,
@@ -1662,5 +4751,15 @@ class GlobalDownloadManagerStartupPolicyTest {
             coverUrl = null,
             mediaUri = "https://example.com/$id"
         )
+    }
+
+    private fun locateProjectFile(path: String): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile ?: return@repeat
+        }
+        error("project source file not found: $path")
     }
 }

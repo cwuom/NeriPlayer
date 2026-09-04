@@ -1,8 +1,11 @@
 package moe.ouom.neriplayer.core.download
 
+import kotlin.math.floor
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.util.format.formatFileSize
 
 data class DownloadTask(
     val song: SongItem,
@@ -10,6 +13,366 @@ data class DownloadTask(
     val status: DownloadStatus,
     val attemptId: Long = 0L
 )
+
+/** immutable membership for one user initiated batch, kept apart from transient task cards */
+internal data class BatchDownloadPresentationState(
+    val id: Long,
+    val memberAttemptIds: Map<String, Long?>,
+    val terminalStates: Map<String, BatchDownloadTerminalState> = emptyMap(),
+    val maximumObservedFractions: Map<String, Float> = emptyMap()
+)
+
+internal enum class BatchDownloadTerminalState {
+    COMPLETED,
+    FAILED,
+    CANCELLED
+}
+
+/** progress shown for a batch, where every selected song has equal weight */
+internal data class BatchDownloadOverallProgress(
+    val totalSongs: Int,
+    val completedSongs: Int,
+    val percentage: Int,
+    val fraction: Float,
+    val activeSongCount: Int,
+    val hasPendingSongs: Boolean
+)
+
+private const val INCOMPLETE_BATCH_PROGRESS_CEILING = 0.99f
+
+internal fun aggregateBatchDownloadProgress(
+    presentation: BatchDownloadPresentationState,
+    tasks: List<DownloadTask>
+): BatchDownloadOverallProgress? {
+    if (presentation.memberAttemptIds.isEmpty()) {
+        return null
+    }
+
+    val tasksBySongKey = tasks.associateBy { task -> task.song.stableKey() }
+    var completedSongs = 0
+    var completedFraction = 0f
+    var activeSongCount = 0
+    var hasPendingSongs = false
+
+    presentation.memberAttemptIds.forEach { (songKey, expectedAttemptId) ->
+        val retainedFraction = presentation.maximumObservedFractions[songKey]
+            ?.coerceIn(0f, 1f)
+            ?: 0f
+        when (presentation.terminalStates[songKey]) {
+            BatchDownloadTerminalState.COMPLETED -> {
+                completedSongs++
+                completedFraction += 1f
+            }
+
+            BatchDownloadTerminalState.FAILED,
+            BatchDownloadTerminalState.CANCELLED -> {
+                completedFraction += retainedFraction
+            }
+
+            null -> {
+                val task = tasksBySongKey[songKey]
+                    ?.takeIf { candidate ->
+                        if (expectedAttemptId == null) {
+                            candidate.status == DownloadStatus.QUEUED ||
+                                candidate.status == DownloadStatus.DOWNLOADING ||
+                                candidate.status == DownloadStatus.WAITING_NETWORK
+                        } else {
+                            candidate.attemptId == expectedAttemptId
+                        }
+                    }
+                when (task?.status) {
+                    DownloadStatus.COMPLETED -> {
+                        // 批量完成只认 terminalStates。core 音频先完成时任务可能已经是
+                        // COMPLETED，但最终发布还没有确认，不能提前增加完成歌曲数
+                        completedFraction += retainedFraction
+                        hasPendingSongs = true
+                    }
+
+                    DownloadStatus.DOWNLOADING -> {
+                        activeSongCount++
+                        completedFraction += maxOf(
+                            retainedFraction,
+                            task.progress?.let(::downloadProgressFraction) ?: 0f
+                        )
+                        hasPendingSongs = true
+                    }
+
+                    DownloadStatus.WAITING_NETWORK -> {
+                        completedFraction += maxOf(
+                            retainedFraction,
+                            task.progress?.let(::downloadProgressFraction) ?: 0f
+                        )
+                        hasPendingSongs = true
+                    }
+
+                    DownloadStatus.QUEUED,
+                    null -> {
+                        completedFraction += retainedFraction
+                        hasPendingSongs = true
+                    }
+
+                    DownloadStatus.FAILED,
+                    DownloadStatus.CANCELLED -> completedFraction += retainedFraction
+                }
+            }
+        }
+    }
+
+    val totalSongs = presentation.memberAttemptIds.size
+    val rawFraction = (completedFraction / totalSongs.toFloat()).coerceIn(0f, 1f)
+    val allSongsCompleted = completedSongs == totalSongs
+    val fraction = if (allSongsCompleted) {
+        1f
+    } else {
+        rawFraction.coerceAtMost(INCOMPLETE_BATCH_PROGRESS_CEILING)
+    }
+    return BatchDownloadOverallProgress(
+        totalSongs = totalSongs,
+        completedSongs = completedSongs,
+        percentage = if (allSongsCompleted) 100 else floor(fraction * 100f).toInt(),
+        fraction = fraction,
+        activeSongCount = activeSongCount,
+        hasPendingSongs = hasPendingSongs
+    )
+}
+
+/** combines overlapping user batch selections without double-counting one song */
+internal fun aggregateBatchDownloadProgress(
+    presentations: Collection<BatchDownloadPresentationState>,
+    tasks: List<DownloadTask>
+): BatchDownloadOverallProgress? {
+    val mergedPresentation = mergeBatchDownloadPresentations(presentations, tasks)
+        ?: return null
+    return aggregateBatchDownloadProgress(mergedPresentation, tasks)
+}
+
+/**
+ * chooses one current membership for each stable key before deriving overall progress
+ *
+ * A second batch can select a song already owned by an earlier batch. The durable
+ * operation remains singular, while the presentation keeps both user selections until
+ * they settle. Prefer the current non-terminal membership so a newer retry never
+ * inherits a completed state from an older request.
+ */
+internal fun mergeBatchDownloadPresentations(
+    presentations: Collection<BatchDownloadPresentationState>,
+    tasks: List<DownloadTask>
+): BatchDownloadPresentationState? {
+    val membersBySongKey = linkedMapOf<String, MutableList<BatchPresentationMember>>()
+    presentations
+        .asSequence()
+        .filter { presentation -> presentation.memberAttemptIds.isNotEmpty() }
+        .sortedBy(BatchDownloadPresentationState::id)
+        .forEach { presentation ->
+            presentation.memberAttemptIds.forEach { (songKey, attemptId) ->
+                if (songKey.isBlank()) {
+                    return@forEach
+                }
+                membersBySongKey.getOrPut(songKey, ::mutableListOf) +=
+                    BatchPresentationMember(
+                        presentationId = presentation.id,
+                        attemptId = attemptId,
+                        terminalState = presentation.terminalStates[songKey],
+                        maximumObservedFraction =
+                            presentation.maximumObservedFractions[songKey] ?: 0f
+                    )
+            }
+        }
+    if (membersBySongKey.isEmpty()) {
+        return null
+    }
+
+    val tasksBySongKey = tasks.associateBy { task -> task.song.stableKey() }
+    val memberAttemptIds = linkedMapOf<String, Long?>()
+    val terminalStates = linkedMapOf<String, BatchDownloadTerminalState>()
+    val maximumObservedFractions = linkedMapOf<String, Float>()
+    membersBySongKey.forEach { (songKey, members) ->
+        val selected = selectBatchPresentationMember(
+            members = members,
+            task = tasksBySongKey[songKey]
+        )
+        memberAttemptIds[songKey] = selected.attemptId
+        selected.terminalState?.let { terminalState ->
+            terminalStates[songKey] = terminalState
+        }
+        mergedBatchPresentationMaximumObservedFraction(selected, members)
+            .coerceIn(0f, 1f)
+            .takeIf { fraction -> fraction > 0f }
+            ?.let { fraction -> maximumObservedFractions[songKey] = fraction }
+    }
+    return BatchDownloadPresentationState(
+        id = presentations.maxOf(BatchDownloadPresentationState::id),
+        memberAttemptIds = memberAttemptIds,
+        terminalStates = terminalStates,
+        maximumObservedFractions = maximumObservedFractions
+    )
+}
+
+private data class BatchPresentationMember(
+    val presentationId: Long,
+    val attemptId: Long?,
+    val terminalState: BatchDownloadTerminalState?,
+    val maximumObservedFraction: Float
+)
+
+private fun selectBatchPresentationMember(
+    members: List<BatchPresentationMember>,
+    task: DownloadTask?
+): BatchPresentationMember {
+    val pendingMembers = members.filter { member -> member.terminalState == null }
+    if (pendingMembers.isEmpty()) {
+        return requireNotNull(members.maxByOrNull(BatchPresentationMember::presentationId))
+    }
+    val currentAttemptId = task
+        ?.takeIf { candidate ->
+            candidate.status == DownloadStatus.QUEUED ||
+                candidate.status == DownloadStatus.DOWNLOADING ||
+                candidate.status == DownloadStatus.WAITING_NETWORK
+        }
+        ?.attemptId
+    if (currentAttemptId != null) {
+        pendingMembers.lastOrNull { member -> member.attemptId == currentAttemptId }
+            ?.let { member -> return member }
+    }
+    return requireNotNull(pendingMembers.maxByOrNull(BatchPresentationMember::presentationId))
+}
+
+private fun mergedBatchPresentationMaximumObservedFraction(
+    selected: BatchPresentationMember,
+    members: List<BatchPresentationMember>
+): Float {
+    val matchingMembers = if (selected.terminalState == null) {
+        members.filter { member ->
+            member.terminalState == null && member.attemptId == selected.attemptId
+        }
+    } else {
+        listOf(selected)
+    }
+    return matchingMembers.maxOfOrNull(BatchPresentationMember::maximumObservedFraction)
+        ?: selected.maximumObservedFraction
+}
+
+internal fun downloadProgressFraction(progress: AudioDownloadManager.DownloadProgress): Float {
+    if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
+        return 1f
+    }
+    if (progress.totalBytes <= 0L) {
+        return 0f
+    }
+    return (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+        .coerceIn(0f, 1f)
+}
+
+/** renders only values that are known so an unknown content length stays honest */
+internal fun formatDownloadTransferProgress(
+    progress: AudioDownloadManager.DownloadProgress,
+    showSpeed: Boolean = true
+): String {
+    val totalBytes = progress.totalBytes.takeIf { total -> total > 0L }
+    val downloadedBytes = progress.bytesRead
+        .coerceAtLeast(0L)
+        .let { bytes -> totalBytes?.let(bytes::coerceAtMost) ?: bytes }
+    val percentageText = totalBytes?.let { total ->
+        "${((downloadedBytes.toDouble() / total.toDouble()) * 100.0).toInt().coerceIn(0, 100)}%"
+    }
+    val transferText = totalBytes?.let { total ->
+        "${formatFileSize(downloadedBytes)} / ${formatFileSize(total)}"
+    } ?: formatFileSize(downloadedBytes)
+    val speedText = progress.speedBytesPerSec
+        .takeIf { speed ->
+            showSpeed &&
+                progress.stage == AudioDownloadManager.DownloadStage.TRANSFERRING &&
+                speed > 0L
+        }
+        ?.let { speed -> "${formatFileSize(speed)}/s" }
+    return listOfNotNull(percentageText, transferText, speedText)
+        .joinToString(" · ")
+}
+
+internal fun mergeDownloadProgress(
+    current: AudioDownloadManager.DownloadProgress?,
+    incoming: AudioDownloadManager.DownloadProgress
+): AudioDownloadManager.DownloadProgress {
+    if (current == null || current.attemptId != incoming.attemptId) {
+        return incoming
+    }
+    val finalizedBytesFloor = if (
+        current.stage == AudioDownloadManager.DownloadStage.FINALIZING &&
+            current.totalBytes > 0L
+    ) {
+        current.totalBytes
+    } else {
+        0L
+    }
+    return incoming.copy(
+        bytesRead = maxOf(
+            current.bytesRead.coerceAtLeast(0L),
+            incoming.bytesRead.coerceAtLeast(0L),
+            finalizedBytesFloor
+        ),
+        totalBytes = mergeKnownDownloadTotalBytes(
+            current.totalBytes,
+            incoming.totalBytes
+        )
+    )
+}
+
+internal fun mergeDownloadTaskProgress(
+    current: AudioDownloadManager.DownloadProgress?,
+    incoming: AudioDownloadManager.DownloadProgress
+): AudioDownloadManager.DownloadProgress {
+    return mergeDownloadProgress(current, incoming)
+}
+
+internal fun mergeKnownDownloadTotalBytes(
+    currentTotalBytes: Long,
+    incomingTotalBytes: Long
+): Long {
+    return when {
+        currentTotalBytes > 0L && incomingTotalBytes > 0L -> {
+            maxOf(currentTotalBytes, incomingTotalBytes)
+        }
+        currentTotalBytes > 0L -> currentTotalBytes
+        incomingTotalBytes > 0L -> incomingTotalBytes
+        else -> 0L
+    }
+}
+
+internal fun resumeBatchDownloadPresentationForRetry(
+    presentation: BatchDownloadPresentationState,
+    songKey: String,
+    attemptId: Long
+): BatchDownloadPresentationState {
+    if (
+        presentation.memberAttemptIds[songKey] != attemptId ||
+            presentation.terminalStates[songKey] != BatchDownloadTerminalState.FAILED
+    ) {
+        return presentation
+    }
+    return presentation.copy(terminalStates = presentation.terminalStates - songKey)
+}
+
+/** durable candidates that must wait for a user action after an OS stop */
+internal data class ExplicitDownloadResumeCandidate(
+    val operationId: String,
+    val song: SongItem,
+    val queueOrder: Int
+)
+
+internal fun visibleExplicitResumeCandidates(
+    candidates: Collection<ExplicitDownloadResumeCandidate>,
+    activeSongKeys: Set<String>
+): List<ExplicitDownloadResumeCandidate> {
+    return candidates
+        .asSequence()
+        .filter { candidate -> candidate.song.stableKey() !in activeSongKeys }
+        .distinctBy { candidate -> candidate.song.stableKey() }
+        .sortedWith(
+            compareBy<ExplicitDownloadResumeCandidate> { it.queueOrder }
+                .thenBy { it.operationId }
+        )
+        .toList()
+}
 
 data class DownloadTaskSummary(
     val pendingTaskCount: Int = 0,
@@ -19,6 +382,10 @@ data class DownloadTaskSummary(
 ) {
     val hasPendingTasks: Boolean
         get() = pendingTaskCount > 0
+
+    /** admission and recovery work must remain reachable before task rows are hydrated */
+    val hasDownloadManagerEntry: Boolean
+        get() = hasPendingTasks || hasActiveOperations
 }
 
 enum class DownloadStatus {
@@ -30,10 +397,106 @@ enum class DownloadStatus {
     CANCELLED
 }
 
-internal data class PreparedDownloadTaskRequest(
+internal data class QueuedDownloadRequest(
     val song: SongItem,
-    val attemptId: Long
+    val attemptId: Long,
+    val operationId: String
 )
+
+internal fun selectBatchRequestsForEarlyHandoff(
+    pendingRequests: List<QueuedDownloadRequest>,
+    scheduledSongKeys: Set<String>,
+    maximumHandoffs: Int
+): List<QueuedDownloadRequest> {
+    val remainingHandoffs = maximumHandoffs - scheduledSongKeys.size
+    if (remainingHandoffs <= 0) {
+        return emptyList()
+    }
+    return pendingRequests
+        .asSequence()
+        .filter { request -> request.song.stableKey() !in scheduledSongKeys }
+        .take(remainingHandoffs)
+        .toList()
+}
+
+internal enum class BatchOperationScheduleAction {
+    SCHEDULE,
+    HANDED_OFF,
+    RELEASE,
+    SETTLED,
+    INVALID
+}
+
+internal fun resolveBatchOperationScheduleAction(
+    operationState: String?,
+    requestMatchesSong: Boolean
+): BatchOperationScheduleAction {
+    if (operationState == null || !requestMatchesSong) {
+        return BatchOperationScheduleAction.INVALID
+    }
+    if (operationState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES) {
+        return BatchOperationScheduleAction.HANDED_OFF
+    }
+    if (operationState in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES) {
+        return BatchOperationScheduleAction.SCHEDULE
+    }
+    if (operationState in setOf("CANCEL_REQUESTED", "CANCELLED", "STOPPED")) {
+        return BatchOperationScheduleAction.RELEASE
+    }
+    return BatchOperationScheduleAction.SETTLED
+}
+
+internal fun shouldPreserveBatchPreparationForHandedOffOperation(
+    operationState: String?,
+    requestMatchesSong: Boolean,
+    attemptId: Long?,
+    requestGenerationCurrent: Boolean
+): Boolean {
+    return attemptId != null &&
+        requestGenerationCurrent &&
+        resolveBatchOperationScheduleAction(
+            operationState = operationState,
+            requestMatchesSong = requestMatchesSong
+        ) == BatchOperationScheduleAction.HANDED_OFF
+}
+
+internal fun canScheduleRecoveredDownloadOperation(operationState: String?): Boolean {
+    return operationState in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES ||
+        operationState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES
+}
+
+/** avoids handing the same durable operation to a second live execution host */
+internal fun shouldRehandoffRecoveredDownloadOperation(
+    operationState: String?,
+    requestMatchesSong: Boolean,
+    isExecuting: Boolean,
+    isStoppedByUser: Boolean
+): Boolean {
+    return requestMatchesSong &&
+        !isExecuting &&
+        !isStoppedByUser &&
+        canScheduleRecoveredDownloadOperation(operationState)
+}
+
+internal fun selectBatchDownloadCandidates(
+    songs: Collection<SongItem>,
+    inFlightSongKeys: Set<String>
+): List<SongItem> {
+    return songs.distinctBy(SongItem::stableKey)
+        .filterNot { song -> song.stableKey() in inFlightSongKeys }
+}
+
+internal fun resolveDownloadPreserveStaging(
+    persistedPreserveStaging: Boolean,
+    preserveRequested: Boolean
+): Boolean = persistedPreserveStaging || preserveRequested
+
+internal fun selectBatchArtifactLeaseForCancellation(
+    handedOff: Boolean,
+    capturedLeaseId: String?
+): String? {
+    return capturedLeaseId?.takeUnless { handedOff }
+}
 
 internal fun isDownloadTaskFinalizing(task: DownloadTask?): Boolean {
     return task?.status == DownloadStatus.DOWNLOADING &&
@@ -46,10 +509,112 @@ internal fun isDownloadTaskCancellable(task: DownloadTask?): Boolean {
         task?.status == DownloadStatus.WAITING_NETWORK
 }
 
-internal fun isDownloadTaskClearable(task: DownloadTask): Boolean {
-    return task.status == DownloadStatus.COMPLETED ||
-        task.status == DownloadStatus.CANCELLED ||
-        task.status == DownloadStatus.FAILED
+internal fun isDownloadTaskCancellationCandidate(task: DownloadTask): Boolean {
+    return task.status != DownloadStatus.COMPLETED &&
+        task.status != DownloadStatus.CANCELLED
+}
+
+internal fun visibleDownloadProgressTasks(tasks: List<DownloadTask>): List<DownloadTask> {
+    return tasks
+        .asSequence()
+        .filter { task ->
+            (
+                task.status == DownloadStatus.QUEUED ||
+                    task.status == DownloadStatus.DOWNLOADING ||
+                    task.status == DownloadStatus.WAITING_NETWORK
+                ) && hasDownloadTaskStartedWork(task)
+        }
+        .sortedWith(
+            compareBy<DownloadTask> { downloadTaskPresentationPriority(it) }
+                .thenBy(DownloadTask::attemptId)
+        )
+        .toList()
+}
+
+/**
+ * true after the host has started source, storage, transfer, or post-transfer work
+ * so host waits cannot hide an operation that is already being processed
+ */
+internal fun hasDownloadTaskStartedWork(task: DownloadTask): Boolean {
+    val stage = currentTaskProgress(task)?.stage ?: return false
+    return stage == AudioDownloadManager.DownloadStage.RESOLVING_SOURCE ||
+        stage == AudioDownloadManager.DownloadStage.PREPARING_STORAGE ||
+        stage == AudioDownloadManager.DownloadStage.TRANSFERRING ||
+        stage == AudioDownloadManager.DownloadStage.VERIFYING_AUDIO ||
+        stage == AudioDownloadManager.DownloadStage.COMMITTING_CORE ||
+        stage == AudioDownloadManager.DownloadStage.ASSETS_ENRICHING ||
+        stage == AudioDownloadManager.DownloadStage.WAITING_RETRY ||
+        stage == AudioDownloadManager.DownloadStage.FINALIZING
+}
+
+private fun downloadTaskPresentationPriority(task: DownloadTask): Int {
+    val stage = currentTaskProgress(task)?.stage
+    return when (task.status) {
+        DownloadStatus.DOWNLOADING -> when (stage) {
+            AudioDownloadManager.DownloadStage.TRANSFERRING,
+            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
+            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
+            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+            AudioDownloadManager.DownloadStage.FINALIZING -> 0
+
+            AudioDownloadManager.DownloadStage.RESOLVING_SOURCE,
+            AudioDownloadManager.DownloadStage.PREPARING_STORAGE -> 1
+
+            AudioDownloadManager.DownloadStage.WAITING_RETRY,
+            AudioDownloadManager.DownloadStage.WAITING_HOST,
+            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
+            null -> 2
+        }
+
+        DownloadStatus.WAITING_NETWORK -> when (stage) {
+            AudioDownloadManager.DownloadStage.TRANSFERRING,
+            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
+            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
+            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+            AudioDownloadManager.DownloadStage.FINALIZING -> 3
+
+            AudioDownloadManager.DownloadStage.WAITING_RETRY -> 4
+            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP -> 5
+            else -> 6
+        }
+
+        DownloadStatus.QUEUED -> when (stage) {
+            AudioDownloadManager.DownloadStage.TRANSFERRING,
+            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
+            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
+            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+            AudioDownloadManager.DownloadStage.FINALIZING -> 3
+
+            AudioDownloadManager.DownloadStage.RESOLVING_SOURCE,
+            AudioDownloadManager.DownloadStage.PREPARING_STORAGE -> 4
+
+            AudioDownloadManager.DownloadStage.WAITING_RETRY -> 5
+            AudioDownloadManager.DownloadStage.WAITING_HOST,
+            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP -> 6
+            null -> 7
+        }
+
+        DownloadStatus.COMPLETED,
+        DownloadStatus.FAILED,
+        DownloadStatus.CANCELLED -> 8
+    }
+}
+
+private fun currentTaskProgress(
+    task: DownloadTask
+): AudioDownloadManager.DownloadProgress? {
+    return task.progress?.takeIf { progress ->
+        progress.attemptId == null || progress.attemptId == task.attemptId
+    }
+}
+
+internal fun activeDownloadTaskWithProgress(tasks: List<DownloadTask>): DownloadTask? {
+    return tasks.firstOrNull { task ->
+        task.status == DownloadStatus.DOWNLOADING &&
+            task.progress?.let { progress ->
+                progress.attemptId == null || progress.attemptId == task.attemptId
+            } == true
+    }
 }
 
 internal fun shouldHideRemoteDownloadAction(
@@ -138,6 +703,13 @@ internal fun shouldApplyTaskMutation(
     return expectedAttemptId == null || task.attemptId == expectedAttemptId
 }
 
+internal fun shouldApplyTaskProgressMutation(
+    task: DownloadTask?,
+    attemptId: Long?
+): Boolean {
+    return task != null && attemptId != null && task.attemptId == attemptId
+}
+
 internal fun isActiveDownloadAttempt(
     tasks: List<DownloadTask>,
     songKey: String,
@@ -168,7 +740,7 @@ internal fun applyWaitingNetworkStatus(
             return@map task
         }
         changed = true
-        task.copy(status = DownloadStatus.WAITING_NETWORK, progress = null)
+        task.copy(status = DownloadStatus.WAITING_NETWORK)
     }
     return if (changed) updatedTasks else tasks
 }
@@ -202,10 +774,6 @@ internal fun applyCancelledStatus(
 
 fun hasPendingDownloadTasks(tasks: List<DownloadTask>): Boolean {
     return countPendingDownloadTasks(tasks) > 0
-}
-
-fun countQueuedDownloadTasks(tasks: List<DownloadTask>): Int {
-    return tasks.count { it.status == DownloadStatus.QUEUED }
 }
 
 fun hasActiveDownloadTasks(tasks: List<DownloadTask>): Boolean {

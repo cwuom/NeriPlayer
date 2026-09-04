@@ -6,7 +6,7 @@
         <item quantity="other">You are using %1$s. Downloading %2$d songs may use a lot of data.</item>
     </plurals>
     <plurals name="mobile_data_download_interruption_message">
-        <item quantity="one">You switched to %1$s. %2$d active download task is paused. Choose what to do next.</item>
-        <item quantity="other">You switched to %1$s. %2$d active download tasks are paused. Choose what to do next.</item>
+        <item quantity="one">You switched to %1$s. %2$d download task is waiting for Wi-Fi. Choose what to do next.</item>
+        <item quantity="other">You switched to %1$s. %2$d download tasks are waiting for Wi-Fi. Choose what to do next.</item>
     </plurals>
 </resources>

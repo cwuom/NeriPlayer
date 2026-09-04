@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download
 import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as MetadataDownloadedAudioTagWriter
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +34,28 @@ class DownloadedAudioTagWriterTest {
         assertEquals(
             "The Book",
             DownloadedAudioTagWriter.normalizeEmbeddedAlbumName(" The Book ")
+        )
+    }
+
+    @Test
+    fun `embedded lyric sidecar is skipped when the download already has lyric text`() {
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldReadEmbeddedLyricReference(
+                reference = "content://managed/song.lrc",
+                fallback = "[00:01.00]ready"
+            )
+        )
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.shouldReadEmbeddedLyricReference(
+                reference = "content://managed/song.lrc",
+                fallback = ""
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldReadEmbeddedLyricReference(
+                reference = null,
+                fallback = null
+            )
         )
     }
 
@@ -95,7 +118,8 @@ class DownloadedAudioTagWriterTest {
             propertyMap = propertyMap,
             audioExtension = "mp3",
             lyrics = "[00:01.00]hello",
-            translatedLyrics = "[00:01.00]你好"
+            translatedLyrics = "[00:01.00]你好",
+            romanizedLyrics = "[00:01.00]ni hao"
         )
 
         val externalLyrics = "[00:01.00]hello\n[00:01.00]你好"
@@ -104,6 +128,7 @@ class DownloadedAudioTagWriterTest {
         assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["LYRICS:TRANSLATION"])
         assertArrayEquals(arrayOf("[00:01.00]hello"), propertyMap["NERI_LYRICS_ORIGINAL"])
         assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["NERI_LYRICS_TRANSLATED"])
+        assertArrayEquals(arrayOf("[00:01.00]ni hao"), propertyMap["NERI_LYRICS_ROMANIZED"])
     }
 
     @Test
@@ -156,6 +181,95 @@ class DownloadedAudioTagWriterTest {
     }
 
     @Test
+    fun `embedded picture parsing is only requested when a cover reference exists`() {
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = null
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences(
+                    coverReference = "   "
+                )
+            )
+        )
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences(
+                    coverReference = "content://covers/song.jpg"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `roleless covr containers skip loading existing pictures`() {
+        val sidecars = AudioDownloadManager.DownloadedSidecarReferences(
+            coverReference = "content://covers/song.jpg"
+        )
+
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = sidecars,
+                audioExtension = "m4a"
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = sidecars,
+                audioExtension = "M4B"
+            )
+        )
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = sidecars,
+                audioExtension = "flac"
+            )
+        )
+        // 未知扩展名继续采用历史上的保守处理
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = sidecars
+            )
+        )
+    }
+
+    @Test
+    fun `unchanged verified tags do not require a second TagLib parse`() {
+        val song = testSong(name = "Song", artist = "Artist")
+        val propertyMap: PropertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Artist")
+        )
+
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.canSkipEmbeddedMetadataVerification(
+                existingPropertyMap = propertyMap,
+                propertyChanged = false,
+                coverChanged = false,
+                song = song
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.canSkipEmbeddedMetadataVerification(
+                existingPropertyMap = propertyMap,
+                propertyChanged = true,
+                coverChanged = false,
+                song = song
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.canSkipEmbeddedMetadataVerification(
+                existingPropertyMap = null,
+                propertyChanged = false,
+                coverChanged = false,
+                song = song
+            )
+        )
+    }
+
+    @Test
     fun `taglib backed containers support embedded tags`() {
         listOf(
             "netease - Artist - Song.mp3",
@@ -185,6 +299,24 @@ class DownloadedAudioTagWriterTest {
     @Test
     fun `extensionless file is not treated as taggable`() {
         assertFalse(DownloadedAudioTagWriter.supportsEmbeddedTags("youtubeMusic - Artist - Song"))
+    }
+
+    @Test
+    fun `pending SAF audio keeps an internal writable reference`() {
+        val entry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npdl_pending.test.pending",
+            reference = "content://provider/tree/audio/pending",
+            mediaUri = "content://provider/tree/audio/pending",
+            localFilePath = null,
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+
+        assertEquals("", entry.playbackUri)
+        assertEquals(
+            "content://provider/tree/audio/pending",
+            MetadataDownloadedAudioTagWriter.writableDescriptorReference(entry)
+        )
     }
 
     @Test

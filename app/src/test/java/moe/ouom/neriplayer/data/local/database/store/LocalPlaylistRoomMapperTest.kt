@@ -15,6 +15,14 @@ class LocalPlaylistRoomMapperTest {
     private val mapper = LocalPlaylistRoomMapper()
 
     @Test
+    fun `domain digest keeps legacy empty-state bytes`() {
+        assertEquals(
+            "fb2c447ba6ceec0b5b0e7856303450290c7250829f9d25df2625a32612f0b937",
+            LocalPlaylistRoomStore.domainDigest(emptyList())
+        )
+    }
+
+    @Test
     fun `round trip keeps playlist order membership tokens and local metadata`() {
         val firstSong = remoteSong(
             id = 101L,

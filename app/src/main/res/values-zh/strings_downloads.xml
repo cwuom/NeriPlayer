@@ -10,6 +10,20 @@
     <string name="download_failed">下载失败</string>
     <string name="download_cancelled">下载已取消</string>
     <string name="download_no_tasks">暂无下载任务</string>
+    <string name="download_loading_tasks">正在读取下载任务…</string>
+    <string name="download_loading_tasks_recovering">暂时无法读取下载任务，正在重试…</string>
+    <string name="download_clearing_tasks">正在停止并清空下载任务…</string>
+    <string name="download_clear_background_cleanup">下载任务已清空，后台正在清理临时文件…</string>
+    <string name="download_clearing_tasks_with_progress">正在清空下载任务: %1$d%% (%2$d 项)</string>
+    <string name="download_clear_phase_preparing">准备中</string>
+    <string name="download_clear_phase_cancelling">停止下载中</string>
+    <string name="download_clear_phase_cleaning">清理临时文件中</string>
+    <string name="download_clear_phase_purging">整理记录中</string>
+    <string name="download_clear_stage_progress">阶段 %1$d/%2$d</string>
+    <string name="download_clear_item_progress">已处理 %1$d/%2$d 个文件</string>
+    <string name="download_clear_item_progress_scanning">正在扫描待清理文件…</string>
+    <string name="download_clear_item_progress_pending">待扫描清理文件数量</string>
+    <string name="download_clear_item_progress_empty">没有发现待清理文件</string>
     <string name="download_empty">暂无已下载歌曲</string>
     <string name="download_desc">管理下载任务和本地文件</string>
     <string name="download_manage_desc">管理音乐下载和本地文件</string>
@@ -28,9 +42,17 @@
     <string name="download_cancel_download">取消下载</string>
     <string name="download_cancelled_status">已取消</string>
     <string name="download_queued_status">等待开始</string>
-    <string name="download_waiting_queue_summary">其余任务正在排队，等待空闲下载槽</string>
     <string name="download_finalizing">音频已写入，正在整理歌词、封面和元信息</string>
     <string name="download_waiting_network_recovery">网络切换中，恢复后会自动继续</string>
+    <string name="download_waiting_host">等待系统下载主机调度</string>
+    <string name="download_waiting_delete_cleanup">等待旧文件清理完成</string>
+    <string name="download_resolving_source">正在解析下载来源</string>
+    <string name="download_preparing_storage">正在准备本地存储</string>
+    <string name="download_verifying_audio">正在校验音频</string>
+    <string name="download_committing_core">正在提交可播放音频</string>
+    <string name="download_assets_enriching">正在整理歌词、封面和元信息</string>
+    <string name="download_explicit_resume_summary">系统停止了用户发起的下载，不会自动重新调度</string>
+    <string name="download_explicit_resume_status">系统已暂停，点击继续下载</string>
     <string name="download_search_hint">搜索已下载的歌曲…</string>
     <string name="download_delete_confirm">确定要删除歌曲 "%s" 吗？此操作不可撤销。</string>
     <string name="download_starting">开始下载：%s</string>
@@ -60,9 +82,18 @@
     <string name="download_delete">删除</string>
     <string name="download_cancelled_message">下载已取消</string>
     <string name="download_failed_message">下载失败</string>
+    <string name="download_execution_notification_channel">下载任务</string>
+    <string name="download_execution_notification_title">下载中</string>
+    <string name="download_execution_notification_content">后台正在处理下载任务</string>
+    <string name="download_execution_notification_progress" formatted="false">已完成 %1$d/%2$d · 剩余 %3$d 首</string>
+    <string name="download_execution_notification_progress_with_percentage" formatted="false">已完成 %1$d/%2$d · 剩余 %3$d 首 · 总进度 %4$d%%</string>
+    <string name="download_execution_notification_current_detail">正在下载：%1$s · %2$s</string>
+    <string name="download_execution_notification_current_unknown">正在下载：%s</string>
     <string name="download_progress_format" formatted="false">下载进度: %1$d/%2$d</string>
+    <string name="download_progress_with_percentage" formatted="false">下载进度: %1$d/%2$d · %3$d%%</string>
     <string name="download_current_song">正在下载: %s</string>
     <string name="download_overall_progress">总体进度: %d%%</string>
-    <string name="download_current_file_progress" formatted="false">当前文件: %1$d%% (%2$d KB/s)</string>
+    <string name="download_current_file_progress" formatted="false">当前歌曲: %1$d%%</string>
+    <string name="download_current_file_progress_detail" formatted="false">当前歌曲: %1$d%%</string>
     <string name="download_progress_file_label">%1$d%% - %2$s</string>
 </resources>

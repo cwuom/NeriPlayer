@@ -31,33 +31,44 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BatchDownloadManagerSheet(
-    batchDownloadProgress: AudioDownloadManager.BatchDownloadProgress?,
     downloadTasks: List<DownloadTask>,
-    progressSummaryText: String,
     onDismiss: () -> Unit
 ) {
     val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsStateWithLifecycle()
     val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsStateWithLifecycle()
+    val batchDownloadProgress by GlobalDownloadManager.batchDownloadProgressFlow
+        .collectAsStateWithLifecycle()
+    val currentBatchDownloadProgress = batchDownloadProgress
     val taskListPendingCount = remember(downloadTasks) {
         countPendingDownloadTasks(downloadTasks)
     }
     val pendingTaskCount = maxOf(taskSummary.pendingTaskCount, taskListPendingCount)
-    val visibleProgress = batchDownloadProgress
-    val stableProgressSummaryText = if (visibleProgress != null) {
-        progressSummaryText
+    val hasPendingBatchSongs = currentBatchDownloadProgress?.hasPendingSongs == true
+    val canCancelDownloads = canCancelBatchDownload(
+        hasPendingBatchSongs = hasPendingBatchSongs,
+        pendingTaskCount = pendingTaskCount,
+        hasActiveDownloadOperations = activeDownloadOperations
+    )
+    val stableProgressSummaryText = if (currentBatchDownloadProgress != null) {
+        stringResource(
+            R.string.download_progress_with_percentage,
+            currentBatchDownloadProgress.completedSongs,
+            currentBatchDownloadProgress.totalSongs,
+            currentBatchDownloadProgress.percentage
+        )
     } else {
         pluralStringResource(
             R.plurals.download_tasks_count,
@@ -96,7 +107,7 @@ fun BatchDownloadManagerSheet(
                 }
             }
 
-            if (visibleProgress != null || pendingTaskCount > 0 || activeDownloadOperations) {
+            if (currentBatchDownloadProgress != null || pendingTaskCount > 0 || activeDownloadOperations) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -114,10 +125,15 @@ fun BatchDownloadManagerSheet(
                         ) {
                             Text(
                                 text = stableProgressSummaryText,
-                                style = MaterialTheme.typography.titleMedium
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            if (pendingTaskCount > 0) {
-                                HapticTextButton(onClick = { GlobalDownloadManager.cancelAllDownloadTasks() }) {
+                            if (canCancelDownloads) {
+                                HapticTextButton(
+                                    onClick = { GlobalDownloadManager.cancelAllDownloadTasks() }
+                                ) {
                                     Text(
                                         text = stringResource(R.string.action_cancel),
                                         color = MaterialTheme.colorScheme.error
@@ -126,35 +142,30 @@ fun BatchDownloadManagerSheet(
                             }
                         }
 
-                        if (
-                            visibleProgress?.currentProgress?.stage ==
-                            AudioDownloadManager.DownloadStage.FINALIZING
-                        ) {
-                            Text(
-                                text = stringResource(R.string.download_finalizing),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        if (visibleProgress != null) {
+                        if (currentBatchDownloadProgress != null) {
                             Text(
                                 text = stringResource(
                                     R.string.download_overall_progress,
-                                    visibleProgress.percentage
+                                    currentBatchDownloadProgress.percentage
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             LinearProgressIndicator(
                                 progress = {
-                                    (visibleProgress.percentage / 100f).coerceIn(0f, 1f)
+                                    currentBatchDownloadProgress.fraction
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             )
                         } else if (pendingTaskCount > 0 || activeDownloadOperations) {
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         }
+
+                        ActiveDownloadTaskList(
+                            tasks = downloadTasks,
+                            maxVisibleTasks = Int.MAX_VALUE,
+                            maxHeight = 320.dp
+                        )
 
                     }
                 }
@@ -186,4 +197,12 @@ fun BatchDownloadManagerSheet(
             }
         }
     }
+}
+
+internal fun canCancelBatchDownload(
+    hasPendingBatchSongs: Boolean,
+    pendingTaskCount: Int,
+    hasActiveDownloadOperations: Boolean
+): Boolean {
+    return hasPendingBatchSongs || pendingTaskCount > 0 || hasActiveDownloadOperations
 }

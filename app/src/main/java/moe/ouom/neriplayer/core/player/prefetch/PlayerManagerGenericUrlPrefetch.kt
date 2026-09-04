@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshSideEffectGate
+import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseMatchedLocalSource
 import moe.ouom.neriplayer.core.player.url.CachePrefetchReadiness
 import moe.ouom.neriplayer.core.player.url.OFFLINE_CACHE_URL_PREFIX
 import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
@@ -226,23 +227,40 @@ internal fun PlayerManager.cancelGenericUrlPrefetchUnlessReusableForSong(
 }
 
 internal suspend fun PlayerManager.consumeGenericUrlPrefetch(
-    cacheKey: String
+    cacheKey: String,
+    song: SongItem
 ): SongUrlResult.Success? {
-    consumeValidGenericUrlPrefetch(cacheKey)?.let { return it }
+    consumeValidGenericUrlPrefetch(cacheKey, song)?.let { return it }
     val activeJob = currentGenericUrlPrefetchJob
         ?.takeIf { it.isActive && currentGenericUrlPrefetchKey == cacheKey }
         ?: return null
     activeJob.join()
-    return consumeValidGenericUrlPrefetch(cacheKey)
+    return consumeValidGenericUrlPrefetch(cacheKey, song)
 }
 
-private fun PlayerManager.consumeValidGenericUrlPrefetch(cacheKey: String): SongUrlResult.Success? {
+private suspend fun PlayerManager.consumeValidGenericUrlPrefetch(
+    cacheKey: String,
+    song: SongItem
+): SongUrlResult.Success? {
     val result = genericUrlPrefetchCache.consume(cacheKey, SystemClock.elapsedRealtime()) ?: return null
     // 预取到消费之间开关可能被关掉或文件失效, 复验不过就丢弃走全新解析
     if (result.isNeteaseLocalFallback &&
-        LocalSongSupport.isLocalMediaUri(result.url) &&
-        (!neteaseLocalSourceFallbackEnabled || !isReadableLocalMediaUri(result.url))
+        LocalSongSupport.isLocalMediaUri(result.url)
     ) {
+        val verifiedFallback = if (
+            neteaseLocalSourceFallbackEnabled && isReadableLocalMediaUri(result.url)
+        ) {
+            tryResolveNeteaseMatchedLocalSource(song)
+        } else {
+            null
+        }
+        if (verifiedFallback is SongUrlResult.Success) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "generic URL prefetch local fallback revalidated: key=$cacheKey"
+            )
+            return verifiedFallback
+        }
         NPLogger.d(
             "NERI-PlayerManager",
             "drop stale local prefetch result: key=$cacheKey"

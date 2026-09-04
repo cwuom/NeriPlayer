@@ -185,6 +185,29 @@ internal class LocalPlaylistRoomStore(
         }
     }
 
+    suspend fun readPlaylistIfRoomPrimary(playlistId: Long): LocalPlaylist? {
+        if (!isRoomPrimary()) {
+            return null
+        }
+        return database.withTransaction {
+            val dao = database.localPlaylistDao()
+            val playlist = dao.getPlaylist(playlistId) ?: return@withTransaction null
+            val members = dao.getMembersForPlaylist(playlistId)
+            val identityKeys = members.mapTo(linkedSetOf()) { it.identityKey }
+            val tracks = identityKeys
+                .chunked(500)
+                .flatMap { keys ->
+                    if (keys.isEmpty()) emptyList() else dao.getTracksByIdentityKeys(keys)
+                }
+            mapper.toDomain(
+                playlists = listOf(playlist),
+                tracks = tracks,
+                members = members,
+                memberTokens = dao.getMemberTokensForPlaylist(playlistId)
+            ).firstOrNull()
+        }
+    }
+
     suspend fun readPendingSyncMutationOutbox(): LocalPlaylistSyncMutationOutbox? {
         val entries = database.syncMetadataDao().getOutbox(
             statuses = listOf(SyncOutboxStatus.PENDING),
@@ -302,10 +325,13 @@ internal class LocalPlaylistRoomStore(
 
         fun domainDigest(playlists: List<LocalPlaylist>): String {
             val digest = MessageDigest.getInstance("SHA-256")
-            val canonical = StringBuilder()
             fun append(value: Any?) {
                 val text = value?.toString() ?: "<null>"
-                canonical.append(text.length).append(':').append(text).append('|')
+                // 直接写入摘要，避免大曲库先拼接一份完整的规范化字符串
+                digest.update(text.length.toString().toByteArray(Charsets.UTF_8))
+                digest.update(COLON_BYTE)
+                digest.update(text.toByteArray(Charsets.UTF_8))
+                digest.update(PIPE_BYTE)
             }
             append(playlists.size)
             playlists.forEachIndexed { playlistIndex, playlist ->
@@ -363,11 +389,14 @@ internal class LocalPlaylistRoomStore(
                         }
                 }
             }
-            return digest.digest(canonical.toString().toByteArray(Charsets.UTF_8))
+            return digest.digest()
                 .joinToString(separator = "") { byte ->
                     "%02x".format(byte.toInt() and 0xff)
                 }
         }
+
+        private val COLON_BYTE = byteArrayOf(':'.code.toByte())
+        private val PIPE_BYTE = byteArrayOf('|'.code.toByte())
 
         private fun migrationMetadata(
             key: String,

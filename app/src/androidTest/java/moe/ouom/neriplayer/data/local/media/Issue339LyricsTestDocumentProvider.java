@@ -18,9 +18,14 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     public static final String AUTHORITY = "moe.ouom.neriplayer.test.issue339lyrics";
@@ -33,6 +38,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     public static final String TRANSLATED_ID = "opaque/translated-issue339";
     public static final String ROMANIZED_ID = "opaque/romanized-issue339";
     public static final String METADATA_ID = "opaque/metadata-issue339";
+    public static final String STALE_COVERS_ID = "legacy/covers-issue339";
     public static final String AUDIO_NAME = "netease - 茶太 - だんご大家族.wav";
     public static final String ORIGINAL_NAME = "netease - 茶太 - だんご大家族.lrc";
     public static final String TRANSLATED_NAME = "netease - 茶太 - だんご大家族_trans.lrc";
@@ -58,6 +64,49 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     private static final byte[] AUDIO_CONTENT = buildWaveContent();
     private static final String METADATA_DIRECTORY_NAME = "issue339-metadata";
     private static final String EXTRA_URI = "uri";
+    private static final String LARGE_AUDIO_PREFIX = "large-audio-";
+    private static final String CONFIGURE_LARGE_SCAN = "test:configureLargeScan";
+    private static final String QUERY_LARGE_SCAN_COUNT = "test:queryLargeScanCount";
+    private static final String RESET_LARGE_SCAN = "test:resetLargeScan";
+    public static final String RESET_LYRICS = "test:resetLyrics";
+    public static final String CLEAR_LYRICS = "test:clearLyrics";
+    public static final String RESTORE_LYRICS = "test:restoreLyrics";
+    public static final String CREATE_EMPTY_METADATA = "test:createEmptyMetadata";
+    public static final String QUERY_METADATA_CREATE_COUNT = "test:queryMetadataCreateCount";
+    public static final String QUERY_LYRICS_DIRECTORY_CREATE_COUNT =
+        "test:queryLyricsDirectoryCreateCount";
+    public static final String FAIL_CHILD_DOCUMENT_QUERIES = "test:failChildDocumentQueries";
+    public static final String RESET_CHILD_DOCUMENT_QUERY_FAILURE =
+        "test:resetChildDocumentQueryFailure";
+    public static final String FAIL_WITH_SECURITY_EXCEPTION =
+        "test:failWithSecurityException";
+    public static final String RESET_SECURITY_EXCEPTION =
+        "test:resetSecurityException";
+    public static final String EMPTY_CHILD_DOCUMENT_QUERIES = "test:emptyChildDocumentQueries";
+    public static final String RESET_EMPTY_CHILD_DOCUMENT_QUERIES =
+        "test:resetEmptyChildDocumentQueries";
+    public static final String USE_NUMBERED_SIDECARS = "test:useNumberedSidecars";
+    public static final String RESET_NUMBERED_SIDECARS = "test:resetNumberedSidecars";
+    public static final String USE_OUT_OF_SCOPE_COVERS = "test:useOutOfScopeCovers";
+    public static final String RESET_OUT_OF_SCOPE_COVERS = "test:resetOutOfScopeCovers";
+    private static final String COUNT_EXTRA = "count";
+    private static final String RESULT_EXTRA = "result";
+    private static final String LYRICS_FIXTURE_DIRECTORY_NAME = "issue339-lyrics";
+    private static volatile int configuredAudioCount = 1;
+    private static volatile boolean failChildDocumentQueries;
+    private static volatile boolean failWithSecurityException;
+    private static volatile boolean emptyChildDocumentQueries;
+    private static volatile boolean useNumberedSidecars;
+    private static volatile boolean useOutOfScopeCovers;
+    private static final AtomicInteger largeAudioDocumentQueryCount = new AtomicInteger();
+    private static final AtomicInteger metadataCreateCount = new AtomicInteger();
+    private static final AtomicInteger lyricsDirectoryCreateCount = new AtomicInteger();
+    private static final Set<String> lyricDocuments =
+        Collections.synchronizedSet(new HashSet<>(Arrays.asList(
+            ORIGINAL_ID,
+            TRANSLATED_ID,
+            ROMANIZED_ID
+        )));
     private static final int DIRECTORY_FLAGS =
         DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE;
 
@@ -79,8 +128,25 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         String[] selectionArgs,
         String sortOrder
     ) {
+        if (isChildDocumentsUri(uri) && failChildDocumentQueries) {
+            throw new IllegalStateException("configured child document query failure");
+        }
+        if (isChildDocumentsUri(uri) && failWithSecurityException) {
+            throw new SecurityException("configured SAF permission failure");
+        }
+        if (isChildDocumentsUri(uri) && STALE_COVERS_ID.equals(documentId(uri))) {
+            throw new SecurityException(
+                "Document " + STALE_COVERS_ID + " is not a descendant of " + ROOT_ID
+            );
+        }
+        if (!isChildDocumentsUri(uri) && isLargeAudioDocument(documentId(uri))) {
+            largeAudioDocumentQueryCount.incrementAndGet();
+        }
         String[] columns = projection == null ? DEFAULT_DOCUMENT_COLUMNS : projection;
         MatrixCursor cursor = new MatrixCursor(columns);
+        if (isChildDocumentsUri(uri) && emptyChildDocumentQueries) {
+            return cursor;
+        }
         if (isChildDocumentsUri(uri)) {
             for (String childId : childrenFor(documentId(uri))) {
                 cursor.addRow(documentRow(columns, childId));
@@ -94,8 +160,11 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
         if (METADATA_ID.equals(documentId(uri))) {
+            File file = metadataFile();
+            if (!mode.contains("w") && !file.isFile()) {
+                throw new FileNotFoundException("Missing file for " + uri);
+            }
             try {
-                File file = metadataFile();
                 int flags = mode.contains("w")
                     ? ParcelFileDescriptor.MODE_READ_WRITE
                         | ParcelFileDescriptor.MODE_CREATE
@@ -105,6 +174,26 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             } catch (IOException error) {
                 FileNotFoundException failure = new FileNotFoundException(
                     "Unable to open Issue #339 metadata: " + uri
+                );
+                failure.initCause(error);
+                throw failure;
+            }
+        }
+        if (isLyricDocument(documentId(uri))) {
+            try {
+                File file = lyricFile(documentId(uri));
+                if (!file.exists()) {
+                    writeFixture(file, defaultContentFor(documentId(uri)));
+                }
+                int flags = mode.contains("w")
+                    ? ParcelFileDescriptor.MODE_READ_WRITE
+                        | ParcelFileDescriptor.MODE_CREATE
+                        | (mode.contains("t") ? ParcelFileDescriptor.MODE_TRUNCATE : 0)
+                    : ParcelFileDescriptor.MODE_READ_ONLY;
+                return ParcelFileDescriptor.open(file, flags);
+            } catch (IOException error) {
+                FileNotFoundException failure = new FileNotFoundException(
+                    "Unable to open Issue #339 lyric: " + uri
                 );
                 failure.initCause(error);
                 throw failure;
@@ -135,10 +224,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
-        if (METADATA_ID.equals(documentId(uri))) {
-            return metadataFile().delete() ? 1 : 0;
-        }
-        return 0;
+        return deleteDocumentById(documentId(uri)) ? 1 : 0;
     }
 
     @Override
@@ -148,6 +234,99 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
+        if (CONFIGURE_LARGE_SCAN.equals(method)) {
+            int count = extras == null ? 1 : extras.getInt(COUNT_EXTRA, 1);
+            configuredAudioCount = Math.max(1, count);
+            largeAudioDocumentQueryCount.set(0);
+            return new Bundle();
+        }
+        if (QUERY_LARGE_SCAN_COUNT.equals(method)) {
+            Bundle result = new Bundle();
+            result.putInt(RESULT_EXTRA, largeAudioDocumentQueryCount.get());
+            return result;
+        }
+        if (RESET_LARGE_SCAN.equals(method)) {
+            configuredAudioCount = 1;
+            largeAudioDocumentQueryCount.set(0);
+            return new Bundle();
+        }
+        if (RESET_LYRICS.equals(method)) {
+            resetLyricsFixtures();
+            failChildDocumentQueries = false;
+            failWithSecurityException = false;
+            emptyChildDocumentQueries = false;
+            useNumberedSidecars = false;
+            useOutOfScopeCovers = false;
+            metadataCreateCount.set(0);
+            lyricsDirectoryCreateCount.set(0);
+            return new Bundle();
+        }
+        if (CLEAR_LYRICS.equals(method)) {
+            clearLyricsFixtures();
+            return new Bundle();
+        }
+        if (RESTORE_LYRICS.equals(method)) {
+            restoreLyricsFixtures();
+            return new Bundle();
+        }
+        if (CREATE_EMPTY_METADATA.equals(method)) {
+            try {
+                writeFixture(metadataFile(), "{}".getBytes(StandardCharsets.UTF_8));
+            } catch (IOException error) {
+                throw new IllegalStateException("Unable to create metadata fixture", error);
+            }
+            return new Bundle();
+        }
+        if (QUERY_METADATA_CREATE_COUNT.equals(method)) {
+            Bundle result = new Bundle();
+            result.putInt(RESULT_EXTRA, metadataCreateCount.get());
+            return result;
+        }
+        if (QUERY_LYRICS_DIRECTORY_CREATE_COUNT.equals(method)) {
+            Bundle result = new Bundle();
+            result.putInt(RESULT_EXTRA, lyricsDirectoryCreateCount.get());
+            return result;
+        }
+        if (FAIL_CHILD_DOCUMENT_QUERIES.equals(method)) {
+            failChildDocumentQueries = true;
+            return new Bundle();
+        }
+        if (RESET_CHILD_DOCUMENT_QUERY_FAILURE.equals(method)) {
+            failChildDocumentQueries = false;
+            return new Bundle();
+        }
+        if (FAIL_WITH_SECURITY_EXCEPTION.equals(method)) {
+            failWithSecurityException = true;
+            return new Bundle();
+        }
+        if (RESET_SECURITY_EXCEPTION.equals(method)) {
+            failWithSecurityException = false;
+            return new Bundle();
+        }
+        if (EMPTY_CHILD_DOCUMENT_QUERIES.equals(method)) {
+            emptyChildDocumentQueries = true;
+            return new Bundle();
+        }
+        if (RESET_EMPTY_CHILD_DOCUMENT_QUERIES.equals(method)) {
+            emptyChildDocumentQueries = false;
+            return new Bundle();
+        }
+        if (USE_NUMBERED_SIDECARS.equals(method)) {
+            useNumberedSidecars = true;
+            return new Bundle();
+        }
+        if (RESET_NUMBERED_SIDECARS.equals(method)) {
+            useNumberedSidecars = false;
+            return new Bundle();
+        }
+        if (USE_OUT_OF_SCOPE_COVERS.equals(method)) {
+            useOutOfScopeCovers = true;
+            return new Bundle();
+        }
+        if (RESET_OUT_OF_SCOPE_COVERS.equals(method)) {
+            useOutOfScopeCovers = false;
+            return new Bundle();
+        }
         if ("android:findDocumentPath".equals(method)) {
             Bundle result = new Bundle();
             result.putParcelable(
@@ -157,6 +336,18 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             return result;
         }
         if ("android:createDocument".equals(method)) {
+            String displayName = requestedDisplayName(extras);
+            if (METADATA_NAME.equals(displayName)) {
+                metadataCreateCount.incrementAndGet();
+            }
+            if ("Lyrics".equals(displayName)) {
+                lyricsDirectoryCreateCount.incrementAndGet();
+            }
+            String createdId = lyricDocumentIdForDisplayName(displayName);
+            if (createdId != null) {
+                lyricDocuments.add(createdId);
+                return documentResult(createdId);
+            }
             Bundle result = new Bundle();
             result.putParcelable(
                 EXTRA_URI,
@@ -170,19 +361,38 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         if ("android:deleteDocument".equals(method)) {
             Uri target = null;
             if (extras != null) {
-                Object rawTarget = Build.VERSION.SDK_INT >= 33
-                    ? extras.getParcelable(EXTRA_URI, Uri.class)
-                    : extras.get(EXTRA_URI);
-                if (rawTarget instanceof Uri) {
-                    target = (Uri) rawTarget;
-                }
+                target = uriExtra(extras);
             }
             if (target != null && METADATA_ID.equals(documentId(target))) {
-                metadataFile().delete();
+                deleteDocumentById(METADATA_ID);
+            } else if (target != null) {
+                deleteDocumentById(documentId(target));
             }
             return new Bundle();
         }
         return super.call(method, arg, extras);
+    }
+
+    private Uri uriExtra(Bundle extras) {
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                return extras.getParcelable(EXTRA_URI, Uri.class);
+            }
+            Object value = Bundle.class
+                .getMethod("getParcelable", String.class)
+                .invoke(extras, EXTRA_URI);
+            return value instanceof Uri ? (Uri) value : null;
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
+
+    private static String requestedDisplayName(Bundle extras) {
+        if (extras == null) return null;
+        String displayName = extras.getString("_display_name");
+        return displayName != null
+            ? displayName
+            : extras.getString("android.provider.extra.DISPLAY_NAME");
     }
 
     private static void writePipe(ParcelFileDescriptor writeSide, byte[] content) {
@@ -223,13 +433,37 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             return Collections.singletonList(MUSIC_ID);
         }
         if (MUSIC_ID.equals(parentDocumentId)) {
-            if (metadataFile().isFile()) {
-                return Arrays.asList(AUDIO_ID, LYRICS_ID, METADATA_ID);
+            if (configuredAudioCount > 1) {
+                List<String> children = new ArrayList<>(configuredAudioCount + 2);
+                for (int index = 0; index < configuredAudioCount; index++) {
+                    children.add(largeAudioId(index));
+                }
+                children.add(LYRICS_ID);
+                if (useOutOfScopeCovers) children.add(STALE_COVERS_ID);
+                if (metadataFile().isFile()) {
+                    children.add(METADATA_ID);
+                }
+                return children;
             }
-            return Arrays.asList(AUDIO_ID, LYRICS_ID);
+            if (metadataFile().isFile()) {
+                List<String> children = new ArrayList<>(
+                    Arrays.asList(AUDIO_ID, LYRICS_ID, METADATA_ID)
+                );
+                if (useOutOfScopeCovers) children.add(STALE_COVERS_ID);
+                return children;
+            }
+            List<String> children = new ArrayList<>(Arrays.asList(AUDIO_ID, LYRICS_ID));
+            if (useOutOfScopeCovers) children.add(STALE_COVERS_ID);
+            return children;
         }
         if (LYRICS_ID.equals(parentDocumentId)) {
-            return Arrays.asList(ORIGINAL_ID, TRANSLATED_ID, ROMANIZED_ID);
+            synchronized (lyricDocuments) {
+                List<String> children = new ArrayList<>(3);
+                if (lyricDocuments.contains(ORIGINAL_ID)) children.add(ORIGINAL_ID);
+                if (lyricDocuments.contains(TRANSLATED_ID)) children.add(TRANSLATED_ID);
+                if (lyricDocuments.contains(ROMANIZED_ID)) children.add(ROMANIZED_ID);
+                return children;
+            }
         }
         return Collections.emptyList();
     }
@@ -256,20 +490,38 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         if (ROOT_ID.equals(documentId)) return "Issue 339";
         if (MUSIC_ID.equals(documentId)) return "my";
         if (AUDIO_ID.equals(documentId)) return AUDIO_NAME;
-        if (LYRICS_ID.equals(documentId)) return "Lyrics";
+        if (LYRICS_ID.equals(documentId)) {
+            return useNumberedSidecars ? "Lyrics (1)" : "Lyrics";
+        }
+        if (STALE_COVERS_ID.equals(documentId)) return "Covers";
         if (ORIGINAL_ID.equals(documentId)) return ORIGINAL_NAME;
         if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_NAME;
         if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_NAME;
-        if (METADATA_ID.equals(documentId)) return METADATA_NAME;
+        if (METADATA_ID.equals(documentId)) {
+            return useNumberedSidecars
+                ? METADATA_NAME.substring(0, METADATA_NAME.length() - ".json".length())
+                    + " (1).json"
+                : METADATA_NAME;
+        }
+        if (isLargeAudioDocument(documentId)) {
+            int index = largeAudioIndex(documentId);
+            return String.format(
+                Locale.ROOT,
+                "Artist %04d - Track %04d.mp3",
+                index,
+                index
+            );
+        }
         return documentId;
     }
 
     private static String mimeTypeFor(String documentId) {
         if (ROOT_ID.equals(documentId) || MUSIC_ID.equals(documentId) ||
-            LYRICS_ID.equals(documentId)) {
+            LYRICS_ID.equals(documentId) || STALE_COVERS_ID.equals(documentId)) {
             return DocumentsContract.Document.MIME_TYPE_DIR;
         }
         if (AUDIO_ID.equals(documentId)) return "audio/wav";
+        if (isLargeAudioDocument(documentId)) return "audio/mpeg";
         if (METADATA_ID.equals(documentId)) return "application/json";
         return "text/plain";
     }
@@ -280,9 +532,18 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     private byte[] contentFor(String documentId) {
         if (AUDIO_ID.equals(documentId)) return AUDIO_CONTENT;
-        if (ORIGINAL_ID.equals(documentId)) return ORIGINAL_CONTENT;
-        if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_CONTENT;
-        if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_CONTENT;
+        if (isLargeAudioDocument(documentId)) return AUDIO_CONTENT;
+        if (isLyricDocument(documentId)) {
+            File file = lyricFile(documentId);
+            if (file.isFile()) {
+                try {
+                    return java.nio.file.Files.readAllBytes(file.toPath());
+                } catch (IOException ignored) {
+                    return EMPTY_CONTENT;
+                }
+            }
+            return defaultContentFor(documentId);
+        }
         if (METADATA_ID.equals(documentId)) {
             try {
                 return java.nio.file.Files.readAllBytes(metadataFile().toPath());
@@ -291,6 +552,18 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             }
         }
         return EMPTY_CONTENT;
+    }
+
+    private static String largeAudioId(int index) {
+        return LARGE_AUDIO_PREFIX + index;
+    }
+
+    private static boolean isLargeAudioDocument(String documentId) {
+        return documentId != null && documentId.startsWith(LARGE_AUDIO_PREFIX);
+    }
+
+    private static int largeAudioIndex(String documentId) {
+        return Integer.parseInt(documentId.substring(LARGE_AUDIO_PREFIX.length()));
     }
 
     private File metadataFile() {
@@ -302,6 +575,90 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             throw new IllegalStateException("Unable to create metadata fixture directory");
         }
         return new File(directory, METADATA_NAME);
+    }
+
+    private File lyricFile(String documentId) {
+        if (getContext() == null) {
+            throw new IllegalStateException("Provider context is unavailable");
+        }
+        File directory = new File(getContext().getCacheDir(), LYRICS_FIXTURE_DIRECTORY_NAME);
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IllegalStateException("Unable to create lyric fixture directory");
+        }
+        String fileName;
+        if (ORIGINAL_ID.equals(documentId)) {
+            fileName = "original.lrc";
+        } else if (TRANSLATED_ID.equals(documentId)) {
+            fileName = "translated.lrc";
+        } else {
+            fileName = "romanized.lrc";
+        }
+        return new File(directory, fileName);
+    }
+
+    private byte[] defaultContentFor(String documentId) {
+        if (ORIGINAL_ID.equals(documentId)) return ORIGINAL_CONTENT;
+        if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_CONTENT;
+        if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_CONTENT;
+        return EMPTY_CONTENT;
+    }
+
+    private void writeFixture(File file, byte[] content) throws IOException {
+        java.nio.file.Files.write(file.toPath(), content);
+    }
+
+    private boolean isLyricDocument(String documentId) {
+        return ORIGINAL_ID.equals(documentId)
+            || TRANSLATED_ID.equals(documentId)
+            || ROMANIZED_ID.equals(documentId);
+    }
+
+    private String lyricDocumentIdForDisplayName(String displayName) {
+        if (ORIGINAL_NAME.equals(displayName)) return ORIGINAL_ID;
+        if (TRANSLATED_NAME.equals(displayName)) return TRANSLATED_ID;
+        if (ROMANIZED_NAME.equals(displayName)) return ROMANIZED_ID;
+        return null;
+    }
+
+    private Bundle documentResult(String documentId) {
+        Bundle result = new Bundle();
+        result.putParcelable(
+            EXTRA_URI,
+            DocumentsContract.buildDocumentUri(AUTHORITY, documentId)
+        );
+        return result;
+    }
+
+    private boolean deleteDocumentById(String documentId) {
+        if (METADATA_ID.equals(documentId)) {
+            File file = metadataFile();
+            return file.delete();
+        }
+        if (!isLyricDocument(documentId)) return false;
+        lyricDocuments.remove(documentId);
+        return lyricFile(documentId).delete();
+    }
+
+    private void resetLyricsFixtures() {
+        restoreLyricsFixtures();
+        metadataFile().delete();
+    }
+
+    private void clearLyricsFixtures() {
+        lyricDocuments.clear();
+        lyricFile(ORIGINAL_ID).delete();
+        lyricFile(TRANSLATED_ID).delete();
+        lyricFile(ROMANIZED_ID).delete();
+    }
+
+    private void restoreLyricsFixtures() {
+        lyricDocuments.clear();
+        lyricDocuments.add(ORIGINAL_ID);
+        lyricDocuments.add(TRANSLATED_ID);
+        lyricDocuments.add(ROMANIZED_ID);
+        lyricFile(ORIGINAL_ID).delete();
+        lyricFile(TRANSLATED_ID).delete();
+        lyricFile(ROMANIZED_ID).delete();
     }
 
     private static byte[] buildWaveContent() {

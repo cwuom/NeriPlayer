@@ -10,6 +10,20 @@
     <string name="download_failed">Download Failed</string>
     <string name="download_cancelled">Download Cancelled</string>
     <string name="download_no_tasks">No Download Tasks</string>
+    <string name="download_loading_tasks">Reading download tasks…</string>
+    <string name="download_loading_tasks_recovering">Unable to read download tasks. Retrying…</string>
+    <string name="download_clearing_tasks">Stopping and clearing download tasks…</string>
+    <string name="download_clear_background_cleanup">Download tasks cleared; temporary files are being cleaned in the background…</string>
+    <string name="download_clearing_tasks_with_progress">Clearing download tasks: %1$d%% (%2$d items)</string>
+    <string name="download_clear_phase_preparing">Preparing</string>
+    <string name="download_clear_phase_cancelling">Stopping downloads</string>
+    <string name="download_clear_phase_cleaning">Cleaning temporary files</string>
+    <string name="download_clear_phase_purging">Finalizing records</string>
+    <string name="download_clear_stage_progress">Phase %1$d/%2$d</string>
+    <string name="download_clear_item_progress">Processed %1$d/%2$d files</string>
+    <string name="download_clear_item_progress_scanning">Scanning files to clean…</string>
+    <string name="download_clear_item_progress_pending">Cleanup file count pending</string>
+    <string name="download_clear_item_progress_empty">No files to clean</string>
     <string name="download_empty">No Downloads</string>
     <string name="download_desc">Manage downloads</string>
     <string name="download_manage_desc">Manage downloads</string>
@@ -28,9 +42,17 @@
     <string name="download_cancel_download">Cancel Download</string>
     <string name="download_cancelled_status">Cancelled</string>
     <string name="download_queued_status">Waiting to start</string>
-    <string name="download_waiting_queue_summary">The remaining tasks are queued and waiting for a free download slot</string>
     <string name="download_finalizing">Audio has been written; lyrics, covers, and metadata are being sorted</string>
     <string name="download_waiting_network_recovery">Network is switching, download will resume automatically</string>
+    <string name="download_waiting_host">Waiting for system download host scheduling</string>
+    <string name="download_waiting_delete_cleanup">Waiting for old file cleanup</string>
+    <string name="download_resolving_source">Resolving download source</string>
+    <string name="download_preparing_storage">Preparing local storage</string>
+    <string name="download_verifying_audio">Verifying audio</string>
+    <string name="download_committing_core">Committing playable audio</string>
+    <string name="download_assets_enriching">Sorting lyrics, covers, and metadata</string>
+    <string name="download_explicit_resume_summary">The system stopped these user-started downloads. They will not restart automatically.</string>
+    <string name="download_explicit_resume_status">Paused by the system. Tap to continue.</string>
     <string name="download_search_hint">Search downloaded songs…</string>
     <string name="download_delete_confirm">Are you sure you want to delete song "%s"? This action cannot be undone.</string>
     <string name="download_starting">Starting download: %s</string>
@@ -60,9 +82,18 @@
     <string name="download_delete">Delete</string>
     <string name="download_cancelled_message">Download cancelled</string>
     <string name="download_failed_message">Download failed</string>
+    <string name="download_execution_notification_channel">Downloads</string>
+    <string name="download_execution_notification_title">Downloading</string>
+    <string name="download_execution_notification_content">Download tasks are running in the background</string>
+    <string name="download_execution_notification_progress" formatted="false">Completed %1$d/%2$d · %3$d remaining</string>
+    <string name="download_execution_notification_progress_with_percentage" formatted="false">Completed %1$d/%2$d · %3$d remaining · %4$d%% overall</string>
+    <string name="download_execution_notification_current_detail">Downloading: %1$s · %2$s</string>
+    <string name="download_execution_notification_current_unknown">Downloading: %s</string>
     <string name="download_progress_format" formatted="false">Download progress: %1$d/%2$d</string>
+    <string name="download_progress_with_percentage" formatted="false">Download progress: %1$d/%2$d · %3$d%%</string>
     <string name="download_current_song">Downloading: %s</string>
     <string name="download_overall_progress">Overall progress: %d%%</string>
-    <string name="download_current_file_progress" formatted="false">Current file: %1$d%% (%2$d KB/s)</string>
+    <string name="download_current_file_progress" formatted="false">Current song: %1$d%%</string>
+    <string name="download_current_file_progress_detail" formatted="false">Current song: %1$d%%</string>
     <string name="download_progress_file_label">%1$d%% - %2$s</string>
 </resources>

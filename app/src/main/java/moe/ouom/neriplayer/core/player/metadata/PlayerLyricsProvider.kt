@@ -47,6 +47,8 @@ import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
@@ -124,8 +126,55 @@ internal fun resolveLocalFirstLyricText(
     return localLyric ?: storedLyric ?: downloadedLyric
 }
 
+internal fun resolveManagedDownloadFirstLyricText(
+    localLyric: String?,
+    storedLyric: String?,
+    downloadedLyric: String?
+): String? {
+    return downloadedLyric ?: localLyric ?: storedLyric
+}
+
+internal fun resolveLyricTextForPlayback(
+    isManagedLocalDownload: Boolean,
+    localLyric: String?,
+    storedLyric: String?,
+    downloadedLyric: String?
+): String? {
+    return if (isManagedLocalDownload) {
+        resolveManagedDownloadFirstLyricText(
+            localLyric = localLyric,
+            storedLyric = storedLyric,
+            downloadedLyric = downloadedLyric
+        )
+    } else {
+        resolveLocalFirstLyricText(
+            localLyric = localLyric,
+            storedLyric = storedLyric,
+            downloadedLyric = downloadedLyric
+        )
+    }
+}
+
 internal fun shouldLoadRemoteLyrics(song: SongItem): Boolean {
     return !song.isLocalSong()
+}
+
+internal fun shouldReadManagedDownloadLyrics(
+    song: SongItem,
+    isManagedLocalDownload: Boolean
+): Boolean {
+    return !song.isLocalSong() || isManagedLocalDownload
+}
+
+private fun isManagedLocalLyricsSourceForSong(application: Application, song: SongItem): Boolean {
+    if (!song.isLocalSong()) {
+        return false
+    }
+    if (GlobalDownloadManager.hasDownloadedSongCached(song)) {
+        return true
+    }
+    // 目录和 URI 线索只用于选择歌词侧载读取策略，不代表下载已经完成
+    return ManagedDownloadStorage.isLikelyManagedDownloadSongFast(application, song)
 }
 
 internal fun hasCollapsedLyricEntryTimeline(entries: List<LyricEntry>): Boolean {
@@ -745,20 +794,44 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
-        val localLyrics = if (song.isLocalSong()) {
-            LocalMediaSupport.inspectLyricsFast(song)
-        } else {
-            null
-        }
-        val localTranslatedLyric = localLyrics?.translatedLyric
-            val storedTranslatedLyric = resolveStoredLyricText(
-                currentLyric = song.matchedTranslatedLyric,
-                legacyLyric = song.originalTranslatedLyric
+            val isManagedLocalDownload = isManagedLocalLyricsSourceForSong(application, song)
+            val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
+                song = song,
+                isManagedLocalDownload = isManagedLocalDownload
             )
-            val downloadedTranslatedLyric = if (song.isLocalSong()) {
+            val managedLyrics = if (isManagedLocalDownload) {
+                AudioDownloadManager.getLyricsBundleFast(
+                    context = application,
+                    song = song,
+                    allowColdSafProbe = false
+                )
+            } else {
+                null
+            }
+            val localLyrics = if (song.isLocalSong() && !isManagedLocalDownload) {
+                LocalMediaSupport.inspectLyricsFast(
+                    context = application,
+                    song = song,
+                    includeEmbeddedFallback = true
+                )
+            } else {
+                null
+            }
+            val localTranslatedLyric = localLyrics?.translatedLyric
+            val storedTranslatedLyric = if (song.isLocalSong()) {
                 null
             } else {
-                AudioDownloadManager.getTranslatedLyricContent(application, song)
+                resolveStoredLyricText(
+                    currentLyric = song.matchedTranslatedLyric,
+                    legacyLyric = song.originalTranslatedLyric
+                )
+            }
+            val downloadedTranslatedLyric = when {
+                managedLyrics != null -> managedLyrics.translatedLyric
+                canReadManagedDownloadLyrics -> {
+                    AudioDownloadManager.getTranslatedLyricContent(application, song)
+                }
+                else -> null
             }
             val selectedTranslatedLyric = resolveLocalFirstLyricText(
                 localLyric = localTranslatedLyric,
@@ -785,9 +858,6 @@ internal object PlayerLyricsProvider {
             } else {
                 NPLogger.w("NERI-PlayerManager", "已忽略 YouTube 全零翻译时间轴: ${song.name}")
             }
-            if (!shouldLoadRemoteLyrics(song)) {
-                return@withContext emptyList()
-            }
             val deferredDownloadedTranslation = if (isYouTubeMusicTrack) {
                 downloadedTranslatedLyric?.let(::extractPlainLyricsFromCollapsedTimedLyrics)
             } else {
@@ -811,10 +881,10 @@ internal object PlayerLyricsProvider {
                     currentLyric = song.matchedLyric,
                     legacyLyric = song.originalLyric
                 )
-                val downloadedLyric = if (song.isLocalSong()) {
-                    null
-                } else {
+                val downloadedLyric = if (canReadManagedDownloadLyrics) {
                     AudioDownloadManager.getLyricContent(application, song)
+                } else {
+                    null
                 }
                 if (
                     shouldBlockExternalYouTubeMusicTranslation(storedLyric) ||
@@ -867,8 +937,26 @@ internal object PlayerLyricsProvider {
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
-            val localRomanizedLyric = if (song.isLocalSong()) {
-                LocalMediaSupport.inspectLyricsFast(song).romanizedLyric
+            val isManagedLocalDownload = isManagedLocalLyricsSourceForSong(application, song)
+            val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
+                song = song,
+                isManagedLocalDownload = isManagedLocalDownload
+            )
+            val managedLyrics = if (isManagedLocalDownload) {
+                AudioDownloadManager.getLyricsBundleFast(
+                    context = application,
+                    song = song,
+                    allowColdSafProbe = false
+                )
+            } else {
+                null
+            }
+            val localRomanizedLyric = if (song.isLocalSong() && !isManagedLocalDownload) {
+                LocalMediaSupport.inspectLyricsFast(
+                    context = application,
+                    song = song,
+                    includeEmbeddedFallback = true
+                ).romanizedLyric
             } else {
                 null
             }
@@ -879,10 +967,12 @@ internal object PlayerLyricsProvider {
                     logPrefix = "本地音译歌词读取失败"
                 )?.let { return@withContext it }
             }
-            val downloadedRomanizedLyric = if (song.isLocalSong()) {
-                null
-            } else {
-                AudioDownloadManager.getRomanizedLyricContent(application, song)
+            val downloadedRomanizedLyric = when {
+                managedLyrics != null -> managedLyrics.romanizedLyric
+                canReadManagedDownloadLyrics -> {
+                    AudioDownloadManager.getRomanizedLyricContent(application, song)
+                }
+                else -> null
             }
             downloadedRomanizedLyric?.let { rawLyric ->
                 parseLocalLyricOverride(
@@ -943,19 +1033,43 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
-            val localLyric = if (song.isLocalSong()) {
-                LocalMediaSupport.inspectLyricsFast(song).lyric
+            val isManagedLocalDownload = isManagedLocalLyricsSourceForSong(application, song)
+            val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
+                song = song,
+                isManagedLocalDownload = isManagedLocalDownload
+            )
+            val managedLyrics = if (isManagedLocalDownload) {
+                AudioDownloadManager.getLyricsBundleFast(
+                    context = application,
+                    song = song,
+                    allowColdSafProbe = false
+                )
             } else {
                 null
             }
-            val storedLyric = resolveStoredLyricText(
-                currentLyric = song.matchedLyric,
-                legacyLyric = song.originalLyric
-            )
-            val downloadedLyric = if (song.isLocalSong()) {
+            val localLyric = if (song.isLocalSong() && !isManagedLocalDownload) {
+                LocalMediaSupport.inspectLyricsFast(
+                    context = application,
+                    song = song,
+                    includeEmbeddedFallback = true
+                ).lyric
+            } else {
+                null
+            }
+            val storedLyric = if (song.isLocalSong()) {
                 null
             } else {
-                AudioDownloadManager.getLyricContent(application, song)
+                resolveStoredLyricText(
+                    currentLyric = song.matchedLyric,
+                    legacyLyric = song.originalLyric
+                )
+            }
+            val downloadedLyric = when {
+                managedLyrics != null -> managedLyrics.lyric
+                canReadManagedDownloadLyrics -> {
+                    AudioDownloadManager.getLyricContent(application, song)
+                }
+                else -> null
             }
             val selectedLyric = resolveLocalFirstLyricText(
                 localLyric = localLyric,

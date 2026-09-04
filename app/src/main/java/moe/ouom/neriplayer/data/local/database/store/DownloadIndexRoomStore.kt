@@ -126,9 +126,6 @@ private fun quoteString(value: String): String {
 private const val DOWNLOAD_INDEX_ROW_OVERHEAD_BYTES = 24L
 
 private val DOWNLOAD_INDEX_TABLES = listOf(
-    "downloaded_song_catalog",
-    "download_snapshot_entry",
-    "download_snapshot_metadata",
-    "download_pending_queue",
-    "download_cancelled_key"
+    "download_operation",
+    "managed_library_item"
 )

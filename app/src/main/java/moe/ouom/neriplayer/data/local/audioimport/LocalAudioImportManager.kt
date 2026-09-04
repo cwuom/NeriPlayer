@@ -33,8 +33,11 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.system.Os
+import androidx.annotation.RequiresApi
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,25 +45,457 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadFileNameTemplates
+import moe.ouom.neriplayer.core.download.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.parseManagedDownloadBaseName
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
+import moe.ouom.neriplayer.data.local.media.LocalKnownSidecarReferences
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.NearbyLyricReferences
+import moe.ouom.neriplayer.data.local.media.CoverReferenceValidation
+import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
+import moe.ouom.neriplayer.data.local.media.isMediaStoreSidecarReference
+import moe.ouom.neriplayer.data.local.media.isMediaStoreUri
+import moe.ouom.neriplayer.data.local.media.isUsableCoverReference
+import moe.ouom.neriplayer.data.local.media.validateCoverReference
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.security.MessageDigest
-import java.util.concurrent.atomic.AtomicInteger
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.Locale
+import java.util.UUID
+import kotlin.coroutines.coroutineContext
+
+enum class LocalAudioScanPhase {
+    TRAVERSING,
+    BUILDING_ENTRIES,
+    HYDRATING_METADATA,
+    COMPLETED
+}
+
+data class LocalAudioScanProgress(
+    val phase: LocalAudioScanPhase = LocalAudioScanPhase.COMPLETED,
+    val processed: Int = 0,
+    val total: Int = 0,
+    val discoveredSongs: Int = 0,
+    val visitedDirectories: Int = 0,
+    val elapsedMs: Long = 0L
+) {
+    val fraction: Float?
+        get() = total.takeIf { it > 0 }?.let {
+            (processed.toFloat() / it).coerceIn(0f, 1f)
+        }
+}
+
+private class LocalAudioScanProgressEmitter(
+    private val startedAt: Long,
+    private val onProgress: (LocalAudioScanProgress) -> Unit
+) {
+    private var lastReportedAt = 0L
+
+    fun emit(
+        phase: LocalAudioScanPhase,
+        processed: Int,
+        total: Int,
+        discoveredSongs: Int,
+        visitedDirectories: Int,
+        force: Boolean = false
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastReportedAt < PROGRESS_REPORT_INTERVAL_MS) {
+            return
+        }
+        lastReportedAt = now
+        try {
+            onProgress(
+                LocalAudioScanProgress(
+                    phase = phase,
+                    processed = processed,
+                    total = total,
+                    discoveredSongs = discoveredSongs,
+                    visitedDirectories = visitedDirectories,
+                    elapsedMs = now - startedAt
+                )
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "scan progress callback failed: ${error.message}")
+        }
+    }
+
+    private companion object {
+        const val PROGRESS_REPORT_INTERVAL_MS = 50L
+        const val TAG = "LocalAudioScanProgress"
+    }
+}
 
 data class LocalAudioImportResult(
     val songs: List<SongItem>,
     val failedCount: Int,
-    val completed: Boolean = true
+    val completed: Boolean = true,
+    val metadataDeferred: Boolean = false
 )
+
+internal fun <T> Result<T>.getOrRethrowCancellation(
+    onFailure: (Throwable) -> Unit
+): T? {
+    return fold(
+        onSuccess = { it },
+        onFailure = { error ->
+            if (error is CancellationException) throw error
+            onFailure(error)
+            null
+        }
+    )
+}
+
+internal fun shouldUseMediaStoreScanResult(result: LocalAudioImportResult?): Boolean {
+    return result?.songs?.isNotEmpty() == true
+}
+
+internal fun shouldKeepMediaStoreAudioRow(
+    hasResolvedFile: Boolean,
+    hasProviderAudioReference: Boolean,
+    hasReadableMediaStoreReference: Boolean
+): Boolean {
+    return hasResolvedFile ||
+        hasProviderAudioReference ||
+        hasReadableMediaStoreReference
+}
+
+internal fun shouldFallbackToDocumentFileAfterTraversalFailure(error: Throwable): Boolean {
+    return error !is CancellationException
+}
+
+internal fun shouldProbeMediaStoreContentReference(
+    rowOrdinal: Int,
+    hasResolvedFile: Boolean,
+    probeLimit: Int = 256
+): Boolean {
+    return hasResolvedFile || rowOrdinal in 1..probeLimit
+}
+
+internal fun shouldDeferExpensiveScanMetadata(
+    songCount: Int,
+    threshold: Int = 256
+): Boolean {
+    return songCount > threshold
+}
+
+internal fun shouldHydrateLocalSongFastIdentity(
+    song: SongItem,
+    metadataReference: String?
+): Boolean {
+    if (!metadataReference.isNullOrBlank() &&
+        !isMediaStoreSidecarReference(metadataReference)
+    ) {
+        return true
+    }
+    val source = song.localMediaUri()
+    if (source != null) {
+        return !isMediaStoreUri(source) ||
+            LocalAudioImportManager.needsLocalIdentityMetadataProbe(song)
+    }
+    return if (isMediaStoreSourceReference(song.mediaUri)) {
+        LocalAudioImportManager.needsLocalIdentityMetadataProbe(song)
+    } else {
+        true
+    }
+}
+
+private fun isMediaStoreSourceReference(reference: String?): Boolean {
+    val normalized = reference?.trim()?.lowercase(Locale.ROOT) ?: return false
+    return normalized.startsWith("content://media/") ||
+        normalized.startsWith("content://com.android.providers.media.documents/")
+}
+
+private const val CREATION_TIME_FUTURE_TOLERANCE_MS = 24L * 60L * 60L * 1_000L
+
+internal fun resolveMediaStoreSourceAddedAt(
+    dateAddedSeconds: Long?,
+    dateModifiedSeconds: Long?
+): Long {
+    return dateAddedSeconds.toEpochMillisOrNull()
+        ?: dateModifiedSeconds.toEpochMillisOrNull()
+        ?: 0L
+}
+
+internal fun resolveScannedSourceAddedAt(
+    preferredTimestampMs: Long?,
+    fallbackTimestampMs: Long?
+): Long {
+    return preferredTimestampMs?.takeIf { it > 0L }
+        ?: fallbackTimestampMs?.takeIf { it > 0L }
+        ?: 0L
+}
+
+internal fun resolveFilesystemCreationTime(file: File): Long? {
+    return resolveFilesystemCreationObservation(file)?.timestampMs
+}
+
+internal data class FilesystemCreationObservation(
+    val timestampMs: Long,
+    val confidence: String
+)
+
+internal fun resolveFilesystemCreationConfidence(
+    creationTimeMs: Long,
+    lastModifiedTimeMs: Long
+): String {
+    return if (creationTimeMs == lastModifiedTimeMs) "INFERRED" else "EXACT"
+}
+
+internal fun resolveFilesystemCreationObservation(file: File): FilesystemCreationObservation? {
+    return runCatching {
+        val attributes = Files.readAttributes(
+            file.toPath(),
+            BasicFileAttributes::class.java,
+            LinkOption.NOFOLLOW_LINKS
+        )
+        val creationTimeMs = attributes.creationTime().toMillis()
+        val lastModifiedTimeMs = attributes.lastModifiedTime().toMillis()
+        val latestAllowed = System.currentTimeMillis() + CREATION_TIME_FUTURE_TOLERANCE_MS
+        if (creationTimeMs <= 0L || creationTimeMs > latestAllowed) {
+            return@runCatching null
+        }
+        FilesystemCreationObservation(
+            timestampMs = creationTimeMs,
+            confidence = resolveFilesystemCreationConfidence(
+                creationTimeMs = creationTimeMs,
+                lastModifiedTimeMs = lastModifiedTimeMs
+            )
+        )
+    }.getOrNull()
+}
+
+private fun validSongTimestamp(timestamp: Long?): Long {
+    return timestamp?.takeIf { it > 0L } ?: Long.MIN_VALUE
+}
+
+private fun songSourceTimestamp(song: SongItem): Long {
+    return validSongTimestamp(song.logicalCreatedAtMs ?: song.addedAt)
+}
+
+private fun songCreationConfidence(song: SongItem): Int {
+    return when (song.createdAtConfidence?.uppercase(Locale.ROOT)) {
+        "EXACT" -> 3
+        "PROVIDER_REPORTED" -> 2
+        "INFERRED" -> 1
+        else -> 0
+    }
+}
+
+private fun hasStableSongCreationEvidence(song: SongItem): Boolean {
+    if (song.logicalCreatedAtMs?.let { validSongTimestamp(it) != Long.MIN_VALUE } == true) {
+        return true
+    }
+    if (songCreationConfidence(song) >= 2) {
+        return true
+    }
+    // 旧版本没有可信度字段，只能把已有 addedAt 当作旧数据回退时间
+    // 显式 UNKNOWN 或 INFERRED 的记录不能借此伪造创建时间
+    return song.createdAtConfidence == null &&
+        validSongTimestamp(song.addedAt) != Long.MIN_VALUE
+}
+
+private fun hasDeterministicSongCreationEvidence(song: SongItem): Boolean {
+    return (song.logicalCreatedAtMs?.let {
+        validSongTimestamp(it) != Long.MIN_VALUE
+    } == true) || songCreationConfidence(song) >= 2
+}
+
+/** 扫描预览按来源时间排序，不使用本次歌单加入时间 */
+internal fun localSongSourceCreationComparator(): Comparator<SongItem> {
+    return Comparator { left, right ->
+        val leftHasStableCreation = hasStableSongCreationEvidence(left)
+        val rightHasStableCreation = hasStableSongCreationEvidence(right)
+        if (leftHasStableCreation != rightHasStableCreation) {
+            return@Comparator if (leftHasStableCreation) -1 else 1
+        }
+        if (!leftHasStableCreation) {
+            // DocumentsProvider 没有可靠创建时间时，利用稳定排序保留 Provider 发现顺序
+            // 不要用 addedAt 或文件名重排这些歌曲
+            return@Comparator 0
+        }
+
+        val timestampComparison = validSongTimestamp(right.logicalCreatedAtMs ?: right.addedAt)
+            .compareTo(validSongTimestamp(left.logicalCreatedAtMs ?: left.addedAt))
+        if (timestampComparison != 0) {
+            return@Comparator timestampComparison
+        }
+
+        val confidenceComparison = songCreationConfidence(right)
+            .compareTo(songCreationConfidence(left))
+        if (confidenceComparison != 0) {
+            return@Comparator confidenceComparison
+        }
+
+        if (!hasDeterministicSongCreationEvidence(left) ||
+            !hasDeterministicSongCreationEvidence(right)
+        ) {
+            return@Comparator 0
+        }
+
+        compareValuesBy(
+            left,
+            right,
+            { it.sourceStableKey.orEmpty() },
+            { it.mediaUri.orEmpty() },
+            { it.localFileName.orEmpty() }
+        )
+    }
+}
+
+/** 已加入本地歌单的歌曲优先按加入时间，同一批次再看来源创建时间 */
+internal fun localSongNewestFirstComparator(): Comparator<SongItem> {
+    return compareByDescending<SongItem> { song ->
+        validSongTimestamp(song.membershipAddedAtMs)
+    }
+        .thenByDescending(::songSourceTimestamp)
+        .thenByDescending { song ->
+            songCreationConfidence(song)
+        }
+        .thenBy { it.sourceStableKey.orEmpty() }
+        .thenBy { it.mediaUri.orEmpty() }
+        .thenBy { it.localFileName.orEmpty() }
+}
+
+internal fun selectMetadataSidecarReference(
+    referencesByName: Map<String, String>,
+    audioName: String,
+    indexedReference: String? = null
+): String? {
+    indexedReference?.takeIf(String::isNotBlank)?.let { return it }
+    return referencesByName.entries
+        .asSequence()
+        .filter { entry ->
+            ManagedDownloadTreeNaming.metadataNameOrdinal(entry.key, audioName) != null
+        }
+        .minWithOrNull(
+            compareBy<Map.Entry<String, String>>(
+                { entry ->
+                    ManagedDownloadTreeNaming.metadataNameOrdinal(entry.key, audioName)
+                        ?: Int.MAX_VALUE
+                },
+                { entry -> entry.key }
+            )
+        )
+        ?.value
+}
+
+/**
+ * 旧 metadata 可能保存了已经失效的 SAF 封面引用, 优先使用当前快照重绑定的引用
+ */
+internal fun selectHydratedLocalCoverReference(
+    sidecarCover: String?,
+    existingCover: String?,
+    reboundCover: String?,
+    metadataFallbackCover: String?
+): String? {
+    val sidecar = sidecarCover.normalizeImportedCoverReference()
+    val existing = existingCover.normalizeImportedCoverReference()
+    val rebound = reboundCover.normalizeImportedCoverReference()
+    val fallback = metadataFallbackCover.normalizeImportedCoverReference()
+
+    // 仍可直接使用的侧车封面保持原有权威性, 避免被远端候选替换
+    if (sidecar != null && !isPotentiallyStaleSafCoverReference(sidecar)) {
+        return sidecar
+    }
+    rebound?.let { return it }
+    if (existing != null && !sameImportedCoverReference(existing, sidecar)) {
+        // 扫描结果可能是新的 SAF URI, 不能因为它不是 MediaStore URI 就丢掉
+        return existing
+    }
+    if (fallback != null && !isPotentiallyStaleSafCoverReference(fallback)) {
+        return fallback
+    }
+    return fallback ?: existing ?: sidecar
+}
+
+internal data class LocalCoverHydrationResult(
+    val song: SongItem,
+    val clearCoverUrl: Boolean = false,
+    val clearOriginalCoverUrl: Boolean = false
+)
+
+/**
+ * 快速扫描留下的旧 SAF 引用不能覆盖后续详细扫描得到的新封面
+ */
+internal fun selectMergedImportedCoverReference(
+    quickCover: String?,
+    detailedCover: String?
+): String? {
+    val quick = quickCover.normalizeImportedCoverReference()
+    val detailed = detailedCover.normalizeImportedCoverReference()
+    return when {
+        quick == null -> detailed
+        detailed == null -> quick
+        isPotentiallyStaleSafCoverReference(quick) && quick != detailed -> detailed
+        else -> quick
+    }
+}
+
+private fun String?.normalizeImportedCoverReference(): String? {
+    return this?.trim()?.takeIf(String::isNotBlank)
+}
+
+private fun sameImportedCoverReference(first: String?, second: String?): Boolean {
+    return first != null && second != null && first == second
+}
+
+private fun isPotentiallyStaleSafCoverReference(reference: String): Boolean {
+    return reference.startsWith("content://", ignoreCase = true) &&
+        !isMediaStoreSidecarReference(reference)
+}
+
+private fun buildLocalSidecarMetadataIndex(
+    filesByName: Map<String, String>
+): Map<String, String> {
+    val best = HashMap<String, Pair<Int, String>>()
+    filesByName.forEach { (normalizedName, reference) ->
+        val audioName = ManagedDownloadTreeNaming.metadataAudioName(normalizedName)
+            ?: return@forEach
+        val key = audioName.lowercase(Locale.ROOT)
+        val ordinal = ManagedDownloadTreeNaming.metadataNameOrdinal(
+            actualName = normalizedName,
+            audioName = audioName
+        ) ?: Int.MAX_VALUE
+        val previous = best[key]
+        if (previous == null || ordinal < previous.first ||
+            (ordinal == previous.first && reference < previous.second)
+        ) {
+            best[key] = ordinal to reference
+        }
+    }
+    return best.mapValues { (_, value) -> value.second }
+}
+
+private fun Long?.toEpochMillisOrNull(): Long? {
+    val seconds = this?.takeIf { it > 0L } ?: return null
+    val latestAllowedSeconds =
+        (System.currentTimeMillis() / 1_000L) + (CREATION_TIME_FUTURE_TOLERANCE_MS / 1_000L)
+    if (seconds > latestAllowedSeconds || seconds > Long.MAX_VALUE / 1_000L) {
+        return null
+    }
+    return seconds * 1_000L
+}
+
+private fun Long?.toValidTimestampMsOrNull(): Long? {
+    val timestamp = this?.takeIf { it > 0L } ?: return null
+    val latestAllowed = System.currentTimeMillis() + CREATION_TIME_FUTURE_TOLERANCE_MS
+    return timestamp.takeIf { it <= latestAllowed }
+}
 
 internal data class SidecarCopyPlan(
     val source: File,
@@ -74,13 +509,20 @@ internal data class QuickImportedSongSeed(
     val artist: String?,
     val album: String?,
     val durationMs: Long?,
+    val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null,
     val localFile: File? = null,
     val nearbyCoverUri: String? = null,
+    val mediaStoreCoverUri: String? = null,
+    val stableIdentitySource: String? = null,
     val sourceStableKey: String? = null,
     val matchedLyric: String? = null,
     val matchedTranslatedLyric: String? = null,
     val originalLyric: String? = null,
-    val originalTranslatedLyric: String? = null
+    val originalTranslatedLyric: String? = null,
+    val matchedRomanizedLyric: String? = null,
+    val originalRomanizedLyric: String? = null
 )
 
 private data class QuickImportedAudioInfo(
@@ -88,16 +530,49 @@ private data class QuickImportedAudioInfo(
     val title: String? = null,
     val artist: String? = null,
     val album: String? = null,
-    val durationMs: Long? = null
+    val durationMs: Long? = null,
+    val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null,
+    val mediaStoreCoverUri: String? = null
 )
 
 private data class ExternalAudioCopyInfo(
     val displayName: String?,
+    val sizeBytes: Long?,
+    val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null,
+    val sourceLastModifiedAt: Long? = null
+)
+
+private data class ExternalProviderTimestampInfo(
+    val dateAddedMs: Long? = null,
+    val dateModifiedMs: Long? = null,
+    val documentLastModifiedMs: Long? = null
+)
+
+private data class ExternalAudioBaseInfo(
+    val displayName: String?,
     val sizeBytes: Long?
 )
 
+private data class StabilizedExternalAudio(
+    val uri: Uri,
+    val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null
+)
+
 private data class FolderScanCandidate(
-    val uri: Uri
+    val uri: Uri,
+    val displayName: String? = null,
+    val nearbyCoverUri: String? = null,
+    val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null,
+    val durationMs: Long? = null,
+    val knownSidecarReferences: LocalKnownSidecarReferences? = null
 )
 
 private data class FolderTraversalResult(
@@ -107,12 +582,622 @@ private data class FolderTraversalResult(
     val mode: String
 )
 
-private data class QueriedFolderChild(
+private data class CompletedScanSongs(
+    val songs: List<SongItem>,
+    val metadataDeferred: Boolean
+)
+
+internal data class ExternalStorageFolderMediaStoreScope(
+    val volumeName: String,
+    val relativePath: String
+)
+
+internal data class QueriedFolderChild(
     val documentUri: Uri,
     val displayName: String,
     val mimeType: String,
-    val isDirectory: Boolean
+    val isDirectory: Boolean,
+    val lastModifiedMs: Long? = null,
+    val durationMs: Long? = null
 )
+
+private const val MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY = 8_192
+private const val MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_TOTAL = 65_536
+private const val MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES = 512
+private const val MEDIA_STORE_SIDECAR_INDEX_MAX_ENTRIES = 8_192
+private val LOCAL_AUDIO_FILE_EXTENSIONS = setOf(
+    "aac",
+    "aif",
+    "aiff",
+    "alac",
+    "amr",
+    "ape",
+    "flac",
+    "m4a",
+    "m4b",
+    "m4p",
+    "mid",
+    "midi",
+    "mka",
+    "mp3",
+    "oga",
+    "ogg",
+    "opus",
+    "wav",
+    "wma"
+)
+private val MEDIA_STORE_SIDECAR_PRIORITY_EXTENSIONS = setOf(
+    "lrc",
+    "txt",
+    "json",
+    "jpg",
+    "jpeg",
+    "png",
+    "webp"
+)
+
+private fun isAudioDocumentChild(child: QueriedFolderChild): Boolean {
+    if (child.mimeType.startsWith("audio/", ignoreCase = true)) return true
+    return child.displayName.substringAfterLast('.', "")
+        .lowercase(Locale.ROOT) in LOCAL_AUDIO_FILE_EXTENSIONS
+}
+
+/**
+ * 大目录只保留解析旁车真正需要的条目，避免一次扫描把整个目录复制到长期缓存
+ */
+internal fun boundMediaStoreSidecarChildrenForCache(
+    children: List<QueriedFolderChild>,
+    maxEntries: Int = MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY
+): List<QueriedFolderChild> {
+    if (maxEntries <= 0 || children.isEmpty()) return emptyList()
+    if (children.size <= maxEntries) return children
+
+    fun isEssential(child: QueriedFolderChild): Boolean {
+        return child.isDirectory || isAudioDocumentChild(child)
+    }
+
+    fun isSidecar(child: QueriedFolderChild): Boolean {
+        return !child.isDirectory &&
+            child.displayName.substringAfterLast('.', "")
+                .lowercase(Locale.ROOT) in MEDIA_STORE_SIDECAR_PRIORITY_EXTENSIONS
+    }
+
+    val prioritized = children.asSequence()
+        .filter(::isEssential)
+        .take(maxEntries)
+        .toList()
+    if (prioritized.size == maxEntries) return prioritized
+
+    val sidecars = children.asSequence()
+        .filter { child -> !isEssential(child) && isSidecar(child) }
+        .take(maxEntries - prioritized.size)
+        .toList()
+    if (prioritized.size + sidecars.size == maxEntries) {
+        return prioritized + sidecars
+    }
+
+    val remaining = maxEntries - prioritized.size - sidecars.size
+    return prioritized + sidecars + children.asSequence()
+        .filter { child -> !isEssential(child) && !isSidecar(child) }
+        .take(remaining)
+        .toList()
+}
+
+private class MediaStoreSidecarResolver(
+    private val context: Context,
+    private val folderUri: Uri,
+    selectedRelativePath: String
+) {
+    private data class SidecarChildrenQueryResult(
+        val children: List<QueriedFolderChild>,
+        val truncated: Boolean
+    )
+
+    private val selectedPath = selectedRelativePath
+    private val selectedSegments = splitStoragePath(selectedRelativePath)
+    private val childrenCache = HashMap<String, List<QueriedFolderChild>>()
+    private var cachedChildrenCount = 0
+    private val directoryCache = HashMap<String, DirectorySidecarIndex?>()
+    private val rootLyricsIndex: Map<String, String> by lazy {
+        val root = directoryIndex(emptyList()) ?: return@lazy emptyMap()
+        root.lyricsIndex
+    }
+    private val rootCoverIndex: Map<String, String> by lazy {
+        val root = directoryIndex(emptyList()) ?: return@lazy emptyMap()
+        root.coverIndex
+    }
+
+    fun resolve(
+        relativePath: String?,
+        displayName: String
+    ): LocalKnownSidecarReferences? {
+        val directory = directoryFor(relativePath) ?: return null
+        val baseName = displayName.substringBeforeLast('.', displayName)
+        val resolved = resolveSidecarReferences(
+            directIndex = directory.directIndex,
+            nestedIndex = directory.lyricsIndex,
+            rootLyricsIndex = rootLyricsIndex,
+            displayName = displayName,
+            baseName = baseName,
+            metadataIndex = directory.metadataIndex
+        )
+        return resolved
+    }
+
+    fun resolveAudioReference(
+        relativePath: String?,
+        displayName: String
+    ): String? {
+        val directory = directoryFor(relativePath) ?: return null
+        return directory.audioIndex[displayName.lowercase(Locale.ROOT)]
+    }
+
+    fun resolveNearbyCoverReference(
+        relativePath: String?,
+        displayName: String
+    ): String? {
+        val directory = directoryFor(relativePath) ?: return null
+        val baseName = displayName.substringBeforeLast('.', displayName)
+        val extensions = listOf("jpg", "jpeg", "png", "webp")
+
+        fun findSpecific(index: Map<String, String>): String? {
+            return extensions.firstNotNullOfOrNull { extension ->
+                index["$baseName.$extension".lowercase(Locale.ROOT)]
+            }
+        }
+
+        findSpecific(directory.directIndex)?.let { return it }
+        findSpecific(directory.coverIndex)?.let { return it }
+        findSpecific(rootCoverIndex)?.let { return it }
+        return listOf("cover", "folder", "front").firstNotNullOfOrNull { coverName ->
+            extensions.firstNotNullOfOrNull { extension ->
+                directory.directIndex["$coverName.$extension".lowercase(Locale.ROOT)]
+                    ?: directory.coverIndex["$coverName.$extension".lowercase(Locale.ROOT)]
+                    ?: rootCoverIndex["$coverName.$extension".lowercase(Locale.ROOT)]
+            }
+        }
+    }
+
+    private fun directoryFor(relativePath: String?): DirectorySidecarIndex? {
+        val rowSegments = splitStoragePath(relativePath ?: selectedPath)
+        if (rowSegments.size < selectedSegments.size ||
+            rowSegments.take(selectedSegments.size) != selectedSegments
+        ) {
+            return null
+        }
+        return directoryIndex(rowSegments.drop(selectedSegments.size))
+    }
+
+    private fun resolveSidecarReferences(
+        directIndex: Map<String, String>,
+        nestedIndex: Map<String, String>,
+        rootLyricsIndex: Map<String, String>,
+        displayName: String,
+        baseName: String,
+        metadataIndex: Map<String, String>
+    ): LocalKnownSidecarReferences {
+        fun find(names: List<String>): String? {
+            return names.firstNotNullOfOrNull { name ->
+                rootLyricsIndex[name.lowercase(Locale.ROOT)]
+                    ?: nestedIndex[name.lowercase(Locale.ROOT)]
+                    ?: directIndex[name.lowercase(Locale.ROOT)]
+            }
+        }
+
+        fun lyricNames(prefix: String): List<String> {
+            return listOf("lrc", "txt").flatMap { extension ->
+                listOf("$prefix.$extension", "$prefix.lrc.txt")
+            }
+        }
+        val original = find(lyricNames(baseName))
+        val translated = find(lyricNames("${baseName}_trans"))
+        val romanized = find(
+            lyricNames(baseName + "_roma") +
+                lyricNames(baseName + "_romalrc") +
+                lyricNames(baseName + "_romanized")
+        )
+        return LocalKnownSidecarReferences(
+            lyrics = NearbyLyricReferences(
+                original = original,
+                translated = translated,
+                romanized = romanized
+            ),
+            metadata = metadataIndex[displayName.lowercase(Locale.ROOT)]
+        )
+    }
+
+    private fun buildDocumentNameIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        return children.asSequence()
+            .filterNot(QueriedFolderChild::isDirectory)
+            .filter { child ->
+                child.displayName.substringAfterLast('.', "")
+                    .lowercase(Locale.ROOT) in MEDIA_STORE_SIDECAR_PRIORITY_EXTENSIONS
+            }
+            .take(MEDIA_STORE_SIDECAR_INDEX_MAX_ENTRIES)
+            .map { child -> child.displayName.lowercase(Locale.ROOT) to child.documentUri.toString() }
+            .toMap()
+    }
+
+    private fun buildDocumentAudioIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        return children.asSequence()
+            .filter(::isAudioDocumentChild)
+            .take(MEDIA_STORE_SIDECAR_INDEX_MAX_ENTRIES)
+            .map { child -> child.displayName.lowercase(Locale.ROOT) to child.documentUri.toString() }
+            .toMap()
+    }
+
+    private fun directoryIndex(relativeSegments: List<String>): DirectorySidecarIndex? {
+        val cacheKey = relativeSegments.joinToString("/") { it.lowercase(Locale.ROOT) }
+        if (cacheKey in directoryCache) return directoryCache[cacheKey]
+
+        var directoryUri = folderUri
+        relativeSegments.forEach { segment ->
+            val child = children(directoryUri).firstOrNull {
+                it.isDirectory && it.displayName.equals(segment, ignoreCase = true)
+            }
+            if (child == null) {
+                if (directoryCache.size < MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES) {
+                    directoryCache[cacheKey] = null
+                }
+                return null
+            }
+            directoryUri = child.documentUri
+        }
+
+        val directChildren = children(directoryUri)
+        val lyricsDirectory = directChildren.firstOrNull {
+            it.isDirectory && it.displayName.equals("Lyrics", ignoreCase = true)
+        }
+        val lyricsChildren = lyricsDirectory?.let { children(it.documentUri) }.orEmpty()
+        val coversDirectory = directChildren.firstOrNull {
+            it.isDirectory && it.displayName.equals("Covers", ignoreCase = true)
+        }
+        val coversChildren = coversDirectory?.let { children(it.documentUri) }.orEmpty()
+        val resolved = DirectorySidecarIndex(
+            directIndex = buildDocumentNameIndex(directChildren),
+            lyricsIndex = buildDocumentNameIndex(lyricsChildren),
+            coverIndex = buildDocumentNameIndex(coversChildren),
+            metadataIndex = buildDocumentMetadataIndex(directChildren),
+            audioIndex = buildDocumentAudioIndex(directChildren)
+        )
+        if (directoryCache.size < MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES) {
+            directoryCache[cacheKey] = resolved
+        }
+        return resolved
+    }
+
+    private fun buildDocumentMetadataIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        val best = HashMap<String, Pair<Int, String>>()
+        children.asSequence()
+            .filterNot(QueriedFolderChild::isDirectory)
+            .take(MEDIA_STORE_SIDECAR_INDEX_MAX_ENTRIES)
+            .forEach { child ->
+                val audioName = ManagedDownloadTreeNaming.metadataAudioName(child.displayName)
+                    ?: return@forEach
+                val key = audioName.lowercase(Locale.ROOT)
+                val ordinal = ManagedDownloadTreeNaming.metadataNameOrdinal(
+                    actualName = child.displayName,
+                    audioName = audioName
+                ) ?: Int.MAX_VALUE
+                val previous = best[key]
+                if (previous == null || ordinal < previous.first ||
+                    (ordinal == previous.first && child.documentUri.toString() < previous.second)
+                ) {
+                    best[key] = ordinal to child.documentUri.toString()
+                }
+            }
+        return best.mapValues { (_, value) -> value.second }
+    }
+
+    private fun children(parentUri: Uri): List<QueriedFolderChild> {
+        val key = parentUri.toString()
+        childrenCache[key]?.let { return it }
+        val documentId = runCatching { DocumentsContract.getDocumentId(parentUri) }
+            .getOrElse {
+                runCatching { DocumentsContract.getTreeDocumentId(parentUri) }.getOrNull()
+            }
+        if (documentId.isNullOrBlank()) return emptyList()
+        val childrenUri = runCatching {
+            DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
+        }.getOrNull() ?: return emptyList()
+        val queryResult = runCatching {
+            context.contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID
+                )
+                val nameIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                )
+                val mimeIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                )
+                if (idIndex < 0 || nameIndex < 0 || mimeIndex < 0) {
+                    error("DocumentsProvider returned an incomplete child projection")
+                }
+                var truncated = false
+                val result = buildList<QueriedFolderChild> {
+                    while (cursor.moveToNext()) {
+                        if (size >= MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY) {
+                            // 旁车索引只服务于快速首屏，巨型目录交给后续按需解析
+                            truncated = true
+                            break
+                        }
+                        val childId = cursor.getString(idIndex)
+                            ?.takeIf(String::isNotBlank)
+                            ?: continue
+                        val childName = cursor.getString(nameIndex)
+                            ?.takeIf(String::isNotBlank)
+                            ?: continue
+                        val mimeType = cursor.getString(mimeIndex).orEmpty()
+                        val isDirectory = mimeType ==
+                            DocumentsContract.Document.MIME_TYPE_DIR
+                        val extension = childName.substringAfterLast('.', "")
+                            .lowercase(Locale.ROOT)
+                        if (!isDirectory &&
+                            extension !in MEDIA_STORE_SIDECAR_PRIORITY_EXTENSIONS &&
+                            !mimeType.startsWith("audio/", ignoreCase = true) &&
+                            extension !in LOCAL_AUDIO_FILE_EXTENSIONS
+                        ) {
+                            continue
+                        }
+                        add(
+                            QueriedFolderChild(
+                                documentUri = DocumentsContract.buildDocumentUriUsingTree(
+                                    parentUri,
+                                    childId
+                                ),
+                                displayName = childName,
+                                mimeType = mimeType,
+                                isDirectory = isDirectory
+                            )
+                        )
+                    }
+                }
+                if (truncated) {
+                    NPLogger.d(
+                        TAG,
+                        "MediaStore sidecar directory query truncated at " +
+                            "$MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY: uri=$key"
+                    )
+                }
+                SidecarChildrenQueryResult(
+                    children = result,
+                    truncated = truncated
+                )
+            }
+        }
+        if (queryResult.isFailure) {
+            val error = queryResult.exceptionOrNull()
+            NPLogger.d(TAG, "MediaStore sidecar index unavailable: ${error?.message}")
+            return emptyList()
+        }
+        val queried = queryResult.getOrNull() ?: run {
+            NPLogger.d(TAG, "MediaStore sidecar index unavailable: null cursor")
+            return emptyList()
+        }
+        val result = queried.children
+        if (queried.truncated) {
+            // 截断结果只作为本次解析的有界快照缓存，避免每首歌重复触发 Binder
+            // 查询，完整性仍保持未知，后续刷新会重新建立索引
+            val remainingCapacity = (
+                MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_TOTAL - cachedChildrenCount
+            ).coerceAtLeast(0)
+            if (childrenCache.size < MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES &&
+                result.size <= remainingCapacity
+            ) {
+                childrenCache[key] = result
+                cachedChildrenCount += result.size
+            }
+            return result
+        }
+        val previousSize = childrenCache[key]?.size ?: 0
+        if (key !in childrenCache &&
+            childrenCache.size >= MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES
+        ) {
+            NPLogger.d(
+                TAG,
+                "MediaStore sidecar directory cache limit reached: " +
+                    "directories=${childrenCache.size}, uri=$key"
+            )
+            return result
+        }
+        val remainingCapacity = (
+            MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_TOTAL -
+                cachedChildrenCount + previousSize
+            ).coerceAtLeast(0)
+        val bounded = boundMediaStoreSidecarChildrenForCache(
+            children = result,
+            maxEntries = minOf(
+                MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY,
+                remainingCapacity
+            )
+        )
+        if (bounded.size < result.size) {
+            NPLogger.d(
+                TAG,
+                "MediaStore sidecar directory cache bounded: " +
+                    "uri=$key, children=${result.size}, cached=${bounded.size}"
+            )
+        }
+        if (bounded.size < result.size) {
+            // 裁剪结果只能用于判断是否值得缓存，不能作为真实目录结果返回
+            // 否则未命中的音频会被误判为不存在
+            return result
+        }
+        childrenCache[key] = result
+        cachedChildrenCount += result.size - previousSize
+        return result
+    }
+
+    private data class DirectorySidecarIndex(
+        val directIndex: Map<String, String>,
+        val lyricsIndex: Map<String, String>,
+        val coverIndex: Map<String, String>,
+        val metadataIndex: Map<String, String>,
+        val audioIndex: Map<String, String>
+    )
+
+    private companion object {
+        const val TAG = "LocalAudioImport"
+        fun splitStoragePath(path: String): List<String> {
+            return Uri.decode(path)
+                .split('/')
+                .map(String::trim)
+                .filter(String::isNotBlank)
+        }
+    }
+}
+
+internal class ManagedMediaStoreSidecarIndex(
+    private val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
+    private val treeDocumentId: String?
+) {
+    private val publicationGate = ManagedDownloadCandidatePublicationGate(
+        snapshot = snapshot,
+        treeDocumentId = treeDocumentId
+    )
+    private val audioByName = snapshot
+        ?.audioEntries
+        ?.associateBy { entry -> entry.name.lowercase(Locale.ROOT) }
+        .orEmpty()
+
+    fun shouldPublish(
+        relativePath: String?,
+        displayName: String,
+        candidateReferences: Collection<String> = emptyList()
+    ): Boolean {
+        return publicationGate.evaluateRelativePath(
+            relativePath = relativePath,
+            displayName = displayName,
+            candidateReferences = candidateReferences
+        ).shouldPublish
+    }
+
+    fun resolve(
+        relativePath: String?,
+        displayName: String
+    ): LocalKnownSidecarReferences? {
+        val currentSnapshot = snapshot ?: return null
+        if (!shouldPublish(relativePath = relativePath, displayName = displayName)) {
+            return null
+        }
+        if (!ManagedDownloadStorage.isManagedDownloadRelativePath(relativePath, treeDocumentId)) {
+            return null
+        }
+        val audio = audioByName[displayName.lowercase(Locale.ROOT)] ?: return null
+        val metadataReference = currentSnapshot.metadataEntriesByAudioName[audio.name]
+            ?.reference
+            ?.takeIf(String::isNotBlank)
+            ?.takeUnless(::isMediaStoreSidecarReference)
+        val coverReference = currentSnapshot.metadataByAudioName[audio.name]
+            ?.coverPath
+            ?.takeIf(currentSnapshot.knownReferences::contains)
+        if (metadataReference == null && coverReference == null) return null
+        return LocalKnownSidecarReferences(
+            lyrics = NearbyLyricReferences(
+                original = null,
+                translated = null,
+                romanized = null
+            ),
+            metadata = metadataReference,
+            cover = coverReference
+        )
+    }
+}
+
+internal enum class ManagedDownloadCandidatePublication {
+    NON_MANAGED,
+    FINALIZED,
+    WITHHELD;
+
+    val shouldPublish: Boolean
+        get() = this != WITHHELD
+}
+
+internal class ManagedDownloadCandidatePublicationGate(
+    private val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
+    private val treeDocumentId: String?
+) {
+    private val audioByName = snapshot
+        ?.audioEntries
+        ?.associateBy { entry -> entry.name.lowercase(Locale.ROOT) }
+        .orEmpty()
+    private val audioByReference = snapshot
+        ?.audioEntries
+        ?.flatMap { entry ->
+            listOf(entry.reference, entry.mediaUri, entry.localFilePath)
+                .mapNotNull { reference -> reference?.takeIf(String::isNotBlank) }
+                .map { reference -> reference to entry }
+        }
+        ?.toMap()
+        .orEmpty()
+
+    fun evaluateRelativePath(
+        relativePath: String?,
+        displayName: String,
+        candidateReferences: Collection<String> = emptyList()
+    ): ManagedDownloadCandidatePublication {
+        return evaluate(
+            isInsideManagedRoot = ManagedDownloadStorage.isManagedDownloadRelativePath(
+                relativePath,
+                treeDocumentId
+            ),
+            displayName = displayName,
+            candidateReferences = candidateReferences
+        )
+    }
+
+    fun evaluate(
+        isInsideManagedRoot: Boolean,
+        displayName: String,
+        candidateReferences: Collection<String> = emptyList()
+    ): ManagedDownloadCandidatePublication {
+        val entryByReference = candidateReferences.asSequence()
+            .mapNotNull { reference -> audioByReference[reference] }
+            .firstOrNull()
+        val entry = entryByReference ?: if (isInsideManagedRoot) {
+            audioByName[displayName.lowercase(Locale.ROOT)]
+        } else {
+            null
+        }
+        if (!isInsideManagedRoot && entry == null) {
+            return ManagedDownloadCandidatePublication.NON_MANAGED
+        }
+        val currentSnapshot = snapshot ?: return ManagedDownloadCandidatePublication.WITHHELD
+        if (!currentSnapshot.rootEntriesComplete) {
+            return ManagedDownloadCandidatePublication.WITHHELD
+        }
+        if (entry == null) {
+            return ManagedDownloadCandidatePublication.WITHHELD
+        }
+        return if (isFinalizedDownloadedAudioEntry(
+                rootEntriesComplete = currentSnapshot.rootEntriesComplete,
+                isPendingAudioWrite = entry.isPendingAudioWrite,
+                metadata = currentSnapshot.metadataByAudioName[entry.name]
+            )
+        ) {
+            ManagedDownloadCandidatePublication.FINALIZED
+        } else {
+            ManagedDownloadCandidatePublication.WITHHELD
+        }
+    }
+}
 
 internal fun buildNearbySidecarCopyPlans(
     sourceFile: File,
@@ -174,41 +1259,69 @@ internal fun buildNearbySidecarCopyPlans(
 
 object LocalAudioImportManager {
     private const val TAG = "LocalAudioImport"
-    private const val FOLDER_SCAN_METADATA_PARALLELISM = 8
-    private const val FOLDER_SCAN_DEEP_METADATA_LIMIT = 120
-    private const val SCAN_NEARBY_COVER_LIMIT = 120
+    private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
+        "com.android.externalstorage.documents"
+    private const val EXTERNAL_STORAGE_PRIMARY_VOLUME_ID = "primary"
     private const val SCAN_PROGRESS_LOG_INTERVAL = 200
     private const val SLOW_SCAN_ITEM_THRESHOLD_MS = 120L
+    private const val COMPLETE_SCAN_PARALLELISM = 24
+    // 限制协程和临时结果数量，避免超大曲库放大内存占用
+    private const val COMPLETE_SCAN_BATCH_SIZE = COMPLETE_SCAN_PARALLELISM * 4
+    // SAF 在几百首规模就可能因逐首容器解析超过刷新预算，超过阈值先返回
+    // 目录行和侧车元数据，嵌入标签在后台或详情页按需读取
+    // 对没有 _data 的 MediaStore 行做有界可读性确认，覆盖常见千首目录
+    // 超出上限的行不会直接发布，后续刷新会继续验证，避免出现不可播放条目
+    private const val COMPLETE_SCAN_CONTENT_PROBE_LIMIT = 4_096
+    // 超过小批量后不在刷新路径解析音频容器，避免大曲库拖慢首屏和扫描
+    private const val COMPLETE_SCAN_METADATA_DEFER_THRESHOLD = 256
+    private const val LOCAL_SIDECAR_INDEX_MAX_ENTRIES = 8_192
+    private const val LEGACY_DOWNLOAD_ROOT = "/storage/emulated/0/neriplayer-download"
     private const val MAX_EXTERNAL_IMPORT_COUNT = 500
     private const val MAX_EXTERNAL_IMPORT_BYTES = 2L * 1024L * 1024L * 1024L
-    private val audioExtensions = setOf(
-        "aac",
-        "aif",
-        "aiff",
-        "alac",
-        "amr",
-        "ape",
-        "flac",
-        "m4a",
-        "m4b",
-        "m4p",
-        "mid",
-        "midi",
-        "mka",
-        "mp3",
-        "oga",
-        "ogg",
-        "opus",
-        "wav",
-        "wma"
-    )
+    private val audioExtensions = LOCAL_AUDIO_FILE_EXTENSIONS
     private val lyricExtensions = listOf("lrc", "txt")
     private val imageExtensions = listOf("jpg", "jpeg", "png", "webp")
     private val coverNames = listOf("cover", "folder", "front")
 
+    private fun isLocalSidecarIndexCandidate(name: String): Boolean {
+        val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        return extension in lyricExtensions ||
+            extension in imageExtensions ||
+            extension == "json"
+    }
+    private val quickMetadataPlaceholders = setOf(
+        "<unknown>",
+        "<unknown artist>",
+        "<unknown album>",
+        "unknown",
+        "unknown artist",
+        "unknown album",
+        "未知",
+        "未知歌手",
+        "未知艺术家",
+        "未知专辑"
+    )
+    private val managedDownloadSourceNames = setOf(
+        "netease",
+        "bilibili",
+        "youtube",
+        "youtube_music",
+        "youtubemusic"
+    )
+
+    private data class LocalSidecarDirectoryIndex(
+        val filesByName: Map<String, String>,
+        val metadataByAudioName: Map<String, String>
+    )
+
     suspend fun importExternalSongs(context: Context, uris: List<Uri>): LocalAudioImportResult = withContext(Dispatchers.IO) {
         val songs = mutableListOf<SongItem>()
         var failedCount = 0
+        var withheldManagedCount = 0
+        val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
+            snapshot = loadManagedDownloadSnapshotForScan(context),
+            treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        )
 
         val distinctUris = uris.distinctBy { it.toString() }
         if (distinctUris.size > MAX_EXTERNAL_IMPORT_COUNT) {
@@ -219,22 +1332,74 @@ object LocalAudioImportManager {
         }
 
         distinctUris.take(MAX_EXTERNAL_IMPORT_COUNT).forEach { uri ->
-            val stableUri = runCatching {
-                stabilizeExternalUri(context, uri)
-            }.onFailure {
+            val sourceFile = resolveSourceFile(context, uri)
+            val sourceCopyInfo = if (
+                uri.scheme.equals("content", ignoreCase = true) &&
+                    uri.authority != MediaStore.AUTHORITY
+            ) {
+                queryExternalAudioCopyInfo(context, uri, sourceFile)
+            } else {
+                null
+            }
+            val displayName = sourceFile?.name
+                ?: sourceCopyInfo?.displayName
+                ?: uri.lastPathSegment
+                ?: uri.toString()
+            val candidateReferences = buildList {
+                add(uri.toString())
+                sourceFile?.absolutePath?.let(::add)
+                sourceFile?.toURI()?.toString()?.let(::add)
+            }
+            if (!managedDownloadGate.evaluate(
+                    isInsideManagedRoot = isManagedExternalAudioCandidate(
+                        context = context,
+                        uri = uri,
+                        sourceFile = sourceFile
+                    ),
+                    displayName = displayName,
+                    candidateReferences = candidateReferences
+                ).shouldPublish
+            ) {
+                withheldManagedCount++
+                NPLogger.d(TAG, "skip unfinalized managed external audio: $uri")
+                return@forEach
+            }
+            val stabilizedAudio = runCatching {
+                stabilizeExternalUri(
+                    context = context,
+                    uri = uri,
+                    sourceFile = sourceFile,
+                    copyInfo = sourceCopyInfo
+                )
+            }.getOrRethrowCancellation {
                 NPLogger.e(TAG, "Failed to stabilize external audio: $uri", it)
-            }.getOrNull()
+            }
 
-            if (stableUri == null) {
+            if (stabilizedAudio == null) {
                 failedCount++
                 return@forEach
             }
 
             val song = runCatching {
-                buildQuickImportedSong(context, stableUri)
-            }.onFailure {
-                NPLogger.e(TAG, "Failed to import stabilized external audio: $stableUri", it)
-            }.getOrNull()
+                val imported = buildQuickImportedSong(context, stabilizedAudio.uri)
+                val sourceAddedAt = stabilizedAudio.sourceAddedAt
+                if (sourceAddedAt == null || sourceAddedAt <= 0L) {
+                    imported
+                } else {
+                    imported.copy(
+                        addedAt = sourceAddedAt,
+                        logicalCreatedAtMs = sourceAddedAt,
+                        createdAtSource = stabilizedAudio.sourceAddedAtSource,
+                        createdAtConfidence = stabilizedAudio.sourceAddedAtConfidence
+                    )
+                }
+            }.getOrRethrowCancellation {
+                NPLogger.e(
+                    TAG,
+                    "Failed to import stabilized external audio: ${stabilizedAudio.uri}",
+                    it
+                )
+            }
 
             if (song != null) {
                 songs += song
@@ -243,33 +1408,104 @@ object LocalAudioImportManager {
             }
         }
 
+        if (withheldManagedCount > 0) {
+            NPLogger.d(
+                TAG,
+                "external import withheld unfinalized managed audio: $withheldManagedCount"
+            )
+        }
+
         LocalAudioImportResult(
-            songs = songs.distinctBy { it.identity() },
+            songs = orderScannedSongs(songs),
             failedCount = failedCount,
-            completed = true
+            completed = true,
+            metadataDeferred = false
         )
     }
 
-    suspend fun scanFolderSongs(context: Context, folderUri: Uri): LocalAudioImportResult = withContext(Dispatchers.IO) {
+    suspend fun scanFolderSongs(
+        context: Context,
+        folderUri: Uri,
+        onProgress: (LocalAudioScanProgress) -> Unit = {}
+    ): LocalAudioImportResult = withContext(Dispatchers.IO) {
+        scanFolderSongsInternal(
+            context = context,
+            folderUri = folderUri,
+            onProgress = onProgress,
+            mediaStoreScan = { progress ->
+                scanExternalStorageFolderWithMediaStore(context, folderUri, progress)
+            }
+        )
+    }
+
+    internal suspend fun scanFolderSongsWithMediaStoreResultForTest(
+        context: Context,
+        folderUri: Uri,
+        mediaStoreResult: LocalAudioImportResult?,
+        onProgress: (LocalAudioScanProgress) -> Unit = {}
+    ): LocalAudioImportResult = withContext(Dispatchers.IO) {
+        scanFolderSongsInternal(
+            context = context,
+            folderUri = folderUri,
+            onProgress = onProgress,
+            mediaStoreScan = { mediaStoreResult }
+        )
+    }
+
+    private suspend fun scanFolderSongsInternal(
+        context: Context,
+        folderUri: Uri,
+        onProgress: (LocalAudioScanProgress) -> Unit,
+        mediaStoreScan: suspend (LocalAudioScanProgressEmitter) -> LocalAudioImportResult?
+    ): LocalAudioImportResult {
         val scanStartedAt = SystemClock.elapsedRealtime()
+        val progress = LocalAudioScanProgressEmitter(scanStartedAt, onProgress)
         NPLogger.d(TAG, "scanFolderSongs start: uri=$folderUri")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val mediaStoreResult = mediaStoreScan(progress)
+            if (shouldUseMediaStoreScanResult(mediaStoreResult)) {
+                return requireNotNull(mediaStoreResult)
+            }
+        }
+
         val root = DocumentFile.fromTreeUri(context, folderUri)
         if (root == null) {
             NPLogger.w(TAG, "scanFolderSongs skipped unreadable folder: $folderUri")
-            return@withContext LocalAudioImportResult(
+            return LocalAudioImportResult(
                 songs = emptyList(),
                 failedCount = 1,
                 completed = false
             )
         }
+        val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
+            snapshot = loadManagedDownloadSnapshotForScan(context),
+            treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        )
 
         val traversalStartedAt = SystemClock.elapsedRealtime()
-        val traversalResult = runCatching {
-            collectFolderCandidatesWithDocumentsContract(context, folderUri)
-        }.onFailure {
-            NPLogger.w(TAG, "scanFolderSongs fast traversal unavailable, fallback DocumentFile: ${it.message}")
-        }.getOrElse {
-            collectFolderCandidatesWithDocumentFile(root)
+        val traversalResult = try {
+            collectFolderCandidatesWithDocumentsContract(
+                context = context,
+                folderUri = folderUri,
+                rootDisplayName = root.name,
+                progress = progress,
+                managedDownloadGate = managedDownloadGate
+            )
+        } catch (error: Exception) {
+            if (!shouldFallbackToDocumentFileAfterTraversalFailure(error)) {
+                throw error
+            }
+            NPLogger.w(
+                TAG,
+                "scanFolderSongs fast traversal unavailable, fallback DocumentFile: ${error.message}"
+            )
+            collectFolderCandidatesWithDocumentFile(
+                context = context,
+                root = root,
+                progress = progress,
+                managedDownloadGate = managedDownloadGate
+            )
         }
         val traversalElapsedMs = SystemClock.elapsedRealtime() - traversalStartedAt
         NPLogger.d(
@@ -277,76 +1513,895 @@ object LocalAudioImportManager {
             "scanFolderSongs traversal finished: mode=${traversalResult.mode}, directories=${traversalResult.visitedDirectoryCount}, audioCandidates=${traversalResult.candidates.size}, failed=${traversalResult.failedCount}, elapsed=${traversalElapsedMs}ms"
         )
 
-        val metadataStartedAt = SystemClock.elapsedRealtime()
-        val processedCount = AtomicInteger(0)
-        val slowItemCount = AtomicInteger(0)
-        val useDeepMetadata = traversalResult.candidates.size <= FOLDER_SCAN_DEEP_METADATA_LIMIT
-        if (!useDeepMetadata) {
-            NPLogger.d(
-                TAG,
-                "scanFolderSongs uses quick metadata: candidates=${traversalResult.candidates.size}, deepLimit=$FOLDER_SCAN_DEEP_METADATA_LIMIT"
+        val candidateCount = traversalResult.candidates.size
+        progress.emit(
+            phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+            processed = 0,
+            total = candidateCount,
+            discoveredSongs = candidateCount,
+            visitedDirectories = traversalResult.visitedDirectoryCount,
+            force = true
+        )
+        NPLogger.d(
+            TAG,
+            "scanFolderSongs builds filename index: candidates=$candidateCount"
+        )
+        val unknownArtistLabel = context.getString(R.string.music_unknown_artist)
+        val quickSongs = buildList {
+            traversalResult.candidates.forEachIndexed { index, candidate ->
+                coroutineContext.ensureActive()
+                runCatching {
+                    buildQuickFolderScannedSong(
+                        candidate = candidate,
+                        unknownArtistLabel = unknownArtistLabel
+                    )
+                }.getOrRethrowCancellation {
+                    NPLogger.w(TAG, "scanFolderSongs skipped ${candidate.uri}: ${it.message}")
+                }?.let(::add)
+                val processed = index + 1
+                progress.emit(
+                    phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                    processed = processed,
+                    total = candidateCount,
+                    discoveredSongs = size,
+                    visitedDirectories = traversalResult.visitedDirectoryCount,
+                    force = processed == candidateCount
+                )
+            }
+        }
+        val completion = run {
+            completeScannedSongs(
+                context = context,
+                songs = orderScannedSongs(quickSongs),
+                progress = progress,
+                visitedDirectories = traversalResult.visitedDirectoryCount,
+                knownSidecarReferences = traversalResult.candidates.associate {
+                    it.uri.toString() to it.knownSidecarReferences
+                }
             )
         }
-        val songs = coroutineScope {
-            val scanDispatcher = Dispatchers.IO.limitedParallelism(FOLDER_SCAN_METADATA_PARALLELISM)
-            traversalResult.candidates.map { candidate ->
-                async(scanDispatcher) {
-                    val itemStartedAt = SystemClock.elapsedRealtime()
-                    runCatching {
-                        if (useDeepMetadata) {
-                            buildFolderScannedSong(context, candidate.uri)
-                        } else {
-                            buildQuickImportedSong(
-                                context = context,
-                                uri = candidate.uri,
-                                resolveNearbyCover = false
-                            )
-                        }
-                    }.onFailure {
-                        NPLogger.w(TAG, "scanFolderSongs skipped ${candidate.uri}: ${it.message}")
-                    }.also {
-                        val processed = processedCount.incrementAndGet()
-                        val costMs = SystemClock.elapsedRealtime() - itemStartedAt
-                        if (costMs >= SLOW_SCAN_ITEM_THRESHOLD_MS) {
-                            slowItemCount.incrementAndGet()
-                            NPLogger.d(TAG, "scanFolderSongs slow item: cost=${costMs}ms, uri=${candidate.uri}")
-                        }
-                        if (processed % SCAN_PROGRESS_LOG_INTERVAL == 0 || processed == traversalResult.candidates.size) {
-                            NPLogger.d(
-                                TAG,
-                                "scanFolderSongs metadata progress: processed=$processed/${traversalResult.candidates.size}, slowItems=${slowItemCount.get()}, elapsed=${SystemClock.elapsedRealtime() - metadataStartedAt}ms"
-                            )
-                        }
-                    }.getOrNull()
-                }
-            }.awaitAll()
-        }
-        val failed = traversalResult.failedCount + songs.count { it == null }
-        val metadataElapsedMs = SystemClock.elapsedRealtime() - metadataStartedAt
+        val songs = completion.songs
+        val failed = traversalResult.failedCount + (candidateCount - quickSongs.size)
         val totalElapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
         NPLogger.d(
             TAG,
-            "scanFolderSongs finished: mode=${traversalResult.mode}, songs=${songs.count { it != null }}, failed=$failed, slowItems=${slowItemCount.get()}, metadataElapsed=${metadataElapsedMs}ms, totalElapsed=${totalElapsedMs}ms"
+            "scanFolderSongs finished: mode=${traversalResult.mode}, songs=${songs.size}, failed=$failed, metadataDeferred=${completion.metadataDeferred}, totalElapsed=${totalElapsedMs}ms"
         )
 
-        LocalAudioImportResult(
-            songs = songs.filterNotNull().distinctBy { it.identity() },
-            failedCount = failed,
-            completed = true
+        progress.emit(
+            phase = LocalAudioScanPhase.COMPLETED,
+            processed = candidateCount,
+            total = candidateCount,
+            discoveredSongs = songs.size,
+            visitedDirectories = traversalResult.visitedDirectoryCount,
+            force = true
         )
+
+        return LocalAudioImportResult(
+            songs = if (completion.metadataDeferred) {
+                distinctSongsPreservingOrder(songs)
+            } else {
+                orderScannedSongs(songs)
+            },
+            failedCount = failed,
+            completed = true,
+            metadataDeferred = completion.metadataDeferred
+        )
+    }
+
+    private fun buildKnownManagedSidecarReferences(
+        context: Context,
+        songs: List<SongItem>
+    ): Map<String, LocalKnownSidecarReferences> {
+        val snapshot = runCatching {
+            ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
+        }.getOrNull() ?: return emptyMap()
+        val metadataByName = snapshot.metadataEntriesByAudioName.entries.associateBy(
+            keySelector = { it.key.lowercase(Locale.ROOT) },
+            valueTransform = { it.value }
+        )
+        val metadataValuesByName = snapshot.metadataByAudioName.entries.associateBy(
+            keySelector = { it.key.lowercase(Locale.ROOT) },
+            valueTransform = { it.value }
+        )
+        return songs.mapNotNull { song ->
+            val localPath = song.localFilePath
+                ?.takeIf { path ->
+                    path == LEGACY_DOWNLOAD_ROOT ||
+                        path.startsWith(LEGACY_DOWNLOAD_ROOT + File.separator)
+                }
+                ?: return@mapNotNull null
+            val displayName = song.localFileName
+                ?.takeIf(String::isNotBlank)
+                ?: File(localPath).name
+            val normalizedName = displayName.lowercase(Locale.ROOT)
+            val metadataReference = metadataByName[normalizedName]
+                ?.reference
+                ?.takeIf(String::isNotBlank)
+                ?.takeUnless(::isMediaStoreSidecarReference)
+            val coverReference = metadataValuesByName[normalizedName]
+                ?.coverPath
+                ?.takeIf(snapshot.knownReferences::contains)
+            if (metadataReference == null && coverReference == null) {
+                return@mapNotNull null
+            }
+            val source = song.mediaUri?.takeIf(String::isNotBlank)
+                ?: return@mapNotNull null
+            source to LocalKnownSidecarReferences(
+                lyrics = NearbyLyricReferences(
+                original = null,
+                translated = null,
+                romanized = null
+                ),
+                metadata = metadataReference,
+                cover = coverReference
+            )
+        }.toMap()
+    }
+
+    private fun configuredManagedDownloadTreeDocumentId(): String? {
+        val configuredUri = ManagedDownloadStorage.configuredDirectoryUri()
+            ?.takeIf(String::isNotBlank)
+            ?.toUri()
+            ?: return null
+        return runCatching {
+            DocumentsContract.getTreeDocumentId(configuredUri)
+        }.getOrNull()
+    }
+
+    private suspend fun loadManagedDownloadSnapshotForScan(
+        context: Context
+    ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
+        return runCatching {
+            ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
+        }.getOrRethrowCancellation { error ->
+            NPLogger.w(TAG, "managed download snapshot unavailable for local scan: ${error.message}")
+        }
+    }
+
+    private fun isManagedExternalAudioCandidate(
+        context: Context,
+        uri: Uri,
+        sourceFile: File?
+    ): Boolean {
+        val displayName = sourceFile?.name
+            ?: uri.lastPathSegment
+            ?: uri.toString()
+        val probe = SongItem(
+            id = 0L,
+            name = displayName,
+            artist = "",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 0L,
+            coverUrl = null,
+            mediaUri = uri.toString(),
+            localFileName = sourceFile?.name,
+            localFilePath = sourceFile?.absolutePath,
+            channelId = "local"
+        )
+        return runCatching {
+            ManagedDownloadStorage.isLikelyManagedDownloadSong(context, probe)
+        }.getOrRethrowCancellation { error ->
+            NPLogger.d(TAG, "managed external audio check unavailable for $uri: ${error.message}")
+        } ?: false
+    }
+
+    private suspend fun completeScannedSongs(
+        context: Context,
+        songs: List<SongItem>,
+        progress: LocalAudioScanProgressEmitter,
+        visitedDirectories: Int,
+        knownSidecarReferences: Map<String, LocalKnownSidecarReferences?> = emptyMap()
+    ): CompletedScanSongs {
+        if (songs.isEmpty()) {
+            return CompletedScanSongs(
+                songs = emptyList(),
+                metadataDeferred = false
+            )
+        }
+        val total = songs.size
+        val indexedSidecarReferences = buildKnownSidecarReferencesForSongs(
+            songs = songs,
+            knownSidecarReferences = knownSidecarReferences
+        )
+        if (shouldDeferExpensiveScanMetadata(
+                songCount = total,
+                threshold = COMPLETE_SCAN_METADATA_DEFER_THRESHOLD
+            )
+        ) {
+            // 大批量扫描先读取轻量 metadata 侧车, 音频容器解析放到播放或编辑时
+            val dispatcher = Dispatchers.IO.limitedParallelism(COMPLETE_SCAN_PARALLELISM)
+            val sidecarHydrated = coroutineScope {
+                val hydrated = ArrayList<SongItem>(total)
+                // 不要为数万首歌曲同时保留 Deferred，分批仍保持输入顺序
+                // 并让取消在批次边界及时生效
+                songs.chunked(COMPLETE_SCAN_BATCH_SIZE).forEach { batch ->
+                    val hydratedBatch = batch.map { song ->
+                        async(dispatcher) {
+                            val metadataReference = song.mediaUri
+                                ?.let(indexedSidecarReferences::get)
+                                ?.metadata
+                            // 大目录首屏只消费目录行和已经建立的侧车索引
+                            // 没有侧车时探测 SAF 音频本身会退化为每首一次
+                            // DocumentsProvider 查询，将嵌入元信息留到后续详情页
+                            val canHydrateWithoutAudioProbe = metadataReference != null ||
+                                !song.localFilePath.isNullOrBlank()
+                            if (!canHydrateWithoutAudioProbe ||
+                                !shouldHydrateLocalSongFastIdentity(song, metadataReference)
+                            ) {
+                                song
+                            } else {
+                                hydrateLocalSongFastIdentity(
+                                    context = context,
+                                    song = song,
+                                    metadataReference = metadataReference
+                                )
+                            }
+                        }
+                    }.awaitAll()
+                    hydrated += hydratedBatch
+                }
+                hydrated
+            }
+            progress.emit(
+                phase = LocalAudioScanPhase.HYDRATING_METADATA,
+                processed = total,
+                total = total,
+                discoveredSongs = total,
+                visitedDirectories = visitedDirectories,
+                force = true
+            )
+            return CompletedScanSongs(
+                songs = sidecarHydrated,
+                metadataDeferred = true
+            )
+        }
+        val allowExpensiveFallback = !shouldDeferExpensiveScanMetadata(
+            songCount = total,
+            threshold = COMPLETE_SCAN_METADATA_DEFER_THRESHOLD
+        )
+        progress.emit(
+            phase = LocalAudioScanPhase.HYDRATING_METADATA,
+            processed = 0,
+            total = total,
+            discoveredSongs = total,
+            visitedDirectories = visitedDirectories,
+            force = true
+        )
+        val dispatcher = Dispatchers.IO.limitedParallelism(COMPLETE_SCAN_PARALLELISM)
+        val completed = coroutineScope {
+            val hydratedSongs = ArrayList<SongItem>(total)
+            var processed = 0
+            songs.chunked(COMPLETE_SCAN_PARALLELISM).forEach { batch ->
+                val hydratedBatch = batch.map { song ->
+                    async(dispatcher) {
+                        val knownReferences = song.mediaUri
+                            ?.let(indexedSidecarReferences::get)
+                        val canProbe = allowExpensiveFallback ||
+                            !song.localFilePath.isNullOrBlank() ||
+                            knownReferences != null
+                        if (!canProbe) {
+                            song
+                        } else {
+                            try {
+                                hydrateLocalSongTextMetadataWithKnownSidecars(
+                                    context = context,
+                                    song = hydrateLocalSongFromMetadataSidecar(
+                                        context = context,
+                                        song = song,
+                                        metadataReference = knownReferences?.metadata
+                                    ),
+                                    resolveCoverFallback = allowExpensiveFallback ||
+                                        !song.localFilePath.isNullOrBlank(),
+                                    includeEmbeddedFallback = allowExpensiveFallback,
+                                    includeEmbeddedCoverFallback = false,
+                                    resolveDurationFallback = allowExpensiveFallback ||
+                                        !song.localFilePath.isNullOrBlank(),
+                                    knownSidecarReferences = knownReferences
+                                )
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                NPLogger.w(
+                                    TAG,
+                                    "complete local scan metadata failed for ${song.name}: " +
+                                        error.message
+                                )
+                                song
+                            }
+                        }
+                    }
+                }.awaitAll()
+                hydratedSongs += hydratedBatch
+                processed += batch.size
+                progress.emit(
+                    phase = LocalAudioScanPhase.HYDRATING_METADATA,
+                    processed = processed,
+                    total = total,
+                    discoveredSongs = total,
+                    visitedDirectories = visitedDirectories,
+                    force = true
+                )
+            }
+            hydratedSongs
+        }
+        progress.emit(
+            phase = LocalAudioScanPhase.HYDRATING_METADATA,
+            processed = total,
+            total = total,
+            discoveredSongs = total,
+            visitedDirectories = visitedDirectories,
+            force = true
+        )
+        return CompletedScanSongs(
+            songs = completed,
+            metadataDeferred = false
+        )
+    }
+
+    private fun buildKnownSidecarReferencesForSongs(
+        songs: List<SongItem>,
+        knownSidecarReferences: Map<String, LocalKnownSidecarReferences?>
+    ): Map<String, LocalKnownSidecarReferences?> {
+        if (songs.isEmpty()) return knownSidecarReferences
+
+        val resolved = HashMap<String, LocalKnownSidecarReferences?>(knownSidecarReferences)
+        val directoryIndexes = HashMap<String, LocalSidecarDirectoryIndex>()
+        val legacyRoot = File(LEGACY_DOWNLOAD_ROOT)
+
+        fun index(directory: File): LocalSidecarDirectoryIndex {
+            val key = directory.absolutePath
+            return directoryIndexes.getOrPut(key) {
+                val filesByName = directory.listFiles { file ->
+                    file.isFile && isLocalSidecarIndexCandidate(file.name)
+                }
+                    ?.asSequence()
+                    ?.take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
+                    .orEmpty()
+                    .mapNotNull { file ->
+                        file.name.takeIf(String::isNotBlank)?.let { name ->
+                            name.lowercase(Locale.ROOT) to file.absolutePath
+                        }
+                    }
+                    .toMap()
+                val metadataByAudioName = buildLocalSidecarMetadataIndex(filesByName)
+                LocalSidecarDirectoryIndex(
+                    filesByName = filesByName,
+                    metadataByAudioName = metadataByAudioName
+                )
+            }
+        }
+
+        fun isInside(file: File, directory: File): Boolean {
+            val filePath = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
+            val directoryPath = runCatching { directory.canonicalPath }
+                .getOrElse { directory.absolutePath }
+                .trimEnd(File.separatorChar)
+            return filePath == directoryPath ||
+                filePath.startsWith(directoryPath + File.separatorChar)
+        }
+
+        songs.forEach { song ->
+            val key = song.mediaUri ?: return@forEach
+            val existing = resolved[key]
+            val mediaStoreSource = runCatching { key.toUri() }
+                .getOrNull()
+                ?.let(::isMediaStoreUri) == true
+            val localFile = if (mediaStoreSource) {
+                null
+            } else {
+                song.localFilePath
+                    ?.takeIf { it.isNotBlank() && !it.startsWith("content://") }
+                    ?.let { path ->
+                        if (path.startsWith("/")) {
+                            File(path)
+                        } else {
+                            runCatching { path.toUri().path }
+                                .getOrNull()
+                                ?.takeIf { it.startsWith("/") }
+                                ?.let(::File)
+                        }
+                    }
+                    ?: key.takeIf { it.startsWith("/") }
+                        ?.let(::File)
+            }
+            val parent = localFile?.parentFile ?: return@forEach
+            val baseName = localFile.nameWithoutExtension
+            val searchDirectories = buildList {
+                if (isInside(localFile, legacyRoot)) {
+                    add(File(legacyRoot, "Lyrics"))
+                }
+                add(File(parent, "Lyrics"))
+                add(parent)
+                if (isInside(localFile, legacyRoot)) {
+                    add(legacyRoot)
+                }
+            }.distinctBy(File::getAbsolutePath)
+            val indexes = searchDirectories.map(::index)
+
+            fun find(kind: LyricSidecarKind): String? {
+                val names = lyricSidecarNames(baseName, kind)
+                return indexes.asSequence()
+                    .mapNotNull { directoryIndex ->
+                        names.firstNotNullOfOrNull { name ->
+                            directoryIndex.filesByName[name.lowercase()]
+                        }
+                    }
+                    .firstOrNull()
+            }
+
+            val metadataReference =
+                searchDirectories.firstNotNullOfOrNull { directory ->
+                    index(directory).metadataByAudioName[localFile.name.lowercase(Locale.ROOT)]
+                }
+            resolved[key] = LocalKnownSidecarReferences(
+                lyrics = NearbyLyricReferences(
+                    original = existing?.lyrics?.original
+                        ?: find(LyricSidecarKind.ORIGINAL),
+                    translated = existing?.lyrics?.translated
+                        ?: find(LyricSidecarKind.TRANSLATED),
+                    romanized = existing?.lyrics?.romanized
+                        ?: find(LyricSidecarKind.ROMANIZED)
+                ),
+                metadata = existing?.metadata ?: metadataReference,
+                cover = existing?.cover
+            )
+        }
+        return resolved
+    }
+
+    private fun orderScannedSongs(songs: List<SongItem>): List<SongItem> {
+        return songs
+            .distinctBy { it.identity() }
+            .sortedWith(localSongSourceCreationComparator())
+    }
+
+    /** 去重不再重复排序，供已经按来源时间排序的扫描结果使用 */
+    private fun distinctSongsPreservingOrder(songs: List<SongItem>): List<SongItem> {
+        return songs.distinctBy { it.identity() }
+    }
+
+    private suspend fun scanExternalStorageFolderWithMediaStore(
+        context: Context,
+        folderUri: Uri,
+        progress: LocalAudioScanProgressEmitter
+    ): LocalAudioImportResult? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return null
+        }
+        val scope = resolveExternalStorageFolderMediaStoreScope(context, folderUri) ?: return null
+        // 空的相对路径表示整个存储卷，不能当作安全的 MediaStore 子目录查询
+        // 交给 DocumentsContract 遍历来确认准确范围
+        if (scope.relativePath.isBlank()) return null
+        val audioUri = MediaStore.Audio.Media.getContentUri(scope.volumeName)
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.RELATIVE_PATH,
+            MediaStore.MediaColumns.DATE_ADDED,
+            MediaStore.MediaColumns.DATE_MODIFIED,
+            "_data"
+        )
+        val selection = if (scope.relativePath.isBlank()) {
+            null
+        } else {
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? ESCAPE '\\'"
+        }
+        val selectionArgs = scope.relativePath
+            .takeIf(String::isNotBlank)
+            ?.let { relativePath -> arrayOf("${escapeMediaStoreLikeValue(relativePath)}%") }
+        val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
+            snapshot = loadManagedDownloadSnapshotForScan(context),
+            treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        )
+        val knownSidecarReferences = HashMap<String, LocalKnownSidecarReferences>()
+        val sidecarResolver = MediaStoreSidecarResolver(
+            context = context,
+            folderUri = folderUri,
+            selectedRelativePath = scope.relativePath
+        )
+        var processedRows = 0
+        var scannedRowCount = 0
+        var acceptedRows = 0
+        var skippedStaleRows = 0
+        var withheldManagedRows = 0
+        var safAudioFallbackRows = 0
+        var mediaStoreQueryTotalCount = 0
+
+        val rawResult = try {
+            context.contentResolver.query(
+                audioUri,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                val totalCount = cursor.count
+                mediaStoreQueryTotalCount = totalCount.coerceAtLeast(0)
+                val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val artistIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val albumIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val albumIdIndex = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
+                val durationIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val displayNameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                val relativePathIndex = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                val dateAddedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                val dateModifiedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                val dataPathIndex = cursor.getColumnIndex("_data")
+                val unknownArtistLabel = context.getString(R.string.music_unknown_artist)
+                val songs = ArrayList<SongItem>(totalCount.coerceAtLeast(0))
+                var resolvedPathCount = 0
+                var mediaStoreCoverHitCount = 0
+                var slowRowCount = 0
+                val startedAt = SystemClock.elapsedRealtime()
+
+                progress.emit(
+                    phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                    processed = 0,
+                    total = totalCount.coerceAtLeast(0),
+                    discoveredSongs = 0,
+                    visitedDirectories = 0,
+                    force = true
+                )
+                while (cursor.moveToNext()) {
+                    coroutineContext.ensureActive()
+                    scannedRowCount++
+                    progress.emit(
+                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                        processed = scannedRowCount,
+                        total = totalCount.coerceAtLeast(scannedRowCount),
+                        discoveredSongs = songs.size,
+                        visitedDirectories = 0
+                    )
+                    val rowStartedAt = SystemClock.elapsedRealtime()
+                    val contentUri = Uri.withAppendedPath(
+                        audioUri,
+                        cursor.getLong(idIndex).toString()
+                    )
+                    val displayName = displayNameIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getString)
+                        ?.takeIf(String::isNotBlank)
+                        ?: contentUri.lastPathSegment
+                        ?: contentUri.toString()
+                    val rowRelativePath = relativePathIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getString)
+                    if (!isMediaStoreRowInFolderScope(
+                            rowRelativePath = rowRelativePath,
+                            selectedRelativePath = scope.relativePath
+                        )
+                    ) {
+                        skippedStaleRows++
+                        continue
+                    }
+                    val resolvedPath = resolveScannedFilePath(
+                        rawPath = dataPathIndex
+                            .takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let(cursor::getString),
+                        relativePath = rowRelativePath,
+                        displayName = displayName
+                    )
+                    val resolvedFile = resolvedPath?.let(::File)?.takeIf(File::isFile)
+                    if (resolvedFile != null) {
+                        resolvedPathCount++
+                    }
+                    // MediaStore 的 _data 或 content URI 可能在切换存储权限后暂时失效
+                    // 目录索引中的同名音频文档作为有界 SAF 回退，避免出现不可播放条目
+                    val safAudioReference = sidecarResolver.resolveAudioReference(
+                        relativePath = rowRelativePath,
+                        displayName = displayName
+                    )
+                    val candidateReferences = buildList {
+                        add(contentUri.toString())
+                        resolvedFile?.absolutePath?.let(::add)
+                        resolvedFile?.toURI()?.toString()?.let(::add)
+                        safAudioReference?.takeIf(String::isNotBlank)?.let(::add)
+                    }
+                    if (!managedDownloadGate.evaluateRelativePath(
+                            relativePath = rowRelativePath,
+                            displayName = displayName,
+                            candidateReferences = candidateReferences
+                        ).shouldPublish
+                    ) {
+                        withheldManagedRows++
+                        continue
+                    }
+                    val mediaStoreCoverUri = albumIdIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                        ?.takeIf { it > 0L }
+                        ?.let(LocalMediaSupport::mediaStoreAlbumArtUri)
+                    val sidecarReferences = sidecarResolver.resolve(
+                        relativePath = rowRelativePath,
+                        displayName = displayName
+                    )
+                    val hasReadableMediaStoreReference = resolvedFile != null ||
+                        (shouldProbeMediaStoreContentReference(
+                            rowOrdinal = scannedRowCount,
+                            hasResolvedFile = false,
+                            probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+                        ) && probeReadableContentReference(context, contentUri))
+                    if (!shouldKeepMediaStoreAudioRow(
+                            hasResolvedFile = resolvedFile != null,
+                            hasProviderAudioReference = !safAudioReference.isNullOrBlank(),
+                            hasReadableMediaStoreReference = hasReadableMediaStoreReference
+                        )
+                    ) {
+                        skippedStaleRows++
+                        continue
+                    }
+                    mediaStoreCoverUri?.let { mediaStoreCoverHitCount++ }
+                    val nearbyCoverUri = sidecarResolver.resolveNearbyCoverReference(
+                        relativePath = rowRelativePath,
+                        displayName = displayName
+                    )
+                    val sourceReference = if (
+                        resolvedFile == null &&
+                            !hasReadableMediaStoreReference &&
+                            !safAudioReference.isNullOrBlank()
+                    ) {
+                        safAudioReference
+                    } else {
+                        contentUri.toString()
+                    }
+                    if (sourceReference == safAudioReference) {
+                        safAudioFallbackRows++
+                    }
+                    sidecarReferences?.let { references ->
+                        knownSidecarReferences[sourceReference] = references
+                        if (sourceReference != contentUri.toString()) {
+                            knownSidecarReferences[contentUri.toString()] = references
+                        }
+                    }
+                    val dateAddedSeconds = dateAddedIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                    val dateModifiedSeconds = dateModifiedIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                    val filesystemCreation = resolvedFile
+                        ?.let(::resolveFilesystemCreationObservation)
+                    val mediaStoreSourceAddedAt = run {
+                        resolveMediaStoreSourceAddedAt(
+                            dateAddedSeconds = dateAddedSeconds,
+                            dateModifiedSeconds = dateModifiedSeconds
+                        )
+                    }
+                    val sourceAddedAt = resolveScannedSourceAddedAt(
+                        preferredTimestampMs = filesystemCreation?.timestampMs,
+                        fallbackTimestampMs = mediaStoreSourceAddedAt
+                    )
+                    val sourceAddedAtSource = when {
+                        filesystemCreation != null -> "FILESYSTEM_BIRTH"
+                        dateAddedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_ADDED"
+                        dateModifiedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_MODIFIED"
+                        else -> "UNKNOWN"
+                    }
+                    val sourceAddedAtConfidence = run {
+                        when (sourceAddedAtSource) {
+                            "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
+                            "MEDIASTORE_DATE_ADDED" -> "PROVIDER_REPORTED"
+                            "MEDIASTORE_DATE_MODIFIED" -> "INFERRED"
+                            else -> "UNKNOWN"
+                        }
+                    }
+                    songs += buildQuickImportedSong(
+                        seed = QuickImportedSongSeed(
+                            sourceRef = sourceReference,
+                            displayName = displayName,
+                            title = titleIndex
+                                .takeIf { !cursor.isNull(it) }
+                                ?.let(cursor::getString),
+                            artist = artistIndex
+                                .takeIf { !cursor.isNull(it) }
+                                ?.let(cursor::getString),
+                            album = albumIndex
+                                .takeIf { !cursor.isNull(it) }
+                                ?.let(cursor::getString),
+                            durationMs = durationIndex
+                                .takeIf { !cursor.isNull(it) }
+                                ?.let(cursor::getLong),
+                            sourceAddedAt = sourceAddedAt,
+                            sourceAddedAtSource = sourceAddedAtSource,
+                            sourceAddedAtConfidence = sourceAddedAtConfidence,
+                            localFile = resolvedFile,
+                            nearbyCoverUri = nearbyCoverUri,
+                            mediaStoreCoverUri = mediaStoreCoverUri,
+                            stableIdentitySource = contentUri.toString()
+                        ),
+                        unknownArtistLabel = unknownArtistLabel
+                    )
+                    acceptedRows++
+                    processedRows++
+                    val rowElapsedMs = SystemClock.elapsedRealtime() - rowStartedAt
+                    if (rowElapsedMs >= SLOW_SCAN_ITEM_THRESHOLD_MS) {
+                        slowRowCount++
+                        NPLogger.d(
+                            TAG,
+                            "scanFolderSongs MediaStore slow row: " +
+                                "cost=${rowElapsedMs}ms, uri=$contentUri"
+                        )
+                    }
+                    progress.emit(
+                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                        processed = scannedRowCount,
+                        total = totalCount.coerceAtLeast(scannedRowCount),
+                        discoveredSongs = songs.size,
+                        visitedDirectories = 0
+                    )
+                }
+                NPLogger.d(
+                    TAG,
+                        "scanFolderSongs MediaStore finished: volume=${scope.volumeName}, " +
+                        "relativePath=${scope.relativePath}, songs=${songs.size}, " +
+                        "queryRows=$totalCount, acceptedRows=$acceptedRows, " +
+                        "resolvedPaths=$resolvedPathCount, " +
+                        "skippedStaleRows=$skippedStaleRows, " +
+                        "withheldManagedRows=$withheldManagedRows, " +
+                        "safAudioFallbackRows=$safAudioFallbackRows, " +
+                        "mediaStoreCoverHits=$mediaStoreCoverHitCount, " +
+                        "slowRows=$slowRowCount, elapsed=" +
+                        "${SystemClock.elapsedRealtime() - startedAt}ms"
+                )
+                LocalAudioImportResult(
+                    songs = orderScannedSongs(songs),
+                    failedCount = 0,
+                    completed = true,
+                    metadataDeferred = false
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "scanFolderSongs MediaStore fast path unavailable for $folderUri: ${error.message}"
+            )
+            null
+        }
+        if (rawResult == null) return null
+        val completion = completeScannedSongs(
+            context = context,
+            songs = rawResult.songs,
+            progress = progress,
+            visitedDirectories = 0,
+            knownSidecarReferences = knownSidecarReferences
+        )
+        val completedSongs = completion.songs
+        progress.emit(
+            phase = LocalAudioScanPhase.COMPLETED,
+            processed = maxOf(mediaStoreQueryTotalCount, acceptedRows),
+            total = maxOf(mediaStoreQueryTotalCount, acceptedRows),
+            discoveredSongs = completedSongs.size,
+            visitedDirectories = 0,
+            force = true
+        )
+        return rawResult.copy(
+            songs = if (completion.metadataDeferred) {
+                distinctSongsPreservingOrder(completedSongs)
+            } else {
+                orderScannedSongs(completedSongs)
+            },
+            metadataDeferred = completion.metadataDeferred
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun resolveExternalStorageFolderMediaStoreScope(
+        context: Context,
+        folderUri: Uri
+    ): ExternalStorageFolderMediaStoreScope? {
+        if (folderUri.authority != EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY) {
+            return null
+        }
+        val documentId = runCatching {
+            DocumentsContract.getTreeDocumentId(folderUri)
+        }.getOrElse {
+            runCatching { DocumentsContract.getDocumentId(folderUri) }.getOrNull()
+        } ?: return null
+        return parseExternalStorageFolderMediaStoreScope(
+            documentId = documentId,
+            knownVolumeNames = MediaStore.getExternalVolumeNames(context)
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    internal fun parseExternalStorageFolderMediaStoreScope(
+        documentId: String,
+        knownVolumeNames: Set<String>
+    ): ExternalStorageFolderMediaStoreScope? {
+        val separatorIndex = documentId.indexOf(':')
+        if (separatorIndex <= 0) {
+            return null
+        }
+        val volumeId = documentId.substring(0, separatorIndex)
+            .trim()
+            .takeIf(String::isNotBlank)
+            ?: return null
+        val volumeName = if (volumeId.equals(EXTERNAL_STORAGE_PRIMARY_VOLUME_ID, ignoreCase = true)) {
+            MediaStore.VOLUME_EXTERNAL_PRIMARY
+        } else {
+            knownVolumeNames.firstOrNull { knownName ->
+                knownName.equals(volumeId, ignoreCase = true)
+            }
+        } ?: return null
+        val relativePath = documentId
+            .substring(separatorIndex + 1)
+            .trim()
+            .trim('/')
+            .takeIf(String::isNotBlank)
+            ?.plus('/')
+            .orEmpty()
+        return ExternalStorageFolderMediaStoreScope(
+            volumeName = volumeName,
+            relativePath = relativePath
+        )
+    }
+
+    internal fun isMediaStoreRowInFolderScope(
+        rowRelativePath: String?,
+        selectedRelativePath: String
+    ): Boolean {
+        fun normalize(path: String?): String {
+            return path
+                ?.trim()
+                ?.replace('\\', '/')
+                ?.trim('/')
+                ?.takeIf(String::isNotBlank)
+                ?.plus('/')
+                .orEmpty()
+        }
+        val selected = normalize(selectedRelativePath)
+        val row = normalize(rowRelativePath)
+        return if (selected.isBlank()) {
+            row.isBlank()
+        } else {
+            row == selected || row.startsWith(selected)
+        }
+    }
+
+    private fun escapeMediaStoreLikeValue(value: String): String {
+        return value
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
     }
 
     /**
      * 全盘扫描设备上的本地音频 (常见音乐格式)
      */
-    suspend fun scanDeviceSongs(context: Context): LocalAudioImportResult = withContext(Dispatchers.IO) {
+    suspend fun scanDeviceSongs(
+        context: Context,
+        onProgress: (LocalAudioScanProgress) -> Unit = {}
+    ): LocalAudioImportResult = withContext(Dispatchers.IO) {
         val scanStartedAt = SystemClock.elapsedRealtime()
+        val progress = LocalAudioScanProgressEmitter(scanStartedAt, onProgress)
         NPLogger.d(TAG, "scanDeviceSongs start")
         val songs = mutableListOf<SongItem>()
         var failed = 0
         var completed = false
         var rawRowCount = 0
+        var acceptedRowCount = 0
         var slowItemCount = 0
+        var mediaStoreCoverHitCount = 0
+        var withheldManagedRowCount = 0
+        var mediaStoreQueryTotalCount = 0
+        val managedSidecarIndex = ManagedMediaStoreSidecarIndex(
+            snapshot = loadManagedDownloadSnapshotForScan(context),
+            treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        )
+        val indexedManagedSidecarReferences = HashMap<String, LocalKnownSidecarReferences>()
 
         val audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         val includeRelativePath = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -355,28 +2410,26 @@ object LocalAudioImportManager {
             add(MediaStore.Audio.Media.TITLE)
             add(MediaStore.Audio.Media.ARTIST)
             add(MediaStore.Audio.Media.ALBUM)
+            add(MediaStore.Audio.Media.ALBUM_ID)
             add(MediaStore.Audio.Media.DURATION)
             add(MediaStore.MediaColumns.DISPLAY_NAME)
             if (includeRelativePath) {
                 add(MediaStore.MediaColumns.RELATIVE_PATH)
             }
+            add(MediaStore.MediaColumns.DATE_ADDED)
+            add(MediaStore.MediaColumns.DATE_MODIFIED)
             add("_data")
         }.toTypedArray()
         val selection = "${MediaStore.Audio.Media.IS_MUSIC}!=0"
 
         runCatching {
             context.contentResolver.query(audioUri, projection, selection, null, null)?.use { cursor ->
-                val resolveNearbyCover = cursor.count <= SCAN_NEARBY_COVER_LIMIT
-                if (!resolveNearbyCover) {
-                    NPLogger.d(
-                        TAG,
-                        "scanDeviceSongs skips nearby cover lookup: rows=${cursor.count}, coverLimit=$SCAN_NEARBY_COVER_LIMIT"
-                    )
-                }
+                mediaStoreQueryTotalCount = cursor.count.coerceAtLeast(0)
                 val idxId = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val idxTitle = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val idxArtist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val idxAlbum = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val idxAlbumId = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
                 val idxDuration = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val idxDisplayName = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                 val idxRelativePath = if (includeRelativePath) {
@@ -384,29 +2437,121 @@ object LocalAudioImportManager {
                 } else {
                     -1
                 }
+                val idxDateAdded = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                val idxDateModified = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
                 val idxData = cursor.getColumnIndex("_data")
-
+                progress.emit(
+                    phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                    processed = 0,
+                    total = mediaStoreQueryTotalCount,
+                    discoveredSongs = 0,
+                    visitedDirectories = 0,
+                    force = true
+                )
                 while (cursor.moveToNext()) {
                     coroutineContext.ensureActive()
                     val itemStartedAt = SystemClock.elapsedRealtime()
                     rawRowCount++
+                    progress.emit(
+                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                        processed = rawRowCount,
+                        total = mediaStoreQueryTotalCount.coerceAtLeast(rawRowCount),
+                        discoveredSongs = songs.size,
+                        visitedDirectories = 0
+                    )
                     val id = cursor.getLong(idxId)
                     val duration = cursor.getLong(idxDuration)
                     val contentUri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString())
+                    val relativePath = idxRelativePath
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getString)
                     val resolvedPath = resolveScannedFilePath(
                         rawPath = idxData.takeIf { it >= 0 }?.let(cursor::getString),
-                        relativePath = idxRelativePath.takeIf { it >= 0 }?.let(cursor::getString),
+                        relativePath = relativePath,
                         displayName = idxDisplayName.takeIf { it >= 0 }?.let(cursor::getString)
                     )
-                    val resolvedFile = resolvedPath?.let(::File)?.takeIf(File::exists)
+                    val resolvedFile = resolvedPath?.let(::File)?.takeIf(File::isFile)
                     val displayName = resolvedFile?.name
                         ?: idxDisplayName.takeIf { it >= 0 }?.let(cursor::getString)
                         ?: contentUri.lastPathSegment
                         ?: contentUri.toString()
-                    val nearbyCoverUri = if (resolveNearbyCover) {
-                        LocalMediaSupport.findNearbyCover(resolvedFile)?.toURI()?.toString()
-                    } else {
-                        null
+                    val candidateReferences = buildList {
+                        add(contentUri.toString())
+                        resolvedFile?.absolutePath?.let(::add)
+                        resolvedFile?.toURI()?.toString()?.let(::add)
+                    }
+                    if (!managedSidecarIndex.shouldPublish(
+                            relativePath = relativePath,
+                            displayName = displayName,
+                            candidateReferences = candidateReferences
+                        )
+                    ) {
+                        withheldManagedRowCount++
+                        continue
+                    }
+                    val hasReadableMediaStoreReference = resolvedFile != null ||
+                        (shouldProbeMediaStoreContentReference(
+                            rowOrdinal = rawRowCount,
+                            hasResolvedFile = false,
+                            probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+                        ) && probeReadableContentReference(context, contentUri))
+                    if (!shouldKeepMediaStoreAudioRow(
+                            hasResolvedFile = resolvedFile != null,
+                            hasProviderAudioReference = false,
+                            hasReadableMediaStoreReference = hasReadableMediaStoreReference
+                        )
+                    ) {
+                        NPLogger.d(TAG, "skip stale MediaStore audio row: uri=$contentUri, name=$displayName")
+                        continue
+                    }
+                    acceptedRowCount++
+                    progress.emit(
+                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                        processed = rawRowCount,
+                        total = mediaStoreQueryTotalCount.coerceAtLeast(rawRowCount),
+                        discoveredSongs = songs.size,
+                        visitedDirectories = 0
+                    )
+                    val mediaStoreCoverUri = idxAlbumId
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                        ?.takeIf { it > 0L }
+                        ?.let(LocalMediaSupport::mediaStoreAlbumArtUri)
+                        ?.also { mediaStoreCoverHitCount++ }
+                    val managedSidecarReferences = managedSidecarIndex.resolve(
+                        relativePath = relativePath,
+                        displayName = displayName
+                    )
+                    managedSidecarReferences?.let { references ->
+                        indexedManagedSidecarReferences[contentUri.toString()] = references
+                    }
+                    val dateAddedSeconds = idxDateAdded
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                    val dateModifiedSeconds = idxDateModified
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                    val filesystemCreation = resolvedFile
+                        ?.let(::resolveFilesystemCreationObservation)
+                    val mediaStoreSourceAddedAt = resolveMediaStoreSourceAddedAt(
+                        dateAddedSeconds = dateAddedSeconds,
+                        dateModifiedSeconds = dateModifiedSeconds
+                    )
+                    val sourceAddedAt = resolveScannedSourceAddedAt(
+                        preferredTimestampMs = filesystemCreation?.timestampMs,
+                        fallbackTimestampMs = mediaStoreSourceAddedAt
+                    )
+                    val sourceAddedAtSource = when {
+                        filesystemCreation != null -> "FILESYSTEM_BIRTH"
+                        dateAddedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_ADDED"
+                        dateModifiedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_MODIFIED"
+                        else -> "UNKNOWN"
+                    }
+                    val sourceAddedAtConfidence = when (sourceAddedAtSource) {
+                        "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
+                        "MEDIASTORE_DATE_ADDED" -> "PROVIDER_REPORTED"
+                        "MEDIASTORE_DATE_MODIFIED" -> "INFERRED"
+                        else -> "UNKNOWN"
                     }
 
                     songs += buildQuickImportedSong(
@@ -417,8 +2562,12 @@ object LocalAudioImportManager {
                             artist = idxArtist.takeIf { it >= 0 }?.let(cursor::getString),
                             album = idxAlbum.takeIf { it >= 0 }?.let(cursor::getString),
                             durationMs = duration,
+                            sourceAddedAt = sourceAddedAt,
+                            sourceAddedAtSource = sourceAddedAtSource,
+                            sourceAddedAtConfidence = sourceAddedAtConfidence,
                             localFile = resolvedFile,
-                            nearbyCoverUri = nearbyCoverUri
+                            nearbyCoverUri = managedSidecarReferences?.cover,
+                            mediaStoreCoverUri = mediaStoreCoverUri
                         ),
                         unknownArtistLabel = context.getString(R.string.music_unknown_artist)
                     )
@@ -436,20 +2585,60 @@ object LocalAudioImportManager {
                 }
                 completed = true
             }
-        }.onFailure {
-            NPLogger.e(TAG, "scanDeviceSongs failed: ${it.message}", it)
+        }.onFailure { error ->
+            if (error is CancellationException) {
+                throw error
+            }
+            NPLogger.e(TAG, "scanDeviceSongs failed: ${error.message}", error)
             failed++
         }
+        val completion = if (completed) {
+            val knownSidecarReferences = buildKnownManagedSidecarReferences(
+                context = context,
+                songs = songs
+            ) + indexedManagedSidecarReferences
+            completeScannedSongs(
+                context = context,
+                songs = orderScannedSongs(songs),
+                progress = progress,
+                visitedDirectories = 0,
+                knownSidecarReferences = knownSidecarReferences
+            )
+        } else {
+            CompletedScanSongs(
+                songs = songs,
+                metadataDeferred = false
+            )
+        }
+        val completedSongs = completion.songs
+        progress.emit(
+            phase = LocalAudioScanPhase.COMPLETED,
+            processed = maxOf(mediaStoreQueryTotalCount, rawRowCount),
+            total = maxOf(mediaStoreQueryTotalCount, rawRowCount),
+            discoveredSongs = completedSongs.size,
+            visitedDirectories = 0,
+            force = true
+        )
         val totalElapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
         NPLogger.d(
             TAG,
-            "scanDeviceSongs finished: rows=$rawRowCount, songs=${songs.size}, failed=$failed, slowItems=$slowItemCount, completed=$completed, totalElapsed=${totalElapsedMs}ms"
+            "scanDeviceSongs finished: rows=$rawRowCount, songs=${completedSongs.size}, " +
+                "acceptedRows=$acceptedRowCount, " +
+                "withheldManagedRows=$withheldManagedRowCount, " +
+                "failed=$failed, slowItems=$slowItemCount, " +
+                "mediaStoreCoverHits=$mediaStoreCoverHitCount, completed=$completed, " +
+                "totalElapsed=${totalElapsedMs}ms"
         )
 
         LocalAudioImportResult(
-            songs = songs.distinctBy { it.identity() },
+            songs = if (completion.metadataDeferred) {
+                distinctSongsPreservingOrder(completedSongs)
+            } else {
+                orderScannedSongs(completedSongs)
+            },
             failedCount = failed,
-            completed = completed
+            completed = completed,
+            metadataDeferred = completion.metadataDeferred
         )
     }
 
@@ -477,9 +2666,7 @@ object LocalAudioImportManager {
         val resolvedTitle = resolvedParsedTitle
             ?: queriedTitle
             ?: fallbackTitle
-        val queriedArtist = seed.artist
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val queriedArtist = normalizeQuickImportedMetadata(seed.artist)
         val resolvedArtist = resolveParsedArtistFallback(
             currentArtist = queriedArtist,
             fallbackArtist = unknownArtistLabel,
@@ -487,15 +2674,40 @@ object LocalAudioImportManager {
         ) ?: queriedArtist
             ?: unknownArtistLabel
         val resolvedAlbumSeed = resolveParsedAlbumFallback(
-            currentAlbum = seed.album,
+            currentAlbum = normalizeQuickImportedMetadata(seed.album),
             fallbackAlbum = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
             parsed = parsedFileName
-        ) ?: seed.album
+        ) ?: normalizeQuickImportedMetadata(seed.album)
         val resolvedAlbum = normalizeLocalAlbumIdentity(
             album = resolvedAlbumSeed,
             usesFallbackAlbum = resolvedAlbumSeed.isNullOrBlank()
         )
-        val stableId = computeStableSongId(resolvedSource)
+        val stableId = computeStableSongId(seed.stableIdentitySource ?: resolvedSource)
+        val filesystemCreation = seed.localFile?.let(::resolveFilesystemCreationObservation)
+        val filesystemModifiedAt = seed.localFile?.lastModified()
+        val sourceAddedAt = resolveScannedSourceAddedAt(
+            preferredTimestampMs = seed.sourceAddedAt,
+            fallbackTimestampMs = filesystemCreation?.timestampMs ?: filesystemModifiedAt
+        )
+        val logicalCreatedAt = sourceAddedAt.takeIf { it > 0L }
+        val createdAtSource = seed.sourceAddedAtSource
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: when {
+                seed.sourceAddedAt?.let { it > 0L } == true -> "PROVIDER_NATIVE"
+                filesystemCreation != null -> "FILESYSTEM_BIRTH"
+                filesystemModifiedAt?.let { it > 0L } == true -> "MTIME_FALLBACK"
+                else -> "UNKNOWN"
+            }
+        val createdAtConfidence = seed.sourceAddedAtConfidence
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: when (createdAtSource) {
+                "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
+                "PROVIDER_NATIVE" -> "PROVIDER_REPORTED"
+                "MTIME_FALLBACK" -> "INFERRED"
+                else -> "UNKNOWN"
+            }
 
         return SongItem(
             id = stableId,
@@ -504,23 +2716,29 @@ object LocalAudioImportManager {
             album = resolvedAlbum,
             albumId = 0L,
             durationMs = seed.durationMs?.takeIf { it > 0L } ?: 0L,
-            coverUrl = seed.nearbyCoverUri,
+            coverUrl = seed.nearbyCoverUri ?: seed.mediaStoreCoverUri,
             mediaUri = preferredLocalMediaReference(
                 localFilePath = seed.localFile?.absolutePath,
                 mediaUri = seed.sourceRef
             ) ?: resolvedSource,
             originalName = resolvedTitle,
             originalArtist = resolvedArtist,
-            originalCoverUrl = seed.nearbyCoverUri,
+            originalCoverUrl = seed.nearbyCoverUri ?: seed.mediaStoreCoverUri,
             matchedLyric = seed.matchedLyric,
             matchedTranslatedLyric = seed.matchedTranslatedLyric,
+            matchedRomanizedLyric = seed.matchedRomanizedLyric,
             originalLyric = seed.originalLyric,
             originalTranslatedLyric = seed.originalTranslatedLyric,
+            originalRomanizedLyric = seed.originalRomanizedLyric,
             localFileName = resolvedDisplayName.ifBlank { null },
             localFilePath = seed.localFile?.absolutePath,
             channelId = "local",
             audioId = stableId.toString(),
-            sourceStableKey = seed.sourceStableKey
+            sourceStableKey = seed.sourceStableKey,
+            addedAt = sourceAddedAt,
+            logicalCreatedAtMs = logicalCreatedAt,
+            createdAtSource = createdAtSource,
+            createdAtConfidence = createdAtConfidence
         )
     }
 
@@ -531,11 +2749,16 @@ object LocalAudioImportManager {
         val resolvedName = detailedSong.name
             .takeIf(::isReadableQuickImportedTitle)
             ?: quickSong.name
-        val resolvedArtist = detailedSong.artist.takeIf { it.isNotBlank() } ?: quickSong.artist
-        val resolvedAlbum = detailedSong.album.takeIf { it.isNotBlank() } ?: quickSong.album
-        val resolvedCoverUrl = quickSong.coverUrl
-            ?.takeIf { it.isNotBlank() }
-            ?: detailedSong.coverUrl
+        val resolvedArtist = normalizeQuickImportedMetadata(detailedSong.artist)
+            ?: quickSong.artist
+        val resolvedAlbum = normalizeLocalAlbumIdentity(
+            album = normalizeQuickImportedMetadata(detailedSong.album) ?: quickSong.album,
+            usesFallbackAlbum = false
+        )
+        val resolvedCoverUrl = selectMergedImportedCoverReference(
+            quickCover = quickSong.coverUrl,
+            detailedCover = detailedSong.coverUrl
+        )
         val quickLocalPath = quickSong.localFilePath?.takeIf { it.isNotBlank() }
         val detailedLocalPath = detailedSong.localFilePath?.takeIf { it.isNotBlank() }
         val resolvedLocalPath = quickLocalPath ?: detailedLocalPath
@@ -559,20 +2782,24 @@ object LocalAudioImportManager {
             album = resolvedAlbum,
             durationMs = detailedSong.durationMs.takeIf { it > 0L } ?: quickSong.durationMs,
             coverUrl = resolvedCoverUrl,
-            matchedLyric = detailedSong.matchedLyric ?: quickSong.matchedLyric,
-            matchedTranslatedLyric = detailedSong.matchedTranslatedLyric ?: quickSong.matchedTranslatedLyric,
+            matchedLyric = detailedSong.matchedLyric,
+            matchedTranslatedLyric = detailedSong.matchedTranslatedLyric,
+            matchedRomanizedLyric = detailedSong.matchedRomanizedLyric,
             originalName = quickSong.originalName?.takeIf { it.isNotBlank() }
                 ?: detailedSong.originalName?.takeIf { it.isNotBlank() }
                 ?: resolvedName,
-            originalArtist = quickSong.originalArtist?.takeIf { it.isNotBlank() }
-                ?: detailedSong.originalArtist?.takeIf { it.isNotBlank() }
+            originalArtist = normalizeQuickImportedMetadata(quickSong.originalArtist)
+                ?: normalizeQuickImportedMetadata(detailedSong.originalArtist)
                 ?: resolvedArtist,
-            originalCoverUrl = quickSong.originalCoverUrl
-                ?: detailedSong.originalCoverUrl
-                ?: resolvedCoverUrl,
+            originalCoverUrl = selectMergedImportedCoverReference(
+                quickCover = quickSong.originalCoverUrl,
+                detailedCover = detailedSong.originalCoverUrl
+            ) ?: resolvedCoverUrl,
             originalLyric = quickSong.originalLyric ?: detailedSong.originalLyric,
             originalTranslatedLyric = quickSong.originalTranslatedLyric
                 ?: detailedSong.originalTranslatedLyric,
+            originalRomanizedLyric = quickSong.originalRomanizedLyric
+                ?: detailedSong.originalRomanizedLyric,
             mediaUri = resolvedMediaUri,
             localFileName = quickSong.localFileName ?: detailedSong.localFileName,
             localFilePath = resolvedLocalPath,
@@ -596,9 +2823,9 @@ object LocalAudioImportManager {
             } else {
                 LocalMediaSupport.inspectMetadataOnly(context, song)
             }
-        }.onFailure {
+        }.getOrRethrowCancellation {
             NPLogger.w(TAG, "hydrate local metadata failed for ${song.name}: ${it.message}")
-        }.getOrNull() ?: return song
+        } ?: return song
 
         return mergeImportedSongMetadata(
             quickSong = song,
@@ -606,19 +2833,445 @@ object LocalAudioImportManager {
         )
     }
 
-    fun hydrateLocalSongTextMetadata(context: Context, song: SongItem): SongItem {
+    /**
+     * 只补全标题、歌手和专辑, 用于快速扫描发现占位元信息的条目
+     */
+    fun hydrateLocalSongIdentityMetadata(
+        context: Context,
+        song: SongItem
+    ): SongItem {
+        if (!LocalSongSupport.isLocalSong(song, context)) return song
+        val sidecarHydrated = hydrateLocalSongFastIdentity(context, song)
+        if (!needsLocalIdentityMetadataProbe(sidecarHydrated)) {
+            return sidecarHydrated
+        }
+        val details = runCatching {
+            LocalMediaSupport.inspectMetadataOnly(
+                context = context,
+                song = sidecarHydrated,
+                resolveCoverFallback = false
+            )
+        }.getOrRethrowCancellation {
+            NPLogger.w(TAG, "hydrate local identity metadata failed for ${song.name}: ${it.message}")
+        } ?: return sidecarHydrated
+        return mergeImportedSongMetadata(
+            quickSong = sidecarHydrated,
+            detailedSong = LocalMediaSupport.toSongItem(details)
+        )
+    }
+
+    internal fun needsLocalIdentityMetadataProbe(song: SongItem): Boolean {
+        val artistNeedsProbe = isQuickMetadataPlaceholder(song.artist) ||
+            song.artist.isBlank()
+        val fileName = song.localFileName
+            ?.substringBeforeLast('.', song.localFileName)
+            ?.trim()
+            .orEmpty()
+        val titleNeedsProbe = song.name.isBlank() ||
+            isQuickMetadataPlaceholder(song.name) ||
+            (fileName.isNotBlank() && song.name.trim().equals(fileName, ignoreCase = true))
+        val albumNeedsProbe = song.album.isBlank() ||
+            isQuickMetadataPlaceholder(song.album) ||
+            song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
+        return artistNeedsProbe || titleNeedsProbe || albumNeedsProbe
+    }
+
+    private fun hydrateLocalSongFastIdentity(
+        context: Context,
+        song: SongItem,
+        metadataReference: String? = null
+    ): SongItem {
+        if (!shouldHydrateLocalSongFastIdentity(song, metadataReference)) {
+            return song
+        }
+        val sidecarHydrated = hydrateLocalSongFromMetadataSidecar(
+            context = context,
+            song = song,
+            metadataReference = metadataReference
+        )
+        return repairQuickIdentityFromFileName(sidecarHydrated)
+    }
+
+    private fun hydrateLocalSongFromMetadataSidecar(
+        context: Context,
+        song: SongItem,
+        metadataReference: String? = null
+    ): SongItem {
+        val metadata = runCatching {
+            LocalMediaSupport.readLocalMetadataSidecarFast(
+                context = context,
+                song = song,
+                metadataReference = metadataReference
+            )
+        }.getOrNull() ?: return song
+        val resolvedName = firstMeaningfulMetadataValue(
+            metadata.customName,
+            metadata.name,
+            metadata.originalName
+        )
+        val resolvedArtist = firstMeaningfulMetadataValue(
+            metadata.customArtist,
+            metadata.artist,
+            metadata.originalArtist
+        )
+        val resolvedAlbum = firstMeaningfulMetadataValue(metadata.album)?.let {
+            normalizeLocalAlbumIdentity(it, usesFallbackAlbum = false)
+        }
+        val sidecarCover = firstMeaningfulMetadataValue(metadata.coverPath)
+        val reboundCover = if (sidecarCover != null &&
+            isPotentiallyStaleSafCoverReference(sidecarCover)
+        ) {
+            resolveCachedManagedCoverReference(song, metadata)
+        } else {
+            null
+        }
+        val metadataFallbackCover = listOf(
+            metadata.customCoverUrl,
+            metadata.coverUrl,
+            metadata.originalCoverUrl
+        )
+            .mapNotNull(::normalizeQuickImportedMetadata)
+            .firstOrNull { candidate -> !sameImportedCoverReference(candidate, sidecarCover) }
+        val resolvedCover = selectHydratedLocalCoverReference(
+            sidecarCover = sidecarCover,
+            existingCover = song.coverUrl,
+            reboundCover = reboundCover,
+            metadataFallbackCover = metadataFallbackCover
+        )
+        val resolvedOriginalCover = selectHydratedLocalCoverReference(
+            sidecarCover = sidecarCover,
+            existingCover = song.originalCoverUrl,
+            reboundCover = reboundCover,
+            metadataFallbackCover = firstMeaningfulMetadataValue(
+                metadata.originalCoverUrl,
+                metadata.coverUrl
+            )?.takeUnless { sameImportedCoverReference(it, sidecarCover) }
+        )
+        val metadataCoverForIdentity = listOf(
+            metadata.customCoverUrl,
+            metadata.coverUrl,
+            metadata.originalCoverUrl
+        )
+            .mapNotNull(::normalizeQuickImportedMetadata)
+            .firstOrNull { candidate -> !sameImportedCoverReference(candidate, sidecarCover) }
+        val hasIdentity = resolvedName != null || resolvedArtist != null || resolvedAlbum != null ||
+            firstMeaningfulMetadataValue(
+                metadata.channelId,
+                metadata.audioId,
+                metadata.stableKey
+            ) != null
+        if (!hasIdentity && metadata.durationMs <= 0L && resolvedCover == null) return song
+        return song.copy(
+            id = metadata.songId ?: song.id,
+            name = resolvedName ?: song.name,
+            artist = resolvedArtist ?: song.artist,
+            album = resolvedAlbum ?: normalizeLocalAlbumIdentity(
+                album = song.album,
+                usesFallbackAlbum = song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
+            ),
+            durationMs = metadata.durationMs.takeIf { it > 0L } ?: song.durationMs,
+            coverUrl = resolvedCover ?: metadataCoverForIdentity ?: song.coverUrl,
+            originalCoverUrl = resolvedOriginalCover
+                ?: metadataCoverForIdentity
+                ?: song.originalCoverUrl
+                ?: resolvedCover,
+            customName = firstMeaningfulMetadataValue(metadata.customName)
+                ?: song.customName?.takeUnless(::isQuickMetadataPlaceholder),
+            customArtist = firstMeaningfulMetadataValue(metadata.customArtist)
+                ?: song.customArtist?.takeUnless(::isQuickMetadataPlaceholder),
+            originalName = firstMeaningfulMetadataValue(metadata.originalName)
+                ?: firstMeaningfulMetadataValue(song.originalName)
+                ?: resolvedName,
+            originalArtist = firstMeaningfulMetadataValue(metadata.originalArtist)
+                ?: firstMeaningfulMetadataValue(song.originalArtist)
+                ?: resolvedArtist,
+            customCoverUrl = firstMeaningfulMetadataValue(metadata.customCoverUrl)
+                ?: song.customCoverUrl,
+            channelId = metadata.channelId?.takeIf(String::isNotBlank) ?: song.channelId,
+            audioId = metadata.audioId?.takeIf(String::isNotBlank) ?: song.audioId,
+            subAudioId = metadata.subAudioId?.takeIf(String::isNotBlank) ?: song.subAudioId,
+            playlistContextId = metadata.playlistContextId?.takeIf(String::isNotBlank)
+                ?: song.playlistContextId,
+            sourceStableKey = metadata.stableKey?.takeIf(String::isNotBlank)
+                ?: song.sourceStableKey
+        )
+    }
+
+    private fun resolveCachedManagedCoverReference(
+        song: SongItem,
+        metadata: LocalMetadataSidecar
+    ): String? {
+        val lookupSong = song.copy(
+            id = metadata.songId ?: song.id,
+            channelId = metadata.channelId ?: song.channelId,
+            audioId = metadata.audioId ?: song.audioId,
+            subAudioId = metadata.subAudioId ?: song.subAudioId,
+            sourceStableKey = metadata.stableKey ?: song.sourceStableKey
+        )
+        val audio = runCatching {
+            ManagedDownloadStorage.peekDownloadedAudio(lookupSong)
+        }.getOrNull() ?: return null
+        val reference = runCatching {
+            ManagedDownloadStorage.peekCoverReference(audio)
+        }.getOrNull()?.trim()?.takeIf(String::isNotBlank) ?: return null
+        return ManagedDownloadStorage.toPlayableUri(reference) ?: reference
+    }
+
+    private fun firstMeaningfulMetadataValue(vararg values: String?): String? {
+        return values.firstNotNullOfOrNull(::normalizeQuickImportedMetadata)
+    }
+
+    private fun repairQuickIdentityFromFileName(song: SongItem): SongItem {
+        val displayName = song.localFileName
+            ?.takeIf(String::isNotBlank)
+            ?: song.localFilePath
+                ?.substringAfterLast(File.separatorChar)
+                ?.takeIf(String::isNotBlank)
+            ?: song.mediaUri
+                ?.substringAfterLast('/')
+                ?.takeIf(String::isNotBlank)
+            ?: return song
+        val parsed = parseFileNameMetadata(displayName) ?: return song
+        val fileBaseName = displayName.substringBeforeLast('.', displayName)
+        val unknownArtist = song.artist.trim().lowercase(Locale.ROOT) in quickMetadataPlaceholders
+        val unknownAlbum = song.album.trim().lowercase(Locale.ROOT) in quickMetadataPlaceholders ||
+            song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
+        val parsedArtist = normalizeQuickImportedMetadata(parsed.artist)
+        val parsedAlbum = normalizeQuickImportedMetadata(parsed.album)
+        val parsedTitle = normalizeQuickImportedMetadata(parsed.title)
+        return song.copy(
+            name = if (
+                !song.name.trim().equals(fileBaseName.trim(), ignoreCase = true) &&
+                    isReadableQuickImportedTitle(song.name)
+            ) {
+                song.name
+            } else {
+                parsedTitle ?: song.name
+            },
+            artist = if (unknownArtist) parsedArtist ?: song.artist else song.artist,
+            album = normalizeLocalAlbumIdentity(
+                album = if (unknownAlbum) parsedAlbum ?: song.album else song.album,
+                usesFallbackAlbum = unknownAlbum && parsedAlbum == null
+            ),
+            originalArtist = if (unknownArtist) parsedArtist ?: song.originalArtist else song.originalArtist
+        )
+    }
+
+    fun hydrateLocalSongTextMetadata(
+        context: Context,
+        song: SongItem,
+        resolveCoverFallback: Boolean = true,
+        includeEmbeddedFallback: Boolean = true,
+        includeEmbeddedCoverFallback: Boolean = true,
+        resolveDurationFallback: Boolean = true
+    ): SongItem {
+        val identityHydrated = hydrateLocalSongFastIdentity(context, song)
+        return hydrateLocalSongTextMetadataWithKnownSidecars(
+            context = context,
+            song = identityHydrated,
+            resolveCoverFallback = resolveCoverFallback,
+            includeEmbeddedFallback = includeEmbeddedFallback,
+            includeEmbeddedCoverFallback = includeEmbeddedCoverFallback,
+            resolveDurationFallback = resolveDurationFallback,
+            knownSidecarReferences = null
+        )
+    }
+
+    fun hydrateLocalSongDurationMetadata(
+        context: Context,
+        song: SongItem
+    ): SongItem {
+        if (!LocalSongSupport.isLocalSong(song, context) || song.durationMs > 0L) {
+            return song
+        }
+        val durationMs = song.localMediaUri()?.let { uri ->
+            runCatching { LocalMediaSupport.resolveDurationFast(context, uri) }
+                .onFailure {
+                    NPLogger.d(TAG, "local duration probe unavailable for ${song.name}: ${it.message}")
+                }
+                .getOrDefault(0L)
+        } ?: 0L
+        return durationMs.takeIf { it > 0L }?.let { song.copy(durationMs = it) } ?: song
+    }
+
+    internal fun hydrateLocalSongTextMetadataWithKnownSidecars(
+        context: Context,
+        song: SongItem,
+        resolveCoverFallback: Boolean = true,
+        includeEmbeddedFallback: Boolean = true,
+        includeEmbeddedCoverFallback: Boolean = true,
+        resolveDurationFallback: Boolean = true,
+        knownSidecarReferences: LocalKnownSidecarReferences? = null
+    ): SongItem {
         if (!LocalSongSupport.isLocalSong(song, context)) {
             return song
         }
-        val details = runCatching {
-            LocalMediaSupport.inspectMetadataOnly(context, song)
-        }.onFailure {
+        val lyricMetadata = runCatching {
+            LocalMediaSupport.inspectLyricsFast(
+                context = context,
+                song = song,
+                includeStoredFallback = false,
+                includeEmbeddedFallback = includeEmbeddedFallback,
+                knownSidecarReferences = knownSidecarReferences
+            )
+        }.getOrRethrowCancellation {
             NPLogger.w(TAG, "hydrate local text metadata failed for ${song.name}: ${it.message}")
-        }.getOrNull() ?: return song
+        } ?: return song
+        val knownCover = knownSidecarReferences?.cover?.takeIf(String::isNotBlank)
+        val nearbyCover = if (knownCover != null) {
+            knownCover
+        } else if (resolveCoverFallback && song.coverUrl.isNullOrBlank()) {
+            runCatching {
+                LocalMediaSupport.resolveNearbyCoverUri(context, song)
+                    ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song)
+                    ?: includeEmbeddedCoverFallback
+                        .takeIf { it }
+                        ?.let { LocalMediaSupport.resolveCoverUri(context, song) }
+            }.getOrNull()
+        } else {
+            null
+        }
+        val durationMs = if (song.durationMs > 0L || !resolveDurationFallback) {
+            song.durationMs
+        } else {
+            runCatching {
+                LocalMediaSupport.inspectQuick(
+                    context = context,
+                    uri = song.localMediaUri() ?: return@runCatching 0L,
+                    includeAudioTrackInfo = true
+                ).durationMs.takeIf { it > 0L } ?: 0L
+            }.onFailure {
+                NPLogger.d(TAG, "local duration fallback unavailable for ${song.name}: ${it.message}")
+            }.getOrDefault(0L)
+        }
+        return song.copy(
+            coverUrl = knownCover ?: song.coverUrl ?: nearbyCover,
+            originalCoverUrl = knownCover ?: song.originalCoverUrl ?: nearbyCover,
+            durationMs = durationMs,
+            matchedLyric = lyricMetadata.lyric ?: song.matchedLyric,
+            matchedTranslatedLyric = lyricMetadata.translatedLyric
+                ?: song.matchedTranslatedLyric,
+            matchedRomanizedLyric = lyricMetadata.romanizedLyric
+                ?: song.matchedRomanizedLyric,
+            originalLyric = lyricMetadata.lyric ?: song.originalLyric,
+            originalTranslatedLyric = lyricMetadata.translatedLyric
+                ?: song.originalTranslatedLyric,
+            originalRomanizedLyric = lyricMetadata.romanizedLyric
+                ?: song.originalRomanizedLyric,
+            matchedLyricSource = if (lyricMetadata.lyric != null) {
+                null
+            } else {
+                song.matchedLyricSource
+            },
+            matchedSongId = if (lyricMetadata.lyric != null) {
+                null
+            } else {
+                song.matchedSongId
+            }
+        )
+    }
 
-        return mergeImportedSongMetadata(
-            quickSong = song,
-            detailedSong = LocalMediaSupport.toSongItem(details)
+    /**
+     * 只补全已经可直接访问的本地封面，避免扫描后台读取并持久化整段歌词
+     */
+    fun hydrateLocalSongCoverMetadata(
+        context: Context,
+        song: SongItem
+    ): SongItem = hydrateLocalSongCoverMetadataResult(context, song).song
+
+    internal fun hydrateLocalSongCoverMetadataResult(
+        context: Context,
+        song: SongItem
+    ): LocalCoverHydrationResult {
+        if (!LocalSongSupport.isLocalSong(song, context)) {
+            return LocalCoverHydrationResult(song)
+        }
+        val existingCover = song.coverUrl
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val existingCoverValidation = existingCover?.let {
+            validateCoverReference(context, it)
+        }
+        val originalCover = song.originalCoverUrl
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val originalCoverValidation = originalCover?.let {
+            validateCoverReference(context, it)
+        }
+        if (existingCoverValidation == CoverReferenceValidation.USABLE) {
+            if (originalCover == null || originalCoverValidation != CoverReferenceValidation.INVALID) {
+                return LocalCoverHydrationResult(song)
+            }
+            return LocalCoverHydrationResult(song.copy(originalCoverUrl = existingCover))
+        }
+        val metadata = runCatching {
+            LocalMediaSupport.readLocalMetadataSidecarFast(
+                context = context,
+                song = song
+            )
+        }.getOrNull()
+        val resolvedCover = sequence<String?> {
+            song.customCoverUrl?.let { yield(it) }
+            metadata?.coverPath?.let { yield(it) }
+            metadata?.customCoverUrl?.let { yield(it) }
+            val managedCover = runCatching {
+                resolveCachedManagedCoverReference(
+                    song = song,
+                    metadata = metadata ?: return@runCatching null
+                )
+            }.getOrNull()
+            if (managedCover != null) yield(managedCover)
+            val nearbyCover = runCatching {
+                LocalMediaSupport.resolveNearbyCoverUri(context, song)
+            }.getOrNull()
+            if (nearbyCover != null) yield(nearbyCover)
+            val mediaStoreCover = runCatching {
+                LocalMediaSupport.peekMediaStoreAlbumArtUri(context, song)
+            }.getOrNull()
+            if (mediaStoreCover != null) yield(mediaStoreCover)
+            val cachedEmbeddedCover = runCatching {
+                LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song)
+            }.getOrNull()
+            if (cachedEmbeddedCover != null) yield(cachedEmbeddedCover)
+            val resolvedLocalCover = runCatching {
+                LocalMediaSupport.resolveCoverUri(context, song)
+            }.getOrNull()
+            if (resolvedLocalCover != null) yield(resolvedLocalCover)
+            metadata?.coverUrl?.let { yield(it) }
+            metadata?.originalCoverUrl?.let { yield(it) }
+            song.originalCoverUrl?.let { yield(it) }
+            }
+            .mapNotNull { candidate -> candidate?.trim()?.takeIf(String::isNotBlank) }
+            .firstOrNull { isUsableCoverReference(context, it) }
+        if (resolvedCover == null) {
+            if (
+                existingCoverValidation != CoverReferenceValidation.INVALID &&
+                originalCoverValidation != CoverReferenceValidation.INVALID
+            ) {
+                return LocalCoverHydrationResult(song)
+            }
+            return LocalCoverHydrationResult(
+                song = song.copy(
+                    coverUrl = existingCover
+                        ?.takeUnless { existingCoverValidation == CoverReferenceValidation.INVALID },
+                    originalCoverUrl = originalCover
+                        ?.takeUnless { originalCoverValidation == CoverReferenceValidation.INVALID }
+                ),
+                clearCoverUrl = existingCoverValidation == CoverReferenceValidation.INVALID,
+                clearOriginalCoverUrl =
+                    originalCoverValidation == CoverReferenceValidation.INVALID
+            )
+        }
+        val resolvedOriginalCover = originalCover
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.takeIf { isUsableCoverReference(context, it) }
+            ?: resolvedCover
+        return LocalCoverHydrationResult(
+            song.copy(
+                coverUrl = resolvedCover,
+                originalCoverUrl = resolvedOriginalCover
+            )
         )
     }
 
@@ -627,6 +3280,7 @@ object LocalAudioImportManager {
         if (trimmed.isBlank()) return false
         if (trimmed.startsWith("content://", ignoreCase = true)) return false
         if (trimmed.startsWith("file://", ignoreCase = true)) return false
+        if (isQuickMetadataPlaceholder(trimmed)) return false
         return true
     }
 
@@ -635,7 +3289,18 @@ object LocalAudioImportManager {
         if (trimmed.isBlank()) return false
         if (trimmed.startsWith("content://", ignoreCase = true)) return false
         if (trimmed.startsWith("file://", ignoreCase = true)) return false
+        if (isQuickMetadataPlaceholder(trimmed)) return false
         return true
+    }
+
+    private fun normalizeQuickImportedMetadata(value: String?): String? {
+        val trimmed = value?.trim().orEmpty()
+        if (trimmed.isBlank() || isQuickMetadataPlaceholder(trimmed)) return null
+        return trimmed
+    }
+
+    private fun isQuickMetadataPlaceholder(value: String): Boolean {
+        return value.trim().lowercase(Locale.ROOT) in quickMetadataPlaceholders
     }
 
     private fun parseFileNameMetadata(displayName: String): ParsedManagedDownloadFileName? {
@@ -644,7 +3309,7 @@ object LocalAudioImportManager {
             .trim()
             .takeIf { it.isNotEmpty() }
             ?: return null
-        return candidateManagedDownloadFileNameTemplates(
+        val parsed = candidateManagedDownloadFileNameTemplates(
             ManagedDownloadStorage.currentDownloadFileNameTemplate()
         ).asSequence()
             .mapNotNull { template -> parseManagedDownloadBaseName(baseName, template) }
@@ -653,6 +3318,53 @@ object LocalAudioImportManager {
                     !parsed.artist.isNullOrBlank() ||
                     !parsed.album.isNullOrBlank()
             }
+        return parsed ?: parseCommonManagedDownloadFileName(baseName)
+    }
+
+    private fun parseCommonManagedDownloadFileName(
+        baseName: String
+    ): ParsedManagedDownloadFileName? {
+        val fields = baseName.split(" - ").map(String::trim)
+        if (fields.size < 3 || fields.any(String::isBlank)) return null
+        val first = fields.first().lowercase(Locale.ROOT)
+        val last = fields.last().lowercase(Locale.ROOT)
+        val isKnownSource = first in managedDownloadSourceNames ||
+            last in managedDownloadSourceNames
+        val hasManagedAlbum = fields.any {
+            it.equals("neriplayer-download", ignoreCase = true) ||
+                it.startsWith("netease", ignoreCase = true)
+        }
+        if (!isKnownSource && !hasManagedAlbum) return null
+        if (first in managedDownloadSourceNames) {
+            return ParsedManagedDownloadFileName(
+                source = fields.first(),
+                artist = fields.getOrNull(1),
+                title = fields.drop(2).joinToString(" - ")
+            )
+        }
+        if (last in managedDownloadSourceNames && fields.size >= 4) {
+            return ParsedManagedDownloadFileName(
+                title = fields.dropLast(3).joinToString(" - "),
+                artist = fields[fields.lastIndex - 2],
+                album = fields[fields.lastIndex - 1],
+                source = fields.last()
+            )
+        }
+        if (last in managedDownloadSourceNames && fields.size == 3) {
+            return ParsedManagedDownloadFileName(
+                title = fields[0],
+                artist = fields[1],
+                source = fields[2]
+            )
+        }
+        if (fields.size == 3 && fields[2].equals("neriplayer-download", ignoreCase = true)) {
+            return ParsedManagedDownloadFileName(
+                title = fields[0],
+                artist = fields[1],
+                album = fields[2]
+            )
+        }
+        return null
     }
 
     private fun resolveParsedTitleFallback(
@@ -730,11 +3442,24 @@ object LocalAudioImportManager {
     }
 
     private fun computeStableSongId(source: String): Long {
-        return stableKey(source).take(16).toULong(16).toLong()
+        val digest = MessageDigest.getInstance("SHA-256").digest(source.toByteArray())
+        var stableId = 0L
+        for (index in 0 until Long.SIZE_BYTES) {
+            stableId = (stableId shl 8) or (digest[index].toLong() and 0xffL)
+        }
+        return stableId
     }
 
     private fun buildFolderScannedSong(context: Context, uri: Uri): SongItem {
         val details = LocalMediaSupport.inspectForScan(context, uri)
+        val localFile = details.filePath?.let(::File)?.takeIf(File::isFile)
+        val filesystemCreation = localFile?.let(::resolveFilesystemCreationObservation)
+        val sourceAddedAt = filesystemCreation?.timestampMs ?: details.lastModifiedMs
+        val sourceAddedAtSource = when {
+            filesystemCreation != null -> "FILESYSTEM_BIRTH"
+            details.lastModifiedMs?.let { it > 0L } == true -> "SAF_LAST_MODIFIED"
+            else -> "UNKNOWN"
+        }
         return buildQuickImportedSong(
             seed = QuickImportedSongSeed(
                 sourceRef = uri.toString(),
@@ -743,39 +3468,146 @@ object LocalAudioImportManager {
                 artist = details.artist,
                 album = details.album.takeUnless { details.usesFallbackAlbum },
                 durationMs = details.durationMs,
-                localFile = details.filePath?.let(::File)?.takeIf(File::exists),
+                sourceAddedAt = sourceAddedAt,
+                sourceAddedAtSource = sourceAddedAtSource,
+                sourceAddedAtConfidence = when (sourceAddedAtSource) {
+                    "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
+                    "SAF_LAST_MODIFIED" -> "INFERRED"
+                    else -> "UNKNOWN"
+                },
+                localFile = localFile,
                 nearbyCoverUri = details.coverUri,
                 sourceStableKey = details.sourceStableKey,
                 matchedLyric = details.lyricContent,
                 matchedTranslatedLyric = details.translatedLyricContent,
                 originalLyric = details.lyricContent,
-                originalTranslatedLyric = details.translatedLyricContent
+                originalTranslatedLyric = details.translatedLyricContent,
+                matchedRomanizedLyric = details.romanizedLyricContent,
+                originalRomanizedLyric = details.romanizedLyricContent
             ),
             unknownArtistLabel = context.getString(R.string.music_unknown_artist)
         )
     }
 
-    private fun collectFolderCandidatesWithDocumentsContract(
+    private suspend fun collectFolderCandidatesWithDocumentsContract(
         context: Context,
-        folderUri: Uri
+        folderUri: Uri,
+        rootDisplayName: String?,
+        progress: LocalAudioScanProgressEmitter,
+        managedDownloadGate: ManagedDownloadCandidatePublicationGate
     ): FolderTraversalResult {
         val candidates = mutableListOf<FolderScanCandidate>()
         var failed = 0
         var visitedDirectoryCount = 0
-        val pendingDirectories = ArrayDeque<Uri>().apply { add(folderUri) }
+        var withheldManagedCandidates = 0
+        val treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        data class PendingDirectory(
+            val uri: Uri,
+            val isInsideManagedRoot: Boolean
+        )
+        val pendingDirectories = ArrayDeque<PendingDirectory>().apply {
+            add(
+                PendingDirectory(
+                    uri = folderUri,
+                    isInsideManagedRoot = isManagedDownloadDocumentDirectory(
+                        context = context,
+                        documentUri = folderUri,
+                        treeDocumentId = treeDocumentId,
+                        displayName = rootDisplayName
+                    )
+                )
+            )
+        }
+        var rootCoverIndex: Map<String, String> = emptyMap()
+        var rootLyricsIndex: Map<String, String> = emptyMap()
 
         while (pendingDirectories.isNotEmpty()) {
-            val directoryUri = pendingDirectories.removeFirst()
+            coroutineContext.ensureActive()
+            val directory = pendingDirectories.removeFirst()
+            val directoryUri = directory.uri
             visitedDirectoryCount++
+            progress.emit(
+                phase = LocalAudioScanPhase.TRAVERSING,
+                processed = visitedDirectoryCount,
+                total = 0,
+                discoveredSongs = candidates.size,
+                visitedDirectories = visitedDirectoryCount
+            )
             val children = queryFolderChildren(context, directoryUri)
             if (children == null) {
                 failed++
                 error("Unable to query children for $directoryUri")
             }
+            val coversChildren = children
+                .firstOrNull { it.isDirectory && it.displayName.equals("Covers", ignoreCase = true) }
+                ?.let { queryFolderChildren(context, it.documentUri) }
+                .orEmpty()
+            val lyricsChildren = children
+                .firstOrNull { it.isDirectory && it.displayName.equals("Lyrics", ignoreCase = true) }
+                ?.let { queryFolderChildren(context, it.documentUri) }
+                .orEmpty()
+            val directCoverIndex = buildDocumentCoverIndex(children)
+            val nestedCoverIndex = buildDocumentCoverIndex(coversChildren)
+            val directSidecarIndex = buildDocumentNameIndex(children)
+            val directMetadataIndex = buildDocumentMetadataIndex(children)
+            val nestedSidecarIndex = buildDocumentNameIndex(lyricsChildren)
+            if (directoryUri == folderUri) {
+                rootCoverIndex = nestedCoverIndex
+                rootLyricsIndex = nestedSidecarIndex
+            }
             for (child in children) {
+                coroutineContext.ensureActive()
                 when {
-                    child.isDirectory -> pendingDirectories.add(child.documentUri)
-                    child.isSupportedAudioDocument() -> candidates += FolderScanCandidate(child.documentUri)
+                    child.isDirectory -> pendingDirectories.add(
+                        PendingDirectory(
+                            uri = child.documentUri,
+                            isInsideManagedRoot = directory.isInsideManagedRoot ||
+                                isManagedDownloadDocumentDirectory(
+                                    context = context,
+                                    documentUri = child.documentUri,
+                                    treeDocumentId = treeDocumentId,
+                                    displayName = child.displayName
+                                )
+                        )
+                    )
+                    child.isSupportedAudioDocument() -> {
+                        if (!managedDownloadGate.evaluate(
+                                isInsideManagedRoot = directory.isInsideManagedRoot,
+                                displayName = child.displayName,
+                                candidateReferences = listOf(child.documentUri.toString())
+                            ).shouldPublish
+                        ) {
+                            withheldManagedCandidates++
+                            continue
+                        }
+                        val baseName = child.displayName.substringBeforeLast('.', child.displayName)
+                        candidates += FolderScanCandidate(
+                            uri = child.documentUri,
+                            displayName = child.displayName,
+                            nearbyCoverUri = findNearbyDocumentCoverReference(
+                                directCoverIndex = directCoverIndex,
+                                nestedCoverIndex = nestedCoverIndex,
+                                rootCoverIndex = rootCoverIndex,
+                                baseName = baseName
+                            ),
+                            sourceAddedAt = child.lastModifiedMs,
+                            sourceAddedAtSource = child.lastModifiedMs
+                                ?.takeIf { it > 0L }
+                                ?.let { "SAF_LAST_MODIFIED" },
+                            sourceAddedAtConfidence = child.lastModifiedMs
+                                ?.takeIf { it > 0L }
+                                ?.let { "INFERRED" },
+                            durationMs = child.durationMs,
+                            knownSidecarReferences = resolveKnownSidecarReferences(
+                                directIndex = directSidecarIndex,
+                                nestedIndex = nestedSidecarIndex,
+                                rootLyricsIndex = rootLyricsIndex,
+                                displayName = child.displayName,
+                                baseName = baseName,
+                                metadataIndex = directMetadataIndex
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -785,31 +3617,149 @@ object LocalAudioImportManager {
             visitedDirectoryCount = visitedDirectoryCount,
             failedCount = failed,
             mode = "documents_contract"
-        )
+        ).also {
+            if (withheldManagedCandidates > 0) {
+                NPLogger.d(
+                    TAG,
+                    "scanFolderSongs withheld unfinalized managed candidates: " +
+                        "$withheldManagedCandidates"
+                )
+            }
+        }
     }
 
-    private fun collectFolderCandidatesWithDocumentFile(root: DocumentFile): FolderTraversalResult {
+    private suspend fun collectFolderCandidatesWithDocumentFile(
+        context: Context,
+        root: DocumentFile,
+        progress: LocalAudioScanProgressEmitter,
+        managedDownloadGate: ManagedDownloadCandidatePublicationGate
+    ): FolderTraversalResult {
         val candidates = mutableListOf<FolderScanCandidate>()
         var failed = 0
         var visitedDirectoryCount = 0
-        val pendingDirectories = ArrayDeque<DocumentFile>().apply { add(root) }
+        var withheldManagedCandidates = 0
+        val treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        data class PendingDirectory(
+            val document: DocumentFile,
+            val isInsideManagedRoot: Boolean
+        )
+        val rootIsInsideManagedRoot = isManagedDownloadDocumentDirectory(
+            context = context,
+            documentUri = root.uri,
+            treeDocumentId = treeDocumentId,
+            displayName = root.name
+        )
+        val pendingDirectories = ArrayDeque<PendingDirectory>().apply {
+            add(
+                PendingDirectory(
+                    document = root,
+                    isInsideManagedRoot = rootIsInsideManagedRoot
+                )
+            )
+        }
+        var rootCoverIndex: Map<String, String> = emptyMap()
+        var rootLyricsIndex: Map<String, String> = emptyMap()
 
         while (pendingDirectories.isNotEmpty()) {
-            val directory = pendingDirectories.removeFirst()
+            coroutineContext.ensureActive()
+            val pendingDirectory = pendingDirectories.removeFirst()
+            val directory = pendingDirectory.document
             visitedDirectoryCount++
-            val children = runCatching { directory.listFiles() }
-                .onFailure {
-                    failed++
-                    NPLogger.w(TAG, "scanFolderSongs failed to list ${directory.uri}: ${it.message}")
-                }
-                .getOrNull()
-                ?: continue
+            progress.emit(
+                phase = LocalAudioScanPhase.TRAVERSING,
+                processed = visitedDirectoryCount,
+                total = 0,
+                discoveredSongs = candidates.size,
+                visitedDirectories = visitedDirectoryCount
+            )
+            val children = try {
+                directory.listFiles()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                failed++
+                NPLogger.w(TAG, "scanFolderSongs failed to list ${directory.uri}: ${error.message}")
+                null
+            } ?: continue
+
+            val coversChildren = children
+                .firstOrNull { it.isDirectory && it.name.equals("Covers", ignoreCase = true) }
+                ?.listFiles()
+                ?.filter { it.isFile }
+                .orEmpty()
+            val lyricsChildren = children
+                .firstOrNull { it.isDirectory && it.name.equals("Lyrics", ignoreCase = true) }
+                ?.listFiles()
+                ?.filter { it.isFile }
+                .orEmpty()
+            val directCoverIndex = buildSafCoverIndex(children.asList())
+            val nestedCoverIndex = buildSafCoverIndex(coversChildren)
+            val directSidecarIndex = buildSafDocumentNameIndex(children.asList())
+            val directMetadataIndex = buildSafDocumentMetadataIndex(children.asList())
+            val nestedSidecarIndex = buildSafDocumentNameIndex(lyricsChildren)
+            if (directory.uri == root.uri) {
+                rootCoverIndex = nestedCoverIndex
+                rootLyricsIndex = nestedSidecarIndex
+            }
 
             for (child in children) {
+                coroutineContext.ensureActive()
                 when {
-                    child.isDirectory -> pendingDirectories.add(child)
+                    child.isDirectory -> pendingDirectories.add(
+                        PendingDirectory(
+                            document = child,
+                            isInsideManagedRoot = pendingDirectory.isInsideManagedRoot ||
+                                isManagedDownloadDocumentDirectory(
+                                    context = context,
+                                    documentUri = child.uri,
+                                    treeDocumentId = treeDocumentId,
+                                    displayName = child.name
+                                )
+                        )
+                    )
                     child.isFile && child.isSupportedAudioDocument() -> {
-                        candidates += FolderScanCandidate(child.uri)
+                        val displayName = child.name
+                        if (!managedDownloadGate.evaluate(
+                                isInsideManagedRoot = pendingDirectory.isInsideManagedRoot,
+                                displayName = displayName.orEmpty(),
+                                candidateReferences = listOf(child.uri.toString())
+                            ).shouldPublish
+                        ) {
+                            withheldManagedCandidates++
+                            continue
+                        }
+                        val baseName = displayName
+                            ?.substringBeforeLast('.', displayName)
+                            .orEmpty()
+                        val childLastModifiedMs = runCatching {
+                            child.lastModified()
+                        }.getOrNull()
+                        candidates += FolderScanCandidate(
+                            uri = child.uri,
+                            displayName = displayName,
+                            nearbyCoverUri = findNearbySafCoverReference(
+                                directCoverIndex = directCoverIndex,
+                                nestedCoverIndex = nestedCoverIndex,
+                                rootCoverIndex = rootCoverIndex,
+                                baseName = baseName
+                            ),
+                            sourceAddedAt = childLastModifiedMs,
+                            sourceAddedAtSource = childLastModifiedMs
+                                ?.takeIf { it > 0L }
+                                ?.let { "SAF_LAST_MODIFIED" },
+                            sourceAddedAtConfidence = childLastModifiedMs
+                                ?.takeIf { it > 0L }
+                                ?.let { "INFERRED" },
+                            durationMs = null,
+                            knownSidecarReferences = resolveKnownSidecarReferences(
+                                directIndex = directSidecarIndex,
+                                nestedIndex = nestedSidecarIndex,
+                                rootLyricsIndex = rootLyricsIndex,
+                                displayName = displayName.orEmpty(),
+                                baseName = baseName,
+                                metadataIndex = directMetadataIndex
+                            )
+                        )
                     }
                 }
             }
@@ -820,55 +3770,405 @@ object LocalAudioImportManager {
             visitedDirectoryCount = visitedDirectoryCount,
             failedCount = failed,
             mode = "document_file"
-        )
+        ).also {
+            if (withheldManagedCandidates > 0) {
+                NPLogger.d(
+                    TAG,
+                    "scanFolderSongs withheld unfinalized managed candidates: " +
+                        "$withheldManagedCandidates"
+                )
+            }
+        }
     }
 
-    private fun queryFolderChildren(context: Context, parentUri: Uri): List<QueriedFolderChild>? {
+    private suspend fun queryFolderChildren(
+        context: Context,
+        parentUri: Uri
+    ): List<QueriedFolderChild>? {
         val documentId = resolveDocumentId(parentUri) ?: return null
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
-        return runCatching {
-            context.contentResolver.query(
-                childrenUri,
-                arrayOf(
-                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    DocumentsContract.Document.COLUMN_MIME_TYPE
-                ),
-                null,
-                null,
-                null
-            )?.use { cursor ->
+        val scanContext = coroutineContext
+        fun query(includeDuration: Boolean): List<QueriedFolderChild>? {
+            val projection = buildList {
+                add(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                add(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                add(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                add(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                if (includeDuration) {
+                    add(MediaStore.Audio.Media.DURATION)
+                }
+            }.toTypedArray()
+            return try {
+                context.contentResolver.query(
+                    childrenUri,
+                    projection,
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
                 val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val mimeTypeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val lastModifiedIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                )
+                val durationIndex = if (includeDuration) {
+                    cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                } else {
+                    -1
+                }
                 if (idIndex < 0 || nameIndex < 0 || mimeTypeIndex < 0) {
                     return@use emptyList()
                 }
 
                 buildList {
                     while (cursor.moveToNext()) {
+                        scanContext.ensureActive()
                         val childDocumentId = cursor.getString(idIndex) ?: continue
                         val childDisplayName = cursor.getString(nameIndex) ?: continue
                         val childMimeType = cursor.getString(mimeTypeIndex).orEmpty()
+                        val isDirectory = childMimeType ==
+                            DocumentsContract.Document.MIME_TYPE_DIR
+                        val extension = childDisplayName.substringAfterLast('.', "")
+                            .lowercase(Locale.ROOT)
+                        val isAudio = childMimeType.startsWith("audio/", ignoreCase = true) ||
+                            extension in audioExtensions
+                        val isSidecar = extension in lyricExtensions ||
+                            extension in imageExtensions ||
+                            extension == "json"
+                        if (!isDirectory && !isAudio && !isSidecar) continue
                         add(
                             QueriedFolderChild(
                                 documentUri = DocumentsContract.buildDocumentUriUsingTree(parentUri, childDocumentId),
                                 displayName = childDisplayName,
                                 mimeType = childMimeType,
-                                isDirectory = childMimeType == DocumentsContract.Document.MIME_TYPE_DIR
+                                isDirectory = isDirectory,
+                                lastModifiedMs = lastModifiedIndex
+                                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                                    ?.let(cursor::getLong),
+                                durationMs = durationIndex
+                                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                                    ?.let(cursor::getLong)
                             )
                         )
                     }
                 }
-            }.orEmpty()
-        }.onFailure {
-            NPLogger.w(TAG, "queryFolderChildren failed for $parentUri: ${it.message}")
-        }.getOrNull()
+                }.also { result ->
+                    if (result == null) {
+                        NPLogger.d(
+                            TAG,
+                            "queryFolderChildren returned no cursor: uri=$parentUri, " +
+                                "includeDuration=$includeDuration"
+                        )
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.d(
+                    TAG,
+                    "queryFolderChildren projection failed: uri=$parentUri, " +
+                        "includeDuration=$includeDuration, error=${error.message}"
+                )
+                null
+            }
+        }
+        return query(includeDuration = true) ?: query(includeDuration = false)
     }
 
     private fun resolveDocumentId(uri: Uri): String? {
         return runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
             ?: runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+    }
+
+    private fun isManagedDownloadDocumentDirectory(
+        context: Context,
+        documentUri: Uri,
+        treeDocumentId: String?,
+        displayName: String?
+    ): Boolean {
+        if (ManagedDownloadStorage.isManagedDownloadRelativePath(displayName, treeDocumentId)) {
+            return true
+        }
+        val configuredTreeDocumentId = (
+            treeDocumentId
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: return false
+            )
+        val documentId = resolveDocumentId(documentUri)
+        if (documentId != null && ManagedDownloadStorage.isKnownManagedDownloadDocumentId(
+                documentId = documentId,
+                treeDocumentId = configuredTreeDocumentId
+            )
+        ) {
+            return true
+        }
+        return runCatching {
+            DocumentsContract.findDocumentPath(context.contentResolver, documentUri)
+                ?.path
+                ?.any { pathDocumentId -> pathDocumentId == configuredTreeDocumentId } == true
+        }.getOrRethrowCancellation { error ->
+            NPLogger.d(TAG, "managed document directory check unavailable: ${error.message}")
+        } ?: false
+    }
+
+    private fun buildQuickFolderScannedSong(
+        candidate: FolderScanCandidate,
+        unknownArtistLabel: String
+    ): SongItem {
+        return buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = candidate.uri.toString(),
+                displayName = candidate.displayName
+                    ?.takeIf(String::isNotBlank)
+                    ?: candidate.uri.lastPathSegment
+                    ?: candidate.uri.toString(),
+                title = null,
+                artist = null,
+                album = null,
+                durationMs = candidate.durationMs,
+                sourceAddedAt = candidate.sourceAddedAt,
+                sourceAddedAtSource = candidate.sourceAddedAtSource,
+                sourceAddedAtConfidence = candidate.sourceAddedAtConfidence,
+                nearbyCoverUri = candidate.nearbyCoverUri
+            ),
+            unknownArtistLabel = unknownArtistLabel
+        )
+    }
+
+    private fun buildDocumentCoverIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        val index = HashMap<String, String>(children.size.coerceAtMost(4_096))
+        children.asSequence()
+            .filter { child -> !child.isDirectory }
+            .filter { child -> isLocalSidecarIndexCandidate(child.displayName) }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
+            .forEach { child ->
+                val name = child.displayName
+                    .takeIf(String::isNotBlank)
+                    ?.lowercase(Locale.ROOT)
+                    ?: return@forEach
+                if (imageExtensions.none { extension ->
+                    name.substringAfterLast('.', "").equals(extension, ignoreCase = true)
+                    }
+                ) {
+                    return@forEach
+                }
+                index.putIfAbsent(name, child.documentUri.toString())
+            }
+        return index
+    }
+
+    private fun buildSafCoverIndex(
+        children: Collection<DocumentFile>
+    ): Map<String, String> {
+        val index = HashMap<String, String>(children.size.coerceAtMost(4_096))
+        children.asSequence()
+            .filter(DocumentFile::isFile)
+            .filter { child -> child.name?.let(::isLocalSidecarIndexCandidate) == true }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
+            .forEach { child ->
+                val name = child.name
+                    ?.takeIf(String::isNotBlank)
+                    ?.lowercase(Locale.ROOT)
+                    ?: return@forEach
+                if (imageExtensions.none { extension ->
+                    name.substringAfterLast('.', "").equals(extension, ignoreCase = true)
+                    }
+                ) {
+                    return@forEach
+                }
+                index.putIfAbsent(name, child.uri.toString())
+            }
+        return index
+    }
+
+    private fun buildDocumentNameIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        return children.asSequence()
+            .filterNot(QueriedFolderChild::isDirectory)
+            .filter { child -> isLocalSidecarIndexCandidate(child.displayName) }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
+            .map { child -> child.displayName.lowercase() to child.documentUri.toString() }
+            .toMap()
+    }
+
+    private fun buildDocumentMetadataIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        val best = HashMap<String, Pair<Int, String>>()
+        children.asSequence()
+            .filterNot(QueriedFolderChild::isDirectory)
+            .filter { child -> isLocalSidecarIndexCandidate(child.displayName) }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
+            .forEach { child ->
+                val audioName = ManagedDownloadTreeNaming.metadataAudioName(child.displayName)
+                    ?: return@forEach
+                val key = audioName.lowercase(Locale.ROOT)
+                val ordinal = ManagedDownloadTreeNaming.metadataNameOrdinal(
+                    actualName = child.displayName,
+                    audioName = audioName
+                ) ?: Int.MAX_VALUE
+                val previous = best[key]
+                if (previous == null || ordinal < previous.first ||
+                    (ordinal == previous.first && child.documentUri.toString() < previous.second)
+                ) {
+                    best[key] = ordinal to child.documentUri.toString()
+                }
+            }
+        return best.mapValues { (_, value) -> value.second }
+    }
+
+    private fun buildSafDocumentNameIndex(
+        children: Collection<DocumentFile>
+    ): Map<String, String> {
+        return children.asSequence()
+            .filter(DocumentFile::isFile)
+            .filter { child -> child.name?.let(::isLocalSidecarIndexCandidate) == true }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
+            .mapNotNull { child ->
+                child.name
+                    ?.takeIf(String::isNotBlank)
+                    ?.lowercase()
+                    ?.let { name -> name to child.uri.toString() }
+            }
+            .toMap()
+    }
+
+    private fun buildSafDocumentMetadataIndex(
+        children: Collection<DocumentFile>
+    ): Map<String, String> {
+        val best = HashMap<String, Pair<Int, String>>()
+        children.asSequence()
+            .filter(DocumentFile::isFile)
+            .filter { child -> child.name?.let(::isLocalSidecarIndexCandidate) == true }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
+            .forEach { child ->
+                val displayName = child.name ?: return@forEach
+                val audioName = ManagedDownloadTreeNaming.metadataAudioName(displayName)
+                    ?: return@forEach
+                val key = audioName.lowercase(Locale.ROOT)
+                val ordinal = ManagedDownloadTreeNaming.metadataNameOrdinal(
+                    actualName = displayName,
+                    audioName = audioName
+                ) ?: Int.MAX_VALUE
+                val previous = best[key]
+                if (previous == null || ordinal < previous.first ||
+                    (ordinal == previous.first && child.uri.toString() < previous.second)
+                ) {
+                    best[key] = ordinal to child.uri.toString()
+                }
+            }
+        return best.mapValues { (_, value) -> value.second }
+    }
+
+    private fun resolveKnownSidecarReferences(
+        directIndex: Map<String, String>,
+        nestedIndex: Map<String, String>,
+        rootLyricsIndex: Map<String, String> = emptyMap(),
+        displayName: String,
+        baseName: String,
+        metadataIndex: Map<String, String>? = null
+    ): LocalKnownSidecarReferences {
+        fun find(names: List<String>): String? {
+            return names.firstNotNullOfOrNull { name ->
+                rootLyricsIndex[name.lowercase()]
+                    ?: nestedIndex[name.lowercase()]
+                    ?: directIndex[name.lowercase()]
+            }
+        }
+
+        val original = find(lyricSidecarNames(baseName, LyricSidecarKind.ORIGINAL))
+        val translated = find(lyricSidecarNames(baseName, LyricSidecarKind.TRANSLATED))
+        val romanized = find(lyricSidecarNames(baseName, LyricSidecarKind.ROMANIZED))
+        val metadata = if (metadataIndex != null) {
+            metadataIndex[displayName.lowercase(Locale.ROOT)]
+        } else {
+            selectMetadataSidecarReference(directIndex, displayName)
+        }
+        return LocalKnownSidecarReferences(
+            lyrics = NearbyLyricReferences(
+                original = original,
+                translated = translated,
+                romanized = romanized
+            ),
+            metadata = metadata
+        )
+    }
+
+    private fun lyricSidecarNames(baseName: String, kind: LyricSidecarKind): List<String> {
+        val prefixes = when (kind) {
+            LyricSidecarKind.ORIGINAL -> listOf(baseName)
+            LyricSidecarKind.TRANSLATED -> listOf("${baseName}_trans")
+            LyricSidecarKind.ROMANIZED -> listOf(
+                "${baseName}_roma",
+                "${baseName}_romalrc",
+                "${baseName}_romanized"
+            )
+        }
+        return buildList {
+            prefixes.forEach { prefix ->
+                lyricExtensions.forEach { extension -> add("$prefix.$extension") }
+                add("$prefix.lrc.txt")
+            }
+        }
+    }
+
+    private enum class LyricSidecarKind {
+        ORIGINAL,
+        TRANSLATED,
+        ROMANIZED
+    }
+
+    private fun findNearbyDocumentCoverReference(
+        directCoverIndex: Map<String, String>,
+        nestedCoverIndex: Map<String, String>,
+        rootCoverIndex: Map<String, String>,
+        baseName: String
+    ): String? {
+        fun findSpecific(index: Map<String, String>): String? {
+            return imageExtensions.firstNotNullOfOrNull { extension ->
+                index["$baseName.$extension".lowercase()]
+            }
+        }
+
+        findSpecific(directCoverIndex)?.let { return it }
+        findSpecific(nestedCoverIndex)?.let { return it }
+        findSpecific(rootCoverIndex)?.let { return it }
+        return coverNames.firstNotNullOfOrNull { coverName ->
+            imageExtensions.firstNotNullOfOrNull { extension ->
+                directCoverIndex["$coverName.$extension".lowercase()]
+                    ?: nestedCoverIndex["$coverName.$extension".lowercase()]
+                    ?: rootCoverIndex["$coverName.$extension".lowercase()]
+            }
+        }
+    }
+
+    private fun findNearbySafCoverReference(
+        directCoverIndex: Map<String, String>,
+        nestedCoverIndex: Map<String, String>,
+        rootCoverIndex: Map<String, String>,
+        baseName: String
+    ): String? {
+        fun findSpecific(index: Map<String, String>): String? {
+            return imageExtensions.firstNotNullOfOrNull { extension ->
+                index["$baseName.$extension".lowercase()]
+            }
+        }
+
+        findSpecific(directCoverIndex)?.let { return it }
+        findSpecific(nestedCoverIndex)?.let { return it }
+        findSpecific(rootCoverIndex)?.let { return it }
+        return coverNames.firstNotNullOfOrNull { coverName ->
+            imageExtensions.firstNotNullOfOrNull { extension ->
+                directCoverIndex["$coverName.$extension".lowercase()]
+                    ?: nestedCoverIndex["$coverName.$extension".lowercase()]
+                    ?: rootCoverIndex["$coverName.$extension".lowercase()]
+            }
+        }
     }
 
     private fun buildQuickImportedSong(
@@ -878,6 +4178,18 @@ object LocalAudioImportManager {
     ): SongItem {
         val resolvedFile = resolveSourceFile(context, uri)
         val queryInfo = queryQuickImportedAudioInfo(context, uri)
+        val filesystemCreation = resolvedFile
+            ?.let(::resolveFilesystemCreationObservation)
+        val durationMs = queryInfo.durationMs?.takeIf { it > 0L }
+            ?: runCatching {
+                LocalMediaSupport.inspectQuick(
+                    context = context,
+                    uri = uri,
+                    includeAudioTrackInfo = true
+                ).durationMs.takeIf { it > 0L }
+            }.onFailure {
+                NPLogger.d(TAG, "quick duration fallback unavailable for $uri: ${it.message}")
+            }.getOrNull()
         val displayName = resolvedFile?.name
             ?: queryInfo.displayName
             ?: uri.lastPathSegment
@@ -889,9 +4201,9 @@ object LocalAudioImportManager {
         }
         val lyrics = runCatching {
             LocalMediaSupport.inspectLyricsForScan(context, uri)
-        }.onFailure {
+        }.getOrRethrowCancellation {
             NPLogger.w(TAG, "quick local lyrics inspection failed for $uri: ${it.message}")
-        }.getOrNull()
+        }
 
         return buildQuickImportedSong(
             seed = QuickImportedSongSeed(
@@ -900,13 +4212,21 @@ object LocalAudioImportManager {
                 title = queryInfo.title,
                 artist = queryInfo.artist,
                 album = queryInfo.album,
-                durationMs = queryInfo.durationMs,
+                durationMs = durationMs,
+                sourceAddedAt = filesystemCreation?.timestampMs ?: queryInfo.sourceAddedAt,
+                sourceAddedAtSource = filesystemCreation?.let { "FILESYSTEM_BIRTH" }
+                    ?: queryInfo.sourceAddedAtSource,
+                sourceAddedAtConfidence = filesystemCreation?.confidence
+                    ?: queryInfo.sourceAddedAtConfidence,
                 localFile = resolvedFile,
                 nearbyCoverUri = nearbyCoverUri,
+                mediaStoreCoverUri = queryInfo.mediaStoreCoverUri,
                 matchedLyric = lyrics?.lyric,
                 matchedTranslatedLyric = lyrics?.translatedLyric,
+                matchedRomanizedLyric = lyrics?.romanizedLyric,
                 originalLyric = lyrics?.lyric,
-                originalTranslatedLyric = lyrics?.translatedLyric
+                originalTranslatedLyric = lyrics?.translatedLyric,
+                originalRomanizedLyric = lyrics?.romanizedLyric
             ),
             unknownArtistLabel = context.getString(R.string.music_unknown_artist)
         )
@@ -924,8 +4244,11 @@ object LocalAudioImportManager {
                     MediaStore.Audio.Media.TITLE,
                     MediaStore.Audio.Media.ARTIST,
                     MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.ALBUM_ID,
                     MediaStore.Audio.Media.DURATION,
-                    MediaStore.MediaColumns.DISPLAY_NAME
+                    MediaStore.MediaColumns.DISPLAY_NAME,
+                    MediaStore.MediaColumns.DATE_ADDED,
+                    MediaStore.MediaColumns.DATE_MODIFIED
                 ),
                 null,
                 null,
@@ -933,6 +4256,19 @@ object LocalAudioImportManager {
             )?.use { cursor ->
                 if (!cursor.moveToFirst()) {
                     return@use QuickImportedAudioInfo()
+                }
+                val dateAddedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                val dateModifiedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                val dateAddedSeconds = dateAddedIndex
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                val dateModifiedSeconds = dateModifiedIndex
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                val sourceAddedAtSource = when {
+                    dateAddedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_ADDED"
+                    dateModifiedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_MODIFIED"
+                    else -> "UNKNOWN"
                 }
                 QuickImportedAudioInfo(
                     title = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
@@ -947,6 +4283,21 @@ object LocalAudioImportManager {
                     durationMs = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong),
+                    sourceAddedAt = resolveMediaStoreSourceAddedAt(
+                        dateAddedSeconds = dateAddedSeconds,
+                        dateModifiedSeconds = dateModifiedSeconds
+                    ),
+                    sourceAddedAtSource = sourceAddedAtSource,
+                    sourceAddedAtConfidence = when (sourceAddedAtSource) {
+                        "MEDIASTORE_DATE_ADDED" -> "PROVIDER_REPORTED"
+                        "MEDIASTORE_DATE_MODIFIED" -> "INFERRED"
+                        else -> "UNKNOWN"
+                    },
+                    mediaStoreCoverUri = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                        ?.takeIf { it > 0L }
+                        ?.let(LocalMediaSupport::mediaStoreAlbumArtUri),
                     displayName = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getString)
@@ -958,22 +4309,35 @@ object LocalAudioImportManager {
         }
     }
 
-    private fun stabilizeExternalUri(context: Context, uri: Uri): Uri {
+    private fun stabilizeExternalUri(
+        context: Context,
+        uri: Uri,
+        sourceFile: File? = null,
+        copyInfo: ExternalAudioCopyInfo? = null
+    ): StabilizedExternalAudio {
         if (uri.scheme.equals("file", ignoreCase = true)) {
-            return uri
+            return StabilizedExternalAudio(uri)
         }
         if (uri.scheme.equals("content", ignoreCase = true) && uri.authority == MediaStore.AUTHORITY) {
-            return uri
+            return StabilizedExternalAudio(uri)
         }
 
         val resolver = context.contentResolver
-        val copyInfo = queryExternalAudioCopyInfo(context, uri)
-        copyInfo.sizeBytes?.takeIf { it > MAX_EXTERNAL_IMPORT_BYTES }?.let { sizeBytes ->
+        val resolvedSourceFile = sourceFile ?: resolveSourceFile(context, uri)
+        val resolvedCopyInfo = copyInfo
+            ?: queryExternalAudioCopyInfo(context, uri, resolvedSourceFile)
+        resolvedCopyInfo.sizeBytes?.takeIf { it > MAX_EXTERNAL_IMPORT_BYTES }?.let { sizeBytes ->
             error("External audio is too large: $sizeBytes bytes")
         }
 
-        val displayName = copyInfo.displayName ?: runCatching {
-            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        val displayName = resolvedCopyInfo.displayName ?: try {
+            resolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
                 val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (column >= 0 && cursor.moveToFirst()) {
                     cursor.getString(column)
@@ -981,7 +4345,12 @@ object LocalAudioImportManager {
                     null
                 }
             }
-        }.getOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.d(TAG, "读取外部音频显示名失败: uri=$uri, error=${error.message}")
+            null
+        }
 
         val extension = displayName
             ?.substringAfterLast('.', "")
@@ -1005,11 +4374,23 @@ object LocalAudioImportManager {
             "${baseName.take(48)}_${stableKey(uri.toString()).take(12)}.$extension"
         )
 
-        if (shouldCopyExternalAudio(targetFile, copyInfo.sizeBytes)) {
-            copyExternalAudioToTarget(context, uri, targetFile, copyInfo.sizeBytes)
+        if (shouldCopyExternalAudio(targetFile, resolvedCopyInfo.sizeBytes)) {
+            copyExternalAudioToTarget(context, uri, targetFile, resolvedCopyInfo.sizeBytes)
         }
+        resolvedCopyInfo.sourceLastModifiedAt
+            ?.takeIf { it > 0L }
+            ?.let { sourceLastModifiedAt ->
+                runCatching { targetFile.setLastModified(sourceLastModifiedAt) }
+                    .onFailure { error ->
+                        NPLogger.d(
+                            TAG,
+                            "无法保留导入文件 mtime: ${targetFile.name}, " +
+                                "error=${error.message}"
+                        )
+                    }
+            }
 
-        resolveSourceFile(context, uri)?.let { sourceFile ->
+        resolvedSourceFile?.let { sourceFile ->
             copyNearbySidecars(sourceFile, targetFile)
         }
         LocalMediaSupport.copyNearbyLyricSidecars(
@@ -1019,11 +4400,68 @@ object LocalAudioImportManager {
             targetFile = targetFile
         )
 
-        return Uri.fromFile(targetFile)
+        return StabilizedExternalAudio(
+            uri = Uri.fromFile(targetFile),
+            sourceAddedAt = resolvedCopyInfo.sourceAddedAt,
+            sourceAddedAtSource = resolvedCopyInfo.sourceAddedAtSource,
+            sourceAddedAtConfidence = resolvedCopyInfo.sourceAddedAtConfidence
+        )
     }
 
-    private fun queryExternalAudioCopyInfo(context: Context, uri: Uri): ExternalAudioCopyInfo {
-        return runCatching {
+    private fun queryExternalAudioCopyInfo(
+        context: Context,
+        uri: Uri,
+        sourceFile: File? = null
+    ): ExternalAudioCopyInfo {
+        val baseInfo = queryExternalAudioBaseInfo(context, uri)
+        val filesystemCreation = sourceFile?.let(::resolveFilesystemCreationObservation)
+        val filesystemModified = sourceFile?.lastModified()
+            ?.toValidTimestampMsOrNull()
+        val providerTimestamps = when {
+            isMediaStoreAuthority(uri.authority) -> {
+                queryExternalMediaStoreTimestamps(context, uri)
+            }
+            sourceFile == null -> queryExternalDocumentTimestamp(context, uri)
+            else -> null
+        }
+        val sourceAddedAt = filesystemCreation?.timestampMs
+            ?: providerTimestamps?.dateAddedMs
+            ?: providerTimestamps?.dateModifiedMs
+            ?: providerTimestamps?.documentLastModifiedMs
+            ?: filesystemModified
+        val sourceAddedAtSource = when {
+            filesystemCreation != null -> "FILESYSTEM_BIRTH"
+            providerTimestamps?.dateAddedMs != null -> "MEDIASTORE_DATE_ADDED"
+            providerTimestamps?.dateModifiedMs != null -> "MEDIASTORE_DATE_MODIFIED"
+            providerTimestamps?.documentLastModifiedMs != null -> "SAF_LAST_MODIFIED"
+            filesystemModified != null -> "MTIME_FALLBACK"
+            else -> null
+        }
+        val sourceAddedAtConfidence = when {
+            filesystemCreation != null -> filesystemCreation.confidence
+            providerTimestamps?.dateAddedMs != null -> "PROVIDER_REPORTED"
+            providerTimestamps?.dateModifiedMs != null ||
+                providerTimestamps?.documentLastModifiedMs != null ||
+                filesystemModified != null -> "INFERRED"
+            else -> null
+        }
+        return ExternalAudioCopyInfo(
+            displayName = baseInfo?.displayName,
+            sizeBytes = baseInfo?.sizeBytes,
+            sourceAddedAt = sourceAddedAt,
+            sourceAddedAtSource = sourceAddedAtSource,
+            sourceAddedAtConfidence = sourceAddedAtConfidence,
+            sourceLastModifiedAt = filesystemModified
+                ?: providerTimestamps?.dateModifiedMs
+                ?: providerTimestamps?.documentLastModifiedMs
+        )
+    }
+
+    private fun queryExternalAudioBaseInfo(
+        context: Context,
+        uri: Uri
+    ): ExternalAudioBaseInfo? {
+        return try {
             context.contentResolver.query(
                 uri,
                 arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
@@ -1031,26 +4469,106 @@ object LocalAudioImportManager {
                 null,
                 null
             )?.use { cursor ->
-                if (!cursor.moveToFirst()) {
-                    return@use null
-                }
+                if (!cursor.moveToFirst()) return@use null
                 val displayNameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                ExternalAudioCopyInfo(
-                    displayName = displayNameIndex.takeIf { it >= 0 && !cursor.isNull(it) }
+                ExternalAudioBaseInfo(
+                    displayName = displayNameIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getString),
-                    sizeBytes = sizeIndex.takeIf { it >= 0 && !cursor.isNull(it) }
+                    sizeBytes = sizeIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong)
                         ?.takeIf { it >= 0L }
                 )
             }
-        }.getOrNull() ?: ExternalAudioCopyInfo(displayName = null, sizeBytes = null)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.d(TAG, "读取外部音频基础信息失败: uri=$uri, error=${error.message}")
+            null
+        }
+    }
+
+    private fun queryExternalMediaStoreTimestamps(
+        context: Context,
+        uri: Uri
+    ): ExternalProviderTimestampInfo? {
+        return try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(
+                    MediaStore.MediaColumns.DATE_ADDED,
+                    MediaStore.MediaColumns.DATE_MODIFIED
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val dateAdded = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                    .toEpochMillisOrNull()
+                val dateModified = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                    .toEpochMillisOrNull()
+                ExternalProviderTimestampInfo(
+                    dateAddedMs = dateAdded,
+                    dateModifiedMs = dateModified
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.d(TAG, "读取 MediaStore 时间失败: uri=$uri, error=${error.message}")
+            null
+        }
+    }
+
+    private fun queryExternalDocumentTimestamp(
+        context: Context,
+        uri: Uri
+    ): ExternalProviderTimestampInfo? {
+        return try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val lastModified = cursor
+                    .getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                    .toValidTimestampMsOrNull()
+                ExternalProviderTimestampInfo(documentLastModifiedMs = lastModified)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.d(TAG, "读取 SAF 时间失败: uri=$uri, error=${error.message}")
+            null
+        }
+    }
+
+    private fun isMediaStoreAuthority(authority: String?): Boolean {
+        return authority == MediaStore.AUTHORITY ||
+            authority == "com.android.providers.media.documents"
     }
 
     private fun shouldCopyExternalAudio(targetFile: File, expectedBytes: Long?): Boolean {
         if (!targetFile.exists()) return true
         if (!targetFile.isFile) return true
-        return expectedBytes != null && targetFile.length() != expectedBytes
+        if (targetFile.length() <= 0L) return true
+        return expectedBytes != null &&
+            !ManagedDownloadSizePolicy.isTransferSizeComplete(
+                expectedSizeBytes = expectedBytes,
+                actualSizeBytes = targetFile.length()
+            )
     }
 
     private fun copyExternalAudioToTarget(
@@ -1063,8 +4581,20 @@ object LocalAudioImportManager {
             targetFile.parentFile ?: error("Import target has no parent"),
             ".${targetFile.name}.${stableKey(uri.toString()).take(8)}.partial"
         )
+        val backupFile = File(
+            targetFile.parentFile ?: error("Import target has no parent"),
+            ".${targetFile.name}.${stableKey(uri.toString()).take(8)}.backup"
+        )
         partialFile.delete()
+        if (!targetFile.exists() && backupFile.isFile) {
+            if (backupFile.renameTo(targetFile) &&
+                !shouldCopyExternalAudio(targetFile, expectedBytes)
+            ) {
+                return
+            }
+        }
         var copiedBytes = 0L
+        var stagedTargetFile: File? = null
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 partialFile.outputStream().use { output ->
@@ -1081,27 +4611,64 @@ object LocalAudioImportManager {
                     output.fd.sync()
                 }
             } ?: error("Unable to open external audio stream")
-            if (expectedBytes != null && copiedBytes != expectedBytes) {
+            if (!ManagedDownloadSizePolicy.isTransferSizeComplete(expectedBytes, copiedBytes)) {
                 error("External audio copy size mismatch: expected=$expectedBytes actual=$copiedBytes")
             }
-            if (targetFile.exists() && !targetFile.delete()) {
-                error("Unable to replace stale import file: ${targetFile.name}")
+            val hadExistingTarget = targetFile.exists()
+            if (hadExistingTarget) {
+                val stageFile = if (!backupFile.exists()) {
+                    backupFile
+                } else {
+                    File(
+                        targetFile.parentFile ?: error("Import target has no parent"),
+                        ".${targetFile.name}.${stableKey(uri.toString()).take(8)}." +
+                            "${UUID.randomUUID()}.stale"
+                    )
+                }
+                if (!targetFile.renameTo(stageFile)) {
+                    error("Unable to stage stale import file: ${targetFile.name}")
+                }
+                stagedTargetFile = stageFile
             }
             if (!partialFile.renameTo(targetFile)) {
                 error("Unable to commit imported audio file: ${targetFile.name}")
             }
+            stagedTargetFile?.let { stagedFile ->
+                if (stagedFile.exists() && !stagedFile.delete()) {
+                    NPLogger.d(TAG, "无法删除外部导入备份文件: ${stagedFile.name}")
+                }
+            }
+        } catch (error: CancellationException) {
+            partialFile.delete()
+            stagedTargetFile?.let { stagedFile ->
+                if (!targetFile.exists() && stagedFile.isFile) {
+                    stagedFile.renameTo(targetFile)
+                }
+            }
+            if (!targetFile.exists() && backupFile.isFile) {
+                backupFile.renameTo(targetFile)
+            }
+            throw error
         } catch (error: Throwable) {
             partialFile.delete()
+            stagedTargetFile?.let { stagedFile ->
+                if (!targetFile.exists() && stagedFile.isFile) {
+                    stagedFile.renameTo(targetFile)
+                }
+            }
+            if (!targetFile.exists() && backupFile.isFile) {
+                backupFile.renameTo(targetFile)
+            }
             throw error
         }
     }
 
     private fun resolveSourceFile(context: Context, uri: Uri): File? {
         if (uri.scheme.equals("file", ignoreCase = true)) {
-            return uri.path?.let(::File)?.takeIf(File::exists)
+            return uri.path?.let(::File)?.takeIf(File::isFile)
         }
 
-        val dataPath = runCatching {
+        val dataPath = try {
             context.contentResolver.query(
                 uri,
                 arrayOf(MediaStore.MediaColumns.DATA, "_data"),
@@ -1118,19 +4685,27 @@ object LocalAudioImportManager {
                     null
                 }
             }
-        }.getOrNull()
-
-        if (!dataPath.isNullOrBlank()) {
-            return File(dataPath).takeIf(File::exists)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
         }
 
-        return runCatching {
+        if (!dataPath.isNullOrBlank()) {
+            return File(dataPath).takeIf(File::isFile)
+        }
+
+        return try {
             context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
                 Os.readlink("/proc/self/fd/${descriptor.fd}")
-                    .takeIf { it.startsWith("/") && File(it).exists() }
+                    .takeIf { it.startsWith("/") && File(it).isFile }
                     ?.let(::File)
             }
-        }.getOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun resolveScannedFilePath(
@@ -1140,7 +4715,7 @@ object LocalAudioImportManager {
     ): String? {
         val normalizedRawPath = rawPath
             ?.substringBefore(" (deleted)")
-            ?.takeIf { it.startsWith("/") && File(it).exists() }
+            ?.takeIf { it.startsWith("/") && File(it).isFile }
         if (normalizedRawPath != null) {
             return normalizedRawPath
         }
@@ -1149,7 +4724,20 @@ object LocalAudioImportManager {
         val safeDisplayName = displayName?.takeIf { it.isNotBlank() } ?: return null
         val reconstructed = File(Environment.getExternalStorageDirectory(), safeRelativePath)
             .resolve(safeDisplayName)
-        return reconstructed.absolutePath.takeIf { reconstructed.exists() }
+        return reconstructed.absolutePath.takeIf { reconstructed.isFile }
+    }
+
+    private fun probeReadableContentReference(context: Context, uri: Uri): Boolean {
+        return try {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+                // MediaStore 存在性探测不读取音频内容，避免大曲库产生逐首读放大
+                descriptor.length != 0L
+            } == true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     internal fun copyNearbySidecars(sourceFile: File, targetFile: File) {

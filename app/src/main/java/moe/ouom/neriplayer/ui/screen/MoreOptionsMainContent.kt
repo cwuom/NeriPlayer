@@ -61,6 +61,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.formatDownloadTransferProgress
 import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -74,6 +75,7 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.stats.TrackStat
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.album.isNeteaseAlbumNavigationSource
@@ -267,22 +269,75 @@ private fun downloadActionLabel(task: DownloadTask?): Int {
 }
 
 @Composable
-private fun DownloadProgressContent(task: DownloadTask?) {
+internal fun DownloadProgressContent(task: DownloadTask?) {
     val progress = task?.progress
     when {
+        progress?.stage?.let(::downloadStageLabelResource) != null -> {
+            val stageLabel = requireNotNull(
+                progress.stage.let(::downloadStageLabelResource)
+            )
+            Column {
+                Text(stringResource(stageLabel))
+                Text(
+                    formatDownloadTransferProgress(
+                        progress = progress,
+                        showSpeed = false
+                    )
+                )
+                if (progress.totalBytes > 0L) {
+                    LinearProgressIndicator(
+                        progress = {
+                            (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+                                .coerceIn(0f, 1f)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+
         progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {
             Column {
                 Text(stringResource(R.string.download_finalizing))
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
         }
+
+        task?.status == DownloadStatus.WAITING_NETWORK -> {
+            Column {
+                Text(stringResource(R.string.download_waiting_network_recovery))
+                progress?.let { retainedProgress ->
+                    Text(
+                        formatDownloadTransferProgress(
+                            progress = retainedProgress,
+                            showSpeed = false
+                        )
+                    )
+                    if (retainedProgress.totalBytes > 0L) {
+                        LinearProgressIndicator(
+                            progress = {
+                                (
+                                    retainedProgress.bytesRead.toFloat() /
+                                        retainedProgress.totalBytes.toFloat()
+                                    ).coerceIn(0f, 1f)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        }
+
         progress != null -> {
             Column {
                 Text(
-                    stringResource(
-                        R.string.download_progress_file_label,
-                        progress.percentage,
-                        progress.fileName
+                    formatDownloadTransferProgress(
+                        progress = progress,
+                        showSpeed = task.status == DownloadStatus.DOWNLOADING
                     )
                 )
                 if (progress.totalBytes > 0L) {
@@ -299,9 +354,6 @@ private fun DownloadProgressContent(task: DownloadTask?) {
             }
         }
         task?.status == DownloadStatus.FAILED -> Text(stringResource(R.string.download_failed))
-        task?.status == DownloadStatus.WAITING_NETWORK -> {
-            Text(stringResource(R.string.download_waiting_network_recovery))
-        }
     }
 }
 

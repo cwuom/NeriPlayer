@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.traffic
 
+import android.net.NetworkCapabilities
+import org.mockito.Mockito.`when`
+import org.mockito.Mockito.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -46,46 +49,254 @@ class NetworkStatusMonitorPolicyTest {
     }
 
     @Test
-    fun `virtual transport alone does not keep app online`() {
+    fun `vpn transport never counts as a direct network interface`() {
         assertFalse(
-            hasLikelyNetworkTransport(
-                hasActiveNetwork = true,
-                activeHasDirectTransport = false,
-                anyKnownHasDirectTransport = { false }
+            isDirectNetworkTransport(
+                hasVpnTransport = true,
+                hasWifiTransport = true,
+                hasCellularTransport = false,
+                hasEthernetTransport = false,
+                hasBluetoothTransport = false,
+                hasUsbTransport = false,
+                hasSatelliteTransport = false
             )
         )
     }
 
     @Test
-    fun `missing active network enters offline mode even with stale direct transport`() {
+    fun `vpn transport alone is not legal network interface evidence`() {
         assertFalse(
-            hasLikelyNetworkTransport(
+            isLegalNetworkTransport(
+                hasWifiTransport = false,
+                hasCellularTransport = false,
+                hasEthernetTransport = false,
+                hasBluetoothTransport = false,
+                hasWifiAwareTransport = false,
+                hasLowpanTransport = false,
+                hasUsbTransport = false,
+                hasSatelliteTransport = false,
+                hasThreadTransport = false,
+                hasVpnTransport = true
+            )
+        )
+    }
+
+    @Test
+    fun `unresolved interface capabilities keep the result indeterminate`() {
+        assertEquals(
+            LikelyNetworkTransportAvailability.INDETERMINATE,
+            resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
+                interfaceScanCompleted = true,
+                hasDirectNetworkInterface = false,
+                hasUnresolvedNetworkInterface = true
+            )
+        )
+    }
+
+    @Test
+    fun `incomplete interface enumeration stays indeterminate`() {
+        assertEquals(
+            LikelyNetworkTransportAvailability.INDETERMINATE,
+            resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
+                interfaceScanCompleted = false,
+                hasDirectNetworkInterface = false,
+                hasUnresolvedNetworkInterface = false
+            )
+        )
+    }
+
+    @Test
+    fun `a direct interface keeps the result online despite another unresolved entry`() {
+        assertEquals(
+            LikelyNetworkTransportAvailability.ONLINE,
+            resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
+                interfaceScanCompleted = true,
+                hasDirectNetworkInterface = true,
+                hasUnresolvedNetworkInterface = true
+            )
+        )
+    }
+
+    @Test
+    fun `offline requires a complete scan with no direct interfaces`() {
+        assertEquals(
+            LikelyNetworkTransportAvailability.OFFLINE,
+            resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
+                interfaceScanCompleted = true,
+                hasDirectNetworkInterface = false,
+                hasUnresolvedNetworkInterface = false
+            )
+        )
+    }
+
+    @Test
+    fun `unknown interface type cannot be used as offline evidence`() {
+        assertEquals(
+            LikelyNetworkTransportAvailability.INDETERMINATE,
+            resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
+                interfaceScanCompleted = true,
+                hasDirectNetworkInterface = false,
+                hasUnresolvedNetworkInterface = true
+            )
+        )
+    }
+
+    @Test
+    fun `missing active network stays offline despite stale direct interface`() {
+        assertEquals(
+            LikelyNetworkTransportAvailability.OFFLINE,
+            resolveNetworkInterfaceAvailability(
                 hasActiveNetwork = false,
-                activeHasDirectTransport = false,
-                anyKnownHasDirectTransport = { true }
+                interfaceScanCompleted = true,
+                hasDirectNetworkInterface = true,
+                hasUnresolvedNetworkInterface = false
             )
         )
     }
 
     @Test
-    fun `fallback direct network keeps app online when active network is indirect`() {
-        assertTrue(
-            hasLikelyNetworkTransport(
+    fun `virtual-only active network stays offline`() {
+        assertEquals(
+            LikelyNetworkTransportAvailability.OFFLINE,
+            resolveNetworkInterfaceAvailability(
                 hasActiveNetwork = true,
-                activeHasDirectTransport = false,
-                anyKnownHasDirectTransport = { true }
+                interfaceScanCompleted = true,
+                hasDirectNetworkInterface = false,
+                hasUnresolvedNetworkInterface = false
             )
         )
     }
 
     @Test
-    fun `active direct transport does not scan fallback networks`() {
+    fun `indeterminate capability access keeps network operations enabled`() {
         assertTrue(
-            hasLikelyNetworkTransport(
-                hasActiveNetwork = true,
-                activeHasDirectTransport = true,
-                anyKnownHasDirectTransport = { error("fallback should not be evaluated") }
+            resolveLikelyInternetAccess(
+                availability = LikelyNetworkTransportAvailability.INDETERMINATE
             )
+        )
+    }
+
+    @Test
+    fun `explicit offline evidence disables network operations`() {
+        assertFalse(
+            resolveLikelyInternetAccess(
+                availability = LikelyNetworkTransportAvailability.OFFLINE
+            )
+        )
+    }
+
+    @Test
+    fun `internet transport without validation cannot recover downloads`() {
+        assertFalse(
+            hasValidatedInternetCapability(
+                hasInternetCapability = true,
+                hasValidatedCapability = false
+            )
+        )
+    }
+
+    @Test
+    fun `validated internet requires both capability flags`() {
+        assertTrue(
+            hasValidatedInternetCapability(
+                hasInternetCapability = true,
+                hasValidatedCapability = true
+            )
+        )
+        assertFalse(
+            hasValidatedInternetCapability(
+                hasInternetCapability = false,
+                hasValidatedCapability = true
+            )
+        )
+    }
+
+    @Test
+    fun `unvalidated transport is not eligible for download network policy`() {
+        assertEquals(
+            null,
+            resolveValidatedTrafficNetworkType(
+                networkType = TrafficNetworkType.WIFI,
+                hasInternetCapability = true,
+                hasValidatedCapability = false
+            )
+        )
+    }
+
+    @Test
+    fun `download policy keeps an unvalidated wifi transport recoverable`() {
+        assertEquals(
+            TrafficNetworkType.WIFI,
+            resolveDownloadNetworkType(
+                validatedType = null,
+                transportType = TrafficNetworkType.WIFI
+            )
+        )
+    }
+
+    @Test
+    fun `download policy never promotes an unvalidated cellular transport`() {
+        assertEquals(
+            null,
+            resolveDownloadNetworkType(
+                validatedType = null,
+                transportType = TrafficNetworkType.MOBILE
+            )
+        )
+    }
+
+    @Test
+    fun `validated mobile network remains mobile for download policy`() {
+        assertEquals(
+            TrafficNetworkType.MOBILE,
+            resolveDownloadNetworkType(
+                validatedType = TrafficNetworkType.MOBILE,
+                transportType = TrafficNetworkType.WIFI
+            )
+        )
+    }
+
+    @Test
+    fun `validated transport keeps its billing class`() {
+        assertEquals(
+            TrafficNetworkType.MOBILE,
+            resolveValidatedTrafficNetworkType(
+                networkType = TrafficNetworkType.MOBILE,
+                hasInternetCapability = true,
+                hasValidatedCapability = true
+            )
+        )
+    }
+
+    @Test
+    fun `validated network type helper rejects unvalidated capabilities`() {
+        val capabilities = mock(NetworkCapabilities::class.java)
+        `when`(capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)).thenReturn(true)
+        `when`(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+            .thenReturn(true)
+        `when`(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+            .thenReturn(false)
+
+        assertEquals(null, capabilities.validatedTrafficNetworkTypeOrNull())
+    }
+
+    @Test
+    fun `validated network type helper accepts validated internet`() {
+        val capabilities = mock(NetworkCapabilities::class.java)
+        `when`(capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)).thenReturn(true)
+        `when`(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+            .thenReturn(true)
+        `when`(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+            .thenReturn(true)
+
+        assertEquals(
+            TrafficNetworkType.WIFI,
+            capabilities.validatedTrafficNetworkTypeOrNull()
         )
     }
 
@@ -197,4 +408,5 @@ class NetworkStatusMonitorPolicyTest {
             hasSatelliteTransport = hasSatelliteTransport
         )
     }
+
 }

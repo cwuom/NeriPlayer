@@ -14,7 +14,7 @@ internal class ManagedDownloadFileChildNameCache(
         val cacheKey = dir.absolutePath
         val lock = reservationLocks.computeIfAbsent(cacheKey) { Any() }
         return synchronized(lock) {
-            ManagedDownloadStorageNaming.createUniqueName(
+            ManagedDownloadStorageNaming.createUniqueAudioName(
                 existingNames = cachedNames(dir, cacheKey),
                 desiredName = desiredName
             ).also { reservedName ->

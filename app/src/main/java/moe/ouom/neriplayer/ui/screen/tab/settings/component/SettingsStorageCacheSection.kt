@@ -29,6 +29,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,6 +47,8 @@ import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.SdStorage
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -64,6 +67,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
@@ -87,6 +92,51 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.util.format.formatFileSize
 
+private val DOWNLOAD_FILE_NAME_PLACEHOLDERS = listOf(
+    "%title%",
+    "%artist%",
+    "%album%",
+    "%source%",
+    "%id%",
+    "%audioId%",
+    "%subAudioId%",
+    "%hash%"
+)
+
+internal fun buildDownloadFileNameTemplatePreview(template: String?): String {
+    return renderManagedDownloadBaseName(
+        title = "晴天",
+        artist = "周杰伦",
+        album = "叶惠美",
+        source = "网易云",
+        songId = "123456",
+        audioId = "456789",
+        subAudioId = "789012",
+        template = normalizeDownloadFileNameTemplate(template)
+            ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    )
+}
+
+internal fun insertDownloadFileNamePlaceholder(
+    value: TextFieldValue,
+    placeholder: String
+): TextFieldValue {
+    val textLength = value.text.length
+    val start = value.selection.start.coerceIn(0, textLength)
+    val end = value.selection.end.coerceIn(0, textLength)
+    val rangeStart = minOf(start, end)
+    val rangeEnd = maxOf(start, end)
+    val updatedText = buildString(textLength - (rangeEnd - rangeStart) + placeholder.length) {
+        append(value.text, 0, rangeStart)
+        append(placeholder)
+        append(value.text, rangeEnd, textLength)
+    }
+    return TextFieldValue(
+        text = updatedText,
+        selection = TextRange(rangeStart + placeholder.length)
+    )
+}
+
 @Composable
 internal fun SettingsStorageCacheSection(
     expanded: Boolean,
@@ -95,6 +145,7 @@ internal fun SettingsStorageCacheSection(
     showHeader: Boolean = true,
     currentDownloadDirectorySummary: String,
     isCustomDownloadDirectory: Boolean,
+    downloadDirectoryPermissionLost: Boolean = false,
     downloadDirectoryChangeEnabled: Boolean,
     onPickDownloadDirectory: () -> Unit,
     onResetDownloadDirectory: () -> Unit,
@@ -137,32 +188,30 @@ internal fun SettingsStorageCacheSection(
 ) {
     val composeResources = LocalResources.current
     val showDownloadFileNameDialog = remember { mutableStateOf(false) }
-    var pendingDownloadFileNameTemplate by rememberSaveable {
-        mutableStateOf(downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
+    var pendingDownloadFileNameTemplate by rememberSaveable(
+        stateSaver = TextFieldValue.Saver
+    ) {
+        mutableStateOf(
+            TextFieldValue(downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
+        )
     }
 
     androidx.compose.runtime.LaunchedEffect(downloadFileNameTemplate) {
         val savedValue = downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-        if (pendingDownloadFileNameTemplate != savedValue) {
-            pendingDownloadFileNameTemplate = savedValue
+        if (pendingDownloadFileNameTemplate.text != savedValue) {
+            pendingDownloadFileNameTemplate = TextFieldValue(savedValue)
         }
     }
 
     val effectiveTemplate = normalizeDownloadFileNameTemplate(
-        pendingDownloadFileNameTemplate
+        pendingDownloadFileNameTemplate.text
     ) ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
     val currentSavedTemplate = downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
     fun dismissDownloadFileNameDialog() {
-        pendingDownloadFileNameTemplate = currentSavedTemplate
+        pendingDownloadFileNameTemplate = TextFieldValue(currentSavedTemplate)
         showDownloadFileNameDialog.value = false
     }
-    val samplePreview = renderManagedDownloadBaseName(
-        title = "晴天",
-        artist = "周杰伦",
-        album = "叶惠美",
-        source = "网易云",
-        template = effectiveTemplate
-    )
+    val samplePreview = buildDownloadFileNameTemplatePreview(effectiveTemplate)
     val canApplyDownloadFileNameTemplate = effectiveTemplate != currentSavedTemplate
     fun shouldShowCard(index: Int): Boolean = cardIndex == null || cardIndex == index
 
@@ -225,6 +274,15 @@ internal fun SettingsStorageCacheSection(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
+                            if (downloadDirectoryPermissionLost) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.settings_download_directory_permission_lost
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                             if (!downloadDirectoryChangeEnabled) {
                                 Text(
                                     text = stringResource(
@@ -637,6 +695,27 @@ internal fun SettingsStorageCacheSection(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
                     )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        DOWNLOAD_FILE_NAME_PLACEHOLDERS.forEach { placeholder ->
+                            AssistChip(
+                                onClick = {
+                                    pendingDownloadFileNameTemplate =
+                                        insertDownloadFileNamePlaceholder(
+                                            value = pendingDownloadFileNameTemplate,
+                                            placeholder = placeholder
+                                        )
+                                },
+                                label = { Text(placeholder) },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            )
+                        }
+                    }
                     Text(
                         text = stringResource(
                             R.string.settings_download_file_name_format_preview,
@@ -651,7 +730,7 @@ internal fun SettingsStorageCacheSection(
                 MiuixSettingsTextButton(
                     onClick = {
                         onDownloadFileNameTemplateChange(
-                            normalizeDownloadFileNameTemplate(pendingDownloadFileNameTemplate)
+                            normalizeDownloadFileNameTemplate(pendingDownloadFileNameTemplate.text)
                         )
                         showDownloadFileNameDialog.value = false
                     },
@@ -664,7 +743,9 @@ internal fun SettingsStorageCacheSection(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MiuixSettingsTextButton(
                         onClick = {
-                            pendingDownloadFileNameTemplate = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+                            pendingDownloadFileNameTemplate = TextFieldValue(
+                                DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+                            )
                             onDownloadFileNameTemplateChange(null)
                             showDownloadFileNameDialog.value = false
                         },

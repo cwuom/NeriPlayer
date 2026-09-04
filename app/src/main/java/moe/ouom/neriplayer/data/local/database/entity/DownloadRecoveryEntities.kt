@@ -39,6 +39,8 @@ internal data class DownloadPendingQueueEntity(
     val matchedLyric: String?,
     @ColumnInfo(name = "matched_translated_lyric")
     val matchedTranslatedLyric: String?,
+    @ColumnInfo(name = "matched_romanized_lyric")
+    val matchedRomanizedLyric: String?,
     @ColumnInfo(name = "matched_lyric_source")
     val matchedLyricSource: String?,
     @ColumnInfo(name = "matched_song_id")
@@ -61,6 +63,8 @@ internal data class DownloadPendingQueueEntity(
     val originalLyric: String?,
     @ColumnInfo(name = "original_translated_lyric")
     val originalTranslatedLyric: String?,
+    @ColumnInfo(name = "original_romanized_lyric")
+    val originalRomanizedLyric: String?,
     @ColumnInfo(name = "local_file_name")
     val localFileName: String?,
     @ColumnInfo(name = "local_file_path")

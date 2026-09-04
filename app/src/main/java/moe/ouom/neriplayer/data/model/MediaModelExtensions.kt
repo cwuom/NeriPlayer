@@ -26,26 +26,50 @@ package moe.ouom.neriplayer.data.model
 import android.content.Context
 import android.os.Looper
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 
-fun SongItem.displayCoverUrl(): String? = customCoverUrl ?: coverUrl
+fun SongItem.displayCoverUrl(): String? = customCoverUrl
+    ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
+    ?: coverUrl
 
 fun SongItem.displayCoverUrl(
     context: Context,
     resolveLocalMetadataFallback: Boolean = true
 ): String? {
-    customCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
+    customCoverUrl
+        ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
+        ?.let { return it }
     val current = coverUrl?.takeIf { it.isNotBlank() }
     val onMainThread = Looper.myLooper() == Looper.getMainLooper()
     val localCover = if (resolveLocalMetadataFallback && shouldResolveLocalCoverFallback(current)) {
-        AudioDownloadManager.getLocalCoverUri(
-            context = context,
-            song = this,
-            resolveLocalMediaFallback = true
-        )
+        if (isLocalSong()) {
+            // local rows already carry their source path; a download-index rebuild here
+            // would block the first frame and repeat the same directory scan
+            AudioDownloadManager.peekLocalCoverUri(this)
+                ?.takeUnless(::isMediaStoreCoverReference)
+                ?: if (!onMainThread) {
+                    LocalMediaSupport.resolveCoverUri(context, this)
+                } else if (
+                    localFilePath?.startsWith("/") == true &&
+                        mediaUri?.startsWith("content://", ignoreCase = true) != true
+                ) {
+                    // direct file sidecars are bounded existence checks and are safe for the first frame
+                    LocalMediaSupport.resolveNearbyCoverUri(context, this)
+                } else {
+                    null
+                }
+        } else {
+            AudioDownloadManager.getLocalCoverUri(
+                context = context,
+                song = this,
+                resolveLocalMediaFallback = false
+            )
+        }
     } else {
         null
     }
@@ -55,9 +79,7 @@ fun SongItem.displayCoverUrl(
         localCoverUrl = localCover,
         onMainThread = onMainThread
     )?.let { return it }
-    if (!isLocalSong()) return current
-    if (onMainThread || !resolveLocalMetadataFallback) return current
-    return LocalMediaSupport.resolveCoverUri(context, this)?.takeIf { it.isNotBlank() } ?: current
+    return current
 }
 
 fun SongItem.displayName(): String = customName ?: name
@@ -66,7 +88,9 @@ fun SongItem.displayArtist(): String = customArtist ?: artist
 fun LocalPlaylist.displayCoverUrl(
     additionalCoverCandidates: List<SongItem> = emptyList()
 ): String? {
-    return customCoverUrl ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
+    return customCoverUrl
+        ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
+        ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
         .firstNotNullOfOrNull { song ->
         song.displayCoverUrl()?.takeIf { it.isNotBlank() }
     }
@@ -77,7 +101,9 @@ fun LocalPlaylist.displayCoverUrl(
     resolveLocalMetadataFallback: Boolean = true,
     additionalCoverCandidates: List<SongItem> = emptyList()
 ): String? {
-    return customCoverUrl ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
+    return customCoverUrl
+        ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
+        ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
         .firstNotNullOfOrNull { song ->
         song.displayCoverUrl(
             context = context,
@@ -109,10 +135,17 @@ private fun String.isRemoteCoverSource(): Boolean {
         startsWith("https://", ignoreCase = true)
 }
 
-private fun SongItem.shouldResolveLocalCoverFallback(currentCoverUrl: String?): Boolean {
+internal fun SongItem.shouldResolveLocalCoverFallback(currentCoverUrl: String?): Boolean {
     if (!isLocalSong()) return true
     if (currentCoverUrl.isNullOrBlank()) return true
-    return currentCoverUrl.isRemoteCoverSource()
+    return currentCoverUrl.isRemoteCoverSource() || currentCoverUrl.isStaleLocalCoverReference()
+}
+
+private fun String.isStaleLocalCoverReference(): Boolean {
+    return isMediaStoreCoverReference(this) ||
+        startsWith("content://", ignoreCase = true) ||
+        startsWith("file:", ignoreCase = true) ||
+        startsWith("/")
 }
 
 internal fun resolveDisplayCoverUrl(

@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.data.model
 
 
 import android.content.Context
+import android.net.Uri
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -66,8 +67,173 @@ fun SongItem.identity(): SongIdentity {
 
 fun SongItem.stableKey(): String = identity().stableKey()
 
+/**
+ * 为播放界面的封面和背景提供不随本地引用迁移而变化的身份
+ *
+ * 下载、删除和同步仍使用 stableKey。这里单独排除会在私有目录和 SAF
+ * 之间变化的路径，只让视觉缓存跟随同一首歌而不是跟随某次扫描结果
+ */
+internal fun SongItem.playbackVisualKey(): String {
+    remoteDownloadIdentityOrNull()?.stableKey()?.let { return "remote:$it" }
+
+    if (!LocalSongSupport.isLocalSong(this, null)) {
+        return "song:${stableKey()}"
+    }
+
+    val sourceKey = sourceStableKey
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?.takeUnless(::isVolatileLocalSourceKey)
+    if (sourceKey != null) {
+        return "local-source:$sourceKey"
+    }
+
+    localPlaybackAudioId()?.let { return "local-audio:$it" }
+
+    val fallback = localVisualMetadataKey(this)
+    if (fallback.isNotBlank()) {
+        // 文件名和原始标签在目录迁移后仍保持不变, 比路径哈希更适合做视觉身份
+        return "local:$fallback"
+    }
+
+    return "local-id:$id"
+}
+
+/**
+ * 返回视觉缓存使用的身份集合
+ *
+ * 本地文件不能仅凭文件名和标签归属到同一首歌, 因此不把元数据候选
+ * 当作缓存所有者。目录迁移由稳定的 sourceStableKey 或 audioId 负责
+ */
+internal fun SongItem.playbackVisualKeyAliases(): List<String> {
+    val aliases = linkedSetOf(playbackVisualKey())
+    if (!LocalSongSupport.isLocalSong(this, null)) {
+        return aliases.toList()
+    }
+
+    remoteDownloadIdentityOrNull()
+        ?.stableKey()
+        ?.let { aliases += "remote:$it" }
+
+    sourceStableKey
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?.takeUnless(::isVolatileLocalSourceKey)
+        ?.let { aliases += "local-source:$it" }
+
+    localPlaybackAudioId()?.let { aliases += "local-audio:$it" }
+    return aliases.toList()
+}
+
+private fun isVolatileLocalSourceKey(sourceKey: String): Boolean {
+    if (
+        sourceKey.startsWith("/", ignoreCase = false) ||
+        sourceKey.contains("content://", ignoreCase = true) ||
+        sourceKey.contains("file://", ignoreCase = true)
+    ) {
+        return true
+    }
+    val identity = parseStableSongIdentity(sourceKey) ?: return false
+    return identity.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY ||
+        identity.mediaUri?.let(LocalSongSupport::isLocalMediaUri) == true
+}
+
+private fun localVisualFileName(song: SongItem): String? {
+    song.localFileName
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?.let { return it }
+    song.localFilePath
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?.substringAfterLast('/')
+        ?.takeIf(String::isNotBlank)
+        ?.let { return it }
+    val rawReference = song.mediaUri
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: return null
+    val pathSegment = runCatching {
+        Uri.parse(rawReference).lastPathSegment
+    }.getOrNull()
+    return (pathSegment ?: rawReference.substringAfterLast('/'))
+        .let(Uri::decode)
+        ?.takeIf(String::isNotBlank)
+}
+
+private fun SongItem.localPlaybackAudioId(): String? {
+    return audioId
+        ?.trim()
+        ?.takeIf {
+            it.isNotBlank() &&
+                !it.equals("0", ignoreCase = true) &&
+                channelId?.equals("local", ignoreCase = true) == true
+        }
+}
+
+private fun localVisualMetadataKey(song: SongItem): String {
+    val fileName = localVisualFileName(song)
+    val title = song.originalName
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: song.name.trim().takeIf(String::isNotBlank)
+    val artistName = song.originalArtist
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: song.artist.trim().takeIf(String::isNotBlank)
+    return listOfNotNull(fileName, title, artistName)
+        .map(::normalizeVisualIdentityToken)
+        .filter(String::isNotBlank)
+        .joinToString("|")
+}
+
+private fun normalizeVisualIdentityToken(value: String): String {
+    return value
+        .trim()
+        .lowercase(Locale.ROOT)
+        .replace(Regex("\\s+"), " ")
+}
+
 internal fun SongItem.remoteSourceIdentityOrNull(): SongIdentity? =
     normalizedSourceStableIdentity()
+
+/**
+ * 返回下载目录使用的远端身份, 即使歌曲当前带有本地播放引用也不丢失来源
+ * 旧版本或异步恢复期间可能没有 sourceStableKey, 但 channel/audio 字段仍足以确认来源
+ */
+internal fun SongItem.remoteDownloadIdentityOrNull(): SongIdentity? {
+    remoteSourceIdentityOrNull()?.let { return it }
+    val rawChannel = channelId
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
+    if (rawChannel == null) {
+        return null
+    }
+    val sourceChannel = normalizedChannelId(
+        rawChannelId = rawChannel,
+        album = album,
+        mediaUri = null,
+        inferNeteaseForBlankRemote = false
+    ) ?: return null
+    val sourceAudio = audioId
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: id.takeIf { it > 0L }?.toString()
+        ?: return null
+    val sourceSong = copy(
+        id = id,
+        album = sourceChannel,
+        albumId = 0L,
+        mediaUri = null,
+        localFileName = null,
+        localFilePath = null,
+        channelId = sourceChannel,
+        audioId = sourceAudio,
+        subAudioId = subAudioId?.trim()?.takeIf(String::isNotBlank),
+        sourceStableKey = null
+    )
+    return sourceSong.normalizedRemoteIdentity()
+}
 
 internal fun SongItem.isSyncableRemoteSong(context: Context? = null): Boolean {
     return !LocalSongSupport.isLocalSong(this, context) ||

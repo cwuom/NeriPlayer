@@ -1,12 +1,53 @@
 package moe.ouom.neriplayer.core.player.url
 
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.player.download.LocalPlaybackReferenceResolution
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SongUrlResolutionRetryTest {
+
+    @Test
+    fun `local playback retries only unstable resolutions`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+
+        assertTrue(
+            shouldRetryLocalPlaybackResolution(
+                song,
+                LocalPlaybackReferenceResolution.TemporarilyUnavailable(
+                    ManagedDownloadReferenceLookup.Result.ProviderFailure(
+                        IllegalStateException("provider busy")
+                    )
+                )
+            )
+        )
+        assertFalse(
+            shouldRetryLocalPlaybackResolution(
+                song,
+                LocalPlaybackReferenceResolution.Playable("content://provider/audio")
+            )
+        )
+        assertFalse(
+            shouldRetryLocalPlaybackResolution(
+                song,
+                LocalPlaybackReferenceResolution.NotIndexed
+            )
+        )
+    }
 
     @Test
     fun `resolution retries five times before succeeding`() = runBlocking {
