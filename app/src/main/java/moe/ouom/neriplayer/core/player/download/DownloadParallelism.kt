@@ -11,14 +11,17 @@ import moe.ouom.neriplayer.data.settings.readBootstrapDownloadParallelism
 import moe.ouom.neriplayer.data.settings.warmBootstrapSettingsSnapshot
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 internal const val DEFAULT_DOWNLOAD_PARALLELISM = 6
 internal const val MAX_DOWNLOAD_PARALLELISM = 8
-internal const val MIN_DOWNLOAD_DISPATCH_WINDOW = 8
-internal const val MAX_DOWNLOAD_DISPATCH_WINDOW = 24
+internal const val MIN_DOWNLOAD_DISPATCH_WINDOW = 2
+internal const val MAX_DOWNLOAD_DISPATCH_WINDOW = 10
+private const val DOWNLOAD_DISPATCH_HEADROOM = 2
 
 internal fun resolveDownloadDispatchWindow(networkParallelism: Int): Int {
-    return (networkParallelism.coerceAtLeast(1) * 2)
+    // 只保留少量预取名额，避免大量宿主在等待网络许可时占住资源
+    return (networkParallelism.coerceAtLeast(1) + DOWNLOAD_DISPATCH_HEADROOM)
         .coerceIn(MIN_DOWNLOAD_DISPATCH_WINDOW, MAX_DOWNLOAD_DISPATCH_WINDOW)
 }
 
@@ -36,17 +39,32 @@ internal fun resolveInitialDownloadParallelism(
         ?: INITIAL_DOWNLOAD_PARALLELISM
 }
 
-/** shares the setting across scheduling backends without blocking every enqueue */
+/** 在各调度后端之间共享设置，避免每次入队都发生阻塞 */
 internal fun currentDownloadParallelism(context: Context): Int {
     return DownloadParallelismCache.current(context)
 }
 
+internal data class DownloadParallelismSnapshot(
+    val value: Int,
+    val revision: Long
+)
+
+internal fun currentDownloadParallelismSnapshot(context: Context): DownloadParallelismSnapshot {
+    return DownloadParallelismCache.snapshot(context)
+}
+
 internal fun publishDownloadParallelism(configuredValue: Int) {
-    DownloadParallelismCache.publish(configuredValue)
+    val normalizedValue = normalizeDownloadParallelism(configuredValue)
+    val revision = DownloadParallelismCache.publish(normalizedValue)
+    AudioDownloadManager.onConfiguredDownloadParallelismChanged(
+        configuredValue = normalizedValue,
+        configurationRevision = revision
+    )
 }
 
 private object DownloadParallelismCache {
     private val value = AtomicInteger(INITIAL_DOWNLOAD_PARALLELISM)
+    private val revision = AtomicLong(0L)
     private val bootstrapLoadAttempted = AtomicBoolean(false)
     private val observerStarted = AtomicBoolean(false)
     private val bootstrapLoadLock = Any()
@@ -55,13 +73,27 @@ private object DownloadParallelismCache {
     fun current(context: Context): Int {
         loadBootstrapValue(context)
         observe(context)
-        return normalizeDownloadParallelism(value.get())
+        return synchronized(bootstrapLoadLock) {
+            normalizeDownloadParallelism(value.get())
+        }
     }
 
-    fun publish(configuredValue: Int) {
+    fun snapshot(context: Context): DownloadParallelismSnapshot {
+        loadBootstrapValue(context)
+        observe(context)
+        return synchronized(bootstrapLoadLock) {
+            DownloadParallelismSnapshot(
+                value = normalizeDownloadParallelism(value.get()),
+                revision = revision.get()
+            )
+        }
+    }
+
+    fun publish(configuredValue: Int): Long {
         synchronized(bootstrapLoadLock) {
             value.set(normalizeDownloadParallelism(configuredValue))
             bootstrapLoadAttempted.set(true)
+            return revision.incrementAndGet()
         }
     }
 
@@ -73,6 +105,7 @@ private object DownloadParallelismCache {
                 context.applicationContext
             )
             value.set(resolveInitialDownloadParallelism(persistedValue))
+            revision.incrementAndGet()
             if (persistedValue == null) {
                 warmBootstrapSettingsSnapshot(context.applicationContext)
             }
@@ -86,7 +119,7 @@ private object DownloadParallelismCache {
         scope.launch {
             runCatching {
                 appContext.autoSettingFlow(setting).collect { configuredValue ->
-                    publish(configuredValue)
+                    publishDownloadParallelism(configuredValue)
                 }
             }.onFailure {
                 observerStarted.set(false)

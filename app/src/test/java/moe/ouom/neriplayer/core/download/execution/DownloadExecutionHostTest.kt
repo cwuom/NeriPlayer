@@ -1256,6 +1256,15 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `storage cancellation is handled without cancelling sibling pump work`() {
+        assertEquals(
+            DownloadExecutionResult.AlreadyHandled,
+            resolveExecutionCancellationResult(WAITING_STORAGE_MUTATION_OPERATION_STATE)
+        )
+        assertNull(resolveExecutionCancellationResult("RUNNING"))
+    }
+
+    @Test
     fun `attempt refresh during scheduling is deferred instead of misclassified as clear`() {
         val context = mockContext()
         val journal = InMemoryDownloadExecutionOperationJournal().apply {
@@ -1393,6 +1402,23 @@ class DownloadExecutionHostTest {
         assertTrue(fenceCancellationIndex > permitIndex)
         assertTrue(stateIndex > permitIndex)
         assertTrue(queueStopIndex > stateIndex)
+    }
+
+    @Test
+    fun `execution host keeps pump and worker database access suspending`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadExecutionHost.kt"
+        ).readText()
+
+        assertFalse(
+            "execute must not block a shared worker thread on Room",
+            methodBody(source, "execute").contains("runBlocking")
+        )
+        assertFalse(
+            "pump must not block a shared worker thread on Room",
+            methodBody(source, "pump").contains("runBlocking")
+        )
     }
 
     @Test
@@ -1560,6 +1586,28 @@ class DownloadExecutionHostTest {
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")
+    }
+
+    private fun methodBody(source: String, methodName: String): String {
+        val signatureStart = sequenceOf(
+            "override suspend fun $methodName(",
+            "private suspend fun $methodName(",
+            "suspend fun $methodName("
+        ).map(source::indexOf).firstOrNull { it >= 0 }
+            ?: error("method not found: $methodName")
+        val bodyStart = source.indexOf('{', signatureStart)
+        require(bodyStart >= 0) { "method body not found: $methodName" }
+        var depth = 0
+        for (index in bodyStart until source.length) {
+            when (source[index]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return source.substring(bodyStart, index + 1)
+                }
+            }
+        }
+        error("unterminated method body: $methodName")
     }
 
     private class StatefulSharedPreferences : SharedPreferences {

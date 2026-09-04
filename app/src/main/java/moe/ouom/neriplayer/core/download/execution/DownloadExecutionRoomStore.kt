@@ -1578,21 +1578,14 @@ internal object DownloadExecutionRoomStore {
         errorCode: String,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Boolean {
-        return database.downloadOperationDao().transitionState(
+        // 复用带 CAS 的统一状态机，不能让空间等待把已经提交的核心文件降级
+        return updateState(
+            context = context,
             operationId = operationId,
-            expectedStates = listOf(
-                "PENDING_QUEUE",
-                "QUEUED",
-                "RUNNING",
-                "RETRYABLE",
-                "COMMITTING",
-                "CORE_COMMITTED",
-                "ASSETS_ENRICHING"
-            ),
             state = WAITING_STORAGE_MUTATION_OPERATION_STATE,
-            updatedAtMs = System.currentTimeMillis(),
-            errorCode = errorCode
-        ) > 0
+            errorCode = errorCode,
+            database = database
+        )
     }
 
     /**

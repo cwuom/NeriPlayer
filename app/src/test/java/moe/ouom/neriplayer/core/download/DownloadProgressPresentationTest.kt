@@ -518,6 +518,22 @@ class DownloadProgressPresentationTest {
                 checkpointBytesWritten = 42L
             )
         )
+        assertEquals(
+            RecoveredDownloadProgress(bytesRead = 20L, totalBytes = 100L),
+            resolveRecoveredDownloadProgress(
+                workingFileBytes = 20L,
+                checkpointTotalBytes = 100L,
+                checkpointBytesWritten = 42L
+            )
+        )
+        assertEquals(
+            RecoveredDownloadProgress(bytesRead = 0L, totalBytes = 100L),
+            resolveRecoveredDownloadProgress(
+                workingFileBytes = 20L,
+                checkpointTotalBytes = 100L,
+                checkpointBytesWritten = 0L
+            )
+        )
         assertNull(
             resolveRecoveredDownloadProgress(
                 workingFileBytes = 101L,

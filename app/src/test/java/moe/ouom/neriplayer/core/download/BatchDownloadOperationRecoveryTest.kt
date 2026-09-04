@@ -313,9 +313,11 @@ class BatchDownloadOperationRecoveryTest {
             startBody.indexOf("beginBatchDownloadPresentation(requestedSongs)") <
                 startBody.indexOf("scope.launch")
         )
-        assertTrue(preparationBody.contains("readyRequests"))
+        assertTrue(preparationBody.contains("pendingSongs.lastOrNull"))
         assertFalse(preparationBody.contains("BATCH_DOWNLOAD_EARLY_HANDOFF_LIMIT"))
-        val earlyHandoffIndex = preparationBody.indexOf("for (request in readyRequests)")
+        val earlyHandoffIndex = preparationBody.indexOf(
+            "val request = session.pendingSongs.lastOrNull"
+        )
         val batchSchedulingIndex = preparationBody.indexOf("schedulePendingBatchDownloads(")
         assertTrue(earlyHandoffIndex >= 0)
         assertTrue(batchSchedulingIndex >= 0)

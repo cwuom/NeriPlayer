@@ -15,6 +15,8 @@ class AudioDownloadManagerCancellationLeaseContractTest {
                 "AudioDownloadManager.kt"
         ).readText()
         val executionBody = methodBody(source, "executeDownloadSong")
+        val attemptFailureBody = methodBody(source, "handleDownloadAttemptFailure")
+        val cancellationBody = methodBody(source, "handleDownloadSongCancellation")
 
         assertFalse(
             executionBody.contains(
@@ -23,15 +25,15 @@ class AudioDownloadManagerCancellationLeaseContractTest {
         )
         assertEquals(
             2,
-            executionBody.windowed(
+            (attemptFailureBody + cancellationBody).windowed(
                 "cleanupCancelledPendingArtifactsWithLease(".length,
                 1
             ).count { window ->
                 window == "cleanupCancelledPendingArtifactsWithLease("
             }
         )
-        assertTrue(executionBody.contains("var cancellationCleanupAttempted = false"))
-        assertTrue(executionBody.contains("if (!cancellationCleanupAttempted)"))
+        assertTrue(source.contains("cancellationCleanupAttempted: Boolean = false"))
+        assertTrue(cancellationBody.contains("if (!state.cancellationCleanupAttempted)"))
     }
 
     @Test

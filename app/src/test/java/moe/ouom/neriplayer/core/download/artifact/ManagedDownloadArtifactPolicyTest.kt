@@ -196,6 +196,34 @@ class ManagedDownloadArtifactPolicyTest {
     }
 
     @Test
+    fun `storage waiting keeps its lease for the same operation after restart`() {
+        val waiting = artifact(
+            state = ManagedDownloadArtifactState.WAITING_STORAGE,
+            updatedAtMs = 900L,
+            leaseId = "operation-42"
+        )
+
+        assertEquals(
+            ManagedDownloadArtifactDecision.Acquire,
+            ManagedDownloadArtifactPolicy.decide(
+                existing = waiting,
+                nowMs = 1_000L,
+                staleLeaseMs = 10_000L,
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertEquals(
+            ManagedDownloadArtifactDecision.InFlight,
+            ManagedDownloadArtifactPolicy.decide(
+                existing = waiting,
+                nowMs = 1_000L,
+                staleLeaseMs = 10_000L,
+                leaseOwnerId = "operation-43"
+            )
+        )
+    }
+
+    @Test
     fun `stale active lease can be reclaimed after a process crash`() {
         assertEquals(
             ManagedDownloadArtifactDecision.Acquire,

@@ -7715,7 +7715,7 @@ internal object ManagedDownloadStorage {
         )
     }
 
-    private fun saveAudioFromTempBlocking(
+    private suspend fun saveAudioFromTempBlocking(
         context: Context,
         tempFile: File,
         fileName: String,
@@ -7775,13 +7775,11 @@ internal object ManagedDownloadStorage {
                         actualAudioName = finalName,
                         pendingMetadataJson = pendingMetadataJson
                     )
-                    val writeResult = runBlocking(Dispatchers.IO) {
-                        FileStorageBackend(temporaryRoot.dir).writeRecoverable(
-                            target = StorageTarget.FileTarget(pendingName)
-                        ) { output ->
-                            tempFile.inputStream().use { input ->
-                                input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-                            }
+                    val writeResult = FileStorageBackend(temporaryRoot.dir).writeRecoverable(
+                        target = StorageTarget.FileTarget(pendingName)
+                    ) { output ->
+                        tempFile.inputStream().use { input ->
+                            input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                         }
                     }
                     val stored = when (writeResult) {
@@ -8027,7 +8025,7 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun writeSafFileThroughBackend(
+    private suspend fun writeSafFileThroughBackend(
         context: Context,
         parent: DocumentFile,
         displayName: String,
@@ -8036,17 +8034,15 @@ internal object ManagedDownloadStorage {
         sourceFile: File
     ): StoredEntry {
         val backend = SafStorageBackend(context)
-        val result = runBlocking(Dispatchers.IO) {
-            backend.writeRecoverable(
-                target = StorageTarget.SafTarget(
-                    parent = StorageReference.SafRef(parent.uri),
-                    displayName = displayName,
-                    mimeType = mimeType
-                )
-            ) { output ->
-                sourceFile.inputStream().use { input ->
-                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-                }
+        val result = backend.writeRecoverable(
+            target = StorageTarget.SafTarget(
+                parent = StorageReference.SafRef(parent.uri),
+                displayName = displayName,
+                mimeType = mimeType
+            )
+        ) { output ->
+            sourceFile.inputStream().use { input ->
+                input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
             }
         }
         val stat = when (result) {
@@ -8062,29 +8058,27 @@ internal object ManagedDownloadStorage {
                 "SAF 不支持写入: $displayName (${result.operation})"
             )
         }
-        val verifiedSize = stat.sizeBytes ?: runBlocking(Dispatchers.IO) {
-            when (val measured = backend.read(stat.reference) { input ->
-                ManagedDownloadCommitIo.countInputStreamBytes(
-                    input,
-                    STREAM_COPY_BUFFER_SIZE_BYTES
-                )
-            }) {
-                is StorageLookupResult.Found -> measured.value
-                StorageLookupResult.Missing -> throw IOException(
-                    "SAF 写入目标在读回时不存在: $displayName"
-                )
-                StorageLookupResult.PermissionLost -> throw SecurityException(
-                    "SAF 写入目标读回权限丢失: $displayName"
-                )
-                is StorageLookupResult.ProviderFailure -> throw IOException(
-                    "SAF 写入目标读回失败: $displayName",
-                    measured.error
-                )
-                StorageLookupResult.OutOfScope,
-                is StorageLookupResult.Unsupported -> throw IOException(
-                    "SAF 写入目标不可读: $displayName"
-                )
-            }
+        val verifiedSize = stat.sizeBytes ?: when (val measured = backend.read(stat.reference) { input ->
+            ManagedDownloadCommitIo.countInputStreamBytes(
+                input,
+                STREAM_COPY_BUFFER_SIZE_BYTES
+            )
+        }) {
+            is StorageLookupResult.Found -> measured.value
+            StorageLookupResult.Missing -> throw IOException(
+                "SAF 写入目标在读回时不存在: $displayName"
+            )
+            StorageLookupResult.PermissionLost -> throw SecurityException(
+                "SAF 写入目标读回权限丢失: $displayName"
+            )
+            is StorageLookupResult.ProviderFailure -> throw IOException(
+                "SAF 写入目标读回失败: $displayName",
+                measured.error
+            )
+            StorageLookupResult.OutOfScope,
+            is StorageLookupResult.Unsupported -> throw IOException(
+                "SAF 写入目标不可读: $displayName"
+            )
         }
         if (verifiedSize != expectedSizeBytes) {
             throw IOException(

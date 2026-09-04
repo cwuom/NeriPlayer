@@ -296,6 +296,15 @@ internal fun mergeDownloadProgress(
     if (current == null || current.attemptId != incoming.attemptId) {
         return incoming
     }
+    val currentGeneration = current.transferGeneration
+    val incomingGeneration = incoming.transferGeneration
+    if (
+        currentGeneration != null &&
+            incomingGeneration != null &&
+            incomingGeneration < currentGeneration
+    ) {
+        return current
+    }
     val finalizedBytesFloor = if (
         current.stage == AudioDownloadManager.DownloadStage.FINALIZING &&
             current.totalBytes > 0L
@@ -313,8 +322,31 @@ internal fun mergeDownloadProgress(
         totalBytes = mergeKnownDownloadTotalBytes(
             current.totalBytes,
             incoming.totalBytes
-        )
+        ),
+        durableBytesRead = mergeDurableDownloadBytes(
+            current = current.durableBytesRead,
+            incoming = incoming.durableBytesRead,
+            visibleBytes = maxOf(
+                current.bytesRead.coerceAtLeast(0L),
+                incoming.bytesRead.coerceAtLeast(0L),
+                finalizedBytesFloor
+            )
+        ),
+        transferGeneration = incomingGeneration ?: currentGeneration
     )
+}
+
+private fun mergeDurableDownloadBytes(
+    current: Long?,
+    incoming: Long?,
+    visibleBytes: Long
+): Long? {
+    val merged = when {
+        current == null -> incoming
+        incoming == null -> current
+        else -> maxOf(current, incoming)
+    } ?: return null
+    return merged.coerceAtLeast(0L).coerceAtMost(visibleBytes)
 }
 
 internal fun mergeDownloadTaskProgress(

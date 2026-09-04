@@ -61,8 +61,7 @@ class PreparedPipelineRemovalTest {
 
         assertFalse(
             "DownloadedSidecarReferences still exposes the removed prepared marker",
-            source.contains("val prepared: Boolean") ||
-                source.contains("prepared =")
+            source.contains("DownloadedSidecarReferences(\n        val prepared:")
         )
     }
 

@@ -4,22 +4,35 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * keeps deferred host handoffs fair without making cancellation walk a large queue
+ * 保持宿主延后交接公平，同时避免取消时遍历无界队列
  */
-internal class DeferredDownloadScheduleQueue {
+internal class DeferredDownloadScheduleQueue(
+    private val maxRequests: Int = DEFAULT_MAX_REQUESTS
+) {
+    init {
+        require(maxRequests > 0) { "maxRequests must be positive" }
+    }
+
     private val requests = ConcurrentHashMap<String, DownloadExecutionRequest>()
+    private val insertionOrder = ConcurrentLinkedQueue<String>()
     private val readyOperationIds = ConcurrentLinkedQueue<String>()
     private val queuedOperationIds = ConcurrentHashMap.newKeySet<String>()
 
     fun enqueue(request: DownloadExecutionRequest) {
-        requests[request.operationId] = request
+        val previous = requests.put(request.operationId, request)
+        if (previous == null) {
+            // 只记录首次入队顺序，更新同一个 operation 不应制造重复节点
+            insertionOrder.offer(request.operationId)
+        }
         offerIfAbsent(request.operationId)
+        evictOverflow()
     }
 
     fun poll(): DownloadExecutionRequest? {
         while (true) {
             val operationId = readyOperationIds.poll() ?: return null
             queuedOperationIds.remove(operationId)
+            insertionOrder.remove(operationId)
             val request = requests[operationId] ?: continue
             return request
         }
@@ -29,17 +42,25 @@ internal class DeferredDownloadScheduleQueue {
         if (requests[request.operationId] !== request) {
             return
         }
+        if (!insertionOrder.contains(request.operationId)) {
+            insertionOrder.offer(request.operationId)
+        }
         offerIfAbsent(request.operationId)
+        evictOverflow()
     }
 
     fun remove(operationId: String) {
         requests.remove(operationId)
         queuedOperationIds.remove(operationId)
+        insertionOrder.remove(operationId)
+        readyOperationIds.remove(operationId)
     }
 
     fun remove(request: DownloadExecutionRequest) {
         if (requests.remove(request.operationId, request)) {
             queuedOperationIds.remove(request.operationId)
+            insertionOrder.remove(request.operationId)
+            readyOperationIds.remove(request.operationId)
         }
     }
 
@@ -55,6 +76,7 @@ internal class DeferredDownloadScheduleQueue {
 
     fun clear() {
         requests.clear()
+        insertionOrder.clear()
         readyOperationIds.clear()
         queuedOperationIds.clear()
     }
@@ -63,5 +85,19 @@ internal class DeferredDownloadScheduleQueue {
         if (queuedOperationIds.add(operationId)) {
             readyOperationIds.offer(operationId)
         }
+    }
+
+    private fun evictOverflow() {
+        while (requests.size > maxRequests) {
+            val oldestOperationId = insertionOrder.poll() ?: return
+            if (requests.remove(oldestOperationId) != null) {
+                queuedOperationIds.remove(oldestOperationId)
+                readyOperationIds.remove(oldestOperationId)
+            }
+        }
+    }
+
+    private companion object {
+        private const val DEFAULT_MAX_REQUESTS = 1_024
     }
 }

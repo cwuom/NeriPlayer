@@ -637,6 +637,23 @@ internal class ManagedDownloadArtifactCoordinator {
         )
     }
 
+    /** 空间或目录暂不可用时保留 lease，恢复时可继续使用同一个工作文件 */
+    suspend fun markWaitingForStorage(
+        context: Context,
+        song: SongItem,
+        expectedLeaseId: String?,
+        errorCode: String
+    ) {
+        updateState(
+            context = context,
+            song = song,
+            expectedLeaseId = expectedLeaseId,
+            state = ManagedDownloadArtifactState.WAITING_STORAGE,
+            clearLease = false,
+            errorCode = errorCode
+        )
+    }
+
     suspend fun markRepairRequired(
         context: Context,
         song: SongItem,
@@ -1380,6 +1397,7 @@ internal class ManagedDownloadArtifactCoordinator {
         return ManagedDownloadArtifactState.fromPersisted(entity.state) in setOf(
             ManagedDownloadArtifactState.QUEUED,
             ManagedDownloadArtifactState.DOWNLOADING,
+            ManagedDownloadArtifactState.WAITING_STORAGE,
             ManagedDownloadArtifactState.VERIFYING,
             ManagedDownloadArtifactState.COMMITTING,
             ManagedDownloadArtifactState.CORE_COMMITTED,
@@ -1398,7 +1416,8 @@ internal class ManagedDownloadArtifactCoordinator {
             ManagedDownloadArtifactState.DOWNLOADING,
             ManagedDownloadArtifactState.VERIFYING,
             ManagedDownloadArtifactState.COMMITTING,
-            ManagedDownloadArtifactState.QUEUED -> 4
+            ManagedDownloadArtifactState.QUEUED,
+            ManagedDownloadArtifactState.WAITING_STORAGE -> 4
 
             ManagedDownloadArtifactState.CORE_COMMITTED,
             ManagedDownloadArtifactState.ASSETS_ENRICHING,
@@ -1462,6 +1481,7 @@ internal class ManagedDownloadArtifactCoordinator {
         private val CROSS_ROOT_AUTHORITATIVE_STATES = setOf(
             ManagedDownloadArtifactState.QUEUED,
             ManagedDownloadArtifactState.DOWNLOADING,
+            ManagedDownloadArtifactState.WAITING_STORAGE,
             ManagedDownloadArtifactState.VERIFYING,
             ManagedDownloadArtifactState.COMMITTING,
             ManagedDownloadArtifactState.CORE_COMMITTED,
@@ -1472,6 +1492,7 @@ internal class ManagedDownloadArtifactCoordinator {
         private val CROSS_ROOT_LEASE_STATES = setOf(
             ManagedDownloadArtifactState.QUEUED,
             ManagedDownloadArtifactState.DOWNLOADING,
+            ManagedDownloadArtifactState.WAITING_STORAGE,
             ManagedDownloadArtifactState.VERIFYING,
             ManagedDownloadArtifactState.COMMITTING,
             ManagedDownloadArtifactState.CORE_COMMITTED,

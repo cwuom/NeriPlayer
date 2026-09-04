@@ -109,6 +109,105 @@ class AudioDownloadManagerTest {
                 previous.copy(bytesRead = 799L)
             )
         )
+
+        val durableProgress = AudioDownloadManager.mergeLatestProgress(
+            previous.copy(
+                bytesRead = 600L,
+                durableBytesRead = 512L
+            ),
+            previous.copy(
+                bytesRead = 900L,
+                durableBytesRead = 700L
+            )
+        )
+        assertEquals(700L, durableProgress.durableBytesRead)
+
+        val clampedDurableProgress = AudioDownloadManager.mergeLatestProgress(
+            previous.copy(
+                bytesRead = 600L,
+                durableBytesRead = 512L
+            ),
+            previous.copy(
+                bytesRead = 400L,
+                durableBytesRead = 900L
+            )
+        )
+        assertEquals(600L, clampedDurableProgress.durableBytesRead)
+    }
+
+    @Test
+    fun `late progress from an older transfer generation is ignored`() {
+        val current = AudioDownloadManager.DownloadProgress(
+            songKey = "generation-song",
+            songId = 1L,
+            fileName = "generation-song.mp3",
+            bytesRead = 800L,
+            totalBytes = 1_000L,
+            speedBytesPerSec = 20L,
+            attemptId = 3L,
+            transferGeneration = 9L,
+            durableBytesRead = 700L
+        )
+        val late = current.copy(
+            bytesRead = 950L,
+            speedBytesPerSec = 30L,
+            transferGeneration = 8L,
+            durableBytesRead = 900L
+        )
+
+        assertFalse(AudioDownloadManager.shouldReplaceLatestProgress(current, late))
+        assertEquals(current, AudioDownloadManager.mergeLatestProgress(current, late))
+    }
+
+    @Test
+    fun `newer attempt wins even when its transfer generation is lower`() {
+        val previous = AudioDownloadManager.DownloadProgress(
+            songKey = "generation-song",
+            songId = 1L,
+            fileName = "generation-song.mp3",
+            bytesRead = 800L,
+            totalBytes = 1_000L,
+            speedBytesPerSec = 20L,
+            attemptId = 9L,
+            transferGeneration = 12L
+        )
+        val newerAttempt = previous.copy(
+            bytesRead = 32L,
+            speedBytesPerSec = 4L,
+            attemptId = 10L,
+            transferGeneration = 1L
+        )
+
+        assertEquals(
+            newerAttempt,
+            AudioDownloadManager.mergeLatestProgress(previous, newerAttempt)
+        )
+    }
+
+    @Test
+    fun `new transfer generation keeps monotonic visible and durable bytes`() {
+        val previous = AudioDownloadManager.DownloadProgress(
+            songKey = "generation-song",
+            songId = 1L,
+            fileName = "generation-song.mp3",
+            bytesRead = 800L,
+            totalBytes = 1_000L,
+            speedBytesPerSec = 20L,
+            attemptId = 3L,
+            transferGeneration = 8L,
+            durableBytesRead = 700L
+        )
+        val resumed = previous.copy(
+            bytesRead = 300L,
+            speedBytesPerSec = 10L,
+            transferGeneration = 9L,
+            durableBytesRead = 250L
+        )
+
+        val merged = AudioDownloadManager.mergeLatestProgress(previous, resumed)
+        assertEquals(800L, merged.bytesRead)
+        assertEquals(700L, merged.durableBytesRead)
+        assertEquals(9L, merged.transferGeneration)
     }
 
     @Test
@@ -345,7 +444,17 @@ class AudioDownloadManagerTest {
         assertTrue(hlsBody.contains("stage = \"hls_open_working_file\""))
         assertFalse(hlsBody.contains("clearHlsResumeState(destFile)\n\n        NPLogger.d"))
         assertTrue(source.contains("onSongPausedForNetworkPolicy"))
-        assertTrue(source.contains("!completionDispatched && !pausedForNetworkPolicy"))
+        assertTrue(source.contains("queuedCompletion == null && !pausedForNetworkPolicy"))
+    }
+
+    @Test
+    fun `direct and chunked streams sync the working file before completion`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+
+        assertTrue(methodBody(source, "singleThreadDownload").contains("output.fd.sync()"))
+        assertTrue(methodBody(source, "singleThreadChunkedDownload").contains("output.fd.sync()"))
     }
 
     @Test

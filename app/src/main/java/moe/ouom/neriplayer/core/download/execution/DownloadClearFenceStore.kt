@@ -293,6 +293,26 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
         }
     }
 
+    /** 挂起式版本供共享泵使用，避免在 IO 调度线程内嵌套 runBlocking */
+    internal suspend fun <T> withSchedulingPermitSuspending(
+        context: Context,
+        onFenceActive: suspend () -> T,
+        stableKey: String? = null,
+        operationId: String? = null,
+        schedule: suspend () -> T
+    ): T {
+        val blocked = isBlocked(
+            context = context,
+            stableKey = stableKey,
+            operationId = operationId
+        )
+        return if (blocked) {
+            onFenceActive()
+        } else {
+            schedule()
+        }
+    }
+
     override fun activate(context: Context): Boolean {
         return activate(context, requestedOwnership)
     }

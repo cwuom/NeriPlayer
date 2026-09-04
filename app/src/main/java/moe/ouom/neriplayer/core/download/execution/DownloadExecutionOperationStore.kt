@@ -19,13 +19,8 @@ internal data class DownloadExecutionPumpPage(
     val nextCursor: DownloadExecutionPumpCursor? = null
 )
 
-internal val INTERRUPTED_DOWNLOAD_OPERATION_STATES = setOf(
-    "RUNNING",
-    "COMMITTING",
-    "CORE_COMMITTED",
-    "ASSETS_ENRICHING",
-    "DEGRADED_COMPLETE"
-)
+internal val INTERRUPTED_DOWNLOAD_OPERATION_STATES: Set<String>
+    get() = DownloadOperationStateTransitions.interruptedWireNames
 
 internal fun resolveProcessExitRecoveryState(state: String?): String? {
     return when (state) {
@@ -40,17 +35,53 @@ internal fun resolveProcessExitRecoveryState(state: String?): String? {
 internal interface DownloadExecutionOperationJournal {
     fun save(context: Context, request: DownloadExecutionRequest)
 
+    /** 挂起式写入供泵和宿主使用，Room 实现不得再套一层 runBlocking */
+    suspend fun saveSuspending(context: Context, request: DownloadExecutionRequest) {
+        save(context, request)
+    }
+
     fun read(context: Context, operationId: String): DownloadExecutionRequest?
+
+    suspend fun readSuspending(
+        context: Context,
+        operationId: String
+    ): DownloadExecutionRequest? = read(context, operationId)
 
     fun remove(context: Context, operationId: String)
 
+    suspend fun removeSuspending(context: Context, operationId: String) {
+        remove(context, operationId)
+    }
+
     fun markStopped(context: Context, operationId: String)
+
+    suspend fun markStoppedSuspending(context: Context, operationId: String) {
+        markStopped(context, operationId)
+    }
 
     fun isStopped(context: Context, operationId: String): Boolean
 
+    suspend fun isStoppedSuspending(context: Context, operationId: String): Boolean {
+        return isStopped(context, operationId)
+    }
+
     fun isUserCancellationRequested(context: Context, operationId: String): Boolean = false
 
+    suspend fun isUserCancellationRequestedSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        return isUserCancellationRequested(context, operationId)
+    }
+
     fun isExplicitResumePending(context: Context, operationId: String): Boolean = false
+
+    suspend fun isExplicitResumePendingSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        return isExplicitResumePending(context, operationId)
+    }
 
     fun stoppedSongKeys(context: Context): Set<String>
 
@@ -60,6 +91,14 @@ internal interface DownloadExecutionOperationJournal {
         afterCursor: DownloadExecutionPumpCursor?,
         limit: Int
     ): DownloadExecutionPumpPage = DownloadExecutionPumpPage()
+
+    suspend fun listSchedulableForPumpPageSuspending(
+        context: Context,
+        afterCursor: DownloadExecutionPumpCursor?,
+        limit: Int
+    ): DownloadExecutionPumpPage {
+        return listSchedulableForPumpPage(context, afterCursor, limit)
+    }
 
     fun findOperationIdForSong(context: Context, songKey: String): String?
 
@@ -74,7 +113,20 @@ internal interface DownloadExecutionOperationJournal {
         errorCode: String? = null
     ): Boolean
 
+    suspend fun updateStateSuspending(
+        context: Context,
+        operationId: String,
+        state: String,
+        errorCode: String? = null
+    ): Boolean {
+        return updateState(context, operationId, state, errorCode)
+    }
+
     fun currentState(context: Context, operationId: String): String?
+
+    suspend fun currentStateSuspending(context: Context, operationId: String): String? {
+        return currentState(context, operationId)
+    }
 
     /** claims an operation before entering the transfer path */
     fun tryStart(
@@ -99,17 +151,45 @@ internal interface DownloadExecutionOperationJournal {
         return updateState(context, operationId, "RUNNING")
     }
 
+    suspend fun tryStartSuspending(
+        context: Context,
+        operationId: String,
+        allowExistingRunning: Boolean = false
+    ): Boolean {
+        return tryStart(context, operationId, allowExistingRunning)
+    }
+
     fun requestCancel(context: Context, operationId: String): Boolean
+
+    suspend fun requestCancelSuspending(context: Context, operationId: String): Boolean {
+        return requestCancel(context, operationId)
+    }
 
     fun markCoreCommitted(context: Context, operationId: String): Boolean
 
+    suspend fun markCoreCommittedSuspending(context: Context, operationId: String): Boolean {
+        return markCoreCommitted(context, operationId)
+    }
+
     fun markCommitting(context: Context, operationId: String): Boolean
+
+    suspend fun markCommittingSuspending(context: Context, operationId: String): Boolean {
+        return markCommitting(context, operationId)
+    }
 
     fun pruneTerminalOperations(
         context: Context,
         cutoffMs: Long,
         limit: Int
     ): Int
+
+    suspend fun pruneTerminalOperationsSuspending(
+        context: Context,
+        cutoffMs: Long,
+        limit: Int
+    ): Int {
+        return pruneTerminalOperations(context, cutoffMs, limit)
+    }
 
     /** reserves an execution slot; in-memory journals keep unit tests isolated from Room */
     fun tryAcquireHostAdmission(
@@ -118,12 +198,31 @@ internal interface DownloadExecutionOperationJournal {
         capacity: Int
     ): Boolean = capacity > 0
 
+    suspend fun tryAcquireHostAdmissionSuspending(
+        context: Context,
+        operationId: String,
+        capacity: Int
+    ): Boolean {
+        return tryAcquireHostAdmission(context, operationId, capacity)
+    }
+
     fun releaseHostAdmission(context: Context, operationId: String) = Unit
+
+    suspend fun releaseHostAdmissionSuspending(context: Context, operationId: String) {
+        releaseHostAdmission(context, operationId)
+    }
 
     fun releaseHostAdmissions(context: Context, operationIds: Collection<String>) {
         operationIds.forEach { operationId ->
             releaseHostAdmission(context, operationId)
         }
+    }
+
+    suspend fun releaseHostAdmissionsSuspending(
+        context: Context,
+        operationIds: Collection<String>
+    ) {
+        releaseHostAdmissions(context, operationIds)
     }
 }
 
@@ -138,10 +237,25 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override suspend fun saveSuspending(context: Context, request: DownloadExecutionRequest) {
+        DownloadExecutionRoomStore.upsert(
+            context = context,
+            request = request,
+            state = ACTIVE_STATE
+        )
+    }
+
     override fun read(context: Context, operationId: String): DownloadExecutionRequest? {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.read(context, operationId)
         }
+    }
+
+    override suspend fun readSuspending(
+        context: Context,
+        operationId: String
+    ): DownloadExecutionRequest? {
+        return DownloadExecutionRoomStore.read(context, operationId)
     }
 
     override fun remove(context: Context, operationId: String) {
@@ -150,10 +264,18 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override suspend fun removeSuspending(context: Context, operationId: String) {
+        DownloadExecutionRoomStore.delete(context, operationId)
+    }
+
     override fun markStopped(context: Context, operationId: String) {
         runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.markStopped(context, operationId)
         }
+    }
+
+    override suspend fun markStoppedSuspending(context: Context, operationId: String) {
+        DownloadExecutionRoomStore.markStopped(context, operationId)
     }
 
     override fun isStopped(context: Context, operationId: String): Boolean {
@@ -162,16 +284,34 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override suspend fun isStoppedSuspending(context: Context, operationId: String): Boolean {
+        return DownloadExecutionRoomStore.isStopped(context, operationId)
+    }
+
     override fun isUserCancellationRequested(context: Context, operationId: String): Boolean {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.isUserCancellationRequested(context, operationId)
         }
     }
 
+    override suspend fun isUserCancellationRequestedSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        return DownloadExecutionRoomStore.isUserCancellationRequested(context, operationId)
+    }
+
     override fun isExplicitResumePending(context: Context, operationId: String): Boolean {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.isExplicitResumePending(context, operationId)
         }
+    }
+
+    override suspend fun isExplicitResumePendingSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        return DownloadExecutionRoomStore.isExplicitResumePending(context, operationId)
     }
 
     override fun stoppedSongKeys(context: Context): Set<String> {
@@ -192,6 +332,18 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
                 limit = limit
             )
         }
+    }
+
+    override suspend fun listSchedulableForPumpPageSuspending(
+        context: Context,
+        afterCursor: DownloadExecutionPumpCursor?,
+        limit: Int
+    ): DownloadExecutionPumpPage {
+        return DownloadExecutionRoomStore.listSchedulableForPumpPage(
+            context = context,
+            afterCursor = afterCursor,
+            limit = limit
+        )
     }
 
     override fun findOperationIdForSong(context: Context, songKey: String): String? {
@@ -222,10 +374,31 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override suspend fun updateStateSuspending(
+        context: Context,
+        operationId: String,
+        state: String,
+        errorCode: String?
+    ): Boolean {
+        return DownloadExecutionRoomStore.updateState(
+            context = context,
+            operationId = operationId,
+            state = state,
+            errorCode = errorCode
+        )
+    }
+
     override fun currentState(context: Context, operationId: String): String? {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.state(context, operationId)
         }
+    }
+
+    override suspend fun currentStateSuspending(
+        context: Context,
+        operationId: String
+    ): String? {
+        return DownloadExecutionRoomStore.state(context, operationId)
     }
 
     override fun tryStart(
@@ -242,10 +415,29 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override suspend fun tryStartSuspending(
+        context: Context,
+        operationId: String,
+        allowExistingRunning: Boolean
+    ): Boolean {
+        return DownloadExecutionRoomStore.tryStart(
+            context = context,
+            operationId = operationId,
+            allowExistingRunning = allowExistingRunning
+        )
+    }
+
     override fun requestCancel(context: Context, operationId: String): Boolean {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.requestCancel(context, operationId)
         }
+    }
+
+    override suspend fun requestCancelSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        return DownloadExecutionRoomStore.requestCancel(context, operationId)
     }
 
     override fun markCoreCommitted(context: Context, operationId: String): Boolean {
@@ -254,10 +446,24 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override suspend fun markCoreCommittedSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        return DownloadExecutionRoomStore.markCoreCommitted(context, operationId)
+    }
+
     override fun markCommitting(context: Context, operationId: String): Boolean {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.markCommitting(context, operationId)
         }
+    }
+
+    override suspend fun markCommittingSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        return DownloadExecutionRoomStore.markCommitting(context, operationId)
     }
 
     override fun pruneTerminalOperations(
@@ -274,6 +480,18 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override suspend fun pruneTerminalOperationsSuspending(
+        context: Context,
+        cutoffMs: Long,
+        limit: Int
+    ): Int {
+        return DownloadExecutionRoomStore.pruneTerminalOperations(
+            context = context,
+            cutoffMs = cutoffMs,
+            limit = limit
+        )
+    }
+
     override fun tryAcquireHostAdmission(
         context: Context,
         operationId: String,
@@ -288,16 +506,42 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override suspend fun tryAcquireHostAdmissionSuspending(
+        context: Context,
+        operationId: String,
+        capacity: Int
+    ): Boolean {
+        return DownloadExecutionRoomStore.tryAcquireHostAdmission(
+            context = context,
+            operationId = operationId,
+            capacity = capacity
+        )
+    }
+
     override fun releaseHostAdmission(context: Context, operationId: String) {
         runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.releaseHostAdmission(context, operationId)
         }
     }
 
+    override suspend fun releaseHostAdmissionSuspending(
+        context: Context,
+        operationId: String
+    ) {
+        DownloadExecutionRoomStore.releaseHostAdmission(context, operationId)
+    }
+
     override fun releaseHostAdmissions(context: Context, operationIds: Collection<String>) {
         runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.releaseHostAdmissions(context, operationIds)
         }
+    }
+
+    override suspend fun releaseHostAdmissionsSuspending(
+        context: Context,
+        operationIds: Collection<String>
+    ) {
+        DownloadExecutionRoomStore.releaseHostAdmissions(context, operationIds)
     }
 
     private const val ACTIVE_STATE = "QUEUED"
@@ -308,6 +552,154 @@ class DownloadExecutionOperationStore internal constructor(
         RoomDownloadExecutionOperationJournal
     }
 ) {
+    /**
+     * 挂起式读取接口供共享泵和执行宿主使用，避免 IO 线程内再次 runBlocking
+     */
+    suspend fun readSuspending(
+        context: Context,
+        operationId: String
+    ): DownloadExecutionRequest? {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return null
+        val appContext = context.applicationContext
+        return journalProvider(appContext).readSuspending(appContext, normalizedId)
+    }
+
+    suspend fun currentStateSuspending(context: Context, operationId: String): String? {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return null
+        val appContext = context.applicationContext
+        return journalProvider(appContext).currentStateSuspending(appContext, normalizedId)
+    }
+
+    suspend fun isStoppedSuspending(context: Context, operationId: String): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).isStoppedSuspending(appContext, normalizedId)
+    }
+
+    suspend fun isUserCancellationRequestedSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext)
+            .isUserCancellationRequestedSuspending(appContext, normalizedId)
+    }
+
+    suspend fun isExplicitResumePendingSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext)
+            .isExplicitResumePendingSuspending(appContext, normalizedId)
+    }
+
+    suspend fun updateStateSuspending(
+        context: Context,
+        operationId: String,
+        state: String,
+        errorCode: String? = null
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).updateStateSuspending(
+            appContext,
+            normalizedId,
+            state,
+            errorCode
+        )
+    }
+
+    suspend fun tryStartSuspending(
+        context: Context,
+        operationId: String,
+        allowExistingRunning: Boolean = false
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).tryStartSuspending(
+            appContext,
+            normalizedId,
+            allowExistingRunning
+        )
+    }
+
+    suspend fun requestCancelSuspending(context: Context, operationId: String): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).requestCancelSuspending(appContext, normalizedId)
+    }
+
+    suspend fun markCoreCommittedSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext)
+            .markCoreCommittedSuspending(appContext, normalizedId)
+    }
+
+    suspend fun markCommittingSuspending(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).markCommittingSuspending(appContext, normalizedId)
+    }
+
+    suspend fun pruneTerminalOperationsSuspending(
+        context: Context,
+        cutoffMs: Long,
+        limit: Int
+    ): Int {
+        if (limit <= 0) return 0
+        val appContext = context.applicationContext
+        return journalProvider(appContext).pruneTerminalOperationsSuspending(
+            appContext,
+            cutoffMs,
+            limit
+        )
+    }
+
+    suspend fun tryAcquireHostAdmissionSuspending(
+        context: Context,
+        operationId: String,
+        capacity: Int
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        if (capacity <= 0) return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).tryAcquireHostAdmissionSuspending(
+            appContext,
+            normalizedId,
+            capacity
+        )
+    }
+
+    suspend fun releaseHostAdmissionSuspending(context: Context, operationId: String) {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+        val appContext = context.applicationContext
+        journalProvider(appContext).releaseHostAdmissionSuspending(appContext, normalizedId)
+    }
+
+    internal suspend fun listSchedulableForPumpPageSuspending(
+        context: Context,
+        afterCursor: DownloadExecutionPumpCursor?,
+        limit: Int
+    ): DownloadExecutionPumpPage {
+        if (limit <= 0) return DownloadExecutionPumpPage()
+        val appContext = context.applicationContext
+        return journalProvider(appContext).listSchedulableForPumpPageSuspending(
+            appContext,
+            afterCursor,
+            limit
+        )
+    }
+
     fun save(context: Context, request: DownloadExecutionRequest) {
         val appContext = context.applicationContext
         journalProvider(appContext).save(appContext, request)
@@ -499,107 +891,12 @@ class DownloadExecutionOperationStore internal constructor(
 internal fun resolveDownloadOperationState(
     currentState: String?,
     requestedState: String
-): String? {
-    val current = currentState?.trim()?.takeIf(String::isNotEmpty) ?: return requestedState
-    if (current == requestedState) return current
-    if (current == "CANCELLED" || current == "COMPLETED") return null
-    if (requestedState == "CANCEL_REQUESTED") {
-        return requestedState.takeIf {
-            it != current && current in setOf("QUEUED", "RUNNING", "STOPPED", "RETRYABLE")
-        }
-    }
-    if (requestedState == "CANCELLED") {
-        return requestedState.takeIf {
-            current == "CANCEL_REQUESTED" ||
-                current in setOf("QUEUED", "RUNNING", "STOPPED", "RETRYABLE")
-        }
-    }
-    if (requestedState == "COMMITTING") {
-        return requestedState.takeIf {
-            current == "PENDING_QUEUE" || current == "QUEUED" || current == "RUNNING"
-        }
-    }
-    if (requestedState == "CORE_COMMITTED") {
-        return requestedState.takeIf {
-            current == "COMMITTING"
-        }
-    }
-    if (
-        requestedState == "RUNNING" &&
-            current in setOf("RUNNING", "COMMITTING")
-    ) {
-        return requestedState
-    }
-    if (requestedState == "RETRYABLE") {
-        return requestedState.takeIf {
-            current in setOf("PENDING_QUEUE", "QUEUED") ||
-                current in setOf("RUNNING", "COMMITTING")
-        }
-    }
-    if (requestedState == METADATA_ACTION_REQUIRED_OPERATION_STATE) {
-        return requestedState.takeIf { current == "DEGRADED_COMPLETE" }
-    }
-    if (current == METADATA_ACTION_REQUIRED_OPERATION_STATE) {
-        return requestedState.takeIf {
-            it in setOf("ASSETS_ENRICHING", "FINALIZED")
-        }
-    }
-    if (current == "CANCEL_REQUESTED") {
-        return requestedState.takeIf { it in CORE_COMMITTED_STATES }
-    }
-    if (requestedState == "INVALID") {
-        return requestedState.takeIf {
-            current in setOf(
-                "PENDING_QUEUE",
-                "QUEUED",
-                "RUNNING",
-                "COMMITTING",
-                "CANCEL_REQUESTED",
-                "STOPPED",
-                "RETRYABLE"
-            )
-        }
-    }
-    if (requestedState == "COMPLETED") {
-        return requestedState.takeIf {
-            current in setOf(
-                "RUNNING",
-                "COMMITTING",
-                "CORE_COMMITTED",
-                "ASSETS_ENRICHING",
-                "FINALIZED",
-                "DEGRADED_COMPLETE"
-            )
-        }
-    }
-    if (
-        current == "DEGRADED_COMPLETE" &&
-            requestedState in setOf("ASSETS_ENRICHING", "FINALIZED")
-    ) {
-        return requestedState
-    }
-    val currentCoreIndex = CORE_COMMITTED_STATES.indexOf(current)
-    if (currentCoreIndex >= 0) {
-        val requestedCoreIndex = CORE_COMMITTED_STATES.indexOf(requestedState)
-        return requestedState.takeIf { requestedCoreIndex >= currentCoreIndex }
-    }
-    return requestedState.takeIf {
-        current == "PENDING_QUEUE" ||
-            current == "QUEUED" ||
-            current == "RUNNING" ||
-            current == "RETRYABLE"
-    }
-}
-
-private val CORE_COMMITTED_STATES = listOf(
-    "CORE_COMMITTED",
-    "ASSETS_ENRICHING",
-    "FINALIZED",
-    "DEGRADED_COMPLETE"
+): String? = DownloadOperationStateTransitions.resolve(
+    currentState = currentState,
+    requestedState = requestedState
 )
 
-private val RESUMABLE_CORE_EXECUTION_STATES = setOf(
-    "CORE_COMMITTED",
-    "ASSETS_ENRICHING",
-    "DEGRADED_COMPLETE"
-)
+private val CORE_COMMITTED_STATES = DownloadOperationStateTransitions.coreCommittedWireNames
+
+private val RESUMABLE_CORE_EXECUTION_STATES = DownloadOperationStateTransitions
+    .resumableCoreWireNames

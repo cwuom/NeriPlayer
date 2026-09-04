@@ -6,6 +6,8 @@ import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEnt
 internal enum class ManagedDownloadArtifactState {
     QUEUED,
     DOWNLOADING,
+    /** 存储空间或目录能力暂时不可用，但仍保留原 lease 和工作文件 */
+    WAITING_STORAGE,
     VERIFYING,
     COMMITTING,
     CORE_COMMITTED,
@@ -78,6 +80,18 @@ internal object ManagedDownloadArtifactPolicy {
 
             ManagedDownloadArtifactState.MISSING_CONFIRMED ->
                 ManagedDownloadArtifactDecision.Acquire
+
+            ManagedDownloadArtifactState.WAITING_STORAGE -> {
+                if (
+                    existing.leaseId == null ||
+                        leaseOwnerId != null && existing.leaseId == leaseOwnerId ||
+                        nowMs - existing.updatedAtMs >= staleLeaseMs
+                ) {
+                    ManagedDownloadArtifactDecision.Acquire
+                } else {
+                    ManagedDownloadArtifactDecision.InFlight
+                }
+            }
 
             ManagedDownloadArtifactState.QUEUED,
             ManagedDownloadArtifactState.DOWNLOADING,

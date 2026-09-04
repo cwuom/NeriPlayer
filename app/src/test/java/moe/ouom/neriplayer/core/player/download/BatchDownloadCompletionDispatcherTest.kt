@@ -23,22 +23,25 @@ class BatchDownloadCompletionDispatcherTest {
             val activeCount = AtomicInteger(0)
             val maxActiveCount = AtomicInteger(0)
 
-            repeat(4) {
-                dispatcher.dispatch {
-                    val active = activeCount.incrementAndGet()
-                    maxActiveCount.accumulateAndGet(active) { current, observed ->
-                        maxOf(current, observed)
-                    }
-                    if (startedCount.incrementAndGet() == 2) {
-                        firstWaveStarted.complete(Unit)
-                    }
-                    try {
-                        releaseCallbacks.await()
-                    } finally {
-                        activeCount.decrementAndGet()
+            suspend fun dispatchFourCallbacks() {
+                repeat(4) {
+                    dispatcher.dispatch {
+                        val active = activeCount.incrementAndGet()
+                        maxActiveCount.accumulateAndGet(active) { current, observed ->
+                            maxOf(current, observed)
+                        }
+                        if (startedCount.incrementAndGet() == 2) {
+                            firstWaveStarted.complete(Unit)
+                        }
+                        try {
+                            releaseCallbacks.await()
+                        } finally {
+                            activeCount.decrementAndGet()
+                        }
                     }
                 }
             }
+            dispatchFourCallbacks()
 
             withTimeout(5_000L) {
                 firstWaveStarted.await()

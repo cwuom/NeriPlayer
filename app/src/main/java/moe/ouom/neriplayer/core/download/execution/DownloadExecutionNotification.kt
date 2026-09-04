@@ -220,50 +220,103 @@ internal object DownloadExecutionNotificationController {
     private val lock = Any()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val activeOwners = ConcurrentHashMap.newKeySet<String>()
+    private val refreshGate = DownloadNotificationRefreshGate()
     private var observerJob: Job? = null
+    private var pendingRefreshJob: Job? = null
+    private var delayedReleaseRefreshJob: Job? = null
+    private var delayedReleaseGeneration = 0L
     private var lastLegacyCleanupElapsedMs = 0L
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         ensureObserver(appContext)
-        refresh(appContext)
+        requestRefresh(appContext, immediate = true)
     }
 
     fun acquire(context: Context, owner: String) {
         val appContext = context.applicationContext
         activeOwners += owner
         ensureObserver(appContext)
-        refresh(appContext)
+        requestRefresh(appContext, immediate = false)
     }
 
     fun release(context: Context, owner: String) {
         val appContext = context.applicationContext
         activeOwners.remove(owner)
-        refresh(appContext)
-        scope.launch {
-            delay(REFRESH_AFTER_RELEASE_MS)
-            refresh(appContext)
+        requestRefresh(appContext, immediate = false)
+        synchronized(lock) {
+            delayedReleaseGeneration++
+            val generation = delayedReleaseGeneration
+            delayedReleaseRefreshJob?.cancel()
+            delayedReleaseRefreshJob = scope.launch {
+                delay(REFRESH_AFTER_RELEASE_MS)
+                synchronized(lock) {
+                    if (generation != delayedReleaseGeneration) return@launch
+                    delayedReleaseRefreshJob = null
+                }
+                requestRefresh(appContext, immediate = false)
+            }
         }
     }
 
     fun refresh(context: Context) {
+        requestRefresh(context.applicationContext, immediate = false)
+    }
+
+    private fun requestRefresh(context: Context, immediate: Boolean) {
         val appContext = context.applicationContext
+        val decision: DownloadNotificationRefreshDecision
+        var shouldRefreshNow = false
         synchronized(lock) {
-            val snapshot = currentDownloadExecutionNotificationSnapshot()
-            val shouldShow = activeOwners.isNotEmpty() || snapshot.hasWork
-            val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE)
-                as? NotificationManager ?: return
-            runCatching {
-                if (shouldShow) {
-                    manager.notify(
-                        DOWNLOAD_EXECUTION_NOTIFICATION_ID,
-                        buildDownloadExecutionNotification(appContext, snapshot)
-                    )
-                } else {
-                    manager.cancel(DOWNLOAD_EXECUTION_NOTIFICATION_ID)
+            decision = refreshGate.request(immediate)
+            if (decision.refreshNow) {
+                pendingRefreshJob?.cancel()
+                pendingRefreshJob = null
+                shouldRefreshNow = true
+            } else {
+                val delayMs = decision.delayMs
+                if (delayMs != null && pendingRefreshJob?.isActive != true) {
+                    val token = decision.token
+                    pendingRefreshJob = scope.launch {
+                        delay(delayMs)
+                        var fireNow = false
+                        var retry = false
+                        synchronized(lock) {
+                            val pendingDecision = refreshGate.onPendingTimer(token)
+                            pendingRefreshJob = null
+                            when {
+                                pendingDecision.refreshNow -> fireNow = true
+                                pendingDecision.delayMs != null -> retry = true
+                            }
+                        }
+                        when {
+                            fireNow -> refreshNow(appContext)
+                            retry -> requestRefresh(appContext, immediate = false)
+                        }
+                    }
                 }
-                cancelLegacyNotificationsIfDue(manager)
             }
+        }
+        if (shouldRefreshNow) {
+            refreshNow(appContext)
+        }
+    }
+
+    private fun refreshNow(context: Context) {
+        val snapshot = currentDownloadExecutionNotificationSnapshot()
+        val shouldShow = activeOwners.isNotEmpty() || snapshot.hasWork
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE)
+            as? NotificationManager ?: return
+        runCatching {
+            if (shouldShow) {
+                manager.notify(
+                    DOWNLOAD_EXECUTION_NOTIFICATION_ID,
+                    buildDownloadExecutionNotification(context, snapshot)
+                )
+            } else {
+                manager.cancel(DOWNLOAD_EXECUTION_NOTIFICATION_ID)
+            }
+            cancelLegacyNotificationsIfDue(manager)
         }
     }
 

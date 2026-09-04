@@ -81,6 +81,7 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.ForegroundDownloadWorker
+import moe.ouom.neriplayer.core.download.execution.DownloadStorageRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionNotificationController
 import moe.ouom.neriplayer.core.download.execution.DownloadClearFenceReleaseResult
 import moe.ouom.neriplayer.core.download.execution.DownloadClearOwnership
@@ -94,6 +95,8 @@ import moe.ouom.neriplayer.core.download.execution.METADATA_ACTION_REQUIRED_OPER
 import moe.ouom.neriplayer.core.download.execution.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
+import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationResult
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
@@ -116,6 +119,8 @@ import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestora
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
+import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
+import moe.ouom.neriplayer.core.download.observability.DownloadStartupRecoveryJournal
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -529,12 +534,16 @@ internal fun resolveRecoveredDownloadProgress(
     checkpointTotalBytes: Long?,
     checkpointBytesWritten: Long? = null
 ): RecoveredDownloadProgress? {
-    // 文件可能暂时不可见（例如进程刚被系统杀死或 SAF 游标尚未恢复），
-    // 但 Room 检查点仍然是可用的进度凭据。两者取较大值，避免重启后回到 0。
-    val durableBytes = maxOf(
-        workingFileBytes.coerceAtLeast(0L),
-        checkpointBytesWritten?.coerceAtLeast(0L) ?: 0L
-    )
+    // 文件和检查点都可见时，以较小值作为安全前缀，避免把未 fsync 的尾部当成已完成
+    // 文件暂时不可见时才回退到检查点，这样重启不会因为一次迟到写入而跳过数据
+    val fileBytes = workingFileBytes.coerceAtLeast(0L)
+    val checkpointBytes = checkpointBytesWritten?.coerceAtLeast(0L)
+    val durableBytes = when {
+        fileBytes > 0L && checkpointBytes != null -> minOf(fileBytes, checkpointBytes)
+        fileBytes > 0L -> fileBytes
+        checkpointBytes != null -> checkpointBytes
+        else -> 0L
+    }
     val totalBytes = when {
         checkpointTotalBytes == null && durableBytes > 0L -> 0L
         checkpointTotalBytes != null &&
@@ -822,6 +831,9 @@ object GlobalDownloadManager {
     internal const val DOWNLOAD_LIBRARY_SCAN_TARGET_MS = 3_000L
     private const val STARTUP_RECOVERY_MAX_ATTEMPTS = 3
     private const val STARTUP_RECOVERY_RETRY_DELAY_MS = 350L
+    /** 首个真实传输的条件化启动预算，超时只触发一次有界再唤醒 */
+    internal const val STARTUP_FIRST_TRANSFER_DEADLINE_MS = 5_000L
+    private const val STARTUP_WATCHDOG_RECHECK_DELAY_MS = 5_000L
     private const val STARTUP_INITIAL_SCAN_WAIT_TIMEOUT_MS =
         DOWNLOAD_LIBRARY_SCAN_TARGET_MS
     private const val STARTUP_ARTIFACT_RECOVERY_HANDOFF_DELAY_MS = 250L
@@ -854,6 +866,8 @@ object GlobalDownloadManager {
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val startupWatchdogLock = Any()
+    private var startupWatchdogJob: Job? = null
     private val downloadPresentationScope = CoroutineScope(
         SupervisorJob() + Dispatchers.Default.limitedParallelism(1)
     )
@@ -1169,7 +1183,8 @@ object GlobalDownloadManager {
     @Volatile
     private var pendingForceRefresh = false
 
-    private var initialized = false
+    /** Application 可能从多个入口同时初始化，初始化流程只能注册一次观察者和泵 */
+    private val initializationStarted = AtomicBoolean(false)
     private val startupProgressRestoreReady = CompletableDeferred<Unit>()
     private val trafficRiskRequestIdGenerator = AtomicLong(0L)
     private val mobileDataInterruptionRequestIdGenerator = AtomicLong(0L)
@@ -1812,7 +1827,10 @@ object GlobalDownloadManager {
         admissionTicket: Long? = downloadAdmissionGate.openTicketOrNull()
     ): Int {
         val appContext = context.applicationContext
-        if (ManagedDownloadDirectoryMutationFence.isActive(appContext)) {
+        if (
+            ManagedDownloadDirectoryMutationFence.isActive(appContext) ||
+            ManagedDownloadMigrationWorker.hasPersistedMigrationRecoveryFast(appContext)
+        ) {
             return 0
         }
         val capturedAdmissionTicket = admissionTicket ?: run {
@@ -1865,6 +1883,11 @@ object GlobalDownloadManager {
             )
         }
         return promotedCount
+    }
+
+    /** 存储空间恢复 worker 使用同一套栅栏提升等待意图，避免绕过迁移和清空保护 */
+    internal suspend fun promoteWaitingStorageMutationsForDownloadPump(context: Context): Int {
+        return promoteWaitingStorageMutationsForRecovery(context.applicationContext)
     }
 
     internal fun recoverPendingDownloadsAfterStorageMutation(context: Context) {
@@ -2081,11 +2104,99 @@ object GlobalDownloadManager {
         )
     }
 
-    fun initialize(context: Context) {
-        if (initialized) return
-        initialized = true
+    /** 返回最近一次启动恢复的 T0、T1、T2 快照，供诊断和验收读取 */
+    internal fun startupDeadlineSnapshot():
+        moe.ouom.neriplayer.core.download.observability.DownloadStartupDeadlineTracker.Snapshot {
+        return DownloadStartupTrace.snapshot()
+    }
 
+    /**
+     * 首次唤醒失败时只做一次有界补偿，避免 WorkManager 入队竞态把首发无限推迟
+     *
+     * 这里不把“已入队”当成 T2。只有传输层获得 permit 后的
+     * DownloadStartupTrace.markTransferStarted 才会结束首发计时
+     */
+    private fun scheduleStartupDispatchWatchdog(
+        context: Context,
+        generation: Long
+    ) {
         val appContext = context.applicationContext
+        synchronized(startupWatchdogLock) {
+            startupWatchdogJob?.cancel()
+            startupWatchdogJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                delay(STARTUP_FIRST_TRANSFER_DEADLINE_MS)
+                val firstSnapshot = DownloadStartupTrace.snapshot()
+                if (
+                    firstSnapshot.generation != generation ||
+                        firstSnapshot.t2Ns != null ||
+                        firstSnapshot.blockedReason != null
+                ) {
+                    return@launch
+                }
+                val hasPendingWork = try {
+                    DownloadExecutionRoomStore.listSchedulableForPumpPage(
+                        context = appContext,
+                        afterCursor = null,
+                        limit = 1
+                    ).requests.isNotEmpty()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Throwable) {
+                    NPLogger.w(
+                        TAG,
+                        "启动首发看门狗读取持久队列失败，保留原恢复状态: ${error.message}",
+                        error
+                    )
+                    false
+                }
+                if (!hasPendingWork) return@launch
+                if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
+                    DownloadStartupTrace.markBlocked(
+                        reason = "startup_execution_fence",
+                        generation = generation
+                    )
+                    return@launch
+                }
+                val rescheduled = wakeDownloadExecutionPump(
+                    context = appContext,
+                    reason = "startup_first_transfer_deadline"
+                )
+                NPLogger.d(
+                    TAG,
+                    "启动首发看门狗完成一次有界补偿: " +
+                        "generation=$generation, rescheduled=$rescheduled"
+                )
+                delay(STARTUP_WATCHDOG_RECHECK_DELAY_MS)
+                val recheck = DownloadStartupTrace.snapshot()
+                if (
+                    recheck.generation == generation &&
+                        recheck.t2Ns == null &&
+                        recheck.blockedReason == null &&
+                        ForegroundDownloadWorker.isPumpBlocked(appContext)
+                ) {
+                    DownloadStartupTrace.markBlocked(
+                        reason = "startup_execution_fence_after_retry",
+                        generation = generation
+                    )
+                }
+            }
+        }
+    }
+
+    fun initialize(context: Context) {
+        if (!initializationStarted.compareAndSet(false, true)) return
+        val appContext = context.applicationContext
+        val previousStartup = DownloadStartupRecoveryJournal.read(appContext)
+        DownloadStartupRecoveryJournal.install(appContext)
+        // 先记录启动恢复起点，后续轻量泵和首个真实传输共享同一代次
+        val startupGeneration = DownloadStartupTrace.begin(previousStartup?.generation)
+        previousStartup?.let { record ->
+            NPLogger.d(
+                TAG,
+                "发现上一次启动恢复现场: generation=${record.generation}, " +
+                    "phase=${record.phase}, reason=${record.blockedReason}"
+            )
+        }
         observeDownloadProgress()
         DownloadExecutionNotificationController.initialize(appContext)
         observeStorageStartupRecovery(appContext)
@@ -2093,6 +2204,12 @@ object GlobalDownloadManager {
         ManagedLibraryProcessingCoordinator.restoreImmediately(appContext)
         // 先唤醒已经落盘的队列，目录扫描和 catalog 恢复不应阻塞下载启动
         wakeDownloadExecutionPump(appContext, "startup_immediate")
+        scheduleStartupDispatchWatchdog(
+            context = appContext,
+            generation = startupGeneration
+        )
+        // 空间不足时由独立 worker 低频探测，避免共享泵在满盘上忙等
+        DownloadStorageRecoveryWorker.schedule(appContext)
         scope.launch {
             // 启动恢复请求绑定创建时的代次，清空期间排队的旧请求不能换用新票据
             val startupAdmissionTicket = downloadAdmissionGate.openTicketOrNull()
@@ -5190,13 +5307,20 @@ object GlobalDownloadManager {
                 ) {
                     return@forEach
                 }
+                val bytesToPersist = when {
+                    checkpoint.progress.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ->
+                        checkpoint.progress.bytesRead.coerceAtLeast(0L)
+                    else -> checkpoint.progress.durableBytesRead
+                        ?.coerceAtLeast(0L)
+                        ?: return@forEach
+                }
                 runCatching {
                     DownloadExecutionRoomStore.checkpointProgress(
                         context = checkpoint.context,
                         operationId = checkpoint.binding.operationId,
                         stableKey = checkpoint.progress.songKey,
                         attemptId = checkpoint.binding.attemptId,
-                        bytesWritten = checkpoint.progress.bytesRead,
+                        bytesWritten = bytesToPersist,
                         totalBytes = checkpoint.progress.totalBytes
                     )
                 }.onFailure { error ->
@@ -5219,6 +5343,44 @@ object GlobalDownloadManager {
                 return
             }
             delay(DOWNLOAD_PROGRESS_CHECKPOINT_COALESCE_MS)
+        }
+    }
+
+    /** 在移除内存绑定前同步最后一个安全前缀，覆盖空间不足和进程取消等快速退出路径 */
+    private suspend fun persistLatestProgressCheckpointNow(
+        context: Context,
+        songKey: String,
+        binding: ActiveProgressCheckpointBinding
+    ) {
+        val currentBinding = activeProgressCheckpointBindings[songKey]
+        if (currentBinding != binding) return
+        val progress = AudioDownloadManager.latestProgressForSong(
+            songKey = songKey,
+            attemptId = binding.attemptId,
+            operationId = binding.operationId
+        ) ?: synchronized(latestProgressByOperationLock) {
+            _latestProgressByOperation.value[binding.operationId]
+        } ?: return
+        val bytesToPersist = when {
+            progress.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ->
+                progress.bytesRead.coerceAtLeast(0L)
+            else -> progress.durableBytesRead?.coerceAtLeast(0L) ?: return
+        }
+        runCatching {
+            DownloadExecutionRoomStore.checkpointProgress(
+                context = context.applicationContext,
+                operationId = binding.operationId,
+                stableKey = songKey,
+                attemptId = binding.attemptId,
+                bytesWritten = bytesToPersist,
+                totalBytes = progress.totalBytes
+            )
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "退出前写入下载进度检查点失败: operationId=${binding.operationId}, " +
+                    "songKey=$songKey, error=${error.message}"
+            )
         }
     }
 
@@ -8633,6 +8795,26 @@ object GlobalDownloadManager {
         }
     }
 
+    private suspend fun markDownloadArtifactWaitingForStorage(
+        context: Context,
+        song: SongItem,
+        leaseId: String?,
+        errorCode: String
+    ) {
+        try {
+            managedDownloadArtifactCoordinator.markWaitingForStorage(
+                context = context,
+                song = song,
+                expectedLeaseId = leaseId,
+                errorCode = errorCode
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            NPLogger.w(TAG, "写入下载 artifact 空间等待状态失败: ${error.message}")
+        }
+    }
+
     private suspend fun markDownloadArtifactRepairRequired(
         context: Context,
         song: SongItem,
@@ -11723,6 +11905,13 @@ object GlobalDownloadManager {
                             )
                         } finally {
                             progressCheckpointBinding?.let { binding ->
+                                withContext(NonCancellable) {
+                                    persistLatestProgressCheckpointNow(
+                                        context = appContext,
+                                        songKey = songKey,
+                                        binding = binding
+                                    )
+                                }
                                 activeProgressCheckpointBindings.remove(songKey, binding)
                                 clearLatestProgressForOperation(binding.operationId)
                             }
@@ -11769,6 +11958,49 @@ object GlobalDownloadManager {
                     "下载提交已转入目录迁移持久等待: " +
                         "song=${song.name}, operationId=$operationId"
                 )
+            } catch (error: DownloadStorageSpaceDeferredException) {
+                val operationMarked = try {
+                    DownloadExecutionRoomStore.markWaitingForStorageMutation(
+                        context = appContext,
+                        operationId = error.operationId,
+                        errorCode = DOWNLOAD_STORAGE_SPACE_ERROR_CODE
+                    )
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (markError: Throwable) {
+                    NPLogger.w(
+                        TAG,
+                        "写入空间等待 operation 状态失败，保留 artifact 凭据: " +
+                            "operationId=${error.operationId}, error=${markError.message}",
+                        markError
+                    )
+                    false
+                }
+                if (operationMarked) {
+                    markDownloadArtifactWaitingForStorage(
+                        context = appContext,
+                        song = song,
+                        leaseId = acquiredLeaseId,
+                        errorCode = DOWNLOAD_STORAGE_SPACE_ERROR_CODE
+                    )
+                    updateTaskStatus(
+                        songKey,
+                        DownloadStatus.WAITING_NETWORK,
+                        expectedAttemptId = attemptId
+                    )
+                    DownloadStorageRecoveryWorker.schedule(appContext)
+                    NPLogger.w(
+                        TAG,
+                        "下载因空间不足转入可恢复等待，保留 operation、lease 和工作文件: " +
+                            "song=${song.name}, operationId=${error.operationId}"
+                    )
+                } else {
+                    NPLogger.d(
+                        TAG,
+                        "空间等待未覆盖当前 operation，保留取消或新代次结果: " +
+                            "song=${song.name}, operationId=${error.operationId}"
+                    )
+                }
             } catch (_: CancellationException) {
                 val pausedForNetworkPolicy =
                     AudioDownloadManager.isDownloadPausedForNetworkPolicy(songKey) ||
@@ -11885,6 +12117,7 @@ object GlobalDownloadManager {
             return
         }
         if (artifactState in setOf(
+                ManagedDownloadArtifactState.WAITING_STORAGE,
                 ManagedDownloadArtifactState.COMMITTING,
                 ManagedDownloadArtifactState.CORE_COMMITTED,
                 ManagedDownloadArtifactState.ASSETS_ENRICHING,
@@ -12387,11 +12620,13 @@ object GlobalDownloadManager {
                 return
             }
             if (!deferEarlyHandoffForNetwork && !session.shouldYieldToSharedPump) {
-                // 每首准备完成即交给 dispatch window，过量部分由持久宿主窗口延后
-                val readyRequests = session.pendingSongs.filter { request ->
-                    request.song.stableKey() !in session.scheduledSongKeys
+                // 每首准备完成即交给 dispatch window，不能反复扫描整个 pending 列表
+                // 否则 847 首会退化成 O(n2)，越到队尾越慢
+                val request = session.pendingSongs.lastOrNull { candidate ->
+                    candidate.song.stableKey() == song.stableKey() &&
+                        candidate.song.stableKey() !in session.scheduledSongKeys
                 }
-                for (request in readyRequests) {
+                if (request != null) {
                     val admitted = schedulePendingBatchDownload(
                         session = session,
                         request = request,
@@ -12401,9 +12636,17 @@ object GlobalDownloadManager {
                         clearBatchDownloadPresentationWithoutOutstandingWork(session)
                         return
                     }
-                    if (session.shouldYieldToSharedPump) {
-                        break
-                    }
+                }
+                if (session.shouldYieldToSharedPump) {
+                    // 宿主窗口已满时，剩余 operation 已经持久化在 Room，
+                    // 不必继续逐首 claim 才能让共享泵开始工作
+                    NPLogger.d(
+                        TAG,
+                        "批量准备达到共享泵背压窗口，提前交接剩余任务: " +
+                            "prepared=${session.pendingSongs.size}, " +
+                            "remaining=${claimableSongs.size - session.pendingSongs.size}"
+                    )
+                    break
                 }
             }
         }

@@ -1,0 +1,224 @@
+package moe.ouom.neriplayer.core.download.execution
+
+/**
+ * 下载 operation 的持久状态
+ *
+ * wireName 保持数据库和旧版本兼容，业务代码通过这个枚举集中判断转移边界
+ */
+internal enum class DownloadOperationState(
+    val wireName: String
+) {
+    PENDING_QUEUE("PENDING_QUEUE"),
+    QUEUED("QUEUED"),
+    RUNNING("RUNNING"),
+    COMMITTING("COMMITTING"),
+    CORE_COMMITTED("CORE_COMMITTED"),
+    ASSETS_ENRICHING("ASSETS_ENRICHING"),
+    FINALIZED("FINALIZED"),
+    DEGRADED_COMPLETE("DEGRADED_COMPLETE"),
+    COMPLETED("COMPLETED"),
+    CANCEL_REQUESTED("CANCEL_REQUESTED"),
+    CANCELLED("CANCELLED"),
+    STOPPED("STOPPED"),
+    RETRYABLE("RETRYABLE"),
+    INVALID("INVALID"),
+    WAITING_STORAGE_MUTATION("WAITING_STORAGE_MUTATION"),
+    WAITING_HOST("WAITING_HOST"),
+    WAITING_DELETE_CLEANUP("WAITING_DELETE_CLEANUP"),
+    METADATA_ACTION_REQUIRED(METADATA_ACTION_REQUIRED_OPERATION_STATE),
+    UNKNOWN("");
+
+    companion object {
+        private val byWireName = entries
+            .filterNot { it == UNKNOWN }
+            .associateBy(DownloadOperationState::wireName)
+
+        fun parse(value: String?): DownloadOperationState {
+            return value?.trim()?.let(byWireName::get) ?: UNKNOWN
+        }
+    }
+}
+
+internal object DownloadOperationStateTransitions {
+    private val coreCommittedStates = listOf(
+        DownloadOperationState.CORE_COMMITTED,
+        DownloadOperationState.ASSETS_ENRICHING,
+        DownloadOperationState.FINALIZED,
+        DownloadOperationState.DEGRADED_COMPLETE
+    )
+
+    private val resumableCoreExecutionStates = setOf(
+        DownloadOperationState.CORE_COMMITTED,
+        DownloadOperationState.ASSETS_ENRICHING,
+        DownloadOperationState.DEGRADED_COMPLETE
+    )
+
+    private val interruptedStates = setOf(
+        DownloadOperationState.RUNNING,
+        DownloadOperationState.COMMITTING,
+        DownloadOperationState.CORE_COMMITTED,
+        DownloadOperationState.ASSETS_ENRICHING,
+        DownloadOperationState.DEGRADED_COMPLETE
+    )
+
+    val interruptedWireNames: Set<String>
+        get() = interruptedStates.mapTo(linkedSetOf(), DownloadOperationState::wireName)
+
+    val coreCommittedWireNames: List<String>
+        get() = coreCommittedStates.map(DownloadOperationState::wireName)
+
+    val resumableCoreWireNames: Set<String>
+        get() = resumableCoreExecutionStates
+            .mapTo(linkedSetOf(), DownloadOperationState::wireName)
+
+    /**
+     * 返回允许落库的下一状态，null 表示拒绝这次转移
+     *
+     * 未知状态仍按旧兼容规则处理，避免旧版本写入的新状态被意外删除
+     */
+    fun resolve(
+        currentState: String?,
+        requestedState: String
+    ): String? {
+        val currentRaw = currentState?.trim()?.takeIf(String::isNotEmpty)
+            ?: return requestedState
+        if (currentRaw == requestedState) return currentRaw
+
+        val current = DownloadOperationState.parse(currentRaw)
+        val requested = DownloadOperationState.parse(requestedState)
+        if (
+            current == DownloadOperationState.CANCELLED ||
+            current == DownloadOperationState.COMPLETED
+        ) {
+            return null
+        }
+        if (current == DownloadOperationState.WAITING_STORAGE_MUTATION) {
+            // 等待状态只能由恢复、取消或失效路径离开，禁止直接跳到完成态
+            return requestedState.takeIf {
+                requested in setOf(
+                    DownloadOperationState.PENDING_QUEUE,
+                    DownloadOperationState.QUEUED,
+                    DownloadOperationState.RUNNING,
+                    DownloadOperationState.RETRYABLE,
+                    DownloadOperationState.CANCEL_REQUESTED,
+                    DownloadOperationState.CANCELLED,
+                    DownloadOperationState.INVALID
+                )
+            }
+        }
+        if (requested == DownloadOperationState.CANCEL_REQUESTED) {
+            return requestedState.takeIf {
+                it != currentRaw && current in setOf(
+                    DownloadOperationState.QUEUED,
+                    DownloadOperationState.RUNNING,
+                    DownloadOperationState.STOPPED,
+                    DownloadOperationState.RETRYABLE
+                )
+            }
+        }
+        if (requested == DownloadOperationState.CANCELLED) {
+            return requestedState.takeIf {
+                current == DownloadOperationState.CANCEL_REQUESTED ||
+                    current in setOf(
+                        DownloadOperationState.QUEUED,
+                        DownloadOperationState.RUNNING,
+                        DownloadOperationState.STOPPED,
+                        DownloadOperationState.RETRYABLE
+                    )
+            }
+        }
+        if (requested == DownloadOperationState.COMMITTING) {
+            return requestedState.takeIf {
+                current in setOf(
+                    DownloadOperationState.PENDING_QUEUE,
+                    DownloadOperationState.QUEUED,
+                    DownloadOperationState.RUNNING
+                )
+            }
+        }
+        if (requested == DownloadOperationState.CORE_COMMITTED) {
+            return requestedState.takeIf { current == DownloadOperationState.COMMITTING }
+        }
+        if (
+            requested == DownloadOperationState.RUNNING &&
+            current in setOf(
+                DownloadOperationState.RUNNING,
+                DownloadOperationState.COMMITTING
+            )
+        ) {
+            return requestedState
+        }
+        if (requested == DownloadOperationState.RETRYABLE) {
+            return requestedState.takeIf {
+                current in setOf(
+                    DownloadOperationState.PENDING_QUEUE,
+                    DownloadOperationState.QUEUED,
+                    DownloadOperationState.RUNNING,
+                    DownloadOperationState.COMMITTING
+                )
+            }
+        }
+        if (requested == DownloadOperationState.METADATA_ACTION_REQUIRED) {
+            return requestedState.takeIf {
+                current == DownloadOperationState.DEGRADED_COMPLETE
+            }
+        }
+        if (current == DownloadOperationState.METADATA_ACTION_REQUIRED) {
+            return requestedState.takeIf {
+                requested == DownloadOperationState.ASSETS_ENRICHING ||
+                    requested == DownloadOperationState.FINALIZED
+            }
+        }
+        if (current == DownloadOperationState.CANCEL_REQUESTED) {
+            return requestedState.takeIf { requested in coreCommittedStates }
+        }
+        if (requested == DownloadOperationState.INVALID) {
+            return requestedState.takeIf {
+                current in setOf(
+                    DownloadOperationState.PENDING_QUEUE,
+                    DownloadOperationState.QUEUED,
+                    DownloadOperationState.RUNNING,
+                    DownloadOperationState.COMMITTING,
+                    DownloadOperationState.CANCEL_REQUESTED,
+                    DownloadOperationState.STOPPED,
+                    DownloadOperationState.RETRYABLE
+                )
+            }
+        }
+        if (requested == DownloadOperationState.COMPLETED) {
+            return requestedState.takeIf {
+                current in setOf(
+                    DownloadOperationState.RUNNING,
+                    DownloadOperationState.COMMITTING,
+                    DownloadOperationState.CORE_COMMITTED,
+                    DownloadOperationState.ASSETS_ENRICHING,
+                    DownloadOperationState.FINALIZED,
+                    DownloadOperationState.DEGRADED_COMPLETE
+                )
+            }
+        }
+        if (
+            current == DownloadOperationState.DEGRADED_COMPLETE &&
+            requested in setOf(
+                DownloadOperationState.ASSETS_ENRICHING,
+                DownloadOperationState.FINALIZED
+            )
+        ) {
+            return requestedState
+        }
+
+        val currentCoreIndex = coreCommittedStates.indexOf(current)
+        if (currentCoreIndex >= 0) {
+            val requestedCoreIndex = coreCommittedStates.indexOf(requested)
+            return requestedState.takeIf { requestedCoreIndex >= currentCoreIndex }
+        }
+        return requestedState.takeIf {
+            current in setOf(
+                DownloadOperationState.PENDING_QUEUE,
+                DownloadOperationState.QUEUED,
+                DownloadOperationState.RUNNING,
+                DownloadOperationState.RETRYABLE
+            )
+        }
+    }
+}

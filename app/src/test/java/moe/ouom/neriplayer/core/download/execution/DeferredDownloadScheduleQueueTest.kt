@@ -63,6 +63,23 @@ class DeferredDownloadScheduleQueueTest {
         assertNull(queue.poll())
     }
 
+    @Test
+    fun `overflow evicts the oldest deferred request while persistence remains authoritative`() {
+        val queue = DeferredDownloadScheduleQueue(maxRequests = 2)
+        val first = request("operation-first", 1L)
+        val second = request("operation-second", 2L)
+        val third = request("operation-third", 3L)
+
+        queue.enqueue(first)
+        queue.enqueue(second)
+        queue.enqueue(third)
+
+        assertEquals(2, queue.size())
+        assertEquals(second, queue.poll())
+        assertEquals(third, queue.poll())
+        assertNull(queue.poll())
+    }
+
     private fun request(
         operationId: String,
         songId: Long,

@@ -1,0 +1,76 @@
+package moe.ouom.neriplayer.core.download.execution
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class DownloadOperationStateTest {
+    @Test
+    fun `wire names round trip through the typed state`() {
+        DownloadOperationState.entries
+            .filterNot { it == DownloadOperationState.UNKNOWN }
+            .forEach { state ->
+                assertEquals(state, DownloadOperationState.parse(state.wireName))
+            }
+        assertEquals(DownloadOperationState.UNKNOWN, DownloadOperationState.parse("future"))
+    }
+
+    @Test
+    fun `terminal state cannot be downgraded`() {
+        listOf("CANCELLED", "COMPLETED").forEach { terminal ->
+            assertNull(resolveDownloadOperationState(terminal, "RETRYABLE"))
+            assertNull(resolveDownloadOperationState(terminal, "CANCEL_REQUESTED"))
+        }
+    }
+
+    @Test
+    fun `core commit transition is monotonic`() {
+        assertEquals(
+            "CORE_COMMITTED",
+            resolveDownloadOperationState("COMMITTING", "CORE_COMMITTED")
+        )
+        assertEquals(
+            "FINALIZED",
+            resolveDownloadOperationState("DEGRADED_COMPLETE", "FINALIZED")
+        )
+        assertNull(resolveDownloadOperationState("CORE_COMMITTED", "RETRYABLE"))
+        assertNull(
+            resolveDownloadOperationState(
+                "CORE_COMMITTED",
+                "WAITING_STORAGE_MUTATION"
+            )
+        )
+        assertNull(
+            resolveDownloadOperationState(
+                "COMMITTING",
+                "WAITING_STORAGE_MUTATION"
+            )
+        )
+    }
+
+    @Test
+    fun `interrupted state set comes from the typed model`() {
+        assertTrue("RUNNING" in INTERRUPTED_DOWNLOAD_OPERATION_STATES)
+        assertTrue("DEGRADED_COMPLETE" in INTERRUPTED_DOWNLOAD_OPERATION_STATES)
+        assertEquals(
+            setOf("CORE_COMMITTED", "ASSETS_ENRICHING", "DEGRADED_COMPLETE"),
+            DownloadOperationStateTransitions.resumableCoreWireNames
+        )
+    }
+
+    @Test
+    fun `storage waiting only leaves through a recoverable or terminal control path`() {
+        assertEquals(
+            "QUEUED",
+            resolveDownloadOperationState("WAITING_STORAGE_MUTATION", "QUEUED")
+        )
+        assertEquals(
+            "CANCEL_REQUESTED",
+            resolveDownloadOperationState("WAITING_STORAGE_MUTATION", "CANCEL_REQUESTED")
+        )
+        assertNull(
+            resolveDownloadOperationState("WAITING_STORAGE_MUTATION", "COMPLETED")
+        )
+    }
+}
