@@ -154,6 +154,14 @@ internal data class DownloadedSongReferenceCoverage(
     val missingReferenceCount: Int
 )
 
+internal fun shouldEvictMissingDownloadedSongCatalogEntry(
+    sawMissing: Boolean,
+    sawUncertain: Boolean,
+    hasActiveDownload: Boolean
+): Boolean {
+    return sawMissing && !sawUncertain && !hasActiveDownload
+}
+
 /** pending 收敛结果只在完整扫描确认后才允许迁移继续 */
 internal data class PendingDownloadRecoverySummary(
     val leaseAcquired: Boolean = false,

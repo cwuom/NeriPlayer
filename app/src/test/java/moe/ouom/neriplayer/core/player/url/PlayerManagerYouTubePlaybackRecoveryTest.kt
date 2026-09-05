@@ -90,8 +90,8 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
         )
     }
 
-    private fun playbackError(errorCode: Int): PlaybackException {
-        return PlaybackException("test", null, errorCode)
+    private fun playbackError(errorCode: Int, cause: Throwable? = null): PlaybackException {
+        return PlaybackException("test", cause, errorCode)
     }
 
     private fun song(mediaUri: String?): SongItem {
@@ -182,6 +182,57 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
                 isOfflineCache = false,
                 isYouTubeTrack = false,
                 isLocalSong = true
+            )
+        )
+    }
+
+    @Test
+    fun `saf missing document wrapped as unspecified io retries local reference`() {
+        val missingDocument = IllegalArgumentException(
+            "Failed to determine if primary:Downloads/song.flac is child of " +
+                "primary:Downloads: java.io.FileNotFoundException: Missing file for " +
+                "primary:Downloads/song.flac"
+        )
+        val error = playbackError(
+            errorCode = PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+            cause = RuntimeException("loader failed", missingDocument)
+        )
+
+        assertTrue(
+            shouldAttemptCachedPlaybackRepair(
+                error = error,
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = true
+            )
+        )
+        assertTrue(
+            shouldAttemptCachedPlaybackRepair(
+                error = error,
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = false
+            )
+        )
+        assertTrue(
+            shouldRecoverMissingLocalPlayback(
+                error = error,
+                isLocalSong = true,
+                currentUrl = null
+            )
+        )
+        assertTrue(
+            shouldRecoverMissingLocalPlayback(
+                error = error,
+                isLocalSong = false,
+                currentUrl = "content://com.android.externalstorage.documents/document/song"
+            )
+        )
+        assertFalse(
+            shouldRecoverMissingLocalPlayback(
+                error = error,
+                isLocalSong = false,
+                currentUrl = "https://example.com/song.flac"
             )
         )
     }

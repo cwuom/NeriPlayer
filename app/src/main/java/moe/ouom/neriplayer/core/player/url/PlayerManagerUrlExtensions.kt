@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliSponsorBlockTarget
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.LocalPlaybackReferenceResolution
@@ -64,6 +65,7 @@ import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.listentogether.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
 import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
@@ -666,15 +668,33 @@ internal fun shouldAttemptCachedPlaybackRepair(
     isLocalSong: Boolean
 ): Boolean {
     if (isOfflineCache) return true
+    val missingLocalPlayback = isMissingLocalPlaybackError(error)
     if (isLocalSong) {
         // 迁移切根或源文件清理与 Media3 打开文件之间存在窄竞态。
         // 仅对明确的文件不存在重绑本地引用，不能把网络或解码错误当成迁移问题
-        return error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
+        return missingLocalPlayback
+    }
+    if (missingLocalPlayback) {
+        return true
     }
     if (isYouTubeTrack) {
         return shouldAttemptYouTubePlaybackRecovery(error, isOfflineCache)
     }
     return isRecoverableRemotePlaybackCacheError(error)
+}
+
+internal fun isMissingLocalPlaybackError(error: PlaybackException): Boolean {
+    return error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
+        ManagedDownloadReferenceLookup.isMissingFailure(error)
+}
+
+internal fun shouldRecoverMissingLocalPlayback(
+    error: PlaybackException,
+    isLocalSong: Boolean,
+    currentUrl: String?
+): Boolean {
+    if (!isLocalSong && !LocalSongSupport.isLocalMediaUri(currentUrl)) return false
+    return isMissingLocalPlaybackError(error)
 }
 
 internal fun shouldInvalidateCachedResourceForPlaybackRecovery(

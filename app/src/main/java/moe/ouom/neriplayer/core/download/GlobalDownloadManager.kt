@@ -10198,9 +10198,24 @@ object GlobalDownloadManager {
 
     private fun scheduleDownloadedSongReferenceReconcile(
         context: Context,
+        song: DownloadedSong,
         probe: DownloadedSongReferenceProbe
     ) {
         if (!probe.sawMissing) return
+        val songKey = song.remoteSourceStableKeyOrNull()
+            ?: song.stableKey?.trim()?.takeIf(String::isNotBlank)
+        val hasActiveDownload = songKey?.let(AudioDownloadManager::isSongDownloadActive)
+            ?: true
+        if (
+            shouldEvictMissingDownloadedSongCatalogEntry(
+                sawMissing = probe.sawMissing,
+                sawUncertain = probe.sawUncertain,
+                hasActiveDownload = hasActiveDownload
+            )
+        ) {
+            removeMissingDownloadedSongEntry(context, song)
+            return
+        }
         // 只有所有候选都给出 Missing 证据时才允许强制对账
         scheduleCatalogReconcile(
             context = context,
@@ -10267,7 +10282,11 @@ object GlobalDownloadManager {
                 )
             }
             if (attemptIndex == 0) {
-                scheduleDownloadedSongReferenceReconcile(context, directReferenceProbe)
+                scheduleDownloadedSongReferenceReconcile(
+                    context = context,
+                    song = downloadedSong,
+                    probe = directReferenceProbe
+                )
             }
 
             if (attemptIndex + 1 < DOWNLOADED_PLAYBACK_RESOLUTION_ATTEMPTS) {
@@ -10523,13 +10542,19 @@ object GlobalDownloadManager {
         context: Context,
         song: DownloadedSong
     ) {
-        val updatedSongs = _downloadedSongs.value.filterNot { candidate ->
+        val previousSongs = _downloadedSongs.value
+        val updatedSongs = previousSongs.filterNot { candidate ->
             matchesDownloadedSongCatalogEntry(candidate, song)
         }
-        if (updatedSongs != _downloadedSongs.value) {
+        if (updatedSongs != previousSongs) {
             publishDownloadedSongs(context, updatedSongs, persistCatalog = true)
+            NPLogger.w(
+                TAG,
+                "移除已确认缺失的下载目录条目: song=${song.name}, " +
+                    "reference=${resolveDownloadedSongPlaybackReference(song)}"
+            )
         }
-        scheduleCatalogReconcile(context, forceRefresh = false)
+        scheduleCatalogReconcile(context, forceRefresh = true)
     }
 
     private fun resolveAudioDuration(context: Context, location: String): Long {
@@ -10586,7 +10611,11 @@ object GlobalDownloadManager {
                 catalogEntryAvailable = true
             )
             probe.reference?.let { return it }
-            scheduleDownloadedSongReferenceReconcile(context, probe)
+            scheduleDownloadedSongReferenceReconcile(
+                context = context,
+                song = cachedSong,
+                probe = probe
+            )
             if (probe.sawUncertain) {
                 NPLogger.w(
                     TAG,
@@ -10605,7 +10634,11 @@ object GlobalDownloadManager {
             catalogEntryAvailable = true
         )
         probe.reference?.let { return it }
-        scheduleDownloadedSongReferenceReconcile(context, probe)
+        scheduleDownloadedSongReferenceReconcile(
+            context = context,
+            song = downloadedSong,
+            probe = probe
+        )
         if (probe.sawUncertain) {
             NPLogger.w(
                 TAG,
@@ -10674,7 +10707,11 @@ object GlobalDownloadManager {
             catalogEntryAvailable = true
         )
         probe.reference?.let { return it }
-        scheduleDownloadedSongReferenceReconcile(context, probe)
+        scheduleDownloadedSongReferenceReconcile(
+            context = context,
+            song = downloadedSong,
+            probe = probe
+        )
         if (probe.sawUncertain) {
             NPLogger.w(
                 TAG,
@@ -14406,6 +14443,7 @@ object GlobalDownloadManager {
             }
             sawMissing -> scheduleDownloadedSongReferenceReconcile(
                 context = context,
+                song = downloadedSong,
                 probe = DownloadedSongReferenceProbe(
                     sawMissing = true,
                     sawUncertain = sawUncertain

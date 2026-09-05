@@ -76,7 +76,8 @@ class ManagedLocalPlaybackGateTest {
             .substringBefore("override fun onPlaybackStateChanged")
 
         assertTrue(errorBody.contains("invalidateCompletedAudioReference"))
-        assertTrue(errorBody.contains("ERROR_CODE_IO_FILE_NOT_FOUND"))
+        assertTrue(errorBody.contains("shouldRecoverMissingLocalPlayback"))
+        assertTrue(errorBody.contains("currentUrl = currentUrl"))
         assertTrue(errorBody.contains("allowLocalSongRecovery = isLocalFileMissingRecovery"))
         assertTrue(
             errorBody.contains("!isLocalFileMissingRecovery &&\n" +

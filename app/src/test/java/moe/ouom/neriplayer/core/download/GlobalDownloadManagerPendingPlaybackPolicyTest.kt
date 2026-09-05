@@ -51,4 +51,36 @@ class GlobalDownloadManagerPendingPlaybackPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `missing catalog entry is evicted only with complete evidence`() {
+        assertTrue(
+            shouldEvictMissingDownloadedSongCatalogEntry(
+                sawMissing = true,
+                sawUncertain = false,
+                hasActiveDownload = false
+            )
+        )
+        assertFalse(
+            shouldEvictMissingDownloadedSongCatalogEntry(
+                sawMissing = true,
+                sawUncertain = true,
+                hasActiveDownload = false
+            )
+        )
+        assertFalse(
+            shouldEvictMissingDownloadedSongCatalogEntry(
+                sawMissing = true,
+                sawUncertain = false,
+                hasActiveDownload = true
+            )
+        )
+        assertFalse(
+            shouldEvictMissingDownloadedSongCatalogEntry(
+                sawMissing = false,
+                sawUncertain = false,
+                hasActiveDownload = false
+            )
+        )
+    }
 }

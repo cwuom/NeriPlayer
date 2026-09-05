@@ -124,6 +124,7 @@ import moe.ouom.neriplayer.core.player.url.shouldAdvanceAfterStuckTrackEnd
 import moe.ouom.neriplayer.core.player.url.shouldAttemptUrlRefresh
 import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheForPlaybackRecovery
+import moe.ouom.neriplayer.core.player.url.shouldRecoverMissingLocalPlayback
 import moe.ouom.neriplayer.core.player.url.shouldTreatPlaybackFailureAsTrackEnd
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForError
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
@@ -642,14 +643,15 @@ internal fun PlayerManager.initializeImpl(
                 val currentSong = _currentSongFlow.value
                 val currentUrl = _currentMediaUrl.value
                 val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
-                val isLocalFileMissingRecovery = currentSong?.let { song ->
-                    isLocalSong(song) &&
-                        error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
-                } == true
+                val isLocalFileMissingRecovery = shouldRecoverMissingLocalPlayback(
+                    error = error,
+                    isLocalSong = currentSong?.let { song -> isLocalSong(song) } == true,
+                    currentUrl = currentUrl
+                )
                 if (isLocalFileMissingRecovery) {
                     // 迁移完成后旧 file URI 可能在 Media3 打开前才失效，先丢弃桥接
                     // 让下一次解析从当前 SAF 快照按文件名重绑定
-                    currentSong.let(AudioDownloadManager::invalidateCompletedAudioReference)
+                    currentSong?.let(AudioDownloadManager::invalidateCompletedAudioReference)
                 }
                 val shouldInvalidateCache =
                     shouldInvalidateCacheForPlaybackRecovery(error, isOfflineCache)
