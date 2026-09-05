@@ -14,6 +14,17 @@ import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEnt
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 
+/** 批量删除结果，用于把竞态和真正的“已不存在”区分开 */
+internal data class ManagedDownloadArtifactBatchDeleteResult(
+    val requestedCount: Int,
+    val removedCount: Int,
+    val missingCount: Int,
+    val racedCount: Int
+) {
+    val isComplete: Boolean
+        get() = racedCount == 0
+}
+
 internal class ManagedDownloadArtifactCoordinator {
     /** 只为不存在的条目批量预创建租约，已有条目仍走完整 claim 校验 */
     suspend fun precreateMissingArtifacts(
@@ -721,6 +732,100 @@ internal class ManagedDownloadArtifactCoordinator {
                 expectedLeaseId = current.leaseId,
                 expectedUpdatedAtMs = current.updatedAtMs
             ) > 0
+        }
+    }
+
+    /** 在一个 Room 事务内批量清理指定歌曲，避免每首歌曲重复打开事务 */
+    suspend fun deleteByStableKeys(
+        context: Context,
+        stableKeys: Collection<String>
+    ): ManagedDownloadArtifactBatchDeleteResult {
+        val normalizedKeys = stableKeys
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        if (normalizedKeys.isEmpty()) {
+            return ManagedDownloadArtifactBatchDeleteResult(0, 0, 0, 0)
+        }
+        val appContext = context.applicationContext
+        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
+        val database = database(appContext)
+        return database.withTransaction {
+            val dao = database.managedDownloadArtifactDao()
+            val currentByStableKey = normalizedKeys
+                .toList()
+                .chunked(BATCH_ARTIFACT_QUERY_CHUNK_SIZE)
+                .flatMap { chunk ->
+                    dao.findAllByRootKeyAndStableKeys(rootKey, chunk)
+                }
+                .associateBy(ManagedDownloadArtifactEntity::stableKey)
+            var removedCount = 0
+            var missingCount = 0
+            var racedCount = 0
+            normalizedKeys.forEach { key ->
+                val current = currentByStableKey[key]
+                when {
+                    current == null -> missingCount++
+                    current.leaseId != null -> racedCount++
+                    dao.deleteIfUnchanged(
+                        rootKey = rootKey,
+                        stableKey = key,
+                        expectedState = current.state,
+                        expectedLeaseId = null,
+                        expectedUpdatedAtMs = current.updatedAtMs
+                    ) > 0 -> removedCount++
+                    else -> racedCount++
+                }
+            }
+            ManagedDownloadArtifactBatchDeleteResult(
+                requestedCount = normalizedKeys.size,
+                removedCount = removedCount,
+                missingCount = missingCount,
+                racedCount = racedCount
+            )
+        }
+    }
+
+    /** 全库物理删除已经确认后，原子清掉当前根目录的无租约凭据 */
+    suspend fun deleteAllLeaseFree(
+        context: Context
+    ): ManagedDownloadArtifactBatchDeleteResult {
+        val appContext = context.applicationContext
+        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
+        val database = database(appContext)
+        return database.withTransaction {
+            val dao = database.managedDownloadArtifactDao()
+            val requestedCount = dao.countByRootKey(rootKey)
+            val activeBefore = dao.countLeasedByRootKey(rootKey)
+            val removedCount = dao.deleteLeaseFreeByRootKey(rootKey)
+            val activeAfter = dao.countLeasedByRootKey(rootKey)
+            ManagedDownloadArtifactBatchDeleteResult(
+                requestedCount = requestedCount,
+                removedCount = removedCount,
+                missingCount = (requestedCount - removedCount - activeBefore)
+                    .coerceAtLeast(0),
+                racedCount = maxOf(activeBefore, activeAfter)
+            )
+        }
+    }
+
+    /** 取消和 Provider 清理已确认后，收敛旧租约并删除当前根目录凭据 */
+    suspend fun deleteAllAfterCancellationSettled(
+        context: Context
+    ): ManagedDownloadArtifactBatchDeleteResult {
+        val appContext = context.applicationContext
+        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
+        val database = database(appContext)
+        return database.withTransaction {
+            val dao = database.managedDownloadArtifactDao()
+            val requestedCount = dao.countByRootKey(rootKey)
+            val removedCount = dao.deleteAllByRootKey(rootKey)
+            ManagedDownloadArtifactBatchDeleteResult(
+                requestedCount = requestedCount,
+                removedCount = removedCount,
+                missingCount = (requestedCount - removedCount).coerceAtLeast(0),
+                racedCount = (requestedCount - removedCount).coerceAtLeast(0)
+            )
         }
     }
 

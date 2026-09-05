@@ -161,6 +161,40 @@ internal class ManagedLibraryFastIndexMutator(
         }
     }
 
+    /** 按分片合并删除，避免批量清理为每首歌重复读写同一个 JSON */
+    suspend fun removeEntries(
+        rootIdentity: String,
+        libraryId: String,
+        stableKeys: Collection<String>,
+        storage: ManagedLibraryFastIndexShardStorage
+    ): List<ManagedLibraryFastIndexMutationResult> {
+        val normalizedKeys = stableKeys
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        if (normalizedKeys.isEmpty()) return emptyList()
+        return normalizedKeys
+            .groupBy(ManagedLibraryFastIndex::shardFor)
+            .toSortedMap()
+            .map { (shard, keys) ->
+                mutate(
+                    rootIdentity = rootIdentity,
+                    libraryId = libraryId,
+                    shard = shard,
+                    storage = storage
+                ) { existingEntries ->
+                    val nextEntries = existingEntries.filterNot { entry ->
+                        entry.stableKey in keys
+                    }
+                    if (nextEntries.size == existingEntries.size) {
+                        MutationPlan.Unchanged
+                    } else {
+                        MutationPlan.Write(nextEntries)
+                    }
+                }
+            }
+    }
+
     private sealed interface MutationPlan {
         data class Write(
             val entries: List<ManagedLibraryIndexEntry>

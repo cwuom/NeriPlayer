@@ -42,6 +42,7 @@ internal class AudioDownloadCoverCoordinator(
         request: Request,
         songKey: String,
         operationId: String?,
+        requireActiveAttempt: Boolean,
         block: (Response) -> String?
     ) -> String?,
     private val commitCover: (
@@ -240,7 +241,12 @@ internal class AudioDownloadCoverCoordinator(
         operationId: String?
     ): String? {
         val request = Request.Builder().url(coverUrl).build()
-        return executeTrackedCall(request, songKey, operationId) { response ->
+        return executeTrackedCall(
+            request,
+            songKey,
+            operationId,
+            requireActiveAttempt
+        ) { response ->
             if (!response.isSuccessful) {
                 throw IOException("封面请求失败: HTTP ${response.code}")
             }

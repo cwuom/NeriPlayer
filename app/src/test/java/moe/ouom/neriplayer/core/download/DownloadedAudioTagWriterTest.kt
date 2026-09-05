@@ -60,6 +60,30 @@ class DownloadedAudioTagWriterTest {
     }
 
     @Test
+    fun `fresh sidecar lyric content wins over a stale downloaded song snapshot`() {
+        assertEquals(
+            "[00:01.00]fresh lyric",
+            MetadataDownloadedAudioTagWriter.selectEmbeddedLyricContent(
+                cachedContent = "[00:01.00]fresh lyric",
+                resolvedContent = null,
+                fallback = "[00:01.00]stale lyric"
+            )
+        )
+    }
+
+    @Test
+    fun `resolved sidecar lyric is used when no fresh content was retained`() {
+        assertEquals(
+            "[00:01.00]restored lyric",
+            MetadataDownloadedAudioTagWriter.selectEmbeddedLyricContent(
+                cachedContent = "  ",
+                resolvedContent = "[00:01.00]restored lyric",
+                fallback = "[00:01.00]stale lyric"
+            )
+        )
+    }
+
+    @Test
     fun `standardized lyric embedding converts netease word lyric to lrc`() {
         val rawLyric = """
             [12580,3470](12580,250,0)难(12830,300,0)以(13130,200,0)忘记
@@ -178,6 +202,77 @@ class DownloadedAudioTagWriterTest {
         )
 
         assertFalse(DownloadedAudioTagWriter.hasRequiredEmbeddedMetadata(propertyMap, song))
+    }
+
+    @Test
+    fun `required embedded metadata accepts every requested lyric variant`() {
+        val song = testSong(name = "Song", artist = "Artist").copy(
+            matchedLyric = "[00:01.00]hello",
+            matchedTranslatedLyric = "[00:01.00]你好",
+            matchedRomanizedLyric = "[00:01.00]ni hao"
+        )
+        val propertyMap: PropertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Artist"),
+            "LYRICS" to arrayOf("[00:01.00]hello"),
+            "LYRICS:TRANSLATION" to arrayOf("[00:01.00]你好"),
+            "NERI_LYRICS_ROMANIZED" to arrayOf("[00:01.00]ni hao")
+        )
+        val sidecars = AudioDownloadManager.DownloadedSidecarReferences(
+            expectedLyric = true,
+            expectedTranslatedLyric = true,
+            expectedRomanizedLyric = true
+        )
+
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.hasRequiredEmbeddedMetadata(
+                propertyMap = propertyMap,
+                song = song,
+                sidecarReferences = sidecars,
+                audioExtension = "flac"
+            )
+        )
+    }
+
+    @Test
+    fun `required embedded metadata rejects a missing requested lyric variant`() {
+        val song = testSong(name = "Song", artist = "Artist").copy(
+            matchedLyric = "[00:01.00]hello",
+            matchedTranslatedLyric = "[00:01.00]你好"
+        )
+        val propertyMap: PropertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Artist"),
+            "LYRICS" to arrayOf("[00:01.00]hello"),
+            "LYRICS:TRANSLATION" to arrayOf("[00:01.00]你好")
+        )
+        val sidecars = AudioDownloadManager.DownloadedSidecarReferences(
+            expectedLyric = true,
+            expectedTranslatedLyric = true,
+            expectedRomanizedLyric = true
+        )
+
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.hasRequiredEmbeddedMetadata(
+                propertyMap = propertyMap,
+                song = song,
+                sidecarReferences = sidecars,
+                audioExtension = "flac"
+            )
+        )
+    }
+
+    @Test
+    fun `embedded metadata uses the custom display artist`() {
+        val song = testSong(name = "Song", artist = "Source artist").copy(
+            customArtist = "Edited artist"
+        )
+        val propertyMap: PropertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Edited artist")
+        )
+
+        assertTrue(DownloadedAudioTagWriter.hasRequiredEmbeddedMetadata(propertyMap, song))
     }
 
     @Test
@@ -315,6 +410,23 @@ class DownloadedAudioTagWriterTest {
         assertEquals("", entry.playbackUri)
         assertEquals(
             "content://provider/tree/audio/pending",
+            MetadataDownloadedAudioTagWriter.writableDescriptorReference(entry)
+        )
+    }
+
+    @Test
+    fun `SAF writable reference falls back to reference when media uri is absent`() {
+        val entry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.flac",
+            reference = "content://provider/tree/audio/song",
+            mediaUri = "",
+            localFilePath = null,
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+
+        assertEquals(
+            "content://provider/tree/audio/song",
             MetadataDownloadedAudioTagWriter.writableDescriptorReference(entry)
         )
     }

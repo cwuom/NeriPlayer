@@ -149,6 +149,15 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
         }
     }
 
+    /** 下载进度页只响应任务清空，不响应整个下载库删除事务 */
+    internal fun isTaskProgressActive(context: Context): Boolean {
+        return synchronized(schedulingLock) {
+            hydratePersistedEpochLocked(context)
+            (isClearRequested() || isPersistedFenceActive(context)) &&
+                activePurposeLocked(context) == DownloadClearPurpose.TASK_PROGRESS
+        }
+    }
+
     /** 返回本轮持久清空开始时间，用于排除清空后的新 generation */
     internal fun requestedAtMs(context: Context): Long? {
         return synchronized(schedulingLock) {

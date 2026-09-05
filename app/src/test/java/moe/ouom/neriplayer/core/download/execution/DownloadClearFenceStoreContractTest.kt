@@ -50,6 +50,21 @@ class DownloadClearFenceStoreContractTest {
     }
 
     @Test
+    fun `download progress probe is limited to task purpose`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadClearFenceStore.kt"
+        ).readText()
+        val body = methodBody(source, "isTaskProgressActive")
+        assertTrue(body.contains("isClearRequested() || isPersistedFenceActive(context)"))
+        assertTrue(
+            body.contains(
+                "activePurposeLocked(context) == DownloadClearPurpose.TASK_PROGRESS"
+            )
+        )
+    }
+
+    @Test
     fun `capture blocks known owners but permits unrelated keys`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +

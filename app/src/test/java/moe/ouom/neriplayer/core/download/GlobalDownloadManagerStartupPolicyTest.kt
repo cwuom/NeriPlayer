@@ -564,6 +564,24 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `full delete recovery does not wait for its own fence before replay`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val recoveryBody = source.substringAfter(
+            "private fun scheduleDeferredFullLibraryDeleteRecovery"
+        ).substringBefore("private suspend fun replayFullLibraryDeleteWithoutCatalog")
+        val cancellationBlock = recoveryBody.substringAfter(
+            "val cancellationSettled ="
+        ).substringBefore("if (!cancellationSettled)")
+
+        assertTrue(cancellationBlock.contains("requestAllDownloadTaskCancellation("))
+        assertTrue(cancellationBlock.contains("isFullLibraryDeleteCancellationSettled(appContext)"))
+        assertFalse(cancellationBlock.contains("hasPersistedFence(appContext)"))
+        assertTrue(source.contains("private suspend fun isFullLibraryDeleteCancellationSettled"))
+    }
+
+    @Test
     fun `provider cleanup key follows the durable fence epoch across recovery generations`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
@@ -1213,6 +1231,15 @@ class GlobalDownloadManagerStartupPolicyTest {
                 songCancelled = true
             )
         )
+        // 全局取消标志只属于当前传输代次，收尾重试由清空栅栏和单曲取消状态控制
+        assertTrue(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "DEGRADED_COMPLETE",
+                metadataActionRequired = false,
+                userStopped = false
+            )
+        )
     }
 
     @Test
@@ -1398,7 +1425,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             "taskStore.finishClearPresentation(taskPresentationToken)"
         )
         val fenceStateIndex = finallyBody.indexOf(
-            "PersistentDownloadClearFenceStore.isTaskClearActive(appContext)"
+            "PersistentDownloadClearFenceStore.isTaskProgressActive(appContext)"
         )
 
         assertTrue(beginIndex >= 0)
@@ -1596,9 +1623,9 @@ class GlobalDownloadManagerStartupPolicyTest {
             "private fun finishReleasedTaskClearState"
         ).substringBefore("private suspend fun awaitDownloadClearFenceRelease")
 
-        assertTrue(clearBody.contains("PersistentDownloadClearFenceStore.isTaskClearActive(appContext)"))
+        assertTrue(clearBody.contains("PersistentDownloadClearFenceStore.isTaskProgressActive(appContext)"))
         assertFalse(clearBody.contains("val durableFenceActive = PersistentDownloadClearFenceStore.isActive(appContext)"))
-        assertTrue(finishBody.contains("PersistentDownloadClearFenceStore.isTaskClearActive(context)"))
+        assertTrue(finishBody.contains("PersistentDownloadClearFenceStore.isTaskProgressActive(context)"))
         assertFalse(finishBody.contains("PersistentDownloadClearFenceStore.isActive(context)"))
     }
 

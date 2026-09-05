@@ -76,6 +76,52 @@ class ManagedLibraryFastIndexMutatorTest {
     }
 
     @Test
+    fun `batch remove groups keys by shard and keeps unrelated entries`() = runTest {
+        val firstKey = "batch-first"
+        val firstShard = ManagedLibraryFastIndex.shardFor(firstKey)
+        val secondKey = keyOutsideShard(firstShard)
+        val secondShard = ManagedLibraryFastIndex.shardFor(secondKey)
+        val firstKeep = keyInShard(firstShard, excluded = setOf(firstKey))
+        val secondKeep = keyInShard(secondShard, excluded = setOf(secondKey))
+        val storage = FakeShardStorage().apply {
+            put(
+                FILE_ROOT,
+                firstShard,
+                payload(firstShard, listOf(entry(firstKey), entry(firstKeep)))
+            )
+            put(
+                FILE_ROOT,
+                secondShard,
+                payload(secondShard, listOf(entry(secondKey), entry(secondKeep)))
+            )
+        }
+
+        val results = ManagedLibraryFastIndexMutator(generatedAtMs = { 42L })
+            .removeEntries(
+                rootIdentity = FILE_ROOT,
+                libraryId = LIBRARY_ID,
+                stableKeys = listOf(firstKey, secondKey),
+                storage = storage
+            )
+
+        assertEquals(2, results.size)
+        assertEquals(
+            setOf(firstKeep),
+            storage.decodedEntries(FILE_ROOT, firstShard)
+                .mapTo(linkedSetOf()) { it.stableKey }
+        )
+        assertEquals(
+            setOf(secondKeep),
+            storage.decodedEntries(FILE_ROOT, secondShard)
+                .mapTo(linkedSetOf()) { it.stableKey }
+        )
+        assertEquals(
+            setOf(firstShard, secondShard),
+            storage.writes.map { it.shard }.toSet()
+        )
+    }
+
+    @Test
     fun `same shard concurrent upserts retain both entries and release their lock`() = runTest {
         val firstKey = "first-song"
         val shard = ManagedLibraryFastIndex.shardFor(firstKey)

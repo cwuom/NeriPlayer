@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.catalog
 
 import android.content.Context
+import androidx.room.withTransaction
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -14,6 +15,14 @@ import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 
 internal const val MANAGED_LIBRARY_CATALOG_BACKUP_SUFFIX = ".managed-v1.json"
+internal const val CONFIRMED_EMPTY_CATALOG_MARKER_SUFFIX = ".confirmed-empty"
+
+internal fun matchesConfirmedEmptyCatalogMarker(
+    markerContent: String?,
+    rootKey: String
+): Boolean {
+    return markerContent?.trim() == rootKey
+}
 
 internal class DownloadedSongCatalogRoomStore(
     private val context: Context,
@@ -30,6 +39,9 @@ internal class DownloadedSongCatalogRoomStore(
                 ?.value
             if (storedRootKey != null && storedRootKey != rootKey) {
                 return null
+            }
+            if (isConfirmedEmpty(rootKey)) {
+                return emptyList()
             }
             val roomSongs = ManagedLibraryItemRoomStore.restore(context, database)
             readManagedCatalogBackup(rootKey)?.let { backupSongs ->
@@ -87,7 +99,47 @@ internal class DownloadedSongCatalogRoomStore(
                     }
                 }
             )
+            if (songs.isNotEmpty()) {
+                clearConfirmedEmptyMarker(rootKey)
+                database.syncMetadataDao().deleteMigrationMetadata(
+                    listOf(CONFIRMED_EMPTY_METADATA_KEY)
+                )
+            }
             if (writeManagedCatalogBackup(rootKey, songs)) {
+                markRoomPrimary(rootKey)
+            }
+        }
+    }
+
+    /** 全库物理删除确认后清空 Room 行，并留下可跨进程恢复的空目录事实 */
+    suspend fun persistConfirmedEmpty() {
+        globalMutex.withLock {
+            val rootKey = snapshotCacheKeyProvider(context)
+            database.withTransaction {
+                ManagedLibraryItemRoomStore.clearPreviews(
+                    context = context,
+                    database = database,
+                    libraryId = rootKey
+                )
+                database.syncMetadataDao().upsertMigrationMetadata(
+                    MigrationMetadataEntity(
+                        key = CONFIRMED_EMPTY_METADATA_KEY,
+                        value = rootKey,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+            writeConfirmedEmptyMarker(rootKey)
+            val backupWritten = writeManagedCatalogBackup(rootKey, emptyList())
+            runCatching {
+                writeLegacyCatalog(rootKey, emptyList())
+            }.onFailure { error ->
+                NPLogger.w(
+                    loggerTag,
+                    "写入空下载目录旧 JSON 失败，保留 Room 空目录标记: ${error.message}"
+                )
+            }
+            if (backupWritten) {
                 markRoomPrimary(rootKey)
             }
         }
@@ -98,7 +150,50 @@ internal class DownloadedSongCatalogRoomStore(
             val rootKey = snapshotCacheKeyProvider(context)
             writeLegacyCatalog(rootKey, songs)
             writeManagedCatalogBackup(rootKey, songs)
+            if (songs.isNotEmpty()) {
+                clearConfirmedEmptyMarker(rootKey)
+                database.syncMetadataDao().deleteMigrationMetadata(
+                    listOf(CONFIRMED_EMPTY_METADATA_KEY)
+                )
+            }
             markLegacyJsonPrimary(rootKey)
+        }
+    }
+
+    private suspend fun isConfirmedEmpty(rootKey: String): Boolean {
+        val metadataRoot = database.syncMetadataDao()
+            .getMigrationMetadata(CONFIRMED_EMPTY_METADATA_KEY)
+            ?.value
+        if (metadataRoot == rootKey) return true
+        return confirmedEmptyMarkerFile().runCatching {
+            isFile && matchesConfirmedEmptyCatalogMarker(
+                markerContent = readText(Charsets.UTF_8),
+                rootKey = rootKey
+            )
+        }.getOrDefault(false)
+    }
+
+    private fun confirmedEmptyMarkerFile(): File {
+        return File(
+            context.applicationContext.filesDir,
+            "$cacheFileName$CONFIRMED_EMPTY_CATALOG_MARKER_SUFFIX"
+        )
+    }
+
+    private fun writeConfirmedEmptyMarker(rootKey: String) {
+        confirmedEmptyMarkerFile().writeTextAtomically(rootKey)
+    }
+
+    private fun clearConfirmedEmptyMarker(rootKey: String) {
+        val marker = confirmedEmptyMarkerFile()
+        val belongsToRoot = marker.runCatching {
+            isFile && matchesConfirmedEmptyCatalogMarker(
+                markerContent = readText(Charsets.UTF_8),
+                rootKey = rootKey
+            )
+        }.getOrDefault(false)
+        if (belongsToRoot && marker.exists() && !marker.delete()) {
+            NPLogger.w(loggerTag, "清理已确认空目录标记失败: ${marker.name}")
         }
     }
 
@@ -214,6 +309,7 @@ internal class DownloadedSongCatalogRoomStore(
         const val ROOT_KEY_METADATA_KEY = "managed_library_item_root_key"
         const val ROOM_PRIMARY_STATE = "room_primary"
         const val LEGACY_JSON_STATE = "legacy_json"
+        const val CONFIRMED_EMPTY_METADATA_KEY = "managed_library_item_confirmed_empty"
         private val globalMutex = Mutex()
     }
 }

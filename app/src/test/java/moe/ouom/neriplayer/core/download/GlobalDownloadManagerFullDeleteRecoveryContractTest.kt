@@ -21,11 +21,13 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         val publishIndex = beginBody.indexOf("publishDownloadedSongs(")
         assertTrue(intentIndex >= 0)
         assertTrue(publishIndex > intentIndex)
-        assertTrue(deleteBody.contains("persistDownloadedSongsCatalog("))
+        assertTrue(deleteBody.contains("persistConfirmedEmptyDownloadedSongsCatalog("))
         assertTrue(
             deleteBody.indexOf("PersistentDownloadedSongDeleteIntentStore.clear(") >
-                deleteBody.indexOf("persistDownloadedSongsCatalog(")
+                deleteBody.indexOf("persistConfirmedEmptyDownloadedSongsCatalog(")
         )
+        assertTrue(deleteBody.contains("deleteAllAfterCancellationSettled("))
+        assertTrue(deleteBody.contains("clearFastIndexForConfirmedEmptyLibrary("))
     }
 
     @Test
@@ -69,6 +71,7 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
                 .substringBefore("private suspend fun activateDownloadClearFence")
                 .contains("buildFullLibraryDeletePlan(appContext)")
         )
+        assertTrue(source.contains("isFullLibraryDeleteCancellationSettled(appContext)"))
     }
 
     @Test
@@ -90,6 +93,20 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         assertTrue(remainingIndex >= 0)
         assertTrue(clearIndex > remainingIndex)
         assertTrue(deleteBody.contains("remainingReferences.isEmpty()"))
+    }
+
+    @Test
+    fun `post core enrichment retry is gated by the clear fence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val enrichmentBody = source.substringAfter(
+            "private suspend fun enrichCoreCommittedDownload"
+        ).substringBefore("private suspend fun settlePostCoreEnrichmentFailure")
+        assertTrue(enrichmentBody.contains("val clearBlocked = isDownloadClearFenceActive"))
+        assertTrue(enrichmentBody.contains("val canRetry = !clearBlocked"))
+        assertTrue(!enrichmentBody.contains("AudioDownloadManager.isAllDownloadsCancelled()"))
+        assertTrue(!source.contains("allDownloadsCancelled = AudioDownloadManager.isAllDownloadsCancelled()"))
     }
 
     @Test

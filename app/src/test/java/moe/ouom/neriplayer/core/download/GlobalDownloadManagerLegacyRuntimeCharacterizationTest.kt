@@ -259,6 +259,33 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     }
 
     @Test
+    fun `post core cancellation releases its artifact lease before retry evaluation`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "enrichCoreCommittedDownload")
+        val cancellationIndex = body.indexOf(
+            "} catch (error: CancellationException)"
+        )
+        val currentStateIndex = body.indexOf(
+            "val currentState =",
+            cancellationIndex
+        )
+        val leaseSettlementIndex = body.indexOf(
+            "settleLeaseAnyRoot(",
+            cancellationIndex
+        )
+
+        assertTrue(cancellationIndex >= 0)
+        assertTrue(leaseSettlementIndex > cancellationIndex)
+        assertTrue(currentStateIndex > leaseSettlementIndex)
+        assertTrue(
+            body.substring(leaseSettlementIndex, currentStateIndex)
+                .contains("requestedState = ManagedDownloadArtifactState.DEGRADED_COMPLETE")
+        )
+    }
+
+    @Test
     fun `final metadata keeps the durable operation identity for restart recovery`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
@@ -358,11 +385,28 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         ).readText()
         val deleteBody = methodBody(source, "deleteDownloadedSongsOnIo")
         val resolvedDeletionIndex = deleteBody.indexOf("resolveDownloadedSongDeleteResult(")
-        val fastIndexRemovalIndex = deleteBody.indexOf("removeFastIndexEntry(")
+        val fastIndexRemovalIndex = deleteBody.indexOf("removeFastIndexEntries(")
 
         assertTrue(resolvedDeletionIndex >= 0)
         assertTrue(fastIndexRemovalIndex > resolvedDeletionIndex)
         assertFalse(deleteBody.contains("persistFastIndex("))
+    }
+
+    @Test
+    fun `full delete uses one batch artifact cleanup before catalog persistence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val deleteBody = methodBody(source, "deleteDownloadedSongsOnIo")
+        val artifactIndex = deleteBody.indexOf("deleteAllAfterCancellationSettled(")
+        val catalogIndex = deleteBody.indexOf("persistConfirmedEmptyDownloadedSongsCatalog(")
+
+        assertTrue(artifactIndex >= 0)
+        assertTrue(catalogIndex > artifactIndex)
+        assertFalse(
+            "全库清理不能退化为逐首打开 artifact 事务",
+            deleteBody.contains("deleteByStableKey(")
+        )
     }
 
     @Test

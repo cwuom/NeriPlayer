@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
+import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.isPostCoreDownloadOperationState
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup
 import moe.ouom.neriplayer.core.download.shouldRollbackCancelledAudio
@@ -204,12 +205,13 @@ object AudioDownloadManager {
                     requireActiveAttempt = active
                 )
             },
-            executeTrackedCall = { request, songKey, operationId, block ->
+            executeTrackedCall = { request, songKey, operationId, active, block ->
                 executeTrackedCall(
                     client = backgroundDownloadClient,
                     request = request,
                     songKey = songKey,
                     operationId = operationId,
+                    requireActiveAttempt = active,
                     block = block
                 )
             },
@@ -220,7 +222,8 @@ object AudioDownloadManager {
                     stage = "cover_commit",
                     batchSessionId = session,
                     attemptId = attempt,
-                    operationId = operation
+                    operationId = operation,
+                    requireActiveAttempt = active
                 ) {
                     ManagedDownloadStorage.commitCoverBytes(
                         context = coverContext,
@@ -1367,6 +1370,7 @@ object AudioDownloadManager {
         batchSessionId: Long? = null,
         attemptId: Long? = null,
         operationId: String? = null,
+        requireActiveAttempt: Boolean = true,
         block: () -> T
     ): T {
         return operationRegistry.withMutationLock {
@@ -1375,7 +1379,8 @@ object AudioDownloadManager {
                 stage = stage,
                 batchSessionId = batchSessionId,
                 attemptId = attemptId,
-                operationId = operationId
+                operationId = operationId,
+                requireActiveAttempt = requireActiveAttempt
             )
             block()
         }
@@ -1721,6 +1726,7 @@ object AudioDownloadManager {
         request: Request,
         songKey: String,
         operationId: String? = null,
+        requireActiveAttempt: Boolean = true,
         block: (okhttp3.Response) -> T
     ): T {
         val call = client.newCall(request)
@@ -1751,7 +1757,7 @@ object AudioDownloadManager {
         } catch (error: IOException) {
             if (
                 call.isCanceled() ||
-                _isCancelled.value ||
+                (_isCancelled.value && requireActiveAttempt) ||
                 shouldPreserveArtifactsForNetworkPolicy(songKey) ||
                 GlobalDownloadManager.isSongCancelled(songKey)
             ) {
@@ -1983,12 +1989,18 @@ object AudioDownloadManager {
         val normalizedOperationId = operationId
             ?.trim()
             ?.takeIf(String::isNotBlank)
+        val clearFenceAllowsWork = !isDownloadClearFenceBlockingWork(
+            songKey = songKey,
+            operationId = normalizedOperationId
+        )
         val operationAllowsWork = normalizedOperationId?.let { id ->
             operationRegistry.allowsReference(songKey, id) &&
-                !operationRegistry.isExecutionHostPaused(id)
-        } ?: true
+                !operationRegistry.isExecutionHostPaused(id) &&
+                clearFenceAllowsWork
+        } ?: clearFenceAllowsWork
         if (!shouldAbortDownloadWork(
-                allDownloadsCancelled = _isCancelled.value,
+                // 后台补齐复用已提交音频，不应继承上一轮全局取消标志
+                allDownloadsCancelled = _isCancelled.value && requireActiveAttempt,
                 batchSessionCurrent = isBatchSessionCurrent(batchSessionId),
                 songCancelled = GlobalDownloadManager.isSongCancelled(songKey),
                 networkPolicyPaused = shouldPreserveArtifactsForNetworkPolicy(songKey),
@@ -2005,6 +2017,17 @@ object AudioDownloadManager {
             expectedOperationId = operationId
         )
         throw java.util.concurrent.CancellationException("Download cancelled during $stage")
+    }
+
+    private fun isDownloadClearFenceBlockingWork(
+        songKey: String,
+        operationId: String?
+    ): Boolean {
+        return PersistentDownloadClearFenceStore.isBlocked(
+            context = AppContainer.applicationContext,
+            stableKey = songKey,
+            operationId = operationId
+        )
     }
 
     private suspend fun buildCorePendingMetadata(
@@ -3970,6 +3993,7 @@ object AudioDownloadManager {
                     batchSessionId = session,
                     attemptId = attempt,
                     operationId = operation,
+                    requireActiveAttempt = active,
                     block = block
                 )
             },
@@ -4210,10 +4234,15 @@ object AudioDownloadManager {
             val normalizedOperationId = operationId
                 ?.trim()
                 ?.takeIf(String::isNotBlank)
+            val clearFenceAllowsWork = !isDownloadClearFenceBlockingWork(
+                songKey = songKey,
+                operationId = normalizedOperationId
+            )
             val operationAllowsWork = normalizedOperationId?.let { id ->
                 operationRegistry.allowsReference(songKey, id) &&
-                    !operationRegistry.isExecutionHostPaused(id)
-            } ?: true
+                    !operationRegistry.isExecutionHostPaused(id) &&
+                    clearFenceAllowsWork
+            } ?: clearFenceAllowsWork
             shouldAbortDownloadWork(
                 allDownloadsCancelled = _isCancelled.value,
                 batchSessionCurrent = isBatchSessionCurrent(batchSessionId),

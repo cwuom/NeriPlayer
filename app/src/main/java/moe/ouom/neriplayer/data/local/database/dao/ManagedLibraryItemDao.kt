@@ -60,4 +60,7 @@ internal interface ManagedLibraryItemDao {
     )
     suspend fun delete(libraryId: String, stableKey: String)
 
+    @Query("DELETE FROM managed_library_item WHERE library_id = :libraryId")
+    suspend fun deleteAll(libraryId: String): Int
+
 }

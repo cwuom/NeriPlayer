@@ -259,9 +259,7 @@ internal class AudioDownloadProgressStore(
         progress: AudioDownloadManager.DownloadProgress
     ): String {
         val operationId = progress.operationId?.trim().orEmpty()
-        return if (operationId.isNotBlank()) {
-            operationId
-        } else {
+        return operationId.ifBlank {
             "${progress.songKey}#${progress.attemptId ?: 0L}"
         }
     }

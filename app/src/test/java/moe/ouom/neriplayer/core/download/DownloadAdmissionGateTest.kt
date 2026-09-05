@@ -7,6 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.task.DownloadTaskStore
+import moe.ouom.neriplayer.core.download.execution.DownloadClearPurpose
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -207,6 +208,33 @@ class DownloadAdmissionGateTest {
         visibility.finish(token)
         assertFalse(visibility.isClearing.value)
         assertFalse(visibility.isTaskPresentationCleared.value)
+    }
+
+    @Test
+    fun `full library delete is not exposed as task progress clearing`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+
+        visibility.begin(token, purpose = DownloadClearPurpose.FULL_LIBRARY_DELETE)
+
+        assertTrue(visibility.isClearing.value)
+        assertFalse(visibility.isTaskProgressClearing.value)
+        visibility.finish(token)
+        assertFalse(visibility.isTaskProgressClearing.value)
+    }
+
+    @Test
+    fun `full library delete upgrades an existing clear generation`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+
+        visibility.begin(token, purpose = DownloadClearPurpose.TASK_PROGRESS)
+        visibility.begin(token, purpose = DownloadClearPurpose.FULL_LIBRARY_DELETE)
+
+        assertFalse(visibility.isTaskProgressClearing.value)
+        visibility.finish(token)
     }
 
     @Test

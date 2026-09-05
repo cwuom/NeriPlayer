@@ -4,6 +4,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import moe.ouom.neriplayer.core.download.execution.DownloadClearPurpose
 
 internal class DownloadAdmissionGate {
     internal data class ClearToken(
@@ -261,22 +262,32 @@ internal class DownloadClearVisibility {
     private val stateLock = Any()
     private val _isClearing = MutableStateFlow(false)
     val isClearing: StateFlow<Boolean> = _isClearing.asStateFlow()
+    private val _isTaskProgressClearing = MutableStateFlow(false)
+    val isTaskProgressClearing: StateFlow<Boolean> =
+        _isTaskProgressClearing.asStateFlow()
     private val _isTaskPresentationCleared = MutableStateFlow(false)
     val isTaskPresentationCleared: StateFlow<Boolean> =
         _isTaskPresentationCleared.asStateFlow()
     private val _progress = MutableStateFlow<ClearProgress?>(null)
     val progress: StateFlow<ClearProgress?> = _progress.asStateFlow()
     private var activeGeneration: Long? = null
+    private var activePurpose = DownloadClearPurpose.TASK_PROGRESS
 
     fun begin(
         token: DownloadAdmissionGate.ClearToken,
         affectedItemCount: Int = 0,
-        totalItemCount: Int = 0
+        totalItemCount: Int = 0,
+        purpose: DownloadClearPurpose = DownloadClearPurpose.TASK_PROGRESS
     ) {
         synchronized(stateLock) {
             val isNewGeneration = activeGeneration != token.generation
             activeGeneration = token.generation
             _isClearing.value = true
+            if (isNewGeneration || purpose == DownloadClearPurpose.FULL_LIBRARY_DELETE) {
+                activePurpose = purpose
+            }
+            _isTaskProgressClearing.value =
+                activePurpose == DownloadClearPurpose.TASK_PROGRESS
             if (isNewGeneration) {
                 val normalizedAffectedItemCount = affectedItemCount.coerceAtLeast(0)
                 val normalizedTotalItemCount = totalItemCount.coerceAtLeast(0)
@@ -354,8 +365,10 @@ internal class DownloadClearVisibility {
         synchronized(stateLock) {
             if (activeGeneration == generation) {
                 activeGeneration = null
+                activePurpose = DownloadClearPurpose.TASK_PROGRESS
                 _isTaskPresentationCleared.value = false
                 _isClearing.value = false
+                _isTaskProgressClearing.value = false
                 _progress.value = null
             }
         }

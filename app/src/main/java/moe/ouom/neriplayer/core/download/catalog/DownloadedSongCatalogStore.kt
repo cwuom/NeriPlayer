@@ -59,6 +59,34 @@ internal class DownloadedSongCatalogStore(
         }
     }
 
+    fun persistConfirmedEmpty(context: Context): Boolean {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            NPLogger.w(loggerTag, "主线程拒绝同步写入空下载歌曲目录")
+            return false
+        }
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore(context).persistConfirmedEmpty()
+            }
+        }.onFailure { error ->
+            NPLogger.e(loggerTag, "写入 Room 确认空目录失败，降级写旧 JSON", error)
+        }.map { true }.getOrElse {
+            runCatching {
+                val appContext = context.applicationContext
+                val rootKey = snapshotCacheKeyProvider(appContext)
+                writeLegacyCatalog(appContext, emptyList())
+                File(
+                    appContext.filesDir,
+                    "$cacheFileName$CONFIRMED_EMPTY_CATALOG_MARKER_SUFFIX"
+                ).writeTextAtomically(rootKey)
+            }
+                .onFailure { fallbackError ->
+                    NPLogger.e(loggerTag, "写入空下载目录旧 JSON 也失败", fallbackError)
+                }
+                .isSuccess
+        }
+    }
+
     private fun restoreDurableOrLegacyCatalog(context: Context): List<DownloadedSong>? {
         val appContext = context.applicationContext
         val rootKey = snapshotCacheKeyProvider(appContext)

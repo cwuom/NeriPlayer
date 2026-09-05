@@ -276,7 +276,7 @@ private suspend fun readDownloadProgressBootstrapState(
     context: android.content.Context
 ): DownloadProgressBootstrapState = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
-    if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+    if (PersistentDownloadClearFenceStore.isTaskProgressActive(appContext)) {
         return@withContext DownloadProgressBootstrapState(
             clearFenceActive = true,
             clearProgress = PersistentDownloadClearProgressStore.read(appContext)
@@ -294,7 +294,7 @@ private suspend fun readDownloadProgressBootstrapState(
         excludeUserStoppedOperations = true
     ).map { entry -> entry.request.song.stableKey() }
 
-    if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+    if (PersistentDownloadClearFenceStore.isTaskProgressActive(appContext)) {
         return@withContext DownloadProgressBootstrapState(
             clearFenceActive = true,
             clearProgress = PersistentDownloadClearProgressStore.read(appContext)

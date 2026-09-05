@@ -4122,6 +4122,58 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    /** 按分片一次性移除多首歌曲，避免全库删除退化为逐条 SAF 读写 */
+    internal suspend fun removeFastIndexEntries(
+        context: Context,
+        stableKeys: Collection<String>
+    ): List<ManagedLibraryFastIndexMutationResult> = withContext(Dispatchers.IO) {
+        val normalizedKeys = stableKeys
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        if (normalizedKeys.isEmpty()) return@withContext emptyList()
+        val appContext = context.applicationContext
+        val root = resolveRootBlocking(appContext)
+        val rootIdentity = fastIndexRootIdentity(root)
+        val libraryId = readManagedLibraryIdForRoot(appContext, root, rootIdentity)
+            ?: return@withContext listOf(
+                ManagedLibraryFastIndexMutationResult.Failed(
+                    shard = "",
+                    error = IOException("managed library manifest is unavailable")
+                )
+            )
+        fastIndexMutationCoordinator.mutate(rootIdentity) {
+            fastIndexMutator.removeEntries(
+                rootIdentity = rootIdentity,
+                libraryId = libraryId,
+                stableKeys = normalizedKeys,
+                storage = fastIndexShardStorage(appContext, root, rootIdentity)
+            )
+        }
+    }
+
+    /** 全库物理删除确认后重建空索引，顺便清除不在 catalog 中的陈旧分片 */
+    internal suspend fun clearFastIndexForConfirmedEmptyLibrary(
+        context: Context
+    ): Boolean = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        val rebuildToken = runCatching {
+            captureFastIndexRebuildToken(appContext)
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "全库删除读取 fast index 根失败: ${error.message}", error)
+            return@withContext false
+        }
+        runCatching {
+            persistFastIndex(
+                context = appContext,
+                snapshot = emptyDownloadLibrarySnapshot(),
+                rebuildToken = rebuildToken
+            )
+        }.onFailure { error ->
+            NPLogger.w(TAG, "全库删除清空 fast index 失败: ${error.message}", error)
+        }.getOrDefault(false)
+    }
+
     private fun missingFastIndexManifestResult(
         stableKey: String
     ): ManagedLibraryFastIndexMutationResult.Failed {

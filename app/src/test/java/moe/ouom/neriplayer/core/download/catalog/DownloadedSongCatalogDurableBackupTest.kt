@@ -160,6 +160,13 @@ class DownloadedSongCatalogDurableBackupTest {
     }
 
     @Test
+    fun `confirmed empty marker only applies to the same storage root`() {
+        assertTrue(matchesConfirmedEmptyCatalogMarker(" root-a\n", "root-a"))
+        assertFalse(matchesConfirmedEmptyCatalogMarker("root-b", "root-a"))
+        assertFalse(matchesConfirmedEmptyCatalogMarker(null, "root-a"))
+    }
+
+    @Test
     fun `preview without stable key is consumed by its exact locator`() {
         val backup = song().copy(
             stableKey = null,

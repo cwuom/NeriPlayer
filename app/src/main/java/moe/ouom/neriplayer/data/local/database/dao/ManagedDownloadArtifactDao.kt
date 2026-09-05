@@ -20,6 +20,19 @@ internal interface ManagedDownloadArtifactDao {
     )
     suspend fun findAllByRootKey(rootKey: String): List<ManagedLibraryItemEntity>
 
+    /** 清理前只取计数，避免把全部 artifact payload 放进 CursorWindow */
+    @Query(
+        "SELECT COUNT(*) FROM managed_library_item " +
+            "WHERE library_id = :rootKey"
+    )
+    suspend fun countByRootKey(rootKey: String): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM managed_library_item " +
+            "WHERE library_id = :rootKey AND lease_id IS NOT NULL"
+    )
+    suspend fun countLeasedByRootKey(rootKey: String): Int
+
     @Query(
         "SELECT * FROM managed_library_item " +
             "WHERE library_id = :rootKey AND stable_key IN (:stableKeys)"
@@ -160,4 +173,17 @@ internal interface ManagedDownloadArtifactDao {
         expectedLeaseId: String?,
         expectedUpdatedAtMs: Long
     ): Int
+
+    /** 全库删除确认后只清掉没有活动租约的旧凭据，避免误伤新代次 */
+    @Query(
+        "DELETE FROM managed_library_item " +
+            "WHERE library_id = :rootKey AND lease_id IS NULL"
+    )
+    suspend fun deleteLeaseFreeByRootKey(rootKey: String): Int
+
+    @Query(
+        "DELETE FROM managed_library_item " +
+            "WHERE library_id = :rootKey"
+    )
+    suspend fun deleteAllByRootKey(rootKey: String): Int
 }
