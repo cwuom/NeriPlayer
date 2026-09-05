@@ -46,8 +46,18 @@ internal object AudioDownloadLyricsCoordinator {
             stage: String,
             batchSessionId: Long?,
             attemptId: Long?,
-            requireActiveAttempt: Boolean
+            requireActiveAttempt: Boolean,
+            operationId: String?
         ) -> Unit,
+        writeSidecar: (
+            songKey: String,
+            stage: String,
+            batchSessionId: Long?,
+            attemptId: Long?,
+            requireActiveAttempt: Boolean,
+            operationId: String?,
+            block: () -> String?
+        ) -> String?,
         rememberPartial: (
             songKey: String,
             operationId: String?,
@@ -69,7 +79,8 @@ internal object AudioDownloadLyricsCoordinator {
                 "lyrics_prepare",
                 batchSessionId,
                 attemptId,
-                requireActiveAttempt
+                requireActiveAttempt,
+                operationId
             )
             lyricText = resolveLocalLyric(song.matchedLyric)
             translatedText = resolveLocalLyric(song.matchedTranslatedLyric)
@@ -117,7 +128,8 @@ internal object AudioDownloadLyricsCoordinator {
                 "lyrics_resolved",
                 batchSessionId,
                 attemptId,
-                requireActiveAttempt
+                requireActiveAttempt,
+                operationId
             )
             expectedLyric = !lyricText.isNullOrBlank()
             expectedTranslatedLyric = !translatedText.isNullOrBlank()
@@ -125,7 +137,22 @@ internal object AudioDownloadLyricsCoordinator {
 
             suspend fun writePrimaryLyric(): String? {
                 val lyric = lyricText?.takeIf(String::isNotBlank) ?: return null
-                val reference = writeManagedLyrics(context, song, baseName, lyric, translated = false)
+                val reference = writeSidecar(
+                    songKey,
+                    "lyrics_primary_write",
+                    batchSessionId,
+                    attemptId,
+                    requireActiveAttempt,
+                    operationId
+                ) {
+                    writeManagedLyrics(
+                        context,
+                        song,
+                        baseName,
+                        lyric,
+                        translated = false
+                    )
+                }
                 reference?.let { storedReference ->
                     rememberPartial(
                         songKey,
@@ -143,7 +170,22 @@ internal object AudioDownloadLyricsCoordinator {
 
             suspend fun writeTranslatedLyric(): String? {
                 val lyric = translatedText?.takeIf(String::isNotBlank) ?: return null
-                val reference = writeManagedLyrics(context, song, baseName, lyric, translated = true)
+                val reference = writeSidecar(
+                    songKey,
+                    "lyrics_translated_write",
+                    batchSessionId,
+                    attemptId,
+                    requireActiveAttempt,
+                    operationId
+                ) {
+                    writeManagedLyrics(
+                        context,
+                        song,
+                        baseName,
+                        lyric,
+                        translated = true
+                    )
+                }
                 reference?.let { storedReference ->
                     rememberPartial(
                         songKey,
@@ -169,14 +211,24 @@ internal object AudioDownloadLyricsCoordinator {
                     "lyrics_romanized_write",
                     batchSessionId,
                     attemptId,
-                    requireActiveAttempt
+                    requireActiveAttempt,
+                    operationId
                 )
-                val reference = ManagedDownloadStorage.writeRomanizedLyrics(
-                    context = context,
-                    songId = song.id,
-                    baseName = baseName,
-                    content = lyric
-                )
+                val reference = writeSidecar(
+                    songKey,
+                    "lyrics_romanized_write",
+                    batchSessionId,
+                    attemptId,
+                    requireActiveAttempt,
+                    operationId
+                ) {
+                    ManagedDownloadStorage.writeRomanizedLyrics(
+                        context = context,
+                        songId = song.id,
+                        baseName = baseName,
+                        content = lyric
+                    )
+                }
                 reference?.let { storedReference ->
                     rememberPartial(
                         songKey,
@@ -202,7 +254,8 @@ internal object AudioDownloadLyricsCoordinator {
                     "lyrics_primary_written",
                     batchSessionId,
                     attemptId,
-                    requireActiveAttempt
+                    requireActiveAttempt,
+                    operationId
                 )
                 translatedLyricReference = writeTranslatedLyric()
                 romanizedLyricReference = writeRomanizedLyric()
@@ -221,7 +274,8 @@ internal object AudioDownloadLyricsCoordinator {
                 "lyrics_primary_written",
                 batchSessionId,
                 attemptId,
-                requireActiveAttempt
+                requireActiveAttempt,
+                operationId
             )
         } catch (cancellation: java.util.concurrent.CancellationException) {
             NPLogger.d(TAG, "歌词整理阶段收到取消: ${song.name}")

@@ -11,7 +11,8 @@ import java.util.concurrent.ConcurrentHashMap
 internal class AudioDownloadReferenceOwnership {
     private data class Owner(
         val operationId: String,
-        val attemptId: Long?
+        val attemptId: Long?,
+        val leaseCount: Int
     )
 
     private val ownersBySongKey = ConcurrentHashMap<String, Owner>()
@@ -22,10 +23,50 @@ internal class AudioDownloadReferenceOwnership {
         if (normalizedSongKey.isBlank() || normalizedOperationId.isBlank()) {
             return
         }
-        ownersBySongKey[normalizedSongKey] = Owner(
-            operationId = normalizedOperationId,
-            attemptId = attemptId
-        )
+        ownersBySongKey.compute(normalizedSongKey) { _, current ->
+            if (current?.operationId == normalizedOperationId) {
+                current.copy(
+                    attemptId = attemptId ?: current.attemptId,
+                    leaseCount = current.leaseCount + 1
+                )
+            } else {
+                Owner(
+                    operationId = normalizedOperationId,
+                    attemptId = attemptId,
+                    leaseCount = 1
+                )
+            }
+        }
+    }
+
+    /** core 结束后，增强阶段可以接管空闲歌曲，但不能抢占新代次 */
+    fun claimForEnrichment(songKey: String, operationId: String): Boolean {
+        val normalizedSongKey = songKey.trim()
+        val normalizedOperationId = operationId.trim()
+        if (normalizedSongKey.isBlank() || normalizedOperationId.isBlank()) {
+            return false
+        }
+        var claimed = false
+        ownersBySongKey.compute(normalizedSongKey) { _, current ->
+            when {
+                current == null -> {
+                    claimed = true
+                    Owner(
+                        operationId = normalizedOperationId,
+                        attemptId = null,
+                        leaseCount = 1
+                    )
+                }
+
+                current.operationId == normalizedOperationId -> {
+                    claimed = true
+                    current.copy(leaseCount = current.leaseCount + 1)
+                }
+
+                else -> current
+            }
+        }
+        return claimed
     }
 
     /** 无 operation 的调用是用户级清理或启动恢复，保持兼容的无条件语义 */
@@ -47,7 +88,33 @@ internal class AudioDownloadReferenceOwnership {
             return
         }
         ownersBySongKey.computeIfPresent(normalizedSongKey) { _, current ->
-            if (current.operationId == normalizedOperationId) null else current
+            if (current.operationId != normalizedOperationId) {
+                current
+            } else if (current.leaseCount <= 1) {
+                null
+            } else {
+                current.copy(leaseCount = current.leaseCount - 1)
+            }
         }
+    }
+
+    /** 取消或宿主停止只撤销指定代次，不能删除替代 operation 的租约 */
+    fun revoke(songKey: String, operationIds: Collection<String>) {
+        val normalizedSongKey = songKey.trim()
+        val normalizedOperationIds = operationIds
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        if (normalizedSongKey.isBlank() || normalizedOperationIds.isEmpty()) {
+            return
+        }
+        ownersBySongKey.computeIfPresent(normalizedSongKey) { _, current ->
+            if (current.operationId in normalizedOperationIds) null else current
+        }
+    }
+
+    /** 全局清空时撤销所有旧租约，新的 operation 会在下一次 begin 时重新登记 */
+    fun revokeAll() {
+        ownersBySongKey.clear()
     }
 }

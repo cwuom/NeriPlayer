@@ -17,13 +17,15 @@ internal fun shouldAbortDownloadWork(
     batchSessionCurrent: Boolean,
     songCancelled: Boolean,
     networkPolicyPaused: Boolean,
-    attemptAllowsWork: Boolean
+    attemptAllowsWork: Boolean,
+    operationAllowsWork: Boolean = true
 ): Boolean {
     return allDownloadsCancelled ||
         !batchSessionCurrent ||
         songCancelled ||
         networkPolicyPaused ||
-        !attemptAllowsWork
+        !attemptAllowsWork ||
+        !operationAllowsWork
 }
 
 /** system and stale-attempt cancellation must leave a resumable staging file behind */
@@ -462,4 +464,3 @@ internal fun coreCommittedSeedMetadataJson(rawMetadata: String): String? {
             .toString()
     }.getOrNull()
 }
-

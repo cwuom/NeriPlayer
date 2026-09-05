@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.joinAll
@@ -32,6 +33,7 @@ internal class AudioDownloadBatchCoordinator(
     private val latestProgressByOperation: StateFlow<
         Map<String, AudioDownloadManager.DownloadProgress>
     >,
+    private val latestProgressEvents: SharedFlow<AudioDownloadManager.DownloadProgress>,
     private val maxCompletionCallbacks: Int,
     private val hooks: Hooks,
     private val tag: String = "NERI-Downloader"
@@ -202,27 +204,39 @@ internal class AudioDownloadBatchCoordinator(
                     requestedParallelism = maxConcurrentDownloads
                 )
 
-                val progressJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                suspend fun acceptProgress(progress: AudioDownloadManager.DownloadProgress) {
+                    if (!hooks.isBatchSessionCurrent(batchSessionId)) {
+                        return
+                    }
+                    if (!trackedSongByKey.containsKey(progress.songKey)) {
+                        return
+                    }
+                    val expectedAttemptId = songAttemptIds[progress.songKey]
+                    if (
+                        expectedAttemptId != null &&
+                            progress.attemptId != expectedAttemptId
+                    ) {
+                        return
+                    }
+                    progressMutex.withLock {
+                        val previous = latestProgressBySongKey[progress.songKey]
+                        latestProgressBySongKey[progress.songKey] =
+                            AudioDownloadProgressPolicy.mergeLatestProgress(previous, progress)
+                    }
+                    publishBatchProgress()
+                }
+
+                // 快照只作为有界补偿，增量事件负责低延迟更新，避免为每个事件扫描整图
+                val progressSnapshotJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     latestProgressByOperation.collect { latestProgress ->
-                        if (!hooks.isBatchSessionCurrent(batchSessionId)) {
-                            return@collect
-                        }
                         latestProgress.values.forEach { progress ->
-                            if (!trackedSongByKey.containsKey(progress.songKey)) {
-                                return@forEach
-                            }
-                            val expectedAttemptId = songAttemptIds[progress.songKey]
-                            if (
-                                expectedAttemptId != null &&
-                                    progress.attemptId != expectedAttemptId
-                            ) {
-                                return@forEach
-                            }
-                            progressMutex.withLock {
-                                latestProgressBySongKey[progress.songKey] = progress
-                            }
+                            acceptProgress(progress)
                         }
-                        publishBatchProgress()
+                    }
+                }
+                val progressJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                    latestProgressEvents.collect { progress ->
+                        acceptProgress(progress)
                     }
                 }
                 val completionDispatcher = BatchDownloadCompletionDispatcher(
@@ -363,6 +377,7 @@ internal class AudioDownloadBatchCoordinator(
                     // 先等进度收集器退出，再结束 session，避免旧批次回调污染下一批
                     withContext(kotlinx.coroutines.NonCancellable) {
                         progressJob.cancelAndJoin()
+                        progressSnapshotJob.cancelAndJoin()
                     }
                 }
 

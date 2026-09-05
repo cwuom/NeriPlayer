@@ -44,6 +44,17 @@ internal class AudioDownloadCoverCoordinator(
         operationId: String?,
         block: (Response) -> String?
     ) -> String?,
+    private val commitCover: (
+        context: Context,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String?,
+        songKey: String,
+        batchSessionId: Long?,
+        attemptId: Long?,
+        requireActiveAttempt: Boolean,
+        operationId: String?
+    ) -> String?,
     private val rememberPartial: (
         songKey: String,
         operationId: String?,
@@ -268,12 +279,17 @@ internal class AudioDownloadCoverCoordinator(
                 requireActiveAttempt,
                 operationId
             )
-            ManagedDownloadStorage.commitCoverBytes(
-                context = context,
-                bytes = bytes,
-                fileName = coverFileName,
-                mimeType = contentType.takeIf(String::isNotBlank)
-            )?.reference
+            commitCover(
+                context,
+                bytes,
+                coverFileName,
+                contentType.takeIf(String::isNotBlank),
+                songKey,
+                batchSessionId,
+                attemptId,
+                requireActiveAttempt,
+                operationId
+            )
         }
     }
 

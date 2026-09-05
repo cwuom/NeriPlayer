@@ -386,6 +386,16 @@ class AudioDownloadManagerTest {
                 attemptAllowsWork = true
             )
         )
+        assertTrue(
+            shouldAbortDownloadWork(
+                allDownloadsCancelled = false,
+                batchSessionCurrent = true,
+                songCancelled = false,
+                networkPolicyPaused = false,
+                attemptAllowsWork = true,
+                operationAllowsWork = false
+            )
+        )
     }
 
     @Test
@@ -433,20 +443,24 @@ class AudioDownloadManagerTest {
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
                 "AudioDownloadBatchCoordinator.kt"
         ).readText()
+        val hlsSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadHlsTransfer.kt"
+        ).readText()
         val pauseBody = methodBody(source, "pauseDownloadsForNetworkPolicy")
         val executionBody = methodBody(source, "executeDownloadSong")
-        val hlsBody = methodBody(source, "singleThreadHlsDownload")
 
         assertFalse(pauseBody.contains("_isCancelled.value = true"))
         assertFalse(pauseBody.contains("invalidateBatchSession()"))
         assertFalse(pauseBody.contains("_batchProgressFlow.value = null"))
-        assertTrue(pauseBody.contains("snapshotActiveCalls(songKey)"))
+        assertTrue(pauseBody.contains("activeOperationIdsForSongLocked"))
+        assertTrue(pauseBody.contains("operationRegistry.revokeReference"))
         assertTrue(source.contains("clearVisibleProgressForSong(songKey)"))
         assertTrue(executionBody.contains("stage = \"source_resolved\""))
         assertTrue(executionBody.contains("stage = \"prepare_working_file\""))
-        assertTrue(hlsBody.contains("stage = \"hls_resume_reset\""))
-        assertTrue(hlsBody.contains("stage = \"hls_open_working_file\""))
-        assertFalse(hlsBody.contains("clearHlsResumeState(destFile)\n\n        NPLogger.d"))
+        assertTrue(hlsSource.contains("stage = \"hls_resume_reset\""))
+        assertTrue(hlsSource.contains("stage = \"hls_open_working_file\""))
+        assertFalse(hlsSource.contains("clearHlsResumeState(destFile)\n\n        NPLogger.d"))
         assertTrue(batchSource.contains("onSongPausedForNetworkPolicy"))
         assertTrue(batchSource.contains("queuedCompletion == null && !pausedForNetworkPolicy"))
     }
@@ -1159,6 +1173,11 @@ class AudioDownloadManagerTest {
             )
         )
         assertTrue(managerSource.contains("private val referenceOwnership"))
+        assertTrue(managerSource.contains("claimReferenceOwnershipForEnrichment"))
+        assertTrue(managerSource.contains("operationAllowsWork = operationAllowsWork"))
+        assertTrue(managerSource.contains("GlobalDownloadManager.withSongExecutionLock(songKey)"))
+        assertTrue(managerSource.contains("operationId = effectiveOperationId"))
+        assertTrue(managerSource.contains("operationRegistry.revokeAllReferences()"))
         assertTrue(
             managerSource.contains(
                 "clearCompletedAudioReference(songKey, operationId = effectiveOperationId)"

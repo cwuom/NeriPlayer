@@ -124,6 +124,7 @@ import moe.ouom.neriplayer.core.download.observability.DownloadStartupRecoveryJo
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.DownloadProgressProjectionStore
 import moe.ouom.neriplayer.core.player.download.isFormalManagedAudioReference
 import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
@@ -392,13 +393,11 @@ object GlobalDownloadManager {
         StateFlow<MobileDataDownloadInterruptionRequest?> =
         _mobileDataDownloadInterruptionRequest.asStateFlow()
 
-    private val latestProgressByOperationLock = Any()
-    private val _latestProgressByOperation = MutableStateFlow<
-        Map<String, AudioDownloadManager.DownloadProgress>
-        >(emptyMap())
+    private val latestProgressProjectionStore =
+        DownloadProgressProjectionStore()
     internal val latestProgressByOperation: StateFlow<
         Map<String, AudioDownloadManager.DownloadProgress>
-        > = _latestProgressByOperation
+        > = latestProgressProjectionStore.snapshot
     private val activeProgressCheckpointBindings =
         ConcurrentHashMap<String, ActiveProgressCheckpointBinding>()
 
@@ -434,7 +433,7 @@ object GlobalDownloadManager {
         MutableStateFlow<Map<Long, BatchDownloadPresentationState>>(emptyMap())
     val downloadTasks: StateFlow<List<DownloadTask>> = combine(
         taskStore.downloadTasks,
-        _latestProgressByOperation
+        latestProgressByOperation
     ) { tasks, latestProgress ->
         overlayLatestProgress(tasks, latestProgress)
     }.stateIn(
@@ -4509,20 +4508,22 @@ object GlobalDownloadManager {
 
     private fun observeDownloadProgress() {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            AudioDownloadManager.latestProgressByOperation.collect { latestProgress ->
+            // 启动时只回放一次快照，运行中消费增量，避免每次更新扫描全量 operation
+            AudioDownloadManager.latestProgressSnapshot().forEach { progress ->
+                updateDownloadProgress(progress)
+            }
+            AudioDownloadManager.latestProgressEvents.collect { progress ->
+                updateDownloadProgress(progress)
+            }
+        }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            // 增量事件可能在高峰期丢弃，低频快照负责有界补偿而不是忙等
+            AudioDownloadManager.latestProgressByOperation.collect {
+                latestProgress ->
                 latestProgress.values.forEach { progress ->
                     updateDownloadProgress(progress)
                 }
             }
-        }
-    }
-
-    private fun latestProgressOperationKey(
-        progress: AudioDownloadManager.DownloadProgress
-    ): String {
-        val operationId = progress.operationId?.trim().orEmpty()
-        return operationId.ifBlank {
-            "${progress.songKey}#${progress.attemptId ?: 0L}"
         }
     }
 
@@ -4586,37 +4587,15 @@ object GlobalDownloadManager {
     private fun recordLatestDownloadProgress(
         progress: AudioDownloadManager.DownloadProgress
     ): AudioDownloadManager.DownloadProgress {
-        val key = latestProgressOperationKey(progress)
-        synchronized(latestProgressByOperationLock) {
-            val previous = _latestProgressByOperation.value[key]
-            val effective = AudioDownloadManager.mergeLatestProgress(previous, progress)
-            if (effective != previous) {
-                val updated = _latestProgressByOperation.value.toMutableMap()
-                updated[key] = effective
-                _latestProgressByOperation.value = updated
-            }
-            return effective
-        }
+        return latestProgressProjectionStore.record(progress)
     }
 
     private fun clearLatestProgressForOperation(operationId: String?) {
-        val normalizedOperationId = operationId?.trim().orEmpty()
-        if (normalizedOperationId.isBlank()) return
-        synchronized(latestProgressByOperationLock) {
-            if (_latestProgressByOperation.value.containsKey(normalizedOperationId)) {
-                val updated = _latestProgressByOperation.value.toMutableMap()
-                updated.remove(normalizedOperationId)
-                _latestProgressByOperation.value = updated
-            }
-        }
+        latestProgressProjectionStore.remove(operationId)
     }
 
     private fun clearAllLatestProgress() {
-        synchronized(latestProgressByOperationLock) {
-            if (_latestProgressByOperation.value.isNotEmpty()) {
-                _latestProgressByOperation.value = emptyMap()
-            }
-        }
+        latestProgressProjectionStore.clear()
     }
 
     private fun enqueueProgressCheckpoint(
@@ -4721,9 +4700,7 @@ object GlobalDownloadManager {
             songKey = songKey,
             attemptId = binding.attemptId,
             operationId = binding.operationId
-        ) ?: synchronized(latestProgressByOperationLock) {
-            _latestProgressByOperation.value[binding.operationId]
-        } ?: return
+        ) ?: latestProgressProjectionStore.latest(binding.operationId) ?: return
         val bytesToPersist = when {
             progress.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ->
                 progress.bytesRead.coerceAtLeast(0L)
