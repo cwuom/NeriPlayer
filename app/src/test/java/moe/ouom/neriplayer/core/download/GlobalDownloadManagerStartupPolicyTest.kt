@@ -1194,6 +1194,25 @@ class GlobalDownloadManagerStartupPolicyTest {
                 userStopped = false
             )
         )
+        assertTrue(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "ASSETS_ENRICHING",
+                metadataActionRequired = false,
+                userStopped = false,
+                allowInFlightState = true
+            )
+        )
+        assertFalse(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "ASSETS_ENRICHING",
+                metadataActionRequired = false,
+                userStopped = false,
+                allowInFlightState = true,
+                songCancelled = true
+            )
+        )
     }
 
     @Test
@@ -2822,6 +2841,52 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(startBody.contains("withSongExecutionLock(songKey, releasable = true)"))
         assertTrue(networkReleaseIndex > settleIndex)
         assertTrue(downloadIndex > networkReleaseIndex)
+    }
+
+    @Test
+    fun `execution cancellation after core commit keeps artifact lease for recovery`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val startBody = source.substringAfter("private suspend fun startDownloadConfirmed")
+            .substringBefore("fun startBatchDownload(context")
+        val cancellationBody = startBody.substringAfter("catch (_: CancellationException)")
+        val recoveryIndex = cancellationBody.indexOf(
+            "recoverCorePublicationAfterExecutionCancellation("
+        )
+        val releaseIndex = cancellationBody.indexOf("releaseDownloadArtifactClaim(")
+        val recoveryHelperBody = source.substringAfter(
+            "private suspend fun recoverCorePublicationAfterExecutionCancellation("
+        ).substringBefore("/** pending 提升失败时只保留可恢复凭据")
+        val resolverBody = source.substringAfter(
+            "private suspend fun resolveCoreRecoveryAudioCandidate("
+        ).substringBefore("private suspend fun recoverPendingAudioWritesFromRoot")
+        val recoveryScheduleIndex = recoveryHelperBody.indexOf(
+            "scheduleStartupArtifactRecovery(appContext)"
+        )
+        val publicationLeaseIndex = recoveryHelperBody.indexOf(
+            "ManagedDownloadDirectoryMutationFence.acquireCommitLeaseOrNull("
+        )
+        val promotionIndex = recoveryHelperBody.indexOf(
+            "corePublicationCoordinator.promoteBeforePublication("
+        )
+        val deferIndex = recoveryHelperBody.indexOf(
+            "deferPendingCorePublication("
+        )
+        val resolverIndex = recoveryHelperBody.indexOf(
+            "resolveCoreRecoveryAudioCandidate("
+        )
+
+        assertTrue(recoveryIndex >= 0)
+        assertTrue(releaseIndex > recoveryIndex)
+        assertTrue(recoveryScheduleIndex >= 0)
+        assertTrue(publicationLeaseIndex >= 0)
+        assertTrue(promotionIndex > publicationLeaseIndex)
+        assertTrue(deferIndex > promotionIndex)
+        assertTrue(resolverIndex >= 0)
+        assertTrue(resolverBody.contains("pendingAudioEntries"))
+        assertTrue(resolverBody.contains("cachedDownloadLibrarySnapshot"))
+        assertTrue(resolverBody.contains("isDurableCoreArtifactState"))
     }
 
     @Test
@@ -4747,6 +4812,19 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertFalse(merged.single().cancelled)
         assertEquals("replacement-operation", merged.single().operationId)
         assertNull(merged.single().workingFile)
+    }
+
+    @Test
+    fun `metadata-less pending recovery refuses ambiguous same-name files`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val recoveryBody = source.substringAfter(
+            "val metadataLessPendingCandidates = candidates.values"
+        ).substringBefore("return CoreRecoveryAudioCandidate(")
+
+        assertTrue(recoveryBody.contains("singleOrNull()"))
+        assertFalse(recoveryBody.contains("maxWithOrNull"))
     }
 
     private fun recoverySong(id: Long, name: String): SongItem {

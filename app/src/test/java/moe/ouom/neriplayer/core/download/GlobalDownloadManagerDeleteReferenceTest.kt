@@ -215,6 +215,78 @@ class GlobalDownloadManagerDeleteReferenceTest {
     }
 
     @Test
+    fun `complete full library snapshot settles stale catalog rows from physical deletion`() {
+        val firstSong = downloadedSong(id = 1L, name = "first")
+        val secondSong = downloadedSong(id = 2L, name = "second")
+        val stalePerSongResult = DownloadedSongDeleteResult(
+            deletedSongs = emptyList(),
+            failedSongs = listOf(firstSong, secondSong)
+        )
+
+        val result = resolveConfirmedFullLibraryDeleteResult(
+            targetSongs = listOf(firstSong, secondSong),
+            snapshotComplete = true,
+            requestedReferences = setOf("current-audio", "current-metadata"),
+            deletedReferences = setOf("current-audio", "current-metadata"),
+            fallback = stalePerSongResult
+        )
+
+        assertEquals(listOf(firstSong, secondSong), result.deletedSongs)
+        assertTrue(result.failedSongs.isEmpty())
+    }
+
+    @Test
+    fun `complete physical rescan settles rows when another idempotent delete consumed references`() {
+        val song = downloadedSong(id = 7L, name = "already gone")
+        val fallback = DownloadedSongDeleteResult(
+            deletedSongs = emptyList(),
+            failedSongs = listOf(song)
+        )
+
+        val result = resolveConfirmedFullLibraryDeleteResult(
+            targetSongs = listOf(song),
+            snapshotComplete = true,
+            requestedReferences = setOf("stale-audio", "stale-meta"),
+            deletedReferences = emptySet(),
+            remainingReferences = emptySet(),
+            fallback = fallback
+        )
+
+        assertEquals(listOf(song), result.deletedSongs)
+        assertTrue(result.failedSongs.isEmpty())
+    }
+
+    @Test
+    fun `full delete ignores stale references already removed in the first pass`() {
+        assertTrue(
+            resolveFullLibraryRemainingReferences(
+                verificationReferences = setOf("stale-audio", "still-present"),
+                deletedReferences = setOf("stale-audio"),
+                residualDeletedReferences = emptySet()
+            ) == setOf("still-present")
+        )
+    }
+
+    @Test
+    fun `incomplete full library snapshot retains stale catalog rows for recovery`() {
+        val song = downloadedSong(id = 1L, name = "retained")
+        val fallback = DownloadedSongDeleteResult(
+            deletedSongs = emptyList(),
+            failedSongs = listOf(song)
+        )
+
+        val result = resolveConfirmedFullLibraryDeleteResult(
+            targetSongs = listOf(song),
+            snapshotComplete = false,
+            requestedReferences = emptySet(),
+            deletedReferences = emptySet(),
+            fallback = fallback
+        )
+
+        assertEquals(fallback, result)
+    }
+
+    @Test
     fun `deletion result merge keeps concurrent downloads and restores failed entries`() {
         val deletedSong = downloadedSong(id = 1L, name = "deleted", downloadTime = 1L)
         val failedSong = downloadedSong(id = 2L, name = "failed", downloadTime = 2L)

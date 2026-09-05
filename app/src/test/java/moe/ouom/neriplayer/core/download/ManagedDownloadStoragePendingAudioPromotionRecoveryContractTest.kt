@@ -157,6 +157,21 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
         )
     }
 
+    @Test
+    fun `copy path reuses verified size and checks copied bytes`() {
+        val source = readStorageSource()
+        val promotion = source
+            .substringAfter("private suspend fun promotePendingAudio")
+            .substringBefore("internal fun resolvePendingTreeAudioPromotionExpectedSize")
+        val copy = source
+            .substringAfter("private suspend fun copyPendingTreeAudioWithoutReplacing")
+            .substringBefore("private fun discardNewTreePromotionTarget")
+
+        assertTrue(promotion.contains("audio.sizeKnown && it > 0L"))
+        assertTrue(copy.contains("val copiedBytes = source.copyTo"))
+        assertTrue(copy.contains("copiedBytes != expectedSizeBytes"))
+    }
+
     private fun readStorageSource(): String {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {

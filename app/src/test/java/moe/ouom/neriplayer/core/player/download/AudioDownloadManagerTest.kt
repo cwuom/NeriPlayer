@@ -2322,6 +2322,20 @@ class AudioDownloadManagerTest {
         assertEquals(0L, AudioDownloadManager.advanceRetryWakeSignalVersion(Long.MAX_VALUE))
     }
 
+    @Test
+    fun `new transfer clears stale core marker before registering operation`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "executeDownloadSong")
+        val clearIndex = body.indexOf("operationRegistry.clearCoreCommitted(")
+        val beginIndex = body.indexOf("beginSongDownloadOperation(")
+
+        assertTrue(clearIndex >= 0)
+        assertTrue(beginIndex > clearIndex)
+    }
+
     private fun methodBody(
         source: String,
         methodName: String,

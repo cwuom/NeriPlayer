@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,6 +9,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadExecutionDurableStatePolicyTest {
+    @Test
+    fun `post core states are not eligible for destructive host pause`() {
+        listOf(
+            "CORE_COMMITTED",
+            "ASSETS_ENRICHING",
+            "FINALIZED",
+            "DEGRADED_COMPLETE",
+            "COMPLETED",
+            METADATA_ACTION_REQUIRED_OPERATION_STATE
+        ).forEach { state ->
+            assertTrue("expected post-core state: $state", isPostCoreDownloadOperationState(state))
+        }
+        assertTrue(isPostCoreDownloadOperationState(" completed "))
+        assertFalse(isPostCoreDownloadOperationState("RUNNING"))
+        assertFalse(isPostCoreDownloadOperationState("CANCELLED"))
+    }
+
     @Test
     fun `core operation states reject retry and cancellation transitions`() {
         val durableStates = listOf(
@@ -27,6 +45,30 @@ class DownloadExecutionDurableStatePolicyTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun `legacy completed pending recovery has a dedicated reopen path`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadExecutionRoomStore.kt"
+        )
+        val text = source.readText()
+        val method = text.substringAfter("suspend fun reopenCorePublicationRecovery(")
+            .substringBefore("suspend fun markScheduleRejectedRetryable(")
+        assertTrue(method.contains("header.state !in setOf(\"COMPLETED\", \"FINALIZED\")"))
+        assertTrue(method.contains("header.stopRequestedByUser"))
+        assertTrue(method.contains("state = \"DEGRADED_COMPLETE\""))
+    }
+
+    private fun locateProjectFile(path: String): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile ?: return@repeat
+        }
+        error("project source file not found: $path")
     }
 
     @Test

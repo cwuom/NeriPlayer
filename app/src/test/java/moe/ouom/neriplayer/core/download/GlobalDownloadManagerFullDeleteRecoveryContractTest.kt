@@ -82,7 +82,7 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
 
         assertTrue(deleteBody.contains("buildFullLibraryDeletePlan(appContext)"))
         val remainingIndex = deleteBody.indexOf(
-            "val remainingReferences = requestedReferences - deletedReferences"
+            "val remainingReferences = verifiedRemainingReferences"
         )
         val clearIndex = deleteBody.indexOf(
             "PersistentDownloadedSongDeleteIntentStore.clear(appContext)"

@@ -34,6 +34,10 @@ class DownloadOperationStateTest {
             "FINALIZED",
             resolveDownloadOperationState("DEGRADED_COMPLETE", "FINALIZED")
         )
+        assertEquals(
+            "DEGRADED_COMPLETE",
+            resolveDownloadOperationState("ASSETS_ENRICHING", "DEGRADED_COMPLETE")
+        )
         assertNull(resolveDownloadOperationState("CORE_COMMITTED", "RETRYABLE"))
         assertNull(
             resolveDownloadOperationState(

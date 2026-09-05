@@ -276,6 +276,39 @@ internal object DownloadExecutionRoomStore {
         ) > 0
     }
 
+    /**
+     * 旧版本可能先把任务写成完成态，再留下 pending 音频
+     * 只有调用方已经确认物理引用仍是 pending 时，才允许重新打开收尾入口
+     */
+    suspend fun reopenCorePublicationRecovery(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        errorCode: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        if (operationId.isBlank()) return false
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val header = dao.findHeader(operationId) ?: return@withTransaction false
+            if (
+                header.stableKey != normalizedKey ||
+                    header.stopRequestedByUser ||
+                    header.state !in setOf("COMPLETED", "FINALIZED")
+            ) {
+                return@withTransaction false
+            }
+            dao.transitionState(
+                operationId = operationId,
+                expectedStates = listOf(header.state),
+                state = "DEGRADED_COMPLETE",
+                updatedAtMs = System.currentTimeMillis(),
+                errorCode = errorCode
+            ) > 0
+        }
+    }
+
     suspend fun markScheduleRejectedRetryable(
         context: Context,
         operationId: String,

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import java.util.Locale
+
 /**
  * 下载 operation 的持久状态
  *
@@ -37,6 +39,19 @@ internal enum class DownloadOperationState(
             return value?.trim()?.let(byWireName::get) ?: UNKNOWN
         }
     }
+}
+
+/** 核心音频已经可靠落盘，宿主停止只能等待收尾或交给恢复流程 */
+internal fun isPostCoreDownloadOperationState(state: String?): Boolean {
+    return state?.trim()?.uppercase(Locale.ROOT) in setOf(
+        DownloadOperationState.CORE_COMMITTED.wireName,
+        DownloadOperationState.ASSETS_ENRICHING.wireName,
+        DownloadOperationState.FINALIZED.wireName,
+        DownloadOperationState.DEGRADED_COMPLETE.wireName,
+        DownloadOperationState.COMPLETED.wireName,
+        DownloadOperationState.METADATA_ACTION_REQUIRED.wireName,
+        "COMPLETE"
+    )
 }
 
 internal object DownloadOperationStateTransitions {

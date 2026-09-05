@@ -280,12 +280,22 @@ internal fun shouldSchedulePostCoreEnrichmentRetry(
     coreAudioCommitted: Boolean,
     operationState: String?,
     metadataActionRequired: Boolean,
-    userStopped: Boolean
+    userStopped: Boolean,
+    allowInFlightState: Boolean = false,
+    songCancelled: Boolean = false
 ): Boolean {
     return coreAudioCommitted &&
-        operationState == "DEGRADED_COMPLETE" &&
+        (
+            operationState == "DEGRADED_COMPLETE" ||
+                allowInFlightState && operationState in setOf(
+                    "CORE_COMMITTED",
+                    "ASSETS_ENRICHING",
+                    "COMPLETED"
+                )
+            ) &&
         !metadataActionRequired &&
-        !userStopped
+        !userStopped &&
+        !songCancelled
 }
 
 /**

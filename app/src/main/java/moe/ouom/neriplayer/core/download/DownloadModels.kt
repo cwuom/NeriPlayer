@@ -286,6 +286,33 @@ internal fun resolveDownloadedSongDeleteResult(
     )
 }
 
+/** 完整目录快照已确认时，以物理引用结果为准，避免旧 catalog 重新复活 */
+internal fun resolveConfirmedFullLibraryDeleteResult(
+    targetSongs: List<DownloadedSong>,
+    snapshotComplete: Boolean,
+    requestedReferences: Set<String>,
+    deletedReferences: Set<String>,
+    remainingReferences: Set<String>? = null,
+    fallback: DownloadedSongDeleteResult
+): DownloadedSongDeleteResult {
+    val unresolvedReferences = remainingReferences
+        ?: requestedReferences.minus(deletedReferences)
+    if (!snapshotComplete || unresolvedReferences.isNotEmpty()) {
+        return fallback
+    }
+    return DownloadedSongDeleteResult(
+        deletedSongs = targetSongs.distinctBy(DownloadedSong::deletionIdentity),
+        failedSongs = emptyList()
+    )
+}
+
+/** 复查快照可能带着旧缓存引用，必须扣除两轮已确认删除的对象 */
+internal fun resolveFullLibraryRemainingReferences(
+    verificationReferences: Set<String>,
+    deletedReferences: Set<String>,
+    residualDeletedReferences: Set<String>
+): Set<String> = verificationReferences - deletedReferences - residualDeletedReferences
+
 internal fun mergeDownloadedSongsAfterDelete(
     currentSongs: List<DownloadedSong>,
     previousSongs: List<DownloadedSong>,

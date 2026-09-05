@@ -68,4 +68,42 @@ class AudioDownloadOperationRegistryTest {
         registry.clearNetworkPolicyPaused()
         assertFalse(registry.isNetworkPolicyPaused("song-b"))
     }
+
+    @Test
+    fun `core committed marker survives transfer completion until finalization`() {
+        val registry = AudioDownloadOperationRegistry(AudioDownloadReferenceOwnership())
+
+        registry.beginSongDownloadOperation("song", "operation", attemptId = 1L)
+        assertTrue(
+            registry.markCoreCommittedIfOwned(
+                songKey = "song",
+                operationId = "operation",
+                attemptId = 1L
+            )
+        )
+        registry.endSongDownloadOperation("song", "operation")
+
+        assertTrue(registry.isCoreCommitted("operation"))
+
+        registry.clearCoreCommitted("operation")
+
+        assertFalse(registry.isCoreCommitted("operation"))
+    }
+
+    @Test
+    fun `revoked operation cannot reestablish core protection`() {
+        val registry = AudioDownloadOperationRegistry(AudioDownloadReferenceOwnership())
+
+        registry.beginSongDownloadOperation("song", "operation", attemptId = 1L)
+        registry.revokeReference("song", setOf("operation"))
+
+        assertFalse(
+            registry.markCoreCommittedIfOwned(
+                songKey = "song",
+                operationId = "operation",
+                attemptId = 1L
+            )
+        )
+        assertFalse(registry.isCoreCommitted("operation"))
+    }
 }

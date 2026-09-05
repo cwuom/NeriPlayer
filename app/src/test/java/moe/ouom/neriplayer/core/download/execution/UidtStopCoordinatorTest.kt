@@ -50,6 +50,8 @@ class UidtStopCoordinatorTest {
         assertTrue(
             prepareStop.contains("AudioDownloadManager.pauseOperationDownloadForExecutionHost")
         )
+        assertTrue(prepareStop.contains("isCoreCommittedOperation"))
+        assertTrue(prepareStop.contains("clearOperationPauseForExecutionHost"))
 
         val workerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +

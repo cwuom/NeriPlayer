@@ -907,7 +907,12 @@ class DefaultDownloadExecutionHost(
             }
         }
         // 先于 Job/Worker 的取消建立保留标记，避免宿主回调与下载收尾并发时删除 staging
-        AudioDownloadManager.pauseOperationDownloadForExecutionHost(normalizedId)
+        if (AudioDownloadManager.isCoreCommittedOperation(normalizedId)) {
+            // core 已经提交后，onStopJob 只能中断宿主，不得撤销增强阶段的引用所有权
+            AudioDownloadManager.clearOperationPauseForExecutionHost(normalizedId)
+        } else {
+            AudioDownloadManager.pauseOperationDownloadForExecutionHost(normalizedId)
+        }
     }
 
     private fun stopInternal(
@@ -929,6 +934,12 @@ class DefaultDownloadExecutionHost(
         ) {
             val currentState = operationStore.currentState(appContext, normalizedId)
             if (!shouldHandleHostStop(currentState)) {
+                // onStopJob 可能先于这里建立暂停标记。核心已提交时只清掉
+                // 这个过期标记，不能让后台资产收尾被误判为用户取消
+                AudioDownloadManager.pauseOperationDownloadForExecutionHost(
+                    operationId = normalizedId,
+                    durableState = currentState
+                )
                 if (preventReschedule) {
                     WifiBoundDownloadWakeWorker.cancel(appContext, normalizedId)
                 }
@@ -967,7 +978,8 @@ class DefaultDownloadExecutionHost(
                 songKey = request.song.stableKey(),
                 expectedAttemptId = request.attemptId,
                 rememberForRetry = retryPrepared,
-                operationId = normalizedId
+                operationId = normalizedId,
+                knownOperationState = currentState
             )
             if (rescheduleBlocked || !retryPrepared) {
                 operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
@@ -1448,7 +1460,8 @@ class DefaultDownloadExecutionHost(
                     songKey = initialRequest.song.stableKey(),
                     expectedAttemptId = initialRequest.attemptId,
                     rememberForRetry = retryPrepared,
-                    operationId = normalizedId
+                    operationId = normalizedId,
+                    knownOperationState = latestState
                 )
             }
             throw cancellation

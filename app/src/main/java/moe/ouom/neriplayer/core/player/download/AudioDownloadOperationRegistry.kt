@@ -19,6 +19,8 @@ internal class AudioDownloadOperationRegistry(
     private val activeOperationCounts = ConcurrentHashMap<String, Int>()
     private val activeSongKeyByOperationId = ConcurrentHashMap<String, String>()
     private val executionHostPausedOperationIds = ConcurrentHashMap.newKeySet<String>()
+    /** core 提交后仍需允许后台增强，不能被宿主生命周期回调撤销 */
+    private val coreCommittedOperationIds = ConcurrentHashMap.newKeySet<String>()
 
     fun <T> withMutationLock(block: () -> T): T = synchronized(mutationLock) {
         block()
@@ -210,6 +212,48 @@ internal class AudioDownloadOperationRegistry(
     fun clearExecutionHostPaused(operationId: String) {
         synchronized(mutationLock) {
             executionHostPausedOperationIds.remove(operationId)
+        }
+    }
+
+    fun markCoreCommitted(operationId: String) {
+        val normalizedId = operationId.trim()
+        if (normalizedId.isBlank()) return
+        synchronized(mutationLock) {
+            coreCommittedOperationIds.add(normalizedId)
+        }
+    }
+
+    /** 只有当前代次仍持有引用时才登记 core，避免取消竞态重新打开旧 operation */
+    fun markCoreCommittedIfOwned(
+        songKey: String,
+        operationId: String,
+        attemptId: Long?
+    ): Boolean {
+        val normalizedSongKey = songKey.trim()
+        val normalizedId = operationId.trim()
+        if (normalizedSongKey.isBlank() || normalizedId.isBlank()) return false
+        return synchronized(mutationLock) {
+            if (!referenceOwnership.allows(normalizedSongKey, normalizedId, attemptId)) {
+                false
+            } else {
+                coreCommittedOperationIds.add(normalizedId)
+                true
+            }
+        }
+    }
+
+    fun clearCoreCommitted(operationId: String) {
+        val normalizedId = operationId.trim()
+        if (normalizedId.isBlank()) return
+        synchronized(mutationLock) {
+            coreCommittedOperationIds.remove(normalizedId)
+        }
+    }
+
+    fun isCoreCommitted(operationId: String): Boolean {
+        val normalizedId = operationId.trim()
+        return normalizedId.isNotBlank() && synchronized(mutationLock) {
+            coreCommittedOperationIds.contains(normalizedId)
         }
     }
 

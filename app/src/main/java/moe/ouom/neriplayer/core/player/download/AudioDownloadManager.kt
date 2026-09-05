@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
+import moe.ouom.neriplayer.core.download.execution.isPostCoreDownloadOperationState
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup
 import moe.ouom.neriplayer.core.download.shouldRollbackCancelledAudio
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
@@ -1590,6 +1591,7 @@ object AudioDownloadManager {
         if (normalizedIds.isEmpty()) return 0
         val calls = operationRegistry.withMutationLock {
             // 先封存 operation，再取消当前调用，防止旧协程在取消窗口内新建请求
+            normalizedIds.forEach(operationRegistry::clearCoreCommitted)
             operationRegistry.markExecutionHostPaused(normalizedIds)
             operationRegistry.revokeReference(songKey, normalizedIds)
             snapshotActiveCalls(normalizedIds)
@@ -1617,26 +1619,59 @@ object AudioDownloadManager {
     }
 
     /** 在系统取消协程前建立保留标记，避免取消异常先删除可续传文件 */
-    internal fun pauseOperationDownloadForExecutionHost(operationId: String): Boolean {
+    internal fun pauseOperationDownloadForExecutionHost(
+        operationId: String,
+        durableState: String? = null
+    ): Boolean {
         val normalizedId = operationId.trim().takeIf(String::isNotBlank) ?: return false
-        val songKey = operationRegistry.songKeyForOperation(normalizedId) ?: return false
-        val calls = operationRegistry.withMutationLock {
-            operationRegistry.markExecutionHostPaused(normalizedId)
-            operationRegistry.revokeReference(songKey, setOf(normalizedId))
-            snapshotActiveCalls(listOf(normalizedId))
+        if (isPostCoreDownloadOperationState(durableState)) {
+            operationRegistry.clearExecutionHostPaused(normalizedId)
+            NPLogger.d(
+                TAG,
+                "宿主停止跳过已提交 core operation: operationId=$normalizedId, " +
+                    "state=$durableState"
+            )
+            return false
         }
+        var skippedCoreCommitted = false
+        var songKey: String? = null
+        val calls = operationRegistry.withMutationLock {
+            if (operationRegistry.isCoreCommitted(normalizedId)) {
+                operationRegistry.clearExecutionHostPaused(normalizedId)
+                skippedCoreCommitted = true
+                emptyList()
+            } else {
+                songKey = operationRegistry.songKeyForOperation(normalizedId)
+                val currentSongKey = songKey
+                if (currentSongKey == null) {
+                    emptyList()
+                } else {
+                    operationRegistry.markExecutionHostPaused(normalizedId)
+                    operationRegistry.revokeReference(currentSongKey, setOf(normalizedId))
+                    snapshotActiveCalls(listOf(normalizedId))
+                }
+            }
+        }
+        if (skippedCoreCommitted) {
+            NPLogger.d(
+                TAG,
+                "宿主停止跳过已提交 core operation: operationId=$normalizedId"
+            )
+            return false
+        }
+        val resolvedSongKey = songKey ?: return false
         calls.forEach(okhttp3.Call::cancel)
         clearPublishedProgress(
-            songKey = songKey,
+            songKey = resolvedSongKey,
             expectedOperationId = normalizedId
         )
         val visibleProgress = progressStore.currentProgress()
         if (
-            visibleProgress?.songKey == songKey &&
+            visibleProgress?.songKey == resolvedSongKey &&
                 visibleProgress.operationId == normalizedId
         ) {
             clearVisibleProgressForSong(
-                songKey = songKey,
+                songKey = resolvedSongKey,
                 expectedOperationId = normalizedId
             )
         }
@@ -1647,6 +1682,19 @@ object AudioDownloadManager {
         val normalizedId = operationId.trim()
         return normalizedId.isNotBlank() &&
             operationRegistry.isExecutionHostPaused(normalizedId)
+    }
+
+    internal fun isCoreCommittedOperation(operationId: String): Boolean {
+        return operationRegistry.isCoreCommitted(operationId)
+    }
+
+    internal fun markCoreCommittedOperation(operationId: String) {
+        operationRegistry.markCoreCommitted(operationId)
+        operationRegistry.clearExecutionHostPaused(operationId)
+    }
+
+    internal fun clearCoreCommittedOperation(operationId: String) {
+        operationRegistry.clearCoreCommitted(operationId)
     }
 
     internal fun clearOperationPauseForExecutionHost(operationId: String) {
@@ -2066,6 +2114,9 @@ object AudioDownloadManager {
             ?.takeIf(String::isNotBlank)
             ?: UUID.randomUUID().toString()
         val state = DownloadExecutionAttemptState()
+        // 进入新的真实传输前清掉旧代次的 core 标记，避免取消后复用 operation
+        // 时把新下载误当成后台增强任务
+        operationRegistry.clearCoreCommitted(effectiveOperationId)
         beginSongDownloadOperation(songKey, effectiveOperationId, attemptId)
         clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
         try {
@@ -3218,6 +3269,18 @@ object AudioDownloadManager {
             )
         }
         coreCommitTracker.phase = DownloadCoreCommitPhase.CORE_COMMITTED
+        val coreMarkerOwned = operationRegistry.markCoreCommittedIfOwned(
+            songKey = songKey,
+            operationId = effectiveOperationId,
+            attemptId = attemptId
+        )
+        if (!coreMarkerOwned) {
+            NPLogger.d(
+                TAG,
+                "core 提交后发现 operation 引用已被撤销，不重新打开宿主保护: " +
+                    "song=${workingSong.name}, operationId=$effectiveOperationId"
+            )
+        }
         val coreOperationMarked = try {
             DownloadExecutionRoomStore.markCoreCommitted(
                 context = context,
@@ -3245,7 +3308,7 @@ object AudioDownloadManager {
         if (committedAudio.isPendingAudioWrite) {
             NPLogger.d(
                 TAG,
-                "音频 core 已提交并保持 pending，等待元信息收尾后提升: " +
+                "音频 core 已提交，交由发布阶段提升为正式文件: " +
                     "song=${workingSong.name}, file=${committedAudio.name}"
             )
         }
@@ -3638,6 +3701,7 @@ object AudioDownloadManager {
         val calls = operationRegistry.withMutationLock {
             operationRegistry.removeNetworkPolicyPaused(songKey)
             val operationIds = activeOperationIdsForSongLocked(songKey)
+            operationIds.forEach(operationRegistry::clearCoreCommitted)
             operationRegistry.markExecutionHostPaused(operationIds)
             operationRegistry.revokeReference(songKey, operationIds)
             operationRegistry.clearInactiveExecutionHostPausesExcept(operationIds)
@@ -3654,7 +3718,9 @@ object AudioDownloadManager {
     fun cancelDownload() {
         val calls = operationRegistry.withMutationLock {
             operationRegistry.clearNetworkPolicyPaused()
-            operationRegistry.markExecutionHostPaused(operationRegistry.activeOperationIds())
+            val operationIds = operationRegistry.activeOperationIds()
+            operationIds.forEach(operationRegistry::clearCoreCommitted)
+            operationRegistry.markExecutionHostPaused(operationIds)
             operationRegistry.revokeAllReferences()
             snapshotActiveCalls()
         }

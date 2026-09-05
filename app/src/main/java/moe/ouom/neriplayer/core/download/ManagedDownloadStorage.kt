@@ -8241,12 +8241,18 @@ internal object ManagedDownloadStorage {
                     ?.value
                     ?.sizeBytes
                 val committedAtMs = System.currentTimeMillis()
-                val expectedSizeBytes = resolveCurrentTreePendingAudioSize(
-                    backend = pendingBackend,
-                    reference = pendingReference,
-                    reportedSizeBytes = pendingReportedSizeBytes,
-                    description = audio.name
-                )
+                // 新写入的 StoredEntry 已经在写入阶段完成长度读回校验。
+                // 优先复用这个尺寸，避免提升前再次完整读取 SAF 音频；复制阶段
+                // 仍会统计实际字节数，旧版本或未知尺寸才回退到完整读回
+                val expectedSizeBytes = audio.sizeBytes
+                    .takeIf { audio.sizeKnown && it > 0L }
+                    ?: pendingReportedSizeBytes?.takeIf { it > 0L }
+                    ?: resolveCurrentTreePendingAudioSize(
+                        backend = pendingBackend,
+                        reference = pendingReference,
+                        reportedSizeBytes = pendingReportedSizeBytes,
+                        description = audio.name
+                    )
                 val treePending = if (pendingIsDirectRootChild) {
                     treeChildRegistry.toTreeDocumentFile(
                         context = context,
@@ -8673,7 +8679,13 @@ internal object ManagedDownloadStorage {
                     val output = context.contentResolver.openOutputStream(created.uri, "w")
                         ?: throw IOException("SAF final 音频不可写: $finalName")
                     output.use { target ->
-                        source.copyTo(target, STREAM_COPY_BUFFER_SIZE_BYTES)
+                        val copiedBytes = source.copyTo(target, STREAM_COPY_BUFFER_SIZE_BYTES)
+                        if (copiedBytes != expectedSizeBytes) {
+                            throw IOException(
+                                "SAF pending 音频复制长度不匹配: $pendingName, " +
+                                    "expected=$expectedSizeBytes, actual=$copiedBytes"
+                            )
+                        }
                     }
                     val entry = verifiedTreeStoredEntry(
                         context = context,

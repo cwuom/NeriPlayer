@@ -251,6 +251,182 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
     }
 
     @Test
+    fun `core publication promotes pending audio before exposing completed catalog`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        )
+        val completionBody = source.substringAfter(
+            "private suspend fun completeCoreDownloadAndEnqueueEnrichment("
+        ).substringBefore("/** 把收尾异常限制在增强资产边界")
+        val promotionIndex = completionBody.indexOf(
+            "val publishedAudio = corePublicationCoordinator.promoteBeforePublication("
+        )
+        val artifactIndex = completionBody.indexOf("val artifactCommitted")
+        val completedStatusIndex = completionBody.indexOf(
+            "status = DownloadStatus.COMPLETED"
+        )
+
+        assertTrue(promotionIndex >= 0)
+        assertTrue(artifactIndex > promotionIndex)
+        assertTrue(completedStatusIndex > promotionIndex)
+    }
+
+    @Test
+    fun `stale admission still promotes core audio before skipping old publication`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        )
+        val completionBody = source.substringAfter(
+            "private suspend fun completeCoreDownloadAndEnqueueEnrichment("
+        ).substringBefore("/** 把收尾异常限制在增强资产边界")
+        val coreResultIndex = completionBody.indexOf("val coreCommitResult =")
+        val promotionIndex = completionBody.indexOf(
+            "val publishedAudio = corePublicationCoordinator.promoteBeforePublication("
+        )
+        val staleReturnIndex = completionBody.indexOf(
+            "core 提交并提升后清空代次已失效"
+        )
+
+        assertTrue(coreResultIndex >= 0)
+        assertTrue(promotionIndex > coreResultIndex)
+        assertTrue(staleReturnIndex > promotionIndex)
+    }
+
+    @Test
+    fun `clear fence keeps core pending evidence out of the delete transaction`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        )
+        val completionBody = source.substringAfter(
+            "private suspend fun completeCoreDownloadAndEnqueueEnrichment("
+        ).substringBefore("/** 把收尾异常限制在增强资产边界")
+        val clearFenceIndex = completionBody.indexOf(
+            "isDownloadClearFenceActive(context, stableKey = songKey, operationId = operationId)"
+        )
+        val promotionIndex = completionBody.indexOf(
+            "val publishedAudio = corePublicationCoordinator.promoteBeforePublication("
+        )
+
+        assertTrue(clearFenceIndex >= 0)
+        assertTrue(promotionIndex > clearFenceIndex)
+    }
+
+    @Test
+    fun `migration promotion failure keeps a durable pending recovery entry`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        )
+        val completionBody = source.substringAfter(
+            "private suspend fun completeCoreDownloadAndEnqueueEnrichment("
+        ).substringBefore("/** pending 提升失败时只保留可恢复凭据")
+        val migrationPromotionIndex = completionBody.indexOf(
+            "迁移持有目录栅栏时先把 core 音频移出 .tmp"
+        )
+        val recoveryIndex = completionBody.indexOf(
+            "reason = \"CORE_PUBLICATION_PENDING_DURING_DIRECTORY_MUTATION\""
+        )
+        val sharedRecoveryIndex = completionBody.indexOf(
+            "deferPendingCorePublication("
+        )
+
+        assertTrue(migrationPromotionIndex >= 0)
+        assertTrue(sharedRecoveryIndex > migrationPromotionIndex)
+        assertTrue(recoveryIndex > sharedRecoveryIndex)
+    }
+
+    @Test
+    fun `unpublished core pending audio never enters completed publication`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        )
+        val completionBody = source.substringAfter(
+            "private suspend fun completeCoreDownloadAndEnqueueEnrichment("
+        ).substringBefore("/** pending 提升失败时只保留可恢复凭据")
+        val pendingGuard = completionBody.indexOf(
+            "if (publishedAudio.isPendingAudioWrite)"
+        )
+        val artifactIndex = completionBody.indexOf(
+            "val artifactCommitted"
+        )
+        val completedStatusIndex = completionBody.indexOf(
+            "status = DownloadStatus.COMPLETED"
+        )
+        val enrichmentIndex = completionBody.indexOf(
+            "assetEnrichmentCoordinator.enqueue("
+        )
+
+        assertTrue(pendingGuard >= 0)
+        assertTrue(artifactIndex > pendingGuard)
+        assertTrue(completedStatusIndex > pendingGuard)
+        assertTrue(enrichmentIndex > pendingGuard)
+        assertTrue(
+            completionBody.substring(pendingGuard, artifactIndex)
+                .contains("return")
+        )
+        val recoveryBody = source.substringAfter(
+            "private suspend fun deferPendingCorePublication("
+        ).substringBefore("/** 把收尾异常限制在增强资产边界")
+        assertTrue(recoveryBody.contains("managedDownloadArtifactCoordinator.markCoreCommitted("))
+        assertTrue(recoveryBody.contains("markStagingPrepared("))
+    }
+
+    @Test
+    fun `enrichment does not write sidecars while core audio remains pending`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        )
+        val enrichmentBody = source.substringAfter(
+            "private suspend fun enrichCoreCommittedDownload("
+        ).substringBefore("private suspend fun preserveUnsupportedMetadataEmbedding(")
+        val pendingGuard = enrichmentBody.indexOf(
+            "if (enrichmentAudio.isPendingAudioWrite)"
+        )
+        val sidecarIndex = enrichmentBody.indexOf(
+            "downloadSidecarsForCompletedAudio("
+        )
+        val metadataIndex = enrichmentBody.indexOf(
+            "persistDownloadedMetadata("
+        )
+
+        assertTrue(pendingGuard >= 0)
+        assertTrue(sidecarIndex > pendingGuard)
+        assertTrue(metadataIndex > pendingGuard)
+        assertTrue(
+            enrichmentBody.substring(pendingGuard, sidecarIndex)
+                .contains("return")
+        )
+        assertTrue(
+            enrichmentBody.substring(pendingGuard, sidecarIndex)
+                .contains("directoryCommitLease?.close()")
+        )
+    }
+
+    @Test
+    fun `cancelled enrichment schedules pending artifact recovery`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        )
+        val enrichmentBody = source.substringAfter(
+            "private suspend fun enrichCoreCommittedDownload("
+        ).substringBefore("private suspend fun preserveUnsupportedMetadataEmbedding(")
+        val cancellationIndex = enrichmentBody.indexOf(
+            "catch (error: CancellationException)"
+        )
+        val degradedIndex = enrichmentBody.indexOf(
+            "state = \"DEGRADED_COMPLETE\"",
+            cancellationIndex
+        )
+        val recoveryIndex = enrichmentBody.indexOf(
+            "scheduleStartupArtifactRecovery(context)",
+            cancellationIndex
+        )
+
+        assertTrue(cancellationIndex >= 0)
+        assertTrue(degradedIndex > cancellationIndex)
+        assertTrue(recoveryIndex > degradedIndex)
+    }
+
+    @Test
     fun `source pending recovery settles operation journal before artifact promotion`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

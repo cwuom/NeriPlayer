@@ -95,6 +95,7 @@ import moe.ouom.neriplayer.core.download.execution.METADATA_ACTION_REQUIRED_OPER
 import moe.ouom.neriplayer.core.download.execution.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.isPostCoreDownloadOperationState
 import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
 import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationResult
@@ -146,6 +147,7 @@ import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.security.MessageDigest
 import java.util.Collections
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -317,6 +319,13 @@ object GlobalDownloadManager {
         val metadata: ManagedDownloadStorage.DownloadedAudioMetadata
     )
 
+    private data class CoreRecoveryAudioCandidate(
+        val audio: ManagedDownloadStorage.StoredEntry,
+        val metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        val operationMatches: Boolean,
+        val identityMatches: Boolean
+    )
+
     private data class PlayableManagedAudioSnapshot(
         val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         val audio: ManagedDownloadStorage.StoredEntry,
@@ -427,6 +436,7 @@ object GlobalDownloadManager {
         timeoutMs = 120_000L
     )
     private val managedLibraryReconciler = ManagedLibraryReconciler()
+    private val corePublicationCoordinator = DownloadCorePublicationCoordinator()
     private val requestGenerationTracker = DownloadRequestGenerationTracker()
     private val batchDownloadPresentationIdGenerator = AtomicLong(0L)
     private val _batchDownloadPresentations =
@@ -2047,6 +2057,218 @@ object GlobalDownloadManager {
     private const val TERMINAL_OPERATION_RETENTION_MS = 7L * 24L * 60L * 60L * 1_000L
     private const val TERMINAL_OPERATION_PRUNE_LIMIT = 64
 
+    /**
+     * 宿主取消可能刚好发生在 core 文件写入完成和内存桥登记之间
+     * 这时不能只依赖 SongItem 的旧引用，要从新快照按持久化凭据找回 pending
+     */
+    private suspend fun resolveCoreRecoveryAudioCandidate(
+        context: Context,
+        song: SongItem,
+        operationId: String?,
+        forceRefreshSnapshot: Boolean = false,
+        allowFormalAudio: Boolean = false
+    ): CoreRecoveryAudioCandidate? {
+        val normalizedOperationId = operationId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val cachedSnapshot = if (forceRefreshSnapshot) {
+            null
+        } else {
+            ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+                context = context,
+                restorePersisted = false
+            )
+        }
+        val snapshot = cachedSnapshot ?: runCatching {
+            ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
+        }.onFailure { error ->
+            if (error !is CancellationException) {
+                NPLogger.w(
+                    TAG,
+                    "宿主取消后的 core 恢复刷新目录失败，改用直接引用: " +
+                        "song=${song.name}, error=${error.message}",
+                    error
+                )
+            }
+        }.getOrNull()
+
+        val candidates = linkedMapOf<String, ManagedDownloadStorage.StoredEntry>()
+        fun addCandidate(audio: ManagedDownloadStorage.StoredEntry?) {
+            if (audio == null || audio.reference.isBlank()) return
+            candidates.putIfAbsent(audio.reference, audio)
+        }
+
+        addCandidate(AudioDownloadManager.peekCompletedAudioReference(song))
+        runCatching { resolveStoredAudio(context, song) }
+            .getOrNull()
+            ?.let(::addCandidate)
+        snapshot?.let { currentSnapshot ->
+            val pending = ManagedDownloadStorage.findPendingDownloadedAudio(
+                currentSnapshot,
+                song
+            )
+            addCandidate(pending)
+            addCandidate(ManagedDownloadStorage.findDownloadedAudio(currentSnapshot, song))
+        }
+        if (snapshot == null) {
+            runCatching {
+                ManagedDownloadStorage.listPendingAudioWrites(
+                    context = context,
+                    forceRefresh = true
+                )
+            }.getOrNull()?.forEach(::addCandidate)
+            runCatching {
+                ManagedDownloadStorage.findDownloadedAudio(
+                    context = context,
+                    song = song,
+                    forceRefresh = true
+                )
+            }.getOrNull()?.let(::addCandidate)
+        }
+        val coreRecoveryCandidateBaseNames =
+            ManagedDownloadStorage.buildCandidateBaseNames(song).toSet()
+        var directMetadataProbeBudget = 8
+        suspend fun metadataCandidates(
+            audio: ManagedDownloadStorage.StoredEntry
+        ): List<ManagedDownloadStorage.DownloadedAudioMetadata> {
+            val indexed = snapshot?.let { currentSnapshot ->
+                listOfNotNull(
+                    currentSnapshot.pendingMetadataByAudioName[audio.logicalName],
+                    currentSnapshot.metadataByAudioName[audio.name],
+                    currentSnapshot.metadataByAudioName[audio.logicalName]
+                )
+            }.orEmpty()
+            // 快照已有解析结果时不再为每个 pending 重复读 SAF；只有少量无索引
+            // 候选允许直接探测，避免取消风暴把 Provider 读放大成新的卡顿
+            val likelyCandidate = audio.nameWithoutExtension in coreRecoveryCandidateBaseNames
+            val direct = if (
+                indexed.isEmpty() &&
+                    (likelyCandidate || directMetadataProbeBudget > 0)
+            ) {
+                if (!likelyCandidate) directMetadataProbeBudget--
+                runCatching {
+                    readDownloadedMetadata(context, audio)
+                }.getOrNull()
+            } else {
+                null
+            }
+            return (indexed + listOfNotNull(direct))
+                .distinct()
+                .filter { metadata ->
+                    metadata.downloadFinalized == true ||
+                        isDurableCoreArtifactState(
+                            metadata.artifactState
+                                ?.trim()
+                                ?.uppercase(Locale.ROOT)
+                        )
+                }
+        }
+
+        suspend fun collectMatches(): List<CoreRecoveryAudioCandidate> {
+            val matches = mutableListOf<CoreRecoveryAudioCandidate>()
+            candidates.values.forEach { audio ->
+                metadataCandidates(audio).forEach { metadata ->
+                    val metadataOperationId = metadata.operationId
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                    val operationMatches = normalizedOperationId != null &&
+                        metadataOperationId == normalizedOperationId
+                    val metadataStableKey = metadata.stableKey
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                    val identityMatches =
+                        metadataStableKey == song.stableKey() ||
+                            metadataStableKey == song.sourceStableKey
+                                ?.trim()
+                                ?.takeIf(String::isNotBlank) ||
+                            isMetadataOwnedBySong(metadata, song)
+                    if (
+                        (operationMatches || identityMatches) &&
+                            (audio.isPendingAudioWrite || operationMatches || allowFormalAudio)
+                    ) {
+                        matches += CoreRecoveryAudioCandidate(
+                            audio = audio,
+                            metadata = metadata,
+                            operationMatches = operationMatches,
+                            identityMatches = identityMatches
+                        )
+                    }
+                }
+            }
+            return matches
+        }
+
+        fun sortMatches(
+            matches: List<CoreRecoveryAudioCandidate>
+        ): CoreRecoveryAudioCandidate? {
+            return matches
+                .distinctBy { candidate ->
+                    candidate.audio.reference to candidate.metadata
+                }
+                .sortedWith(
+                    compareByDescending<CoreRecoveryAudioCandidate> {
+                        it.operationMatches
+                    }
+                        .thenByDescending { it.identityMatches }
+                        .thenByDescending { it.audio.isPendingAudioWrite }
+                        .thenByDescending { it.metadata?.downloadFinalized == true }
+                        .thenByDescending { it.audio.lastModifiedMs }
+                        .thenByDescending { it.audio.sizeBytes }
+                )
+                .firstOrNull()
+        }
+
+        val bestMatch = sortMatches(collectMatches())
+        if (bestMatch != null) return bestMatch
+
+        // 快照索引若因旧版本或 provider 延迟漏掉了目标，才扩展到全部 pending
+        // 候选。正常取消路径不会为每首歌重复读取整棵目录
+        if (cachedSnapshot != null && !forceRefreshSnapshot) {
+            return resolveCoreRecoveryAudioCandidate(
+                context = context,
+                song = song,
+                operationId = operationId,
+                forceRefreshSnapshot = true,
+                allowFormalAudio = allowFormalAudio
+            )
+        }
+        snapshot?.pendingAudioEntries?.forEach(::addCandidate)
+        if (snapshot == null) {
+            runCatching {
+                ManagedDownloadStorage.listPendingAudioWrites(
+                    context = context,
+                    forceRefresh = true
+                )
+            }.getOrNull()?.forEach(::addCandidate)
+        }
+        directMetadataProbeBudget = 8
+        sortMatches(collectMatches())?.let { return it }
+        if (allowFormalAudio) {
+            // seed metadata 也可能因旧版本或 Provider 瞬时失败完全缺失。
+            // 已知 operation 已越过 core 边界时，只接受当前歌曲命名匹配的
+            // pending，先补写 core metadata，再走同一提升器
+            val metadataLessPendingCandidates = candidates.values
+                .asSequence()
+                .filter(ManagedDownloadStorage.StoredEntry::isPendingAudioWrite)
+                .filter { audio -> audio.nameWithoutExtension in coreRecoveryCandidateBaseNames }
+                .toList()
+            val metadataLessPending = metadataLessPendingCandidates
+                .singleOrNull()
+            if (metadataLessPending != null) {
+                return CoreRecoveryAudioCandidate(
+                    audio = metadataLessPending,
+                    metadata = null,
+                    operationMatches = false,
+                    identityMatches = true
+                )
+            }
+        }
+        return null
+    }
+
     private suspend fun recoverPendingAudioWritesFromRoot(
         context: Context,
         directoryMutationLeaseOwned: Boolean = false,
@@ -2409,7 +2631,23 @@ object GlobalDownloadManager {
                                         admissionTicket = admissionTicket,
                                         admissionAlreadyHeld = true
                                     )
-                                    itemResolved = true
+                                    // finalize 可能因为 Provider 暂不可用只保留 pending 凭据。
+                                    // 不能把“调用返回”误记成“物理文件已正式发布”，否则迁移
+                                    // 会提前放行，下一次扫描又会重新遇到同一个 pending
+                                    val resolvedAudio = ManagedDownloadStorage.findDownloadedAudio(
+                                        context = context,
+                                        song = song,
+                                        forceRefresh = true
+                                    )
+                                    itemResolved = resolvedAudio != null &&
+                                        !resolvedAudio.isPendingAudioWrite
+                                    if (!itemResolved) {
+                                        NPLogger.w(
+                                            TAG,
+                                            "pending 收尾返回但正式文件仍未确认，保留恢复凭据: " +
+                                                "song=${song.name}, file=${pendingAudio.name}"
+                                        )
+                                    }
                                 }
                             }
                             if (!mutationAdmitted) return@runCatching
@@ -5313,23 +5551,6 @@ object GlobalDownloadManager {
             )
             return
         }
-        if (
-            admissionTicket != null &&
-                !isDownloadAdmissionTicketCurrent(
-                    context = context,
-                    admissionTicket = admissionTicket,
-                    stableKey = songKey,
-                    operationId = operationId
-                )
-        ) {
-            NPLogger.d(
-                TAG,
-                "core 提交完成后清空代次已失效，跳过发布和资产增强: " +
-                    "song=${song.name}, operationId=$operationId"
-            )
-            return
-        }
-
         var sourceArtifactLeaseLookupFailed = false
         val sourceArtifactRootKey = if (directoryMutationLeaseOwned) {
             try {
@@ -5407,10 +5628,72 @@ object GlobalDownloadManager {
                     "core pending 音频未确认提升，暂停本次迁移收尾: " +
                         "song=${song.name}, file=${storedAudio.name}"
                 )
+                // 迁移持有目录栅栏时同样要留下可调度的恢复入口，不能只记录日志后
+                // 返回。否则 Provider 短暂失败会把完整 core 长期困在 pending 目录
+                deferPendingCorePublication(
+                    context = context,
+                    song = song,
+                    audio = storedAudio,
+                    existingMetadata = existingMetadata,
+                    artifactLeaseId = artifactLeaseForCommit,
+                    expectedAttemptId = expectedAttemptId,
+                    operationId = operationId,
+                    admissionTicket = admissionTicket,
+                    reason = "CORE_PUBLICATION_PENDING_DURING_DIRECTORY_MUTATION"
+                )
                 return
             }
         } else {
             storedAudio
+        }
+        // core 已完成完整性校验后立即离开 .tmp。元信息增强仍可异步执行，
+        // 但“下载完成”不再把 pending 音频留给一个可能被宿主取消的收尾任务
+        if (isDownloadClearFenceActive(context, stableKey = songKey, operationId = operationId)) {
+            // 清空栅栏拥有删除优先级，不能在删除事务期间把 pending 重新发布到正式目录
+            NPLogger.d(
+                TAG,
+                "core 提交后发现清空栅栏，跳过正式发布并保留恢复凭据: " +
+                    "song=${song.name}, operationId=$operationId"
+            )
+            return
+        }
+        val publishedAudio = corePublicationCoordinator.promoteBeforePublication(
+            context = context,
+            song = song,
+            audio = committedAudio
+        )
+        if (publishedAudio.isPendingAudioWrite) {
+            // Provider 短暂不可用时不能把 pending 当成最终文件，也不能继续发布完成态
+            deferPendingCorePublication(
+                context = context,
+                song = song,
+                audio = publishedAudio,
+                existingMetadata = existingMetadata,
+                artifactLeaseId = artifactLeaseForCommit,
+                expectedAttemptId = expectedAttemptId,
+                operationId = operationId,
+                admissionTicket = admissionTicket,
+                reason = "CORE_PUBLICATION_PENDING"
+            )
+            return
+        }
+        if (
+            admissionTicket != null &&
+                !isDownloadAdmissionTicketCurrent(
+                    context = context,
+                    admissionTicket = admissionTicket,
+                    stableKey = songKey,
+                    operationId = operationId
+                )
+        ) {
+            // core 已经完整落盘，不能因为旧代次失效而把最终文件继续留在 .tmp
+            // 这里只跳过旧代次的 artifact、UI 和增强发布，启动恢复会接管剩余步骤
+            NPLogger.d(
+                TAG,
+                "core 提交并提升后清空代次已失效，跳过旧代次发布和资产增强: " +
+                    "song=${song.name}, operationId=$operationId"
+            )
+            return
         }
 
         val artifactCommitted = if (
@@ -5423,7 +5706,7 @@ object GlobalDownloadManager {
                 managedDownloadArtifactCoordinator.markCoreCommitted(
                     context = context,
                     song = song,
-                    storedAudio = committedAudio,
+                    storedAudio = publishedAudio,
                     expectedLeaseId = artifactLeaseForCommit,
                     rootKeyOverride = sourceArtifactRootKey
                 )
@@ -5503,7 +5786,7 @@ object GlobalDownloadManager {
         // 先登记当前引用，再发布 Room/catalog，保证这段窗口内也能立即播放
         AudioDownloadManager.rememberCompletedAudioReference(
             song = song,
-            storedAudio = committedAudio
+            storedAudio = publishedAudio
         )
 
         // artifact 行可能尚未有可展示标题，补一条同事务可恢复的目录预览
@@ -5512,7 +5795,7 @@ object GlobalDownloadManager {
             ManagedLibraryItemRoomStore.upsert(
                 context = context,
                 song = song,
-                audio = committedAudio,
+                audio = publishedAudio,
                 state = ManagedDownloadArtifactState.CORE_COMMITTED.name
             )
         }.onFailure { error ->
@@ -5535,7 +5818,7 @@ object GlobalDownloadManager {
         runCatching {
             publishOptimisticDownloadedSongs(
                 context = context,
-                songs = listOf(buildOptimisticDownloadedSong(song, committedAudio))
+                songs = listOf(buildOptimisticDownloadedSong(song, publishedAudio))
             )
         }.onFailure { error ->
             // 目录发布失败不影响已提交音频，启动时仍会从 core metadata 恢复
@@ -5554,6 +5837,12 @@ object GlobalDownloadManager {
             artifactLeaseId = artifactLeaseId,
             expectedAttemptId = expectedAttemptId
         )
+        // core 已提交后把引用所有权交给后台收尾。宿主停止回调只能中断网络传输，
+        // 不能再撤销这个 operation，否则 pending 音频会永久留在 .tmp
+        AudioDownloadManager.markCoreCommittedOperation(enrichmentOperationId)
+        normalizedOperationId
+            ?.takeUnless { it == enrichmentOperationId }
+            ?.let(AudioDownloadManager::markCoreCommittedOperation)
         if (directoryMutationLeaseOwned) {
             // 目录迁移期间不启动会等待同一栅栏的增强协程，释放栅栏后由统一恢复入口
             // 扫描 CORE_COMMITTED 音频并继续处理，避免迁移前置恢复自锁
@@ -5563,6 +5852,18 @@ object GlobalDownloadManager {
                     "song=${song.name}, operationId=$enrichmentOperationId"
             )
             return
+        }
+        val enrichmentStatePersisted = DownloadExecutionRoomStore.updateState(
+            context = context,
+            operationId = enrichmentOperationId,
+            state = "ASSETS_ENRICHING"
+        )
+        if (!enrichmentStatePersisted) {
+            NPLogger.w(
+                TAG,
+                "资产增强 operation 未确认 ASSETS_ENRICHING，保留 core 凭据等待恢复: " +
+                    "song=${song.name}, operationId=$enrichmentOperationId"
+            )
         }
         if (
             admissionTicket != null &&
@@ -5597,7 +5898,7 @@ object GlobalDownloadManager {
                             enrichCoreCommittedDownload(
                                 context = context,
                                 song = song,
-                                storedAudio = committedAudio,
+                                storedAudio = publishedAudio,
                                 existingMetadataHint = existingMetadata,
                                 operationId = enrichmentOperationId,
                                 artifactLeaseId = artifactLeaseId,
@@ -5643,7 +5944,7 @@ object GlobalDownloadManager {
                                     runCatching {
                                         persistDownloadedMetadata(
                                             context = context,
-                                            audio = storedAudio,
+                                            audio = publishedAudio,
                                             song = song,
                                             existingMetadataHint = existingMetadata,
                                             sidecarReferences =
@@ -5722,6 +6023,406 @@ object GlobalDownloadManager {
                 managedDownloadArtifactLeases.remove(songKey, leaseId)
             }
             throw error
+        }
+    }
+
+    /** 提交边界后的宿主取消只结束本次执行，不能释放 core 的恢复凭据 */
+    private suspend fun recoverCorePublicationAfterExecutionCancellation(
+        context: Context,
+        song: SongItem,
+        operationId: String?,
+        expectedAttemptId: Long?,
+        requestGeneration: Long,
+        admissionTicket: Long?,
+        artifactLeaseId: String?
+    ): Boolean {
+        val normalizedOperationId = operationId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+        val appContext = context.applicationContext
+        return withContext(NonCancellable) {
+            val operationState = runCatching {
+                DownloadExecutionRoomStore.state(appContext, normalizedOperationId)
+            }.getOrNull()
+            val normalizedOperationState = operationState
+                ?.trim()
+                ?.uppercase(Locale.ROOT)
+            val knownCoreCommitted = AudioDownloadManager.isCoreCommittedOperation(
+                normalizedOperationId
+            ) || isPostCoreDownloadOperationState(normalizedOperationState)
+            if (!isDownloadRequestGenerationCurrent(song.stableKey(), requestGeneration)) {
+                return@withContext false
+            }
+            val userStopped = runCatching {
+                DownloadExecutionRoomStore.isStopped(appContext, normalizedOperationId)
+            }.getOrDefault(true)
+            val userCancelled = isSongCancelled(song.stableKey()) || runCatching {
+                DownloadExecutionRoomStore.isUserCancellationRequested(
+                    appContext,
+                    normalizedOperationId
+                )
+            }.getOrDefault(true)
+            if (
+                userStopped ||
+                    userCancelled ||
+                    isDownloadClearFenceActive(
+                        context = appContext,
+                        stableKey = song.stableKey(),
+                        operationId = normalizedOperationId
+                    ) ||
+                    admissionTicket != null &&
+                    !isDownloadAdmissionTicketCurrent(
+                        context = appContext,
+                        admissionTicket = admissionTicket,
+                        stableKey = song.stableKey(),
+                        operationId = normalizedOperationId
+                    )
+            ) {
+                return@withContext false
+            }
+            val recoveryCandidate = resolveCoreRecoveryAudioCandidate(
+                context = appContext,
+                song = song,
+                operationId = normalizedOperationId,
+                allowFormalAudio = knownCoreCommitted
+            )
+            val coreCommitted = knownCoreCommitted ||
+                recoveryCandidate != null
+            if (!coreCommitted) {
+                return@withContext false
+            }
+
+            if (normalizedOperationState == "COMMITTING") {
+                // 宿主停止可能抢在 markCoreCommitted 之前发生。持久化 seed
+                // 已经证明 core 完整时，先修复 operation 状态再交给发布恢复
+                runCatching {
+                    DownloadExecutionRoomStore.markCoreCommitted(
+                        context = appContext,
+                        operationId = normalizedOperationId
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "提交后取消修复 operation core 状态失败，保留恢复凭据: " +
+                            "song=${song.name}, operationId=$normalizedOperationId, " +
+                            "error=${error.message}",
+                        error
+                    )
+                }
+            }
+            AudioDownloadManager.markCoreCommittedOperation(normalizedOperationId)
+            val storedAudio = recoveryCandidate?.audio
+            var recoveryMetadata = recoveryCandidate?.metadata
+            if (storedAudio?.isPendingAudioWrite == true && recoveryMetadata == null) {
+                // 极旧版本可能只留下 pending 音频而没有 seed metadata。已知
+                // operation 越过 core 边界时补写最小 core 凭据，避免永久孤儿
+                val metadataWritten = try {
+                    persistDownloadedMetadata(
+                        context = appContext,
+                        audio = storedAudio,
+                        song = song,
+                        downloadFinalized = false,
+                        resolveExistingSidecars = false,
+                        artifactStateOverride = ManagedDownloadArtifactState.CORE_COMMITTED.name,
+                        operationId = normalizedOperationId
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    NPLogger.w(
+                        TAG,
+                        "提交后取消补写 core metadata 失败，保留 pending 凭据: " +
+                            "song=${song.name}, operationId=$normalizedOperationId, " +
+                            "error=${error.message}",
+                        error
+                    )
+                    false
+                }
+                if (metadataWritten) {
+                    recoveryMetadata = runCatching {
+                        readDownloadedMetadata(appContext, storedAudio)
+                    }.getOrNull()
+                }
+            }
+            val publishedAudio = if (storedAudio?.isPendingAudioWrite == true) {
+                // 宿主取消只结束执行窗口，core 已经完整校验时要在同一窗口尽快离开
+                // pending。目录租约失败才交给持久恢复，不能让 sidecar 成为唯一出口
+                val publicationLease = runCatching {
+                    ManagedDownloadDirectoryMutationFence.acquireCommitLeaseOrNull(
+                        context = appContext,
+                        operationId = normalizedOperationId
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "宿主取消后的 core 提升暂时无法取得目录租约: " +
+                            "song=${song.name}, operationId=$normalizedOperationId, " +
+                            "error=${error.message}",
+                        error
+                    )
+                }.getOrNull()
+                if (publicationLease == null) {
+                    storedAudio
+                } else {
+                    try {
+                        corePublicationCoordinator.promoteBeforePublication(
+                            context = appContext,
+                            song = song,
+                            audio = storedAudio
+                        )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        NPLogger.w(
+                            TAG,
+                            "宿主取消后的 core 提升失败，转入持久恢复: " +
+                                "song=${song.name}, operationId=$normalizedOperationId, " +
+                                "error=${error.message}",
+                            error
+                        )
+                        storedAudio
+                    } finally {
+                        publicationLease.close()
+                    }
+                }
+            } else {
+                storedAudio
+            }
+            if (publishedAudio?.isPendingAudioWrite == true) {
+                val existingMetadata = recoveryMetadata
+                    ?: runCatching {
+                        readDownloadedMetadata(appContext, publishedAudio)
+                    }.getOrNull()
+                runCatching {
+                    deferPendingCorePublication(
+                        context = appContext,
+                        song = song,
+                        audio = publishedAudio,
+                        existingMetadata = existingMetadata,
+                        artifactLeaseId = artifactLeaseId,
+                        expectedAttemptId = expectedAttemptId,
+                        operationId = normalizedOperationId,
+                        admissionTicket = admissionTicket,
+                        reason = "CORE_PUBLICATION_HOST_CANCELLED"
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "提交后取消的 pending core 恢复入口写入失败，保留启动扫描: " +
+                            "song=${song.name}, operationId=$normalizedOperationId, " +
+                            "error=${error.message}",
+                        error
+                    )
+                }
+            }
+            // 即使当前 Provider 暂时无法读取，也要让统一扫描在本进程继续接管
+            scheduleStartupArtifactRecovery(appContext)
+            updateTaskStatus(
+                songKey = song.stableKey(),
+                status = if (publishedAudio != null && !publishedAudio.isPendingAudioWrite) {
+                    DownloadStatus.COMPLETED
+                } else {
+                    DownloadStatus.WAITING_NETWORK
+                },
+                expectedAttemptId = expectedAttemptId,
+                settleBatchPresentation = false
+            )
+            NPLogger.d(
+                TAG,
+                "宿主取消发生在 core 提交之后，已转入正式发布恢复: " +
+                    "song=${song.name}, operationId=$normalizedOperationId, " +
+                    "state=$operationState, pending=${publishedAudio?.isPendingAudioWrite}"
+            )
+            true
+        }
+    }
+
+    /**
+     * pending 提升失败时只保留可恢复凭据，禁止把临时引用暴露成完成文件
+     *
+     * 这里的状态写回必须和宿主取消解耦。Provider 恢复后由启动扫描或持久宿主
+     * 再次进入 finalize 路径，成功提升前不会写 artifact、catalog 或 sidecar
+     */
+    private suspend fun deferPendingCorePublication(
+        context: Context,
+        song: SongItem,
+        audio: ManagedDownloadStorage.StoredEntry,
+        existingMetadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        artifactLeaseId: String?,
+        expectedAttemptId: Long?,
+        operationId: String?,
+        admissionTicket: Long?,
+        reason: String
+    ) {
+        withContext(NonCancellable) {
+            val appContext = context.applicationContext
+            val songCancelled = isSongCancelled(song.stableKey())
+            if (
+                isDownloadClearFenceActive(
+                    context = appContext,
+                    stableKey = song.stableKey(),
+                    operationId = operationId
+                ) ||
+                    songCancelled ||
+                    admissionTicket != null &&
+                    !isDownloadAdmissionTicketCurrent(
+                        context = appContext,
+                        admissionTicket = admissionTicket,
+                        stableKey = song.stableKey(),
+                        operationId = operationId
+                    )
+            ) {
+                NPLogger.d(
+                    TAG,
+                    "pending core 发布被清空代次阻止，保留原始凭据: " +
+                        "song=${song.name}, file=${audio.name}, operationId=$operationId"
+                )
+                return@withContext
+            }
+
+            val recoveryOperationId = runCatching {
+                ensureCoreRecoveryOperation(
+                    context = appContext,
+                    song = song,
+                    operationId = operationId ?: existingMetadata?.operationId,
+                    artifactLeaseId = artifactLeaseId,
+                    expectedAttemptId = expectedAttemptId
+                )
+            }.getOrElse { error ->
+                NPLogger.w(
+                    TAG,
+                    "pending core 发布无法建立恢复 operation，保留凭据: " +
+                        "song=${song.name}, file=${audio.name}, " +
+                        "error=${error.message}",
+                    error
+                )
+                null
+            }
+            val currentState = recoveryOperationId?.let { id ->
+                runCatching {
+                    DownloadExecutionRoomStore.state(appContext, id)
+                }.getOrNull()
+            }
+            val cancellationState = currentState == "CANCEL_REQUESTED" ||
+                currentState == "CANCELLED" ||
+                currentState == "STOPPED" ||
+                songCancelled
+            val statePersisted = if (
+                recoveryOperationId != null && !cancellationState
+            ) {
+                runCatching {
+                    if (currentState == "COMPLETED" || currentState == "FINALIZED") {
+                        // 只为已确认的 pending 音频打开旧终态，普通状态转移仍保持单向
+                        DownloadExecutionRoomStore.reopenCorePublicationRecovery(
+                            context = appContext,
+                            operationId = recoveryOperationId,
+                            stableKey = song.stableKey(),
+                            errorCode = reason
+                        )
+                    } else {
+                        DownloadExecutionRoomStore.updateState(
+                            context = appContext,
+                            operationId = recoveryOperationId,
+                            state = "DEGRADED_COMPLETE",
+                            errorCode = reason
+                        )
+                    }
+                }.getOrElse { error ->
+                    NPLogger.w(
+                        TAG,
+                        "pending core 发布恢复状态写入失败，保留下次扫描: " +
+                            "song=${song.name}, operationId=$recoveryOperationId, " +
+                            "error=${error.message}",
+                        error
+                    )
+                    false
+                }
+            } else {
+                false
+            }
+            val canSchedulePersistentRetry = statePersisted ||
+                currentState == "DEGRADED_COMPLETE"
+            if (recoveryOperationId != null && !cancellationState) {
+                val pendingArtifactCommitted = runCatching {
+                    // artifact 记录可以暂存 pending 引用，但不能把它误写成最终完成。
+                    // 这样下一次 claim 会走“已有 core，优先收尾”分支，不会清掉可恢复音频
+                    managedDownloadArtifactCoordinator.markCoreCommitted(
+                        context = appContext,
+                        song = song,
+                        storedAudio = audio,
+                        expectedLeaseId = artifactLeaseId
+                    )
+                }.getOrElse { error ->
+                    NPLogger.w(
+                        TAG,
+                        "pending core artifact 凭据写入失败，仍保留 metadata 恢复入口: " +
+                            "song=${song.name}, operationId=$recoveryOperationId, " +
+                            "error=${error.message}",
+                        error
+                    )
+                    false
+                }
+                if (!pendingArtifactCommitted) {
+                    NPLogger.w(
+                        TAG,
+                        "pending core artifact 未确认，下一轮仍需优先保护 staging: " +
+                            "song=${song.name}, operationId=$recoveryOperationId"
+                    )
+                }
+                runCatching {
+                    // 即使 artifact provider 暂时不可写，也要让重试请求保留 pending
+                    // staging，不能在下一次执行前被 fresh-start 清理掉
+                    DownloadExecutionRoomStore.markStagingPrepared(
+                        context = appContext,
+                        operationId = recoveryOperationId,
+                        stableKey = song.stableKey()
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "pending core staging 保留标记写入失败: " +
+                            "song=${song.name}, operationId=$recoveryOperationId, " +
+                            "error=${error.message}",
+                        error
+                    )
+                }
+                AudioDownloadManager.markCoreCommittedOperation(recoveryOperationId)
+                updateTaskStatus(
+                    songKey = song.stableKey(),
+                    status = DownloadStatus.WAITING_NETWORK,
+                    expectedAttemptId = expectedAttemptId,
+                    settleBatchPresentation = false
+                )
+                publishDownloadStage(
+                    song = song,
+                    stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+                    operationId = recoveryOperationId,
+                    attemptId = expectedAttemptId,
+                    bytesRead = audio.sizeBytes,
+                    totalBytes = audio.sizeBytes
+                )
+            }
+            if (canSchedulePersistentRetry) {
+                schedulePostCoreEnrichmentRetry(
+                    context = appContext,
+                    song = song,
+                    operationId = recoveryOperationId!!,
+                    expectedAttemptId = expectedAttemptId,
+                    reason = reason,
+                    admissionTicket = admissionTicket,
+                    allowInFlightState = true
+                )
+            }
+            // 即使旧 operation 已经进入终态，也要让下一次有界扫描重新确认物理文件
+            // 不能依赖一个可能已经被旧版本错误结算的 Room 状态
+            scheduleStartupArtifactRecovery(appContext)
+            NPLogger.w(
+                TAG,
+                "pending core 发布未确认，跳过完成态和资产增强: " +
+                    "song=${song.name}, file=${audio.name}, " +
+                    "operationId=$recoveryOperationId, state=$currentState"
+            )
         }
     }
 
@@ -5843,7 +6544,8 @@ object GlobalDownloadManager {
         operationId: String,
         expectedAttemptId: Long?,
         reason: String,
-        admissionTicket: Long? = null
+        admissionTicket: Long? = null,
+        allowInFlightState: Boolean = false
     ) {
         val appContext = context.applicationContext
         if (
@@ -5925,7 +6627,9 @@ object GlobalDownloadManager {
                 coreAudioCommitted = true,
                 operationState = operationState,
                 metadataActionRequired = metadataActionRequired,
-                userStopped = userStopped
+                userStopped = userStopped,
+                allowInFlightState = allowInFlightState,
+                songCancelled = isSongCancelled(song.stableKey())
             )
         ) {
             NPLogger.d(
@@ -6056,6 +6760,58 @@ object GlobalDownloadManager {
             )
             return
         }
+        // 启动恢复可能拿到旧版本留下的 pending 音频，增强前再次尝试正式提升
+        val enrichmentAudio = try {
+            corePublicationCoordinator.promoteBeforePublication(
+                context = context,
+                song = song,
+                audio = storedAudio
+            )
+        } catch (error: Throwable) {
+            // 提升本身发生在 try 主体之前，异常路径也必须释放目录租约
+            directoryCommitLease?.close()
+            throw error
+        }
+        if (
+            isDownloadClearFenceActive(
+                context = context,
+                stableKey = song.stableKey(),
+                operationId = operationId
+            ) ||
+                admissionTicket != null &&
+                !isDownloadAdmissionTicketCurrent(
+                    context = context,
+                    admissionTicket = admissionTicket,
+                    stableKey = song.stableKey(),
+                    operationId = operationId
+                )
+        ) {
+            // Provider 提升期间可能刚好进入清空代次，不能再对 artifact 或 sidecar 写入
+            directoryCommitLease?.close()
+            NPLogger.d(
+                TAG,
+                "资产增强提升后准入已失效，保留 core 凭据: " +
+                    "song=${song.name}, operationId=$operationId"
+            )
+            return
+        }
+        if (enrichmentAudio.isPendingAudioWrite) {
+            // 增强阶段也不能对 pending 引用写 sidecar 或最终 metadata，否则宿主取消
+            // 后会留下“UI 已完成但正式文件不存在”的假完成状态
+            directoryCommitLease?.close()
+            deferPendingCorePublication(
+                context = context,
+                song = song,
+                audio = enrichmentAudio,
+                existingMetadata = existingMetadataHint,
+                artifactLeaseId = artifactLeaseId,
+                expectedAttemptId = expectedAttemptId,
+                operationId = operationId,
+                admissionTicket = admissionTicket,
+                reason = "CORE_PUBLICATION_PENDING"
+            )
+            return
+        }
         var sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences()
         try {
             managedDownloadArtifactCoordinator.markAssetsEnriching(
@@ -6082,7 +6838,7 @@ object GlobalDownloadManager {
             sidecarReferences = AudioDownloadManager.downloadSidecarsForCompletedAudio(
                 context = context,
                 song = song,
-                storedAudio = storedAudio,
+                storedAudio = enrichmentAudio,
                 operationId = operationId
             )
             if (
@@ -6134,7 +6890,7 @@ object GlobalDownloadManager {
                 when (
                     runDownloadedAudioMetadataPostProcessing(
                         context = context,
-                        audio = storedAudio,
+                        audio = enrichmentAudio,
                         song = song,
                         sidecarReferences = sidecarReferences
                     )
@@ -6146,7 +6902,7 @@ object GlobalDownloadManager {
                         preserveUnsupportedMetadataEmbedding(
                             context = context,
                             song = song,
-                            storedAudio = storedAudio,
+                            storedAudio = enrichmentAudio,
                             sidecarReferences = sidecarReferences,
                             operationId = operationId,
                             artifactLeaseId = artifactLeaseId,
@@ -6176,7 +6932,7 @@ object GlobalDownloadManager {
             check(
                 persistDownloadedMetadata(
                     context = context,
-                    audio = storedAudio,
+                    audio = enrichmentAudio,
                     song = song,
                     existingMetadataHint = existingMetadataHint,
                     sidecarReferences = sidecarReferences,
@@ -6201,7 +6957,7 @@ object GlobalDownloadManager {
                 publishFinalizedDownload(
                     context = context,
                     song = song,
-                    storedAudio = storedAudio,
+                    storedAudio = enrichmentAudio,
                     sidecarReferences = sidecarReferences,
                     expectedAttemptId = expectedAttemptId,
                     operationId = operationId,
@@ -6216,6 +6972,80 @@ object GlobalDownloadManager {
                 "下载资产补齐完成: song=${song.name}, operationId=$operationId"
             )
         } catch (error: CancellationException) {
+            val retryScheduled = withContext(NonCancellable) {
+                runCatching {
+                    val currentState = DownloadExecutionRoomStore.state(context, operationId)
+                    val userStopped = DownloadExecutionRoomStore.isStopped(context, operationId)
+                    val clearBlocked = isDownloadClearFenceActive(
+                        context = context,
+                        stableKey = song.stableKey(),
+                        operationId = operationId
+                    )
+                    val canRetry = !clearBlocked && !userStopped &&
+                        !isSongCancelled(song.stableKey()) &&
+                        currentState in setOf(
+                            "CORE_COMMITTED",
+                            "ASSETS_ENRICHING",
+                            "DEGRADED_COMPLETE",
+                            "COMPLETED"
+                        )
+                    if (canRetry) {
+                        val statePersisted = if (currentState == "COMPLETED") {
+                            // 普通状态机禁止 COMPLETED 回退，旧宿主取消仍需打开可恢复入口
+                            DownloadExecutionRoomStore.reopenCorePublicationRecovery(
+                                context = context,
+                                operationId = operationId,
+                                stableKey = song.stableKey(),
+                                errorCode = "ASSET_ENRICHMENT_CANCELLED"
+                            )
+                        } else {
+                            DownloadExecutionRoomStore.updateState(
+                                context = context,
+                                operationId = operationId,
+                                state = "DEGRADED_COMPLETE",
+                                errorCode = "ASSET_ENRICHMENT_CANCELLED"
+                            )
+                        }
+                        if (!statePersisted) {
+                            NPLogger.w(
+                                TAG,
+                                "资产增强取消后的降级状态未确认，保留启动恢复: " +
+                                    "song=${song.name}, operationId=$operationId, " +
+                                    "state=$currentState"
+                            )
+                        }
+                        // ASSETS_ENRICHING 不是共享泵的可调度状态。直接触发 artifact
+                        // 恢复扫描，既能提升 pending 音频，也能重新建立增强任务
+                        scheduleStartupArtifactRecovery(context)
+                        schedulePostCoreEnrichmentRetry(
+                            context = context,
+                            song = song,
+                            operationId = operationId,
+                            expectedAttemptId = expectedAttemptId,
+                            reason = "ASSET_ENRICHMENT_CANCELLED",
+                            admissionTicket = admissionTicket,
+                            allowInFlightState = true
+                        )
+                    }
+                    canRetry
+                }.getOrElse { retryError ->
+                    NPLogger.w(
+                        TAG,
+                        "资产增强取消后的恢复调度失败，保留 core 凭据: " +
+                            "song=${song.name}, operationId=$operationId, " +
+                            "error=${retryError.message}",
+                        retryError
+                    )
+                    false
+                }
+            }
+            if (retryScheduled) {
+                NPLogger.d(
+                    TAG,
+                    "资产增强被宿主取消，已保留持久重试: " +
+                        "song=${song.name}, operationId=$operationId"
+                )
+            }
             throw error
         } catch (error: Throwable) {
             NPLogger.w(
@@ -6244,7 +7074,7 @@ object GlobalDownloadManager {
             runCatching {
                 persistDownloadedMetadata(
                     context = context,
-                    audio = storedAudio,
+                    audio = enrichmentAudio,
                     song = song,
                     sidecarReferences = sidecarReferences.retainCreatedOnly(),
                     downloadFinalized = false,
@@ -6307,7 +7137,9 @@ object GlobalDownloadManager {
                             )
                         )
             ) {
-                scheduleCatalogReconcile(context, forceRefresh = true)
+                // 资产队列本身已经通过增量发布更新 catalog。这里仅安排轻量对账，
+                // 避免每首歌结束都强制完整枚举 SAF 导致后段 GC 和文件增长观感变慢
+                scheduleCatalogReconcile(context, forceRefresh = false)
             }
         }
     }
@@ -6582,6 +7414,7 @@ object GlobalDownloadManager {
                 operationId = id,
                 state = "FINALIZED"
             )
+            AudioDownloadManager.clearCoreCommittedOperation(id)
         }
         cleanupFinalizedPendingArtifacts(
             context = context,
@@ -9082,7 +9915,7 @@ object GlobalDownloadManager {
             } else {
                 null
             }
-            val requestedReferences = mergeManagedRequestedReferences(
+            var requestedReferences = mergeManagedRequestedReferences(
                 deletePlans.map(ManagedDownloadSongDeletePlan::requestedReferences) +
                     listOfNotNull(fullLibraryDeletePlan?.requestedReferences)
             )
@@ -9091,14 +9924,96 @@ object GlobalDownloadManager {
                 "批量删除下载开始: songs=${targetSongs.size}, references=${requestedReferences.size}, " +
                     "visible=${_downloadedSongs.value.size}"
             )
-            val deletedReferences = if (requestedReferences.isNotEmpty()) {
+            var deletedReferences = if (requestedReferences.isNotEmpty()) {
                 ManagedDownloadStorage.deleteReferences(appContext, requestedReferences)
             } else {
                 emptySet()
             }
-            val deletionResult = resolveDownloadedSongDeleteResult(
+            var fullLibrarySnapshotComplete = deletesEntireCatalog &&
+                fullLibraryDeletePlan?.snapshotComplete == true
+            var verifiedRemainingReferences: Set<String>? = null
+            if (deletesEntireCatalog && fullLibrarySnapshotComplete) {
+                // 收尾协程可能在第一轮快照后刚好写出 pending。只做一次有界复查，
+                // 在清空栅栏内把这类尾部引用一并删除，避免留下永久 .pending
+                val verificationPlan = try {
+                    managedDownloadDeletePlanner.buildFullLibraryDeletePlan(appContext)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Throwable) {
+                    NPLogger.w(
+                        TAG,
+                        "全选删除尾部快照读取失败，保留恢复意图: ${error.message}",
+                        error
+                    )
+                    null
+                }
+                if (verificationPlan?.snapshotComplete == true) {
+                    val verificationReferences = verificationPlan.requestedReferences
+                    val residualReferences = verificationReferences - deletedReferences
+                    var residualDeleteFailed = false
+                    var residualDeletedReferences = emptySet<String>()
+                    if (residualReferences.isNotEmpty()) {
+                        val residualDeleted = try {
+                            ManagedDownloadStorage.deleteReferences(
+                                context = appContext,
+                                references = residualReferences
+                            )
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (error: Throwable) {
+                            fullLibrarySnapshotComplete = false
+                            NPLogger.w(
+                                TAG,
+                                "全选删除尾部引用清理失败，保留恢复意图: ${error.message}",
+                                error
+                            )
+                            residualDeleteFailed = true
+                            emptySet()
+                        }
+                        residualDeletedReferences = residualDeleted
+                        deletedReferences = deletedReferences + residualDeleted
+                    }
+                    requestedReferences = mergeManagedRequestedReferences(
+                        listOf(requestedReferences, verificationReferences)
+                    )
+                    if (!residualDeleteFailed) {
+                        // 复查快照代表当前物理目录事实。即使另一轮幂等删除已经
+                        // 抢先移除了对象，不能再用“本轮返回 deleted 为空”复活 catalog
+                        // 复查快照可能仍返回第一轮已经删除的旧引用。两轮删除结果都
+                        // 必须从快照中扣除，否则幂等删除会被误判成残留并复活歌曲
+                        verifiedRemainingReferences = resolveFullLibraryRemainingReferences(
+                            verificationReferences = verificationReferences,
+                            deletedReferences = deletedReferences,
+                            residualDeletedReferences = residualDeletedReferences
+                        )
+                    }
+                    NPLogger.d(
+                        TAG,
+                        "全选删除完成尾部快照复查: " +
+                            "discovered=${verificationReferences.size}, " +
+                            "residual=${residualReferences.size}"
+                    )
+                } else {
+                    fullLibrarySnapshotComplete = false
+                    NPLogger.w(
+                        TAG,
+                        "全选删除尾部快照不完整，保留恢复意图等待下一轮"
+                    )
+                }
+            }
+            val remainingReferences = verifiedRemainingReferences
+                ?: (requestedReferences - deletedReferences)
+            val perSongDeletionResult = resolveDownloadedSongDeleteResult(
                 deletePlans = deletePlans,
                 deletedReferences = deletedReferences
+            )
+            val deletionResult = resolveConfirmedFullLibraryDeleteResult(
+                targetSongs = targetSongs,
+                snapshotComplete = fullLibrarySnapshotComplete,
+                requestedReferences = requestedReferences,
+                deletedReferences = deletedReferences,
+                remainingReferences = remainingReferences,
+                fallback = perSongDeletionResult
             )
             settleDownloadedSongDeleteSession(
                 context = appContext,
@@ -9106,9 +10021,8 @@ object GlobalDownloadManager {
                 deletedSongs = deletionResult.deletedSongs,
                 restoredSongs = deletionResult.failedSongs
             )
-            val remainingReferences = requestedReferences - deletedReferences
             val fullLibrarySnapshotIncomplete = deletesEntireCatalog &&
-                fullLibraryDeletePlan?.snapshotComplete != true
+                !fullLibrarySnapshotComplete
             if (deletionResult.failedSongs.isNotEmpty()) {
                 NPLogger.w(
                     TAG,
@@ -10470,7 +11384,8 @@ object GlobalDownloadManager {
         songKey: String,
         expectedAttemptId: Long?,
         rememberForRetry: Boolean,
-        operationId: String? = null
+        operationId: String? = null,
+        knownOperationState: String? = null
     ) {
         val appContext = context.applicationContext
         val normalizedOperationId = operationId
@@ -10479,7 +11394,19 @@ object GlobalDownloadManager {
         // 任务卡片可能已经被替代 operation 更新，先按 operation 身份停止旧宿主。
         // 不能让后面的 current attempt 检查把旧网络调用留在执行槽位里
         normalizedOperationId?.let { oldOperationId ->
-            AudioDownloadManager.pauseOperationDownloadForExecutionHost(oldOperationId)
+            if (
+                !isPostCoreDownloadOperationState(knownOperationState) &&
+                    !AudioDownloadManager.isCoreCommittedOperation(oldOperationId)
+            ) {
+                AudioDownloadManager.pauseOperationDownloadForExecutionHost(oldOperationId)
+            } else {
+                AudioDownloadManager.clearOperationPauseForExecutionHost(oldOperationId)
+                NPLogger.d(
+                    TAG,
+                    "停止请求跳过已提交 core operation: operationId=$oldOperationId, " +
+                        "state=$knownOperationState"
+                )
+            }
         }
         if (
             isDownloadClearFenceActive(appContext, stableKey = songKey) ||
@@ -11358,6 +12285,20 @@ object GlobalDownloadManager {
                 )
             }
         } catch (_: CancellationException) {
+            val coreRecoveryScheduled = recoverCorePublicationAfterExecutionCancellation(
+                context = appContext,
+                song = song,
+                operationId = operationId,
+                expectedAttemptId = attemptId,
+                requestGeneration = requestGeneration,
+                admissionTicket = admissionTicket,
+                artifactLeaseId = acquiredLeaseId
+            )
+            if (coreRecoveryScheduled) {
+                // core 已经提交后，宿主取消只代表本次执行结束，不能把正式发布凭据
+                // 当成普通取消释放，否则 pending 音频只能等到下一次冷启动
+                return
+            }
             val pausedForNetworkPolicy =
                 AudioDownloadManager.isDownloadPausedForNetworkPolicy(songKey) ||
                     operationId?.let(
@@ -16616,7 +17557,11 @@ object GlobalDownloadManager {
                     if (!PersistentDownloadedSongDeleteIntentStore.hasPending(appContext)) {
                         return@launch
                     }
-                    val replayed = replayFullLibraryDeleteWithoutCatalog(appContext)
+                    // 正常删除和无 catalog 恢复共用同一把锁。否则恢复线程可能
+                    // 先删完引用，正常会话随后把空删除结果误判为失败并复活歌曲
+                    val replayed = downloadedSongDeleteMutex.withLock {
+                        replayFullLibraryDeleteWithoutCatalog(appContext)
+                    }
                     if (replayed) {
                         NPLogger.i(TAG, "进程重启后的全选删除已按目录快照收敛")
                         return@launch
