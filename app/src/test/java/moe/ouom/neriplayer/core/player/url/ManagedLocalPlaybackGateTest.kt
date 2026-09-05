@@ -44,18 +44,26 @@ class ManagedLocalPlaybackGateTest {
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
                 "AudioDownloadManager.kt"
         ).readText()
-        assertTrue(downloadSource.contains("peekPendingDownloadedAudio(song)"))
-        assertTrue(downloadSource.contains("metadataForAudioEntry(snapshot, entry)"))
-        val localUriBody = downloadSource.substringAfter("fun getLocalPlaybackUri")
-            .substringBefore("private fun resolveRecentlyCommittedAudioReference")
-        val indexedLookupBody = downloadSource.substringAfter("fun mayHaveIndexedLocalDownload")
+        val playbackSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadPlaybackCoordinator.kt"
+        ).readText()
+        assertTrue(playbackSource.contains("peekPendingDownloadedAudio(song)"))
+        assertTrue(playbackSource.contains("metadataForAudioEntry(snapshot,"))
+        val localUriBody = playbackSource.substringAfter("fun getLocalPlaybackUri")
+            .substringBefore("suspend fun resolvePermittedLocalPlaybackUri")
+        val indexedLookupBody = playbackSource.substringAfter("fun mayHaveIndexedLocalDownload")
             .substringBefore("fun hasLocalDownload")
         val clearCompletedReferenceBody = downloadSource
             .substringAfter("private fun clearCompletedAudioReference")
             .substringBefore("private fun clearPartialSidecarReferences")
-        assertTrue(localUriBody.contains("resolveRecentlyCommittedAudioReference(context, song)"))
+        assertTrue(localUriBody.contains("resolveRecentlyCommittedAudioReference("))
         assertTrue(indexedLookupBody.contains("peekCompletedAudioReference(song)"))
-        assertTrue(clearCompletedReferenceBody.contains("removeCompletedAudioReferenceAliases"))
+        assertTrue(
+            clearCompletedReferenceBody.contains(
+                "completedAudioReferenceRegistry.clearCompletedAudioReference"
+            )
+        )
     }
 
     @Test
@@ -78,14 +86,14 @@ class ManagedLocalPlaybackGateTest {
 
     @Test
     fun `catalog ready miss still probes the durable snapshot before NotIndexed`() {
-        val downloadSource = locateProjectFile(
+        val playbackSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
-                "AudioDownloadManager.kt"
+                "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
-        val indexedLookupBody = downloadSource.substringAfter(
+        val indexedLookupBody = playbackSource.substringAfter(
             "fun mayHaveIndexedLocalDownload"
         ).substringBefore("fun hasLocalDownload")
-        val durableLookupBody = downloadSource.substringAfter(
+        val durableLookupBody = playbackSource.substringAfter(
             "private fun findDurableCachedManagedAudio"
         ).substringBefore("private fun canUseReadableManagedAudioForPlayback")
         val durableProbeIndex = indexedLookupBody.indexOf(
@@ -104,7 +112,7 @@ class ManagedLocalPlaybackGateTest {
         assertTrue(durableLookupBody.contains("cachedDownloadLibrarySnapshot"))
         assertTrue(!durableLookupBody.contains("scanLocalFiles"))
 
-        val indexedPlaybackBody = downloadSource.substringAfter(
+        val indexedPlaybackBody = playbackSource.substringAfter(
             "internal fun resolveIndexedLocalPlaybackReference"
         ).substringBefore("private fun isRecentManagedPlaybackReference")
         assertTrue(indexedPlaybackBody.contains("durableCachedAudio?.audio"))

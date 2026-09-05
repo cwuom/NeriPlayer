@@ -429,6 +429,10 @@ class AudioDownloadManagerTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
         ).readText()
+        val batchSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadBatchCoordinator.kt"
+        ).readText()
         val pauseBody = methodBody(source, "pauseDownloadsForNetworkPolicy")
         val executionBody = methodBody(source, "executeDownloadSong")
         val hlsBody = methodBody(source, "singleThreadHlsDownload")
@@ -443,18 +447,18 @@ class AudioDownloadManagerTest {
         assertTrue(hlsBody.contains("stage = \"hls_resume_reset\""))
         assertTrue(hlsBody.contains("stage = \"hls_open_working_file\""))
         assertFalse(hlsBody.contains("clearHlsResumeState(destFile)\n\n        NPLogger.d"))
-        assertTrue(source.contains("onSongPausedForNetworkPolicy"))
-        assertTrue(source.contains("queuedCompletion == null && !pausedForNetworkPolicy"))
+        assertTrue(batchSource.contains("onSongPausedForNetworkPolicy"))
+        assertTrue(batchSource.contains("queuedCompletion == null && !pausedForNetworkPolicy"))
     }
 
     @Test
     fun `direct and chunked streams sync the working file before completion`() {
-        val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        val transferSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadFileTransfer.kt"
         ).readText()
-
-        assertTrue(methodBody(source, "singleThreadDownload").contains("output.fd.sync()"))
-        assertTrue(methodBody(source, "singleThreadChunkedDownload").contains("output.fd.sync()"))
+        assertTrue(transferSource.contains("suspend fun download("))
+        assertTrue(transferSource.contains("private suspend fun downloadChunked("))
+        assertTrue(transferSource.split("output.fd.sync()").size - 1 >= 4)
     }
 
     @Test
@@ -1104,7 +1108,7 @@ class AudioDownloadManagerTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
         ).readText()
-        val downloadSongBody = methodBody(source, "downloadSong")
+        val downloadSongBody = methodBody(source, "downloadSong", preferLast = true)
         val executionBody = methodBody(source, "executeDownloadSong")
 
         assertTrue(downloadSongBody.contains("downloadSongOnIo("))
@@ -1113,6 +1117,81 @@ class AudioDownloadManagerTest {
         assertFalse(executionBody.contains("ManagedDownloadStorage.saveAudioFromTemp("))
         assertTrue(source.contains("private suspend fun downloadPayloadForTransport("))
         assertTrue(source.contains("private suspend fun finalizeDownloadedAudio("))
+    }
+
+    @Test
+    fun `late cancellation cleanup is scoped to the owning operation`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+        val trackedCallBody = managerSource
+            .substringAfter("private inline fun <T> executeTrackedCall(")
+            .substringBefore("internal fun consumeCompletedAudioReference")
+        val cancellationGuardBody = managerSource
+            .substringAfter("private fun ensureSongDownloadNotCancelled(")
+            .substringBefore("private suspend fun buildCorePendingMetadata")
+        val transferSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadFileTransfer.kt"
+        ).readText()
+        val coverSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadCoverCoordinator.kt"
+        ).readText()
+
+        assertTrue(
+            trackedCallBody.contains(
+                "expectedOperationId = normalizedOperationId"
+            )
+        )
+        assertTrue(
+            cancellationGuardBody.contains(
+                "expectedAttemptId = attemptId"
+            )
+        )
+        assertTrue(
+            cancellationGuardBody.contains(
+                "expectedOperationId = operationId"
+            )
+        )
+        assertTrue(
+            transferSource.contains(
+                "operationId: String?"
+            )
+        )
+        assertTrue(managerSource.contains("private val referenceOwnership"))
+        assertTrue(
+            managerSource.contains(
+                "clearCompletedAudioReference(songKey, operationId = effectiveOperationId)"
+            )
+        )
+        assertTrue(coverSource.contains("operationId: String?"))
+        assertTrue(coverSource.contains("requireActiveAttempt: Boolean,"))
+        assertTrue(coverSource.contains("operationId"))
+        assertTrue(managerSource.contains("active, operationId ->"))
+    }
+
+    @Test
+    fun `batch progress publication leaves aggregation lock before invoking hook`() {
+        val batchSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadBatchCoordinator.kt"
+        ).readText()
+        val publishBody = batchSource
+            .substringAfter("suspend fun publishBatchProgress()")
+            .substringBefore("suspend fun markSongStarted")
+        val snapshotIndex = publishBody.indexOf("val snapshot = progressMutex.withLock")
+        val publishCommentIndex = publishBody.indexOf("外部 Flow 发布不占用聚合锁")
+        val publishMutexIndex = publishBody.indexOf("progressPublishMutex.withLock")
+        val updateIndex = publishBody.indexOf("hooks.updateBatchProgressForSession")
+
+        assertTrue(snapshotIndex >= 0)
+        assertTrue(publishCommentIndex > snapshotIndex)
+        assertTrue(publishMutexIndex > publishCommentIndex)
+        assertTrue(updateIndex > publishMutexIndex)
+        assertTrue(batchSource.contains("nextProgressVersion"))
+        assertTrue(batchSource.contains("publishedProgressVersion"))
+        assertTrue(batchSource.contains("kotlinx.coroutines.NonCancellable"))
+        assertTrue(batchSource.contains("progressJob.cancelAndJoin()"))
     }
 
     @Test
@@ -1137,7 +1216,8 @@ class AudioDownloadManagerTest {
     @Test
     fun `recent completed bridge is checked before SAF inspection`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
         val playbackBody = methodBody(source, "resolvePermittedLocalPlayback")
         val bridgeIndex = playbackBody.indexOf(
@@ -2223,10 +2303,20 @@ class AudioDownloadManagerTest {
         assertEquals(0L, AudioDownloadManager.advanceRetryWakeSignalVersion(Long.MAX_VALUE))
     }
 
-    private fun methodBody(source: String, methodName: String): String {
+    private fun methodBody(
+        source: String,
+        methodName: String,
+        preferLast: Boolean = false
+    ): String {
         val signatureStart = Regex(
             "(?:private|internal|public)?\\s*(?:suspend\\s+)?fun\\s+$methodName\\b"
-        ).find(source)?.range?.first
+        ).let { regex ->
+            if (preferLast) {
+                regex.findAll(source).lastOrNull()?.range?.first
+            } else {
+                regex.find(source)?.range?.first
+            }
+        }
             ?: error("method not found: $methodName")
         val bodyStart = source.indexOf('{', signatureStart)
         require(bodyStart >= 0) { "method body not found: $methodName" }

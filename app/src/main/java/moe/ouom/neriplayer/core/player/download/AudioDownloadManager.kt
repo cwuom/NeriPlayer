@@ -26,138 +26,81 @@ package moe.ouom.neriplayer.core.player.download
  */
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.os.Looper
-import androidx.core.net.toUri
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.supervisorScope
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.DownloadCoreCommitPhase
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
-import moe.ouom.neriplayer.core.download.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.boundManagedDownloadFileName
-import moe.ouom.neriplayer.core.download.mergeDownloadProgress
 import moe.ouom.neriplayer.core.download.resource.DownloadTransferPermitRegistry
 import moe.ouom.neriplayer.core.download.resource.DownloadTransferWatchdog
-import moe.ouom.neriplayer.core.download.resource.DownloadTransferStalledException
 import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceGuard
 import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
 import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
 import moe.ouom.neriplayer.core.download.resource.containsDownloadStorageSpaceFailure
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
-import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
-import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
-import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedAudioEntry
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup
-import moe.ouom.neriplayer.core.download.downloadedSongPlaybackReferenceCandidates
-import moe.ouom.neriplayer.core.download.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.shouldRollbackCancelledAudio
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
-import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
-import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
-import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.engine.datasource.ChunkRequestIOException
-import moe.ouom.neriplayer.core.player.engine.datasource.ResumableHttpRangeSupport
-import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
-import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.playbackVisualKey
-import moe.ouom.neriplayer.data.model.displayCoverUrl
-import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.model.SongIdentity
-import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeWebRemixDirectMissingPoToken
-import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
-import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
-import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkTypeOrNull
 import moe.ouom.neriplayer.data.traffic.downloadNetworkTypeOrNull
 import moe.ouom.neriplayer.data.traffic.hasConfirmedInternetAccess
-import moe.ouom.neriplayer.data.traffic.validatedTrafficNetworkTypeOrNull
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import okhttp3.Dispatcher
 import okhttp3.Request
-import okhttp3.ResponseBody
 import okio.Buffer
 import okio.BufferedSource
 import okio.buffer
 import okio.sink
-import org.json.JSONObject
-import java.io.EOFException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.IOException
-import java.io.InterruptedIOException
-import java.net.ConnectException
-import java.net.SocketException
-import java.net.SocketTimeoutException
-import java.net.URI
-import java.net.URLConnection
-import java.net.UnknownHostException
 import java.security.MessageDigest
 import java.util.Collections
-import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
-import javax.net.ssl.SSLException
 
 /**
  * 音频下载管理器: 解析来源 (网易云 / Bilibili) 并保存到本地目录
@@ -176,10 +119,8 @@ object AudioDownloadManager {
     internal const val SOURCE_RESOLVE_PARALLELISM = 10
     internal const val CORE_COMMIT_PARALLELISM = 2
     private const val BATCH_COMPLETION_CALLBACK_PARALLELISM = 2
-    private const val PROGRESS_EMIT_INTERVAL_NS = 180_000_000L
     private const val DURABLE_CHECKPOINT_INTERVAL_BYTES = 1L * 1024L * 1024L
     private const val DURABLE_CHECKPOINT_INTERVAL_NS = 500_000_000L
-    private const val PROGRESS_EMIT_MIN_BYTES_DELTA = 256L * 1024L
     private const val PROGRESS_EVENT_BUFFER_CAPACITY = 64
     private const val DOWNLOAD_TRAFFIC_FLUSH_BYTES = 512L * 1024L
     private const val TRANSIENT_DOWNLOAD_MAX_ATTEMPTS = 6
@@ -194,21 +135,9 @@ object AudioDownloadManager {
     private const val DOWNLOAD_CLIENT_WRITE_TIMEOUT_MS = 45_000L
     private const val COVER_DOWNLOAD_MAX_ATTEMPTS = 3
     private const val COVER_DOWNLOAD_RETRY_DELAY_MS = 250L
-    private const val MAX_INLINE_SIDECAR_LYRIC_BYTES = 512L * 1024L
-    private const val LEGACY_INDEX_REFRESH_COOLDOWN_MS = 5_000L
     /** core 提交和目录索引发布之间允许播放入口复用已校验引用的最长时间 */
     private const val COMPLETED_AUDIO_REFERENCE_RETENTION_MS = 2 * 60 * 1_000L
     private const val COMPLETED_AUDIO_REFERENCE_MAX_ENTRIES = 512
-    private const val MANAGED_PLAYBACK_REBIND_COOLDOWN_MS = 1_500L
-    private const val DIRECTORY_MUTATION_PLAYBACK_WAIT_MS = 1_200L
-    private const val YOUTUBE_DOWNLOAD_SHARED_DIRECT_RESOLVE_TIMEOUT_MS = 3_500L
-    private const val YOUTUBE_DOWNLOAD_FRESH_DIRECT_RESOLVE_TIMEOUT_MS = 18_000L
-    private const val YOUTUBE_DOWNLOAD_SHARED_PLAYABLE_RESOLVE_TIMEOUT_MS = 6_000L
-    private const val YOUTUBE_DOWNLOAD_FRESH_PLAYABLE_RESOLVE_TIMEOUT_MS = 18_000L
-
-    private fun canBlockStorageLookup(): Boolean {
-        return Looper.myLooper() != Looper.getMainLooper()
-    }
     private const val DOWNLOAD_READ_BUFFER_BYTES = 64L * 1024L
     private const val YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES = 4L * 1024L * 1024L
     private const val MAX_HLS_PLAYLIST_BYTES = 1L * 1024L * 1024L
@@ -267,21 +196,214 @@ object AudioDownloadManager {
     )
     internal val latestProgressByOperation: StateFlow<Map<String, DownloadProgress>> =
         _latestProgressByOperation
-    private val completedAudioReferencesBySongKey =
-        ConcurrentHashMap<String, CompletedAudioReference>()
-    private val completedAudioReferencesByReference =
-        ConcurrentHashMap<String, CompletedAudioReference>()
-    /** 多张映射必须一起替换，否则首播可能读到旧 URI 别名 */
-    private val completedAudioReferenceMutationLock = Any()
+    private val completedAudioReferenceRegistry = AudioDownloadReferenceRegistry(
+        retentionMs = COMPLETED_AUDIO_REFERENCE_RETENTION_MS,
+        maxEntries = COMPLETED_AUDIO_REFERENCE_MAX_ENTRIES
+    )
+    private val referenceOwnership = AudioDownloadReferenceOwnership()
     private val managedPlaybackRebindAtMsBySongKey = ConcurrentHashMap<String, Long>()
-    private val partialSidecarReferencesBySongKey =
-        ConcurrentHashMap<String, DownloadedSidecarReferences>()
-    private val coverDownloadSingleFlight =
-        CoverDownloadSingleFlight<CoverDownloadFlightKey, CachedCoverReference?>()
+    private val coverCoordinator by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AudioDownloadCoverCoordinator(
+            maxAttempts = COVER_DOWNLOAD_MAX_ATTEMPTS,
+            retryDelayMs = COVER_DOWNLOAD_RETRY_DELAY_MS,
+            maxResponseBytes = MAX_COVER_RESPONSE_BYTES,
+            ensureNotCancelled = { key, stage, session, attempt, active, operationId ->
+                ensureSongDownloadNotCancelled(
+                    songKey = key,
+                    stage = stage,
+                    batchSessionId = session,
+                    attemptId = attempt,
+                    operationId = operationId,
+                    requireActiveAttempt = active
+                )
+            },
+            executeTrackedCall = { request, songKey, operationId, block ->
+                executeTrackedCall(
+                    client = backgroundDownloadClient,
+                    request = request,
+                    songKey = songKey,
+                    operationId = operationId,
+                    block = block
+                )
+            },
+            rememberPartial = { key, operationId, references ->
+                rememberPartialSidecarReferences(
+                    songKey = key,
+                    sidecarReferences = references,
+                    operationId = operationId
+                )
+            }
+        )
+    }
     private val hlsResumeStore = AudioHlsResumeStore(
         checkpointFileFor = ManagedDownloadStorage::buildWorkingHlsCheckpointFile,
         readBufferBytes = DOWNLOAD_READ_BUFFER_BYTES.toInt()
     )
+    private val fileTransfer = AudioDownloadFileTransfer(
+        hooks = object : AudioDownloadFileTransfer.Hooks {
+            override fun ensureDownloadNotCancelled(
+                songId: Long,
+                songKey: String,
+                destFile: File,
+                batchSessionId: Long?,
+                attemptId: Long?,
+                operationId: String?
+            ) {
+                this@AudioDownloadManager.ensureDownloadNotCancelled(
+                    songId = songId,
+                    songKey = songKey,
+                    destFile = destFile,
+                    batchSessionId = batchSessionId,
+                    attemptId = attemptId,
+                    operationId = operationId
+                )
+            }
+
+            override fun <T> withWorkingFileMutation(
+                songKey: String,
+                stage: String,
+                batchSessionId: Long?,
+                attemptId: Long?,
+                operationId: String?,
+                block: () -> T
+            ): T = this@AudioDownloadManager.withNetworkPolicyMutationPermit(
+                songKey = songKey,
+                stage = stage,
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                operationId = operationId,
+                block = block
+            )
+
+            override fun deleteWorkingFile(file: File?) {
+                this@AudioDownloadManager.deleteWorkingFile(file)
+            }
+
+            override fun storageSpaceOwnerKey(
+                operationId: String?,
+                attemptId: Long?,
+                songKey: String,
+                file: File
+            ): String = this@AudioDownloadManager.storageSpaceOwnerKey(
+                operationId = operationId,
+                attemptId = attemptId,
+                songKey = songKey,
+                file = file
+            )
+
+            override fun <T> executeTrackedCall(
+                client: okhttp3.OkHttpClient,
+                request: Request,
+                songKey: String,
+                operationId: String?,
+                block: (okhttp3.Response) -> T
+            ): T = this@AudioDownloadManager.executeTrackedCall(
+                client = client,
+                request = request,
+                songKey = songKey,
+                operationId = operationId,
+                block = block
+            )
+
+            override fun newTrafficAccumulator(): TrafficByteAccumulator =
+                this@AudioDownloadManager.newDownloadTrafficAccumulator()
+
+            override fun markTransferNetworkActivity(
+                operationId: String?,
+                attemptId: Long?,
+                songKey: String,
+                transferGeneration: Long?
+            ) {
+                this@AudioDownloadManager.markTransferNetworkActivity(
+                    operationId = operationId,
+                    attemptId = attemptId,
+                    songKey = songKey,
+                    transferGeneration = transferGeneration
+                )
+            }
+
+            override fun publishProgress(progress: DownloadProgress) {
+                this@AudioDownloadManager.publishProgress(progress)
+            }
+
+            override fun resolveVisibleDownloadFileName(
+                requestedName: String,
+                actualName: String
+            ): String = moe.ouom.neriplayer.core.player.download
+                .resolveVisibleDownloadFileName(requestedName, actualName)
+        },
+        readBufferBytes = DOWNLOAD_READ_BUFFER_BYTES,
+        preferredChunkSizeBytes = YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES
+    )
+    private val playbackCoordinator by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AudioDownloadPlaybackCoordinator(
+            completedAudioReferenceRegistry = completedAudioReferenceRegistry,
+            isSongDownloadActive = ::isSongDownloadActive,
+            directoryMutationWaitMs = 1_200L,
+            tag = TAG
+        )
+    }
+    private val batchCoordinator by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AudioDownloadBatchCoordinator(
+            latestProgressByOperation = latestProgressByOperation,
+            maxCompletionCallbacks = BATCH_COMPLETION_CALLBACK_PARALLELISM,
+            hooks = object : AudioDownloadBatchCoordinator.Hooks {
+                override fun startBatchSession(): Long =
+                    this@AudioDownloadManager.startBatchSession()
+
+                override fun isBatchSessionCurrent(batchSessionId: Long?): Boolean =
+                    this@AudioDownloadManager.isBatchSessionCurrent(batchSessionId)
+
+                override fun finishBatchSession(batchSessionId: Long) {
+                    this@AudioDownloadManager.finishBatchSession(batchSessionId)
+                }
+
+                override fun updateBatchProgressForSession(
+                    batchSessionId: Long,
+                    progress: BatchDownloadProgress?
+                ) {
+                    this@AudioDownloadManager.updateBatchProgressForSession(
+                        batchSessionId,
+                        progress
+                    )
+                }
+
+                override fun isAllDownloadsCancelled(): Boolean = _isCancelled.value
+
+                override fun resetCancelFlag() {
+                    _isCancelled.value = false
+                }
+
+                override fun resolveWorkerCount(
+                    songCount: Int,
+                    requestedParallelism: Int
+                ): Int = this@AudioDownloadManager.resolveBatchDownloadWorkerCount(
+                    songCount = songCount,
+                    requestedParallelism = requestedParallelism
+                )
+
+                override fun shouldPreserveArtifactsForNetworkPolicy(
+                    songKey: String
+                ): Boolean = this@AudioDownloadManager
+                    .shouldPreserveArtifactsForNetworkPolicy(songKey)
+
+                override suspend fun downloadSong(
+                    context: Context,
+                    song: SongItem,
+                    batchSessionId: Long,
+                    attemptId: Long?
+                ) {
+                    this@AudioDownloadManager.downloadSong(
+                        context = context,
+                        song = song,
+                        batchSessionId = batchSessionId,
+                        attemptId = attemptId
+                    )
+                }
+            },
+            tag = TAG
+        )
+    }
     private val retryWakeSignalVersion = MutableStateFlow(0L)
     private val activeCallsBySongKey =
         ConcurrentHashMap<String, MutableSet<okhttp3.Call>>()
@@ -300,53 +422,8 @@ object AudioDownloadManager {
     private val networkRecoveryMonitorLock = Any()
     private var lastConfirmedInternetAccess = false
 
-    private data class CoverDownloadFlightKey(
-        val songKey: String,
-        val fileName: String
-    )
-
-    private data class CompletedAudioReference(
-        val audio: ManagedDownloadStorage.StoredEntry,
-        val committedAtMs: Long,
-        val songLookupKeys: Set<String>,
-        val rootGeneration: Long
-    )
-
-    private data class CachedManagedAudio(
-        val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
-        val audio: ManagedDownloadStorage.StoredEntry
-    )
-
-    private data class CachedCoverReference(
-        val reference: String,
-        val created: Boolean
-    )
-
     @Volatile
     private var lastRecoveryOpportunityAtMs = 0L
-
-    @Volatile
-    private var lastLegacyIndexRefreshAtMs = 0L
-
-    private fun requestBackgroundDownloadIndexRefresh(context: Context) {
-        val nowMs = System.currentTimeMillis()
-        val shouldRequest = synchronized(this) {
-            val previousAtMs = lastLegacyIndexRefreshAtMs
-            if (previousAtMs in 1..nowMs &&
-                nowMs - previousAtMs < LEGACY_INDEX_REFRESH_COOLDOWN_MS
-            ) {
-                false
-            } else {
-                lastLegacyIndexRefreshAtMs = nowMs
-                true
-            }
-        }
-        if (!shouldRequest) {
-            return
-        }
-        NPLogger.d(TAG, "本地音频已可读，后台轻量刷新下载索引")
-        GlobalDownloadManager.scanLocalFiles(context, forceRefresh = false)
-    }
 
     private fun newDownloadTrafficAccumulator(): TrafficByteAccumulator {
         val appContext = AppContainer.applicationContext
@@ -604,7 +681,7 @@ object AudioDownloadManager {
         }
     }
 
-    private data class ResolvedDownloadSource(
+    internal data class ResolvedDownloadSource(
         val url: String,
         val mimeType: String? = null,
         val fileExtensionHint: String? = null,
@@ -716,77 +793,23 @@ object AudioDownloadManager {
         progress: DownloadProgress,
         nowNs: Long,
         force: Boolean = false
-    ): Boolean {
-        if (force || previous == null) {
-            return true
-        }
-        if (previous.attemptId != progress.attemptId) {
-            return true
-        }
-        val enoughTimeElapsed = nowNs - previous.emittedAtNs >= PROGRESS_EMIT_INTERVAL_NS
-        val completedTransfer = progress.stage != DownloadStage.TRANSFERRING ||
-            (progress.totalBytes > 0L && progress.bytesRead >= progress.totalBytes)
-        if (progress.stage != previous.stage || completedTransfer) {
-            return true
-        }
-        if (!enoughTimeElapsed) {
-            return false
-        }
-        if (progress.totalBytes != previous.totalBytes) {
-            return true
-        }
-        if (progress.totalBytes <= 0L) {
-            return progress.bytesRead > previous.bytesRead
-        }
-        val bytesDelta = progress.bytesRead - previous.bytesRead
-        val absoluteBytesDelta = if (bytesDelta >= 0L) bytesDelta else -bytesDelta
-        return progress.percentage != previous.percentage ||
-            absoluteBytesDelta >= PROGRESS_EMIT_MIN_BYTES_DELTA
-    }
+    ): Boolean = AudioDownloadProgressPolicy.shouldPublishAudioDownloadProgress(
+        previous,
+        progress,
+        nowNs,
+        force
+    )
 
     internal fun shouldReplaceLatestProgress(
         previous: DownloadProgress?,
         incoming: DownloadProgress
-    ): Boolean {
-        return previous != mergeLatestProgress(previous, incoming)
-    }
+    ): Boolean = AudioDownloadProgressPolicy.shouldReplaceLatestProgress(previous, incoming)
 
     internal fun mergeLatestProgress(
         previous: DownloadProgress?,
         incoming: DownloadProgress
-    ): DownloadProgress {
-        if (previous == null) {
-            return incoming
-        }
-        val previousAttemptId = previous.attemptId
-        val incomingAttemptId = incoming.attemptId
-        if (previousAttemptId != null && incomingAttemptId != null) {
-            return if (incomingAttemptId > previousAttemptId) {
-                incoming
-            } else if (incomingAttemptId < previousAttemptId) {
-                previous
-            } else {
-                val previousGeneration = previous.transferGeneration
-                val incomingGeneration = incoming.transferGeneration
-                if (
-                    previousGeneration != null &&
-                        incomingGeneration != null &&
-                        incomingGeneration < previousGeneration
-                ) {
-                    previous
-                } else {
-                    mergeDownloadProgress(previous, incoming)
-                }
-            }
-        }
-        if (previousAttemptId != null) {
-            return previous
-        }
-        if (incomingAttemptId != null) {
-            return incoming
-        }
-        return mergeDownloadProgress(previous, incoming)
-    }
+    ): DownloadProgress = AudioDownloadProgressPolicy.mergeLatestProgress(previous, incoming)
+
 
     internal data class DownloadedSidecarReferences(
         val coverReference: String? = null,
@@ -841,7 +864,7 @@ object AudioDownloadManager {
         }
     }
 
-    private data class DownloadedPayloadSummary(
+    internal data class DownloadedPayloadSummary(
         val actualBytes: Long,
         val expectedBytes: Long?,
         val resumeMetadataAvailable: Boolean = true
@@ -905,286 +928,122 @@ object AudioDownloadManager {
             get() = end - start + 1L
     }
 
-    internal fun buildCoverDownloadCandidateUrls(song: SongItem): List<String> {
-        return listOf(
-            song.displayCoverUrl(),
-            song.coverUrl,
-            song.originalCoverUrl,
-            song.customCoverUrl
-        ).mapNotNull { candidate ->
-            candidate
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?.takeIf(::isNetworkCoverUrl)
-        }.distinct()
-    }
+    internal fun buildCoverDownloadCandidateUrls(song: SongItem): List<String> =
+        AudioDownloadTransferPolicy.buildCoverDownloadCandidateUrls(song)
 
-    private fun isNetworkCoverUrl(url: String): Boolean {
-        return url.startsWith("http://", ignoreCase = true) ||
-            url.startsWith("https://", ignoreCase = true)
-    }
+    internal fun isTransferSizeComplete(expectedBytes: Long?, actualBytes: Long): Boolean =
+        AudioDownloadTransferPolicy.isTransferSizeComplete(expectedBytes, actualBytes)
 
-    internal fun isTransferSizeComplete(expectedBytes: Long?, actualBytes: Long): Boolean {
-        val expectedSize = expectedBytes?.takeIf { it > 0L }
-        if (expectedSize != null && actualBytes < expectedSize) {
-            return false
-        }
-        return ManagedDownloadSizePolicy.isTransferSizeComplete(
-            expectedSizeBytes = expectedSize,
-            actualSizeBytes = actualBytes
-        )
-    }
-
-    /**
-     * 原始传输长度只适用于 TagLib 修改前的文件
-     */
     internal fun resolveAudioCommitExpectedSize(
         transferExpectedBytes: Long?,
         bytesBeforeMetadata: Long,
         bytesAtCommit: Long
-    ): Long? {
-        val expectedBytes = transferExpectedBytes?.takeIf { it > 0L } ?: return null
-        return expectedBytes.takeIf { bytesBeforeMetadata == bytesAtCommit }
-    }
+    ): Long? = AudioDownloadTransferPolicy.resolveAudioCommitExpectedSize(
+        transferExpectedBytes,
+        bytesBeforeMetadata,
+        bytesAtCommit
+    )
 
     internal fun resolveDownloadTransportKind(
         streamType: YouTubePlayableStreamType,
         request: Request
-    ): DownloadTransportKind {
-        if (streamType == YouTubePlayableStreamType.HLS) {
-            return DownloadTransportKind.HLS
-        }
-        val headers = request.headers.names().associateWith { headerName ->
-            request.header(headerName).orEmpty()
-        }
-        return if (
-            YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(request) &&
-            !ResumableHttpRangeSupport.hasExplicitRangeHeader(headers)
-        ) {
-            DownloadTransportKind.CHUNKED_RANGE
-        } else {
-            DownloadTransportKind.DIRECT
-        }
-    }
+    ): DownloadTransportKind = AudioDownloadTransferPolicy.resolveDownloadTransportKind(
+        streamType,
+        request
+    )
 
-    internal fun buildResumeRangeHeader(completedBytes: Long): String? {
-        return completedBytes
-            .takeIf { it > 0L }
-            ?.let { "bytes=$it-" }
-    }
+    internal fun buildResumeRangeHeader(completedBytes: Long): String? =
+        AudioDownloadTransferPolicy.buildResumeRangeHeader(completedBytes)
 
     internal fun resolveResumeValidatorHeader(
         fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?
-    ): String? {
-        return fingerprint?.etag?.trim()?.takeIf(::isStrongEtag)
-    }
-
-    private fun isStrongEtag(value: String): Boolean {
-        val trimmed = value.trim()
-        return trimmed.length >= 2 &&
-            !trimmed.startsWith("W/", ignoreCase = true) &&
-            trimmed.startsWith('"') &&
-            trimmed.endsWith('"')
-    }
+    ): String? = AudioDownloadTransferPolicy.resolveResumeValidatorHeader(fingerprint)
 
     internal fun shouldDiscardWorkingFileForResume(
         requestUrl: String,
         fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?
-    ): Boolean {
-        val recordedUrl = fingerprint?.sourceUrl
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-            ?: return false
-        val currentUrl = requestUrl.trim()
-        if (recordedUrl == currentUrl) {
-            return false
-        }
-        if (!resolveResumeValidatorHeader(fingerprint).isNullOrBlank()) {
-            return false
-        }
-        val recordedKey = resumeResourceKey(recordedUrl) ?: return false
-        val currentKey = resumeResourceKey(currentUrl) ?: return false
-        return recordedKey != currentKey
-    }
-
-    private fun resumeResourceKey(url: String): String? {
-        val volatileQueryKeys = setOf(
-            "alr",
-            "expire",
-            "expires",
-            "lsig",
-            "n",
-            "sig",
-            "signature",
-            "sp",
-            "st",
-            "token"
-        )
-        return runCatching {
-            val uri = java.net.URI(url)
-            val query = uri.rawQuery
-                ?.split('&')
-                ?.mapNotNull { part ->
-                    val key = part.substringBefore('=').lowercase()
-                    part.takeIf { key.isNotBlank() && key !in volatileQueryKeys }
-                }
-                ?.sorted()
-                ?.joinToString("&")
-                ?.takeIf(String::isNotBlank)
-            buildString {
-                append(uri.scheme.orEmpty().lowercase())
-                append("://")
-                append(uri.rawAuthority.orEmpty().lowercase())
-                append(uri.rawPath.orEmpty())
-                if (query != null) {
-                    append('?')
-                    append(query)
-                }
-            }
-        }.getOrNull()
-    }
+    ): Boolean = AudioDownloadTransferPolicy.shouldDiscardWorkingFileForResume(
+        requestUrl,
+        fingerprint
+    )
 
     internal fun buildResumeRequest(
         request: Request,
         completedBytes: Long,
         fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?
-    ): Request {
-        val resumeRangeHeader = buildResumeRangeHeader(completedBytes) ?: return request
-        val validator = resolveResumeValidatorHeader(fingerprint)
-        return request.newBuilder()
-            .header("Range", resumeRangeHeader)
-            .header("Accept-Encoding", "identity")
-            .removeHeader("If-Range")
-            .apply {
-                if (!validator.isNullOrBlank()) {
-                    header("If-Range", validator)
-                }
-            }
-            .build()
-    }
+    ): Request = AudioDownloadTransferPolicy.buildResumeRequest(
+        request,
+        completedBytes,
+        fingerprint
+    )
 
     internal fun buildChunkResumeRequest(
         request: Request,
         start: Long,
         length: Long,
         fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?
-    ): Request {
-        val validator = resolveResumeValidatorHeader(fingerprint)
-        return YouTubeGoogleVideoRangeSupport.buildChunkedRequest(
-            request = request,
-            start = start,
-            length = length
-        ).newBuilder()
-            .header("Accept-Encoding", "identity")
-            .removeHeader("If-Range")
-            .apply {
-                if (start > 0L && !validator.isNullOrBlank()) {
-                    header("If-Range", validator)
-                }
-            }
-            .build()
-    }
+    ): Request = AudioDownloadTransferPolicy.buildChunkResumeRequest(
+        request,
+        start,
+        length,
+        fingerprint
+    )
 
     internal fun resolveLatestResumeFingerprint(
         fallback: ManagedDownloadStorage.WorkingResumeFingerprint?,
         latest: ManagedDownloadStorage.WorkingResumeFingerprint?
-    ): ManagedDownloadStorage.WorkingResumeFingerprint? {
-        return latest ?: fallback
-    }
+    ): ManagedDownloadStorage.WorkingResumeFingerprint? =
+        AudioDownloadTransferPolicy.resolveLatestResumeFingerprint(fallback, latest)
 
-    internal fun parseContentRange(headers: Map<String, List<String>>): ParsedContentRange? {
-        val value = responseHeaderValue(headers, "Content-Range") ?: return null
-        val match = Regex("""^bytes\s+(\d+)-(\d+)/(\d+)$""", RegexOption.IGNORE_CASE)
-            .matchEntire(value.trim()) ?: return null
-        val start = match.groupValues[1].toLongOrNull() ?: return null
-        val end = match.groupValues[2].toLongOrNull() ?: return null
-        val total = match.groupValues[3].toLongOrNull() ?: return null
-        if (start < 0L || end < start || total <= end) {
-            return null
-        }
-        return ParsedContentRange(start = start, end = end, total = total)
-    }
+    internal fun parseContentRange(
+        headers: Map<String, List<String>>
+    ): ParsedContentRange? = AudioDownloadTransferPolicy.parseContentRange(headers)
 
-    internal fun parseUnsatisfiedContentRangeTotal(headers: Map<String, List<String>>): Long? {
-        val value = responseHeaderValue(headers, "Content-Range") ?: return null
-        val match = Regex("""^bytes\s+\*/(\d+)$""", RegexOption.IGNORE_CASE)
-            .matchEntire(value.trim()) ?: return null
-        return match.groupValues[1].toLongOrNull()?.takeIf { it >= 0L }
-    }
+    internal fun parseUnsatisfiedContentRangeTotal(
+        headers: Map<String, List<String>>
+    ): Long? = AudioDownloadTransferPolicy.parseUnsatisfiedContentRangeTotal(headers)
 
     internal fun isExactRangeEnd(
         headers: Map<String, List<String>>,
         resumedBytes: Long
-    ): Boolean {
-        return resumedBytes >= 0L && parseUnsatisfiedContentRangeTotal(headers) == resumedBytes
-    }
+    ): Boolean = AudioDownloadTransferPolicy.isExactRangeEnd(headers, resumedBytes)
 
     internal fun validatePartialContentRange(
         headers: Map<String, List<String>>,
         expectedStart: Long,
         bodyLength: Long? = null
-    ): ParsedContentRange {
-        val range = parseContentRange(headers)
-            ?: throw IOException("缺少或非法 Content-Range")
-        if (range.start != expectedStart) {
-            throw IOException(
-                "续传偏移不匹配: expected=$expectedStart, actual=${range.start}"
-            )
-        }
-        if (bodyLength != null && bodyLength >= 0L && bodyLength != range.length) {
-            throw IOException(
-                "Content-Range 长度不匹配: expected=${range.length}, actual=$bodyLength"
-            )
-        }
-        return range
-    }
+    ): ParsedContentRange = AudioDownloadTransferPolicy.validatePartialContentRange(
+        headers,
+        expectedStart,
+        bodyLength
+    )
 
     internal fun isResumeResponseCompatible(
         fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?,
         headers: Map<String, List<String>>,
         totalBytes: Long
-    ): Boolean {
-        val expectedEtag = fingerprint?.etag?.trim()?.takeIf(::isStrongEtag) ?: return false
-        val actualEtag = responseHeaderValue(headers, "ETag")
-            ?.trim()
-            ?.takeIf(::isStrongEtag)
-            ?: return false
-        if (expectedEtag != actualEtag) {
-            return false
-        }
-        val expectedTotal = fingerprint.expectedContentLength?.takeIf { it > 0L }
-        return expectedTotal == null || expectedTotal == totalBytes
-    }
+    ): Boolean = AudioDownloadTransferPolicy.isResumeResponseCompatible(
+        fingerprint,
+        headers,
+        totalBytes
+    )
 
     private fun responseHeaderValue(
         headers: Map<String, List<String>>,
         name: String
-    ): String? {
-        return headers.entries.firstOrNull { (key, _) ->
-            key.equals(name, ignoreCase = true)
-        }?.value?.firstOrNull()?.takeIf(String::isNotBlank)
-    }
+    ): String? = AudioDownloadTransferPolicy.responseHeaderValue(headers, name)
 
     private fun updateWorkingResumeFingerprint(
         destFile: File,
         requestUrl: String,
         headers: Map<String, List<String>>,
         expectedContentLength: Long?
-    ): Boolean {
-        return runCatching {
-            ManagedDownloadStorage.updateWorkingResumeFingerprint(
-                workingFile = destFile,
-                fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
-                    sourceUrl = requestUrl,
-                    etag = responseHeaderValue(headers, "ETag"),
-                    lastModified = responseHeaderValue(headers, "Last-Modified"),
-                    expectedContentLength = expectedContentLength?.takeIf { it > 0L }
-                )
-            )
-        }.onFailure { error ->
-            NPLogger.e(TAG, "写入续传指纹失败，后续续传将退化为整文件重下: ${destFile.name}", error)
-        }.getOrDefault(false)
-    }
+    ): Boolean = AudioDownloadTransferPolicy.updateWorkingResumeFingerprint(
+        destFile,
+        requestUrl,
+        headers,
+        expectedContentLength
+    )
 
     internal fun resolveResponseExpectedBytes(
         requestUrl: String,
@@ -1192,82 +1051,32 @@ object AudioDownloadManager {
         bodyLength: Long,
         resumedBytes: Long,
         isPartialResponse: Boolean
-    ): Long? {
-        val contentRangeValue = responseHeaderValue(headers, "Content-Range")
-        if (contentRangeValue != null) {
-            return parseContentRange(headers)?.total
-                ?: parseUnsatisfiedContentRangeTotal(headers)
-        }
-        if (bodyLength > 0L) {
-            return if (isPartialResponse) {
-                bodyLength + resumedBytes.coerceAtLeast(0L)
-            } else {
-                bodyLength
-            }
-        }
-
-        if (YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(requestUrl)) {
-            return YouTubeGoogleVideoRangeSupport.resolveTotalContentLength(
-                requestUrl,
-                headers
-            )?.takeIf { it > 0L }
-        }
-        return null
-    }
+    ): Long? = AudioDownloadTransferPolicy.resolveResponseExpectedBytes(
+        requestUrl,
+        headers,
+        bodyLength,
+        resumedBytes,
+        isPartialResponse
+    )
 
     internal fun shouldPreservePartialDownloadForRetry(
         transportKind: DownloadTransportKind?,
         existingBytes: Long,
         hasHlsResumeState: Boolean
-    ): Boolean {
-        if (existingBytes <= 0L || transportKind == null) {
-            return false
-        }
-        return when (transportKind) {
-            DownloadTransportKind.DIRECT,
-            DownloadTransportKind.CHUNKED_RANGE -> true
-            DownloadTransportKind.HLS -> hasHlsResumeState
-        }
-    }
+    ): Boolean = AudioDownloadTransferPolicy.shouldPreservePartialDownloadForRetry(
+        transportKind,
+        existingBytes,
+        hasHlsResumeState
+    )
 
-    internal fun advanceRetryWakeSignalVersion(currentVersion: Long): Long {
-        return if (currentVersion == Long.MAX_VALUE) 0L else currentVersion + 1L
-    }
+    internal fun advanceRetryWakeSignalVersion(currentVersion: Long): Long =
+        AudioDownloadTransferPolicy.advanceRetryWakeSignalVersion(currentVersion)
 
     internal fun resolveYouTubeDownloadResolveAttempts(
         forceRefresh: Boolean
-    ): List<YouTubeDownloadResolveAttempt> {
-        val attempts = mutableListOf<YouTubeDownloadResolveAttempt>()
-        if (!forceRefresh) {
-            attempts += YouTubeDownloadResolveAttempt(
-                forceRefresh = false,
-                requireDirect = true,
-                timeoutMs = YOUTUBE_DOWNLOAD_SHARED_DIRECT_RESOLVE_TIMEOUT_MS,
-                shareInFlight = true
-            )
-        }
-        attempts += YouTubeDownloadResolveAttempt(
-            forceRefresh = true,
-            requireDirect = true,
-            timeoutMs = YOUTUBE_DOWNLOAD_FRESH_DIRECT_RESOLVE_TIMEOUT_MS,
-            shareInFlight = false
-        )
-        if (!forceRefresh) {
-            attempts += YouTubeDownloadResolveAttempt(
-                forceRefresh = false,
-                requireDirect = false,
-                timeoutMs = YOUTUBE_DOWNLOAD_SHARED_PLAYABLE_RESOLVE_TIMEOUT_MS,
-                shareInFlight = true
-            )
-        }
-        attempts += YouTubeDownloadResolveAttempt(
-            forceRefresh = true,
-            requireDirect = false,
-            timeoutMs = YOUTUBE_DOWNLOAD_FRESH_PLAYABLE_RESOLVE_TIMEOUT_MS,
-            shareInFlight = false
-        )
-        return attempts
-    }
+    ): List<YouTubeDownloadResolveAttempt> =
+        AudioDownloadTransferPolicy.resolveYouTubeDownloadResolveAttempts(forceRefresh)
+
 
     fun notifyRecoveryOpportunity(reason: String) {
         val appContext = AppContainer.applicationContext
@@ -1404,6 +1213,7 @@ object AudioDownloadManager {
         stage: String,
         batchSessionId: Long? = null,
         attemptId: Long? = null,
+        operationId: String? = null,
         block: () -> T
     ): T {
         return synchronized(networkPolicyMutationLock) {
@@ -1411,7 +1221,8 @@ object AudioDownloadManager {
                 songKey = songKey,
                 stage = stage,
                 batchSessionId = batchSessionId,
-                attemptId = attemptId
+                attemptId = attemptId,
+                operationId = operationId
             )
             block()
         }
@@ -1564,8 +1375,19 @@ object AudioDownloadManager {
         }
     }
 
-    private fun clearVisibleProgressForSong(songKey: String) {
-        if (_progressFlow.value?.songKey == songKey) {
+    private fun clearVisibleProgressForSong(
+        songKey: String,
+        expectedAttemptId: Long? = null,
+        expectedOperationId: String? = null
+    ) {
+        if (
+            AudioDownloadProgressPolicy.shouldClearVisibleProgressForOwner(
+                visible = _progressFlow.value,
+                songKey = songKey,
+                expectedAttemptId = expectedAttemptId,
+                expectedOperationId = expectedOperationId
+            )
+        ) {
             _progressFlow.value = null
         }
     }
@@ -1672,7 +1494,16 @@ object AudioDownloadManager {
         _batchProgressFlow.value = progress
     }
 
-    private fun beginSongDownloadOperation(songKey: String, operationId: String) {
+    private fun beginSongDownloadOperation(
+        songKey: String,
+        operationId: String,
+        attemptId: Long?
+    ) {
+        referenceOwnership.begin(
+            songKey = songKey,
+            operationId = operationId,
+            attemptId = attemptId
+        )
         activeSongOperationCounts.compute(songKey) { _, current ->
             (current ?: 0) + 1
         }
@@ -1698,6 +1529,7 @@ object AudioDownloadManager {
         if (remainingOperationCount <= 0) {
             activeSongKeyByOperationId.remove(operationId, songKey)
             executionHostPausedOperationIds.remove(operationId)
+            referenceOwnership.finish(songKey, operationId)
         }
     }
 
@@ -1787,7 +1619,10 @@ object AudioDownloadManager {
             ?.takeIf { progress -> progress.songKey == songKey }
             ?.operationId
         if (visibleOperationId in normalizedIds) {
-            clearVisibleProgressForSong(songKey)
+            clearVisibleProgressForSong(
+                songKey = songKey,
+                expectedOperationId = visibleOperationId
+            )
         }
         normalizedIds.forEach { operationId ->
             if ((activeOperationCounts[operationId] ?: 0) <= 0) {
@@ -1815,7 +1650,10 @@ object AudioDownloadManager {
             visibleProgress?.songKey == songKey &&
                 visibleProgress.operationId == normalizedId
         ) {
-            clearVisibleProgressForSong(songKey)
+            clearVisibleProgressForSong(
+                songKey = songKey,
+                expectedOperationId = normalizedId
+            )
         }
         return true
     }
@@ -1884,7 +1722,10 @@ object AudioDownloadManager {
                 shouldPreserveArtifactsForNetworkPolicy(songKey) ||
                 GlobalDownloadManager.isSongCancelled(songKey)
             ) {
-                clearVisibleProgressForSong(songKey)
+                clearVisibleProgressForSong(
+                    songKey = songKey,
+                    expectedOperationId = normalizedOperationId
+                )
                 throw java.util.concurrent.CancellationException("Download cancelled").apply {
                     initCause(error)
                 }
@@ -1899,48 +1740,24 @@ object AudioDownloadManager {
 
     internal fun consumeCompletedAudioReference(
         songKey: String
-    ): ManagedDownloadStorage.StoredEntry? {
-        synchronized(completedAudioReferenceMutationLock) {
-            val current = completedAudioReferencesBySongKey[songKey] ?: return null
-            if (isCompletedAudioReferenceExpired(songKey, current)) {
-                return null
-            }
-            removeCompletedAudioReferenceAliases(current)
-            return current.audio
-        }
-    }
+    ): ManagedDownloadStorage.StoredEntry? =
+        completedAudioReferenceRegistry.consumeCompletedAudioReference(songKey)
 
     internal fun releaseCompletedAudioReference(
         songKey: String,
         expectedAudio: ManagedDownloadStorage.StoredEntry? = null,
         retainForPlayback: Boolean = false
     ) {
-        synchronized(completedAudioReferenceMutationLock) {
-            val current = completedAudioReferencesBySongKey[songKey] ?: return
-            if (isCompletedAudioReferenceExpired(songKey, current)) {
-                return
-            }
-            if (!retainForPlayback && (expectedAudio == null || current.audio == expectedAudio)) {
-                removeCompletedAudioReferenceAliases(current)
-            }
-        }
+        completedAudioReferenceRegistry.releaseCompletedAudioReference(
+            songKey = songKey,
+            expectedAudio = expectedAudio,
+            retainForPlayback = retainForPlayback
+        )
     }
 
     /** 迁移或切换下载根后，主动丢弃仍指向旧目录的内存桥接引用 */
     internal fun invalidateCompletedAudioReference(song: SongItem) {
-        synchronized(completedAudioReferenceMutationLock) {
-            val matches = buildSet {
-                completedAudioSongLookupKeys(song).forEach { key ->
-                    completedAudioReferencesBySongKey[key]?.let(::add)
-                }
-                listOfNotNull(song.localFilePath, song.mediaUri).forEach { reference ->
-                    completedAudioReferenceKeys(reference).forEach { key ->
-                        completedAudioReferencesByReference[key]?.let(::add)
-                    }
-                }
-            }
-            matches.forEach(::removeCompletedAudioReferenceAliases)
-        }
+        completedAudioReferenceRegistry.invalidateCompletedAudioReference(song)
     }
 
     /**
@@ -1948,181 +1765,50 @@ object AudioDownloadManager {
      */
     internal fun peekCompletedAudioReference(
         songKey: String
-    ): ManagedDownloadStorage.StoredEntry? {
-        synchronized(completedAudioReferenceMutationLock) {
-            return completedAudioReferencesBySongKey[songKey]
-                ?.takeUnless { isCompletedAudioReferenceExpired(songKey, it) }
-                ?.audio
-        }
-    }
+    ): ManagedDownloadStorage.StoredEntry? =
+        completedAudioReferenceRegistry.peekCompletedAudioReference(songKey)
 
     /** 允许刚提交音频按原始 URI 取回, 避免歌曲身份字段尚未同步时丢失桥接 */
     internal fun peekCompletedAudioReferenceByRawReference(
         reference: String?
-    ): ManagedDownloadStorage.StoredEntry? {
-        val candidates = listOfNotNull(
-            reference?.trim()?.takeIf(String::isNotBlank),
-            safeToPlayableUri(reference)
-        ).distinct()
-        if (candidates.isEmpty()) {
-            return null
-        }
-        synchronized(completedAudioReferenceMutationLock) {
-            return candidates.firstNotNullOfOrNull { key ->
-                val current = completedAudioReferencesByReference[key]
-                    ?: return@firstNotNullOfOrNull null
-                current.takeUnless {
-                    isCompletedAudioReferenceExpired(key, it)
-                }?.audio
-            }
-        }
-    }
+    ): ManagedDownloadStorage.StoredEntry? =
+        completedAudioReferenceRegistry.peekCompletedAudioReferenceByRawReference(reference)
 
     /** 允许播放列表使用提交时刚写入的 URI, 即使稳定身份字段尚未同步 */
-    internal fun peekCompletedAudioReference(song: SongItem): ManagedDownloadStorage.StoredEntry? {
-        synchronized(completedAudioReferenceMutationLock) {
-            completedAudioSongLookupKeys(song).forEach { key ->
-                completedAudioReferencesBySongKey[key]?.let { current ->
-                    if (!isCompletedAudioReferenceExpired(key, current)) {
-                        return current.audio
-                    }
-                }
-            }
-            val references = listOfNotNull(song.localFilePath, song.mediaUri)
-                .flatMap { reference ->
-                    listOfNotNull(
-                        reference.trim().takeIf(String::isNotBlank),
-                        safeToPlayableUri(reference)
-                    )
-                }
-                .distinct()
-            return references.firstNotNullOfOrNull { reference ->
-                val current = completedAudioReferencesByReference[reference]
-                    ?: return@firstNotNullOfOrNull null
-                current.takeUnless {
-                    isCompletedAudioReferenceExpired(reference, it)
-                }?.audio
-            }
-        }
-    }
+    internal fun peekCompletedAudioReference(song: SongItem): ManagedDownloadStorage.StoredEntry? =
+        completedAudioReferenceRegistry.peekCompletedAudioReference(song)
 
     internal fun consumePartialSidecarReferences(
-        songKey: String
+        songKey: String,
+        operationId: String? = null
     ): DownloadedSidecarReferences? {
-        return partialSidecarReferencesBySongKey.remove(songKey)
+        if (!referenceOwnership.allows(songKey, operationId)) {
+            return null
+        }
+        return completedAudioReferenceRegistry.consumePartialSidecarReferences(songKey)
     }
 
     internal fun rememberCompletedAudioReference(
         songKey: String,
-        storedAudio: ManagedDownloadStorage.StoredEntry
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        operationId: String? = null
     ) {
-        rememberCompletedAudioReference(
-            songLookupKeys = setOf(songKey),
-            storedAudio = storedAudio
-        )
+        if (!referenceOwnership.allows(songKey, operationId)) {
+            return
+        }
+        completedAudioReferenceRegistry.rememberCompletedAudioReference(songKey, storedAudio)
     }
 
     /** 下载回调与播放队列可能使用不同版本的歌曲身份, 同时保存兼容别名 */
     internal fun rememberCompletedAudioReference(
         song: SongItem,
-        storedAudio: ManagedDownloadStorage.StoredEntry
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        operationId: String? = null
     ) {
-        rememberCompletedAudioReference(
-            songLookupKeys = completedAudioSongLookupKeys(song),
-            storedAudio = storedAudio
-        )
-    }
-
-    private fun rememberCompletedAudioReference(
-        songLookupKeys: Set<String>,
-        storedAudio: ManagedDownloadStorage.StoredEntry
-    ) {
-        val normalizedSongLookupKeys = songLookupKeys
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .toSet()
-        if (normalizedSongLookupKeys.isEmpty()) {
+        if (!referenceOwnership.allows(song.stableKey(), operationId)) {
             return
         }
-        synchronized(completedAudioReferenceMutationLock) {
-            pruneCompletedAudioReferences(System.currentTimeMillis())
-            val completed = CompletedAudioReference(
-                audio = storedAudio,
-                committedAtMs = System.currentTimeMillis(),
-                songLookupKeys = normalizedSongLookupKeys,
-                rootGeneration = LocalStorageRootGeneration.current()
-            )
-            normalizedSongLookupKeys.forEach { key ->
-                completedAudioReferencesBySongKey[key]
-                    ?.let(::removeCompletedAudioReferenceAliases)
-            }
-            normalizedSongLookupKeys.forEach { key ->
-                completedAudioReferencesBySongKey[key] = completed
-            }
-            completedAudioReferenceKeys(storedAudio).forEach { key ->
-                completedAudioReferencesByReference[key] = completed
-            }
-        }
-    }
-
-    private fun pruneCompletedAudioReferences(nowMs: Long) {
-        val uniqueReferences = completedAudioReferencesBySongKey.values.distinct()
-        uniqueReferences
-            .filter { nowMs - it.committedAtMs >= COMPLETED_AUDIO_REFERENCE_RETENTION_MS }
-            .forEach(::removeCompletedAudioReferenceAliases)
-        val remaining = completedAudioReferencesBySongKey.values.distinct()
-        if (remaining.size <= COMPLETED_AUDIO_REFERENCE_MAX_ENTRIES) {
-            return
-        }
-        remaining
-            .sortedBy(CompletedAudioReference::committedAtMs)
-            .take(remaining.size - COMPLETED_AUDIO_REFERENCE_MAX_ENTRIES)
-            .forEach(::removeCompletedAudioReferenceAliases)
-    }
-
-    private fun completedAudioSongLookupKeys(song: SongItem): Set<String> {
-        return buildSet {
-            song.playbackVisualKey()
-                .takeIf(String::isNotBlank)
-                ?.let(::add)
-            song.stableKey().takeIf(String::isNotBlank)?.let(::add)
-            song.remoteDownloadIdentityOrNull()
-                ?.stableKey()
-                ?.takeIf(String::isNotBlank)
-                ?.let(::add)
-            song.sourceStableKey
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?.let(::add)
-            // 保留旧版本以原始字段生成的身份, 兼容升级后队列中的历史条目
-            SongIdentity(song.id, song.album, song.mediaUri)
-                .stableKey()
-                .takeIf(String::isNotBlank)
-                ?.let(::add)
-        }
-    }
-
-    private fun completedAudioReferenceKeys(
-        audio: ManagedDownloadStorage.StoredEntry
-    ): Set<String> {
-        return listOfNotNull(
-            audio.reference,
-            audio.mediaUri,
-            audio.localFilePath,
-            safeToPlayableUri(audio.reference),
-            safeToPlayableUri(audio.mediaUri)
-        ).map(String::trim)
-            .filter(String::isNotBlank)
-            .toSet()
-    }
-
-    private fun completedAudioReferenceKeys(reference: String?): Set<String> {
-        return listOfNotNull(
-            reference?.trim()?.takeIf(String::isNotBlank),
-            safeToPlayableUri(reference)
-        ).map(String::trim)
-            .filter(String::isNotBlank)
-            .toSet()
+        completedAudioReferenceRegistry.rememberCompletedAudioReference(song, storedAudio)
     }
 
     private fun safeToPlayableUri(reference: String?): String? {
@@ -2131,164 +1817,46 @@ object AudioDownloadManager {
         }.getOrNull()
     }
 
-    private fun isCompletedAudioReferenceExpired(
-        lookupKey: String,
-        current: CompletedAudioReference
-    ): Boolean {
-        val generationChanged = shouldInvalidateCompletedAudioReferenceForRoot(
-            referenceRootGeneration = current.rootGeneration,
-            currentRootGeneration = LocalStorageRootGeneration.current()
-        )
-        val expiredByAge = System.currentTimeMillis() - current.committedAtMs >=
-            COMPLETED_AUDIO_REFERENCE_RETENTION_MS
-        if (!generationChanged && !expiredByAge) {
-            return false
-        }
-        if (completedAudioReferencesBySongKey.remove(lookupKey, current)) {
-            removeCompletedAudioReferenceAliases(current)
-        } else {
-            completedAudioReferencesByReference.remove(lookupKey, current)
-        }
-        return true
-    }
-
-    private fun removeCompletedAudioReferenceAliases(
-        current: CompletedAudioReference
-    ) {
-        current.songLookupKeys.forEach { key ->
-            completedAudioReferencesBySongKey.remove(key, current)
-        }
-        completedAudioReferenceKeys(current.audio).forEach { key ->
-            completedAudioReferencesByReference.remove(key, current)
-        }
-    }
-
     private fun rememberPartialSidecarReferences(
         songKey: String,
-        sidecarReferences: DownloadedSidecarReferences
+        sidecarReferences: DownloadedSidecarReferences,
+        operationId: String? = null
     ) {
-        if (sidecarReferences.isEmpty) {
+        if (!referenceOwnership.allows(songKey, operationId)) {
             return
         }
-        partialSidecarReferencesBySongKey.compute(songKey) { _, existing ->
-            mergeDownloadedSidecarReferences(existing, sidecarReferences)
-                .takeUnless(DownloadedSidecarReferences::isEmpty)
+        completedAudioReferenceRegistry.rememberPartialSidecarReferences(
+            songKey,
+            sidecarReferences
+        )
+    }
+
+    private fun clearCompletedAudioReference(
+        songKey: String,
+        operationId: String? = null
+    ) {
+        if (referenceOwnership.allows(songKey, operationId)) {
+            completedAudioReferenceRegistry.clearCompletedAudioReference(songKey)
         }
     }
 
-    private fun clearCompletedAudioReference(songKey: String) {
-        synchronized(completedAudioReferenceMutationLock) {
-            completedAudioReferencesBySongKey.remove(songKey)
-                ?.let(::removeCompletedAudioReferenceAliases)
+    private fun clearPartialSidecarReferences(
+        songKey: String,
+        operationId: String? = null
+    ) {
+        if (referenceOwnership.allows(songKey, operationId)) {
+            completedAudioReferenceRegistry.clearPartialSidecarReferences(songKey)
         }
-    }
-
-    private fun clearPartialSidecarReferences(songKey: String) {
-        partialSidecarReferencesBySongKey.remove(songKey)
     }
 
     internal fun mergeDownloadedSidecarReferences(
         existing: DownloadedSidecarReferences?,
         incoming: DownloadedSidecarReferences?
-    ): DownloadedSidecarReferences {
-        return DownloadedSidecarReferences(
-            coverReference = incoming?.coverReference ?: existing?.coverReference,
-            lyricContent = mergeSidecarContent(
-                existingReference = existing?.lyricReference,
-                existingContent = existing?.lyricContent,
-                incomingReference = incoming?.lyricReference,
-                incomingContent = incoming?.lyricContent
-            ),
-            translatedLyricContent = mergeSidecarContent(
-                existingReference = existing?.translatedLyricReference,
-                existingContent = existing?.translatedLyricContent,
-                incomingReference = incoming?.translatedLyricReference,
-                incomingContent = incoming?.translatedLyricContent
-            ),
-            romanizedLyricContent = mergeSidecarContent(
-                existingReference = existing?.romanizedLyricReference,
-                existingContent = existing?.romanizedLyricContent,
-                incomingReference = incoming?.romanizedLyricReference,
-                incomingContent = incoming?.romanizedLyricContent
-            ),
-            expectedCover = (existing?.expectedCover == true) ||
-                (incoming?.expectedCover == true),
-            createdCover = mergeSidecarCreatedFlag(
-                existingReference = existing?.coverReference,
-                existingCreated = existing?.createdCover ?: false,
-                incomingReference = incoming?.coverReference,
-                incomingCreated = incoming?.createdCover ?: false
-            ),
-            lyricReference = incoming?.lyricReference ?: existing?.lyricReference,
-            createdLyric = mergeSidecarCreatedFlag(
-                existingReference = existing?.lyricReference,
-                existingCreated = existing?.createdLyric ?: false,
-                incomingReference = incoming?.lyricReference,
-                incomingCreated = incoming?.createdLyric ?: false
-            ),
-            translatedLyricReference = incoming?.translatedLyricReference
-                ?: existing?.translatedLyricReference,
-            expectedTranslatedLyric = (existing?.expectedTranslatedLyric == true) ||
-                (incoming?.expectedTranslatedLyric == true),
-            createdTranslatedLyric = mergeSidecarCreatedFlag(
-                existingReference = existing?.translatedLyricReference,
-                existingCreated = existing?.createdTranslatedLyric ?: false,
-                incomingReference = incoming?.translatedLyricReference,
-                incomingCreated = incoming?.createdTranslatedLyric ?: false
-            ),
-            romanizedLyricReference = incoming?.romanizedLyricReference
-                ?: existing?.romanizedLyricReference,
-            expectedLyric = (existing?.expectedLyric == true) ||
-                (incoming?.expectedLyric == true),
-            expectedRomanizedLyric = (existing?.expectedRomanizedLyric == true) ||
-                (incoming?.expectedRomanizedLyric == true),
-            createdRomanizedLyric = mergeSidecarCreatedFlag(
-                existingReference = existing?.romanizedLyricReference,
-                existingCreated = existing?.createdRomanizedLyric ?: false,
-                incomingReference = incoming?.romanizedLyricReference,
-                incomingCreated = incoming?.createdRomanizedLyric ?: false
-            )
-        )
-    }
+    ): DownloadedSidecarReferences = AudioDownloadSidecarPolicy.mergeDownloadedSidecarReferences(
+        existing,
+        incoming
+    )
 
-    private fun mergeSidecarContent(
-        existingReference: String?,
-        existingContent: String?,
-        incomingReference: String?,
-        incomingContent: String?
-    ): String? {
-        val normalizedIncomingReference = incomingReference
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-        if (normalizedIncomingReference == null) {
-            return existingContent
-        }
-        val normalizedExistingReference = existingReference
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-        return when {
-            !incomingContent.isNullOrBlank() -> incomingContent
-            normalizedIncomingReference == normalizedExistingReference -> existingContent
-            else -> null
-        }
-    }
-
-    private fun mergeSidecarCreatedFlag(
-        existingReference: String?,
-        existingCreated: Boolean,
-        incomingReference: String?,
-        incomingCreated: Boolean
-    ): Boolean {
-        val incoming = incomingReference?.takeIf(String::isNotBlank)
-            ?: return existingCreated
-        val existing = existingReference?.takeIf(String::isNotBlank)
-            ?: return incomingCreated
-        return if (incoming == existing) {
-            existingCreated || incomingCreated
-        } else {
-            incomingCreated
-        }
-    }
 
     private fun publishFinalizingProgress(
         songId: Long,
@@ -2371,6 +1939,7 @@ object AudioDownloadManager {
         stage: String,
         batchSessionId: Long? = null,
         attemptId: Long? = null,
+        operationId: String? = null,
         requireActiveAttempt: Boolean = true
     ) {
         val attemptAllowsWork = if (requireActiveAttempt) {
@@ -2389,7 +1958,11 @@ object AudioDownloadManager {
             return
         }
         NPLogger.d(TAG, "检测到下载取消: songKey=$songKey, stage=$stage")
-        clearVisibleProgressForSong(songKey)
+        clearVisibleProgressForSong(
+            songKey = songKey,
+            expectedAttemptId = attemptId,
+            expectedOperationId = operationId
+        )
         throw java.util.concurrent.CancellationException("Download cancelled during $stage")
     }
 
@@ -2500,13 +2073,23 @@ object AudioDownloadManager {
             ?.takeIf(String::isNotBlank)
             ?: UUID.randomUUID().toString()
         val state = DownloadExecutionAttemptState()
-        beginSongDownloadOperation(songKey, effectiveOperationId)
-        clearPartialSidecarReferences(songKey)
+        beginSongDownloadOperation(songKey, effectiveOperationId, attemptId)
+        clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
         try {
-            ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
+            ensureSongDownloadNotCancelled(
+                songKey = songKey,
+                stage = "prepare",
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                operationId = effectiveOperationId
+            )
             if (LocalSongSupport.isLocalSong(song, context)) {
                 NPLogger.d(TAG, "Skip local song download: ${song.name}")
-                clearVisibleProgressForSong(songKey)
+                clearVisibleProgressForSong(
+                    songKey = songKey,
+                    expectedAttemptId = attemptId,
+                    expectedOperationId = effectiveOperationId
+                )
                 return
             }
 
@@ -2515,7 +2098,11 @@ object AudioDownloadManager {
                     TAG,
                     "${context.getString(R.string.download_file_exists, song.name)}, songKey=$songKey"
                 )
-                clearVisibleProgressForSong(songKey)
+                clearVisibleProgressForSong(
+                    songKey = songKey,
+                    expectedAttemptId = attemptId,
+                    expectedOperationId = effectiveOperationId
+                )
                 return
             }
 
@@ -2552,6 +2139,7 @@ object AudioDownloadManager {
                 song = song,
                 songKey = songKey,
                 effectiveOperationId = effectiveOperationId,
+                attemptId = attemptId,
                 state = state,
                 error = error
             )
@@ -2571,6 +2159,7 @@ object AudioDownloadManager {
         song: SongItem,
         songKey: String,
         effectiveOperationId: String,
+        attemptId: Long?,
         state: DownloadExecutionAttemptState,
         error: Exception
     ): Nothing {
@@ -2578,9 +2167,13 @@ object AudioDownloadManager {
             error is DownloadStorageMutationDeferredException ||
                 error is DownloadStorageSpaceDeferredException
         ) {
-            clearVisibleProgressForSong(songKey)
-            clearCompletedAudioReference(songKey)
-            clearPartialSidecarReferences(songKey)
+            clearVisibleProgressForSong(
+                songKey = songKey,
+                expectedAttemptId = attemptId,
+                expectedOperationId = effectiveOperationId
+            )
+            clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
+            clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
             throw error
         }
         if (
@@ -2594,6 +2187,7 @@ object AudioDownloadManager {
                 song = song,
                 songKey = songKey,
                 effectiveOperationId = effectiveOperationId,
+                attemptId = attemptId,
                 state = state,
                 error = error
             )
@@ -2604,9 +2198,13 @@ object AudioDownloadManager {
             error
         )
         deleteWorkingFileUnlessNetworkPolicyPaused(songKey, state.tempFile)
-        clearVisibleProgressForSong(songKey)
-        clearCompletedAudioReference(songKey)
-        clearPartialSidecarReferences(songKey)
+        clearVisibleProgressForSong(
+            songKey = songKey,
+            expectedAttemptId = attemptId,
+            expectedOperationId = effectiveOperationId
+        )
+        clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
+        clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
         throw error
     }
 
@@ -2615,10 +2213,14 @@ object AudioDownloadManager {
         song: SongItem,
         songKey: String,
         effectiveOperationId: String,
+        attemptId: Long?,
         state: DownloadExecutionAttemptState,
         error: Exception
     ): Nothing {
-        val partialSidecarReferences = consumePartialSidecarReferences(songKey)
+        val partialSidecarReferences = consumePartialSidecarReferences(
+            songKey,
+            operationId = effectiveOperationId
+        )
             ?.retainCreatedOnly()
         NPLogger.d(TAG, "下载已取消: ${song.name}")
         val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
@@ -2676,12 +2278,16 @@ object AudioDownloadManager {
         if (!preserveCancellationArtifacts) {
             deleteWorkingFileUnlessNetworkPolicyPaused(songKey, state.tempFile)
         }
-        clearVisibleProgressForSong(songKey)
+        clearVisibleProgressForSong(
+            songKey = songKey,
+            expectedAttemptId = attemptId,
+            expectedOperationId = effectiveOperationId
+        )
         if (!preserveCancellationArtifacts) {
             clearSongCancelled(songKey)
         }
-        clearCompletedAudioReference(songKey)
-        clearPartialSidecarReferences(songKey)
+        clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
+        clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
         throw java.util.concurrent.CancellationException(
             if (preserveCancellationArtifacts) {
                 "Download cancellation deferred for recovery"
@@ -2704,7 +2310,13 @@ object AudioDownloadManager {
     ) {
         val songKey = song.stableKey()
         while (true) {
-            ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
+            ensureSongDownloadNotCancelled(
+                songKey = songKey,
+                stage = "prepare",
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                operationId = effectiveOperationId
+            )
             publishStageProgress(
                 songId = song.id,
                 songKey = songKey,
@@ -2777,7 +2389,8 @@ object AudioDownloadManager {
             songKey = songKey,
             stage = "source_resolved",
             batchSessionId = batchSessionId,
-            attemptId = attemptId
+            attemptId = attemptId,
+            operationId = effectiveOperationId
         )
         if (resolved == null) {
             if (state.attemptNumber >= TRANSIENT_DOWNLOAD_MAX_ATTEMPTS) {
@@ -2811,7 +2424,8 @@ object AudioDownloadManager {
                 songKey = songKey,
                 delayMs = retryDelayMs,
                 batchSessionId = batchSessionId,
-                attemptId = attemptId
+                attemptId = attemptId,
+                operationId = effectiveOperationId
             )
             state.attemptNumber++
             return false
@@ -2954,7 +2568,8 @@ object AudioDownloadManager {
             songKey = songKey,
             stage = "prepare_working_file",
             batchSessionId = batchSessionId,
-            attemptId = attemptId
+            attemptId = attemptId,
+            operationId = effectiveOperationId
         ) {
             if (
                 state.tempFile == null ||
@@ -3058,7 +2673,7 @@ object AudioDownloadManager {
         state: DownloadExecutionAttemptState
     ) {
         // 只有确认即将开始新的网络传输后才清理旧桥接
-        clearCompletedAudioReference(songKey)
+        clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
         publishStageProgress(
             songId = prepared.workingSong.id,
             songKey = songKey,
@@ -3114,9 +2729,17 @@ object AudioDownloadManager {
             "音频落盘完成，sidecar 转入后台整理: " +
                 "song=${prepared.workingSong.name}, audioFile=${committedAudio.audio.name}"
         )
-        rememberCompletedAudioReference(prepared.workingSong, committedAudio.audio)
-        clearVisibleProgressForSong(songKey)
-        clearPartialSidecarReferences(songKey)
+        rememberCompletedAudioReference(
+            song = prepared.workingSong,
+            storedAudio = committedAudio.audio,
+            operationId = effectiveOperationId
+        )
+        clearVisibleProgressForSong(
+            songKey = songKey,
+            expectedAttemptId = attemptId,
+            expectedOperationId = effectiveOperationId
+        )
+        clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
     }
 
     private suspend fun handleDownloadAttemptFailure(
@@ -3131,9 +2754,13 @@ object AudioDownloadManager {
     ): DownloadAttemptFailureAction {
         val songKey = song.stableKey()
         if (error is DownloadStorageMutationDeferredException) {
-            clearVisibleProgressForSong(songKey)
-            clearCompletedAudioReference(songKey)
-            clearPartialSidecarReferences(songKey)
+            clearVisibleProgressForSong(
+                songKey = songKey,
+                expectedAttemptId = attemptId,
+                expectedOperationId = effectiveOperationId
+            )
+            clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
+            clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
             throw error
         }
         if (containsDownloadStorageSpaceFailure(error)) {
@@ -3172,7 +2799,11 @@ object AudioDownloadManager {
                 attemptId = attemptId,
                 operationId = effectiveOperationId
             )
-            clearVisibleProgressForSong(songKey)
+            clearVisibleProgressForSong(
+                songKey = songKey,
+                expectedAttemptId = attemptId,
+                expectedOperationId = effectiveOperationId
+            )
             throw DownloadStorageSpaceDeferredException(effectiveOperationId)
         }
         val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
@@ -3189,7 +2820,10 @@ object AudioDownloadManager {
                 preserveArtifacts ||
                 GlobalDownloadManager.isSongCancelled(songKey)
         ) {
-            val partialSidecarReferences = consumePartialSidecarReferences(songKey)
+            val partialSidecarReferences = consumePartialSidecarReferences(
+                songKey,
+                operationId = effectiveOperationId
+            )
                 ?.retainCreatedOnly()
             NPLogger.d(TAG, "下载已取消: ${song.name}")
             if (
@@ -3240,12 +2874,16 @@ object AudioDownloadManager {
             ) {
                 state.tempFile = null
             }
-            clearVisibleProgressForSong(songKey)
+            clearVisibleProgressForSong(
+                songKey = songKey,
+                expectedAttemptId = attemptId,
+                expectedOperationId = effectiveOperationId
+            )
             if (!preserveCancellationArtifacts) {
                 clearSongCancelled(songKey)
             }
-            clearCompletedAudioReference(songKey)
-            clearPartialSidecarReferences(songKey)
+            clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
+            clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
             throw java.util.concurrent.CancellationException(
                 if (preserveCancellationArtifacts) {
                     "Download cancellation deferred for recovery"
@@ -3254,7 +2892,7 @@ object AudioDownloadManager {
                 }
             )
         }
-        clearPartialSidecarReferences(songKey)
+        clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
         if (
             state.storedAudio == null &&
                 state.attemptNumber < TRANSIENT_DOWNLOAD_MAX_ATTEMPTS &&
@@ -3453,7 +3091,8 @@ object AudioDownloadManager {
             songKey = songKey,
             stage = "audio_finalize_prepare",
             batchSessionId = batchSessionId,
-            attemptId = attemptId
+            attemptId = attemptId,
+            operationId = effectiveOperationId
         )
         verifyDownloadedAudioPayload(
             song = workingSong,
@@ -3465,7 +3104,8 @@ object AudioDownloadManager {
             songKey = songKey,
             stage = "audio_verified",
             batchSessionId = batchSessionId,
-            attemptId = attemptId
+            attemptId = attemptId,
+            operationId = effectiveOperationId
         )
         val directoryCommitLease =
             ManagedDownloadDirectoryMutationFence.acquireCommitLeaseOrNull(
@@ -3484,7 +3124,8 @@ object AudioDownloadManager {
             songKey = songKey,
             stage = "audio_pending_metadata",
             batchSessionId = batchSessionId,
-            attemptId = attemptId
+            attemptId = attemptId,
+            operationId = effectiveOperationId
         )
         if (!ManagedDownloadStorage.writePendingAudioMetadata(
                 context = context,
@@ -3499,7 +3140,8 @@ object AudioDownloadManager {
             songKey = songKey,
             stage = "audio_pending_metadata_written",
             batchSessionId = batchSessionId,
-            attemptId = attemptId
+            attemptId = attemptId,
+            operationId = effectiveOperationId
         )
 
         val bytesAtCommit = workingFile.length().coerceAtLeast(0L)
@@ -3529,7 +3171,13 @@ object AudioDownloadManager {
             bytesRead = transferredBytes,
             totalBytes = transferredBytes
         )
-        ensureSongDownloadNotCancelled(songKey, "audio_commit", batchSessionId, attemptId)
+        ensureSongDownloadNotCancelled(
+            songKey = songKey,
+            stage = "audio_commit",
+            batchSessionId = batchSessionId,
+            attemptId = attemptId,
+            operationId = effectiveOperationId
+        )
         coreCommitTracker.phase = DownloadCoreCommitPhase.COMMITTING
         val committingMarked = try {
             DownloadExecutionRoomStore.markCommitting(
@@ -3626,7 +3274,11 @@ object AudioDownloadManager {
     ): DownloadedSidecarReferences = withContext(Dispatchers.IO) {
         val songKey = song.stableKey()
         val expectedCover = buildCoverDownloadCandidateUrls(song).isNotEmpty()
-        clearPartialSidecarReferences(songKey)
+        val referenceOwnerActive = operationId == null ||
+            referenceOwnership.allows(songKey, operationId)
+        if (referenceOwnerActive) {
+            clearPartialSidecarReferences(songKey)
+        }
         val downloadedReferences = runCatching {
             downloadSidecars(
                 context = context,
@@ -3651,8 +3303,12 @@ object AudioDownloadManager {
             }
             DownloadedSidecarReferences(expectedCover = expectedCover)
         }
-        val createdReferences = consumePartialSidecarReferences(songKey)
-            ?.retainCreatedOnly()
+        val createdReferences = if (referenceOwnerActive) {
+            consumePartialSidecarReferences(songKey, operationId)
+                ?.retainCreatedOnly()
+        } else {
+            null
+        }
         mergeDownloadedSidecarReferences(downloadedReferences, createdReferences)
     }
 
@@ -3735,6 +3391,7 @@ object AudioDownloadManager {
             stage = "sidecar_prepare",
             batchSessionId = batchSessionId,
             attemptId = attemptId,
+            operationId = operationId,
             requireActiveAttempt = requireActiveAttempt
         )
         val useSequentialSidecarWrites = ManagedDownloadStorage.usesDocumentTree(context)
@@ -3751,7 +3408,8 @@ object AudioDownloadManager {
                 baseName = baseName,
                 batchSessionId = batchSessionId,
                 attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt
+                requireActiveAttempt = requireActiveAttempt,
+                operationId = operationId
             )
             val cachedCover = cacheCover(
                 context = context,
@@ -3790,7 +3448,8 @@ object AudioDownloadManager {
                         serializeWrites = false,
                         batchSessionId = batchSessionId,
                         attemptId = attemptId,
-                        requireActiveAttempt = requireActiveAttempt
+                        requireActiveAttempt = requireActiveAttempt,
+                        operationId = operationId
                     )
                 }
                 val coverJob = async {
@@ -3827,7 +3486,8 @@ object AudioDownloadManager {
         }
         return mergeDownloadedSidecarReferences(
             references,
-            partialSidecarReferencesBySongKey[songKey]?.retainCreatedOnly()
+            completedAudioReferenceRegistry.peekPartialSidecarReferences(songKey)
+                ?.retainCreatedOnly()
         )
     }
 
@@ -3842,267 +3502,31 @@ object AudioDownloadManager {
         requireActiveAttempt: Boolean = true,
         allowIndexedLookup: Boolean = true,
         operationId: String? = null
-    ): CachedCoverReference? {
-        val coverFileName = buildCoverSidecarFileName(baseName, songKey)
-        val cachedCover = coverDownloadSingleFlight.run(
-            CoverDownloadFlightKey(
-                songKey = songKey,
-                fileName = coverFileName
-            )
-        ) {
-            cacheCoverInFlight(
-                context = context,
-                song = song,
-                songKey = songKey,
-                storedAudio = storedAudio,
-                coverFileName = coverFileName,
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt,
-                allowIndexedLookup = allowIndexedLookup,
-                operationId = operationId
-            )
-        }
-        if (cachedCover != null) {
-            ensureSongDownloadNotCancelled(
-                songKey = songKey,
-                stage = "cover_reused",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt
-            )
-            rememberPartialSidecarReferences(
-                songKey,
-                DownloadedSidecarReferences(
-                    coverReference = cachedCover.reference,
-                    createdCover = cachedCover.created
-                )
-            )
-        }
-        return cachedCover
-    }
-
-    private suspend fun cacheCoverInFlight(
-        context: Context,
-        song: SongItem,
-        songKey: String,
-        storedAudio: ManagedDownloadStorage.StoredEntry,
-        coverFileName: String,
-        batchSessionId: Long?,
-        attemptId: Long?,
-        requireActiveAttempt: Boolean,
-        allowIndexedLookup: Boolean,
-        operationId: String?
-    ): CachedCoverReference? {
-        val indexedCover = ManagedDownloadStorage.peekCoverReference(storedAudio)
-            ?: if (allowIndexedLookup && ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
-                ManagedDownloadStorage.peekCoverReference(storedAudio)
-            } else {
-                null
-            }
-        val indexedCoverEvidence = indexedCover?.let { reference ->
-            ManagedDownloadReferenceLookup.inspect(context, reference)
-        }
-        if (
-            indexedCoverEvidence is ManagedDownloadReferenceLookup.Result.PermissionLost ||
-            indexedCoverEvidence is ManagedDownloadReferenceLookup.Result.ProviderFailure ||
-            indexedCoverEvidence == ManagedDownloadReferenceLookup.Result.OutOfScope
-        ) {
-            NPLogger.w(
-                TAG,
-                "封面索引引用暂不可确认，跳过本次补齐: " +
-                    "song=${song.name}, reference=$indexedCover, evidence=$indexedCoverEvidence"
-            )
-            return null
-        }
-        val existingCover = indexedCover?.takeIf {
-            indexedCoverEvidence is ManagedDownloadReferenceLookup.Result.Present
-        }
-        if (!existingCover.isNullOrBlank()) {
-            return CachedCoverReference(
-                reference = existingCover,
-                created = false
-            )
-        }
-
-        try {
-            val coverCandidates = buildCoverDownloadCandidateUrls(song)
-            coverCandidates.forEachIndexed { candidateIndex, coverUrl ->
-                repeat(COVER_DOWNLOAD_MAX_ATTEMPTS) { retryIndex ->
-                    ensureSongDownloadNotCancelled(
-                        songKey = songKey,
-                        stage = "cover_request",
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId,
-                        requireActiveAttempt = requireActiveAttempt
-                    )
-                    val committedCoverReference = runCatching {
-                        downloadCoverCandidate(
-                            context = context,
-                            songKey = songKey,
-                            coverUrl = coverUrl,
-                            coverFileName = coverFileName,
-                            batchSessionId = batchSessionId,
-                            attemptId = attemptId,
-                            requireActiveAttempt = requireActiveAttempt,
-                            operationId = operationId
-                        )
-                    }.getOrElse { error ->
-                        if (error is java.util.concurrent.CancellationException) {
-                            throw error
-                        }
-                        NPLogger.w(
-                            TAG,
-                            "封面下载重试失败: song=${song.name}, " +
-                                "candidate=${candidateIndex + 1}/${coverCandidates.size}, " +
-                                "attempt=${retryIndex + 1}/$COVER_DOWNLOAD_MAX_ATTEMPTS, " +
-                                "${error.javaClass.simpleName}: ${error.message}",
-                            error
-                        )
-                        null
-                    }
-                    if (!committedCoverReference.isNullOrBlank()) {
-                        NPLogger.d(TAG, "封面写入完成: song=${song.name}, reference=$committedCoverReference")
-                        return CachedCoverReference(
-                            reference = committedCoverReference,
-                            created = true
-                        )
-                    }
-                    if (retryIndex + 1 < COVER_DOWNLOAD_MAX_ATTEMPTS) {
-                        delay(COVER_DOWNLOAD_RETRY_DELAY_MS * (retryIndex + 1))
-                    }
-                }
-                NPLogger.w(
-                    TAG,
-                    "封面候选下载失败，准备尝试下一个来源: song=${song.name}, candidate=${candidateIndex + 1}/${coverCandidates.size}"
-                )
-            }
-        } catch (cancellation: java.util.concurrent.CancellationException) {
-            NPLogger.d(TAG, "封面整理阶段收到取消: ${song.name}")
-            throw cancellation
-        } catch (error: Exception) {
-            NPLogger.w(
-                TAG,
-                "封面后台下载失败: ${song.name} - " +
-                    "${error.javaClass.simpleName}: ${error.message}",
-                error
-            )
-        }
-        return null
-    }
+    ): AudioCachedCoverReference? = coverCoordinator.cacheCover(
+        context = context,
+        song = song,
+        songKey = songKey,
+        baseName = baseName,
+        storedAudio = storedAudio,
+        batchSessionId = batchSessionId,
+        attemptId = attemptId,
+        requireActiveAttempt = requireActiveAttempt,
+        allowIndexedLookup = allowIndexedLookup,
+        operationId = operationId
+    )
 
     internal fun buildCoverSidecarFileName(baseName: String, songKey: String): String {
-        val suffix = ManagedDownloadStorageNaming.coverStableKeySuffix(songKey)
-        return "$baseName-$suffix.jpg"
-    }
-
-    private fun buildLyricSidecarFileName(
-        baseName: String,
-        songKey: String,
-        translated: Boolean
-    ): String {
-        val suffix = ManagedDownloadStorageNaming.stableKeySuffix(songKey)
-        val variant = if (translated) "_trans" else ""
-        return "$baseName$variant-$suffix.lrc"
-    }
-
-    private fun buildRomanizedLyricSidecarFileName(
-        baseName: String,
-        songKey: String
-    ): String {
-        val suffix = ManagedDownloadStorageNaming.stableKeySuffix(songKey)
-        return "$baseName-roma-$suffix.lrc"
-    }
-
-    private fun downloadCoverCandidate(
-        context: Context,
-        songKey: String,
-        coverUrl: String,
-        coverFileName: String,
-        batchSessionId: Long? = null,
-        attemptId: Long? = null,
-        requireActiveAttempt: Boolean = true,
-        operationId: String? = null
-    ): String? {
-        val req = Request.Builder().url(coverUrl).build()
-        return executeTrackedCall(
-            client = backgroundDownloadClient,
-            request = req,
-            songKey = songKey,
-            operationId = operationId
-        ) { response ->
-            if (!response.isSuccessful) {
-                throw IOException("封面请求失败: HTTP ${response.code}")
-            }
-            val body: ResponseBody = response.body
-            val contentType: String = body.contentType()?.toString().orEmpty()
-            if (contentType.isNotBlank() && !contentType.startsWith("image/", ignoreCase = true)) {
-                throw IOException("封面响应不是图片: $contentType")
-            }
-            val declaredLength = body.contentLength()
-            val expectedLength = declaredLength.takeIf { it > 0L }
-            val bytes = body.byteStream().use { input ->
-                readCoverResponseBytes(input, declaredLength)
-            }
-            ensureSongDownloadNotCancelled(
-                songKey = songKey,
-                stage = "cover_downloaded",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt
-            )
-            val copiedBytes = bytes.size.toLong()
-            if (copiedBytes <= 0L) {
-                throw IOException("封面写入为空")
-            }
-            if (!isTransferSizeComplete(expectedLength, copiedBytes)) {
-                throw IOException("封面写入不完整: $copiedBytes/$expectedLength")
-            }
-            if (!isUsableCoverBytes(bytes)) {
-                throw IOException("封面文件校验失败")
-            }
-            ensureSongDownloadNotCancelled(
-                songKey = songKey,
-                stage = "cover_commit",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt
-            )
-            ManagedDownloadStorage.commitCoverBytes(
-                context = context,
-                bytes = bytes,
-                fileName = coverFileName,
-                mimeType = contentType.takeIf { it.isNotBlank() }
-            )?.reference
-        }
-    }
-
-    private fun isUsableCoverBytes(bytes: ByteArray): Boolean {
-        if (bytes.isEmpty()) {
-            return false
-        }
-        return runCatching {
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-            options.outWidth > 0 && options.outHeight > 0
-        }.getOrDefault(false)
+        return AudioDownloadCoverCoordinator.buildCoverSidecarFileName(baseName, songKey)
     }
 
     internal fun readCoverResponseBytes(
         input: InputStream,
         declaredLength: Long
-    ): ByteArray {
-        if (declaredLength > MAX_COVER_RESPONSE_BYTES) {
-            throw IOException(
-                "封面响应过大: declared=$declaredLength, limit=$MAX_COVER_RESPONSE_BYTES"
-            )
-        }
-        return try {
-            input.readBytesLimited(MAX_COVER_RESPONSE_BYTES)
-        } catch (error: IllegalArgumentException) {
-            throw IOException("封面响应超过大小限制: $MAX_COVER_RESPONSE_BYTES", error)
-        }
-    }
+    ): ByteArray = AudioDownloadCoverCoordinator.readCoverResponseBytes(
+        input = input,
+        declaredLength = declaredLength,
+        maxResponseBytes = MAX_COVER_RESPONSE_BYTES
+    )
 
     private fun verifyDownloadedAudioPayload(
         song: SongItem,
@@ -4175,291 +3599,18 @@ object AudioDownloadManager {
         onSongFailed: suspend (SongItem, Throwable) -> Unit = { _, _ -> },
         onSongCancelled: suspend (SongItem) -> Unit = {},
         onSongPausedForNetworkPolicy: suspend (SongItem) -> Unit = {}
-    ) {
-        withContext(Dispatchers.IO) {
-            var batchSessionId: Long? = null
-            try {
-                batchSessionId = startBatchSession()
-                val remoteSongs = songs.filterNot { LocalSongSupport.isLocalSong(it, context) }
-                if (remoteSongs.isEmpty()) {
-                    NPLogger.d(TAG, "Skip batch download because all songs are local")
-                    updateBatchProgressForSession(batchSessionId, null)
-                    return@withContext
-                }
-
-                val trackedSongs = remoteSongs.mapIndexed { index, song ->
-                    TrackedBatchSong(
-                        song = song,
-                        index = index
-                    )
-                }
-                val trackedSongByKey = trackedSongs.associateBy { it.song.stableKey() }
-                val progressMutex = Mutex()
-                val latestProgressBySongKey = mutableMapOf<String, DownloadProgress>()
-                var completedSongs = 0
-                var currentSongLabel = ""
-                var currentSongIndex = 0
-
-                suspend fun publishBatchProgress() {
-                    progressMutex.withLock {
-                        val leadingEntry = latestProgressBySongKey.entries
-                            .minByOrNull { entry -> trackedSongByKey.getValue(entry.key).index }
-                        if (leadingEntry != null) {
-                            val trackedSong = trackedSongByKey.getValue(leadingEntry.key)
-                            currentSongLabel = trackedSong.song.displayName()
-                            currentSongIndex = trackedSong.index
-                        }
-                        val aggregateProgressFraction = if (trackedSongs.isEmpty()) {
-                            1.0
-                        } else {
-                            (
-                                completedSongs.toDouble() +
-                                    latestProgressBySongKey.values.sumOf { progress ->
-                                        if (progress.totalBytes > 0L) {
-                                            progress.bytesRead.toDouble() / progress.totalBytes.toDouble()
-                                        } else {
-                                            0.0
-                                        }
-                                    }
-                                ) / trackedSongs.size.toDouble()
-                        }.coerceIn(0.0, 1.0).toFloat()
-
-                        updateBatchProgressForSession(
-                            batchSessionId,
-                            BatchDownloadProgress(
-                                totalSongs = trackedSongs.size,
-                                completedSongs = completedSongs,
-                                currentSong = currentSongLabel,
-                                currentProgress = leadingEntry?.value,
-                                currentSongIndex = currentSongIndex,
-                                aggregateProgressFraction = aggregateProgressFraction
-                            )
-                        )
-                    }
-                }
-
-                suspend fun markSongStarted(trackedSong: TrackedBatchSong) {
-                    progressMutex.withLock {
-                        currentSongLabel = trackedSong.song.displayName()
-                        currentSongIndex = trackedSong.index
-                    }
-                    publishBatchProgress()
-                }
-
-                suspend fun markSongFinished(songKey: String) {
-                    progressMutex.withLock {
-                        latestProgressBySongKey.remove(songKey)
-                        completedSongs++
-                    }
-                    publishBatchProgress()
-                }
-
-                suspend fun markSongPaused(songKey: String) {
-                    progressMutex.withLock {
-                        latestProgressBySongKey.remove(songKey)
-                    }
-                    publishBatchProgress()
-                }
-
-                _isCancelled.value = false
-                updateBatchProgressForSession(
-                    batchSessionId,
-                    BatchDownloadProgress(
-                        totalSongs = trackedSongs.size,
-                        completedSongs = 0,
-                        currentSong = "",
-                        currentProgress = null,
-                        aggregateProgressFraction = 0f
-                    )
-                )
-                val workerCount = resolveBatchDownloadWorkerCount(
-                    songCount = trackedSongs.size,
-                    requestedParallelism = maxConcurrentDownloads
-                )
-
-                val progressJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                    latestProgressByOperation.collect { latestProgress ->
-                        if (!isBatchSessionCurrent(batchSessionId)) {
-                            return@collect
-                        }
-                        latestProgress.values.forEach { progress ->
-                            if (!trackedSongByKey.containsKey(progress.songKey)) {
-                                return@forEach
-                            }
-                            val expectedAttemptId = songAttemptIds[progress.songKey]
-                            if (
-                                expectedAttemptId != null &&
-                                    progress.attemptId != expectedAttemptId
-                            ) {
-                                return@forEach
-                            }
-                            progressMutex.withLock {
-                                latestProgressBySongKey[progress.songKey] = progress
-                            }
-                        }
-                        publishBatchProgress()
-                    }
-                }
-                val completionDispatcher = BatchDownloadCompletionDispatcher(
-                    scope = this,
-                    maxConcurrentCallbacks = BATCH_COMPLETION_CALLBACK_PARALLELISM
-                )
-
-                suspend fun processTrackedSong(trackedSong: TrackedBatchSong) {
-                    val song = trackedSong.song
-                    val songKey = song.stableKey()
-                    val attemptId = songAttemptIds[songKey]
-                    var pausedForNetworkPolicy = false
-                    var queuedCompletion: (suspend () -> Unit)? = null
-                    var immediateCallback: (suspend () -> Unit)? = null
-                    GlobalDownloadManager.withSongExecutionLock(songKey) {
-                        if (_isCancelled.value || !isBatchSessionCurrent(batchSessionId)) {
-                            NPLogger.d(TAG, context.getString(R.string.download_cancelled_message))
-                            markSongFinished(songKey)
-                            immediateCallback = { invokeBatchCallback(song) { onSongCancelled(song) } }
-                            return@withSongExecutionLock
-                        }
-                        if (GlobalDownloadManager.isSongCancelled(songKey)) {
-                            NPLogger.d(TAG, "跳过已取消的歌曲: ${song.name}")
-                            clearSongCancelled(songKey)
-                            markSongFinished(songKey)
-                            immediateCallback = { invokeBatchCallback(song) { onSongCancelled(song) } }
-                            return@withSongExecutionLock
-                        }
-                        if (shouldPreserveArtifactsForNetworkPolicy(songKey)) {
-                            pausedForNetworkPolicy = true
-                            markSongPaused(songKey)
-                            immediateCallback = {
-                                invokeBatchCallback(song) { onSongPausedForNetworkPolicy(song) }
-                            }
-                            return@withSongExecutionLock
-                        }
-                        if (!GlobalDownloadManager.isDownloadAttemptActive(songKey, attemptId)) {
-                            NPLogger.d(TAG, "跳过过期的批量下载项: ${song.name}")
-                            markSongFinished(songKey)
-                            return@withSongExecutionLock
-                        }
-
-                        try {
-                            markSongStarted(trackedSong)
-                            invokeBatchCallback(song) { onSongStarted(song) }
-                            downloadSong(
-                                context = context,
-                                song = song,
-                                batchSessionId = batchSessionId,
-                                attemptId = attemptId
-                            )
-                            queuedCompletion = {
-                                try {
-                                    GlobalDownloadManager.withSongExecutionLock(songKey) {
-                                        invokeBatchCallback(song) { onSongCompleted(song) }
-                                    }
-                                } finally {
-                                    markSongFinished(songKey)
-                                }
-                            }
-                        } catch (_: java.util.concurrent.CancellationException) {
-                            NPLogger.d(TAG, "歌曲下载被取消: ${song.name}")
-                            if (shouldPreserveArtifactsForNetworkPolicy(songKey)) {
-                                pausedForNetworkPolicy = true
-                                markSongPaused(songKey)
-                                immediateCallback = {
-                                    invokeBatchCallback(song) {
-                                        onSongPausedForNetworkPolicy(song)
-                                    }
-                                }
-                            } else {
-                                clearSongCancelled(songKey)
-                                immediateCallback = {
-                                    invokeBatchCallback(song) { onSongCancelled(song) }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            NPLogger.e(
-                                TAG,
-                                context.getString(
-                                    R.string.download_batch_failed_song,
-                                    song.name,
-                                    e.message ?: ""
-                                ),
-                                e
-                            )
-                            immediateCallback = {
-                                invokeBatchCallback(song) { onSongFailed(song, e) }
-                            }
-                        } finally {
-                            if (queuedCompletion == null && !pausedForNetworkPolicy) {
-                                markSongFinished(songKey)
-                            }
-                        }
-                    }
-
-                    // 回调不能在歌曲锁内等待有界收尾队列，否则慢回调会和发送方互相等待
-                    immediateCallback?.invoke()
-                    val completion = queuedCompletion
-                    if (completion != null) {
-                        try {
-                            completionDispatcher.dispatch(completion)
-                        } catch (error: Throwable) {
-                            // 入队失败时没有 worker 会负责最终计数，立即补一次收尾
-                            markSongFinished(songKey)
-                            throw error
-                        }
-                    }
-                }
-
-                try {
-                    // 单首回调或取消异常不能取消同批其他歌曲，批量收尾必须采用监督作用域
-                    supervisorScope {
-                        val nextSongIndex = AtomicInteger(0)
-                        List(workerCount) {
-                            launch {
-                                while (true) {
-                                    val songIndex = nextSongIndex.getAndIncrement()
-                                    if (songIndex >= trackedSongs.size) {
-                                        break
-                                    }
-                                    processTrackedSong(trackedSongs[songIndex])
-                                }
-                            }
-                        }.joinAll()
-                        completionDispatcher.awaitAll()
-                    }
-                } finally {
-                    progressJob.cancel()
-                }
-
-                updateBatchProgressForSession(batchSessionId, null)
-            } catch (cancellation: java.util.concurrent.CancellationException) {
-                batchSessionId?.let { updateBatchProgressForSession(it, null) }
-                throw cancellation
-            } catch (e: Exception) {
-                NPLogger.e(TAG, context.getString(R.string.download_batch_failed, e.message ?: ""), e)
-                batchSessionId?.let { updateBatchProgressForSession(it, null) }
-            } finally {
-                batchSessionId?.let(::finishBatchSession)
-            }
-        }
-    }
-
-    private data class TrackedBatchSong(
-        val song: SongItem,
-        val index: Int
+    ) = batchCoordinator.downloadPlaylist(
+        context = context,
+        songs = songs,
+        maxConcurrentDownloads = maxConcurrentDownloads,
+        songAttemptIds = songAttemptIds,
+        onSongStarted = onSongStarted,
+        onSongCompleted = onSongCompleted,
+        onSongFailed = onSongFailed,
+        onSongCancelled = onSongCancelled,
+        onSongPausedForNetworkPolicy = onSongPausedForNetworkPolicy
     )
 
-    private suspend fun invokeBatchCallback(
-        song: SongItem,
-        block: suspend () -> Unit
-    ) {
-        try {
-            block()
-        } catch (cancellation: java.util.concurrent.CancellationException) {
-            throw cancellation
-        } catch (callbackError: Exception) {
-            NPLogger.e(TAG, "批量下载回调失败: ${song.name}", callbackError)
-        }
-    }
-    
     /** 取消下载 */
     fun cancelSongDownload(songKey: String) {
         val calls = synchronized(networkPolicyMutationLock) {
@@ -4550,125 +3701,33 @@ object AudioDownloadManager {
         }
     }
 
-    internal fun resolveTransientDownloadRetryDelayMs(attemptNumber: Int): Long {
-        return when (attemptNumber.coerceAtLeast(1)) {
-            1 -> 1_000L
-            2 -> 2_000L
-            3 -> 4_000L
-            else -> 5_000L
-        }
-    }
+    internal fun resolveTransientDownloadRetryDelayMs(attemptNumber: Int): Long =
+        AudioDownloadTransferPolicy.resolveTransientDownloadRetryDelayMs(attemptNumber)
 
-    internal fun shouldRetryTransientDownloadFailure(error: Throwable): Boolean {
-        if (error is java.util.concurrent.CancellationException) {
-            return false
-        }
-        if (error is DownloadTransferStalledException) {
-            return true
-        }
-        if (error is ChunkRequestIOException) {
-            return isTransientHttpStatusCode(error.responseCode)
-        }
-        parseHttpStatusCode(error)?.let(::isTransientHttpStatusCode)?.let { shouldRetry ->
-            return shouldRetry
-        }
-        return generateSequence(error) { it.cause }.any { cause ->
-            when (cause) {
-                is UnknownHostException,
-                is ConnectException,
-                is SocketTimeoutException,
-                is InterruptedIOException,
-                is EOFException,
-                is SSLException -> true
-
-                is SocketException -> true
-                is IOException -> isTransientNetworkMessage(cause.message)
-                else -> false
-            }
-        }
-    }
+    internal fun shouldRetryTransientDownloadFailure(error: Throwable): Boolean =
+        AudioDownloadTransferPolicy.shouldRetryTransientDownloadFailure(error)
 
     internal fun shouldRetryDownloadFailureForSource(
         error: Throwable,
         isYouTubeMusic: Boolean
-    ): Boolean {
-        if (shouldRetryTransientDownloadFailure(error)) {
-            return true
-        }
-        return isYouTubeMusic && shouldRefreshYouTubeDownloadSourceOnFailure(error)
-    }
+    ): Boolean = AudioDownloadTransferPolicy.shouldRetryDownloadFailureForSource(
+        error,
+        isYouTubeMusic
+    )
 
-    internal fun shouldRefreshYouTubeDownloadSourceOnFailure(error: Throwable): Boolean {
-        val statusCode = extractYouTubeDownloadHttpStatus(error) ?: return false
-        return isRefreshableYouTubeDownloadStatusCode(statusCode)
-    }
+    internal fun shouldRefreshYouTubeDownloadSourceOnFailure(error: Throwable): Boolean =
+        AudioDownloadTransferPolicy.shouldRefreshYouTubeDownloadSourceOnFailure(error)
 
-    // 403 表示服务端拒绝该直链: WEB_REMIX web-GVS 直链在脏 IP 下即便带 pot 也常被 403
-    // (同一直链能 range 播放却下不了) ; 据此让下载重试改走不需 pot 的 HLS 兜底
-    internal fun isForbiddenYouTubeDownloadFailure(error: Throwable): Boolean {
-        return extractYouTubeDownloadHttpStatus(error) == 403
-    }
-
-    private fun extractYouTubeDownloadHttpStatus(error: Throwable): Int? {
-        if (error is java.util.concurrent.CancellationException) {
-            return null
-        }
-        return when (error) {
-            is ChunkRequestIOException -> error.responseCode
-            else -> parseHttpStatusCode(error)
-        }
-    }
-
-    private fun isRefreshableYouTubeDownloadStatusCode(statusCode: Int): Boolean {
-        return statusCode == 401 ||
-            statusCode == 403 ||
-            statusCode == 410 ||
-            statusCode == 416 ||
-            isTransientHttpStatusCode(statusCode)
-    }
-
-    private fun parseHttpStatusCode(error: Throwable): Int? {
-        val message = error.message.orEmpty()
-        return Regex("""HTTP\s+(\d{3})""")
-            .find(message)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toIntOrNull()
-    }
-
-    private fun isTransientHttpStatusCode(statusCode: Int): Boolean {
-        return statusCode == 408 ||
-            statusCode == 409 ||
-            statusCode == 425 ||
-            statusCode == 429 ||
-            statusCode in 500..599
-    }
-
-    private fun isTransientNetworkMessage(message: String?): Boolean {
-        val normalized = message?.lowercase().orEmpty()
-        if (normalized.isBlank()) {
-            return false
-        }
-        return normalized.contains("unexpected end of stream") ||
-            normalized.contains("connection shutdown") ||
-            normalized.contains("connection reset") ||
-            normalized.contains("connection abort") ||
-            normalized.contains("broken pipe") ||
-            normalized.contains("software caused connection abort") ||
-            normalized.contains("failed to connect") ||
-            normalized.contains("unable to resolve host") ||
-            normalized.contains("network is unreachable") ||
-            normalized.contains("stream was reset") ||
-            normalized.contains("timeout") ||
-            normalized.contains("timed out")
-    }
+    internal fun isForbiddenYouTubeDownloadFailure(error: Throwable): Boolean =
+        AudioDownloadTransferPolicy.isForbiddenYouTubeDownloadFailure(error)
 
     private suspend fun waitForRetryOrCancellation(
         context: Context,
         songKey: String,
         delayMs: Long,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        operationId: String? = null
     ) {
         val initialDelayMs = delayMs.coerceAtLeast(0L)
         // 下载重试只接受已确认的 INTERNET_CAPABILITY_INTERNET，未知状态不能
@@ -4682,7 +3741,13 @@ object AudioDownloadManager {
         var recoveredOnlineAtMs: Long? = null
         var observedWakeSignalVersion = retryWakeSignalVersion.value
         while (remainingMs > 0L) {
-            ensureSongDownloadNotCancelled(songKey, "retry_wait", batchSessionId, attemptId)
+            ensureSongDownloadNotCancelled(
+                songKey = songKey,
+                stage = "retry_wait",
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                operationId = operationId
+            )
             val hasConfirmedInternetNow = context.hasConfirmedInternetAccess()
             if (startedOffline && hasConfirmedInternetNow) {
                 val nowMs = System.currentTimeMillis()
@@ -4719,7 +3784,13 @@ object AudioDownloadManager {
             }
             remainingMs -= nextSliceMs
         }
-        ensureSongDownloadNotCancelled(songKey, "retry_wait", batchSessionId, attemptId)
+        ensureSongDownloadNotCancelled(
+            songKey = songKey,
+            stage = "retry_wait",
+            batchSessionId = batchSessionId,
+            attemptId = attemptId,
+            operationId = operationId
+        )
     }
 
     internal fun clampBatchDownloadParallelism(requestedParallelism: Int): Int {
@@ -4751,354 +3822,27 @@ object AudioDownloadManager {
         return clampBatchDownloadParallelism(requestedParallelism).coerceAtMost(songCount)
     }
 
-    private fun resolveReadableManagedDownload(
-        context: Context,
-        song: SongItem
-    ): ManagedDownloadStorage.StoredEntry? {
-        val cachedSnapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-            context = context,
-            restorePersisted = false
-        )
-        val cachedAudio = cachedSnapshot?.let { snapshot ->
-            ManagedDownloadStorage.findDownloadedAudio(snapshot, song)
-                ?: ManagedDownloadStorage.findPendingDownloadedAudio(snapshot, song)
-        } ?: ManagedDownloadStorage.peekDownloadedAudio(song)
-            ?: ManagedDownloadStorage.peekPendingDownloadedAudio(song)
-        cachedAudio?.let { audio ->
-            val reference = playableReferenceForManagedAudio(audio)
-                ?: return@let
-            val evidence = ManagedDownloadReferenceLookup.inspect(
-                context,
-                reference
-            )
-            if (canUseReadableManagedAudioForPlayback(
-                    song = song,
-                    snapshot = cachedSnapshot,
-                    audio = audio,
-                    evidence = evidence
-                )
-            ) {
-                if (!canExposeManagedDownloadForPlayback(cachedSnapshot, audio)) {
-                    NPLogger.d(
-                        TAG,
-                        "直接确认本地下载音频可读，跳过未完成快照门禁: " +
-                            "song=${song.name}, file=${audio.name}, " +
-                            "rootEntriesComplete=${cachedSnapshot?.rootEntriesComplete}"
-                    )
-                    requestBackgroundDownloadIndexRefresh(context)
-                }
-                return audio
-            }
-            if (evidence == ManagedDownloadReferenceLookup.Result.Present) {
-                NPLogger.d(
-                    TAG,
-                    "下载音频已存在但仍处于临时或替换状态，暂不作为本地歌曲播放: " +
-                        "song=${song.name}, file=${audio.name}"
-                )
-                return null
-            }
-            when (evidence) {
-                ManagedDownloadReferenceLookup.Result.Present -> return null
-                ManagedDownloadReferenceLookup.Result.Missing -> {
-                    NPLogger.w(
-                        TAG,
-                        "本地下载索引确认缺失，准备强制刷新: " +
-                            "song=${song.name}, reference=" +
-                                "${playableReferenceForManagedAudio(audio)}"
-                    )
-                    GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
-                }
-                is ManagedDownloadReferenceLookup.Result.PermissionLost,
-                is ManagedDownloadReferenceLookup.Result.ProviderFailure,
-                ManagedDownloadReferenceLookup.Result.OutOfScope -> {
-                    NPLogger.w(
-                        TAG,
-                        "本地下载索引引用暂不可确认，保留并等待对账: " +
-                            "song=${song.name}, reference=" +
-                                "${playableReferenceForManagedAudio(audio)}, " +
-                            "evidence=$evidence"
-                    )
-                    return null
-                }
-            }
-        }
-
-        if (!canBlockStorageLookup()) {
-            return null
-        }
-        val snapshot = cachedSnapshot
-            ?: if (ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
-                ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context, restorePersisted = false)
-            } else {
-                null
-            }
-        if (snapshot == null) {
-            return null
-        }
-
-        val indexedAudio = ManagedDownloadStorage.findDownloadedAudio(snapshot, song)
-            ?: ManagedDownloadStorage.findPendingDownloadedAudio(snapshot, song)
-        if (indexedAudio != null) {
-            val reference = playableReferenceForManagedAudio(indexedAudio)
-                ?: return null
-            val evidence = ManagedDownloadReferenceLookup.inspect(
-                context,
-                reference
-            )
-            if (canUseReadableManagedAudioForPlayback(
-                    song = song,
-                    snapshot = snapshot,
-                    audio = indexedAudio,
-                    evidence = evidence
-                )
-            ) {
-                if (!canExposeManagedDownloadForPlayback(snapshot, indexedAudio)) {
-                    NPLogger.d(
-                        TAG,
-                        "直接确认索引下载音频可读，跳过未完成快照门禁: " +
-                            "song=${song.name}, file=${indexedAudio.name}, " +
-                            "rootEntriesComplete=${snapshot.rootEntriesComplete}"
-                    )
-                    requestBackgroundDownloadIndexRefresh(context)
-                }
-                return indexedAudio
-            }
-            if (evidence == ManagedDownloadReferenceLookup.Result.Present) {
-                NPLogger.d(
-                    TAG,
-                    "索引音频已存在但仍处于临时或替换状态，暂不作为本地歌曲播放: " +
-                        "song=${song.name}, file=${indexedAudio.name}"
-                )
-                return null
-            }
-            when (evidence) {
-                ManagedDownloadReferenceLookup.Result.Present -> return null
-                ManagedDownloadReferenceLookup.Result.Missing -> {
-                    NPLogger.w(
-                        TAG,
-                        "下载索引确认缺失，准备强制刷新: " +
-                            "song=${song.name}, reference=" +
-                                "${playableReferenceForManagedAudio(indexedAudio)}"
-                    )
-                    GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
-                }
-                is ManagedDownloadReferenceLookup.Result.PermissionLost,
-                is ManagedDownloadReferenceLookup.Result.ProviderFailure,
-                ManagedDownloadReferenceLookup.Result.OutOfScope -> {
-                    NPLogger.w(
-                        TAG,
-                        "下载索引引用暂不可确认，保留并等待对账: " +
-                            "song=${song.name}, reference=" +
-                                "${playableReferenceForManagedAudio(indexedAudio)}, " +
-                            "evidence=$evidence"
-                    )
-                    return null
-                }
-            }
-        }
-
-        if (!GlobalDownloadManager.hasDownloadedSongCached(song)) {
-            return null
-        }
-
-        NPLogger.w(
-            TAG,
-            "下载目录缓存命中但快照索引未命中，回退目录缓存播放并后台对账: song=${song.name}"
-        )
-        GlobalDownloadManager.scanLocalFiles(context, forceRefresh = false)
-        return null
-    }
-
-    /**
-     * catalog 已就绪但歌曲身份尚未同步时，只读取持久化快照中的目标条目
-     * 这里不枚举 SAF，避免把播放请求拖进整目录扫描
-     */
-    private fun findDurableCachedManagedAudio(
-        context: Context,
-        song: SongItem,
-        restorePersisted: Boolean = true
-    ): CachedManagedAudio? {
-        val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-            context = context,
-            restorePersisted = restorePersisted
-        )
-        val audio = snapshot?.let { currentSnapshot ->
-            ManagedDownloadStorage.findDownloadedAudio(currentSnapshot, song)
-                ?: ManagedDownloadStorage.findPendingDownloadedAudio(currentSnapshot, song)
-        } ?: ManagedDownloadStorage.peekDownloadedAudio(song)
-            ?: ManagedDownloadStorage.peekPendingDownloadedAudio(song)
-        return audio?.let { CachedManagedAudio(snapshot = snapshot, audio = it) }
-    }
-
-    private fun canUseReadableManagedAudioForPlayback(
-        song: SongItem,
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
-        audio: ManagedDownloadStorage.StoredEntry,
-        evidence: ManagedDownloadReferenceLookup.Result
-    ): Boolean {
-        if (evidence != ManagedDownloadReferenceLookup.Result.Present) {
-            return false
-        }
-        val metadata = metadataForManagedAudio(snapshot, audio)
-        return isReadableManagedAudioPlaybackAllowed(
-            audioIsPending = audio.isPendingAudioWrite,
-            downloadActive = isSongDownloadActive(song.stableKey()),
-            downloadCancelled = GlobalDownloadManager.isSongCancelled(song.stableKey()),
-            metadata = metadata,
-            allowLegacyPublishedAudio = !audio.isPendingAudioWrite
-        )
-    }
-
-    private fun metadataForManagedAudio(
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
-        audio: ManagedDownloadStorage.StoredEntry
-    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
-        return ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
-    }
-
-    private fun playableReferenceForManagedAudio(
-        audio: ManagedDownloadStorage.StoredEntry
-    ): String? {
-        // 迁移快照可能同时包含旧私有路径和新的 SAF URI，优先使用当前根下的引用
-        // 避免目录切换和目录刷新之间播放器打开过期路径
-        return selectManagedPlaybackReferenceForConfiguredSaf(
-            references = listOfNotNull(
-                audio.mediaUri,
-                audio.reference,
-                audio.localFilePath
-            ),
-            configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri(),
-            allowPending = audio.isPendingAudioWrite
-        )
-    }
-
-    /**
-     * 只读取现有内存快照判断是否存在明确的临时写入或替换凭据
-     *
-     * 这里不能触发目录扫描，否则播放线程会被 SAF 查询拖慢
-     */
-    private fun isManagedReferenceExplicitlyIncomplete(
-        context: Context,
-        song: SongItem,
-        reference: String
-    ): Boolean {
-        val songKey = song.stableKey()
-        if (
-            GlobalDownloadManager.isSongCancelled(songKey) ||
-            reference.lowercase(Locale.ROOT).contains(
-                DOWNLOAD_STAGING_DIR_NAME.lowercase(Locale.ROOT)
-            )
-        ) {
-            return true
-        }
-        val referenceLooksPending = reference.contains(
-            PENDING_AUDIO_WRITE_MARKER,
-            ignoreCase = true
-        )
-        val referenceName = ManagedDownloadStorage.normalizeManagedAudioFileName(reference)
-        if (
-            referenceName?.let { name ->
-                name.startsWith(DOWNLOAD_STAGING_FILE_PREFIX) &&
-                    name.endsWith(DOWNLOAD_STAGING_FILE_SUFFIX)
-            } == true
-        ) {
-            return true
-        }
-        val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-            context = context,
-            restorePersisted = false
-        ) ?: return referenceLooksPending
-        val indexedFileName = referenceName
-        // 先按用户手里的精确引用匹配, 防止同一首歌的 pending 条目遮蔽旧正式文件
-        val exactReferences = listOfNotNull(
-            reference,
-            safeToPlayableUri(reference)
-        ).distinct()
-        fun matchesReference(audio: ManagedDownloadStorage.StoredEntry): Boolean {
-            return exactReferences.any { candidate ->
-                candidate == audio.reference ||
-                    candidate == audio.mediaUri ||
-                    candidate == audio.localFilePath ||
-                    candidate == ManagedDownloadStorage.resolveStoredEntryPlaybackUri(
-                        entry = audio,
-                        allowPending = true
-                    )
-            }
-        }
-        val exactAudio = snapshot.audioEntries.firstOrNull(::matchesReference)
-            ?: snapshot.pendingAudioEntries.firstOrNull(::matchesReference)
-        if (exactAudio == null && !referenceLooksPending) {
-            // 旧版本保存的 tree/document URI 可能与当前扫描得到的 URI 外形不同。
-            // 只要用户手里的正式引用已经得到 Present 证据, 不能让另一个
-            // 同身份的 pending 条目遮蔽它并误报为暂不可播放。
-            val formalAudio = snapshot.audioEntries.firstOrNull { audio ->
-                !audio.isPendingAudioWrite &&
-                    (audio.name == indexedFileName ||
-                        audio.logicalName == indexedFileName)
-            }
-            return formalAudio?.let { audio ->
-                !isReadableManagedAudioPlaybackAllowed(
-                    audioIsPending = false,
-                    downloadActive = false,
-                    downloadCancelled = false,
-                    metadata = metadataForManagedAudio(snapshot, audio),
-                    allowLegacyPublishedAudio = true
-                )
-            } ?: false
-        }
-        val matchedAudio = exactAudio
-            ?: ManagedDownloadStorage.findDownloadedAudio(snapshot, song)
-            ?: ManagedDownloadStorage.findPendingDownloadedAudio(snapshot, song)
-            ?: snapshot.audioEntries.firstOrNull { audio ->
-                audio.name == indexedFileName
-            }
-            ?: return referenceLooksPending
-        return !isReadableManagedAudioPlaybackAllowed(
-            audioIsPending = matchedAudio.isPendingAudioWrite,
-            downloadActive = false,
-            downloadCancelled = false,
-            metadata = metadataForManagedAudio(snapshot, matchedAudio),
-            allowLegacyPublishedAudio = !matchedAudio.isPendingAudioWrite
-        )
-    }
-
     private fun hasFastCachedManagedDownloadForStart(
         context: Context,
         song: SongItem
-    ): Boolean {
-        val cached = findDurableCachedManagedAudio(context, song)
-        val snapshot = cached?.snapshot
-        val cachedAudio = cached?.audio
-        if (cachedAudio != null) {
-            if (isFinalizedDownloadedMetadata(
-                    ManagedDownloadStorage.metadataForAudioEntry(snapshot, cachedAudio)
-                )
-            ) {
-                return true
-            }
-            NPLogger.d(
-                TAG,
-                "下载快照命中未完成音频，交由完成链路收尾而非重复传输: " +
-                    "song=${song.name}, file=${cachedAudio.name}"
-            )
-            return true
-        }
-        return GlobalDownloadManager.findFastCachedDownloadedSongPlaybackUri(context, song) != null
-    }
+    ): Boolean = playbackCoordinator.hasFastCachedManagedDownloadForStart(context, song)
 
     internal fun resolveLocalLyricForDownload(rawLyric: String?): String? {
-        return rawLyric?.takeIf { it.isNotBlank() }
+        return AudioDownloadLyricsCoordinator.resolveLocalLyric(rawLyric)
     }
 
     internal fun shouldFetchRemoteLyricForDownload(rawLyric: String?): Boolean {
-        return rawLyric == null
+        return AudioDownloadLyricsCoordinator.shouldFetchRemoteLyric(rawLyric)
     }
 
     internal fun shouldFetchRomanizedLyricForDownload(
         shouldFetchPrimaryLyric: Boolean,
         shouldFetchTranslatedLyric: Boolean
     ): Boolean {
-        return shouldFetchPrimaryLyric || shouldFetchTranslatedLyric
+        return AudioDownloadLyricsCoordinator.shouldFetchRomanizedLyric(
+            shouldFetchPrimaryLyric,
+            shouldFetchTranslatedLyric
+        )
     }
 
     /** 下载歌词文件 */
@@ -5110,965 +3854,92 @@ object AudioDownloadManager {
         serializeWrites: Boolean = true,
         batchSessionId: Long? = null,
         attemptId: Long? = null,
-        requireActiveAttempt: Boolean = true
+        requireActiveAttempt: Boolean = true,
+        operationId: String? = null
     ): DownloadedSidecarReferences {
-        var lyricReference: String? = null
-        var translatedLyricReference: String? = null
-        var romanizedLyricReference: String? = null
-        var expectedLyric = false
-        var expectedTranslatedLyric = false
-        var expectedRomanizedLyric = false
-        var lyricText: String? = null
-        var translatedText: String? = null
-        var romanizedText: String? = null
-        try {
-            ensureSongDownloadNotCancelled(
-                songKey = songKey,
-                stage = "lyrics_prepare",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt
-            )
-            lyricText = resolveLocalLyricForDownload(song.matchedLyric)
-            translatedText = resolveLocalLyricForDownload(song.matchedTranslatedLyric)
-            val shouldFetchPrimaryLyric = shouldFetchRemoteLyricForDownload(song.matchedLyric)
-            val shouldFetchTranslatedLyric =
-                shouldFetchRemoteLyricForDownload(song.matchedTranslatedLyric)
-            val shouldFetchRomanizedLyric = shouldFetchRomanizedLyricForDownload(
-                shouldFetchPrimaryLyric = shouldFetchPrimaryLyric,
-                shouldFetchTranslatedLyric = shouldFetchTranslatedLyric
-            )
-            if (lyricText != null) {
-                NPLogger.d(TAG, context.getString(R.string.download_lyrics_matched, song.name))
-            }
-            val isYouTubeMusic = isYouTubeMusicSong(song)
-            val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
-
-            when {
-                isYouTubeMusic -> {
-                    if (lyricText == null && shouldFetchPrimaryLyric) {
-                        lyricText = downloadYouTubeMusicLyrics(song)
-                    }
-                }
-                isBili -> { /* B站暂无歌词源 */ }
-                else -> {
-                    val downloaded = downloadNeteaseLyrics(
-                        song = song,
-                        shouldFetchPrimaryLyric = shouldFetchPrimaryLyric && lyricText == null,
-                        shouldFetchTranslatedLyric = shouldFetchTranslatedLyric && translatedText == null,
-                        shouldFetchRomanizedLyric = shouldFetchRomanizedLyric && romanizedText == null
-                    )
-                    if (lyricText == null && shouldFetchPrimaryLyric) {
-                        lyricText = downloaded.lyricText
-                    }
-                    if (translatedText == null && shouldFetchTranslatedLyric) {
-                        translatedText = downloaded.translatedText
-                    }
-                    if (romanizedText == null && shouldFetchRomanizedLyric) {
-                        romanizedText = downloaded.romanizedText
-                    }
-                }
-            }
-
-            ensureSongDownloadNotCancelled(
-                songKey = songKey,
-                stage = "lyrics_resolved",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt
-            )
-            expectedLyric = !lyricText.isNullOrBlank()
-            expectedTranslatedLyric = !translatedText.isNullOrBlank()
-            expectedRomanizedLyric = !romanizedText.isNullOrBlank()
-
-            suspend fun writePrimaryLyric(): String? {
-                val lyric = lyricText?.takeIf(String::isNotBlank) ?: return null
-                val reference = writeManagedLyrics(
-                    context = context,
-                    song = song,
-                    baseName = baseName,
-                    content = lyric,
-                    translated = false
-                )
-                reference?.let { storedReference ->
-                    rememberPartialSidecarReferences(
-                        songKey,
-                        DownloadedSidecarReferences(
-                            lyricReference = storedReference,
-                            createdLyric = true,
-                            lyricContent = inlineLyricContent(lyric)
-                        )
-                    )
-                    NPLogger.d(
-                        TAG,
-                        "歌词写入完成: song=${song.name}, reference=$storedReference"
-                    )
-                }
-                return reference
-            }
-
-            suspend fun writeTranslatedLyric(): String? {
-                val lyric = translatedText?.takeIf(String::isNotBlank) ?: return null
-                val reference = writeManagedLyrics(
-                    context = context,
-                    song = song,
-                    baseName = baseName,
-                    content = lyric,
-                    translated = true
-                )
-                reference?.let { storedReference ->
-                    rememberPartialSidecarReferences(
-                        songKey,
-                        DownloadedSidecarReferences(
-                            translatedLyricReference = storedReference,
-                            createdTranslatedLyric = true,
-                            translatedLyricContent = inlineLyricContent(lyric)
-                        )
-                    )
-                    NPLogger.d(
-                        TAG,
-                        "翻译歌词写入完成: song=${song.name}, reference=$storedReference"
-                    )
-                }
-                return reference
-            }
-
-            suspend fun writeRomanizedLyric(): String? {
-                val lyric = romanizedText?.takeIf(String::isNotBlank) ?: return null
-                ensureSongDownloadNotCancelled(
-                    songKey = songKey,
-                    stage = "lyrics_romanized_write",
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId,
-                    requireActiveAttempt = requireActiveAttempt
-                )
-                val reference = ManagedDownloadStorage.writeRomanizedLyrics(
-                    context = context,
-                    songId = song.id,
-                    baseName = baseName,
-                    content = lyric
-                )
-                reference?.let { storedReference ->
-                    rememberPartialSidecarReferences(
-                        songKey,
-                        DownloadedSidecarReferences(
-                            romanizedLyricReference = storedReference,
-                            createdRomanizedLyric = true,
-                            romanizedLyricContent = inlineLyricContent(lyric)
-                        )
-                    )
-                    NPLogger.d(
-                        TAG,
-                        "音译歌词写入完成: song=${song.name}, reference=$storedReference"
-                    )
-                }
-                return reference
-            }
-
-            if (serializeWrites) {
-                lyricReference = writePrimaryLyric()
-                ensureSongDownloadNotCancelled(
-                    songKey = songKey,
-                    stage = "lyrics_primary_written",
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId,
-                    requireActiveAttempt = requireActiveAttempt
-                )
-                translatedLyricReference = writeTranslatedLyric()
-                romanizedLyricReference = writeRomanizedLyric()
-            } else {
-                coroutineScope {
-                    val primaryJob = async(Dispatchers.IO) { writePrimaryLyric() }
-                    val translatedJob = async(Dispatchers.IO) { writeTranslatedLyric() }
-                    val romanizedJob = async(Dispatchers.IO) { writeRomanizedLyric() }
-                    lyricReference = primaryJob.await()
-                    translatedLyricReference = translatedJob.await()
-                    romanizedLyricReference = romanizedJob.await()
-                }
-            }
-            ensureSongDownloadNotCancelled(
-                songKey = songKey,
-                stage = "lyrics_primary_written",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt
-            )
-        } catch (cancellation: java.util.concurrent.CancellationException) {
-            NPLogger.d(TAG, "歌词整理阶段收到取消: ${song.name}")
-            throw cancellation
-        } catch (e: Exception) {
-            NPLogger.w(
-                TAG,
-                "歌词下载失败: ${song.name} - ${e.javaClass.simpleName}: ${e.message}",
-                e
-            )
-        }
-        return DownloadedSidecarReferences(
-            lyricReference = lyricReference,
-            translatedLyricReference = translatedLyricReference,
-            romanizedLyricReference = romanizedLyricReference,
-            expectedLyric = expectedLyric,
-            expectedTranslatedLyric = expectedTranslatedLyric,
-            expectedRomanizedLyric = expectedRomanizedLyric,
-            createdLyric = !lyricReference.isNullOrBlank(),
-            createdTranslatedLyric = !translatedLyricReference.isNullOrBlank(),
-            createdRomanizedLyric = !romanizedLyricReference.isNullOrBlank(),
-            lyricContent = lyricReference?.let { inlineLyricContent(lyricText) },
-            translatedLyricContent = translatedLyricReference?.let {
-                inlineLyricContent(translatedText)
-            },
-            romanizedLyricContent = romanizedLyricReference?.let {
-                inlineLyricContent(romanizedText)
-            }
-        )
-    }
-
-    private fun inlineLyricContent(content: String?): String? {
-        val normalized = content?.takeIf(String::isNotBlank) ?: return null
-        return normalized.takeIf {
-            it.toByteArray(Charsets.UTF_8).size.toLong() <= MAX_INLINE_SIDECAR_LYRIC_BYTES
-        }
-    }
-
-    /** 从 LRCLIB / YouTube Music API 获取歌词并保存 */
-    private suspend fun downloadYouTubeMusicLyrics(
-        song: SongItem
-    ): String? {
-        if (!shouldFetchRemoteLyricForDownload(song.matchedLyric)) return null
-        try {
-            val lrcLibResult = try {
-                val durationSec = song.durationMs / 1_000L
-                AppContainer.lrcLibClient.getLyrics(
-                    trackName = song.name,
-                    artistName = song.artist,
-                    durationSeconds = durationSec
-                ) ?: AppContainer.lrcLibClient.searchLyrics(
-                    trackName = song.name,
-                    artistName = song.artist,
-                    durationSeconds = durationSec
-                )
-            } catch (_: Exception) { null }
-
-            val syncedLyrics = lrcLibResult?.syncedLyrics?.takeIf { it.isNotBlank() }
-            val plainLyrics = lrcLibResult?.plainLyrics?.takeIf { it.isNotBlank() }
-
-            when {
-                syncedLyrics != null -> {
-                    NPLogger.d(TAG, "LRCLIB 同步歌词保存: ${song.name}")
-                    return syncedLyrics
-                }
-                plainLyrics != null -> {
-                    NPLogger.d(TAG, "LRCLIB 纯文本歌词保存: ${song.name}")
-                    return plainLyrics
-                }
-            }
-
-            // 回退 YouTube Music API
-            val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
-            val ytResult = AppContainer.youtubeMusicClient.getLyrics(videoId) ?: return null
-            val lyricsText = ytResult.lyrics.takeIf { it.isNotBlank() } ?: return null
-            NPLogger.d(TAG, "YouTube Music API 歌词保存: ${song.name}")
-            return lyricsText
-        } catch (e: Exception) {
-            NPLogger.w(TAG, "YouTube Music 歌词下载失败: ${song.name} - ${e.message}")
-        }
-        return null
-    }
-
-    /** 从网易云 API 获取歌词并保存 */
-    private fun downloadNeteaseLyrics(
-        song: SongItem,
-        shouldFetchPrimaryLyric: Boolean = true,
-        shouldFetchTranslatedLyric: Boolean = true,
-        shouldFetchRomanizedLyric: Boolean = true
-    ): DownloadedLyrics {
-        if (!shouldFetchPrimaryLyric && !shouldFetchTranslatedLyric && !shouldFetchRomanizedLyric) {
-            return DownloadedLyrics()
-        }
-
-        if (!shouldFetchPrimaryLyric && !shouldFetchRomanizedLyric) {
-            try {
-                val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
-                val root = JSONObject(lyrics)
-                if (root.optInt("code") == 200) {
-                    val tlyric: String = root.optJSONObject("tlyric")?.optString("lyric").orEmpty()
-                    val romalrc = root.optJSONObject("romalrc")?.optString("lyric").orEmpty()
-                    if (shouldFetchTranslatedLyric && tlyric.isNotBlank()) {
-                        NPLogger.d(TAG, "翻译歌词保存: ${song.name}")
-                        return DownloadedLyrics(
-                            translatedText = tlyric,
-                            romanizedText = romalrc.takeIf {
-                                shouldFetchRomanizedLyric && it.isNotBlank()
-                            }
-                        )
-                    }
-                    if (shouldFetchRomanizedLyric && romalrc.isNotBlank()) {
-                        return DownloadedLyrics(romanizedText = romalrc)
-                    }
-                }
-            } catch (e: Exception) {
-                NPLogger.w(TAG, "翻译歌词下载失败: ${song.name} - ${e.message}")
-            }
-            return DownloadedLyrics()
-        }
-
-        try {
-            val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
-            val root = JSONObject(lyrics)
-            if (root.optInt("code") != 200) return DownloadedLyrics()
-
-            val yrc: String = root.optJSONObject("yrc")?.optString("lyric") ?: ""
-            val lrc: String = root.optJSONObject("lrc")?.optString("lyric") ?: ""
-            val translated: String = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
-            val romanized: String = root.optJSONObject("romalrc")?.optString("lyric") ?: ""
-            val preferredLyric = if (shouldFetchPrimaryLyric) {
-                yrc.takeIf { it.isNotBlank() } ?: lrc.takeIf { it.isNotBlank() }
-            } else {
-                null
-            }
-            if (shouldFetchPrimaryLyric && yrc.isNotBlank()) {
-                NPLogger.d(TAG, "从API获取逐字歌词保存: ${song.name}")
-            }
-            if (shouldFetchPrimaryLyric && lrc.isNotBlank()) {
-                NPLogger.d(TAG, "从API获取歌词保存: ${song.name}")
-            }
-            if (shouldFetchTranslatedLyric && translated.isNotBlank()) {
-                NPLogger.d(TAG, "从API获取翻译歌词保存: ${song.name}")
-            }
-            return DownloadedLyrics(
-                lyricText = preferredLyric,
-                translatedText = translated.takeIf {
-                    shouldFetchTranslatedLyric && it.isNotBlank()
-                },
-                romanizedText = romanized.takeIf {
-                    shouldFetchRomanizedLyric && it.isNotBlank()
-                }
-            )
-        } catch (e: Exception) {
-            NPLogger.w(TAG, "网易云歌词下载失败: ${song.name} - ${e.message}")
-        }
-        return DownloadedLyrics()
-    }
-
-    private fun writeManagedLyrics(
-        context: Context,
-        song: SongItem,
-        baseName: String,
-        content: String,
-        translated: Boolean
-    ): String? {
-        return ManagedDownloadStorage.writeLyrics(
+        return AudioDownloadLyricsCoordinator.download(
             context = context,
-            songId = song.id,
+            song = song,
+            songKey = songKey,
             baseName = baseName,
-            content = content,
-            translated = translated
-        )
-    }
-
-    fun getLocalPlaybackUri(context: Context, song: SongItem): String? {
-        val songKey = song.stableKey()
-        if (GlobalDownloadManager.isSongCancelled(songKey)) {
-            return null
-        }
-        val managedDownloadHint = runCatching {
-            ManagedDownloadStorage.isLikelyManagedDownloadSongFast(context, song)
-        }.getOrDefault(false)
-        if (shouldWaitForManagedPlaybackDirectoryMutation(
-                isManagedDownload = managedDownloadHint,
-                mutationActive = ManagedDownloadDirectoryMutationFence.isActiveFast(context)
-            )
-        ) {
-            NPLogger.d(
-                TAG,
-                "同步播放解析遇到目录迁移，暂不使用旧引用: song=${song.name}"
-            )
-            return null
-        }
-        resolveRecentlyCommittedAudioReference(context, song)?.let { return it }
-        // 下载核心提交后内存目录已经有可验证引用时，先走零扫描路径。
-        // 目录快照可能仍在后台刷新，不能让首播等待一次完整 SAF 枚举。
-        val catalogPlaybackReference = GlobalDownloadManager
-            .findAccessibleDownloadedSongPlaybackUri(
-            context = context,
-            song = song
-        )
-        if (
-            catalogPlaybackReference != null &&
-            (!managedDownloadHint || isManagedPlaybackReferenceCompatibleWithConfiguredSaf(
-                reference = catalogPlaybackReference,
-                configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
-            ))
-        ) {
-            return catalogPlaybackReference
-        }
-        if (catalogPlaybackReference != null) {
-            NPLogger.d(
-                TAG,
-                "目录切换后忽略缓存中的旧播放引用: " +
-                    "song=${song.name}, reference=$catalogPlaybackReference"
-            )
-        }
-        resolveReadableManagedDownload(context, song)
-            ?.let(::playableReferenceForManagedAudio)
-            ?.let { return it }
-        val indexedReferences = GlobalDownloadManager.findDownloadedSongCached(song)
-            ?.let(::downloadedSongPlaybackReferenceCandidates)
-            ?: return null
-        return indexedReferences.asSequence()
-            .filter { reference ->
-                !managedDownloadHint || isManagedPlaybackReferenceCompatibleWithConfiguredSaf(
-                    reference = reference,
-                    configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+            serializeWrites = serializeWrites,
+            batchSessionId = batchSessionId,
+            attemptId = attemptId,
+            requireActiveAttempt = requireActiveAttempt,
+            operationId = operationId,
+            ensureNotCancelled = { key, stage, session, attempt, active ->
+                ensureSongDownloadNotCancelled(
+                    songKey = key,
+                    stage = stage,
+                    batchSessionId = session,
+                    attemptId = attempt,
+                    operationId = operationId,
+                    requireActiveAttempt = active
+                )
+            },
+            rememberPartial = { key, operationId, references ->
+                rememberPartialSidecarReferences(
+                    songKey = key,
+                    sidecarReferences = references,
+                    operationId = operationId
                 )
             }
-            .mapNotNull { reference ->
-                resolveReboundDownloadedPlaybackUri(context, reference)
-            }
-            .firstOrNull()
-    }
-
-    private fun resolveRecentlyCommittedAudioReference(
-        context: Context,
-        song: SongItem,
-        rawReference: String? = null
-    ): String? {
-        val songKey = song.stableKey()
-        val audio = rawReference?.let(::peekCompletedAudioReferenceByRawReference)
-            ?: peekCompletedAudioReference(song)
-            ?: return null
-        val reference = playableReferenceForManagedAudio(audio) ?: return null
-        if (shouldDiscardCompletedReferenceForConfiguredSaf(
-                reference = reference,
-                configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
-            )
-        ) {
-            invalidateCompletedAudioReference(song)
-            NPLogger.d(
-                TAG,
-                "目录已切换到 SAF，丢弃旧完成桥接引用并等待当前根重绑定: " +
-                    "songKey=$songKey, reference=$reference"
-            )
-            return null
-        }
-        if (isMissingFilePlaybackReference(reference)) {
-            invalidateCompletedAudioReference(song)
-            NPLogger.d(
-                TAG,
-                "完成桥接引用已不存在，等待当前存储根重新绑定: " +
-                    "songKey=$songKey, reference=$reference"
-            )
-            return null
-        }
-        if (!shouldUseCompletedAudioReferenceDirectly(
-                reference = reference,
-                downloadCancelled = GlobalDownloadManager.isSongCancelled(songKey)
-            )
-        ) {
-            return null
-        }
-        NPLogger.d(
-            TAG,
-            "core 音频已提交，目录回调尚未完成，直接使用已校验引用并后台校验: " +
-                "songKey=$songKey, reference=$reference"
         )
-        // 这里不能同步查询 SAF。后台扫描只负责更新索引，Provider 短暂异常时保留桥接。
-        GlobalDownloadManager.scanLocalFiles(context, forceRefresh = false)
-        return ManagedDownloadStorage.toPlayableUri(reference) ?: reference
     }
 
-    /**
-     * 受管目录中的本地引用必须经过完成凭据校验，不能仅凭文件仍可读取就播放
-     */
+    fun getLocalPlaybackUri(context: Context, song: SongItem): String? =
+        playbackCoordinator.getLocalPlaybackUri(context, song)
+
     suspend fun resolvePermittedLocalPlaybackUri(
         context: Context,
         song: SongItem,
         rawLocalReference: String?
-    ): String? {
-        return (resolvePermittedLocalPlayback(
-            context = context,
-            song = song,
-            rawLocalReference = rawLocalReference
-        ) as? LocalPlaybackReferenceResolution.Playable)?.reference
-    }
+    ): String? = playbackCoordinator.resolvePermittedLocalPlaybackUri(
+        context = context,
+        song = song,
+        rawLocalReference = rawLocalReference
+    )
 
     internal suspend fun resolvePermittedLocalPlayback(
         context: Context,
         song: SongItem,
         rawLocalReference: String?
-    ): LocalPlaybackReferenceResolution = withContext(Dispatchers.IO) {
-        val appContext = context.applicationContext
-        val reference = rawLocalReference?.trim()?.takeIf(String::isNotBlank)
-        if (reference == null) {
-            // 播放队列可能先恢复歌曲身份, 再异步补齐本地引用。优先读取
-            // 已提交的内存桥和快速索引, 不要把这个短窗口误报成远程地址失败
-            getLocalPlaybackUri(appContext, song)?.let { verifiedReference ->
-                return@withContext LocalPlaybackReferenceResolution.Playable(
-                    verifiedReference
-                )
-            }
-            return@withContext LocalPlaybackReferenceResolution.TemporarilyUnavailable(
-                ManagedDownloadReferenceLookup.Result.OutOfScope
-            )
-        }
-        val managedDownloadHint = runCatching {
-            ManagedDownloadStorage.isLikelyManagedDownloadSongFast(appContext, song)
-        }.getOrDefault(false)
-        if (shouldWaitForManagedPlaybackDirectoryMutation(
-                isManagedDownload = managedDownloadHint,
-                mutationActive = runCatching {
-                    ManagedDownloadDirectoryMutationFence.isActive(appContext)
-                }.getOrDefault(true)
-            )
-        ) {
-            val opened = withTimeoutOrNull(DIRECTORY_MUTATION_PLAYBACK_WAIT_MS) {
-                ManagedDownloadDirectoryMutationFence.awaitOpen()
-                true
-            } == true
-            if (!opened) {
-                NPLogger.d(
-                    TAG,
-                    "目录迁移仍在进行，暂不使用旧播放引用: song=${song.name}"
-                )
-                return@withContext LocalPlaybackReferenceResolution.TemporarilyUnavailable(
-                    ManagedDownloadReferenceLookup.Result.OutOfScope
-                )
-            }
-        }
-        // core 提交桥已经验证过完整音频, 必须在任何 SAF 查询前消费它
-        resolveRecentlyCommittedAudioReference(
-            context = appContext,
-            song = song,
-            rawReference = reference
-        )?.let { bridgedReference ->
-            return@withContext LocalPlaybackReferenceResolution.Playable(bridgedReference)
-        }
-        val isManagedDownload = try {
-            ManagedDownloadStorage.isLikelyManagedDownloadSong(appContext, song)
-        } catch (cancellation: java.util.concurrent.CancellationException) {
-            throw cancellation
-        } catch (error: Exception) {
-            NPLogger.w(
-                TAG,
-                "识别受管本地音频失败，按内存线索保守处理: ${error.message}"
-            )
-            ManagedDownloadStorage.isLikelyManagedDownloadSongFast(appContext, song)
-        }
-        val configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
-        val rawReferenceCompatible = !isManagedDownload ||
-            isManagedPlaybackReferenceCompatibleWithConfiguredSaf(
-                reference = reference,
-                configuredDirectoryUri = configuredDirectoryUri
-            )
-        if (isManagedDownload && !rawReferenceCompatible) {
-            NPLogger.d(
-                TAG,
-                "目录切换后拒绝旧受管播放引用，准备重绑当前根: " +
-                    "song=${song.name}, reference=$reference"
-            )
-        }
-        val rawEvidence = if (rawReferenceCompatible) {
-            ManagedDownloadReferenceLookup.inspect(appContext, reference)
-        } else {
-            // 旧根引用按暂时不可用处理，交给有界重绑定流程，不再探测旧 Provider
-            ManagedDownloadReferenceLookup.Result.Missing
-        }
-        val managedReferenceIsExplicitlyIncomplete = if (isManagedDownload && rawReferenceCompatible) {
-            isManagedReferenceExplicitlyIncomplete(
-                context = appContext,
-                song = song,
-                reference = reference
-            )
-        } else {
-            false
-        }
-        if (
-            rawReferenceCompatible && shouldUseDirectPresentLocalPlayback(
-                reference = reference,
-                isManagedDownload = isManagedDownload,
-                evidence = rawEvidence,
-                downloadCancelled = GlobalDownloadManager.isSongCancelled(song.stableKey())
-            )
-        ) {
-            if (isManagedDownload && managedReferenceIsExplicitlyIncomplete) {
-                NPLogger.d(
-                    TAG,
-                    "正式下载引用已确认可读，跳过旧完成状态门禁: " +
-                        "song=${song.name}, reference=$reference"
-                )
-            }
-            return@withContext selectPermittedLocalPlaybackResolution(
-                rawLocalReference = reference,
-                isManagedDownload = isManagedDownload,
-                verifiedManagedReference = null,
-                rawEvidence = rawEvidence,
-                managedReferenceIsExplicitlyIncomplete = false
-            )
-        }
-        val verifiedManagedReference = if (isManagedDownload) {
-            getLocalPlaybackUri(appContext, song)
-                ?: if (rawEvidence == ManagedDownloadReferenceLookup.Result.Missing) {
-                    forceResolveManagedPlaybackAfterMissing(
-                        context = appContext,
-                        song = song
-                    )
-                } else {
-                    null
-                }
-        } else {
-            null
-        }
-        // getLocalPlaybackUri 已经完成 Present 和 core 凭据校验，不能再被原始
-        // pending 引用的旧标记覆盖，否则刚提交的音频会被误判为暂不可用
-        val effectiveIncomplete = if (verifiedManagedReference != null) {
-            false
-        } else {
-            managedReferenceIsExplicitlyIncomplete
-        }
-        selectPermittedLocalPlaybackResolution(
-            rawLocalReference = reference,
-            isManagedDownload = isManagedDownload,
-            verifiedManagedReference = verifiedManagedReference,
-            rawEvidence = rawEvidence,
-            managedReferenceIsExplicitlyIncomplete = effectiveIncomplete,
-            missingIsTransient = isRecentManagedPlaybackReference(
-                song = song,
-                reference = reference
-            )
-        )
-    }
-
-    /** 旧 catalog 只剩失效路径时，单飞一次强制快照重绑到迁移后的引用 */
-    private suspend fun forceResolveManagedPlaybackAfterMissing(
-        context: Context,
-        song: SongItem
-    ): String? {
-        val songKey = song.stableKey()
-        val nowMs = System.currentTimeMillis()
-        val shouldRefresh = synchronized(managedPlaybackRebindAtMsBySongKey) {
-            val previousAtMs = managedPlaybackRebindAtMsBySongKey[songKey]
-            if (previousAtMs != null && nowMs - previousAtMs < MANAGED_PLAYBACK_REBIND_COOLDOWN_MS) {
-                false
-            } else {
-                managedPlaybackRebindAtMsBySongKey[songKey] = nowMs
-                true
-            }
-        }
-        if (!shouldRefresh) {
-            return null
-        }
-        val audio = try {
-            ManagedDownloadStorage.findDownloadedAudio(
-                context = context,
-                song = song,
-                forceRefresh = true
-            ) ?: ManagedDownloadStorage.peekDownloadedAudio(song)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (error: Throwable) {
-            NPLogger.w(
-                TAG,
-                "旧本地引用缺失时强制重绑失败，保留目录等待重试: " +
-                    "song=${song.name}, error=${error.message}",
-                error
-            )
-            return null
-        }
-        val reference = audio
-            ?.let(::playableReferenceForManagedAudio)
-            ?.takeIf { candidate ->
-                ManagedDownloadReferenceLookup.inspect(context, candidate) ==
-                    ManagedDownloadReferenceLookup.Result.Present
-            }
-        if (reference != null) {
-            requestBackgroundDownloadIndexRefresh(context)
-            return ManagedDownloadStorage.toPlayableUri(reference) ?: reference
-        }
-        GlobalDownloadManager.scanLocalFiles(context, forceRefresh = false)
-        return null
-    }
-
-    private fun isMissingFilePlaybackReference(reference: String): Boolean {
-        val normalized = reference.trim()
-        val path = when {
-            normalized.startsWith("/") -> normalized
-            normalized.startsWith("file:", ignoreCase = true) -> {
-                runCatching { URI(normalized).path }.getOrNull()
-            }
-            else -> null
-        } ?: return false
-        return !File(path).isFile
-    }
+    ): LocalPlaybackReferenceResolution = playbackCoordinator.resolvePermittedLocalPlayback(
+        context = context,
+        song = song,
+        rawLocalReference = rawLocalReference
+    )
 
     internal fun resolveIndexedLocalPlaybackReference(
         context: Context,
         song: SongItem
-    ): LocalPlaybackReferenceResolution {
-        if (!mayHaveIndexedLocalDownload(context, song)) {
-            return LocalPlaybackReferenceResolution.NotIndexed
-        }
-        // mayHaveIndexedLocalDownload 可能刚从 Room/磁盘快照恢复了条目。
-        // catalog 仍未发布时也要把该持久化引用带入后续完整性门禁。
-        val durableCachedAudio = findDurableCachedManagedAudio(
-            context = context,
-            song = song,
-            restorePersisted = false
-        )
-        val verifiedReference = getLocalPlaybackUri(context, song)
-        val indexedReference = listOfNotNull(
-            GlobalDownloadManager.findDownloadedSongCached(song)
-                ?.let(::resolveDownloadedSongPlaybackReference),
-            durableCachedAudio?.audio?.let(::playableReferenceForManagedAudio),
-            ManagedDownloadStorage.peekPendingDownloadedAudio(song)
-                ?.let(::playableReferenceForManagedAudio)
-        ).firstOrNull { reference ->
-            isManagedPlaybackReferenceCompatibleWithConfiguredSaf(
-                reference = reference,
-                configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
-            )
-        }
-        val indexedEvidence = if (verifiedReference == null && indexedReference != null) {
-            ManagedDownloadReferenceLookup.inspect(context, indexedReference)
-        } else {
-            null
-        }
-        if (
-            verifiedReference == null &&
-            indexedReference != null &&
-            shouldUseDirectPresentLocalPlayback(
-                reference = indexedReference,
-                isManagedDownload = true,
-                evidence = indexedEvidence
-                    ?: ManagedDownloadReferenceLookup.Result.OutOfScope,
-                downloadCancelled = GlobalDownloadManager.isSongCancelled(song.stableKey())
-            )
-        ) {
-            NPLogger.d(
-                TAG,
-                "索引中的正式下载音频已确认可读，跳过旧完成状态门禁: " +
-                    "song=${song.name}, reference=$indexedReference"
-            )
-            return LocalPlaybackReferenceResolution.Playable(indexedReference)
-        }
-        val indexedReferenceIsExplicitlyIncomplete = if (
-            verifiedReference == null &&
-                indexedReference != null &&
-                indexedEvidence == ManagedDownloadReferenceLookup.Result.Present
-        ) {
-            isManagedReferenceExplicitlyIncomplete(
-                context = context,
-                song = song,
-                reference = indexedReference
-            )
-        } else {
-            false
-        }
-        return selectIndexedLocalPlaybackResolution(
-            verifiedReference = verifiedReference,
-            indexedReference = indexedReference,
-            indexedEvidence = indexedEvidence,
-            indexedReferenceIsExplicitlyIncomplete = indexedReferenceIsExplicitlyIncomplete,
-            missingIsTransient = indexedReference?.let {
-                isRecentManagedPlaybackReference(song = song, reference = it)
-            } == true
-        )
-    }
+    ): LocalPlaybackReferenceResolution = playbackCoordinator.resolveIndexedLocalPlaybackReference(
+        context = context,
+        song = song
+    )
 
-    private fun isRecentManagedPlaybackReference(
-        song: SongItem,
-        reference: String
-    ): Boolean {
-        return reference.contains(PENDING_AUDIO_WRITE_MARKER, ignoreCase = true) ||
-            peekCompletedAudioReference(song) != null ||
-            isSongDownloadActive(song.stableKey())
-    }
+    fun mayHaveIndexedLocalDownload(context: Context, song: SongItem): Boolean =
+        playbackCoordinator.mayHaveIndexedLocalDownload(context, song)
 
-    fun mayHaveIndexedLocalDownload(context: Context, song: SongItem): Boolean {
-        if (peekCompletedAudioReference(song) != null) {
-            return true
-        }
-        if (GlobalDownloadManager.hasDownloadedSongCached(song)) {
-            return true
-        }
-        if (ManagedDownloadStorage.peekPendingDownloadedAudio(song) != null) {
-            return true
-        }
-        // catalogReady 只表示内存目录已发布，不代表它已包含当前队列身份。
-        // 仅在目录已发布且内存索引 miss 时恢复一次 Room/磁盘快照，避免播放
-        // 请求重复读取持久化索引；快照查询本身不会枚举 SAF。
-        val catalogReady = GlobalDownloadManager.isDownloadedSongCatalogReady()
-        if (
-            findDurableCachedManagedAudio(
-                context = context,
-                song = song,
-                restorePersisted = catalogReady
-            ) != null
-        ) {
-            return true
-        }
-        if (catalogReady) {
-            return false
-        }
-        if (!canBlockStorageLookup()) {
-            return false
-        }
-        if (!ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
-            return false
-        }
-        val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-            context = context,
-            restorePersisted = false
-        ) ?: return false
-        val audio = ManagedDownloadStorage.findDownloadedAudio(snapshot, song)
-        if (audio != null) {
-            // 快照可能仍是增量或预览状态，真正的完整性和可读性由
-            // getLocalPlaybackUri 的 Present 和 artifact 凭据校验负责
-            return true
-        }
-        return ManagedDownloadStorage.findPendingDownloadedAudio(snapshot, song) != null
-    }
-
-    fun hasLocalDownload(context: Context, song: SongItem): Boolean {
-        val songKey = song.stableKey()
-        if (GlobalDownloadManager.isSongCancelled(songKey) || isSongDownloadActive(songKey)) {
-            return false
-        }
-        return resolveReadableDownloadedPlaybackUri(context, song) != null
-    }
+    fun hasLocalDownload(context: Context, song: SongItem): Boolean =
+        playbackCoordinator.hasLocalDownload(context, song)
 
     /**
      * 只读取已驻留下载索引，供滚动列表恢复已有封面，避免触发目录扫描
      */
-    fun peekLocalCoverUri(song: SongItem): String? {
-        if (!GlobalDownloadManager.hasDownloadedSongCached(song)) {
-            return null
-        }
-        val localAudio = ManagedDownloadStorage.peekDownloadedAudio(song) ?: return null
-        val coverReference = ManagedDownloadStorage.peekCoverReference(localAudio) ?: return null
-        return ManagedDownloadStorage.toPlayableUri(coverReference) ?: coverReference
-    }
+    fun peekLocalCoverUri(song: SongItem): String? =
+        playbackCoordinator.peekLocalCoverUri(song)
 
     /** 解析下载歌曲对应的本地封面, 供离线 UI 兜底使用 */
     fun getLocalCoverUri(
         context: Context,
         song: SongItem,
         resolveLocalMediaFallback: Boolean = true
-    ): String? {
-        val allowBlockingLookup = canBlockStorageLookup()
-        val localAudio = findFinalizedCachedAudioForCover(
-            context = context,
-            song = song,
-            allowBlockingLookup = allowBlockingLookup
-        )
-        val coverReference = localAudio?.let {
-            ManagedDownloadStorage.peekCoverReference(it)
-                ?: if (allowBlockingLookup && ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
-                    runBlocking(Dispatchers.IO) {
-                        ManagedDownloadStorage.findCoverReference(context, it)
-                    }
-                } else {
-                    null
-                }
-        }
-        if (!coverReference.isNullOrBlank()) {
-            return ManagedDownloadStorage.toPlayableUri(coverReference) ?: coverReference
-        }
-
-        if (localAudio != null || !allowBlockingLookup) {
-            return null
-        }
-        if (!resolveLocalMediaFallback) {
-            return null
-        }
-        if (!LocalSongSupport.isLocalSong(song)) {
-            return null
-        }
-
-        return runCatching {
-            LocalMediaSupport.resolveCoverUri(context, song)
-        }.getOrElse {
-            NPLogger.w(TAG, "resolve local cover fallback failed: ${it.message}")
-            null
-        }
-    }
-
-    private fun findFinalizedCachedAudioForCover(
-        context: Context,
-        song: SongItem,
-        allowBlockingLookup: Boolean
-    ): ManagedDownloadStorage.StoredEntry? {
-        fun finalizedAudio(
-            snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?
-        ): ManagedDownloadStorage.StoredEntry? {
-            val audio = snapshot?.let { currentSnapshot ->
-                ManagedDownloadStorage.findDownloadedAudio(currentSnapshot, song)
-            }
-            return audio?.takeIf { candidate ->
-                canExposeManagedDownloadForPlayback(snapshot, candidate)
-            }
-        }
-
-        finalizedAudio(
-            ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-                context = context,
-                restorePersisted = false
-            )
-        )?.let { return it }
-        if (!allowBlockingLookup || !ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
-            return null
-        }
-        return finalizedAudio(
-            ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-                context = context,
-                restorePersisted = false
-            )
-        )
-    }
-
-    private fun resolveReadableDownloadedPlaybackUri(
-        context: Context,
-        song: SongItem
-    ): String? {
-        resolveReadableManagedDownload(context, song)
-            ?.let(::playableReferenceForManagedAudio)
-            ?.let { return it }
-        val catalogPlaybackUri = GlobalDownloadManager.findAccessibleDownloadedSongPlaybackUri(
-            context = context,
-            song = song
-        )?.takeIf { reference ->
-            !ManagedDownloadStorage.isLikelyManagedDownloadSongFast(context, song) ||
-                isManagedPlaybackReferenceCompatibleWithConfiguredSaf(
-                    reference = reference,
-                    configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
-                )
-        } ?: return null
-        NPLogger.d(
-            TAG,
-            "下载索引未命中，回退下载目录缓存播放: song=${song.name}, reference=$catalogPlaybackUri"
-        )
-        return catalogPlaybackUri
-    }
-
-    private fun resolveReboundDownloadedPlaybackUri(
-        context: Context,
-        indexedReference: String
-    ): String? {
-        val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-            context = context,
-            restorePersisted = false
-        ) ?: return null
-        val reboundAudio = findReboundFinalizedManagedAudio(snapshot, indexedReference)
-            ?: return null
-        val playbackUri = playableReferenceForManagedAudio(reboundAudio) ?: return null
-        return when (ManagedDownloadReferenceLookup.inspect(context, playbackUri)) {
-            ManagedDownloadReferenceLookup.Result.Present -> playbackUri
-            else -> null
-        }
-    }
-
-    private fun candidateBaseNames(song: SongItem): List<String> {
-        return ManagedDownloadStorage.buildCandidateBaseNames(song)
-    }
+    ): String? = playbackCoordinator.getLocalCoverUri(
+        context = context,
+        song = song,
+        resolveLocalMediaFallback = resolveLocalMediaFallback
+    )
 
     fun getLyricContent(context: Context, song: SongItem): String? {
         return ManagedDownloadStorage.readLyrics(context, song, translated = false)
@@ -6105,224 +3976,52 @@ object AudioDownloadManager {
     private suspend fun resolveNetease(
         songId: Long,
         preferredQuality: String
-    ): ResolvedDownloadSource? {
-        val raw = AppContainer.neteaseClient.getSongDownloadUrl(songId, level = preferredQuality)
-        return try {
-            val root = JSONObject(raw)
-            if (root.optInt("code") != 200) return tryWeapiFallback(songId, preferredQuality)
-            val data = NeteasePlaybackResponseParser.parseDownloadInfo(raw)
-                ?: return tryWeapiFallback(songId, preferredQuality)
-            val url = data.url
-            val type = data.type.orEmpty() // e.g., mp3/flac
-            val mime = guessMimeFromUrl(url)
-            ResolvedDownloadSource(
-                url = ensureHttps(url),
-                mimeType = mime,
-                fileExtensionHint = type.lowercase().ifBlank { extFromUrl(url) },
-                contentLength = data.contentLength
-            )
-        } catch (_: Exception) {
-            tryWeapiFallback(songId, preferredQuality)
-        }
-    }
-
-    private fun bitrateForQuality(level: String): Int = when (level.lowercase()) {
-        "standard" -> 128000
-        "higher" -> 192000
-        "exhigh" -> 320000
-        "lossless", "hires", "jyeffect", "sky", "jymaster" -> 1411200
-        else -> 320000
-    }
-
-    private fun tryWeapiFallback(songId: Long, level: String): ResolvedDownloadSource? {
-        return try {
-            val br = bitrateForQuality(level)
-            val raw = AppContainer.neteaseClient.getSongUrl(songId, bitrate = br)
-            val data = NeteasePlaybackResponseParser.parseDownloadInfo(raw) ?: return null
-            val url = data.url
-            val finalUrl = ensureHttps(url)
-            val mime = guessMimeFromUrl(finalUrl)
-            val ext = extFromUrl(finalUrl)
-            ResolvedDownloadSource(
-                url = finalUrl,
-                mimeType = mime,
-                fileExtensionHint = ext,
-                contentLength = data.contentLength
-            )
-        } catch (_: Exception) { null }
-    }
+    ): ResolvedDownloadSource? = AudioDownloadSourceResolver.resolveNetease(
+        songId = songId,
+        preferredQuality = preferredQuality
+    )
 
     private suspend fun resolveYouTubeMusic(
         song: SongItem,
         preferredQuality: String,
         forceRefresh: Boolean = false,
         avoidDirect: Boolean = false
-    ): ResolvedDownloadSource? {
-        val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
-        var directPlayableAudio: YouTubePlayableAudio? = null
-        var fallbackPlayableAudio: YouTubePlayableAudio? = null
-        // 直链下载曾被 403 时(avoidDirect)只用不要求直链的策略并跳过所有直链候选, 改优先 HLS:
-        // HLS(m3u8) 的 GVS 不需要 pot, 脏 IP 下比 WEB_REMIX web-GVS 直链稳 (对齐 yt-dlp/PoToken 指南)
-        val attempts = resolveYouTubeDownloadResolveAttempts(forceRefresh)
-            .let { list -> if (avoidDirect) list.filterNot { it.requireDirect } else list }
-        for (attempt in attempts) {
-            val candidate = resolveYouTubeMusicDownloadAudio(
-                videoId = videoId,
-                attempt = attempt,
-                preferredQuality = preferredQuality,
-                avoidDirect = avoidDirect
-            ) ?: continue
-            if (candidate.streamType == YouTubePlayableStreamType.DIRECT) {
-                if (avoidDirect) {
-                    NPLogger.w(
-                        TAG,
-                        "直链下载曾 403，改走 HLS：跳过直链候选 videoId=$videoId, mode=${attempt.logLabel}"
-                    )
-                    continue
-                }
-                // WEB_REMIX 直链缺 pot 时:1 字节探活可过但整段下载必被 googlevideo 403
-                // 跳过该候选继续降级(重解析 mint pot / HLS 兜底), 避免下载拿到必失败的直链
-                if (isYouTubeWebRemixDirectMissingPoToken(candidate.url)) {
-                    NPLogger.w(
-                        TAG,
-                        "YouTube Music 下载直链为 WEB_REMIX 但缺少 pot，跳过继续降级: videoId=$videoId, mode=${attempt.logLabel}"
-                    )
-                    continue
-                }
-                directPlayableAudio = candidate
-                break
-            }
-            if (!attempt.requireDirect && fallbackPlayableAudio == null) {
-                fallbackPlayableAudio = candidate
-                break
-            }
-            NPLogger.w(
-                TAG,
-                "YouTube Music 下载直链策略返回非直链，继续降级: videoId=$videoId, mode=${attempt.logLabel}, type=${candidate.streamType}"
-            )
-        }
-        val playableAudio = directPlayableAudio ?: fallbackPlayableAudio ?: return null
-        if (directPlayableAudio == null && playableAudio.streamType == YouTubePlayableStreamType.HLS) {
-            NPLogger.w(TAG, "YouTube Music 下载未拿到直链，回退 HLS: videoId=$videoId")
-        }
-        if (playableAudio.streamType == YouTubePlayableStreamType.HLS) {
-            return ResolvedDownloadSource(
-                url = playableAudio.url,
-                mimeType = "audio/aac",
-                fileExtensionHint = "aac",
-                streamType = YouTubePlayableStreamType.HLS,
-                contentLength = playableAudio.contentLength
-            )
-        }
-        val mimeType = playableAudio.mimeType ?: guessMimeFromUrl(playableAudio.url)
-        return ResolvedDownloadSource(
-            url = playableAudio.url,
-            mimeType = mimeType,
-            fileExtensionHint = extFromUrl(playableAudio.url),
-            contentLength = playableAudio.contentLength,
-            durationMs = playableAudio.durationMs
-        )
-    }
+    ): ResolvedDownloadSource? = AudioDownloadSourceResolver.resolveYouTubeMusic(
+        song = song,
+        preferredQuality = preferredQuality,
+        forceRefresh = forceRefresh,
+        avoidDirect = avoidDirect
+    )
 
     private suspend fun resolveYouTubeMusicDownloadAudio(
         videoId: String,
         attempt: YouTubeDownloadResolveAttempt,
         preferredQuality: String,
         avoidDirect: Boolean = false
-    ): YouTubePlayableAudio? {
-        val startedAtMs = System.currentTimeMillis()
-        return try {
-            val playableAudio = withTimeoutOrNull(attempt.timeoutMs) {
-                val playbackRepository = if (attempt.shareInFlight) {
-                    AppContainer.youtubeMusicPlaybackRepository
-                } else {
-                    AppContainer.youtubeMusicDownloadPlaybackRepository
-                }
-                playbackRepository.getBestPlayableAudio(
-                    videoId = videoId,
-                    preferredQualityOverride = preferredQuality,
-                    forceRefresh = attempt.forceRefresh,
-                    requireDirect = attempt.requireDirect,
-                    preferM4a = true,
-                    shareInFlight = attempt.shareInFlight,
-                    avoidDirect = avoidDirect
-                )
-            }
-            val elapsedMs = System.currentTimeMillis() - startedAtMs
-            if (playableAudio == null) {
-                NPLogger.w(
-                    TAG,
-                    "YouTube Music 下载解析未命中或超时: videoId=$videoId, mode=${attempt.logLabel}, timeoutMs=${attempt.timeoutMs}, elapsedMs=$elapsedMs"
-                )
-            } else {
-                NPLogger.d(
-                    TAG,
-                    "YouTube Music 下载解析命中: videoId=$videoId, mode=${attempt.logLabel}, type=${playableAudio.streamType}, elapsedMs=$elapsedMs"
-                )
-            }
-            playableAudio
-        } catch (error: Exception) {
-            if (error is java.util.concurrent.CancellationException) {
-                throw error
-            }
-            NPLogger.w(
-                TAG,
-                "YouTube Music 下载解析失败，切换下一策略: videoId=$videoId, mode=${attempt.logLabel}, ${error.javaClass.simpleName} - ${error.message}"
-            )
-            null
-        }
-    }
+    ): YouTubePlayableAudio? = AudioDownloadSourceResolver.resolveYouTubeMusicDownloadAudioForManager(
+        videoId = videoId,
+        attempt = attempt,
+        preferredQuality = preferredQuality,
+        avoidDirect = avoidDirect
+    )
 
     // 解析 B 站音频直链
     private suspend fun resolveBili(
         song: SongItem,
         preferredQuality: String
-    ): ResolvedDownloadSource? {
-        val resolved = resolveBiliSong(song, AppContainer.biliClient) ?: return null
-        val chosen: BiliAudioStreamInfo? = AppContainer.biliPlaybackRepository
-            .getBestPlayableAudio(
-                bvid = resolved.videoInfo.bvid,
-                cid = resolved.cid,
-                preferredKeyOverride = preferredQuality
-            )
-        val url = chosen?.url ?: return null
-        val mime = chosen.mimeType
-        val ext = mimeToExt(mime)
-        return ResolvedDownloadSource(url = url, mimeType = mime, fileExtensionHint = ext)
-    }
-
-    private data class DownloadedLyrics(
-        val lyricText: String? = null,
-        val translatedText: String? = null,
-        val romanizedText: String? = null
+    ): ResolvedDownloadSource? = AudioDownloadSourceResolver.resolveBili(
+        song = song,
+        preferredQuality = preferredQuality
     )
 
-    private fun ensureHttps(url: String): String = if (url.startsWith("http://")) url.replaceFirst("http://", "https://") else url
+    private fun ensureHttps(url: String): String = AudioDownloadSourceResolver.ensureHttps(url)
 
-    private fun mimeToExt(mime: String): String? = when (mime.lowercase()) {
-        "audio/flac" -> "flac"
-        "audio/x-flac" -> "flac"
-        "audio/eac3", "audio/e-ac-3" -> "eac3"
-        "audio/mp4", "audio/m4a", "audio/aac" -> "m4a"
-        "video/mp4" -> "mp4"
-        "audio/webm" -> "webm"
-        "audio/ogg" -> "ogg"
-        "audio/mpeg" -> "mp3"
-        else -> null
-    }
+    private fun mimeToExt(mime: String): String? = AudioDownloadSourceResolver.mimeToExt(mime)
 
-    private fun guessMimeFromUrl(url: String): String? {
-        return try {
-            URLConnection.guessContentTypeFromName(url.toUri().lastPathSegment)
-        } catch (_: Exception) { null }
-    }
+    private fun guessMimeFromUrl(url: String): String? =
+        AudioDownloadSourceResolver.guessMimeFromUrl(url)
 
-    private fun extFromUrl(url: String): String? {
-        val p = url.toUri().lastPathSegment ?: return null
-        val dot = p.lastIndexOf('.')
-        if (dot <= 0 || dot == p.length - 1) return null
-        return p.substring(dot + 1).lowercase().take(6)
-    }
+    private fun extFromUrl(url: String): String? = AudioDownloadSourceResolver.extFromUrl(url)
 
     private suspend fun singleThreadHlsDownload(
         client: okhttp3.OkHttpClient,
@@ -6357,7 +4056,14 @@ object AudioDownloadManager {
                 input.readBytesLimited(MAX_HLS_PLAYLIST_BYTES).toString(Charsets.UTF_8)
             }
         }
-        ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
+        ensureDownloadNotCancelled(
+            songId,
+            songKey,
+            destFile,
+            batchSessionId,
+            attemptId,
+            operationId
+        )
         val segmentUrls = parseHlsSegmentUrls(playlistRequest.url.toString(), playlistText)
         if (segmentUrls.isEmpty()) {
             throw IllegalStateException("HLS playlist contains no segments")
@@ -6392,7 +4098,8 @@ object AudioDownloadManager {
                     songKey = songKey,
                     stage = "hls_resume_truncate",
                     batchSessionId = batchSessionId,
-                    attemptId = attemptId
+                    attemptId = attemptId,
+                    operationId = operationId
                 ) {
                     if (
                         destFile.exists() &&
@@ -6408,7 +4115,8 @@ object AudioDownloadManager {
                 songKey = songKey,
                 stage = "hls_resume_reset",
                 batchSessionId = batchSessionId,
-                attemptId = attemptId
+                attemptId = attemptId,
+                operationId = operationId
             ) {
                 if (hasHlsResumeState(destFile)) {
                     clearHlsResumeState(destFile)
@@ -6443,7 +4151,8 @@ object AudioDownloadManager {
                 songKey = songKey,
                 stage = "hls_open_working_file",
                 batchSessionId = batchSessionId,
-                attemptId = attemptId
+                attemptId = attemptId,
+                operationId = operationId
             ) {
                 FileOutputStream(destFile, resumeSegmentIndex > 0)
             }
@@ -6465,7 +4174,14 @@ object AudioDownloadManager {
                 guarded.sink().buffer().use { sink ->
                     segmentUrls.drop(resumeSegmentIndex).forEachIndexed { relativeIndex, segmentUrl ->
                         val index = resumeSegmentIndex + relativeIndex
-                        ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
+                        ensureDownloadNotCancelled(
+                            songId,
+                            songKey,
+                            destFile,
+                            batchSessionId,
+                            attemptId,
+                            operationId
+                        )
                         val segmentRequest = Request.Builder()
                             .url(segmentUrl)
                             .apply {
@@ -6577,37 +4293,11 @@ object AudioDownloadManager {
     }
 
     private fun parseHlsSegmentUrls(playlistUrl: String, playlistText: String): List<String> {
-        val lines = playlistText.lineSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .toList()
-        require(lines.any { it == "#EXTM3U" }) { "HLS playlist is missing EXTM3U header" }
-        val unsupportedTag = lines.firstOrNull { line ->
-            line.startsWith("#EXT-X-KEY", ignoreCase = true) ||
-                line.startsWith("#EXT-X-MAP", ignoreCase = true) ||
-                line.startsWith("#EXT-X-BYTERANGE", ignoreCase = true) ||
-                line.startsWith("#EXT-X-I-FRAMES-ONLY", ignoreCase = true)
-        }
-        require(unsupportedTag == null) { "Unsupported HLS tag: ${unsupportedTag?.substringBefore(':')}" }
-        require(lines.none { it.startsWith("#EXT-X-STREAM-INF", ignoreCase = true) }) {
-            "HLS master playlists are not supported"
-        }
-        return lines
-            .filter { !it.startsWith('#') }
-            .map { segment ->
-                runCatching { java.net.URI(playlistUrl).resolve(segment).toString() }
-                    .getOrElse { segment }
-            }
+        return AudioHlsSegmentSupport.parseSegmentUrls(playlistUrl, playlistText)
     }
 
     private fun parseHlsMediaSequence(playlistText: String): Long? {
-        return playlistText.lineSequence()
-            .map(String::trim)
-            .firstOrNull { it.startsWith("#EXT-X-MEDIA-SEQUENCE", ignoreCase = true) }
-            ?.substringAfter(':', "")
-            ?.trim()
-            ?.toLongOrNull()
-            ?.takeIf { it >= 0L }
+        return AudioHlsSegmentSupport.parseMediaSequence(playlistText)
     }
 
     internal fun copyHlsSegment(
@@ -6618,87 +4308,16 @@ object AudioDownloadManager {
         expectedRawBytes: Long? = null,
         onNetworkActivity: (() -> Unit)? = null
     ): Long {
-        val header = ByteArray(10)
-        var headerBytes = 0
-        var rawBytes = 0L
-        while (headerBytes < header.size) {
-            val read = source.read(header, headerBytes, header.size - headerBytes)
-            if (read == -1) {
-                break
-            }
-            onNetworkActivity?.invoke()
-            headerBytes += read
-            rawBytes += read
-            trafficAccumulator.add(read.toLong())
-        }
-        require(rawBytes <= MAX_HLS_SEGMENT_BYTES) {
-            "HLS segment exceeds limit: $rawBytes > $MAX_HLS_SEGMENT_BYTES"
-        }
-
-        var outputBytes = 0L
-        val hasId3Header = headerBytes == header.size &&
-            header[0] == 'I'.code.toByte() &&
-            header[1] == 'D'.code.toByte() &&
-            header[2] == '3'.code.toByte()
-        if (!hasId3Header) {
-            sink.write(header, 0, headerBytes)
-            prefixDigest?.update(header, 0, headerBytes)
-            outputBytes += headerBytes
-        } else {
-            val tagSize =
-                ((header[6].toInt() and 0x7f) shl 21) or
-                    ((header[7].toInt() and 0x7f) shl 14) or
-                    ((header[8].toInt() and 0x7f) shl 7) or
-                    (header[9].toInt() and 0x7f)
-            val remainingTagBytes = tagSize.toLong()
-            require(10L + remainingTagBytes <= MAX_HLS_SEGMENT_BYTES) {
-                "HLS ID3 tag exceeds limit: ${10L + remainingTagBytes} > $MAX_HLS_SEGMENT_BYTES"
-            }
-            var skipped = 0L
-            val skipBuffer = ByteArray(DOWNLOAD_READ_BUFFER_BYTES.toInt())
-            while (skipped < remainingTagBytes) {
-                val requested = minOf(
-                    skipBuffer.size.toLong(),
-                    remainingTagBytes - skipped
-                ).toInt()
-                val read = source.read(skipBuffer, 0, requested)
-                if (read == -1) {
-                    throw EOFException("HLS ID3 tag is truncated")
-                }
-                onNetworkActivity?.invoke()
-                skipped += read
-                rawBytes += read
-                trafficAccumulator.add(read.toLong())
-                require(rawBytes <= MAX_HLS_SEGMENT_BYTES) {
-                    "HLS segment exceeds limit: $rawBytes > $MAX_HLS_SEGMENT_BYTES"
-                }
-            }
-        }
-
-        val buffer = ByteArray(DOWNLOAD_READ_BUFFER_BYTES.toInt())
-        while (true) {
-            val read = source.read(buffer)
-            if (read == -1) {
-                break
-            }
-            onNetworkActivity?.invoke()
-            rawBytes += read.toLong()
-            trafficAccumulator.add(read.toLong())
-            require(rawBytes <= MAX_HLS_SEGMENT_BYTES) {
-                "HLS segment exceeds limit: $rawBytes > $MAX_HLS_SEGMENT_BYTES"
-            }
-            sink.write(buffer, 0, read)
-            prefixDigest?.update(buffer, 0, read)
-            outputBytes += read.toLong()
-        }
-        expectedRawBytes?.let { expected ->
-            if (rawBytes != expected) {
-                throw IllegalStateException(
-                    "HLS segment length mismatch: expected=$expected, actual=$rawBytes"
-                )
-            }
-        }
-        return outputBytes
+        return AudioHlsSegmentSupport.copySegment(
+            source = source,
+            sink = sink,
+            trafficAccumulator = trafficAccumulator,
+            maxSegmentBytes = MAX_HLS_SEGMENT_BYTES,
+            readBufferBytes = DOWNLOAD_READ_BUFFER_BYTES.toInt(),
+            prefixDigest = prefixDigest,
+            expectedRawBytes = expectedRawBytes,
+            onNetworkActivity = onNetworkActivity
+        )
     }
 
     /** 单线程下载 */
@@ -6713,665 +4332,26 @@ object AudioDownloadManager {
         attemptId: Long? = null,
         operationId: String? = null,
         transferGeneration: Long? = null
-    ): DownloadedPayloadSummary = withContext(Dispatchers.IO) {
-        ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
-        if (YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(request) &&
-            !ResumableHttpRangeSupport.hasExplicitRangeHeader(
-                request.headers.names().associateWith { headerName ->
-                    request.header(headerName).orEmpty()
-                }
-            )
-        ) {
-            return@withContext singleThreadChunkedDownload(
-                client = client,
-                request = request,
-                destFile = destFile,
-                displayFileName = displayFileName,
-                songId = songId,
-                songKey = songKey,
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                chunkOperationId = operationId,
-                transferGeneration = transferGeneration
-            )
-        }
-
-        val startNs = System.nanoTime()
-        var resumedBytes = resolveWorkingFileBytes(destFile)
-        val resumeFingerprint = ManagedDownloadStorage.readWorkingResumeFingerprint(destFile)
-        if (resumedBytes > 0L && shouldDiscardWorkingFileForResume(request.url.toString(), resumeFingerprint)) {
-            NPLogger.w(TAG, "续传来源链接已变化，丢弃旧临时文件: ${destFile.name}")
-            withNetworkPolicyMutationPermit(
-                songKey = songKey,
-                stage = "direct_resume_reset",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId
-            ) {
-                deleteWorkingFile(destFile)
-            }
-            resumedBytes = 0L
-        } else if (resumedBytes > 0L && resolveResumeValidatorHeader(resumeFingerprint).isNullOrBlank()) {
-            NPLogger.w(TAG, "续传缺少 If-Range 校验符，回退整文件重下: ${destFile.name}")
-            resumedBytes = 0L
-        }
-        val resumeRangeHeader = buildResumeRangeHeader(resumedBytes)
-        val effectiveRequest = if (resumeRangeHeader != null) {
-            NPLogger.d(
-                TAG,
-                "恢复直链下载: ${destFile.name}, bytes=$resumedBytes, songId=$songId"
-            )
-            buildResumeRequest(
-                request = request,
-                completedBytes = resumedBytes,
-                fingerprint = resumeFingerprint
-            )
-        } else {
-            request
-        }
-        NPLogger.d(TAG, "开始下载文件: ${destFile.name}, songId=$songId")
-        return@withContext executeTrackedCall(
-            client = client,
-            request = effectiveRequest,
-            songKey = songKey,
-            operationId = operationId
-        ) { resp ->
-            val responseHeaders = resp.headers.toMultimap()
-            if (resumedBytes > 0L && resp.code == 416) {
-                val expectedBytes = resolveResponseExpectedBytes(
-                    requestUrl = request.url.toString(),
-                    headers = responseHeaders,
-                    bodyLength = resp.body.contentLength(),
-                    resumedBytes = resumedBytes,
-                    isPartialResponse = true
-                )
-                val durableBytes = destFile.length().coerceAtLeast(0L)
-                if (
-                    isExactRangeEnd(responseHeaders, resumedBytes) &&
-                    expectedBytes != null &&
-                    durableBytes == expectedBytes
-                ) {
-                    return@executeTrackedCall DownloadedPayloadSummary(
-                        actualBytes = resumedBytes,
-                        expectedBytes = expectedBytes
-                    )
-                }
-                throw IllegalStateException("HTTP ${resp.code}")
-            }
-            if (!resp.isSuccessful) throw IllegalStateException("HTTP ${resp.code}")
-
-            val appending = resumedBytes > 0L && resp.code == 206
-            val partialRange = if (resp.code == 206) {
-                val range = runCatching {
-                    validatePartialContentRange(
-                        headers = responseHeaders,
-                        expectedStart = if (resumedBytes > 0L) resumedBytes else 0L,
-                        bodyLength = resp.body.contentLength()
-                    )
-                }.getOrElse { error ->
-                    withNetworkPolicyMutationPermit(
-                        songKey = songKey,
-                        stage = "direct_invalid_range",
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId
-                    ) {
-                        deleteWorkingFile(destFile)
-                    }
-                    throw error
-                }
-                if (appending && !isResumeResponseCompatible(resumeFingerprint, responseHeaders, range.total)) {
-                    withNetworkPolicyMutationPermit(
-                        songKey = songKey,
-                        stage = "direct_incompatible_resume",
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId
-                    ) {
-                        deleteWorkingFile(destFile)
-                    }
-                    throw IOException("续传响应校验符或总长度不匹配")
-                }
-                range
-            } else {
-                null
-            }
-            if (resumedBytes > 0L && !appending) {
-                NPLogger.w(TAG, "服务端未接受续传，回退整文件重下: ${destFile.name}, code=${resp.code}")
-            }
-            val initialBytes = if (appending) resumedBytes else 0L
-            if (!appending && resumedBytes > 0L) {
-                withNetworkPolicyMutationPermit(
-                    songKey = songKey,
-                    stage = "direct_restart_without_range",
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId
-                ) {
-                    deleteWorkingFile(destFile)
-                }
-            }
-            val total = resolveResponseExpectedBytes(
-                requestUrl = request.url.toString(),
-                headers = responseHeaders,
-                bodyLength = resp.body.contentLength(),
-                resumedBytes = initialBytes,
-                isPartialResponse = appending
-            ) ?: 0L
-            NPLogger.d(
-                TAG,
-                "HTTP 音频响应长度: file=${destFile.name}, code=${resp.code}, " +
-                    "contentLength=${resp.body.contentLength()}, " +
-                    "contentRange=${responseHeaderValue(responseHeaders, "Content-Range")}, " +
-                    "queryClen=${YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(request.url.toString())}, " +
-                    "resolvedTotal=$total"
-            )
-            NPLogger.d(TAG, "文件总大小: $total bytes, songId=$songId")
-            val resumeMetadataWritten = withNetworkPolicyMutationPermit(
-                songKey = songKey,
-                stage = "direct_resume_metadata",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId
-            ) {
-                updateWorkingResumeFingerprint(
-                    destFile = destFile,
-                    requestUrl = request.url.toString(),
-                    headers = responseHeaders,
-                    expectedContentLength = total.takeIf { it > 0L }
-                )
-            }
-            val source = resp.body.source()
-            var readSoFar = initialBytes
-            val trafficAccumulator = newDownloadTrafficAccumulator()
-            try {
-                val output = withNetworkPolicyMutationPermit(
-                    songKey = songKey,
-                    stage = "direct_open_working_file",
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId
-                ) {
-                    FileOutputStream(destFile, appending)
-                }
-            val guardedOutput = DownloadStorageSpaceGuard.global.guardOutput(
-                output = output,
-                root = destFile.parentFile ?: destFile,
-                ownerKey = storageSpaceOwnerKey(
-                    operationId = operationId,
-                    attemptId = attemptId,
-                    songKey = songKey,
-                    file = destFile
-                ),
-                expectedAdditionalBytes = total
-                    .takeIf { it > 0L }
-                    ?.minus(initialBytes)
-                    ?.coerceAtLeast(0L)
-            )
-            guardedOutput.use { guarded ->
-                guarded.sink().buffer().use { sink ->
-                    val buffer = Buffer()
-                    var durableBytes = initialBytes
-                    var lastDurableSyncNs = startNs
-                    while (true) {
-                        ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
-
-                        val read = source.read(buffer, DOWNLOAD_READ_BUFFER_BYTES)
-                        if (read == -1L) break
-                        markTransferNetworkActivity(
-                            operationId = operationId,
-                            attemptId = attemptId,
-                            songKey = songKey,
-                            transferGeneration = transferGeneration
-                        )
-                        sink.write(buffer, read)
-                        trafficAccumulator.add(read)
-                        readSoFar += read
-                        val nowNs = System.nanoTime()
-                        if (
-                            readSoFar - durableBytes >= DURABLE_CHECKPOINT_INTERVAL_BYTES ||
-                                nowNs - lastDurableSyncNs >= DURABLE_CHECKPOINT_INTERVAL_NS
-                        ) {
-                            // 检查点只记录已经刷到文件描述符的前缀，避免恢复时越过安全边界
-                            sink.flush()
-                            output.fd.sync()
-                            durableBytes = readSoFar
-                            lastDurableSyncNs = nowNs
-                        }
-                        val elapsedSec = ((nowNs - startNs) / 1_000_000_000.0).coerceAtLeast(0.001)
-                        val speed = ((readSoFar - initialBytes) / elapsedSec).toLong()
-                        val progress = DownloadProgress(
-                            songKey = songKey,
-                            songId = songId,
-                            fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
-                            bytesRead = readSoFar,
-                            totalBytes = total,
-                            speedBytesPerSec = speed,
-                            attemptId = attemptId,
-                            operationId = operationId,
-                            transferGeneration = transferGeneration,
-                            durableBytesRead = durableBytes
-                        )
-                        publishProgress(progress)
-                    }
-                        // 只有缓冲区和文件描述符都刷盘后，checkpoint 才能代表可恢复前缀
-                        sink.flush()
-                        output.fd.sync()
-                    }
-                }
-            } finally {
-                trafficAccumulator.flush()
-            }
-            NPLogger.d(TAG, "文件下载完成: ${destFile.name}, 实际大小: $readSoFar bytes, songId=$songId")
-            if (partialRange != null && readSoFar != partialRange.total) {
-                throw IOException(
-                    "Content-Range 总长度不匹配: expected=${partialRange.total}, actual=$readSoFar"
-                )
-            }
-            if (!isTransferSizeComplete(total.takeIf { it > 0L }, readSoFar)) {
-                throw IOException("下载文件不完整: ${destFile.name}, $readSoFar/$total")
-            }
-            DownloadedPayloadSummary(
-                actualBytes = readSoFar,
-                expectedBytes = total.takeIf { it > 0L },
-                resumeMetadataAvailable = resumeMetadataWritten
-            )
-        }
-    }
-
-    private suspend fun singleThreadChunkedDownload(
-        client: okhttp3.OkHttpClient,
-        request: Request,
-        destFile: File,
-        displayFileName: String,
-        songId: Long,
-        songKey: String,
-        batchSessionId: Long? = null,
-        attemptId: Long? = null,
-        chunkOperationId: String? = null,
-        transferGeneration: Long? = null
-    ): DownloadedPayloadSummary = withContext(Dispatchers.IO) {
-        val startNs = System.nanoTime()
-        NPLogger.d(TAG, "开始分块下载文件: ${destFile.name}, songId=$songId")
-        ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
-
-        var resumedBytes = resolveWorkingFileBytes(destFile)
-        val resumeFingerprint = ManagedDownloadStorage.readWorkingResumeFingerprint(destFile)
-        if (resumedBytes > 0L && shouldDiscardWorkingFileForResume(request.url.toString(), resumeFingerprint)) {
-            NPLogger.w(TAG, "分块续传来源链接已变化，丢弃旧临时文件: ${destFile.name}")
-            withNetworkPolicyMutationPermit(
-                songKey = songKey,
-                stage = "chunked_resume_reset",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId
-            ) {
-                deleteWorkingFile(destFile)
-            }
-            resumedBytes = 0L
-        } else if (resumedBytes > 0L && resolveResumeValidatorHeader(resumeFingerprint).isNullOrBlank()) {
-            NPLogger.w(TAG, "分块续传缺少 If-Range 校验符，回退整文件重下: ${destFile.name}")
-            resumedBytes = 0L
-        }
-        if (resumedBytes > 0L) {
-            NPLogger.d(TAG, "恢复分块下载: ${destFile.name}, bytes=$resumedBytes, songId=$songId")
-        }
-
-        var downloadedBytes = resumedBytes
-        var durableBytes = resumedBytes
-        var resumeMetadataAvailable = true
-        val queryTotalHint = YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(
-            request.url.toString()
-        ) ?: 0L
-        var totalBytes = 0L
-        var strictTotalBytes = false
-        if (queryTotalHint > 0L) {
-            NPLogger.d(
-                TAG,
-                "分块下载长度提示: file=${destFile.name}, queryClen=$queryTotalHint, " +
-                    "仅用于进度显示"
-            )
-        }
-        val output = withNetworkPolicyMutationPermit(
-            songKey = songKey,
-            stage = "chunked_open_working_file",
-            batchSessionId = batchSessionId,
-            attemptId = attemptId
-        ) {
-            FileOutputStream(destFile, resumedBytes > 0L)
-        }
-        val guardedOutput = DownloadStorageSpaceGuard.global.guardOutput(
-            output = output,
-            root = destFile.parentFile ?: destFile,
-            ownerKey = storageSpaceOwnerKey(
-                operationId = chunkOperationId,
-                attemptId = attemptId,
-                songKey = songKey,
-                file = destFile
-            ),
-            expectedAdditionalBytes = null
-        )
-        guardedOutput.use { guarded ->
-            guarded.sink().buffer().use { sink ->
-            while (true) {
-                ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
-
-                val remainingRequestLength = if (totalBytes > 0L) {
-                    (totalBytes - downloadedBytes).coerceAtLeast(0L)
-                } else {
-                    -1L
-                }
-                if (remainingRequestLength == 0L) {
-                    break
-                }
-
-                try {
-                    val chunkResult = ResumableHttpRangeSupport.executeChunkLengthFallback(
-                        requestLength = remainingRequestLength,
-                        preferredChunkSize = YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES
-                    ) { chunkLength ->
-                        markTransferNetworkActivity(
-                            operationId = chunkOperationId,
-                            attemptId = attemptId,
-                            songKey = songKey,
-                            transferGeneration = transferGeneration
-                        )
-                        downloadChunk(
-                            client = client,
-                            request = request,
-                            start = downloadedBytes,
-                            requestedChunkLength = chunkLength,
-                            resumeFingerprint = resumeFingerprint,
-                            sink = sink,
-                            displayFileName = displayFileName,
-                            songId = songId,
-                            songKey = songKey,
-                            destFile = destFile,
-                            startNs = startNs,
-                            attemptStartBytes = resumedBytes,
-                            currentDownloadedBytes = downloadedBytes,
-                            currentTotalBytes = totalBytes,
-                            progressTotalBytesHint = queryTotalHint,
-                            batchSessionId = batchSessionId,
-                            attemptId = attemptId,
-                            operationId = chunkOperationId,
-                            transferGeneration = transferGeneration,
-                            durableBytesRead = durableBytes
-                        )
-                    }
-                    downloadedBytes = chunkResult.value.downloadedBytes
-                    totalBytes = chunkResult.value.totalBytes
-                    strictTotalBytes = strictTotalBytes || chunkResult.value.strictTotalBytes
-                    resumeMetadataAvailable = resumeMetadataAvailable &&
-                        chunkResult.value.resumeMetadataAvailable
-                    // 一个 chunk 完成后统一刷盘，下一次恢复最多重做当前 chunk
-                    sink.flush()
-                    output.fd.sync()
-                    durableBytes = downloadedBytes
-                    publishProgress(
-                        DownloadProgress(
-                            songKey = songKey,
-                            songId = songId,
-                            fileName = resolveVisibleDownloadFileName(
-                                displayFileName,
-                                destFile.name
-                            ),
-                            bytesRead = downloadedBytes,
-                            totalBytes = totalBytes.takeIf { it > 0L } ?: queryTotalHint,
-                            speedBytesPerSec = ((downloadedBytes - resumedBytes) /
-                                ((System.nanoTime() - startNs) / 1_000_000_000.0)
-                                    .coerceAtLeast(0.001)).toLong(),
-                            attemptId = attemptId,
-                            operationId = chunkOperationId,
-                            transferGeneration = transferGeneration,
-                            durableBytesRead = durableBytes
-                        )
-                    )
-                    if (
-                        chunkResult.chunkLength !=
-                        ResumableHttpRangeSupport.candidateChunkLengths(
-                            requestLength = remainingRequestLength,
-                            preferredChunkSize = YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES
-                        ).first()
-                    ) {
-                        NPLogger.w(
-                            TAG,
-                            "下载分块 fallback 生效: ${chunkResult.chunkLength} bytes, songId=$songId"
-                        )
-                    }
-                    if (chunkResult.value.isEndOfStream) {
-                        break
-                    }
-                } catch (error: ChunkRequestIOException) {
-                    val alreadyComplete = totalBytes > 0L && downloadedBytes == totalBytes
-                    if (error.responseCode == 403 && alreadyComplete) {
-                        // 403 = CDN 拒绝, 只有在总长度已满足时才接受为完成
-                        break
-                    }
-                    throw error
-                }
-            }
-                // 分块请求可能跨多个响应，统一在整个 attempt 结束时刷盘
-                // 后再交给完整性校验，避免进程退出留下未落盘的尾部
-                sink.flush()
-                output.fd.sync()
-            }
-        }
-
-        NPLogger.d(TAG, "分块下载完成: ${destFile.name}, 实际大小: $downloadedBytes bytes, songId=$songId")
-        val expectedBytes = totalBytes.takeIf { it > 0L }
-        if (strictTotalBytes && expectedBytes != null && downloadedBytes != expectedBytes) {
-            throw IOException("分块 Content-Range 总长度不匹配: $downloadedBytes/$expectedBytes")
-        }
-        if (!strictTotalBytes && !isTransferSizeComplete(expectedBytes, downloadedBytes)) {
-            throw IOException("分块下载不完整: ${destFile.name}, $downloadedBytes/$expectedBytes")
-        }
-        return@withContext DownloadedPayloadSummary(
-            actualBytes = downloadedBytes,
-            expectedBytes = expectedBytes,
-            resumeMetadataAvailable = resumeMetadataAvailable
-        )
-    }
-
-    private data class ChunkDownloadResult(
-        val requestedChunkLength: Long,
-        val downloadedBytes: Long,
-        val totalBytes: Long,
-        val isEndOfStream: Boolean,
-        val strictTotalBytes: Boolean,
-        val resumeMetadataAvailable: Boolean = true
+    ): DownloadedPayloadSummary = fileTransfer.download(
+        client = client,
+        request = request,
+        destFile = destFile,
+        displayFileName = displayFileName,
+        songId = songId,
+        songKey = songKey,
+        batchSessionId = batchSessionId,
+        attemptId = attemptId,
+        operationId = operationId,
+        transferGeneration = transferGeneration
     )
-
-    private fun downloadChunk(
-        client: okhttp3.OkHttpClient,
-        request: Request,
-        start: Long,
-        requestedChunkLength: Long,
-        resumeFingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?,
-        sink: okio.BufferedSink,
-        displayFileName: String,
-        songId: Long,
-        songKey: String,
-        destFile: File,
-        startNs: Long,
-        attemptStartBytes: Long,
-        currentDownloadedBytes: Long,
-        currentTotalBytes: Long,
-        progressTotalBytesHint: Long,
-        batchSessionId: Long? = null,
-        attemptId: Long? = null,
-        operationId: String? = null,
-        transferGeneration: Long? = null,
-        durableBytesRead: Long? = null
-    ): ChunkDownloadResult {
-        val effectiveResumeFingerprint = resolveLatestResumeFingerprint(
-            fallback = resumeFingerprint,
-            latest = ManagedDownloadStorage.readWorkingResumeFingerprint(destFile)
-        )
-        val chunkRequest = buildChunkResumeRequest(
-            request = request,
-            start = start,
-            length = requestedChunkLength,
-            fingerprint = effectiveResumeFingerprint
-        )
-
-        val trafficAccumulator = newDownloadTrafficAccumulator()
-        try {
-            return executeTrackedCall(
-                client = client,
-                request = chunkRequest,
-                songKey = songKey,
-                operationId = operationId
-            ) { response ->
-                val responseHeaders = response.headers.toMultimap()
-                if (response.code == 416) {
-                    sink.flush()
-                    val total = parseUnsatisfiedContentRangeTotal(responseHeaders)
-                    val durableBytes = destFile.length().coerceAtLeast(0L)
-                    if (
-                        total != null &&
-                        (currentTotalBytes == 0L || currentTotalBytes == total) &&
-                        start == total &&
-                        currentDownloadedBytes == total &&
-                        durableBytes == total
-                    ) {
-                        return@executeTrackedCall ChunkDownloadResult(
-                            requestedChunkLength = requestedChunkLength,
-                            downloadedBytes = currentDownloadedBytes,
-                            totalBytes = total,
-                            isEndOfStream = true,
-                            strictTotalBytes = true
-                        )
-                    }
-                    throw ChunkRequestIOException(response.code, "HTTP ${response.code}")
-                }
-                if (!response.isSuccessful) {
-                    throw ChunkRequestIOException(response.code, "HTTP ${response.code}")
-                }
-                if (response.code != 206) {
-                    throw ChunkRequestIOException(
-                        response.code,
-                        "Chunk request did not return partial content: HTTP ${response.code}"
-                    )
-                }
-
-                val contentRange = runCatching {
-                    validatePartialContentRange(
-                        headers = responseHeaders,
-                        expectedStart = start,
-                        bodyLength = response.body.contentLength()
-                    )
-                }.getOrElse { error ->
-                    withNetworkPolicyMutationPermit(
-                        songKey = songKey,
-                        stage = "chunked_invalid_range",
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId
-                    ) {
-                        deleteWorkingFile(destFile)
-                    }
-                    throw error
-                }
-                if (start > 0L && !isResumeResponseCompatible(
-                        effectiveResumeFingerprint,
-                        responseHeaders,
-                        contentRange.total
-                    )
-                ) {
-                    withNetworkPolicyMutationPermit(
-                        songKey = songKey,
-                        stage = "chunked_incompatible_resume",
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId
-                    ) {
-                        deleteWorkingFile(destFile)
-                    }
-                    throw IOException("分块响应校验符或总长度不匹配")
-                }
-                var downloadedBytes = currentDownloadedBytes
-                val totalBytes = contentRange.total
-                if (currentTotalBytes > 0L && currentTotalBytes != totalBytes) {
-                    throw IOException(
-                        "分块总长度不匹配: expected=$currentTotalBytes, actual=$totalBytes"
-                    )
-                }
-                val resumeMetadataWritten = withNetworkPolicyMutationPermit(
-                    songKey = songKey,
-                    stage = "chunked_resume_metadata",
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId
-                ) {
-                    updateWorkingResumeFingerprint(
-                        destFile = destFile,
-                        requestUrl = request.url.toString(),
-                        headers = responseHeaders,
-                        expectedContentLength = totalBytes.takeIf { it > 0L }
-                    )
-                }
-
-                val source: BufferedSource = response.body.source()
-                val buffer = Buffer()
-                var chunkRead = 0L
-                while (true) {
-                    ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
-
-                    val read = source.read(buffer, DOWNLOAD_READ_BUFFER_BYTES)
-                    if (read == -1L) {
-                        break
-                    }
-                    markTransferNetworkActivity(
-                        operationId = operationId,
-                        attemptId = attemptId,
-                        songKey = songKey,
-                        transferGeneration = transferGeneration
-                    )
-                    sink.write(buffer, read)
-                    trafficAccumulator.add(read)
-                    chunkRead += read
-                    downloadedBytes += read
-
-                    val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0)
-                        .coerceAtLeast(0.001)
-                    val speed = ((downloadedBytes - attemptStartBytes) / elapsedSec).toLong()
-                    publishProgress(
-                        DownloadProgress(
-                            songKey = songKey,
-                            songId = songId,
-                            fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
-                            bytesRead = downloadedBytes,
-                            totalBytes = totalBytes.takeIf { it > 0L } ?: progressTotalBytesHint,
-                            speedBytesPerSec = speed,
-                            attemptId = attemptId,
-                            operationId = operationId,
-                            transferGeneration = transferGeneration,
-                            durableBytesRead = durableBytesRead
-                        )
-                    )
-                }
-
-                if (chunkRead != contentRange.length) {
-                    throw IOException(
-                        "分块响应长度不匹配: expected=${contentRange.length}, actual=$chunkRead"
-                    )
-                }
-
-                val isEndOfStream = chunkRead < requestedChunkLength || (
-                    totalBytes in 1..downloadedBytes
-                )
-
-                return ChunkDownloadResult(
-                    requestedChunkLength = requestedChunkLength,
-                    downloadedBytes = downloadedBytes,
-                    totalBytes = totalBytes,
-                    isEndOfStream = isEndOfStream,
-                    strictTotalBytes = true,
-                    resumeMetadataAvailable = resumeMetadataWritten
-                )
-            }
-        } finally {
-            trafficAccumulator.flush()
-        }
-    }
 
     private fun ensureDownloadNotCancelled(
         songId: Long,
         songKey: String,
         destFile: File,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        operationId: String? = null
     ) {
         val shouldAbort = synchronized(networkPolicyMutationLock) {
             shouldAbortDownloadWork(
@@ -7394,7 +4374,11 @@ object AudioDownloadManager {
             if (!preserveCancellationArtifacts) {
                 deleteWorkingFileUnlessNetworkPolicyPaused(songKey, destFile)
             }
-            clearVisibleProgressForSong(songKey)
+            clearVisibleProgressForSong(
+                songKey = songKey,
+                expectedAttemptId = attemptId,
+                expectedOperationId = operationId
+            )
             throw java.util.concurrent.CancellationException("Download cancelled")
         }
     }

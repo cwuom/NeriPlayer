@@ -393,8 +393,8 @@ class BatchDownloadOperationRecoveryTest {
         val managerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val roomStoreSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomStore.kt"
+        val roomReadStoreSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomReadStore.kt"
         ).readText()
         val recoveryStoreSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/DownloadRecoveryRoomStore.kt"
@@ -410,7 +410,11 @@ class BatchDownloadOperationRecoveryTest {
         assertFalse(stagingBody.contains("rememberPendingDownloadQueue("))
         assertTrue(batchBody.contains("val operationHeaders"))
         assertFalse(batchBody.contains("val operationSnapshots"))
-        assertTrue(roomStoreSource.contains("normalizedOperationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE)"))
+        assertTrue(
+            roomReadStoreSource.contains(
+                "normalizedOperationIds.chunked(DownloadExecutionRoomStore.Access.SQLITE_IN_QUERY_CHUNK_SIZE)"
+            )
+        )
         assertTrue(pendingUpsertBody.contains("rehydrateMalformedReusableOperations("))
         assertFalse(pendingUpsertBody.contains("rehydrateMalformedReusableOperation("))
         assertTrue(waitingUpsertBody.contains("findAllHeadersByStableKeys("))

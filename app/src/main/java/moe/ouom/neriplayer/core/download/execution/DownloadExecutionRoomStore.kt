@@ -164,1375 +164,97 @@ internal object DownloadExecutionRoomStore {
         }
     }
 
-    suspend fun read(
-        context: Context,
-        operationId: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): DownloadExecutionRequest? {
-        return database.withTransaction {
-            val dao = database.downloadOperationDao()
-            val header = dao.findHeader(operationId) ?: return@withTransaction null
-            readRequestFromHeader(dao, header).request
-        }
-    }
-
-    suspend fun readOperationSnapshots(
-        context: Context,
-        operationIds: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Map<String, OperationSnapshot> {
-        val normalizedOperationIds = operationIds
-            .asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .distinct()
-            .toList()
-        if (normalizedOperationIds.isEmpty()) {
-            return emptyMap()
-        }
-        val snapshots = linkedMapOf<String, OperationSnapshot>()
-        normalizedOperationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { operationIdChunk ->
-            val chunkSnapshots = database.withTransaction {
-                val dao = database.downloadOperationDao()
-                dao.findAllHeadersByOperationIds(operationIdChunk).map { header ->
-                    val decoded = readRequestFromHeader(dao, header)
-                    val request = decoded.request
-                    header to HeaderRequestRead(
-                        request = request,
-                        payloadWasRead = decoded.payloadWasRead
-                    )
-                }
-            }
-            chunkSnapshots.forEach { (header, decoded) ->
-                val request = decoded.request
-                if (request == null) {
-                    if (decoded.payloadWasRead) {
-                        invalidateMalformedPayload(database, header)
-                    }
-                    return@forEach
-                }
-                snapshots[header.operationId] = OperationSnapshot(
-                    request = request,
-                    state = header.state
-                )
-            }
-        }
-        return snapshots
-    }
-
-    /** 批量读取 operation 表头，不把歌词等大载荷装入内存 */
-    suspend fun readOperationHeaders(
-        context: Context,
-        operationIds: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Map<String, DownloadOperationHeaderRow> {
-        val normalizedOperationIds = operationIds
-            .asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .distinct()
-            .toList()
-        if (normalizedOperationIds.isEmpty()) return emptyMap()
-        return normalizedOperationIds
-            .chunked(SQLITE_IN_QUERY_CHUNK_SIZE)
-            .flatMap { operationIdChunk ->
-                database.downloadOperationDao().findAllHeadersByOperationIds(operationIdChunk)
-            }
-            .associateBy(DownloadOperationHeaderRow::operationId)
-    }
-
-    /** 读取调度所需的小字段，避免为批量任务解码完整歌曲和歌词 */
-    suspend fun readOperationRequestMetadata(
-        context: Context,
-        operationIds: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Map<String, OperationRequestMetadata> {
-        val normalizedOperationIds = operationIds
-            .asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .distinct()
-            .toList()
-        if (normalizedOperationIds.isEmpty()) return emptyMap()
-        val metadata = linkedMapOf<String, OperationRequestMetadata>()
-        val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()
-        normalizedOperationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { operationIdChunk ->
-            val chunkMetadata = database.withTransaction {
-                val dao = database.downloadOperationDao()
-                dao.findAllHeadersByOperationIds(operationIdChunk).mapNotNull { header ->
-                    val sourceHintJson = readSourceHintJson(dao, header)
-                    val root = sourceHintJson?.let { json ->
-                        runCatching { JSONObject(json) }.getOrNull()
-                    }
-                    val sourceStableKey = root?.optString("sourceStableKey")
-                        ?.takeIf(String::isNotBlank)
-                    val artifactLeaseId = root?.optString("artifactLeaseId")
-                        ?.takeIf(String::isNotBlank)
-                    if (
-                        root == null ||
-                            root.optInt("schemaVersion") != JOURNAL_PAYLOAD_VERSION ||
-                            root.optJSONObject("song") == null ||
-                            sourceStableKey != null && sourceStableKey != header.stableKey
-                    ) {
-                        if (sourceHintJson != null) malformedHeaders += header
-                        return@mapNotNull null
-                    }
-                    OperationRequestMetadata(
-                        operationId = header.operationId,
-                        stableKey = header.stableKey,
-                        state = header.state,
-                        preserveStaging = root.optBoolean("preserveStaging", false),
-                        requiresWifiNetwork = if (root.has("requiresWifiNetwork")) {
-                            root.optBoolean("requiresWifiNetwork", true)
-                        } else {
-                            true
-                        },
-                        attemptId = root.optLong("attemptId", 0L)
-                            .takeIf { attemptId -> attemptId > 0L },
-                        artifactLeaseId = artifactLeaseId ?: header.operationId,
-                        userInitiated = if (root.has("userInitiated")) {
-                            root.optBoolean("userInitiated", false)
-                        } else {
-                            false
-                        },
-                        downloadAudioQuality = root.optJSONObject("downloadAudioQuality")
-                            ?.let { quality ->
-                                DownloadAudioQualitySelection.normalized(
-                                    neteaseQuality = quality.optString("neteaseQuality"),
-                                    youtubeQuality = quality.optString("youtubeQuality"),
-                                    biliQuality = quality.optString("biliQuality")
-                                )
-                            }
-                    )
-                }
-            }
-            chunkMetadata.forEach { item -> metadata[item.operationId] = item }
-        }
-        malformedHeaders.forEach { header -> invalidateMalformedPayload(database, header) }
-        return metadata
-    }
-
-    suspend fun promoteWaitingStorageMutations(
-        context: Context,
-        operationIds: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Int {
-        val normalizedOperationIds = operationIds
-            .asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .distinct()
-            .toList()
-        if (normalizedOperationIds.isEmpty()) return 0
-        return database.withTransaction {
-            database.downloadOperationDao().promoteWaitingStorageMutations(
-                operationIds = normalizedOperationIds,
-                libraryId = currentLibraryId(context),
-                updatedAtMs = System.currentTimeMillis()
-            )
-        }
-    }
-
-    /** 批量提升失败时仍需知道该 operation 属于哪首歌，不能让一条坏记录中止整批 */
-    suspend fun readOperationIdentities(
-        context: Context,
-        operationIds: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Map<String, OperationIdentity> {
-        val normalizedOperationIds = operationIds
-            .asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .distinct()
-            .toList()
-        if (normalizedOperationIds.isEmpty()) return emptyMap()
-        val identities = linkedMapOf<String, OperationIdentity>()
-        normalizedOperationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { operationIdChunk ->
-            database.downloadOperationDao().findAllHeadersByOperationIds(operationIdChunk)
-                .forEach { header ->
-                    identities[header.operationId] = OperationIdentity(
-                        operationId = header.operationId,
-                        stableKey = header.stableKey,
-                        createdAtMs = header.createdAtMs
-                    )
-                }
-        }
-        return identities
-    }
-
-    suspend fun checkpointProgress(
-        context: Context,
-        operationId: String,
-        stableKey: String,
-        attemptId: Long?,
-        bytesWritten: Long,
-        totalBytes: Long?,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Boolean {
-        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
-        val normalizedAttemptId = attemptId?.takeIf { it > 0L } ?: return false
-        val normalizedTotalBytes = totalBytes?.takeIf { it > 0L }
-        return database.withTransaction {
-            val dao = database.downloadOperationDao()
-            val header = dao.findHeader(operationId) ?: return@withTransaction false
-            if (
-                header.stableKey != normalizedKey ||
-                    header.state !in PROGRESS_CHECKPOINT_OPERATION_STATES ||
-                    header.stopRequestedByUser
-            ) {
-                return@withTransaction false
-            }
-            val request = readRequestFromHeader(dao, header).request
-                ?: return@withTransaction false
-            if (
-                request.attemptId != normalizedAttemptId ||
-                    request.song.stableKey() != normalizedKey
-            ) {
-                return@withTransaction false
-            }
-            dao.updateProgressCheckpointAnyLibrary(
-                operationId = operationId,
-                stableKey = normalizedKey,
-                bytesWritten = bytesWritten.coerceAtLeast(0L),
-                totalBytes = normalizedTotalBytes,
-                expectedStates = PROGRESS_CHECKPOINT_OPERATION_STATES
-            ) > 0
-        }
-    }
-
-    suspend fun readProgressCheckpoint(
-        context: Context,
-        operationId: String,
-        stableKey: String,
-        attemptId: Long?,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): ProgressCheckpoint? {
-        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return null
-        val normalizedAttemptId = attemptId?.takeIf { it > 0L } ?: return null
-        val dao = database.downloadOperationDao()
-        val header = dao.findHeader(operationId) ?: return null
-        if (
-            header.stableKey != normalizedKey ||
-                header.state !in PROGRESS_CHECKPOINT_OPERATION_STATES
-        ) {
-            return null
-        }
-        val request = readRequestFromHeader(dao, header).request ?: return null
-        if (
-            request.attemptId != normalizedAttemptId ||
-                request.song.stableKey() != normalizedKey
-        ) {
-            return null
-        }
-        return ProgressCheckpoint(
-            bytesWritten = header.bytesWritten.coerceAtLeast(0L),
-            totalBytes = header.totalBytes?.takeIf { it > 0L }
-        )
-    }
-
-    suspend fun listByState(
-        context: Context,
-        state: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<StateEntry> {
-        return listByStates(
-            context = context,
-            states = listOf(state),
-            database = database
-        )
-    }
-
-    suspend fun countByStates(
-        context: Context,
-        states: List<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Int {
-        if (states.isEmpty()) return 0
-        return database.downloadOperationDao().countByStatesInLibrary(
-            libraryId = currentLibraryId(context),
-            states = states
-        )
-    }
-
-    /** 给全局下载泵提供有界 keyset 页面，避免 grace 过滤把后续可运行任务饿死 */
-    suspend fun listSchedulableForPumpPage(
-        context: Context,
-        afterCursor: DownloadExecutionPumpCursor?,
-        limit: Int,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): DownloadExecutionPumpPage {
-        val boundedLimit = limit.coerceIn(1, PUMP_QUERY_MAX_ITEMS)
-        val (headers, decodedRequests) = database.withTransaction {
-            val dao = database.downloadOperationDao()
-            val headers = dao.findSchedulableForPumpAfterCursorHeaders(
-                states = REUSABLE_OPERATION_STATES,
-                afterQueueOrder = afterCursor?.queueOrder,
-                afterUpdatedAtMs = afterCursor?.updatedAtMs,
-                afterOperationId = afterCursor?.operationId,
-                limit = boundedLimit
-            )
-            headers to headers.map { header ->
-                header to readRequestFromHeader(dao, header)
-            }
-        }
-        val nextCursor = headers.lastOrNull()
-            ?.takeIf { headers.size == boundedLimit }
-            ?.let { header ->
-                DownloadExecutionPumpCursor(
-                    queueOrder = header.queueOrder,
-                    updatedAtMs = header.updatedAtMs,
-                    operationId = header.operationId
-                )
-            }
-        val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()
-        val requests = decodedRequests.mapNotNull { (header, decoded) ->
-            if (decoded.request == null) {
-                if (decoded.payloadWasRead) malformedHeaders += header
-                null
-            } else {
-                decoded.request
-            }
-        }
-        malformedHeaders.forEach { header -> invalidateMalformedPayload(database, header) }
-        return DownloadExecutionPumpPage(
-            requests = requests,
-            nextCursor = nextCursor
-        )
-    }
-
-    suspend fun listByStates(
-        context: Context,
-        states: List<String>,
-        excludeUserStoppedOperations: Boolean = false,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<StateEntry> {
-        if (states.isEmpty()) return emptyList()
-        val libraryId = currentLibraryId(context)
-        val dao = database.downloadOperationDao()
-        val entries = mutableListOf<StateEntry>()
-        val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()
-        var afterOperationId = ""
-        while (true) {
-            val page = dao.findByStatesInLibraryAfterOperationIdHeaders(
-                libraryId = libraryId,
-                states = states,
-                afterOperationId = afterOperationId,
-                limit = OPERATION_QUERY_PAGE_SIZE,
-            )
-            if (page.isEmpty()) {
-                break
-            }
-            page.forEach { header ->
-                val decoded = readRequestFromHeader(dao, header)
-                val request = decoded.request
-                if (request == null) {
-                    if (decoded.payloadWasRead) malformedHeaders += header
-                } else if (!excludeUserStoppedOperations || !header.stopRequestedByUser) {
-                    entries += StateEntry(
-                        request = request,
-                        queueOrder = header.queueOrder,
-                        createdAtMs = header.createdAtMs,
-                        state = header.state,
-                        updatedAtMs = header.updatedAtMs
-                    )
-                }
-            }
-            val nextOperationId = page.last().operationId
-            if (nextOperationId <= afterOperationId) {
-                break
-            }
-            afterOperationId = nextOperationId
-            if (page.size < OPERATION_QUERY_PAGE_SIZE) {
-                break
-            }
-        }
-        malformedHeaders.forEach { header -> invalidateMalformedPayload(database, header) }
-        entries.sortWith(
-            compareBy<StateEntry> { it.queueOrder }
-                .thenBy { it.updatedAtMs }
-                .thenBy { it.request.operationId }
-        )
-        return entries
-    }
-
-    /**
-     * 目录切换或进程重启后仍需看到旧根目录中的持久 operation
-     * 分页读取避免一次性把大量历史行装入内存
-     */
-    suspend fun listByStatesAnyLibrary(
-        context: Context,
-        states: List<String>,
-        excludeUserStoppedOperations: Boolean = false,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<StateEntry> {
-        if (states.isEmpty()) return emptyList()
-        val dao = database.downloadOperationDao()
-        val entries = mutableListOf<StateEntry>()
-        val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()
-        var afterOperationId = ""
-        while (true) {
-            val page = dao.findByStatesAfterOperationIdHeaders(
-                states = states,
-                afterOperationId = afterOperationId,
-                limit = OPERATION_QUERY_PAGE_SIZE,
-            )
-            if (page.isEmpty()) break
-            page.forEach { header ->
-                val decoded = readRequestFromHeader(dao, header)
-                val request = decoded.request
-                if (request == null) {
-                    if (decoded.payloadWasRead) malformedHeaders += header
-                } else if (!excludeUserStoppedOperations || !header.stopRequestedByUser) {
-                    entries += StateEntry(
-                        request = request,
-                        queueOrder = header.queueOrder,
-                        createdAtMs = header.createdAtMs,
-                        state = header.state,
-                        updatedAtMs = header.updatedAtMs
-                    )
-                }
-            }
-            val nextOperationId = page.last().operationId
-            if (nextOperationId <= afterOperationId) {
-                break
-            }
-            afterOperationId = nextOperationId
-            if (page.size < OPERATION_QUERY_PAGE_SIZE) break
-        }
-        malformedHeaders.forEach { header -> invalidateMalformedPayload(database, header) }
-        entries.sortWith(
-            compareBy<StateEntry> { it.queueOrder }
-                .thenBy { it.updatedAtMs }
-                .thenBy { it.request.operationId }
-        )
-        return entries
-    }
-
-    /** 供网络回调快速判断是否有任务，不加载整批记录 */
-    fun hasAnyByStatesAnyLibrary(
-        context: Context,
-        states: List<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Boolean {
-        return states.isNotEmpty() && database.downloadOperationDao().hasAnyByStates(states)
-    }
-
-    /** 用一条 Room 语句把可恢复和活动记录切到当前存储根目录 */
-    suspend fun rehomeActiveOperationsToCurrentLibrary(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Int {
-        return database.withTransaction {
-            database.downloadOperationDao().rehomeOperationsLibrary(
-                libraryId = currentLibraryId(context),
-                states = ROOT_REHOME_OPERATION_STATES,
-                updatedAtMs = System.currentTimeMillis()
-            )
-        }
-    }
-
-    /**
-     * 分页读取重启后可恢复的进度，避免为每首歌重新查询一次 Room
-     */
-    suspend fun listProgressEntries(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<ProgressEntry> {
-        val libraryId = currentLibraryId(context)
-        val dao = database.downloadOperationDao()
-        val entries = mutableListOf<ProgressEntry>()
-        val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()
-        var afterOperationId = ""
-        while (true) {
-            val page = dao.findByStatesInLibraryAfterOperationIdHeaders(
-                libraryId = libraryId,
-                states = PROGRESS_CHECKPOINT_OPERATION_STATES,
-                afterOperationId = afterOperationId,
-                limit = OPERATION_QUERY_PAGE_SIZE,
-            )
-            if (page.isEmpty()) break
-            page.forEach { header ->
-                val decoded = readRequestFromHeader(dao, header)
-                val request = decoded.request
-                if (request == null) {
-                    if (decoded.payloadWasRead) malformedHeaders += header
-                } else {
-                    entries += ProgressEntry(
-                        request = request,
-                        state = header.state,
-                        bytesWritten = header.bytesWritten.coerceAtLeast(0L),
-                        totalBytes = header.totalBytes?.takeIf { it > 0L },
-                        stopRequestedByUser = header.stopRequestedByUser,
-                        updatedAtMs = header.updatedAtMs,
-                        queueOrder = header.queueOrder
-                    )
-                }
-            }
-            val nextOperationId = page.last().operationId
-            if (nextOperationId <= afterOperationId) {
-                break
-            }
-            afterOperationId = nextOperationId
-            if (page.size < OPERATION_QUERY_PAGE_SIZE) break
-        }
-        malformedHeaders.forEach { header -> invalidateMalformedPayload(database, header) }
-        entries.sortWith(
-            compareBy<ProgressEntry> { it.queueOrder }
-                .thenBy { it.updatedAtMs }
-                .thenBy { it.request.operationId }
-        )
-        return entries
-    }
-
-    /** 跨存储根读取进度检查点，避免刚完成迁移就把任务卡片隐藏 */
-    suspend fun listProgressEntriesAnyLibrary(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<ProgressEntry> {
-        val dao = database.downloadOperationDao()
-        val entries = mutableListOf<ProgressEntry>()
-        val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()
-        var afterOperationId = ""
-        while (true) {
-            val page = dao.findByStatesAfterOperationIdHeaders(
-                states = PROGRESS_CHECKPOINT_OPERATION_STATES,
-                afterOperationId = afterOperationId,
-                limit = OPERATION_QUERY_PAGE_SIZE,
-            )
-            if (page.isEmpty()) break
-            page.forEach { header ->
-                val decoded = readRequestFromHeader(dao, header)
-                val request = decoded.request
-                if (request == null) {
-                    if (decoded.payloadWasRead) malformedHeaders += header
-                } else {
-                    entries += ProgressEntry(
-                        request = request,
-                        state = header.state,
-                        bytesWritten = header.bytesWritten.coerceAtLeast(0L),
-                        totalBytes = header.totalBytes?.takeIf { it > 0L },
-                        stopRequestedByUser = header.stopRequestedByUser,
-                        updatedAtMs = header.updatedAtMs,
-                        queueOrder = header.queueOrder
-                    )
-                }
-            }
-            val nextOperationId = page.last().operationId
-            if (nextOperationId <= afterOperationId) {
-                break
-            }
-            afterOperationId = nextOperationId
-            if (page.size < OPERATION_QUERY_PAGE_SIZE) break
-        }
-        malformedHeaders.forEach { header -> invalidateMalformedPayload(database, header) }
-        entries.sortWith(
-            compareBy<ProgressEntry> { it.queueOrder }
-                .thenBy { it.updatedAtMs }
-                .thenBy { it.request.operationId }
-        )
-        return entries
-    }
-
-    /** 迁移栅栏打开后重新绑定活动 operation，不改动其载荷内容 */
-    suspend fun rehomeOperationToCurrentLibrary(
-        context: Context,
-        operationId: String,
-        stableKey: String,
-        states: List<String> = ACTIVE_OPERATION_STATES,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Boolean {
-        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
-        if (operationId.isBlank() || states.isEmpty()) return false
-        val currentLibraryId = currentLibraryId(context)
-        return database.withTransaction {
-            val dao = database.downloadOperationDao()
-            val header = dao.findHeader(operationId) ?: return@withTransaction false
-            if (
-                header.stableKey != normalizedKey ||
-                    header.state !in states ||
-                    header.stopRequestedByUser
-            ) {
-                return@withTransaction false
-            }
-            val decoded = readRequestFromHeader(dao, header)
-            val request = decoded.request ?: run {
-                if (decoded.payloadWasRead) {
-                    invalidateMalformedPayloadInTransaction(database, header)
-                }
-                return@withTransaction false
-            }
-            if (request.song.stableKey() != normalizedKey) {
-                invalidateMalformedPayloadInTransaction(database, header)
-                return@withTransaction false
-            }
-            if (header.libraryId == currentLibraryId) {
-                return@withTransaction true
-            }
-            dao.rehomeOperationLibrary(
-                operationId = operationId,
-                stableKey = normalizedKey,
-                libraryId = currentLibraryId,
-                states = states,
-                updatedAtMs = System.currentTimeMillis()
-            ) > 0
-        }
-    }
-
-    suspend fun listCancellationCandidates(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<StateEntry> {
-        return listByStates(
-            context = context,
-            states = CANCELLATION_CANDIDATE_OPERATION_STATES,
-            database = database
-        )
-    }
-
-    suspend fun listAllOperationIds(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<String> {
-        return listAllOperationIdentities(context, database)
-            .map(OperationIdentity::operationId)
-            .distinct()
-    }
-
-    suspend fun listAllOperationIdentities(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<OperationIdentity> {
-        val dao = database.downloadOperationDao()
-        val identities = mutableListOf<OperationIdentity>()
-        var afterOperationId = ""
-        while (true) {
-            val page = dao.findAllOperationIdentitiesAfterOperationId(
-                afterOperationId = afterOperationId,
-                limit = OPERATION_QUERY_PAGE_SIZE,
-            )
-            if (page.isEmpty()) {
-                break
-            }
-            identities += page.map { row ->
-                OperationIdentity(
-                    operationId = row.operationId,
-                    stableKey = row.stableKey
-                )
-            }
-            val nextOperationId = page.last().operationId
-            if (nextOperationId <= afterOperationId) {
-                break
-            }
-            afterOperationId = nextOperationId
-            if (page.size < OPERATION_QUERY_PAGE_SIZE) {
-                break
-            }
-        }
-        return identities
-    }
-
-    /** 清空恢复需要跨 library 捕获所有仍可能持有 staging lease 的 operation */
-    suspend fun listCancellationCandidatesAnyLibrary(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<StateEntry> {
-        return listByStatesAnyLibrary(
-            context = context,
-            states = CANCELLATION_CANDIDATE_OPERATION_STATES,
-            database = database
-        )
-    }
-
-    /** 只返回带用户取消凭据的 operation，避免新请求被旧 stableKey 误取消 */
-    suspend fun findUserCancellationOperationIdsForSong(
-        context: Context,
-        songKey: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
-        createdAtMsAtMost: Long? = null
-    ): List<String> {
-        val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return emptyList()
-        return database.downloadOperationDao()
-            .findAllHeadersByStableKeyAnyLibrary(
-                stableKey = normalizedKey,
-                states = CANCELLATION_CANDIDATE_OPERATION_STATES
-            )
-            .asSequence()
-            .filter { header ->
-                createdAtMsAtMost == null || header.createdAtMs <= createdAtMsAtMost
-            }
-            .filter { header ->
-                header.state in setOf("CANCEL_REQUESTED", "CANCELLED", "STOPPED") ||
-                    header.stopRequestedByUser ||
-                    header.lastErrorCode == "USER_CANCELLED"
-            }
-            .map(DownloadOperationHeaderRow::operationId)
-            .distinct()
-            .toList()
-    }
-
-    /** 清空 owner 捕获只读取身份列，避免把大段 sourceHintJson 装入 CursorWindow */
-    suspend fun listCancellationIdentitiesAnyLibrary(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<OperationIdentity> {
-        val dao = database.downloadOperationDao()
-        val identities = mutableListOf<OperationIdentity>()
-        var afterOperationId = ""
-        while (true) {
-            val page = dao.findCancellationIdentitiesAfterOperationId(
-                states = CANCELLATION_CANDIDATE_OPERATION_STATES,
-                afterOperationId = afterOperationId,
-                limit = CANCELLATION_QUERY_PAGE_SIZE
-            )
-            if (page.isEmpty()) break
-            identities += page.map { row ->
-                OperationIdentity(
-                    operationId = row.operationId,
-                    stableKey = row.stableKey,
-                    createdAtMs = row.createdAtMs
-                )
-            }
-            val nextOperationId = page.last().operationId
-            if (nextOperationId <= afterOperationId ||
-                page.size < CANCELLATION_QUERY_PAGE_SIZE
-            ) {
-                break
-            }
-            afterOperationId = nextOperationId
-        }
-        return identities
-    }
-
-    /** 只读取清空开始时已拥有 stableKey 的 operation，避免纳入新 generation */
-    suspend fun listOperationIdentitiesForStableKeys(
-        context: Context,
-        stableKeys: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<OperationIdentity> {
-        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
-        if (keys.isEmpty()) return emptyList()
-        return keys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).flatMap { chunk ->
-            database.downloadOperationDao()
-                .findAllHeadersByStableKeysAnyLibrary(
-                    stableKeys = chunk,
-                    states = CANCELLATION_CANDIDATE_OPERATION_STATES
-                )
-                .map { header ->
-                    OperationIdentity(
-                        operationId = header.operationId,
-                        stableKey = header.stableKey,
-                        createdAtMs = header.createdAtMs
-                    )
-                }
-        }.distinctBy(OperationIdentity::operationId)
-    }
-
-    suspend fun requestCancelAll(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): CancellationSnapshot {
-        val requestedAtMs = System.currentTimeMillis()
-        val headers = mutableListOf<DownloadOperationHeaderRow>()
-        while (true) {
-            val page = database.withTransaction {
-                val dao = database.downloadOperationDao()
-                val candidates = dao.findCancellationCandidatesPageHeaders(
-                    states = CANCELLATION_CANDIDATE_OPERATION_STATES,
-                    limit = CANCELLATION_QUERY_PAGE_SIZE
-                )
-                val directCancellationIds = candidates.asSequence()
-                    .filter { header -> requiresDirectCancellation(header) }
-                    .map(DownloadOperationHeaderRow::operationId)
-                    .toList()
-                val commitBoundaryCancellationIds = candidates.asSequence()
-                    .filter { header -> requiresCommitBoundaryCancellation(header) }
-                    .map(DownloadOperationHeaderRow::operationId)
-                    .toList()
-                directCancellationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { ids ->
-                    dao.requestCancellations(ids, requestedAtMs)
-                }
-                commitBoundaryCancellationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { ids ->
-                    dao.requestCommitBoundaryCancellations(ids, requestedAtMs)
-                }
-                candidates
-            }
-            if (page.isEmpty()) {
-                break
-            }
-            headers += page
-        }
-        val dao = database.downloadOperationDao()
-        val refreshedHeadersByOperationId = linkedMapOf<String, DownloadOperationHeaderRow>()
-        headers.map(DownloadOperationHeaderRow::operationId)
-            .chunked(SQLITE_IN_QUERY_CHUNK_SIZE)
-            .forEach { operationIdChunk ->
-                dao.findAllHeadersByOperationIds(operationIdChunk).forEach { header ->
-                    refreshedHeadersByOperationId[header.operationId] = header
-                }
-            }
-        val entries = mutableListOf<StateEntry>()
-        headers.forEach { header ->
-            if (
-                !requiresDirectCancellation(header) &&
-                    !requiresCommitBoundaryCancellation(header)
-            ) {
-                return@forEach
-            }
-            val refreshedHeader = refreshedHeadersByOperationId[header.operationId]
-                ?: return@forEach
-            val decoded = readRequestFromHeader(dao, refreshedHeader)
-            val request = decoded.request
-            if (request == null) {
-                if (decoded.payloadWasRead) {
-                    invalidateMalformedPayload(database, refreshedHeader)
-                }
-                return@forEach
-            }
-            entries += StateEntry(
-                request = request,
-                queueOrder = header.queueOrder,
-                createdAtMs = header.createdAtMs,
-                state = header.state,
-                updatedAtMs = header.updatedAtMs
-            )
-        }
-        return CancellationSnapshot(
-            entries = entries,
-            operationIds = headers.map(DownloadOperationHeaderRow::operationId).distinct(),
-            stableKeys = headers.mapTo(linkedSetOf(), DownloadOperationHeaderRow::stableKey),
-            requestedAtMs = requestedAtMs
-        )
-    }
-
-    /** 用户清空的快速阶段，用集合更新写入取消栅栏，详细凭据由恢复流程收集 */
-    suspend fun requestCancelAllFast(
-        context: Context,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Int {
-        val requestedAtMs = System.currentTimeMillis()
-        return database.withTransaction {
-            val dao = database.downloadOperationDao()
-            dao.requestAllCancellationsFast(requestedAtMs) +
-                dao.requestAllCommitBoundaryCancellationsFast(requestedAtMs)
-        }
-    }
-
-    /** 快速阶段只标记清空开始时拥有 stableKey 的 operation */
-    suspend fun requestCancelForStableKeysFast(
-        context: Context,
-        stableKeys: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Int {
-        val identities = listOperationIdentitiesForStableKeys(
-            context = context,
-            stableKeys = stableKeys,
-            database = database
-        )
-        return requestCancelOperationsFast(
-            context = context,
-            operationIds = identities.map(OperationIdentity::operationId),
-            database = database
-        )
-    }
-
-    /** 持久收敛只取消固定快照中的 operation，不扫描清空后的新任务 */
-    suspend fun requestCancelOperations(
-        context: Context,
-        operationIds: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): CancellationSnapshot {
-        val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
-        if (ids.isEmpty()) {
-            return CancellationSnapshot(
-                entries = emptyList(),
-                operationIds = emptyList(),
-                stableKeys = emptySet(),
-                requestedAtMs = System.currentTimeMillis()
-            )
-        }
-        val requestedAtMs = System.currentTimeMillis()
-        val headers = database.withTransaction {
-            val dao = database.downloadOperationDao()
-            val candidates = ids.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).flatMap { chunk ->
-                dao.findAllHeadersByOperationIds(chunk)
-            }
-            val directIds = candidates.asSequence()
-                .filter { header -> requiresDirectCancellation(header) }
-                .map(DownloadOperationHeaderRow::operationId)
-                .toList()
-            val commitBoundaryIds = candidates.asSequence()
-                .filter { header -> requiresCommitBoundaryCancellation(header) }
-                .map(DownloadOperationHeaderRow::operationId)
-                .toList()
-            directIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { chunk ->
-                dao.requestCancellations(chunk, requestedAtMs)
-            }
-            commitBoundaryIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { chunk ->
-                dao.requestCommitBoundaryCancellations(chunk, requestedAtMs)
-            }
-            candidates
-        }
-        val dao = database.downloadOperationDao()
-        val refreshedHeadersByOperationId = linkedMapOf<String, DownloadOperationHeaderRow>()
-        headers.map(DownloadOperationHeaderRow::operationId)
-            .chunked(SQLITE_IN_QUERY_CHUNK_SIZE)
-            .forEach { operationIdChunk ->
-                dao.findAllHeadersByOperationIds(operationIdChunk).forEach { header ->
-                    refreshedHeadersByOperationId[header.operationId] = header
-                }
-            }
-        val entries = mutableListOf<StateEntry>()
-        headers.forEach { header ->
-            if (
-                !requiresDirectCancellation(header) &&
-                    !requiresCommitBoundaryCancellation(header)
-            ) {
-                return@forEach
-            }
-            val refreshedHeader = refreshedHeadersByOperationId[header.operationId]
-                ?: return@forEach
-            val decoded = readRequestFromHeader(dao, refreshedHeader)
-            val request = decoded.request
-            if (request == null) {
-                if (decoded.payloadWasRead) {
-                    invalidateMalformedPayload(database, refreshedHeader)
-                }
-                return@forEach
-            }
-            entries += StateEntry(
-                request = request,
-                queueOrder = header.queueOrder,
-                createdAtMs = header.createdAtMs,
-                state = header.state,
-                updatedAtMs = header.updatedAtMs
-            )
-        }
-        return CancellationSnapshot(
-            entries = entries,
-            operationIds = headers.map(DownloadOperationHeaderRow::operationId).distinct(),
-            stableKeys = headers.map(DownloadOperationHeaderRow::stableKey).toSet(),
-            requestedAtMs = requestedAtMs
-        )
-    }
-
-    /** 快速标记固定 operation，避免全局 UPDATE 触碰新 generation */
-    suspend fun requestCancelOperationsFast(
-        context: Context,
-        operationIds: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Int {
-        val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
-        if (ids.isEmpty()) return 0
-        val requestedAtMs = System.currentTimeMillis()
-        return database.withTransaction {
-            val dao = database.downloadOperationDao()
-            val headers = ids.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).flatMap { chunk ->
-                dao.findAllHeadersByOperationIds(chunk)
-            }
-            val directIds = headers.asSequence()
-                .filter { header -> requiresDirectCancellation(header) }
-                .map(DownloadOperationHeaderRow::operationId)
-                .toList()
-            val commitBoundaryIds = headers.asSequence()
-                .filter { header -> requiresCommitBoundaryCancellation(header) }
-                .map(DownloadOperationHeaderRow::operationId)
-                .toList()
-            directIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
-                dao.requestCancellations(chunk, requestedAtMs)
-            } + commitBoundaryIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
-                dao.requestCommitBoundaryCancellations(chunk, requestedAtMs)
-            }
-        }
-    }
-
-    suspend fun finalizeRequestedCancellations(
-        context: Context,
-        operationIds: Collection<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Int {
-        val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
-        if (ids.isEmpty()) return 0
-        val updatedAtMs = System.currentTimeMillis()
-        return ids.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
-            database.downloadOperationDao().finalizeRequestedCancellations(
-                operationIds = chunk,
-                updatedAtMs = updatedAtMs
-            )
-        }
-    }
-
-    suspend fun deleteByStateAndStableKeys(
-        context: Context,
-        state: String,
-        stableKeys: List<String>,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ) {
-        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
-        if (keys.isEmpty()) return
-        keys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { chunk ->
-            database.withTransaction {
-                val dao = database.downloadOperationDao()
-                val operationIds = dao.findOperationIdsByStateAndStableKeys(state, chunk)
-                if (operationIds.isNotEmpty()) {
-                    dao.deleteHostAdmissions(operationIds)
-                    dao.deleteOperations(operationIds)
-                }
-            }
-        }
-    }
-
-    suspend fun deleteByState(
-        context: Context,
-        state: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ) {
-        val ids = database.downloadOperationDao().findOperationIdsByState(state)
-        deleteOperationsWithAdmissions(database, ids)
-    }
-
-    suspend fun pruneTerminalOperations(
-        context: Context,
-        cutoffMs: Long,
-        limit: Int,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Int {
-        if (limit <= 0) return 0
-        val ids = database.downloadOperationDao().findTerminalOperationIdsBefore(
-            states = TERMINAL_STATES,
-            cutoffMs = cutoffMs,
-            limit = limit
-        )
-        return deleteOperationsWithAdmissions(database, ids)
-    }
-
-    suspend fun findOperationIdForSong(
-        context: Context,
-        songKey: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
-        states: List<String> = ACTIVE_OPERATION_STATES
-    ): String? {
-        val normalizedSongKey = songKey.trim().takeIf(String::isNotEmpty) ?: return null
-        val libraryId = currentLibraryId(context)
-        val dao = database.downloadOperationDao()
-        return dao.findLatestOperationIdByStableKey(
-                libraryId = libraryId,
-                stableKey = normalizedSongKey,
-                states = states
-            ) ?: dao.findAllHeadersByStableKeyAnyLibrary(
-                stableKey = normalizedSongKey,
-                states = states
-            ).firstOrNull { header -> !header.stopRequestedByUser }?.also { header ->
-                rehomeOperationToCurrentLibrary(
-                    context = context,
-                    operationId = header.operationId,
-                    stableKey = normalizedSongKey,
-                    states = states,
-                    database = database
-                )
-            }?.operationId
-    }
-
-    suspend fun findOperationIdsForSong(
-        context: Context,
-        songKey: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
-        states: List<String> = CANCELLATION_CANDIDATE_OPERATION_STATES,
-        createdAtMsAtMost: Long? = null
-    ): List<String> {
-        val normalizedSongKey = songKey.trim().takeIf(String::isNotEmpty) ?: return emptyList()
-        val libraryId = currentLibraryId(context)
-        val dao = database.downloadOperationDao()
-        // 目录迁移可能在新根目录先写入一行，而旧根目录仍保留活动行。
-        // 取消必须覆盖两边，否则旧宿主和旧 lease 会继续挡住下一次下载
-        val rows = (
-            dao.findAllHeadersByStableKey(libraryId, normalizedSongKey, states) +
-                dao.findAllHeadersByStableKeyAnyLibrary(normalizedSongKey, states)
-            ).distinctBy(DownloadOperationHeaderRow::operationId)
-        val eligibleRows = rows.filter { header ->
-            createdAtMsAtMost == null || header.createdAtMs <= createdAtMsAtMost
-        }
-        eligibleRows.filter { header -> header.libraryId != libraryId }.forEach { header ->
-            rehomeOperationToCurrentLibrary(
-                context = context,
-                operationId = header.operationId,
-                stableKey = normalizedSongKey,
-                states = states,
-                database = database
-            )
-        }
-        return eligibleRows.map(DownloadOperationHeaderRow::operationId).distinct()
-    }
-
-    suspend fun findReadableOperationIdForSong(
-        context: Context,
-        songKey: String,
-        states: List<String>,
-        excludeUserCancelledStops: Boolean = false,
-        excludeUserStoppedOperations: Boolean = false,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): String? {
-        val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return null
-        return findReadableOperationsBySongKeys(
-            context = context,
-            songKeys = listOf(normalizedKey),
-            states = states,
-            excludeUserCancelledStops = excludeUserCancelledStops,
-            excludeUserStoppedOperations = excludeUserStoppedOperations,
-            database = database
-        )[normalizedKey]?.operationId
-    }
-
-    suspend fun findReadableOperationsBySongKeys(
-        context: Context,
-        songKeys: Collection<String>,
-        states: List<String>,
-        excludeUserCancelledStops: Boolean = false,
-        excludeUserStoppedOperations: Boolean = false,
-        excludedOperationIds: Collection<String> = emptySet(),
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Map<String, DownloadExecutionRequest> {
-        val normalizedKeys = songKeys
-            .asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .distinct()
-            .toList()
-        if (normalizedKeys.isEmpty() || states.isEmpty()) {
-            return emptyMap()
-        }
-        val excludedIds = excludedOperationIds
-            .asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .toSet()
-        val libraryId = currentLibraryId(context)
-        val dao = database.downloadOperationDao()
-        val readableOperations = linkedMapOf<String, DownloadExecutionRequest>()
-        normalizedKeys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { keyChunk ->
-            dao.findAllHeadersByStableKeys(
-                libraryId = libraryId,
-                stableKeys = keyChunk,
-                states = states
-            ).forEach headerLoop@{ header ->
-                val entitySongKey = header.stableKey
-                if (header.operationId in excludedIds) {
-                    return@headerLoop
-                }
-                if (entitySongKey in readableOperations) {
-                    return@headerLoop
-                }
-                if (
-                    header.stopRequestedByUser && (
-                        excludeUserStoppedOperations ||
-                            (excludeUserCancelledStops &&
-                                header.lastErrorCode == "USER_CANCELLED")
-                    )
-                ) {
-                    return@headerLoop
-                }
-                val decoded = readRequestFromHeader(dao, header)
-                val request = decoded.request
-                if (request != null) {
-                    readableOperations[entitySongKey] = request
-                } else if (decoded.payloadWasRead) {
-                    invalidateMalformedPayload(database, header)
-                }
-            }
-        }
-        val unresolvedKeys = normalizedKeys.filterNot { key -> key in readableOperations }
-        unresolvedKeys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { keyChunk ->
-            dao.findAllHeadersByStableKeysAnyLibrary(
-                stableKeys = keyChunk,
-                states = states
-            ).forEach headerLoop@{ header ->
-                val entitySongKey = header.stableKey
-                if (header.operationId in excludedIds) {
-                    return@headerLoop
-                }
-                if (entitySongKey in readableOperations) {
-                    return@headerLoop
-                }
-                if (
-                    header.stopRequestedByUser && (
-                        excludeUserStoppedOperations ||
-                            (excludeUserCancelledStops &&
-                                header.lastErrorCode == "USER_CANCELLED")
-                    )
-                ) {
-                    return@headerLoop
-                }
-                val decoded = readRequestFromHeader(dao, header)
-                val request = decoded.request
-                if (request == null) {
-                    if (decoded.payloadWasRead) {
-                        invalidateMalformedPayload(database, header)
-                    }
-                    return@headerLoop
-                }
-                if (header.libraryId != libraryId) {
-                    rehomeOperationToCurrentLibrary(
-                        context = context,
-                        operationId = header.operationId,
-                        stableKey = header.stableKey,
-                        states = states,
-                        database = database
-                    )
-                }
-                readableOperations[entitySongKey] = request
-            }
-        }
-        return readableOperations
-    }
-
-    /**
-     * 只有调用方提供同一稳定键的新歌曲载荷时，才恢复可复用的日志记录
-     */
-    suspend fun rehydrateMalformedReusableOperation(
-        context: Context,
-        song: SongItem,
-        userInitiated: Boolean,
-        requiresWifiNetwork: Boolean,
-        updatedAtMs: Long,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Boolean {
-        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return false
-        return stableKey in rehydrateMalformedReusableOperations(
-            context = context,
-            songs = listOf(song),
-            userInitiated = userInitiated,
-            requiresWifiNetwork = requiresWifiNetwork,
-            updatedAtMs = updatedAtMs,
-            database = database
-        )
-    }
-
-    suspend fun rehydrateMalformedReusableOperations(
-        context: Context,
-        songs: Collection<SongItem>,
-        userInitiated: Boolean,
-        requiresWifiNetwork: Boolean,
-        updatedAtMs: Long,
-        downloadAudioQuality: DownloadAudioQualitySelection? = null,
-        excludedOperationIds: Collection<String> = emptySet(),
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Set<String> {
-        val songsByStableKey = linkedMapOf<String, SongItem>()
-        songs.forEach { song ->
-            val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return@forEach
-            songsByStableKey.putIfAbsent(stableKey, song)
-        }
-        if (songsByStableKey.isEmpty()) {
-            return emptySet()
-        }
-        val excludedIds = excludedOperationIds
-            .asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .toSet()
-        val libraryId = currentLibraryId(context)
-        return database.withTransaction {
-            val dao = database.downloadOperationDao()
-            val candidatesByStableKey = linkedMapOf<String, MutableList<DownloadOperationHeaderRow>>()
-            songsByStableKey.keys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { stableKeyChunk ->
-                dao.findAllHeadersByStableKeys(
-                    libraryId = libraryId,
-                    stableKeys = stableKeyChunk,
-                    states = REUSABLE_OPERATION_STATES
-                ).forEach { header ->
-                    if (header.operationId in excludedIds) return@forEach
-                    candidatesByStableKey.getOrPut(header.stableKey) { mutableListOf() } += header
-                }
-            }
-            val rehydratedStableKeys = linkedSetOf<String>()
-            songsByStableKey.forEach { (stableKey, song) ->
-                val candidates = candidatesByStableKey[stableKey]
-                    .orEmpty()
-                    .filterNot(DownloadOperationHeaderRow::stopRequestedByUser)
-                if (candidates.isEmpty()) {
-                    return@forEach
-                }
-                val decodedCandidates = candidates.map { header ->
-                    header to readRequestFromHeader(dao, header)
-                }
-                if (decodedCandidates.any { (_, decoded) -> decoded.request != null }) {
-                    return@forEach
-                }
-                val existing = decodedCandidates.firstOrNull { (_, decoded) ->
-                    decoded.payloadWasRead
-                }?.first ?: return@forEach
-                val request = DownloadExecutionRequest(
-                    operationId = existing.operationId,
-                    song = song,
-                    artifactLeaseId = UUID.randomUUID().toString(),
-                    requiresWifiNetwork = requiresWifiNetwork,
-                    userInitiated = userInitiated,
-                    downloadAudioQuality = downloadAudioQuality
-                )
-                val replaced = dao.replaceMalformedReusablePayload(
-                    operationId = existing.operationId,
-                    libraryId = libraryId,
-                    stableKey = stableKey,
-                    expectedStates = REUSABLE_OPERATION_STATES,
-                    sourceHintJson = requestToJson(request).toString(),
-                    updatedAtMs = nextPayloadUpdatedAt(
-                        previousUpdatedAtMs = existing.updatedAtMs,
-                        requestedAtMs = updatedAtMs
-                    )
-                ) > 0
-                if (replaced) {
-                    dao.deleteHostAdmission(existing.operationId)
-                    rehydratedStableKeys += stableKey
-                }
-            }
-            rehydratedStableKeys
-        }
-    }
-
-    suspend fun isStopped(
-        context: Context,
-        operationId: String
-    ): Boolean {
-        return NeriUserDataDatabase.getInstance(context).downloadOperationDao()
-            .isUserStopped(operationId) == true
-    }
-
-    suspend fun isUserCancellationRequested(
-        context: Context,
-        operationId: String
-    ): Boolean {
-        return NeriUserDataDatabase.getInstance(context).downloadOperationDao()
-            .isUserCancellationRequested(operationId)
-    }
-
-    suspend fun isExplicitResumePending(
-        context: Context,
-        operationId: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Boolean {
-        return database.downloadOperationDao().isExplicitResumePending(operationId)
-    }
-
-    suspend fun isExecutionOwned(
-        context: Context,
-        operationId: String,
-        stableKey: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Boolean {
-        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
-        return database.downloadOperationDao().isExecutionOwnedAnyLibrary(
-            operationId = operationId,
-            stableKey = normalizedKey
-        )
-    }
-
-    suspend fun stoppedSongKeys(context: Context): Set<String> {
-        val dao = NeriUserDataDatabase.getInstance(context).downloadOperationDao()
-        return dao.findUserStoppedHeaders()
-            .mapNotNull { header ->
-                readRequestFromHeader(dao, header).request?.song?.stableKey()
-            }
-            .toSet()
-    }
+    // facade 保持既有调用面，读取、取消和状态查询分别由独立 store 承担
+    suspend fun read(context: Context, operationId: String, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.read(context, operationId, database)
+    suspend fun readOperationSnapshots(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.readOperationSnapshots(context, operationIds, database)
+    suspend fun readOperationHeaders(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.readOperationHeaders(context, operationIds, database)
+    suspend fun readOperationRequestMetadata(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.readOperationRequestMetadata(context, operationIds, database)
+    suspend fun promoteWaitingStorageMutations(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.promoteWaitingStorageMutations(context, operationIds, database)
+    suspend fun readOperationIdentities(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.readOperationIdentities(context, operationIds, database)
+    suspend fun checkpointProgress(context: Context, operationId: String, stableKey: String, attemptId: Long?, bytesWritten: Long, totalBytes: Long?, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.checkpointProgress(context, operationId, stableKey, attemptId, bytesWritten, totalBytes, database)
+    suspend fun readProgressCheckpoint(context: Context, operationId: String, stableKey: String, attemptId: Long?, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.readProgressCheckpoint(context, operationId, stableKey, attemptId, database)
+    suspend fun listByState(context: Context, state: String, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.listByState(context, state, database)
+    suspend fun countByStates(context: Context, states: List<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.countByStates(context, states, database)
+    suspend fun listSchedulableForPumpPage(context: Context, afterCursor: DownloadExecutionPumpCursor?, limit: Int, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.listSchedulableForPumpPage(context, afterCursor, limit, database)
+    suspend fun listByStates(context: Context, states: List<String>, excludeUserStoppedOperations: Boolean = false, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.listByStates(context, states, excludeUserStoppedOperations, database)
+    suspend fun listByStatesAnyLibrary(context: Context, states: List<String>, excludeUserStoppedOperations: Boolean = false, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.listByStatesAnyLibrary(context, states, excludeUserStoppedOperations, database)
+    fun hasAnyByStatesAnyLibrary(context: Context, states: List<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.hasAnyByStatesAnyLibrary(context, states, database)
+    suspend fun rehomeActiveOperationsToCurrentLibrary(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.rehomeActiveOperationsToCurrentLibrary(context, database)
+    suspend fun listProgressEntries(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.listProgressEntries(context, database)
+    suspend fun listProgressEntriesAnyLibrary(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.listProgressEntriesAnyLibrary(context, database)
+    suspend fun rehomeOperationToCurrentLibrary(context: Context, operationId: String, stableKey: String, states: List<String> = ACTIVE_OPERATION_STATES, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.rehomeOperationToCurrentLibrary(context, operationId, stableKey, states, database)
+    suspend fun listCancellationCandidates(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.listCancellationCandidates(context, database)
+    suspend fun listAllOperationIds(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.listAllOperationIds(context, database)
+    suspend fun listAllOperationIdentities(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.listAllOperationIdentities(context, database)
+    suspend fun listCancellationCandidatesAnyLibrary(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.listCancellationCandidatesAnyLibrary(context, database)
+    suspend fun findUserCancellationOperationIdsForSong(context: Context, songKey: String, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context), createdAtMsAtMost: Long? = null) =
+        DownloadExecutionRoomCancellationStore.findUserCancellationOperationIdsForSong(context, songKey, database, createdAtMsAtMost)
+    suspend fun listCancellationIdentitiesAnyLibrary(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.listCancellationIdentitiesAnyLibrary(context, database)
+    suspend fun listOperationIdentitiesForStableKeys(context: Context, stableKeys: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.listOperationIdentitiesForStableKeys(context, stableKeys, database)
+    suspend fun requestCancelAll(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.requestCancelAll(context, database)
+    suspend fun requestCancelAllFast(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.requestCancelAllFast(context, database)
+    suspend fun requestCancelForStableKeysFast(context: Context, stableKeys: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.requestCancelForStableKeysFast(context, stableKeys, database)
+    suspend fun requestCancelOperations(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.requestCancelOperations(context, operationIds, database)
+    suspend fun requestCancelOperationsFast(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.requestCancelOperationsFast(context, operationIds, database)
+    suspend fun finalizeRequestedCancellations(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.finalizeRequestedCancellations(context, operationIds, database)
+    suspend fun deleteByStateAndStableKeys(context: Context, state: String, stableKeys: List<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.deleteByStateAndStableKeys(context, state, stableKeys, database)
+    suspend fun deleteByState(context: Context, state: String, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.deleteByState(context, state, database)
+    suspend fun pruneTerminalOperations(context: Context, cutoffMs: Long, limit: Int, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.pruneTerminalOperations(context, cutoffMs, limit, database)
+    suspend fun findOperationIdForSong(context: Context, songKey: String, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context), states: List<String> = ACTIVE_OPERATION_STATES) =
+        DownloadExecutionRoomCancellationStore.findOperationIdForSong(context, songKey, database, states)
+    suspend fun findOperationIdsForSong(context: Context, songKey: String, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context), states: List<String> = CANCELLATION_CANDIDATE_OPERATION_STATES, createdAtMsAtMost: Long? = null) =
+        DownloadExecutionRoomCancellationStore.findOperationIdsForSong(context, songKey, database, states, createdAtMsAtMost)
+    suspend fun findReadableOperationIdForSong(context: Context, songKey: String, states: List<String>, excludeUserCancelledStops: Boolean = false, excludeUserStoppedOperations: Boolean = false, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.findReadableOperationIdForSong(context, songKey, states, excludeUserCancelledStops, excludeUserStoppedOperations, database)
+    suspend fun findReadableOperationsBySongKeys(context: Context, songKeys: Collection<String>, states: List<String>, excludeUserCancelledStops: Boolean = false, excludeUserStoppedOperations: Boolean = false, excludedOperationIds: Collection<String> = emptySet(), database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.findReadableOperationsBySongKeys(context, songKeys, states, excludeUserCancelledStops, excludeUserStoppedOperations, excludedOperationIds, database)
+    suspend fun rehydrateMalformedReusableOperation(context: Context, song: SongItem, userInitiated: Boolean, requiresWifiNetwork: Boolean, updatedAtMs: Long, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.rehydrateMalformedReusableOperation(context, song, userInitiated, requiresWifiNetwork, updatedAtMs, database)
+    suspend fun rehydrateMalformedReusableOperations(context: Context, songs: Collection<SongItem>, userInitiated: Boolean, requiresWifiNetwork: Boolean, updatedAtMs: Long, downloadAudioQuality: DownloadAudioQualitySelection? = null, excludedOperationIds: Collection<String> = emptySet(), database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.rehydrateMalformedReusableOperations(context, songs, userInitiated, requiresWifiNetwork, updatedAtMs, downloadAudioQuality, excludedOperationIds, database)
+    suspend fun isStopped(context: Context, operationId: String) =
+        DownloadExecutionRoomStatusStore.isStopped(context, operationId)
+    suspend fun isUserCancellationRequested(context: Context, operationId: String) =
+        DownloadExecutionRoomStatusStore.isUserCancellationRequested(context, operationId)
+    suspend fun isExplicitResumePending(context: Context, operationId: String, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomStatusStore.isExplicitResumePending(context, operationId, database)
+    suspend fun isExecutionOwned(context: Context, operationId: String, stableKey: String, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomStatusStore.isExecutionOwned(context, operationId, stableKey, database)
+    suspend fun stoppedSongKeys(context: Context) =
+        DownloadExecutionRoomStatusStore.stoppedSongKeys(context)
 
     suspend fun updateState(
         context: Context,
@@ -2521,7 +1243,7 @@ internal object DownloadExecutionRoomStore {
         }.getOrNull()
     }
 
-    private data class HeaderRequestRead(
+    internal data class HeaderRequestRead(
         val request: DownloadExecutionRequest?,
         val payloadWasRead: Boolean
     )
@@ -2903,6 +1625,104 @@ internal object DownloadExecutionRoomStore {
         "ASSETS_ENRICHING",
         "DEGRADED_COMPLETE"
     )
+
+    /**
+     * 供拆分后的 Room 读写边界使用的窄适配层
+     *
+     * 保留 payload 解码和状态常量的单一所有权，避免 facade 拆分后出现两套规则
+     */
+    internal object Access {
+        internal val JOURNAL_PAYLOAD_VERSION: Int
+            get() = DownloadExecutionRoomStore.JOURNAL_PAYLOAD_VERSION
+        internal val ACTIVE_OPERATION_STATES: List<String>
+            get() = DownloadExecutionRoomStore.ACTIVE_OPERATION_STATES
+        internal val OPERATION_QUERY_PAGE_SIZE: Int
+            get() = DownloadExecutionRoomStore.OPERATION_QUERY_PAGE_SIZE
+        internal val CANCELLATION_QUERY_PAGE_SIZE: Int
+            get() = DownloadExecutionRoomStore.CANCELLATION_QUERY_PAGE_SIZE
+        internal val PUMP_QUERY_MAX_ITEMS: Int
+            get() = DownloadExecutionRoomStore.PUMP_QUERY_MAX_ITEMS
+        internal val SQLITE_IN_QUERY_CHUNK_SIZE: Int
+            get() = DownloadExecutionRoomStore.SQLITE_IN_QUERY_CHUNK_SIZE
+        internal val TERMINAL_STATES: List<String>
+            get() = DownloadExecutionRoomStore.TERMINAL_STATES
+        internal val CANCELLATION_CANDIDATE_OPERATION_STATES: List<String>
+            get() = DownloadExecutionRoomStore.CANCELLATION_CANDIDATE_OPERATION_STATES
+        internal val ROOT_REHOME_OPERATION_STATES: List<String>
+            get() = DownloadExecutionRoomStore.ROOT_REHOME_OPERATION_STATES
+        internal val PROGRESS_CHECKPOINT_OPERATION_STATES: List<String>
+            get() = DownloadExecutionRoomStore.PROGRESS_CHECKPOINT_OPERATION_STATES
+        internal val REUSABLE_OPERATION_STATES: List<String>
+            get() = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+
+        internal fun requestToJson(request: DownloadExecutionRequest): JSONObject {
+            return DownloadExecutionRoomStore.requestToJson(request)
+        }
+
+        internal fun nextPayloadUpdatedAt(
+            previousUpdatedAtMs: Long?,
+            requestedAtMs: Long = System.currentTimeMillis()
+        ): Long {
+            return DownloadExecutionRoomStore.nextPayloadUpdatedAt(
+                previousUpdatedAtMs,
+                requestedAtMs
+            )
+        }
+
+        internal suspend fun readRequestFromHeader(
+            dao: DownloadOperationDao,
+            header: DownloadOperationHeaderRow
+        ): HeaderRequestRead {
+            return DownloadExecutionRoomStore.readRequestFromHeader(dao, header)
+        }
+
+        internal suspend fun readSourceHintJson(
+            dao: DownloadOperationDao,
+            header: DownloadOperationHeaderRow
+        ): String? {
+            return DownloadExecutionRoomStore.readSourceHintJson(dao, header)
+        }
+
+        internal suspend fun invalidateMalformedPayload(
+            database: NeriUserDataDatabase,
+            header: DownloadOperationHeaderRow
+        ) {
+            DownloadExecutionRoomStore.invalidateMalformedPayload(database, header)
+        }
+
+        internal suspend fun invalidateMalformedPayloadInTransaction(
+            database: NeriUserDataDatabase,
+            header: DownloadOperationHeaderRow
+        ) {
+            DownloadExecutionRoomStore.invalidateMalformedPayloadInTransaction(database, header)
+        }
+
+        internal fun currentLibraryId(context: Context): String {
+            return DownloadExecutionRoomStore.currentLibraryId(context)
+        }
+
+        internal fun requiresDirectCancellation(
+            header: DownloadOperationHeaderRow
+        ): Boolean {
+            return DownloadExecutionRoomStore.requiresDirectCancellation(header)
+        }
+
+        internal fun requiresCommitBoundaryCancellation(
+            header: DownloadOperationHeaderRow
+        ): Boolean {
+            return DownloadExecutionRoomStore.requiresCommitBoundaryCancellation(header)
+        }
+
+        internal suspend fun deleteOperationsWithAdmissions(
+            database: NeriUserDataDatabase,
+            operationIds: Collection<String>
+        ): Int {
+            return DownloadExecutionRoomStore.deleteOperationsWithAdmissions(
+                database,
+                operationIds
+            )
+        }
+    }
 }
 
 private fun executionConvergencePriority(state: String): Int {

@@ -286,16 +286,16 @@ class DownloadExecutionOperationJournalCharacterizationTest {
             .map {
                 java.io.File(
                     it,
-                    "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomStore.kt"
+                    "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomCancellationStore.kt"
                 )
             }
             .firstOrNull(java.io.File::isFile)
-            ?: error("operation room store source not found")
+            ?: error("operation room cancellation store source not found")
         val source = sourceFile.readText()
         val rawLookup = source.substringAfter("suspend fun findOperationIdForSong")
             .substringBefore("suspend fun findReadableOperationIdForSong")
         val readableLookup = source.substringAfter("suspend fun findReadableOperationIdForSong")
-            .substringBefore("suspend fun isStopped")
+            .substringBefore("suspend fun rehydrateMalformedReusableOperation")
         assertTrue(rawLookup.contains("findLatestOperationIdByStableKey"))
         assertTrue(!rawLookup.contains("requestFromEntity"))
         assertTrue(readableLookup.contains("readRequestFromHeader(dao, header)"))

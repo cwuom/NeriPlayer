@@ -128,7 +128,7 @@ class AudioDownloadManagerPlaybackRaceTest {
     fun `incomplete lookup checks the exact reference before song identity fallback`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
-                "AudioDownloadManager.kt"
+                "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
         val body = methodBody(source, "isManagedReferenceExplicitlyIncomplete")
         val exactIndex = body.indexOf("val exactAudio")
@@ -153,7 +153,7 @@ class AudioDownloadManagerPlaybackRaceTest {
     fun `recent bridge bypasses synchronous provider inspection`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
-                "AudioDownloadManager.kt"
+                "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
         val body = methodBody(source, "resolveRecentlyCommittedAudioReference")
 
@@ -167,7 +167,7 @@ class AudioDownloadManagerPlaybackRaceTest {
     fun `missing managed reference forces one fresh root rebind`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
-                "AudioDownloadManager.kt"
+                "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
         val body = methodBody(source, "resolvePermittedLocalPlayback")
 
@@ -268,7 +268,7 @@ class AudioDownloadManagerPlaybackRaceTest {
     fun `raw managed playback source filters references from a previous saf root`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
-                "AudioDownloadManager.kt"
+                "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
         val body = methodBody(source, "resolvePermittedLocalPlayback")
 
@@ -316,7 +316,7 @@ class AudioDownloadManagerPlaybackRaceTest {
     fun `synchronous playback lookup consults the fast directory mutation gate`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
-                "AudioDownloadManager.kt"
+                "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
         val body = methodBody(source, "getLocalPlaybackUri")
 

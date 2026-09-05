@@ -24,7 +24,7 @@ class DownloadOperationPaginationContractTest {
     fun `recovery readers advance a monotonic cursor and restore queue ordering`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
-                "DownloadExecutionRoomStore.kt"
+                "DownloadExecutionRoomReadStore.kt"
         )
         val stateReader = source.substringAfter("suspend fun listByStates(")
             .substringBefore("/**\n     * 目录切换")
@@ -77,7 +77,7 @@ class DownloadOperationPaginationContractTest {
 
         val roomStoreSource = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
-                "DownloadExecutionRoomStore.kt"
+                "DownloadExecutionRoomReadStore.kt"
         )
         val pumpReader = roomStoreSource.substringAfter(
             "suspend fun listSchedulableForPumpPage("

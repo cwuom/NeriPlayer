@@ -2189,11 +2189,10 @@ class GlobalDownloadManagerStartupPolicyTest {
         val downloadSongIndex = startBody.indexOf("AudioDownloadManager.downloadSong(")
         assertTrue(secondAdmissionCheckIndex >= 0)
         assertTrue(downloadSongIndex > secondAdmissionCheckIndex)
-        assertTrue(
-            startBody.contains(
-                "!isDownloadClearFenceActive(\n                                    appContext,"
-            )
-        )
+        // 这里只验证最终准入复核包含清空闸门，避免格式化缩进变化让结构测试失效
+        assertTrue(startBody.contains("!isDownloadClearFenceActive("))
+        assertTrue(startBody.contains("stableKey = songKey"))
+        assertTrue(startBody.contains("operationId = operationId"))
         assertTrue(startBody.contains("!isSongCancelled(songKey)"))
         assertTrue(startBody.contains("removeDownloadTask(songKey, expectedAttemptId = attemptId)"))
         assertTrue(
@@ -2803,16 +2802,26 @@ class GlobalDownloadManagerStartupPolicyTest {
         val startBody = source.substringAfter("private suspend fun startDownloadConfirmed")
             .substringBefore("fun startBatchDownload(context")
 
-        val settleIndex = startBody.indexOf("val cancellationSettled = awaitSongCancellationSettled(")
+        val releaseLockIndex = startBody.indexOf("withoutSongExecutionLock {")
+        val settleIndex = startBody.indexOf("awaitSongCancellationSettled(")
         val guardIndex = startBody.indexOf(
             "shouldClearNetworkPolicyPauseAfterCancellationSettled(cancellationSettled)"
         )
         val clearIndex = startBody.indexOf("AudioDownloadManager.clearNetworkPolicyPause")
+        val downloadIndex = startBody.indexOf("AudioDownloadManager.downloadSong(")
+        assertTrue(downloadIndex >= 0)
+        val networkReleaseIndex = startBody
+            .substring(0, downloadIndex)
+            .lastIndexOf("withoutSongExecutionLock {")
 
-        assertTrue(settleIndex >= 0)
+        assertTrue(releaseLockIndex >= 0)
+        assertTrue(settleIndex > releaseLockIndex)
         assertTrue(guardIndex > settleIndex)
         assertTrue(clearIndex > guardIndex)
         assertTrue(startBody.contains("CANCELLATION_SETTLEMENT_PENDING"))
+        assertTrue(startBody.contains("withSongExecutionLock(songKey, releasable = true)"))
+        assertTrue(networkReleaseIndex > settleIndex)
+        assertTrue(downloadIndex > networkReleaseIndex)
     }
 
     @Test
