@@ -81,8 +81,8 @@ class DownloadPipelineScaleBenchmarkTest {
         assertEquals(result.operationCount.toLong() * FIXED_AUDIO_BYTES, result.networkBytes)
         assertEquals(result.operationCount, result.providerCommitCount)
         assertEquals(0, result.queueResidentAfterRun)
-        assertTrue(result.maxQueueResident <= result.operationCount)
-        assertTrue(result.maxMaterializedRequests <= result.operationCount)
+        assertTrue(result.maxQueueResident <= MATERIALIZED_WINDOW)
+        assertTrue(result.maxMaterializedRequests <= MATERIALIZED_WINDOW + 1)
         assertTrue(result.permitHeldAtLeastTransfer)
     }
 
@@ -92,7 +92,7 @@ class DownloadPipelineScaleBenchmarkTest {
         enrichmentDelayMs: Long,
         audioOnly: Boolean
     ): DownloadPipelineBenchmarkResult {
-        val queue = DeferredDownloadScheduleQueue(maxRequests = operationCount.coerceAtLeast(1))
+        val queue = DeferredDownloadScheduleQueue(maxRequests = MATERIALIZED_WINDOW)
         val requests = (0 until operationCount).map { index ->
             DownloadExecutionRequest(
                 operationId = "benchmark-$operationCount-$networkLanes-$audioOnly-$index",
@@ -109,8 +109,15 @@ class DownloadPipelineScaleBenchmarkTest {
                 artifactLeaseId = "benchmark-lease-$index"
             )
         }
-        requests.forEach(queue::enqueue)
-        val maxQueueResident = queue.size()
+        var nextEnqueueIndex = 0
+        var maxQueueResident = 0
+        fun fillMaterializedWindow() {
+            while (nextEnqueueIndex < requests.size && queue.size() < MATERIALIZED_WINDOW) {
+                queue.enqueue(requests[nextEnqueueIndex++])
+                maxQueueResident = maxOf(maxQueueResident, queue.size())
+            }
+        }
+        fillMaterializedWindow()
         var virtualNowNs = 0L
         val collector = DownloadOperationTimingCollector(
             nowNs = { virtualNowNs },
@@ -139,6 +146,7 @@ class DownloadPipelineScaleBenchmarkTest {
             assertEquals(expectedRequest.operationId, request.operationId)
             queue.remove(request)
             maxMaterializedRequests = maxOf(maxMaterializedRequests, queue.size() + 1)
+            fillMaterializedWindow()
             val token = requireNotNull(
                 collector.begin(request.operationId, attemptId = 1L)
             )
@@ -384,6 +392,8 @@ class DownloadPipelineScaleBenchmarkTest {
 
     private companion object {
         private const val PUMP_PAGE_SIZE = 64
+        private const val DISPATCH_WINDOW = 8
+        private const val MATERIALIZED_WINDOW = DISPATCH_WINDOW * 2
         private const val CORE_COMMIT_LANES = 2
         private const val ENRICHMENT_LANES = 2
         private const val BACKEND_START_MS = 1L
