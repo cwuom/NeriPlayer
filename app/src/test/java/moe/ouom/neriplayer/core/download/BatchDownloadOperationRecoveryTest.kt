@@ -313,6 +313,12 @@ class BatchDownloadOperationRecoveryTest {
             startBody.indexOf("beginBatchDownloadPresentation(requestedSongs)") <
                 startBody.indexOf("scope.launch")
         )
+        assertTrue(startBody.contains("seedInitialBatchDownloadPresentation"))
+        assertTrue(startBody.contains("removeBatchDownloadPresentationMembers"))
+        assertTrue(
+            startBody.indexOf("beginBatchDownloadPresentation(requestedSongs)") <
+                startBody.indexOf("openDownloadAdmissionTicketForStableKeysOrNull")
+        )
         assertTrue(preparationBody.contains("pendingSongs.lastOrNull"))
         assertFalse(preparationBody.contains("BATCH_DOWNLOAD_EARLY_HANDOFF_LIMIT"))
         val earlyHandoffIndex = preparationBody.indexOf(
@@ -324,6 +330,37 @@ class BatchDownloadOperationRecoveryTest {
         assertTrue(
             earlyHandoffIndex < batchSchedulingIndex
         )
+    }
+
+    @Test
+    fun `finalization recovery reuses one snapshot and accepts formal audio`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val recoveryBody = methodBody(source, "findPendingAudioForFinalization")
+        val snapshotBody = methodBody(source, "loadFinalizationRecoverySnapshot")
+
+        assertTrue(recoveryBody.contains("resolveCoreRecoveryAudioCandidate"))
+        assertTrue(recoveryBody.contains("allowFormalAudio = true"))
+        assertTrue(recoveryBody.contains("loadFinalizationRecoverySnapshot"))
+        assertTrue(source.contains("FINALIZATION_RECOVERY_SNAPSHOT_TTL_MS"))
+        assertTrue(source.contains("finalizationRecoverySnapshotMutex"))
+        assertTrue(snapshotBody.contains("cache.forceRefreshed"))
+        assertTrue(snapshotBody.contains("!forceRefresh || cache.forceRefreshed"))
+        assertTrue(snapshotBody.contains("allowFreshCacheReuse"))
+        assertTrue(snapshotBody.contains("includeMetadataLessAudioForLegacyUpgrade = true"))
+        assertTrue(recoveryBody.contains("preferredAudioReference"))
+        assertTrue(source.contains("downloadedSongCatalogIndex.find(song)"))
+        assertTrue(recoveryBody.contains("snapshot.audioEntriesByLookupKey"))
+        assertTrue(source.contains("return !audio.isDirectory"))
+        assertTrue(source.contains("tryFinalizePreparedBatchArtifact"))
+        assertTrue(
+            source.indexOf("tryFinalizePreparedBatchArtifact(session, song, preparedArtifact)") <
+                source.indexOf("session.enqueue(song, attemptId, preparedArtifact.operationId)")
+        )
+        assertTrue(source.contains("recoverPostCoreDownloadOperation"))
+        assertTrue(source.contains("findDownloadedAudioIncludingMetadataLess"))
+        assertTrue(source.contains("snapshot = downloadLibrarySnapshot"))
     }
 
     @Test
@@ -386,6 +423,32 @@ class BatchDownloadOperationRecoveryTest {
         assertTrue(recoveryBody.contains("shouldRehandoffRecoveredDownloadOperation("))
         assertTrue(recoveryBody.contains("DownloadExecutionRoomStore.isStopped("))
         assertTrue(recoveryBody.contains("DownloadExecutionHosts.default"))
+        assertTrue(recoveryBody.contains("var recoveredPostCore = false"))
+        assertTrue(recoveryBody.contains("recoverPostCoreDownloadOperation("))
+        assertTrue(
+            recoveryBody.indexOf("recoverPostCoreDownloadOperation(") <
+                recoveryBody.indexOf("DownloadExecutionHosts.default.schedule(")
+        )
+    }
+
+    @Test
+    fun `post core recovery retries when durable completion cannot be confirmed`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val executeBody = methodBody(source, "executeDownloadOperation")
+        val recoveryBody = methodBody(source, "recoverPostCoreDownloadOperation")
+        val artifactBody = methodBody(source, "claimAndPrepareBatchArtifact")
+
+        assertTrue(executeBody.contains("return DownloadExecutionResult.Retry"))
+        assertTrue(recoveryBody.contains("currentStateAnyRoot("))
+        assertTrue(recoveryBody.contains("isDownloadFinalizationDurablySettled("))
+       assertTrue(recoveryBody.contains("matchingCompletedTask"))
+       assertTrue(recoveryBody.contains("settleAndRemoveRecoveredTask"))
+        assertTrue(source.contains("removeDownloadTask"))
+        assertTrue(recoveryBody.contains("promoteStatus = durablePostCore"))
+       assertTrue(source.contains("audioEntriesWithoutMetadata"))
+       assertTrue(artifactBody.contains("attemptId == null && !canFinalizePreparedArtifact"))
     }
 
     @Test

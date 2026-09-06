@@ -64,6 +64,7 @@ import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLook
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadManagedAudioPolicy
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.metadata.resolveCreatedAtConfidence
 import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationCopyWorker
@@ -158,7 +159,6 @@ import moe.ouom.neriplayer.core.download.storage.backend.cleanupTerminalTemporar
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
-import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndex
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexEntryFactory
@@ -1055,9 +1055,48 @@ internal object ManagedDownloadStorage {
         val metadataByAudioName = snapshot?.metadataByAudioName ?: return null
         if (audio.isPendingAudioWrite) {
             snapshot.pendingMetadataByAudioName[audio.logicalName]?.let { return it }
+            snapshot.pendingMetadataByAudioName.entries.firstOrNull { (name, _) ->
+                ManagedDownloadTreeNaming.canonicalLookupName(name) ==
+                    ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
+            }?.value?.let { return it }
         }
         return metadataByAudioName[audio.name]
             ?: metadataByAudioName[audio.logicalName]
+            ?: metadataByAudioName.entries.firstOrNull { (name, _) ->
+                ManagedDownloadTreeNaming.canonicalLookupName(name) ==
+                    ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
+                    ManagedDownloadTreeNaming.canonicalLookupName(name) ==
+                        ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
+            }?.value
+            ?: metadataByAudioName.values.firstOrNull { metadata ->
+                metadataMatchesStoredAudio(metadata, audio)
+            }
+    }
+
+    private fun metadataMatchesStoredAudio(
+        metadata: DownloadedAudioMetadata,
+        audio: StoredEntry
+    ): Boolean {
+        val metadataFileName = metadata.audioFileName
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        if (metadataFileName != null) {
+            val canonicalMetadataName = ManagedDownloadTreeNaming.canonicalLookupName(
+                metadataFileName
+            )
+            if (
+                canonicalMetadataName == ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
+                    canonicalMetadataName ==
+                    ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
+            ) {
+                return true
+            }
+        }
+        val metadataReference = metadata.mediaUri
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        return metadataReference != null &&
+            metadataReference in setOf(audio.reference, audio.mediaUri, audio.localFilePath)
     }
 
     data class DownloadedLyricsBundle(
@@ -3867,6 +3906,18 @@ internal object ManagedDownloadStorage {
         return findAudioEntry(snapshot, song)
     }
 
+    /** 批量收敛还要看没有 metadata 的正式音频, 但只接受当前歌曲的严格文件名候选 */
+    internal fun findDownloadedAudioIncludingMetadataLess(
+        snapshot: DownloadLibrarySnapshot,
+        song: SongItem
+    ): StoredEntry? {
+        return findAudioEntry(snapshot, song)
+            ?: ManagedDownloadStorageLookup.findAudioEntry(
+                audioEntries = snapshot.audioEntriesWithoutMetadata,
+                baseNames = candidateManagedDownloadBaseNames(song, settings.fileNameTemplate)
+            )
+    }
+
     internal fun findPendingDownloadedAudio(
         snapshot: DownloadLibrarySnapshot,
         song: SongItem
@@ -4783,7 +4834,9 @@ internal object ManagedDownloadStorage {
             .filter(StoredEntry::isPendingAudioWrite)
             .distinctBy(StoredEntry::reference)
         val pendingAudioLogicalNames = pendingAudioEntries
-            .mapTo(hashSetOf(), StoredEntry::logicalName)
+            .mapTo(hashSetOf()) { entry ->
+                ManagedDownloadTreeNaming.canonicalLookupName(entry.logicalName)
+            }
         val audioEntries = rootEntries.filter {
             !it.isPendingAudioWrite && it.extension in audioExtensions
         }
@@ -4798,7 +4851,8 @@ internal object ManagedDownloadStorage {
             !ManagedDownloadTreeNaming.isPendingMetadataName(
                 actualName = entry.name,
                 audioName = audioName
-            ) || audioName in pendingAudioLogicalNames
+            ) || ManagedDownloadTreeNaming.canonicalLookupName(audioName) in
+                pendingAudioLogicalNames
         }
         val metadataEntriesByAudioName = metadataEntries
             .mapNotNull { entry ->
@@ -5110,10 +5164,16 @@ internal object ManagedDownloadStorage {
         return shouldIndexMetadataLessAudio(settings.configuredDirectoryUri)
     }
 
-    suspend fun findMetadataForAudio(context: Context, audio: StoredEntry): StoredEntry? = withContext(Dispatchers.IO) {
+    suspend fun findMetadataForAudio(context: Context, audio: StoredEntry): StoredEntry? =
+        withContext(Dispatchers.IO) {
         val snapshot = resolveSnapshotForIndexedLookup(context)
             ?: buildDownloadLibrarySnapshotBlocking(context)
         snapshot.metadataEntriesByAudioName[audio.logicalName]
+            ?: snapshot.metadataEntriesByAudioName.entries.firstOrNull { (name, _) ->
+                val canonicalName = ManagedDownloadTreeNaming.canonicalLookupName(name)
+                canonicalName == ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
+                    canonicalName == ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
+            }?.value
             ?: findMetadataByDirectLookup(context, audio)
     }
 
@@ -5164,6 +5224,11 @@ internal object ManagedDownloadStorage {
     ): StoredEntry? {
         val snapshot = rootOverride?.let { null } ?: resolveSnapshotForIndexedLookup(context)
         return snapshot?.metadataEntriesByAudioName?.get(audio.logicalName)
+            ?: snapshot?.metadataEntriesByAudioName?.entries?.firstOrNull { (name, _) ->
+                val canonicalName = ManagedDownloadTreeNaming.canonicalLookupName(name)
+                canonicalName == ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
+                    canonicalName == ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
+            }?.value
             ?: findMetadataByDirectLookup(context, audio, rootOverride)
     }
 

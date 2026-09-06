@@ -27,6 +27,17 @@ class DownloadExecutionDurableStatePolicyTest {
     }
 
     @Test
+    fun `shared pump includes resumable core states but not active transfer states`() {
+        assertEquals(
+            DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES +
+                listOf("CORE_COMMITTED", "ASSETS_ENRICHING", "DEGRADED_COMPLETE"),
+            DownloadExecutionRoomStore.PUMP_OPERATION_STATES
+        )
+        assertFalse("RUNNING" in DownloadExecutionRoomStore.PUMP_OPERATION_STATES)
+        assertFalse("COMMITTING" in DownloadExecutionRoomStore.PUMP_OPERATION_STATES)
+    }
+
+    @Test
     fun `core operation states reject retry and cancellation transitions`() {
         val durableStates = listOf(
             "CORE_COMMITTED",

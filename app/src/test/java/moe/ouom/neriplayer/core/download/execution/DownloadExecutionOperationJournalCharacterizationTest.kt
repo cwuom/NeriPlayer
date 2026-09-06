@@ -353,7 +353,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
         val page = entries.values
             .filter { entry ->
                 !entry.userStopped &&
-                    entry.state in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+                    entry.state in DownloadExecutionRoomStore.PUMP_OPERATION_STATES
             }
             .filter { entry -> entry.isAfter(afterCursor) }
             .sortedWith(

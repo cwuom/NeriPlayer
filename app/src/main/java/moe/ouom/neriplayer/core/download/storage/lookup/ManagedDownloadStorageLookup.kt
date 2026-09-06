@@ -189,7 +189,13 @@ internal object ManagedDownloadStorageLookup {
                 audioExtensions.forEach { ext -> add("$baseName.$ext") }
             }
         }
-        val patternCandidates = baseNames.map { baseName ->
+        val canonicalExactCandidates = exactCandidates.mapTo(hashSetOf()) { name ->
+            ManagedDownloadTreeNaming.canonicalLookupName(name)
+        }
+        val canonicalBaseNames = baseNames.map { baseName ->
+            ManagedDownloadTreeNaming.canonicalLookupName(baseName)
+        }
+        val patternCandidates = canonicalBaseNames.map { baseName ->
             Regex("^${Regex.escape(baseName)}(?: \\(\\d+\\))?\\.[A-Za-z0-9]+$")
         }
 
@@ -197,19 +203,33 @@ internal object ManagedDownloadStorageLookup {
             .filterNot(ManagedDownloadStorage.StoredEntry::isDirectory)
             .filter { entry ->
                 entry.extension in audioExtensions && (
-                    entry.name in exactCandidates ||
-                        patternCandidates.any { it.matches(entry.name) }
+                    ManagedDownloadTreeNaming.canonicalLookupName(entry.name) in
+                        canonicalExactCandidates ||
+                        patternCandidates.any {
+                            it.matches(
+                                ManagedDownloadTreeNaming.canonicalLookupName(entry.name)
+                            )
+                        }
                     )
             }
             .minWithOrNull(
                 compareBy(
-                    { entry -> if (entry.name in exactCandidates) 0 else 1 },
                     { entry ->
-                        baseNames.asSequence()
+                        if (ManagedDownloadTreeNaming.canonicalLookupName(entry.name) in
+                            canonicalExactCandidates
+                        ) {
+                            0
+                        } else {
+                            1
+                        }
+                    },
+                    { entry ->
+                        canonicalBaseNames.asSequence()
                             .flatMap { baseName ->
                                 audioExtensions.asSequence().mapNotNull { extension ->
                                     ManagedDownloadTreeNaming.providerNumberedNameOrdinal(
-                                        actualName = entry.name,
+                                        actualName = ManagedDownloadTreeNaming
+                                            .canonicalLookupName(entry.name),
                                         expectedName = "$baseName.$extension"
                                     )
                                 }
@@ -230,20 +250,23 @@ internal object ManagedDownloadStorageLookup {
         baseNames: List<String>
     ): ManagedDownloadStorage.StoredEntry? {
         val normalizedBaseNames = baseNames
-            .map(String::trim)
+            .map { ManagedDownloadTreeNaming.canonicalLookupName(it.trim()) }
             .filter(String::isNotBlank)
             .distinct()
         if (normalizedBaseNames.isEmpty()) return null
 
         fun matchOrdinal(logicalName: String): Int? {
+            val canonicalLogicalName = ManagedDownloadTreeNaming.canonicalLookupName(logicalName)
             return normalizedBaseNames.asSequence()
                 .flatMap { baseName ->
                     audioExtensions.asSequence().mapNotNull { extension ->
-                        val expectedName = "$baseName.$extension"
+                        val expectedName = ManagedDownloadTreeNaming.canonicalLookupName(
+                            "$baseName.$extension"
+                        )
                         when {
-                            logicalName.equals(expectedName, ignoreCase = true) -> 0
+                            canonicalLogicalName == expectedName -> 0
                             else -> ManagedDownloadTreeNaming.providerNumberedNameOrdinal(
-                                actualName = logicalName,
+                                actualName = canonicalLogicalName,
                                 expectedName = expectedName
                             )
                                 ?.plus(1)
@@ -325,12 +348,33 @@ internal object ManagedDownloadStorageLookup {
     }
 
     private fun metadataForEntry(
-        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
-        entry: ManagedDownloadStorage.StoredEntry
-    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
-        return metadataByAudioName[entry.name]
-            ?: metadataByAudioName[entry.logicalName]
-    }
+    metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+    entry: ManagedDownloadStorage.StoredEntry
+): ManagedDownloadStorage.DownloadedAudioMetadata? {
+    return metadataByAudioName[entry.name]
+        ?: metadataByAudioName[entry.logicalName]
+        ?: metadataByAudioName.entries.firstOrNull { (name, _) ->
+            ManagedDownloadTreeNaming.canonicalLookupName(name) ==
+                ManagedDownloadTreeNaming.canonicalLookupName(entry.name) ||
+                ManagedDownloadTreeNaming.canonicalLookupName(name) ==
+                ManagedDownloadTreeNaming.canonicalLookupName(entry.logicalName)
+        }?.value
+        ?: metadataByAudioName.values.firstOrNull { metadata ->
+            val metadataFileName = metadata.audioFileName
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+            val fileNameMatches = metadataFileName != null &&
+                (ManagedDownloadTreeNaming.canonicalLookupName(metadataFileName) ==
+                    ManagedDownloadTreeNaming.canonicalLookupName(entry.name) ||
+                    ManagedDownloadTreeNaming.canonicalLookupName(metadataFileName) ==
+                    ManagedDownloadTreeNaming.canonicalLookupName(entry.logicalName))
+            val metadataReference = metadata.mediaUri
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+            fileNameMatches || metadataReference != null &&
+                metadataReference in setOf(entry.reference, entry.mediaUri, entry.localFilePath)
+        }
+}
 
     private fun findUniqueLegacyLocalAudioEntry(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
@@ -348,11 +392,15 @@ internal object ManagedDownloadStorageLookup {
             .filter { entry ->
                 baseNames.any { baseName ->
                     audioExtensions.any { extension ->
-                        val expectedName = "$baseName.$extension"
+                        val expectedName = ManagedDownloadTreeNaming.canonicalLookupName(
+                            "$baseName.$extension"
+                        )
                         listOf(entry.name, entry.logicalName).any { actualName ->
-                            actualName.equals(expectedName, ignoreCase = true) ||
+                            val canonicalActualName = ManagedDownloadTreeNaming
+                                .canonicalLookupName(actualName)
+                            canonicalActualName == expectedName ||
                                 ManagedDownloadTreeNaming.providerNumberedNameOrdinal(
-                                    actualName = actualName,
+                                    actualName = canonicalActualName,
                                     expectedName = expectedName
                                 ) != null
                         }

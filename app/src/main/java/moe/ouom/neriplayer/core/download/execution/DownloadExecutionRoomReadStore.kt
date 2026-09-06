@@ -323,7 +323,7 @@ internal object DownloadExecutionRoomReadStore {
         val (headers, decodedRequests) = database.withTransaction {
             val dao = database.downloadOperationDao()
             val headers = dao.findSchedulableForPumpAfterCursorHeaders(
-                states = DownloadExecutionRoomStore.Access.REUSABLE_OPERATION_STATES,
+                states = DownloadExecutionRoomStore.Access.PUMP_OPERATION_STATES,
                 afterQueueOrder = afterCursor?.queueOrder,
                 afterUpdatedAtMs = afterCursor?.updatedAtMs,
                 afterOperationId = afterCursor?.operationId,

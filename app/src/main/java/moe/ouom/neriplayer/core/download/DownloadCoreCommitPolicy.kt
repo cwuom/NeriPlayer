@@ -109,6 +109,24 @@ internal fun requiresDownloadFinalizationRecovery(state: String?): Boolean {
     )
 }
 
+/** 只有持久化状态越过 core 收尾边界后，恢复流程才能停止重试 */
+internal fun isDownloadFinalizationDurablySettled(
+    operationState: String?,
+    artifactState: String?
+): Boolean {
+    return operationState in setOf(
+        "COMPLETED",
+        "FINALIZED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE",
+        "COMPLETE"
+    ) || artifactState in setOf(
+        "FINALIZED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
+    )
+}
+
 internal fun requiresFinalizedPublicationRecovery(
     metadataFinalized: Boolean?,
     operationState: String?,

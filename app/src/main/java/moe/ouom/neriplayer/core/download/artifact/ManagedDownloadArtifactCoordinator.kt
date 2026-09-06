@@ -1078,7 +1078,8 @@ internal class ManagedDownloadArtifactCoordinator {
         val snapshot = runCatching {
             ManagedDownloadStorage.buildDownloadLibrarySnapshot(
                 context = context,
-                forceRefresh = true
+                forceRefresh = true,
+                includeMetadataLessAudioForLegacyUpgrade = true
             )
         }.getOrNull() ?: return null
         if (!snapshot.rootEntriesComplete) return null
@@ -1105,7 +1106,8 @@ internal class ManagedDownloadArtifactCoordinator {
         val snapshot = runCatching {
             ManagedDownloadStorage.buildDownloadLibrarySnapshot(
                 context = context,
-                forceRefresh = true
+                forceRefresh = true,
+                includeMetadataLessAudioForLegacyUpgrade = true
             )
         }.getOrNull() ?: return false
         if (!snapshot.rootEntriesComplete) return false
@@ -1135,29 +1137,24 @@ internal class ManagedDownloadArtifactCoordinator {
     private suspend fun loadDiscoverySnapshot(
         context: Context
     ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
-        val cachedSnapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-            context = context,
-            restorePersisted = true
-        )?.takeIf { snapshot -> snapshot.rootEntriesComplete }
-        return cachedSnapshot ?: runCatching {
+        return runCatching {
             ManagedDownloadStorage.buildDownloadLibrarySnapshot(
                 context = context,
-                forceRefresh = true
+                forceRefresh = true,
+                includeMetadataLessAudioForLegacyUpgrade = true
             )
         }.getOrNull()
+            ?.takeIf { snapshot -> snapshot.rootEntriesComplete }
     }
 
     private suspend fun loadLiveFinalizationSnapshot(
         context: Context
     ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
-        val cachedSnapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-            context = context,
-            restorePersisted = false
-        )?.takeIf { snapshot -> snapshot.rootEntriesComplete }
-        return cachedSnapshot ?: runCatching {
+        return runCatching {
             ManagedDownloadStorage.buildDownloadLibrarySnapshot(
                 context = context,
-                forceRefresh = true
+                forceRefresh = true,
+                includeMetadataLessAudioForLegacyUpgrade = true
             )
         }.getOrNull()?.takeIf { snapshot -> snapshot.rootEntriesComplete }
     }
@@ -1261,7 +1258,7 @@ internal class ManagedDownloadArtifactCoordinator {
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         song: SongItem
     ): DiscoveredAudio? {
-        val audio = ManagedDownloadStorage.findDownloadedAudio(snapshot, song)
+        val audio = ManagedDownloadStorage.findDownloadedAudioIncludingMetadataLess(snapshot, song)
             ?: ManagedDownloadStorage.findPendingDownloadedAudio(snapshot, song)
             ?: return null
         val metadata = ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
@@ -1681,7 +1678,11 @@ internal class ManagedDownloadArtifactCoordinator {
 internal fun artifactReconciliationAudioEntries(
     snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
 ): List<ManagedDownloadStorage.StoredEntry> {
-    return (snapshot.audioEntries + snapshot.pendingAudioEntries)
+    return (
+        snapshot.audioEntries +
+            snapshot.audioEntriesWithoutMetadata +
+            snapshot.pendingAudioEntries
+        )
         .distinctBy(ManagedDownloadStorage.StoredEntry::reference)
 }
 

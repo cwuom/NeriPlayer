@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
+import java.text.Normalizer
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationEntryCollector
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationFinalizer
@@ -854,6 +855,34 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `shouldTreatAudioAsManaged normalizes metadata unicode names`() {
+        val composed = "Caf\u00E9 - Song.mp3"
+        val decomposed = Normalizer.normalize(composed, Normalizer.Form.NFD)
+        assertTrue(
+            ManagedDownloadStorage.shouldTreatAudioAsManaged(
+                audioName = decomposed,
+                metadataAudioNames = setOf(composed),
+                coverEntryNames = emptySet(),
+                lyricEntryNames = emptySet(),
+                allowMetadataLessAudio = false
+            )
+        )
+    }
+
+    @Test
+    fun `shouldTreatAudioAsManaged accepts provider numbered metadata audio`() {
+        assertTrue(
+            ManagedDownloadStorage.shouldTreatAudioAsManaged(
+                audioName = "Artist - Song (1).mp3",
+                metadataAudioNames = setOf("Artist - Song.mp3"),
+                coverEntryNames = emptySet(),
+                lyricEntryNames = emptySet(),
+                allowMetadataLessAudio = false
+            )
+        )
+    }
+
+    @Test
     fun `shouldTreatAudioAsManaged keeps legacy sidecar backed audio in custom directory`() {
         assertTrue(
             ManagedDownloadStorage.shouldTreatAudioAsManaged(
@@ -969,6 +998,27 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertFalse(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers copy", "Covers"))
         assertFalse(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers(1)", "Covers"))
         assertFalse(ManagedDownloadStorage.matchesManagedSubdirectoryName("Lyrics (x)", "Lyrics"))
+    }
+
+    @Test
+    fun `tree naming normalizes unicode before provider numbering`() {
+        val expected = "Café.mp3"
+        val decomposed = Normalizer.normalize("Café", Normalizer.Form.NFD)
+
+        assertEquals(
+            2,
+            ManagedDownloadTreeNaming.providerNumberedNameOrdinal(
+                actualName = "$decomposed (2).MP3",
+                expectedName = expected
+            )
+        )
+        assertEquals(
+            0,
+            ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(
+                actualName = Normalizer.normalize("Covers", Normalizer.Form.NFD),
+                desiredName = "Covers"
+            )
+        )
     }
 
     @Test

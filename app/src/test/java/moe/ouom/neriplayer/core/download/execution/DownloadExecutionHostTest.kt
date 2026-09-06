@@ -372,6 +372,44 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `UIDT grace predecessor does not hide a runnable replacement for the same song`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val song = sampleSong().copy(id = 20_001L)
+        val graceBlocked = DownloadExecutionRequest(
+            operationId = "operation-pump-grace-predecessor",
+            song = song
+        )
+        val replacement = DownloadExecutionRequest(
+            operationId = "operation-pump-runnable-replacement",
+            song = song
+        )
+        store.save(context, graceBlocked)
+        store.save(context, replacement)
+        val executedOperationIds = mutableListOf<String>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, request ->
+                executedOperationIds += request.operationId
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+            downloadParallelismProvider = { 1 },
+            pendingUidtGraceDelayProvider = { _, request ->
+                if (request.operationId == graceBlocked.operationId) 1L else 0L
+            }
+        )
+
+        assertEquals(DownloadExecutionPumpResult.ContinueSoon, host.pump(context))
+        assertEquals(listOf(replacement.operationId), executedOperationIds)
+        assertEquals(
+            "COMPLETED",
+            store.currentState(context, replacement.operationId)
+        )
+    }
+
+    @Test
     fun `download notification ids are shared across operations and backends`() {
         val firstOperation = "operation-notification-01"
         val secondOperation = "operation-notification-02"
@@ -1105,6 +1143,22 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `deferred scheduler cannot lose an enqueue while its worker exits`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadExecutionHost.kt"
+        ).readText()
+        val enqueueBody = methodBody(source, "enqueueDeferredSchedule")
+        val triggerBody = methodBody(source, "triggerDeferredSchedules")
+
+        assertTrue(source.contains("private val deferredSchedulingLock = Any()"))
+        assertTrue(enqueueBody.contains("withDeferredSchedulingLock"))
+        assertTrue(triggerBody.contains("synchronized(deferredSchedulingLock)"))
+        assertTrue(triggerBody.contains("deferredSchedulingRunning.set(false)"))
+        assertTrue(triggerBody.contains("!deferredRequests.isEmpty()"))
+    }
+
+    @Test
     fun `active clear fence rejects scheduling and execution before entry point`() = runTest {
         val store = DownloadExecutionOperationStore { testJournal }
         val context = mockContext(activeClearFence = true)
@@ -1592,6 +1646,7 @@ class DownloadExecutionHostTest {
         val signatureStart = sequenceOf(
             "override suspend fun $methodName(",
             "private suspend fun $methodName(",
+            "private fun $methodName(",
             "suspend fun $methodName("
         ).map(source::indexOf).firstOrNull { it >= 0 }
             ?: error("method not found: $methodName")

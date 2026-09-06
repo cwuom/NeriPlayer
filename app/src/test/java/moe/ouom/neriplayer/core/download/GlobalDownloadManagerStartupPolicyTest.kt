@@ -2392,6 +2392,65 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `fresh start releases post core cancellation fence while generic cleanup stays conservative`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val freshStartBody = managerSource.substringAfter(
+            "private suspend fun clearSongCancellationForFreshStart("
+        ).substringBefore("private suspend fun awaitCancellationOperationSnapshot(")
+        assertTrue(freshStartBody.contains("clearUserStopForFreshStart("))
+        assertFalse(freshStartBody.contains("clearUserStopForStableKeys("))
+
+        val daoSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/data/local/database/dao/DownloadOperationDao.kt"
+        ).readText()
+        val freshStartDaoRegion = daoSource.substringAfter(
+            "suspend fun clearUserStopForStableKeysAnyLibrary"
+        ).substringBefore("suspend fun prepareExplicitResume(")
+        assertTrue(daoSource.contains("clearUserStopForFreshStartAnyLibrary"))
+        assertTrue(
+            freshStartDaoRegion.contains("'CORE_COMMITTED'")
+        )
+        assertTrue(freshStartDaoRegion.contains("stop_requested_by_user = 1"))
+        assertTrue(
+            daoSource.contains("last_error_code IS NULL OR last_error_code != 'USER_CANCELLED'")
+        )
+    }
+
+    @Test
+    fun `fresh start keeps captured cancellation operations fenced and rehands released core work`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val freshStartBody = managerSource.substringAfter(
+            "private suspend fun clearSongCancellationForFreshStart("
+        ).substringBefore("private suspend fun awaitCancellationOperationSnapshot(")
+        assertTrue(freshStartBody.contains("val trackedCancellationKeys"))
+        assertTrue(freshStartBody.contains("val cancellationContextKeys"))
+        assertTrue(
+            freshStartBody.contains("songKey in cancellationContextKeys")
+        )
+        assertTrue(
+            freshStartBody.contains("cancellationForceNewSongKeys.add(songKey)")
+        )
+        assertTrue(freshStartBody.contains("val resumableKeys = keys - trackedCancellationKeys"))
+        assertTrue(freshStartBody.contains("stableKeys = resumableKeys"))
+
+        val batchStartBody = managerSource.substringAfter(
+            "private fun startBatchDownload("
+        ).substringBefore("private fun startBatchDownloadConfirmed(")
+        val clearIndex = batchStartBody.indexOf("clearSongCancellationForFreshStart(")
+        val rereadIndex = batchStartBody.indexOf("postClearInFlightOperationsBySongKey")
+        val recoveryIndex = batchStartBody.indexOf("existingRequestsToRecover = (")
+        assertTrue(clearIndex >= 0)
+        assertTrue(rereadIndex > clearIndex)
+        assertTrue(recoveryIndex > rereadIndex)
+        assertTrue(batchStartBody.contains("val stageCandidateSongs"))
+        assertTrue(batchStartBody.contains("postClearInFlightSongKeys.isEmpty()"))
+    }
+
+    @Test
     fun `clear owner capture uses identity projection before storage cleanup`() {
         val managerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
@@ -4847,7 +4906,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val recoveryBody = source.substringAfter(
-            "val metadataLessPendingCandidates = candidates.values"
+            "val metadataLessCandidates = candidates.values"
         ).substringBefore("return CoreRecoveryAudioCandidate(")
 
         assertTrue(recoveryBody.contains("singleOrNull()"))

@@ -208,6 +208,40 @@ class DownloadCoreCommitPolicyTest {
     }
 
     @Test
+    fun `recovery stops only after operation or artifact is durably settled`() {
+        assertTrue(
+            isDownloadFinalizationDurablySettled(
+                operationState = "CORE_COMMITTED",
+                artifactState = "FINALIZED"
+            )
+        )
+        assertTrue(
+            isDownloadFinalizationDurablySettled(
+                operationState = "ASSETS_ENRICHING",
+                artifactState = "CORE_COMMITTED"
+            )
+        )
+        assertTrue(
+            isDownloadFinalizationDurablySettled(
+                operationState = "DEGRADED_COMPLETE",
+                artifactState = "DEGRADED_COMPLETE"
+            )
+        )
+        assertFalse(
+            isDownloadFinalizationDurablySettled(
+                operationState = "CORE_COMMITTED",
+                artifactState = "CORE_COMMITTED"
+            )
+        )
+        assertFalse(
+            isDownloadFinalizationDurablySettled(
+                operationState = "COMMITTING",
+                artifactState = "REPAIR_REQUIRED"
+            )
+        )
+    }
+
+    @Test
     fun `final metadata republishes when operation or artifact publication was interrupted`() {
         assertTrue(
             requiresFinalizedPublicationRecovery(

@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.lookup
 
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 
 internal object ManagedDownloadManagedAudioPolicy {
     fun shouldTreatAudioAsManaged(
@@ -11,7 +12,10 @@ internal object ManagedDownloadManagedAudioPolicy {
         lyricEntryNames: Set<String>,
         allowMetadataLessAudio: Boolean
     ): Boolean {
-        if (audioName in metadataAudioNames) {
+        if (metadataAudioNames.any { metadataName ->
+                matchesStoredName(audioName, metadataName)
+            }
+        ) {
             return true
         }
         if (allowMetadataLessAudio) {
@@ -22,24 +26,34 @@ internal object ManagedDownloadManagedAudioPolicy {
         )
         val hasManagedCover = ManagedDownloadStorageNaming
             .buildSidecarCandidateNames(candidateBaseNames)
-            .any(coverEntryNames::contains)
+            .any { candidate ->
+                coverEntryNames.any { storedName ->
+                    matchesStoredName(storedName, candidate)
+                }
+            }
         if (hasManagedCover) {
             return true
         }
-        return ManagedDownloadStorageNaming.buildLyricCandidateNames(
-            songId = null,
-            candidateBaseNames = candidateBaseNames,
-            kind = ManagedDownloadStorageNaming.LyricKind.ORIGINAL
-        ).any(lyricEntryNames::contains) ||
+        return ManagedDownloadStorageNaming.LyricKind.entries.any { kind ->
             ManagedDownloadStorageNaming.buildLyricCandidateNames(
                 songId = null,
                 candidateBaseNames = candidateBaseNames,
-                kind = ManagedDownloadStorageNaming.LyricKind.TRANSLATED
-            ).any(lyricEntryNames::contains) ||
-            ManagedDownloadStorageNaming.buildLyricCandidateNames(
-                songId = null,
-                candidateBaseNames = candidateBaseNames,
-                kind = ManagedDownloadStorageNaming.LyricKind.ROMANIZED
-            ).any(lyricEntryNames::contains)
+                kind = kind
+            ).any { candidate ->
+                lyricEntryNames.any { storedName ->
+                    matchesStoredName(storedName, candidate)
+                }
+            }
+        }
+    }
+
+    private fun matchesStoredName(actualName: String, expectedName: String): Boolean {
+        val canonicalActualName = ManagedDownloadTreeNaming.canonicalLookupName(actualName)
+        val canonicalExpectedName = ManagedDownloadTreeNaming.canonicalLookupName(expectedName)
+        return canonicalActualName == canonicalExpectedName ||
+            ManagedDownloadTreeNaming.providerNumberedNameOrdinal(
+                actualName = canonicalActualName,
+                expectedName = canonicalExpectedName
+            ) != null
     }
 }

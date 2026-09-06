@@ -19,7 +19,9 @@ internal data class BatchDownloadPresentationState(
     val id: Long,
     val memberAttemptIds: Map<String, Long?>,
     val terminalStates: Map<String, BatchDownloadTerminalState> = emptyMap(),
-    val maximumObservedFractions: Map<String, Float> = emptyMap()
+    val maximumObservedFractions: Map<String, Float> = emptyMap(),
+    /** 当前目录已经确认完成的成员, 等待真实传输时再清除 */
+    val initiallyCompletedSongKeys: Set<String> = emptySet()
 )
 
 internal enum class BatchDownloadTerminalState {
@@ -174,7 +176,8 @@ internal fun mergeBatchDownloadPresentations(
                         attemptId = attemptId,
                         terminalState = presentation.terminalStates[songKey],
                         maximumObservedFraction =
-                            presentation.maximumObservedFractions[songKey] ?: 0f
+                            presentation.maximumObservedFractions[songKey] ?: 0f,
+                        initiallyCompleted = songKey in presentation.initiallyCompletedSongKeys
                     )
             }
         }
@@ -186,6 +189,7 @@ internal fun mergeBatchDownloadPresentations(
     val memberAttemptIds = linkedMapOf<String, Long?>()
     val terminalStates = linkedMapOf<String, BatchDownloadTerminalState>()
     val maximumObservedFractions = linkedMapOf<String, Float>()
+    val initiallyCompletedSongKeys = linkedSetOf<String>()
     membersBySongKey.forEach { (songKey, members) ->
         val selected = selectBatchPresentationMember(
             members = members,
@@ -194,6 +198,9 @@ internal fun mergeBatchDownloadPresentations(
         memberAttemptIds[songKey] = selected.attemptId
         selected.terminalState?.let { terminalState ->
             terminalStates[songKey] = terminalState
+        }
+        if (selected.initiallyCompleted) {
+            initiallyCompletedSongKeys += songKey
         }
         mergedBatchPresentationMaximumObservedFraction(selected, members)
             .coerceIn(0f, 1f)
@@ -204,7 +211,8 @@ internal fun mergeBatchDownloadPresentations(
         id = presentations.maxOf(BatchDownloadPresentationState::id),
         memberAttemptIds = memberAttemptIds,
         terminalStates = terminalStates,
-        maximumObservedFractions = maximumObservedFractions
+        maximumObservedFractions = maximumObservedFractions,
+        initiallyCompletedSongKeys = initiallyCompletedSongKeys
     )
 }
 
@@ -212,7 +220,8 @@ private data class BatchPresentationMember(
     val presentationId: Long,
     val attemptId: Long?,
     val terminalState: BatchDownloadTerminalState?,
-    val maximumObservedFraction: Float
+    val maximumObservedFraction: Float,
+    val initiallyCompleted: Boolean
 )
 
 private fun selectBatchPresentationMember(

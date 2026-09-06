@@ -236,6 +236,41 @@ class DownloadProgressPresentationTest {
     }
 
     @Test
+    fun `batch progress counts catalog completed members before task hydration`() {
+        val first = song(1L)
+        val second = song(2L)
+        val third = song(3L)
+        val presentation = BatchDownloadPresentationState(
+            id = 23L,
+            memberAttemptIds = mapOf(
+                first.stableKey() to null,
+                second.stableKey() to null,
+                third.stableKey() to null
+            ),
+            terminalStates = mapOf(
+                first.stableKey() to BatchDownloadTerminalState.COMPLETED,
+                second.stableKey() to BatchDownloadTerminalState.COMPLETED
+            ),
+            maximumObservedFractions = mapOf(
+                first.stableKey() to 1f,
+                second.stableKey() to 1f
+            ),
+            initiallyCompletedSongKeys = setOf(
+                first.stableKey(),
+                second.stableKey()
+            )
+        )
+
+        val aggregate = requireNotNull(aggregateBatchDownloadProgress(presentation, emptyList()))
+
+        assertEquals(3, aggregate.totalSongs)
+        assertEquals(2, aggregate.completedSongs)
+        assertEquals(66, aggregate.percentage)
+        assertEquals(0, aggregate.activeSongCount)
+        assertTrue(aggregate.hasPendingSongs)
+    }
+
+    @Test
     fun `finalizing transfer remains pending without being counted as a completed song`() {
         val selected = song(1L)
         val presentation = BatchDownloadPresentationState(
@@ -403,7 +438,8 @@ class DownloadProgressPresentationTest {
             id = 1L,
             memberAttemptIds = mapOf(selected.stableKey() to 1L),
             terminalStates = mapOf(selected.stableKey() to BatchDownloadTerminalState.COMPLETED),
-            maximumObservedFractions = mapOf(selected.stableKey() to 1f)
+            maximumObservedFractions = mapOf(selected.stableKey() to 1f),
+            initiallyCompletedSongKeys = setOf(selected.stableKey())
         )
         val retryBatch = BatchDownloadPresentationState(
             id = 2L,

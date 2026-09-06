@@ -7,8 +7,95 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.text.Normalizer
 
 class ManagedDownloadStorageLookupTest {
+
+    @Test
+    fun `audio lookup normalizes composed and decomposed unicode names`() {
+        val composedBaseName = "君がいる世界へ - 鹿乃 -  - netease"
+        val decomposedBaseName = Normalizer.normalize(
+            composedBaseName,
+            Normalizer.Form.NFD
+        )
+        val expected = storedEntry(
+            name = decomposedBaseName + ".mp3",
+            reference = "/music/" + decomposedBaseName + ".mp3",
+            mediaUri = "/music/" + decomposedBaseName + ".mp3"
+        )
+
+        assertEquals(
+            expected,
+            ManagedDownloadStorageLookup.findAudioEntry(
+                audioEntries = listOf(expected),
+                baseNames = listOf(composedBaseName)
+            )
+        )
+    }
+
+    @Test
+    fun `snapshot indexes metadata by audio file name when map key differs`() {
+        val audioName =
+            "Stella-rium (弾き語りver.) - 鹿乃 - アルストロメリア - netease.mp3"
+        val audio = storedEntry(
+            name = Normalizer.normalize(audioName, Normalizer.Form.NFD),
+            reference = "/music/stella.audio",
+            mediaUri = "/music/stella.audio"
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "525241128|netease|",
+            audioFileName = audioName,
+            downloadFinalized = true
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(audio),
+            metadataEntries = emptyList(),
+            metadataByAudioName = mapOf("legacy-key.mp3" to metadata),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        assertEquals(
+            listOf(audio),
+            snapshot.audioEntriesByStableKey["525241128|netease|"]
+        )
+        assertEquals(metadata, ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio))
+    }
+
+    @Test
+    fun `metadata less formal audio is recovered by strict candidate name`() {
+        val song = SongItem(
+            id = 525_241_128L,
+            name = "Stella-rium (弾き語りver.)",
+            artist = "鹿乃",
+            album = "アルストロメリア (初回生産限定盤)",
+            albumId = 1L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "525241128"
+        )
+        val formalName =
+            "Stella-rium (弾き語りver.) - 鹿乃 - " +
+                "アルストロメリア (初回生産限定盤) - netease.mp3"
+        val stored = storedEntry(
+            name = Normalizer.normalize(formalName, Normalizer.Form.NFD),
+            reference = "/music/stella-formal.mp3",
+            mediaUri = "/music/stella-formal.mp3"
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(stored),
+            metadataEntries = emptyList(),
+            metadataByAudioName = emptyMap(),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        assertEquals(
+            stored,
+            ManagedDownloadStorage.findDownloadedAudioIncludingMetadataLess(snapshot, song)
+        )
+    }
 
     @Test
     fun `audio lookup accepts numbered duplicate suffix`() {
@@ -376,6 +463,28 @@ class ManagedDownloadStorageLookupTest {
             ManagedDownloadStorageLookup.findPendingAudioEntry(
                 audioEntries = listOf(pending),
                 baseNames = listOf("artist - song")
+            )
+        )
+    }
+
+    @Test
+    fun `pending audio lookup normalizes decomposed logical filename`() {
+        val composedBaseName = "Café - Artist"
+        val decomposedBaseName = Normalizer.normalize(
+            composedBaseName,
+            Normalizer.Form.NFD
+        )
+        val pending = storedEntry(
+            name = "$decomposedBaseName.flac$PENDING_AUDIO_WRITE_MARKER.pending",
+            reference = "/music/cafe-pending.audio",
+            mediaUri = "/music/cafe-pending.audio"
+        )
+
+        assertEquals(
+            pending,
+            ManagedDownloadStorageLookup.findPendingAudioEntry(
+                audioEntries = listOf(pending),
+                baseNames = listOf(composedBaseName)
             )
         )
     }

@@ -22,7 +22,9 @@ internal object ManagedDownloadSnapshotIndex {
             it.isPendingAudioWrite
         }).distinctBy(ManagedDownloadStorage.StoredEntry::reference)
         val pendingAudioNames = normalizedPendingAudioEntries
-            .mapTo(hashSetOf(), ManagedDownloadStorage.StoredEntry::logicalName)
+            .mapTo(hashSetOf()) { entry ->
+                ManagedDownloadTreeNaming.canonicalLookupName(entry.logicalName)
+            }
         val normalizedAudioEntries = audioEntries
             .filterNot(ManagedDownloadStorage.StoredEntry::isPendingAudioWrite)
             .distinctBy(ManagedDownloadStorage.StoredEntry::reference)
@@ -37,7 +39,8 @@ internal object ManagedDownloadSnapshotIndex {
                 !ManagedDownloadTreeNaming.isPendingMetadataName(
                     actualName = entry.name,
                     audioName = audioName
-                ) || audioName in pendingAudioNames
+                ) || ManagedDownloadTreeNaming.canonicalLookupName(audioName) in
+                pendingAudioNames
             }
             .groupBy { it.first }
             .mapValues { (audioName, entries) ->
@@ -52,7 +55,9 @@ internal object ManagedDownloadSnapshotIndex {
         // 孤儿凭据可能来自进程中断，不能让它把可播放的旧歌曲从索引中移除
         // 这里仍需记录未进入 metadataEntriesByAudioName 的孤儿 pending 名称，
         // 否则调用方传入的旧 metadataByAudioName 会把孤儿凭据重新当成正式数据
-        val metadataGroupsByAudioName = metadataEntriesWithAudioNames.groupBy { it.first }
+        val metadataGroupsByAudioName = metadataEntriesWithAudioNames.groupBy { (audioName, _) ->
+            ManagedDownloadTreeNaming.canonicalLookupName(audioName)
+        }
         val pendingMetadataNamesFromEntries = metadataGroupsByAudioName
             .filter { (audioName, entries) ->
                 val hasPending = entries.any { (_, entry) ->
@@ -71,11 +76,16 @@ internal object ManagedDownloadSnapshotIndex {
             }
             .keys
         val normalizedPendingMetadataByAudioName = pendingMetadataByAudioName
-            .filterKeys { audioName -> audioName in pendingAudioNames }
+            .filterKeys { audioName ->
+                ManagedDownloadTreeNaming.canonicalLookupName(audioName) in pendingAudioNames
+            }
         val pendingMetadataNames = pendingMetadataNamesFromEntries +
-            normalizedPendingMetadataByAudioName.keys
+            normalizedPendingMetadataByAudioName.keys.map {
+                ManagedDownloadTreeNaming.canonicalLookupName(it)
+            }
         val normalizedMetadataByAudioName = metadataByAudioName.filterKeys { audioName ->
-            audioName !in pendingMetadataNames || audioName in pendingAudioNames
+            val canonicalAudioName = ManagedDownloadTreeNaming.canonicalLookupName(audioName)
+            canonicalAudioName !in pendingMetadataNames || canonicalAudioName in pendingAudioNames
         }
         val coverEntriesByName = coverEntries.associateBy(ManagedDownloadStorage.StoredEntry::name)
         val lyricEntriesByName = lyricEntries.associateBy(ManagedDownloadStorage.StoredEntry::name)
@@ -87,8 +97,10 @@ internal object ManagedDownloadSnapshotIndex {
 
         normalizedAudioEntries.forEach { entry ->
             // metadata 可能按逻辑文件名保存，索引时要同时接受两种命名
-            val metadata = normalizedMetadataByAudioName[entry.name]
-                ?: normalizedMetadataByAudioName[entry.logicalName]
+            val metadata = metadataForAudioEntry(
+                metadataByAudioName = normalizedMetadataByAudioName,
+                audio = entry
+            )
             if (metadata == null) {
                 audioEntriesWithoutMetadata += entry
                 return@forEach
@@ -143,6 +155,35 @@ internal object ManagedDownloadSnapshotIndex {
             pendingMetadataByAudioName = normalizedPendingMetadataByAudioName
         )
     }
+
+    private fun metadataForAudioEntry(
+    metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+    audio: ManagedDownloadStorage.StoredEntry
+): ManagedDownloadStorage.DownloadedAudioMetadata? {
+    return metadataByAudioName[audio.name]
+        ?: metadataByAudioName[audio.logicalName]
+        ?: metadataByAudioName.entries.firstOrNull { (name, _) ->
+            ManagedDownloadTreeNaming.canonicalLookupName(name) ==
+                ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
+                ManagedDownloadTreeNaming.canonicalLookupName(name) ==
+                    ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
+        }?.value
+        ?: metadataByAudioName.values.firstOrNull { metadata ->
+            val metadataFileName = metadata.audioFileName
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+            val fileNameMatches = metadataFileName != null &&
+                (ManagedDownloadTreeNaming.canonicalLookupName(metadataFileName) ==
+                    ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
+                    ManagedDownloadTreeNaming.canonicalLookupName(metadataFileName) ==
+                    ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName))
+            val metadataReference = metadata.mediaUri
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+            fileNameMatches || metadataReference != null &&
+                metadataReference in setOf(audio.reference, audio.mediaUri, audio.localFilePath)
+        }
+}
 
     fun serializePayload(
         cacheKey: String,

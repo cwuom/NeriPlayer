@@ -1096,6 +1096,22 @@ internal object DownloadExecutionRoomStore {
         } > 0
     }
 
+    suspend fun clearUserStopForFreshStart(
+        context: Context,
+        stableKeys: Collection<String>
+    ): Boolean {
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
+        if (keys.isEmpty()) return false
+        val dao = NeriUserDataDatabase.getInstance(context).downloadOperationDao()
+        val updatedAtMs = System.currentTimeMillis()
+        return keys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
+            dao.clearUserStopForFreshStartAnyLibrary(
+                stableKeys = chunk,
+                updatedAtMs = updatedAtMs
+            )
+        } > 0
+    }
+
     suspend fun prepareExplicitResume(
         context: Context,
         operationId: String,
@@ -1550,6 +1566,9 @@ internal object DownloadExecutionRoomStore {
         "QUEUED",
         "RETRYABLE"
     )
+    /** 共享泵必须覆盖核心写入后的收尾状态，避免延迟调度丢失后永久悬挂 */
+    internal val PUMP_OPERATION_STATES =
+        REUSABLE_OPERATION_STATES + DownloadOperationStateTransitions.resumableCoreWireNames.toList()
     internal val IN_FLIGHT_OPERATION_STATES = listOf(
         "RUNNING",
         "COMMITTING",
@@ -1687,6 +1706,8 @@ internal object DownloadExecutionRoomStore {
             get() = DownloadExecutionRoomStore.PROGRESS_CHECKPOINT_OPERATION_STATES
         internal val REUSABLE_OPERATION_STATES: List<String>
             get() = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+        internal val PUMP_OPERATION_STATES: List<String>
+            get() = DownloadExecutionRoomStore.PUMP_OPERATION_STATES
 
         internal fun requestToJson(request: DownloadExecutionRequest): JSONObject {
             return DownloadExecutionRoomStore.requestToJson(request)

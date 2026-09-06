@@ -856,6 +856,20 @@ internal interface DownloadOperationDao {
         updatedAtMs: Long
     ): Int
 
+    /** 用户明确发起新下载时，解除旧取消栅栏并允许核心收尾重新进入共享泵 */
+    @Query(
+        "UPDATE download_operation SET stop_requested_by_user = 0, " +
+            "last_error_code = CASE WHEN last_error_code = 'USER_CANCELLED' " +
+            "THEN NULL ELSE last_error_code END, " +
+            "updated_at_ms = :updatedAtMs WHERE stable_key IN (:stableKeys) " +
+            "AND state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 1"
+    )
+    suspend fun clearUserStopForFreshStartAnyLibrary(
+        stableKeys: List<String>,
+        updatedAtMs: Long
+    ): Int
+
     @Query(
         "UPDATE download_operation SET state = 'RETRYABLE', " +
             "stop_requested_by_user = 0, updated_at_ms = :updatedAtMs, " +

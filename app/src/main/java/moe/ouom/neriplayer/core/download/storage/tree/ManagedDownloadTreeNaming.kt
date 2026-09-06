@@ -5,6 +5,8 @@ import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_TEMPORARY_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
+import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import java.text.Normalizer
 import java.util.Locale
 
@@ -30,6 +32,17 @@ internal object ManagedDownloadTreeNaming {
 
     fun isExactTreeStoredName(actualName: String?, expectedName: String): Boolean {
         return canonicalName(resolveTreeStoredName(actualName, expectedName)) == canonicalName(expectedName)
+    }
+
+    fun canonicalLookupName(value: String): String {
+        return canonicalName(value)
+    }
+
+    fun logicalAudioName(value: String): String {
+        val markerIndex = value.indexOf(PENDING_AUDIO_WRITE_MARKER)
+        return value.takeIf {
+            markerIndex <= 0 || !ManagedDownloadPendingAudioWriteNames.isArtifactName(value)
+        } ?: value.substring(0, markerIndex)
     }
 
     fun documentCreateMimeType(desiredName: String, mimeType: String): String {
@@ -72,7 +85,7 @@ internal object ManagedDownloadTreeNaming {
     }
 
     fun managedSubdirectoryOrdinal(actualName: String, desiredName: String): Int {
-        if (actualName.equals(desiredName, ignoreCase = true)) {
+        if (canonicalName(actualName) == canonicalName(desiredName)) {
             return 0
         }
         return providerNumberedNameOrdinal(actualName, desiredName) ?: Int.MAX_VALUE
@@ -182,20 +195,22 @@ internal object ManagedDownloadTreeNaming {
     }
 
     fun providerNumberedNameOrdinal(actualName: String, expectedName: String): Int? {
+        val canonicalActualName = canonicalName(actualName)
+        val canonicalExpectedName = canonicalName(expectedName)
         numberedNameOrdinal(
-            actualName = actualName,
-            prefix = "$expectedName (",
+            actualName = canonicalActualName,
+            prefix = "$canonicalExpectedName (",
             suffix = ""
         )?.let { return it }
 
-        val extensionIndex = expectedName.lastIndexOf('.')
-        if (extensionIndex <= 0 || extensionIndex == expectedName.lastIndex) {
+        val extensionIndex = canonicalExpectedName.lastIndexOf('.')
+        if (extensionIndex <= 0 || extensionIndex == canonicalExpectedName.lastIndex) {
             return null
         }
         return numberedNameOrdinal(
-            actualName = actualName,
-            prefix = expectedName.substring(0, extensionIndex) + " (",
-            suffix = expectedName.substring(extensionIndex)
+            actualName = canonicalActualName,
+            prefix = canonicalExpectedName.substring(0, extensionIndex) + " (",
+            suffix = canonicalExpectedName.substring(extensionIndex)
         )
     }
 

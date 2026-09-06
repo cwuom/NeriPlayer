@@ -50,6 +50,8 @@ class DefaultDownloadExecutionHost(
     private val backendOwners = ConcurrentHashMap<String, BackendOwner>()
     private val scheduleOwners = ConcurrentHashMap<String, ScheduleTicket>()
     private val deferredRequests = DeferredDownloadScheduleQueue()
+    /** 把延后队列和运行标记作为一个状态机检查，避免入队与退出检查丢失唤醒 */
+    private val deferredSchedulingLock = Any()
     private val deferredSchedulingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val deferredSchedulingRunning = AtomicBoolean(false)
     /** WorkManager、UIDT 和进程内唤醒可能同时触发泵，统一串行读取和接管队列 */
@@ -338,7 +340,9 @@ class DefaultDownloadExecutionHost(
                 return rejectStaleSchedule(context, request, hostAdmissionAcquired, boundTicket)
             }
             operationIdsBySongKey[songKey] = request.operationId
-            deferredRequests.remove(request)
+            withDeferredSchedulingLock {
+                deferredRequests.remove(request)
+            }
             return DownloadExecutionSchedule.Scheduled(scheduledBackend)
         } catch (error: Throwable) {
             if (!isScheduleTicketCurrent(context, ticket)) {
@@ -487,7 +491,9 @@ class DefaultDownloadExecutionHost(
         } else {
             operationIdsBySongKey.remove(request.song.stableKey(), request.operationId)
         }
-        deferredRequests.remove(request)
+        withDeferredSchedulingLock {
+            deferredRequests.remove(request)
+        }
         val persistedIdentityMatches = ticket?.let {
             it.attemptBound && isPersistedScheduleTicketCurrent(context, it)
         } ?: isPersistedRequestIdentityCurrent(context, request)
@@ -575,7 +581,9 @@ class DefaultDownloadExecutionHost(
             }
         }
 
-        deferredRequests.remove(request)
+        withDeferredSchedulingLock {
+            deferredRequests.remove(request)
+        }
         if (!backendAlreadyScheduled) {
             enqueueDeferredSchedule(
                 context = context,
@@ -752,7 +760,9 @@ class DefaultDownloadExecutionHost(
         synchronized(backendOwnershipLock) {
             backendOwners.remove(normalizedId)
         }
-        deferredRequests.remove(normalizedId)
+        withDeferredSchedulingLock {
+            deferredRequests.remove(normalizedId)
+        }
         WifiBoundDownloadWakeWorker.cancel(appContext, normalizedId)
         val request = operationStore.read(appContext, normalizedId)
         val cancelAccepted = request != null &&
@@ -813,7 +823,9 @@ class DefaultDownloadExecutionHost(
             }
         }
         operationIdsBySongKey.entries.removeIf { entry -> entry.value in normalizedIds }
-        deferredRequests.removeAll(normalizedIds)
+        withDeferredSchedulingLock {
+            deferredRequests.removeAll(normalizedIds)
+        }
         if (idleOperationIds.isNotEmpty()) {
             operationStore.releaseHostAdmissions(appContext, idleOperationIds)
             triggerDeferredSchedules(appContext)
@@ -832,7 +844,11 @@ class DefaultDownloadExecutionHost(
         WifiBoundDownloadWakeWorker.cancelAllOwned(appContext)
         val ownedOperationIds = buildSet {
             addAll(operationIdsBySongKey.values)
-            addAll(deferredRequests.operationIds())
+            addAll(
+                withDeferredSchedulingLock {
+                    deferredRequests.operationIds()
+                }
+            )
             synchronized(executionAdmissionLock) {
                 addAll(hostAdmissionOwners.keys)
             }
@@ -848,7 +864,9 @@ class DefaultDownloadExecutionHost(
             backendOwners.clear()
         }
         operationIdsBySongKey.clear()
-        deferredRequests.clear()
+        withDeferredSchedulingLock {
+            deferredRequests.clear()
+        }
     }
 
     override fun stopForSong(
@@ -1602,8 +1620,7 @@ class DefaultDownloadExecutionHost(
                 if (
                     request.operationId in attemptedOperationIds ||
                         request.song.stableKey() in attemptedStableKeys ||
-                        !observedOperationIds.add(request.operationId) ||
-                        !observedStableKeys.add(request.song.stableKey())
+                        !observedOperationIds.add(request.operationId)
                 ) {
                     return@forEach
                 }
@@ -1611,7 +1628,10 @@ class DefaultDownloadExecutionHost(
                 if (graceDelayMs > 0L) {
                     shortestPendingUidtGraceDelayMs =
                         shortestPendingUidtGraceDelayMs?.coerceAtMost(graceDelayMs) ?: graceDelayMs
-                } else if (candidates.size < capacity) {
+                } else if (
+                    candidates.size < capacity &&
+                        observedStableKeys.add(request.song.stableKey())
+                ) {
                     candidates += request
                 }
             }
@@ -1689,12 +1709,18 @@ class DefaultDownloadExecutionHost(
         ticket: ScheduleTicket? = null
     ): Boolean {
         if (ticket != null && !isScheduleTicketCurrent(context, ticket)) {
-            deferredRequests.remove(request)
+            withDeferredSchedulingLock {
+                deferredRequests.remove(request)
+            }
             return false
         }
-        deferredRequests.enqueue(request)
+        withDeferredSchedulingLock {
+            deferredRequests.enqueue(request)
+        }
         if (ticket != null && !isScheduleTicketCurrent(context, ticket)) {
-            deferredRequests.remove(request)
+            withDeferredSchedulingLock {
+                deferredRequests.remove(request)
+            }
             return false
         }
         triggerDeferredSchedules(context.applicationContext)
@@ -1702,15 +1728,23 @@ class DefaultDownloadExecutionHost(
     }
 
     private fun triggerDeferredSchedules(context: Context) {
-        if (!deferredSchedulingRunning.compareAndSet(false, true)) return
+        val shouldStart = synchronized(deferredSchedulingLock) {
+            deferredSchedulingRunning.compareAndSet(false, true)
+        }
+        if (!shouldStart) return
         val appContext = context.applicationContext
         deferredSchedulingScope.launch {
             var deferredRetryCount = 0
             try {
                 while (true) {
-                    val request = deferredRequests.poll()
+                    val request = withDeferredSchedulingLock {
+                        deferredRequests.poll()
+                    }
                     if (request == null) {
-                        if (deferredRequests.isEmpty()) {
+                        val queueEmpty = withDeferredSchedulingLock {
+                            deferredRequests.isEmpty()
+                        }
+                        if (queueEmpty) {
                             return@launch
                         }
                         delay(HOST_ADMISSION_RETRY_DELAY_MS)
@@ -1718,21 +1752,29 @@ class DefaultDownloadExecutionHost(
                     }
                     when (val result = schedule(appContext, request)) {
                         is DownloadExecutionSchedule.Scheduled -> {
-                            deferredRequests.remove(request)
+                            withDeferredSchedulingLock {
+                                deferredRequests.remove(request)
+                            }
                             deferredRetryCount = 0
                         }
 
                         is DownloadExecutionSchedule.Deferred -> {
-                            deferredRequests.requeue(request)
+                            withDeferredSchedulingLock {
+                                deferredRequests.requeue(request)
+                            }
                             deferredRetryCount++
                         }
 
                         is DownloadExecutionSchedule.Rejected -> {
                             if (result.retryable) {
-                                deferredRequests.requeue(request)
+                                withDeferredSchedulingLock {
+                                    deferredRequests.requeue(request)
+                                }
                                 deferredRetryCount++
                             } else {
-                                deferredRequests.remove(request)
+                                withDeferredSchedulingLock {
+                                    deferredRequests.remove(request)
+                                }
                                 deferredRetryCount = 0
                             }
                         }
@@ -1743,8 +1785,11 @@ class DefaultDownloadExecutionHost(
                     }
                 }
             } finally {
-                deferredSchedulingRunning.set(false)
-                if (!deferredRequests.isEmpty()) {
+                val shouldRestart = synchronized(deferredSchedulingLock) {
+                    deferredSchedulingRunning.set(false)
+                    !deferredRequests.isEmpty()
+                }
+                if (shouldRestart) {
                     triggerDeferredSchedules(appContext)
                 }
             }
@@ -1752,9 +1797,15 @@ class DefaultDownloadExecutionHost(
     }
 
     private fun deferredRetryLimit(): Int {
-        return deferredRequests.size()
-            .coerceAtLeast(1)
-            .coerceAtMost(MAX_DEFERRED_SCHEDULES_PER_PASS)
+        return withDeferredSchedulingLock {
+            deferredRequests.size()
+                .coerceAtLeast(1)
+                .coerceAtMost(MAX_DEFERRED_SCHEDULES_PER_PASS)
+        }
+    }
+
+    private fun <T> withDeferredSchedulingLock(action: () -> T): T {
+        return synchronized(deferredSchedulingLock, action)
     }
 
     internal fun releaseHandoffAdmissionIfIdle(
