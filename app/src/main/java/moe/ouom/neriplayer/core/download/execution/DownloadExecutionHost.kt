@@ -20,6 +20,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
@@ -82,6 +84,14 @@ class DefaultDownloadExecutionHost(
         request: DownloadExecutionRequest
     ): DownloadExecutionSchedule {
         val appContext = context.applicationContext
+        val traceToken = DownloadOperationTrace.begin(
+            operationId = request.operationId,
+            attemptId = request.attemptId
+        )
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.ENQUEUED
+        )
         val ticket = captureScheduleTicket(appContext, request)
             ?: return DownloadExecutionSchedule.Rejected(
                 "download clear is in progress"
@@ -181,6 +191,14 @@ class DefaultDownloadExecutionHost(
                     ticket = ticket
                 )
             currentTicket = boundTicket
+            val operationTraceToken = DownloadOperationTrace.begin(
+                operationId = boundTicket.operationId,
+                attemptId = boundTicket.attemptId
+            )
+            DownloadOperationTrace.mark(
+                operationTraceToken,
+                DownloadOperationTracePhase.ENQUEUED
+            )
             val previousScheduleOwner = scheduleOwners.putIfAbsent(
                 request.operationId,
                 boundTicket
@@ -200,6 +218,10 @@ class DefaultDownloadExecutionHost(
             if (!isScheduleTicketCurrent(context, boundTicket)) {
                 return rejectStaleSchedule(context, request, hostAdmissionAcquired, boundTicket)
             }
+            DownloadOperationTrace.mark(
+                operationTraceToken,
+                DownloadOperationTracePhase.HOST_ADMISSION_REQUESTED
+            )
             if (!tryAcquireHostAdmission(
                     context = context,
                     operationId = request.operationId,
@@ -220,6 +242,10 @@ class DefaultDownloadExecutionHost(
                 )
             }
             hostAdmissionAcquired = true
+            DownloadOperationTrace.mark(
+                operationTraceToken,
+                DownloadOperationTracePhase.HOST_ADMISSION_GRANTED
+            )
             val previousAdmissionOwner = synchronized(executionAdmissionLock) {
                 hostAdmissionOwners.putIfAbsent(request.operationId, boundTicket)
             }
@@ -340,6 +366,10 @@ class DefaultDownloadExecutionHost(
                 return rejectStaleSchedule(context, request, hostAdmissionAcquired, boundTicket)
             }
             operationIdsBySongKey[songKey] = request.operationId
+            DownloadOperationTrace.mark(
+                operationTraceToken,
+                DownloadOperationTracePhase.BACKEND_SCHEDULED
+            )
             withDeferredSchedulingLock {
                 deferredRequests.remove(request)
             }
@@ -1159,6 +1189,10 @@ class DefaultDownloadExecutionHost(
                 releaseHostAdmissionIfIdleSuspending(appContext, normalizedId)
                 return@withContext DownloadExecutionResult.MissingOperation
             }
+        var operationTraceToken = DownloadOperationTrace.begin(
+            operationId = normalizedId,
+            attemptId = initialRequest.attemptId
+        )
         if (
             PersistentDownloadClearFenceStore.isBlocked(
                 context = appContext,
@@ -1213,7 +1247,17 @@ class DefaultDownloadExecutionHost(
         }
         // Room 访问必须发生在短内存临界区之外，避免清空或进度回调被
         // 一个挂起的数据库操作长期阻塞
+        DownloadOperationTrace.mark(
+            operationTraceToken,
+            DownloadOperationTracePhase.HOST_ADMISSION_REQUESTED
+        )
         val hostAdmissionAcquired = tryAcquireHostAdmissionSuspending(appContext, normalizedId)
+        if (hostAdmissionAcquired) {
+            DownloadOperationTrace.mark(
+                operationTraceToken,
+                DownloadOperationTracePhase.HOST_ADMISSION_GRANTED
+            )
+        }
         val stateBeforeClaim = operationStore.currentStateSuspending(appContext, normalizedId)
         val claimResult = synchronized(executionAdmissionLock) {
             when {
@@ -1291,6 +1335,10 @@ class DefaultDownloadExecutionHost(
                 )
             }
             executionTicket = reboundTicket
+            operationTraceToken = DownloadOperationTrace.begin(
+                operationId = normalizedId,
+                attemptId = executionTicket.attemptId
+            ) ?: operationTraceToken
             if (operationStore.isStoppedSuspending(appContext, normalizedId)) {
                 return@withContext DownloadExecutionResult.UserStopped
             }
@@ -1314,6 +1362,10 @@ class DefaultDownloadExecutionHost(
                 )
             }
             operationIdsBySongKey[request.song.stableKey()] = normalizedId
+            DownloadOperationTrace.mark(
+                operationTraceToken,
+                DownloadOperationTracePhase.BACKEND_STARTED
+            )
             val result = entryPoint.start(
                 context = context.applicationContext,
                 request = request
@@ -1511,6 +1563,10 @@ class DefaultDownloadExecutionHost(
                 DownloadExecutionResult.Failed(error)
             }
         } finally {
+            DownloadOperationTrace.mark(
+                operationTraceToken,
+                DownloadOperationTracePhase.TERMINAL
+            )
             val finishedTicket = executionTicket
             scheduleOwners.remove(normalizedId, finishedTicket)
             removeBackendOwnerIfMatches(normalizedId, finishedTicket)
@@ -1633,6 +1689,14 @@ class DefaultDownloadExecutionHost(
                         observedStableKeys.add(request.song.stableKey())
                 ) {
                     candidates += request
+                    val traceToken = DownloadOperationTrace.begin(
+                        operationId = request.operationId,
+                        attemptId = request.attemptId
+                    )
+                    DownloadOperationTrace.mark(
+                        traceToken,
+                        DownloadOperationTracePhase.QUEUE_SELECTED
+                    )
                 }
             }
             if (candidates.size >= capacity) {

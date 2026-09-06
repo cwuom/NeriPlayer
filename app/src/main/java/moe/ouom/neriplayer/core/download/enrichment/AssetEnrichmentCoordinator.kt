@@ -16,6 +16,9 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceToken
 
 /**
  * 在有界队列中执行歌词、封面和标签等非核心资产工作
@@ -36,8 +39,10 @@ internal class AssetEnrichmentCoordinator(
 
     fun enqueue(
         operationId: String,
+        attemptId: Long? = null,
         onTimeout: suspend (Throwable) -> Unit = {},
         onCompletion: (Throwable?) -> Unit = {},
+        traceToken: DownloadOperationTraceToken? = null,
         block: suspend () -> Unit
     ): Job {
         val normalizedId = operationId.trim().takeIf(String::isNotBlank)
@@ -47,10 +52,26 @@ internal class AssetEnrichmentCoordinator(
                 if (existing.isActive) return@synchronized existing
             }
             val timeoutCallbackFailure = AtomicReference<Throwable?>(null)
+            val operationTraceToken = traceToken
+                ?.takeIf { token ->
+                    token.operationId == normalizedId && token.attemptId == attemptId
+                }
+                ?: DownloadOperationTrace.begin(
+                    operationId = normalizedId,
+                    attemptId = attemptId
+                )
+            DownloadOperationTrace.mark(
+                operationTraceToken,
+                DownloadOperationTracePhase.ENRICHMENT_ENQUEUED
+            )
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     withTimeout(timeoutMs) {
                         semaphore.withPermit {
+                            DownloadOperationTrace.mark(
+                                operationTraceToken,
+                                DownloadOperationTracePhase.ENRICHMENT_STARTED
+                            )
                             block()
                         }
                     }
@@ -59,6 +80,11 @@ internal class AssetEnrichmentCoordinator(
                         .onFailure(timeoutCallbackFailure::set)
                 } catch (error: CancellationException) {
                     throw error
+                } finally {
+                    DownloadOperationTrace.mark(
+                        operationTraceToken,
+                        DownloadOperationTracePhase.ENRICHMENT_FINISHED
+                    )
                 }
             }
             jobsByOperationId[normalizedId] = job
@@ -69,6 +95,10 @@ internal class AssetEnrichmentCoordinator(
                 }
                 val completionError = error ?: timeoutCallbackFailure.get()
                 runCatching { onCompletion(completionError) }
+                DownloadOperationTrace.mark(
+                    operationTraceToken,
+                    DownloadOperationTracePhase.TERMINAL
+                )
             }
             job.start()
             refreshActiveStateLocked()

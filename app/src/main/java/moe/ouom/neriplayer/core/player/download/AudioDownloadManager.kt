@@ -59,6 +59,9 @@ import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredEx
 import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
 import moe.ouom.neriplayer.core.download.resource.containsDownloadStorageSpaceFailure
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceToken
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
@@ -2136,6 +2139,14 @@ object AudioDownloadManager {
         val effectiveOperationId = operationId?.trim()
             ?.takeIf(String::isNotBlank)
             ?: UUID.randomUUID().toString()
+        val traceToken = DownloadOperationTrace.begin(
+            operationId = effectiveOperationId,
+            attemptId = attemptId
+        )
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.ENQUEUED
+        )
         val state = DownloadExecutionAttemptState()
         // 进入新的真实传输前清掉旧代次的 core 标记，避免取消后复用 operation
         // 时把新下载误当成后台增强任务
@@ -2211,6 +2222,10 @@ object AudioDownloadManager {
                 error = error
             )
         } finally {
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.TERMINAL
+            )
             clearPublishedProgress(
                 songKey = songKey,
                 expectedAttemptId = attemptId,
@@ -2445,13 +2460,28 @@ object AudioDownloadManager {
         state: DownloadExecutionAttemptState
     ): Boolean {
         val songKey = song.stableKey()
-        val resolved = resolveDownloadSourceForAttempt(
-            song = song,
-            downloadAudioQuality = downloadAudioQuality,
-            isYouTubeMusic = isYouTubeMusic,
-            isBili = isBili,
-            state = state
+        val traceToken = DownloadOperationTrace.begin(
+            operationId = effectiveOperationId,
+            attemptId = attemptId
         )
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.SOURCE_RESOLVE_STARTED
+        )
+        val resolved = try {
+            resolveDownloadSourceForAttempt(
+                song = song,
+                downloadAudioQuality = downloadAudioQuality,
+                isYouTubeMusic = isYouTubeMusic,
+                isBili = isBili,
+                state = state
+            )
+        } finally {
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.SOURCE_RESOLVE_FINISHED
+            )
+        }
         ensureSongDownloadNotCancelled(
             songKey = songKey,
             stage = "source_resolved",
@@ -2498,15 +2528,26 @@ object AudioDownloadManager {
             return false
         }
         state.forceRefreshYouTubeSource = false
-        val prepared = prepareDownloadAttempt(
-            context = context,
-            song = song,
-            resolved = resolved,
-            batchSessionId = batchSessionId,
-            attemptId = attemptId,
-            effectiveOperationId = effectiveOperationId,
-            state = state
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.PREPARE_STARTED
         )
+        val prepared = try {
+            prepareDownloadAttempt(
+                context = context,
+                song = song,
+                resolved = resolved,
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                effectiveOperationId = effectiveOperationId,
+                state = state
+            )
+        } finally {
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.PREPARE_FINISHED
+            )
+        }
         transferAndCommitDownloadAttempt(
             context = context,
             songKey = songKey,
@@ -2740,6 +2781,10 @@ object AudioDownloadManager {
         effectiveOperationId: String,
         state: DownloadExecutionAttemptState
     ) {
+        val traceToken = DownloadOperationTrace.begin(
+            operationId = effectiveOperationId,
+            attemptId = attemptId
+        )
         // 只有确认即将开始新的网络传输后才清理旧桥接
         clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
         publishStageProgress(
@@ -2752,6 +2797,10 @@ object AudioDownloadManager {
             bytesRead = resolveWorkingFileBytes(prepared.workingFile),
             totalBytes = prepared.resolved.contentLength ?: 0L
         )
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.NETWORK_PERMIT_REQUESTED
+        )
         val downloadedPayload = downloadPayloadForTransport(
             context = context,
             transportKind = prepared.transportKind,
@@ -2762,35 +2811,60 @@ object AudioDownloadManager {
             workingSong = prepared.workingSong,
             batchSessionId = batchSessionId,
             attemptId = attemptId,
-            effectiveOperationId = effectiveOperationId
+            effectiveOperationId = effectiveOperationId,
+            traceToken = traceToken
         )
         state.resumeMetadataAvailable = state.resumeMetadataAvailable &&
             downloadedPayload.resumeMetadataAvailable
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.CORE_COMMIT_REQUESTED
+        )
         val committedAudio = coreCommitSemaphore.withPermit {
             // 网络阶段可以并行，最终文件提交必须和同曲目的新代次串行
             GlobalDownloadManager.withSongExecutionLock(songKey) {
-                ensureSongDownloadNotCancelled(
-                    songKey = songKey,
-                    stage = "core_commit_lock",
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId,
-                    operationId = effectiveOperationId
+                // 把 semaphore 和同曲目提交锁的等待合并为一个 Core admission 段
+                DownloadOperationTrace.mark(
+                    traceToken,
+                    DownloadOperationTracePhase.CORE_COMMIT_GRANTED
                 )
-                finalizeDownloadedAudio(
-                    context = context,
-                    songKey = songKey,
-                    workingSong = prepared.workingSong,
-                    fileName = prepared.fileName,
-                    mimeType = prepared.mimeType,
-                    workingFile = prepared.workingFile,
-                    payloadSummary = downloadedPayload,
-                    effectiveOperationId = effectiveOperationId,
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId,
-                    coreCommitTracker = state.coreCommitTracker
+                DownloadOperationTrace.mark(
+                    traceToken,
+                    DownloadOperationTracePhase.CORE_COMMIT_STARTED
                 )
+                try {
+                    ensureSongDownloadNotCancelled(
+                        songKey = songKey,
+                        stage = "core_commit_lock",
+                        batchSessionId = batchSessionId,
+                        attemptId = attemptId,
+                        operationId = effectiveOperationId
+                    )
+                    finalizeDownloadedAudio(
+                        context = context,
+                        songKey = songKey,
+                        workingSong = prepared.workingSong,
+                        fileName = prepared.fileName,
+                        mimeType = prepared.mimeType,
+                        workingFile = prepared.workingFile,
+                        payloadSummary = downloadedPayload,
+                        effectiveOperationId = effectiveOperationId,
+                        batchSessionId = batchSessionId,
+                        attemptId = attemptId,
+                        coreCommitTracker = state.coreCommitTracker
+                    )
+                } finally {
+                    DownloadOperationTrace.mark(
+                        traceToken,
+                        DownloadOperationTracePhase.CORE_COMMIT_FINISHED
+                    )
+                }
             }
         }
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.CORE_COMMITTED
+        )
         state.storedAudio = committedAudio.audio
         publishStageProgress(
             songId = prepared.workingSong.id,
@@ -3101,7 +3175,8 @@ object AudioDownloadManager {
         workingSong: SongItem,
         batchSessionId: Long?,
         attemptId: Long?,
-        effectiveOperationId: String
+        effectiveOperationId: String,
+        traceToken: DownloadOperationTraceToken?
     ): DownloadedPayloadSummary {
         return withConfiguredDownloadPermit(
             context = context,
@@ -3109,7 +3184,8 @@ object AudioDownloadManager {
                 operationId = effectiveOperationId,
                 attemptId = attemptId,
                 stableKey = workingSong.stableKey()
-            )
+            ),
+            traceToken = traceToken
         ) { transferGeneration ->
             val client = backgroundDownloadClient
             when (transportKind) {
@@ -3458,6 +3534,7 @@ object AudioDownloadManager {
     private suspend fun <T> withConfiguredDownloadPermit(
         context: Context,
         ownerKey: String,
+        traceToken: DownloadOperationTraceToken?,
         block: suspend (transferGeneration: Long) -> T
     ): T {
         val configured = currentDownloadParallelismSnapshot(context)
@@ -3470,7 +3547,15 @@ object AudioDownloadManager {
             ownerKey = ownerKey
         )
         try {
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.NETWORK_PERMIT_GRANTED
+            )
             permit.markNetworkIoStarted()
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.NETWORK_STARTED
+            )
             DownloadStartupTrace.markTransferStarted()
             return transferWatchdog.run(permit) {
                 block(permit.generation)
@@ -3478,7 +3563,15 @@ object AudioDownloadManager {
         } finally {
             withContext(NonCancellable) {
                 permit.markNetworkIoFinished()
+                DownloadOperationTrace.mark(
+                    traceToken,
+                    DownloadOperationTracePhase.NETWORK_FINISHED
+                )
                 permit.release()
+                DownloadOperationTrace.mark(
+                    traceToken,
+                    DownloadOperationTracePhase.NETWORK_PERMIT_RELEASED
+                )
             }
         }
     }

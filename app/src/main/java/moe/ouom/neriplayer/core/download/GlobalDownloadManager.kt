@@ -28,7 +28,6 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.SystemClock
 import androidx.core.net.toUri
-import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +35,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -50,87 +50,85 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.catalog.downloadedSongNewestFirstComparator
-import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
-import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
-import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactCoordinator
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
 import moe.ouom.neriplayer.core.download.artifact.ownedLeaseIdOrNull
+import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuildItem
+import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
+import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
+import moe.ouom.neriplayer.core.download.catalog.downloadedSongNewestFirstComparator
+import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
+import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.download.enrichment.AssetEnrichmentCoordinator
-import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionOperationStore
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionResult
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionPumpResult
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.ForegroundDownloadWorker
-import moe.ouom.neriplayer.core.download.execution.DownloadStorageRecoveryWorker
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionNotificationController
+import moe.ouom.neriplayer.core.download.execution.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
 import moe.ouom.neriplayer.core.download.execution.DownloadClearFenceReleaseResult
 import moe.ouom.neriplayer.core.download.execution.DownloadClearOwnership
 import moe.ouom.neriplayer.core.download.execution.DownloadClearPurpose
-import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearProgressStore
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionNotificationController
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionOperationStore
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionResult
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
-import moe.ouom.neriplayer.core.download.execution.WifiBoundDownloadWakeWorker
-import moe.ouom.neriplayer.core.download.execution.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
-import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
+import moe.ouom.neriplayer.core.download.execution.DownloadStorageRecoveryWorker
+import moe.ouom.neriplayer.core.download.execution.ForegroundDownloadWorker
 import moe.ouom.neriplayer.core.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
+import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearProgressStore
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.WifiBoundDownloadWakeWorker
 import moe.ouom.neriplayer.core.download.execution.isPostCoreDownloadOperationState
-import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
-import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationResult
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
+import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
+import moe.ouom.neriplayer.core.download.observability.DownloadStartupRecoveryJournal
+import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
 import moe.ouom.neriplayer.core.download.policy.recoveryOperationIdsForKeys
 import moe.ouom.neriplayer.core.download.policy.shouldRecoverDownloadCandidateWithBatch
+import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.download.reconcile.EmptyScanDecision
 import moe.ouom.neriplayer.core.download.reconcile.EmptyScanObservation
 import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler
 import moe.ouom.neriplayer.core.download.reconcile.ScanConfidence
-import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
-import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuildItem
+import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
+import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
+import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
-import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
-import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
-import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
-import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
+import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
-import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
-import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
-import moe.ouom.neriplayer.core.download.observability.DownloadStartupRecoveryJournal
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.DownloadProgressProjectionStore
-import moe.ouom.neriplayer.core.player.download.isFormalManagedAudioReference
 import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
-import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
@@ -138,7 +136,6 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
@@ -146,14 +143,15 @@ import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
+import java.io.File
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import java.util.UUID
 
 
 /**
@@ -5525,6 +5523,16 @@ object GlobalDownloadManager {
         }
 
         val normalizedOperationId = operationId?.trim()?.takeIf(String::isNotBlank)
+        val traceToken = normalizedOperationId?.let { id ->
+            DownloadOperationTrace.begin(
+                operationId = id,
+                attemptId = expectedAttemptId
+            )
+        }
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.CORE_COMMIT_REQUESTED
+        )
         val operationState = normalizedOperationId?.let { id ->
             DownloadExecutionRoomStore.state(context, id)
         }
@@ -5593,6 +5601,14 @@ object GlobalDownloadManager {
             }
         }
 
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.CORE_COMMIT_GRANTED
+        )
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.CORE_COMMIT_STARTED
+        )
         val coreCommitResult = withContext(NonCancellable) {
             val coreMetadataReady = existingMetadata?.downloadFinalized == true ||
                 isDurableCoreArtifactState(
@@ -5705,6 +5721,10 @@ object GlobalDownloadManager {
             }
             true
         }
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.CORE_COMMIT_FINISHED
+        )
         if (!coreCommitResult) {
             updateTaskStatus(songKey, DownloadStatus.FAILED, expectedAttemptId = expectedAttemptId)
             markDownloadArtifactRepairRequired(
@@ -5715,6 +5735,10 @@ object GlobalDownloadManager {
             )
             return
         }
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.CORE_COMMITTED
+        )
         var sourceArtifactLeaseLookupFailed = false
         val sourceArtifactRootKey = if (directoryMutationLeaseOwned) {
             try {
@@ -6051,6 +6075,8 @@ object GlobalDownloadManager {
         try {
             assetEnrichmentCoordinator.enqueue(
                 operationId = enrichmentOperationId,
+                attemptId = expectedAttemptId,
+                traceToken = traceToken,
                 block = {
                     val admitted = admissionTicket?.let { ticket ->
                         admitDownloadMutation(
