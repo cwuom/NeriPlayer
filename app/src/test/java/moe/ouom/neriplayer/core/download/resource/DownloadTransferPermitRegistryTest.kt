@@ -202,6 +202,30 @@ class DownloadTransferPermitRegistryTest {
     }
 
     @Test
+    fun `network finish keeps the permit held through core commit`() = runBlocking {
+        val registry = DownloadTransferPermitRegistry(maxParallelism = 1)
+        val first = registry.acquire("core-holder")
+        first.markNetworkIoStarted()
+        val waiting = async(start = CoroutineStart.UNDISPATCHED) {
+            registry.acquire("core-waiter")
+        }
+        yield()
+
+        first.markNetworkIoFinished()
+        val afterNetwork = registry.snapshot()
+        assertEquals(1, afterNetwork.permitCount)
+        assertEquals(0, afterNetwork.activeTransferCount)
+        assertEquals(listOf("core-waiter"), afterNetwork.waitingOwners)
+        assertFalse(waiting.isCompleted)
+
+        first.release()
+        val second = withTimeout(1_000L) { waiting.await() }
+        assertEquals("core-waiter", second.ownerKey)
+        second.release()
+        assertEquals(0, registry.snapshot().permitCount)
+    }
+
+    @Test
     fun `invalid configured limit is clamped with an explicit reason`() {
         val registry = DownloadTransferPermitRegistry(maxParallelism = 4)
         val snapshot = registry.updateConfiguredParallelism(99, reason = "thermal")

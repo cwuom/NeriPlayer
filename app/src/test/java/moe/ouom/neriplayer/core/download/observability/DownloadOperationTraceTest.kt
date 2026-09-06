@@ -31,13 +31,14 @@ class DownloadOperationTraceTest {
         collector.mark(token, DownloadOperationTracePhase.NETWORK_STARTED)
         nowNs = 80L
         collector.mark(token, DownloadOperationTracePhase.NETWORK_FINISHED)
-        collector.mark(token, DownloadOperationTracePhase.NETWORK_PERMIT_RELEASED)
         collector.mark(token, DownloadOperationTracePhase.CORE_COMMIT_REQUESTED)
         nowNs = 90L
         collector.mark(token, DownloadOperationTracePhase.CORE_COMMIT_GRANTED)
         collector.mark(token, DownloadOperationTracePhase.CORE_COMMIT_STARTED)
         nowNs = 120L
         collector.mark(token, DownloadOperationTracePhase.CORE_COMMIT_FINISHED)
+        collector.mark(token, DownloadOperationTracePhase.CORE_COMMITTED)
+        collector.mark(token, DownloadOperationTracePhase.NETWORK_PERMIT_RELEASED)
         collector.mark(token, DownloadOperationTracePhase.ENRICHMENT_ENQUEUED)
         nowNs = 140L
         val snapshot = requireNotNull(
@@ -48,7 +49,7 @@ class DownloadOperationTraceTest {
         assertEquals(15L, snapshot.hostAdmissionWaitNs)
         assertEquals(15L, snapshot.networkPermitWaitNs)
         assertEquals(30L, snapshot.transferNs)
-        assertEquals(30L, snapshot.networkPermitHeldNs)
+        assertEquals(70L, snapshot.networkPermitHeldNs)
         assertEquals(10L, snapshot.coreCommitWaitNs)
         assertEquals(30L, snapshot.coreCommitIoNs)
         assertEquals(20L, snapshot.enrichmentQueueWaitNs)

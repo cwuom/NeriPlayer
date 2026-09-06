@@ -16,7 +16,7 @@ import kotlinx.coroutines.withContext
  * 传输无进展监视器
  *
  * 监视器只负责把卡住的传输转换成可重试错误，不会直接释放 permit。先让传输协程退出，
- * 再由 withConfiguredDownloadPermit 的 finally 回收 owner，避免旧写入继续污染新 attempt
+ * 再由 transfer-cycle owner 回收 permit，避免旧写入继续污染新 attempt
  */
 internal class DownloadTransferWatchdog(
     private val registry: DownloadTransferPermitRegistry,

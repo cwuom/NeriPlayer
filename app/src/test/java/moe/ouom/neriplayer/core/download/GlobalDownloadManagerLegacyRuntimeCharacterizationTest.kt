@@ -152,6 +152,18 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     }
 
     @Test
+    fun `core commit wake is best effort and cannot turn durable audio into failure`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val wakeBody = methodBody(source, "wakeDownloadExecutionPumpAfterCoreCommit")
+        assertTrue(wakeBody.contains("runCatching"))
+        assertTrue(wakeBody.contains("wakeDownloadExecutionPump("))
+        assertTrue(wakeBody.contains("保留持久队列"))
+        assertFalse(wakeBody.contains("throw error"))
+    }
+
+    @Test
     fun `core recovery registers the playback bridge before durable preview publication`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

@@ -1134,6 +1134,40 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `transfer cycle releases permit only after core commit and wakes the pump`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+        val transferBody = methodBody(source, "transferAndCommitDownloadAttempt")
+        val transferIndex = transferBody.indexOf("transferWatchdog.run(permit)")
+        val networkFinishedIndex = transferBody.indexOf("markNetworkFinished()", transferIndex)
+        val coreRequestedIndex = transferBody.indexOf(
+            "DownloadOperationTracePhase.CORE_COMMIT_REQUESTED",
+            networkFinishedIndex
+        )
+        val coreCommittedIndex = transferBody.indexOf(
+            "DownloadOperationTracePhase.CORE_COMMITTED",
+            coreRequestedIndex
+        )
+        val wakeIndex = transferBody.indexOf(
+            "GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(context)",
+            coreCommittedIndex
+        )
+        val cycleBody = methodBody(source, "withTransferCyclePermit")
+        val blockIndex = cycleBody.indexOf("return block(permit, ::markNetworkFinished)")
+        val releaseIndex = cycleBody.indexOf("permit.release()")
+
+        assertTrue(transferIndex >= 0)
+        assertTrue(networkFinishedIndex > transferIndex)
+        assertTrue(coreRequestedIndex > networkFinishedIndex)
+        assertTrue(coreCommittedIndex > coreRequestedIndex)
+        assertTrue(wakeIndex > coreCommittedIndex)
+        assertTrue(blockIndex >= 0)
+        assertTrue(releaseIndex > blockIndex)
+        assertFalse(source.contains("withConfiguredDownloadPermit"))
+    }
+
+    @Test
     fun `late cancellation cleanup is scoped to the owning operation`() {
         val managerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
@@ -2342,7 +2376,8 @@ class AudioDownloadManagerTest {
         preferLast: Boolean = false
     ): String {
         val signatureStart = Regex(
-            "(?:private|internal|public)?\\s*(?:suspend\\s+)?fun\\s+$methodName\\b"
+            "(?:private|internal|public)?\\s*(?:suspend\\s+)?fun\\s+" +
+                "(?:<[^>{}]+>\\s*)?$methodName\\b"
         ).let { regex ->
             if (preferLast) {
                 regex.findAll(source).lastOrNull()?.range?.first

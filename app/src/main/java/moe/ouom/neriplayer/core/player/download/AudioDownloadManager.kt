@@ -2801,70 +2801,86 @@ object AudioDownloadManager {
             traceToken,
             DownloadOperationTracePhase.NETWORK_PERMIT_REQUESTED
         )
-        val downloadedPayload = downloadPayloadForTransport(
-            context = context,
-            transportKind = prepared.transportKind,
-            resolved = prepared.resolved,
-            request = prepared.request,
-            workingFile = prepared.workingFile,
-            fileName = prepared.fileName,
-            workingSong = prepared.workingSong,
-            batchSessionId = batchSessionId,
+        val ownerKey = DownloadTransferPermitRegistry.ownerKey(
+            operationId = effectiveOperationId,
             attemptId = attemptId,
-            effectiveOperationId = effectiveOperationId,
+            stableKey = prepared.workingSong.stableKey()
+        )
+        val committedAudio = withTransferCyclePermit(
+            context = context,
+            ownerKey = ownerKey,
             traceToken = traceToken
-        )
-        state.resumeMetadataAvailable = state.resumeMetadataAvailable &&
-            downloadedPayload.resumeMetadataAvailable
-        DownloadOperationTrace.mark(
-            traceToken,
-            DownloadOperationTracePhase.CORE_COMMIT_REQUESTED
-        )
-        val committedAudio = coreCommitSemaphore.withPermit {
-            // 网络阶段可以并行，最终文件提交必须和同曲目的新代次串行
-            GlobalDownloadManager.withSongExecutionLock(songKey) {
-                // 把 semaphore 和同曲目提交锁的等待合并为一个 Core admission 段
-                DownloadOperationTrace.mark(
-                    traceToken,
-                    DownloadOperationTracePhase.CORE_COMMIT_GRANTED
+        ) { permit, markNetworkFinished ->
+            val downloadedPayload = transferWatchdog.run(permit) {
+                downloadPayloadForTransport(
+                    transportKind = prepared.transportKind,
+                    resolved = prepared.resolved,
+                    request = prepared.request,
+                    workingFile = prepared.workingFile,
+                    fileName = prepared.fileName,
+                    workingSong = prepared.workingSong,
+                    batchSessionId = batchSessionId,
+                    attemptId = attemptId,
+                    effectiveOperationId = effectiveOperationId,
+                    transferGeneration = permit.generation
                 )
-                DownloadOperationTrace.mark(
-                    traceToken,
-                    DownloadOperationTracePhase.CORE_COMMIT_STARTED
-                )
-                try {
-                    ensureSongDownloadNotCancelled(
-                        songKey = songKey,
-                        stage = "core_commit_lock",
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId,
-                        operationId = effectiveOperationId
-                    )
-                    finalizeDownloadedAudio(
-                        context = context,
-                        songKey = songKey,
-                        workingSong = prepared.workingSong,
-                        fileName = prepared.fileName,
-                        mimeType = prepared.mimeType,
-                        workingFile = prepared.workingFile,
-                        payloadSummary = downloadedPayload,
-                        effectiveOperationId = effectiveOperationId,
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId,
-                        coreCommitTracker = state.coreCommitTracker
-                    )
-                } finally {
+            }
+            markNetworkFinished()
+            state.resumeMetadataAvailable = state.resumeMetadataAvailable &&
+                downloadedPayload.resumeMetadataAvailable
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.CORE_COMMIT_REQUESTED
+            )
+            val committedAudio = coreCommitSemaphore.withPermit {
+                // 网络阶段可以并行，最终文件提交必须和同曲目的新代次串行
+                GlobalDownloadManager.withSongExecutionLock(songKey) {
+                    // 把 semaphore 和同曲目提交锁的等待合并为一个 Core admission 段
                     DownloadOperationTrace.mark(
                         traceToken,
-                        DownloadOperationTracePhase.CORE_COMMIT_FINISHED
+                        DownloadOperationTracePhase.CORE_COMMIT_GRANTED
                     )
+                    DownloadOperationTrace.mark(
+                        traceToken,
+                        DownloadOperationTracePhase.CORE_COMMIT_STARTED
+                    )
+                    try {
+                        ensureSongDownloadNotCancelled(
+                            songKey = songKey,
+                            stage = "core_commit_lock",
+                            batchSessionId = batchSessionId,
+                            attemptId = attemptId,
+                            operationId = effectiveOperationId
+                        )
+                        finalizeDownloadedAudio(
+                            context = context,
+                            songKey = songKey,
+                            workingSong = prepared.workingSong,
+                            fileName = prepared.fileName,
+                            mimeType = prepared.mimeType,
+                            workingFile = prepared.workingFile,
+                            payloadSummary = downloadedPayload,
+                            effectiveOperationId = effectiveOperationId,
+                            batchSessionId = batchSessionId,
+                            attemptId = attemptId,
+                            coreCommitTracker = state.coreCommitTracker
+                        )
+                    } finally {
+                        DownloadOperationTrace.mark(
+                            traceToken,
+                            DownloadOperationTracePhase.CORE_COMMIT_FINISHED
+                        )
+                    }
                 }
             }
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.CORE_COMMITTED
+            )
+            committedAudio
         }
-        DownloadOperationTrace.mark(
-            traceToken,
-            DownloadOperationTracePhase.CORE_COMMITTED
-        )
+        // Core durable commit 成功后 permit 已在 helper finally 中释放，立即补位下一首
+        GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(context)
         state.storedAudio = committedAudio.audio
         publishStageProgress(
             songId = prepared.workingSong.id,
@@ -3166,7 +3182,6 @@ object AudioDownloadManager {
     }
 
     private suspend fun downloadPayloadForTransport(
-        context: Context,
         transportKind: DownloadTransportKind,
         resolved: ResolvedDownloadSource,
         request: Request,
@@ -3176,46 +3191,36 @@ object AudioDownloadManager {
         batchSessionId: Long?,
         attemptId: Long?,
         effectiveOperationId: String,
-        traceToken: DownloadOperationTraceToken?
+        transferGeneration: Long
     ): DownloadedPayloadSummary {
-        return withConfiguredDownloadPermit(
-            context = context,
-            ownerKey = DownloadTransferPermitRegistry.ownerKey(
-                operationId = effectiveOperationId,
+        val client = backgroundDownloadClient
+        return when (transportKind) {
+            DownloadTransportKind.HLS -> hlsTransfer.download(
+                client = client,
+                playlistRequest = request,
+                destFile = workingFile,
+                displayFileName = fileName,
+                songId = workingSong.id,
+                songKey = workingSong.stableKey(),
+                totalBytesHint = resolved.contentLength ?: 0L,
+                batchSessionId = batchSessionId,
                 attemptId = attemptId,
-                stableKey = workingSong.stableKey()
-            ),
-            traceToken = traceToken
-        ) { transferGeneration ->
-            val client = backgroundDownloadClient
-            when (transportKind) {
-                DownloadTransportKind.HLS -> hlsTransfer.download(
-                    client = client,
-                    playlistRequest = request,
-                    destFile = workingFile,
-                    displayFileName = fileName,
-                    songId = workingSong.id,
-                    songKey = workingSong.stableKey(),
-                    totalBytesHint = resolved.contentLength ?: 0L,
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId,
-                    operationId = effectiveOperationId,
-                    transferGeneration = transferGeneration
-                )
-                DownloadTransportKind.DIRECT,
-                DownloadTransportKind.CHUNKED_RANGE -> singleThreadDownload(
-                    client = client,
-                    request = request,
-                    destFile = workingFile,
-                    displayFileName = fileName,
-                    songId = workingSong.id,
-                    songKey = workingSong.stableKey(),
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId,
-                    operationId = effectiveOperationId,
-                    transferGeneration = transferGeneration
-                )
-            }
+                operationId = effectiveOperationId,
+                transferGeneration = transferGeneration
+            )
+            DownloadTransportKind.DIRECT,
+            DownloadTransportKind.CHUNKED_RANGE -> singleThreadDownload(
+                client = client,
+                request = request,
+                destFile = workingFile,
+                displayFileName = fileName,
+                songId = workingSong.id,
+                songKey = workingSong.stableKey(),
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                operationId = effectiveOperationId,
+                transferGeneration = transferGeneration
+            )
         }
     }
 
@@ -3531,11 +3536,19 @@ object AudioDownloadManager {
         )
     }
 
-    private suspend fun <T> withConfiguredDownloadPermit(
+    /**
+     * 一次 transfer cycle 持有网络槽位直到最小 Core Commit 完成
+     *
+     * 网络 I/O 结束时只关闭 active 标记，permit 本身由调用方的 Core Commit 继续持有
+     */
+    private suspend fun <T> withTransferCyclePermit(
         context: Context,
         ownerKey: String,
         traceToken: DownloadOperationTraceToken?,
-        block: suspend (transferGeneration: Long) -> T
+        block: suspend (
+            permit: DownloadTransferPermitRegistry.Permit,
+            markNetworkFinished: () -> Unit
+        ) -> T
     ): T {
         val configured = currentDownloadParallelismSnapshot(context)
         transferPermitRegistry.updateConfiguredParallelism(
@@ -3546,6 +3559,16 @@ object AudioDownloadManager {
         val permit = transferPermitRegistry.acquire(
             ownerKey = ownerKey
         )
+        var networkFinished = false
+        fun markNetworkFinished() {
+            if (networkFinished) return
+            permit.markNetworkIoFinished()
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.NETWORK_FINISHED
+            )
+            networkFinished = true
+        }
         try {
             DownloadOperationTrace.mark(
                 traceToken,
@@ -3557,16 +3580,10 @@ object AudioDownloadManager {
                 DownloadOperationTracePhase.NETWORK_STARTED
             )
             DownloadStartupTrace.markTransferStarted()
-            return transferWatchdog.run(permit) {
-                block(permit.generation)
-            }
+            return block(permit, ::markNetworkFinished)
         } finally {
             withContext(NonCancellable) {
-                permit.markNetworkIoFinished()
-                DownloadOperationTrace.mark(
-                    traceToken,
-                    DownloadOperationTracePhase.NETWORK_FINISHED
-                )
+                markNetworkFinished()
                 permit.release()
                 DownloadOperationTrace.mark(
                     traceToken,

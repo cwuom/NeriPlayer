@@ -1506,6 +1506,23 @@ object GlobalDownloadManager {
         )
     }
 
+    /** Core 音频已 durable 后立即补位，资产增强仍由独立队列异步处理 */
+    internal fun wakeDownloadExecutionPumpAfterCoreCommit(context: Context) {
+        runCatching {
+            wakeDownloadExecutionPump(
+                context = context,
+                reason = "core_commit_durable"
+            )
+        }.onFailure { error ->
+            // 唤醒失败不能把已经 durable 的音频重新判成传输失败
+            NPLogger.w(
+                TAG,
+                "core commit 后唤醒下载泵失败，保留持久队列: ${error.message}",
+                error
+            )
+        }
+    }
+
     /** 返回最近一次启动恢复的 T0、T1、T2 快照，供诊断和验收读取 */
     internal fun startupDeadlineSnapshot():
         moe.ouom.neriplayer.core.download.observability.DownloadStartupDeadlineTracker.Snapshot {
