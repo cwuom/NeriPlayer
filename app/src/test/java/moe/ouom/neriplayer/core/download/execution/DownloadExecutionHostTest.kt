@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
+import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrace
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -326,6 +327,78 @@ class DownloadExecutionHostTest {
         assertEquals(setOf(failed.operationId, later.operationId), executed.toSet())
         assertEquals("RETRYABLE", store.currentState(context, failed.operationId))
         assertEquals("COMPLETED", store.currentState(context, later.operationId))
+    }
+
+    @Test
+    fun `pump drains rows left behind by a full database page`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val requests = (0 until 130).map { index ->
+            DownloadExecutionRequest(
+                operationId = "operation-pump-page-$index",
+                song = sampleSong().copy(id = 30_000L + index)
+            )
+        }
+        requests.forEach { request -> store.save(context, request) }
+        val executed = mutableListOf<String>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, request ->
+                executed += request.operationId
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 }
+        )
+
+        assertEquals(DownloadExecutionPumpResult.Completed, host.pump(context))
+        assertEquals(requests.size, executed.size)
+        assertEquals(
+            requests.map(DownloadExecutionRequest::operationId).toSet(),
+            executed.toSet()
+        )
+    }
+
+    @Test
+    fun `pump selection reads each durable page once across scale sizes`() = runTest {
+        val scaleSizes = listOf(10, 100, 500, 1_000)
+        scaleSizes.forEach { size ->
+            val context = mockContext()
+            val journal = InMemoryDownloadExecutionOperationJournal()
+            val store = DownloadExecutionOperationStore { journal }
+            val requests = (0 until size).map { index ->
+                DownloadExecutionRequest(
+                    operationId = "operation-pump-scale-$size-$index",
+                    song = sampleSong().copy(id = 40_000L + index)
+                )
+            }
+            requests.forEach { request -> store.save(context, request) }
+            val host = DefaultDownloadExecutionHost(
+                operationStore = store,
+                entryPoint = DownloadOperationEntryPoint { _, _ ->
+                    DownloadExecutionResult.Accepted
+                },
+                sdkInt = 28,
+                downloadParallelismProvider = { 6 }
+            )
+
+            DownloadPumpSelectionTrace.clearForTests()
+            var pumpResult = host.pump(context)
+            var pumpRuns = 1
+            while (pumpResult == DownloadExecutionPumpResult.ContinueSoon && pumpRuns < 8) {
+                pumpResult = host.pump(context)
+                pumpRuns++
+            }
+            assertEquals(DownloadExecutionPumpResult.Completed, pumpResult)
+
+            val expectedPageCount = (size + 63) / 64
+            assertTrue(journal.pumpPageCallCount <= expectedPageCount + 1)
+            assertTrue(
+                DownloadPumpSelectionTrace.snapshot()
+                    .maxOf { sample -> sample.rowsRead } <= 64
+            )
+        }
     }
 
     @Test

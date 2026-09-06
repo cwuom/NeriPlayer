@@ -312,6 +312,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
     var hostAdmissionAcquireCount: Int = 0
     var lastHostAdmissionCapacity: Int? = null
     var hostAdmissionReleaseCount: Int = 0
+    var pumpPageCallCount: Int = 0
 
     override fun save(context: Context, request: DownloadExecutionRequest) {
         val queueOrder = entries[request.operationId]?.queueOrder ?: nextQueueOrder++
@@ -349,6 +350,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
         afterCursor: DownloadExecutionPumpCursor?,
         limit: Int
     ): DownloadExecutionPumpPage {
+        pumpPageCallCount++
         val boundedLimit = limit.coerceAtLeast(0)
         val page = entries.values
             .filter { entry ->

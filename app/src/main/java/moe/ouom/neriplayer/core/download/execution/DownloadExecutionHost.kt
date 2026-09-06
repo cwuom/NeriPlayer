@@ -22,6 +22,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
+import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionMetrics
+import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
@@ -62,7 +64,15 @@ class DefaultDownloadExecutionHost(
     private data class PumpCandidateSelection(
         val requests: List<DownloadExecutionRequest>,
         val hasSchedulableRequest: Boolean,
-        val shortestPendingUidtGraceDelayMs: Long?
+        val shortestPendingUidtGraceDelayMs: Long?,
+        val nextCursor: DownloadExecutionPumpCursor?,
+        val exhausted: Boolean,
+        val pendingPage: PumpPendingPage?
+    )
+
+    private data class PumpPendingPage(
+        val requests: List<DownloadExecutionRequest>,
+        val continuationCursor: DownloadExecutionPumpCursor?
     )
 
     /** 调度期间绑定的清空代次和 operation 身份，避免长 I/O 返回后越过新代次 */
@@ -1597,6 +1607,8 @@ class DefaultDownloadExecutionHost(
             var waitedForPendingUidtGrace = false
             val attemptedOperationIds = mutableSetOf<String>()
             val attemptedStableKeys = mutableSetOf<String>()
+            var pumpCursor: DownloadExecutionPumpCursor? = null
+            var pumpPendingPage: PumpPendingPage? = null
             while (completedBatches < PUMP_MAX_BATCHES_PER_RUN) {
                 if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
                     return@withContext DownloadExecutionPumpResult.Completed
@@ -1606,8 +1618,12 @@ class DefaultDownloadExecutionHost(
                     context = appContext,
                     capacity = dispatchWindow,
                     attemptedOperationIds = attemptedOperationIds,
-                    attemptedStableKeys = attemptedStableKeys
+                    attemptedStableKeys = attemptedStableKeys,
+                    afterCursor = pumpCursor,
+                    pendingPage = pumpPendingPage
                 )
+                pumpCursor = selection.nextCursor
+                pumpPendingPage = selection.pendingPage
                 val candidates = selection.requests
                 if (candidates.isEmpty() && !selection.hasSchedulableRequest) {
                     return@withContext if (sawRetry) {
@@ -1622,6 +1638,11 @@ class DefaultDownloadExecutionHost(
                     val graceDelayMs = selection.shortestPendingUidtGraceDelayMs
                     if (graceDelayMs != null && !waitedForPendingUidtGrace) {
                         waitedForPendingUidtGrace = true
+                        if (selection.exhausted) {
+                            // 延后项可能位于本轮 cursor 之前，等待后必须重新观察队首
+                            pumpCursor = null
+                            pumpPendingPage = null
+                        }
                         delay(graceDelayMs)
                         continue
                     }
@@ -1648,6 +1669,23 @@ class DefaultDownloadExecutionHost(
                 }
                 completedBatches++
                 sawRetry = sawRetry || results.any(::requiresPumpRetry)
+                if (selection.exhausted) {
+                    val graceDelayMs = selection.shortestPendingUidtGraceDelayMs
+                    if (graceDelayMs != null && !waitedForPendingUidtGrace) {
+                        waitedForPendingUidtGrace = true
+                        // grace 结束后从队首重新观察，之前的 cursor 只服务于本轮扫描
+                        pumpCursor = null
+                        pumpPendingPage = null
+                        delay(graceDelayMs)
+                        continue
+                    }
+                    if (sawRetry) return@withContext DownloadExecutionPumpResult.ContinueAfterRetry
+                    // 页面未填满 dispatch window 时已经到达 durable 队列尾部
+                    if (candidates.size < dispatchWindow) {
+                        return@withContext DownloadExecutionPumpResult.Completed
+                    }
+                    return@withContext DownloadExecutionPumpResult.ContinueSoon
+                }
             }
             DownloadExecutionPumpResult.ContinueSoon
         }
@@ -1657,31 +1695,67 @@ class DefaultDownloadExecutionHost(
         context: Context,
         capacity: Int,
         attemptedOperationIds: Set<String>,
-        attemptedStableKeys: Set<String>
+        attemptedStableKeys: Set<String>,
+        afterCursor: DownloadExecutionPumpCursor?,
+        pendingPage: PumpPendingPage?
     ): PumpCandidateSelection {
+        val selectionStartedNs = System.nanoTime()
         val candidates = mutableListOf<DownloadExecutionRequest>()
         val observedOperationIds = mutableSetOf<String>()
         val observedStableKeys = mutableSetOf<String>()
         var hasSchedulableRequest = false
         var shortestPendingUidtGraceDelayMs: Long? = null
-        var cursor: DownloadExecutionPumpCursor? = null
+        var rowsRead = 0
+        var pagesRead = 0
+        var rowsFilteredAttempted = 0
+        var rowsFilteredDuplicateOperation = 0
+        var rowsFilteredStableKey = 0
+        var rowsDeferredUidt = 0
+        var roomQueryNs = 0L
+        var cursor = afterCursor
+        var exhausted = false
+        var pendingRequests = ArrayDeque<DownloadExecutionRequest>().apply {
+            pendingPage?.requests?.forEach(::addLast)
+        }
+        var pendingContinuationCursor = pendingPage?.continuationCursor
         while (candidates.size < capacity) {
-            val page = operationStore.listSchedulableForPumpPageSuspending(
-                context = context,
-                afterCursor = cursor,
-                limit = PUMP_QUERY_LIMIT
-            )
-            page.requests.forEach { request ->
+            if (pendingRequests.isEmpty()) {
+                val queryStartedNs = System.nanoTime()
+                val page = operationStore.listSchedulableForPumpPageSuspending(
+                    context = context,
+                    afterCursor = cursor,
+                    limit = PUMP_QUERY_LIMIT
+                )
+                roomQueryNs += (System.nanoTime() - queryStartedNs).coerceAtLeast(0L)
+                pagesRead++
+                rowsRead += page.requests.size
+                pendingRequests.addAll(page.requests)
+                pendingContinuationCursor = page.nextCursor
+                if (pendingRequests.isEmpty() && pendingContinuationCursor == null) {
+                    exhausted = true
+                    break
+                }
+            }
+            while (pendingRequests.isNotEmpty() && candidates.size < capacity) {
+                val request = pendingRequests.removeFirst()
                 hasSchedulableRequest = true
                 if (
-                    request.operationId in attemptedOperationIds ||
-                        request.song.stableKey() in attemptedStableKeys ||
-                        !observedOperationIds.add(request.operationId)
+                    request.operationId in attemptedOperationIds
                 ) {
-                    return@forEach
+                    rowsFilteredAttempted++
+                    continue
+                }
+                if (!observedOperationIds.add(request.operationId)) {
+                    rowsFilteredDuplicateOperation++
+                    continue
+                }
+                if (request.song.stableKey() in attemptedStableKeys) {
+                    rowsFilteredStableKey++
+                    continue
                 }
                 val graceDelayMs = pendingUidtGraceDelayMs(context, request)
                 if (graceDelayMs > 0L) {
+                    rowsDeferredUidt++
                     shortestPendingUidtGraceDelayMs =
                         shortestPendingUidtGraceDelayMs?.coerceAtMost(graceDelayMs) ?: graceDelayMs
                 } else if (
@@ -1697,21 +1771,64 @@ class DefaultDownloadExecutionHost(
                         traceToken,
                         DownloadOperationTracePhase.QUEUE_SELECTED
                     )
+                } else {
+                    rowsFilteredStableKey++
                 }
             }
             if (candidates.size >= capacity) {
+                // 页内剩余请求留在内存窗口，避免把未选中的行跳过
+                if (pendingRequests.isEmpty()) {
+                    if (pendingContinuationCursor != null && pendingContinuationCursor != cursor) {
+                        cursor = pendingContinuationCursor
+                    } else {
+                        exhausted = pendingContinuationCursor == null
+                    }
+                }
                 break
             }
-            val nextCursor = page.nextCursor ?: break
+            if (pendingRequests.isNotEmpty()) {
+                continue
+            }
+            val nextCursor = pendingContinuationCursor
+            if (nextCursor == null) {
+                exhausted = true
+                break
+            }
             if (nextCursor == cursor) {
+                exhausted = true
                 break
             }
             cursor = nextCursor
+            pendingContinuationCursor = null
         }
+        DownloadPumpSelectionTrace.record(
+            DownloadPumpSelectionMetrics(
+                capacity = capacity,
+                pagesRead = pagesRead,
+                rowsRead = rowsRead,
+                rowsFilteredAttempted = rowsFilteredAttempted,
+                rowsFilteredDuplicateOperation = rowsFilteredDuplicateOperation,
+                rowsFilteredStableKey = rowsFilteredStableKey,
+                rowsDeferredUidt = rowsDeferredUidt,
+                candidateCount = candidates.size,
+                roomQueryNs = roomQueryNs,
+                selectionNs = (System.nanoTime() - selectionStartedNs).coerceAtLeast(0L)
+            )
+        )
         return PumpCandidateSelection(
             requests = candidates,
             hasSchedulableRequest = hasSchedulableRequest,
-            shortestPendingUidtGraceDelayMs = shortestPendingUidtGraceDelayMs
+            shortestPendingUidtGraceDelayMs = shortestPendingUidtGraceDelayMs,
+            nextCursor = cursor,
+            exhausted = exhausted,
+            pendingPage = pendingRequests
+                .takeIf { it.isNotEmpty() }
+                ?.let { remaining ->
+                    PumpPendingPage(
+                        requests = remaining.toList(),
+                        continuationCursor = pendingContinuationCursor
+                    )
+                }
         )
     }
 
