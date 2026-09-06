@@ -9016,6 +9016,24 @@ internal object ManagedDownloadStorage {
         )?.reference
     }
 
+    /** 封面 source 已落到临时流后直接提交，避免在 storage 层再次复制整块内容 */
+    internal suspend fun persistRemoteCoverStream(
+        context: Context,
+        input: InputStream,
+        fileName: String,
+        mimeType: String?,
+        expectedSizeBytes: Long? = null
+    ): String? = withContext(Dispatchers.IO) {
+        writeSubdirectoryStreamBlocking(
+            context = context,
+            subdirectory = COVER_SUBDIRECTORY,
+            displayName = fileName,
+            input = input,
+            mimeType = mimeTypeFromName(fileName, mimeType),
+            expectedSizeBytes = expectedSizeBytes
+        )?.reference
+    }
+
     private fun saveLyricTextBlocking(context: Context, displayName: String, content: String): String? {
         return writeSubdirectoryBytesBlocking(
             context = context,
@@ -11650,6 +11668,27 @@ internal object ManagedDownloadStorage {
             displayName = displayName,
             bytes = bytes,
             mimeType = mimeType
+        ).also { entry ->
+            updateSnapshotAfterSubdirectoryWrite(context, subdirectory, entry)
+        }
+    }
+
+    private fun writeSubdirectoryStreamBlocking(
+        context: Context,
+        subdirectory: String,
+        displayName: String,
+        input: InputStream,
+        mimeType: String,
+        expectedSizeBytes: Long?
+    ): StoredEntry? {
+        return commitWriter.writeSubdirectoryStream(
+            context = context,
+            root = resolveRootBlocking(context),
+            subdirectory = subdirectory,
+            displayName = displayName,
+            mimeType = mimeType,
+            input = input,
+            expectedSizeBytes = expectedSizeBytes
         ).also { entry ->
             updateSnapshotAfterSubdirectoryWrite(context, subdirectory, entry)
         }

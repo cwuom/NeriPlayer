@@ -5,10 +5,42 @@ import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 
 class ManagedDownloadCoverAssetStoreTest {
+    @Test
+    fun `source cover exactly at 16 MiB is accepted while the next byte is rejected`() = runBlocking {
+        val exact = Files.createTempFile("neriplayer-cover-exact", ".bin").toFile()
+        val oversized = Files.createTempFile("neriplayer-cover-oversized", ".bin").toFile()
+        try {
+            exact.outputStream().use { output ->
+                output.write(ByteArray(MAX_SOURCE_COVER_BYTES.toInt()))
+            }
+            oversized.outputStream().use { output ->
+                output.write(ByteArray(MAX_SOURCE_COVER_BYTES.toInt() + 1))
+            }
+            val context = mock(Context::class.java)
+            assertTrue(
+                ManagedDownloadCoverAssetStore.inspect(
+                    context = context,
+                    reference = exact.toURI().toString()
+                ) != null
+            )
+            val failure = runCatching {
+                ManagedDownloadCoverAssetStore.inspect(
+                    context = context,
+                    reference = oversized.toURI().toString()
+                )
+            }.exceptionOrNull()
+            assertTrue(failure is CoverSourceTooLargeException)
+        } finally {
+            exact.delete()
+            oversized.delete()
+        }
+    }
+
     @Test
     fun `cover asset hash is stable sha256`() {
         assertEquals(

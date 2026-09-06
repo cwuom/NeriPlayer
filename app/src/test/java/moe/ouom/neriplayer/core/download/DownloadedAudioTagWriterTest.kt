@@ -4,6 +4,8 @@ import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as MetadataDownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.download.storage.metadata.MAX_COVER_PIXELS
+import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWithin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
@@ -13,6 +15,14 @@ import org.junit.Test
 import moe.ouom.neriplayer.data.model.SongItem
 
 class DownloadedAudioTagWriterTest {
+    @Test
+    fun `cover pixel budget uses long multiplication and rejects overflow`() {
+        assertTrue(isCoverPixelBudgetWithin(4_000, 4_000))
+        assertFalse(isCoverPixelBudgetWithin(4_001, 4_000))
+        assertFalse(isCoverPixelBudgetWithin(Int.MAX_VALUE, Int.MAX_VALUE))
+        assertTrue(isCoverPixelBudgetWithin(1, MAX_COVER_PIXELS.toInt()))
+    }
+
 
     @Test
     fun `embedded album name strips netease source prefix`() {

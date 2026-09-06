@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.backend
 
 import android.net.Uri
+import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -180,6 +181,75 @@ interface StorageBackend {
 internal class StorageReadBlockFailure(
     val blockFailure: Throwable
 ) : RuntimeException(blockFailure)
+
+internal class StorageReadLimitExceededException(
+    val actualBytes: Long,
+    val maxBytes: Long
+) : IOException("stream exceeds limit: $actualBytes > $maxBytes")
+
+/** 在不改变 StorageBackend 对外契约的前提下限制一次 source read 的字节数 */
+internal suspend fun <T> StorageBackend.readBounded(
+    reference: StorageReference,
+    maxBytes: Long,
+    block: suspend (InputStream) -> T
+): StorageLookupResult<T> {
+    require(maxBytes >= 0L) { "maxBytes must be non-negative" }
+    return try {
+        read(reference) { input ->
+            try {
+                block(BoundedInputStream(input, maxBytes))
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                throw StorageReadBlockFailure(error)
+            }
+        }
+    } catch (error: kotlinx.coroutines.CancellationException) {
+        throw error
+    } catch (error: StorageReadBlockFailure) {
+        StorageLookupResult.ProviderFailure(error.blockFailure)
+    }
+}
+
+private class BoundedInputStream(
+    input: InputStream,
+    private val maxBytes: Long
+) : FilterInputStream(input) {
+    private var consumedBytes = 0L
+
+    override fun read(): Int {
+        if (consumedBytes >= maxBytes) {
+            return readPastLimitOrEof()
+        }
+        val value = super.read()
+        if (value >= 0) consumedBytes++
+        return value
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (length == 0) return 0
+        require(offset >= 0 && length >= 0 && offset <= buffer.size - length) {
+            "invalid read range"
+        }
+        if (consumedBytes >= maxBytes) {
+            return readPastLimitOrEof()
+        }
+        val remaining = maxBytes - consumedBytes
+        val boundedLength = minOf(length.toLong(), remaining).toInt()
+        val count = super.read(buffer, offset, boundedLength)
+        if (count > 0) consumedBytes += count.toLong()
+        return count
+    }
+
+    private fun readPastLimitOrEof(): Int {
+        // 读取一个额外字节来区分“恰好达到上限”和“超过上限”
+        val extra = super.read()
+        if (extra >= 0) {
+            throw StorageReadLimitExceededException(actualBytes = maxBytes + 1L, maxBytes = maxBytes)
+        }
+        return extra
+    }
+}
 
 /** 将业务读取异常包在结果中，同时保持协程取消语义 */
 internal suspend fun <T> StorageBackend.readPreservingBlockFailure(

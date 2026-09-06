@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.metadata
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.os.ParcelFileDescriptor
 import androidx.core.net.toUri
 import com.kyant.taglib.Metadata
@@ -14,6 +15,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.naming.normalizeManagedDownloadAlbumName
+import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
+import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWithin
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
@@ -49,7 +52,6 @@ internal enum class DownloadedAudioTagWriteOutcome {
 internal object DownloadedAudioTagWriter {
     private const val TAG = "DownloadedAudioTagWriter"
     private const val FRONT_COVER_TYPE = "Front Cover"
-    private const val MAX_EMBEDDED_COVER_BYTES = 8L * 1024L * 1024L
     private val ROLELESS_COVER_PICTURE_EXTENSIONS = setOf(
         "3g2", "m4a", "m4b", "m4p", "m4r", "m4v", "mp4"
     )
@@ -917,6 +919,14 @@ internal object DownloadedAudioTagWriter {
             )
             return CoverPreparation.Unavailable("cover sidecar is unreadable")
         }
+        if (!isCoverPixelBudgetWithinBytes(coverBytes)) {
+            NPLogger.w(
+                TAG,
+                "封面像素预算超限，跳过内嵌: " +
+                    "stage=cover_decode_bounds, extension=$audioExtension, bytes=${coverBytes.size}"
+            )
+            return CoverPreparation.Unavailable("cover pixel budget exceeded")
+        }
         val normalizedCover = LocalMediaSupport.normalizeEmbeddedCoverForContainer(
             sourceBytes = coverBytes,
             sourceMimeType = detectPictureMimeType(coverBytes),
@@ -1070,7 +1080,8 @@ internal object DownloadedAudioTagWriter {
         val localFile = reference.takeIf { it.startsWith("/") }?.let(::File)
         if (localFile != null && localFile.exists()) {
             return runCatching {
-                localFile.inputStream().use { it.readBytesLimited(MAX_EMBEDDED_COVER_BYTES) }
+                // source 读取上限统一为 16 MiB，容器独立的输出策略在 normalize 中处理
+                localFile.inputStream().use { it.readBytesLimited(MAX_SOURCE_COVER_BYTES) }
             }.onFailure {
                 NPLogger.w(
                     TAG,
@@ -1088,7 +1099,7 @@ internal object DownloadedAudioTagWriter {
         }.getOrNull() ?: return null
         return runCatching {
             context.contentResolver.openInputStream(uri)?.use {
-                it.readBytesLimited(MAX_EMBEDDED_COVER_BYTES)
+                it.readBytesLimited(MAX_SOURCE_COVER_BYTES)
             }
         }.onFailure {
             NPLogger.w(
@@ -1097,6 +1108,17 @@ internal object DownloadedAudioTagWriter {
                 it
             )
         }.getOrNull()
+    }
+
+    private fun isCoverPixelBudgetWithinBytes(bytes: ByteArray): Boolean {
+        val bounds = runCatching {
+            BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { options ->
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            }
+        }.getOrNull() ?: return true
+        // 非图片内容交给既有格式归一化逻辑处理；只对明确读出的尺寸执行像素上限
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return true
+        return isCoverPixelBudgetWithin(bounds.outWidth, bounds.outHeight)
     }
 
     private fun detectPictureMimeType(bytes: ByteArray): String? {

@@ -425,6 +425,79 @@ internal class ManagedDownloadStorageCommitWriter(
         }
     }
 
+    /** 直接把有界 source 流写入受管 sidecar，避免先 materialize 第二份 ByteArray */
+    fun writeSubdirectoryStream(
+        context: Context,
+        root: ManagedDownloadRootHandle,
+        subdirectory: String,
+        displayName: String,
+        mimeType: String,
+        input: InputStream,
+        expectedSizeBytes: Long? = null
+    ): ManagedDownloadStorage.StoredEntry? {
+        return when (root) {
+            is ManagedDownloadRootHandle.FileRoot -> {
+                val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
+                treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
+                val target = File(dir, displayName)
+                var copiedBytes = 0L
+                writeFileEntry(root = root.dir, target = target, displayName = displayName) { output ->
+                    copiedBytes = ManagedDownloadCommitIo.copyStreamWithProgress(
+                        input = input,
+                        output = output,
+                        bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES
+                    )
+                }
+                verifyExpectedStreamSize(
+                    displayName = displayName,
+                    copiedBytes = copiedBytes,
+                    expectedSizeBytes = expectedSizeBytes
+                )
+                val verifiedSize = ManagedDownloadCommitIo.verifyFileCommittedLength(
+                    target = target,
+                    expectedSizeBytes = copiedBytes,
+                    description = displayName
+                )
+                ManagedDownloadStoredEntryMapper.fromFile(target).copy(sizeBytes = verifiedSize)
+            }
+
+            is ManagedDownloadRootHandle.TreeRoot -> {
+                val directory = treeDirectories.findOrCreateDirectory(context, root.tree, subdirectory)
+                    ?: return null
+                treeDirectories.ensureManagedMediaScanIsolation(context, subdirectory, directory)
+                writeSafEntry(
+                    context = context,
+                    parent = directory,
+                    displayName = displayName,
+                    mimeType = mimeType,
+                    expectedSizeBytes = expectedSizeBytes,
+                    expectedAbsent = false,
+                    fallbackOnOptimisticCommitFailure = true
+                ) { output ->
+                    ManagedDownloadCommitIo.copyStreamWithProgress(
+                        input = input,
+                        output = output,
+                        bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES
+                    )
+                }
+            }
+        }
+    }
+
+    private fun verifyExpectedStreamSize(
+        displayName: String,
+        copiedBytes: Long,
+        expectedSizeBytes: Long?
+    ) {
+        val expected = expectedSizeBytes?.takeIf { it >= 0L } ?: return
+        if (copiedBytes != expected) {
+            throw IOException(
+                "流式 sidecar 写入字节不匹配: $displayName, " +
+                    "expected=$expected, actual=$copiedBytes"
+            )
+        }
+    }
+
     fun writeMigrationSubdirectoryStream(
         context: Context,
         root: ManagedDownloadRootHandle,

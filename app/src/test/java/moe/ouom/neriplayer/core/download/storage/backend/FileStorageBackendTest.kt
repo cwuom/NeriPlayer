@@ -17,6 +17,40 @@ import org.mockito.Mockito.mock
 
 class FileStorageBackendTest {
     @Test
+    fun `bounded read accepts the exact limit and classifies the first extra byte`() {
+        runBlocking {
+            val root = Files.createTempDirectory("neriplayer-bounded-read").toFile()
+            try {
+                val file = root.resolve("cover.bin").apply {
+                    writeBytes(ByteArray(16) { index -> index.toByte() })
+                }
+                val backend = FileStorageBackend(root)
+                val exact = backend.readBounded(
+                    reference = StorageReference.FileRef(file.name),
+                    maxBytes = 16L
+                ) { input ->
+                    input.readBytes().size
+                }
+                assertEquals(StorageLookupResult.Found(16), exact)
+
+                file.appendBytes(byteArrayOf(16))
+                val oversized = backend.readBounded(
+                    reference = StorageReference.FileRef(file.name),
+                    maxBytes = 16L
+                ) { input ->
+                    input.readBytes().size
+                }
+                assertTrue(oversized is StorageLookupResult.ProviderFailure)
+                val error = (oversized as StorageLookupResult.ProviderFailure).error
+                assertTrue(error is StorageReadLimitExceededException)
+                assertEquals(17L, (error as StorageReadLimitExceededException).actualBytes)
+            } finally {
+                root.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun `file backend writes atomically and reports structured state`() {
         runBlocking {
             val root = Files.createTempDirectory("neriplayer-storage-backend").toFile()
