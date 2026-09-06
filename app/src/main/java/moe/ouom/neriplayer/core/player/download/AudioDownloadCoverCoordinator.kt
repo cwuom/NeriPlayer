@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
+import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWithin
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
@@ -306,7 +307,8 @@ internal class AudioDownloadCoverCoordinator(
         return runCatching {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-            options.outWidth > 0 && options.outHeight > 0
+            options.outWidth > 0 && options.outHeight > 0 &&
+                isCoverPixelBudgetWithin(options.outWidth, options.outHeight)
         }.getOrDefault(false)
     }
 

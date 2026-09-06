@@ -81,6 +81,29 @@ class GlobalDownloadManagerCatalogRaceTest {
     }
 
     @Test
+    fun `optimistic catalog publication uses a bounded delta instead of a full rebuild`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "publishOptimisticDownloadedSongs")
+
+        assertTrue(body.contains("CatalogPublishMode.DELTA"))
+        assertTrue(body.contains("publishDownloadedSongs("))
+        assertTrue(!body.contains("scheduleCatalogReconcile"))
+    }
+
+    @Test
+    fun `finalized publication does not trigger a per-song full catalog reconcile`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "publishFinalizedDownload")
+
+        assertTrue(body.contains("publishCompletedDownloadOptimistically"))
+        assertTrue(!body.contains("scheduleCatalogReconcile(context, forceRefresh = false)"))
+    }
+
+    @Test
     fun `scanned catalog replacement rejects concurrent catalog or metadata mutations`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

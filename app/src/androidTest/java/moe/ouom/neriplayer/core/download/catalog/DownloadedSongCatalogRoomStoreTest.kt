@@ -152,6 +152,45 @@ class DownloadedSongCatalogRoomStoreTest {
         }
     }
 
+    @Test
+    fun deltaPersistenceUpdatesAndRemovesOnlyAffectedPreviewRows() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val cacheFileName = "downloaded-song-catalog-delta-test.json"
+        val cacheFile = File(context.filesDir, "$cacheFileName.managed-v1.json")
+        try {
+            val store = DownloadedSongCatalogRoomStore(
+                context = context,
+                database = database,
+                cacheFileName = cacheFileName,
+                snapshotCacheKeyProvider = { "root-delta" },
+                loggerTag = "DownloadedSongCatalogRoomStoreTest"
+            )
+            val first = song("first", "/music/first.mp3")
+            val second = song("second", "/music/second.mp3")
+                .copy(stableKey = "2|netease|")
+            store.persist(listOf(first, second))
+            val replacement = first.copy(name = "first updated", fileSize = 200L)
+            val delta = buildDownloadedSongCatalogDelta(
+                previousSongs = listOf(first, second),
+                currentSongs = listOf(replacement)
+            )
+
+            store.persistCatalogDelta(delta, listOf(replacement))
+
+            val restored = store.restore()
+            assertEquals(listOf(replacement.stableKey), restored?.map(DownloadedSong::stableKey))
+            assertEquals("first updated", restored?.single()?.name)
+            assertEquals(200L, restored?.single()?.fileSize)
+        } finally {
+            cacheFile.delete()
+            database.close()
+        }
+    }
+
     private fun song(name: String, filePath: String): DownloadedSong {
         return DownloadedSong(
             id = 1L,

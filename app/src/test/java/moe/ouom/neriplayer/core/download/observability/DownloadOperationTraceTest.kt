@@ -56,6 +56,33 @@ class DownloadOperationTraceTest {
     }
 
     @Test
+    fun `timing exposes enrichment asset stages independently`() {
+        var nowNs = 100L
+        val collector = DownloadOperationTimingCollector(nowNs = { nowNs })
+        val token = requireNotNull(collector.begin("operation-assets", attemptId = 1L))
+
+        collector.mark(token, DownloadOperationTracePhase.ENRICHMENT_METADATA_STARTED)
+        nowNs = 130L
+        collector.mark(token, DownloadOperationTracePhase.ENRICHMENT_METADATA_FINISHED)
+        collector.mark(token, DownloadOperationTracePhase.ENRICHMENT_COVER_STARTED)
+        nowNs = 175L
+        collector.mark(token, DownloadOperationTracePhase.ENRICHMENT_COVER_FINISHED)
+        collector.mark(token, DownloadOperationTracePhase.ENRICHMENT_LYRICS_STARTED)
+        nowNs = 205L
+        collector.mark(token, DownloadOperationTracePhase.ENRICHMENT_LYRICS_FINISHED)
+        collector.mark(token, DownloadOperationTracePhase.ENRICHMENT_TAG_STARTED)
+        nowNs = 220L
+        val snapshot = requireNotNull(
+            collector.mark(token, DownloadOperationTracePhase.ENRICHMENT_TAG_FINISHED)
+        )
+
+        assertEquals(30L, snapshot.metadataNs)
+        assertEquals(45L, snapshot.coverNs)
+        assertEquals(30L, snapshot.lyricsNs)
+        assertEquals(15L, snapshot.tagNs)
+    }
+
+    @Test
     fun `late callback from an older attempt cannot mutate the newer revision`() {
         var nowNs = 1L
         val collector = DownloadOperationTimingCollector(nowNs = { nowNs })

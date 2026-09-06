@@ -68,7 +68,11 @@ import moe.ouom.neriplayer.core.download.artifact.ownedLeaseIdOrNull
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuildItem
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
+import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogDelta
+import moe.ouom.neriplayer.core.download.catalog.applyDownloadedSongCatalogDelta
+import moe.ouom.neriplayer.core.download.catalog.buildDownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.downloadedSongNewestFirstComparator
+import moe.ouom.neriplayer.core.download.catalog.downloadedSongCatalogEntryKey
 import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.download.enrichment.AssetEnrichmentCoordinator
@@ -101,6 +105,7 @@ import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
+import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceToken
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupRecoveryJournal
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
@@ -125,6 +130,7 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadedSidecarStage
 import moe.ouom.neriplayer.core.player.download.DownloadProgressProjectionStore
 import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
 import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
@@ -161,6 +167,7 @@ object GlobalDownloadManager {
     private const val TAG = "GlobalDownloadManager"
     private const val DOWNLOAD_CATALOG_CACHE_FILE_NAME = "downloaded_song_catalog_v4.json"
     private const val DOWNLOAD_CATALOG_PERSIST_DEBOUNCE_MS = 1_200L
+    private const val DOWNLOAD_CATALOG_DELTA_MAX_ENTRIES = 2_048
     private const val DOWNLOAD_TASK_COMPLETED_RETENTION_MS = 800L
     private const val DOWNLOAD_CATALOG_RECONCILE_DELAY_MS = 1_200L
     private const val DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS = 5_000L
@@ -380,6 +387,17 @@ object GlobalDownloadManager {
         RETRYABLE_FAILURE
     }
 
+    private enum class CatalogPublishMode {
+        FULL,
+        DELTA
+    }
+
+    private data class PendingCatalogPersistRequest(
+        val expectedRevision: Long,
+        val full: Boolean,
+        val delta: DownloadedSongCatalogDelta?
+    )
+
     data class TrafficRiskDownloadRequest(
         val id: Long,
         val songs: List<SongItem>,
@@ -556,6 +574,10 @@ object GlobalDownloadManager {
     private val refreshWaiters =
         mutableSetOf<CompletableDeferred<ManagedLibraryRefreshOutcome>>()
     private var catalogPersistJob: Job? = null
+    private val catalogPersistGeneration = AtomicLong(0L)
+    private val pendingCatalogDeltaByKey = linkedMapOf<String, DownloadedSong>()
+    private val pendingCatalogDeltaRemovedStableKeys = linkedSetOf<String>()
+    private var pendingCatalogPersistRequiresFull = false
     private var catalogReconcileJob: Job? = null
     private var terminalTemporaryWriteCleanupJob: Job? = null
     private var pendingCatalogReconcileForceRefresh = false
@@ -4827,7 +4849,8 @@ object GlobalDownloadManager {
     private fun publishDownloadedSongs(
         context: Context,
         songs: List<DownloadedSong>,
-        persistCatalog: Boolean
+        persistCatalog: Boolean,
+        catalogPublishMode: CatalogPublishMode = CatalogPublishMode.FULL
     ) {
         synchronized(downloadedSongCatalogMutationLock) {
             val visibleSongs = downloadedSongDeleteVisibility.filterVisible(songs)
@@ -4836,15 +4859,42 @@ object GlobalDownloadManager {
                 previousSongs = previousSongs,
                 currentSongs = visibleSongs
             )
+            val catalogDelta = if (
+                catalogPublishMode == CatalogPublishMode.DELTA &&
+                    visibleSongs == songs
+            ) {
+                buildDownloadedSongCatalogDelta(
+                    previousSongs = previousSongs,
+                    currentSongs = visibleSongs
+                )
+            } else {
+                null
+            }
             // 先发布索引再通知列表, 避免界面首帧看到歌曲时索引仍为空
-            downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(visibleSongs)
+            downloadedSongCatalogIndex = if (
+                catalogDelta != null && downloadedSongCatalogReady
+            ) {
+                applyDownloadedSongCatalogDelta(
+                    previousIndex = downloadedSongCatalogIndex,
+                    previousSongs = previousSongs,
+                    currentSongs = visibleSongs
+                )
+            } else {
+                buildDownloadedSongCatalogIndex(visibleSongs)
+            }
             downloadedSongCatalogReady = true
             _downloadedSongs.value = visibleSongs
             downloadedSongCatalogPersistenceRevision.incrementAndGet()
             LocalAssetInvalidationBus.bumpSongs(changedSongKeys)
             _downloadPresenceVersion.value += 1
-            if (persistCatalog && visibleSongs == songs) {
-                scheduleDownloadedSongsCatalogPersist(context)
+            if (
+                persistCatalog && visibleSongs == songs &&
+                    (catalogDelta == null || !catalogDelta.isEmpty)
+            ) {
+                scheduleDownloadedSongsCatalogPersist(
+                    context = context,
+                    delta = catalogDelta
+                )
             }
         }
     }
@@ -4890,20 +4940,83 @@ object GlobalDownloadManager {
         _downloadPresenceVersion.value += 1
     }
 
-    private fun scheduleDownloadedSongsCatalogPersist(context: Context) {
+    private fun scheduleDownloadedSongsCatalogPersist(
+        context: Context,
+        delta: DownloadedSongCatalogDelta? = null
+    ) {
         val appContext = context.applicationContext
         val expectedRevision = downloadedSongCatalogPersistenceRevision.get()
         synchronized(catalogPersistenceLock) {
+            if (delta == null || delta.requiresFullPersistence) {
+                pendingCatalogPersistRequiresFull = true
+                pendingCatalogDeltaByKey.clear()
+                pendingCatalogDeltaRemovedStableKeys.clear()
+            } else if (!pendingCatalogPersistRequiresFull) {
+                delta.upserts.forEach { song ->
+                    val key = downloadedSongCatalogEntryKey(song)
+                    pendingCatalogDeltaByKey[key] = song
+                    song.stableKey
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                        ?.let(pendingCatalogDeltaRemovedStableKeys::remove)
+                }
+                delta.removedStableKeys.forEach { stableKey ->
+                    pendingCatalogDeltaByKey.remove("stable:$stableKey")
+                    pendingCatalogDeltaRemovedStableKeys += stableKey
+                }
+                if (
+                    pendingCatalogDeltaByKey.size +
+                        pendingCatalogDeltaRemovedStableKeys.size >
+                    DOWNLOAD_CATALOG_DELTA_MAX_ENTRIES
+                ) {
+                    pendingCatalogPersistRequiresFull = true
+                    pendingCatalogDeltaByKey.clear()
+                    pendingCatalogDeltaRemovedStableKeys.clear()
+                }
+            }
+            val generation = catalogPersistGeneration.incrementAndGet()
             catalogPersistJob?.cancel()
             catalogPersistJob = scope.launch {
                 delay(DOWNLOAD_CATALOG_PERSIST_DEBOUNCE_MS)
+                if (catalogPersistGeneration.get() != generation) return@launch
+                val request = synchronized(catalogPersistenceLock) {
+                    if (catalogPersistGeneration.get() != generation) {
+                        null
+                    } else {
+                        val requestDelta = DownloadedSongCatalogDelta(
+                            upserts = pendingCatalogDeltaByKey.values.toList(),
+                            removedStableKeys = pendingCatalogDeltaRemovedStableKeys.toSet()
+                        )
+                        val request = PendingCatalogPersistRequest(
+                            expectedRevision = expectedRevision,
+                            full = pendingCatalogPersistRequiresFull,
+                            delta = requestDelta.takeUnless { it.isEmpty }
+                        )
+                        pendingCatalogPersistRequiresFull = false
+                        pendingCatalogDeltaByKey.clear()
+                        pendingCatalogDeltaRemovedStableKeys.clear()
+                        request
+                    }
+                } ?: return@launch
                 catalogPersistenceMutex.withLock {
                     val songs = synchronized(downloadedSongCatalogMutationLock) {
                         _downloadedSongs.value.takeIf {
-                            downloadedSongCatalogPersistenceRevision.get() == expectedRevision
+                            downloadedSongCatalogPersistenceRevision.get() ==
+                                request.expectedRevision
                         }
                     } ?: return@withLock
-                    persistDownloadedSongsCatalog(appContext, songs)
+                    if (request.full || request.delta == null) {
+                        persistDownloadedSongsCatalog(appContext, songs)
+                    } else {
+                        val persisted = downloadedSongCatalogStore.persistDelta(
+                            context = appContext,
+                            delta = request.delta,
+                            snapshot = songs
+                        )
+                        if (!persisted) {
+                            persistDownloadedSongsCatalog(appContext, songs)
+                        }
+                    }
                 }
             }
         }
@@ -4912,8 +5025,12 @@ object GlobalDownloadManager {
     /** 删除事务要同步写空 catalog 时，先收敛可能在等待中的延迟写入 */
     private fun cancelScheduledDownloadedSongsCatalogPersist() {
         synchronized(catalogPersistenceLock) {
+            catalogPersistGeneration.incrementAndGet()
             catalogPersistJob?.cancel()
             catalogPersistJob = null
+            pendingCatalogPersistRequiresFull = false
+            pendingCatalogDeltaByKey.clear()
+            pendingCatalogDeltaRemovedStableKeys.clear()
         }
     }
 
@@ -6110,6 +6227,7 @@ object GlobalDownloadManager {
                                 operationId = enrichmentOperationId,
                                 artifactLeaseId = artifactLeaseId,
                                 expectedAttemptId = expectedAttemptId,
+                                traceToken = traceToken,
                                 refreshCatalog = refreshCatalog,
                                 allowMissingTask = allowMissingTask,
                                 directoryMutationLeaseOwned = false,
@@ -6921,6 +7039,7 @@ object GlobalDownloadManager {
         operationId: String,
         artifactLeaseId: String?,
         expectedAttemptId: Long?,
+        traceToken: DownloadOperationTraceToken?,
         refreshCatalog: Boolean,
         allowMissingTask: Boolean,
         directoryMutationLeaseOwned: Boolean,
@@ -7046,7 +7165,23 @@ object GlobalDownloadManager {
                 context = context,
                 song = song,
                 storedAudio = enrichmentAudio,
-                operationId = operationId
+                operationId = operationId,
+                stageObserver = { stage, started ->
+                    val phase = when (stage) {
+                        DownloadedSidecarStage.COVER -> if (started) {
+                            DownloadOperationTracePhase.ENRICHMENT_COVER_STARTED
+                        } else {
+                            DownloadOperationTracePhase.ENRICHMENT_COVER_FINISHED
+                        }
+
+                        DownloadedSidecarStage.LYRICS -> if (started) {
+                            DownloadOperationTracePhase.ENRICHMENT_LYRICS_STARTED
+                        } else {
+                            DownloadOperationTracePhase.ENRICHMENT_LYRICS_FINISHED
+                        }
+                    }
+                    DownloadOperationTrace.mark(traceToken, phase)
+                }
             )
             if (
                 admissionTicket != null &&
@@ -7103,62 +7238,75 @@ object GlobalDownloadManager {
                     "expectedTranslatedLyric=${sidecarReferences.expectedTranslatedLyric}, " +
                     "expectedRomanizedLyric=${sidecarReferences.expectedRomanizedLyric}"
             )
-            val metadataEmbeddingState = if (metadataPostProcessingEnabled) {
-                when (
-                    runDownloadedAudioMetadataPostProcessing(
+            val metadataEmbeddingState: DownloadedAudioEmbeddingState
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.ENRICHMENT_METADATA_STARTED
+            )
+            try {
+                metadataEmbeddingState = if (metadataPostProcessingEnabled) {
+                    when (
+                        runDownloadedAudioMetadataPostProcessing(
+                            context = context,
+                            audio = enrichmentAudio,
+                            song = song,
+                            sidecarReferences = sidecarReferences,
+                            traceToken = traceToken
+                        )
+                    ) {
+                        MetadataPostProcessingResult.EMBEDDED_VERIFIED ->
+                            DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+
+                        MetadataPostProcessingResult.UNSUPPORTED_CONTAINER -> {
+                            preserveUnsupportedMetadataEmbedding(
+                                context = context,
+                                song = song,
+                                storedAudio = enrichmentAudio,
+                                sidecarReferences = sidecarReferences,
+                                operationId = operationId,
+                                artifactLeaseId = artifactLeaseId,
+                                expectedAttemptId = expectedAttemptId,
+                                admissionTicket = admissionTicket
+                            )
+                            return
+                        }
+
+                        MetadataPostProcessingResult.RETRYABLE_FAILURE ->
+                            error("embedded metadata post-processing failed")
+                    }
+                } else {
+                    DownloadedAudioEmbeddingState.USER_DISABLED
+                }
+                if (
+                    admissionTicket != null &&
+                        !isDownloadAdmissionTicketCurrent(
+                            context = context,
+                            admissionTicket = admissionTicket,
+                            stableKey = song.stableKey(),
+                            operationId = operationId
+                        )
+                ) {
+                    return
+                }
+                check(
+                    persistDownloadedMetadata(
                         context = context,
                         audio = enrichmentAudio,
                         song = song,
-                        sidecarReferences = sidecarReferences
-                    )
-                ) {
-                    MetadataPostProcessingResult.EMBEDDED_VERIFIED ->
-                        DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
-
-                    MetadataPostProcessingResult.UNSUPPORTED_CONTAINER -> {
-                        preserveUnsupportedMetadataEmbedding(
-                            context = context,
-                            song = song,
-                            storedAudio = enrichmentAudio,
-                            sidecarReferences = sidecarReferences,
-                            operationId = operationId,
-                            artifactLeaseId = artifactLeaseId,
-                            expectedAttemptId = expectedAttemptId,
-                            admissionTicket = admissionTicket
-                        )
-                        return
-                    }
-
-                    MetadataPostProcessingResult.RETRYABLE_FAILURE ->
-                        error("embedded metadata post-processing failed")
-                }
-            } else {
-                DownloadedAudioEmbeddingState.USER_DISABLED
-            }
-            if (
-                admissionTicket != null &&
-                    !isDownloadAdmissionTicketCurrent(
-                        context = context,
-                        admissionTicket = admissionTicket,
-                        stableKey = song.stableKey(),
+                        existingMetadataHint = existingMetadataHint,
+                        sidecarReferences = sidecarReferences,
+                        downloadFinalized = true,
+                        metadataEmbeddingState = metadataEmbeddingState,
+                        resolveExistingSidecars = false,
                         operationId = operationId
                     )
-            ) {
-                return
-            }
-            check(
-                persistDownloadedMetadata(
-                    context = context,
-                    audio = enrichmentAudio,
-                    song = song,
-                    existingMetadataHint = existingMetadataHint,
-                    sidecarReferences = sidecarReferences,
-                    downloadFinalized = true,
-                    metadataEmbeddingState = metadataEmbeddingState,
-                    resolveExistingSidecars = false,
-                    operationId = operationId
+                ) { "final metadata persist failed" }
+            } finally {
+                DownloadOperationTrace.mark(
+                    traceToken,
+                    DownloadOperationTracePhase.ENRICHMENT_METADATA_FINISHED
                 )
-            ) { "final metadata persist failed" }
+            }
             if (
                 admissionTicket != null &&
                     !isDownloadAdmissionTicketCurrent(
@@ -7361,22 +7509,6 @@ object GlobalDownloadManager {
             )
         } finally {
             directoryCommitLease?.close()
-            if (
-                !directoryMutationLeaseOwned &&
-                    (
-                    admissionTicket == null ||
-                            isDownloadAdmissionTicketCurrent(
-                                context = context,
-                                admissionTicket = admissionTicket,
-                                stableKey = song.stableKey(),
-                                operationId = operationId
-                            )
-                        )
-            ) {
-                // 资产队列本身已经通过增量发布更新 catalog。这里仅安排轻量对账，
-                // 避免每首歌结束都强制完整枚举 SAF 导致后段 GC 和文件增长观感变慢
-                scheduleCatalogReconcile(context, forceRefresh = false)
-            }
         }
     }
 
@@ -7661,9 +7793,9 @@ object GlobalDownloadManager {
             terminalTemporaryWriteCleanupRecorded =
                 promotion.terminalTemporaryWriteCleanupRecorded
         )
-        if (refreshCatalog) {
-            scheduleCatalogReconcile(context, forceRefresh = false)
-        }
+        // publishCompletedDownloadOptimistically 已经写入内存和 Room delta；
+        // 正常完成不再为每首歌曲触发一次完整目录扫描。refreshCatalog 仅保留给
+        // 调用方的兼容参数，真正需要对账的异常路径会显式请求 forceRefresh
         return true
     }
 
@@ -7921,69 +8053,80 @@ object GlobalDownloadManager {
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
         song: SongItem,
-        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
+        traceToken: DownloadOperationTraceToken? = null
     ): MetadataPostProcessingResult {
         val songKey = song.stableKey()
-        repeat(METADATA_POST_PROCESSING_MAX_ATTEMPTS) { attempt ->
-            if (isSongCancelled(songKey)) {
-                return MetadataPostProcessingResult.RETRYABLE_FAILURE
-            }
-            val writeResult = runCatching {
-                metadataPostProcessingSemaphore.withPermit {
-                    val standardizedLyricEmbeddingEnabled =
-                        isStandardizedLyricEmbeddingEnabled(context)
-                    DownloadedAudioTagWriter.write(
-                        context = context,
-                        audio = audio,
-                        song = song,
-                        sidecarReferences = sidecarReferences,
-                        standardizedLyricEmbeddingEnabled = standardizedLyricEmbeddingEnabled
-                    )
+        DownloadOperationTrace.mark(
+            traceToken,
+            DownloadOperationTracePhase.ENRICHMENT_TAG_STARTED
+        )
+        try {
+            repeat(METADATA_POST_PROCESSING_MAX_ATTEMPTS) { attempt ->
+                if (isSongCancelled(songKey)) {
+                    return MetadataPostProcessingResult.RETRYABLE_FAILURE
                 }
-            }
-            val hasRemainingAttempts =
-                attempt < METADATA_POST_PROCESSING_MAX_ATTEMPTS - 1 && !isSongCancelled(songKey)
-            when (tagPostProcessingAction(writeResult.getOrNull(), hasRemainingAttempts)) {
-                TagPostProcessingAction.FINALIZE_TAGGED -> {
-                    return MetadataPostProcessingResult.EMBEDDED_VERIFIED
-                }
-                TagPostProcessingAction.RETRY -> {
-                    val lastError = writeResult.exceptionOrNull()
-                        ?: IllegalStateException(
-                            "TagLib 未确认标签写入成功: outcome=${writeResult.getOrNull()}"
+                val writeResult = runCatching {
+                    metadataPostProcessingSemaphore.withPermit {
+                        val standardizedLyricEmbeddingEnabled =
+                            isStandardizedLyricEmbeddingEnabled(context)
+                        DownloadedAudioTagWriter.write(
+                            context = context,
+                            audio = audio,
+                            song = song,
+                            sidecarReferences = sidecarReferences,
+                            standardizedLyricEmbeddingEnabled = standardizedLyricEmbeddingEnabled
                         )
-                    NPLogger.w(
-                        TAG,
-                        "元信息后处理失败，准备重试(第${attempt + 1}次): " +
-                            "${audio.name}, stage=tag_post_process, " +
-                            "outcome=${writeResult.getOrNull()}, " +
-                            "error=${lastError.javaClass.simpleName}: ${lastError.message}",
-                        lastError
-                    )
-                    delay(METADATA_POST_PROCESSING_RETRY_DELAY_MS * (attempt + 1))
+                    }
                 }
-                TagPostProcessingAction.PRESERVE_UNFINALIZED -> {
-                    val reason = writeResult.exceptionOrNull()?.message
-                        ?: writeResult.getOrNull()?.name
-                    NPLogger.w(
-                        TAG,
-                        "标签写入持续失败，保留音频等待收尾重试: " +
-                            "${audio.name}, stage=tag_post_process, reason=$reason",
-                        writeResult.exceptionOrNull()
-                    )
-                    return if (
-                        writeResult.getOrNull() ==
-                            DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER
-                    ) {
-                        MetadataPostProcessingResult.UNSUPPORTED_CONTAINER
-                    } else {
-                        MetadataPostProcessingResult.RETRYABLE_FAILURE
+                val hasRemainingAttempts =
+                    attempt < METADATA_POST_PROCESSING_MAX_ATTEMPTS - 1 && !isSongCancelled(songKey)
+                when (tagPostProcessingAction(writeResult.getOrNull(), hasRemainingAttempts)) {
+                    TagPostProcessingAction.FINALIZE_TAGGED -> {
+                        return MetadataPostProcessingResult.EMBEDDED_VERIFIED
+                    }
+                    TagPostProcessingAction.RETRY -> {
+                        val lastError = writeResult.exceptionOrNull()
+                            ?: IllegalStateException(
+                                "TagLib 未确认标签写入成功: outcome=${writeResult.getOrNull()}"
+                            )
+                        NPLogger.w(
+                            TAG,
+                            "元信息后处理失败，准备重试(第${attempt + 1}次): " +
+                                "${audio.name}, stage=tag_post_process, " +
+                                "outcome=${writeResult.getOrNull()}, " +
+                                "error=${lastError.javaClass.simpleName}: ${lastError.message}",
+                            lastError
+                        )
+                        delay(METADATA_POST_PROCESSING_RETRY_DELAY_MS * (attempt + 1))
+                    }
+                    TagPostProcessingAction.PRESERVE_UNFINALIZED -> {
+                        val reason = writeResult.exceptionOrNull()?.message
+                            ?: writeResult.getOrNull()?.name
+                        NPLogger.w(
+                            TAG,
+                            "标签写入持续失败，保留音频等待收尾重试: " +
+                                "${audio.name}, stage=tag_post_process, reason=$reason",
+                            writeResult.exceptionOrNull()
+                        )
+                        return if (
+                            writeResult.getOrNull() ==
+                                DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER
+                        ) {
+                            MetadataPostProcessingResult.UNSUPPORTED_CONTAINER
+                        } else {
+                            MetadataPostProcessingResult.RETRYABLE_FAILURE
+                        }
                     }
                 }
             }
+            return MetadataPostProcessingResult.RETRYABLE_FAILURE
+        } finally {
+            DownloadOperationTrace.mark(
+                traceToken,
+                DownloadOperationTracePhase.ENRICHMENT_TAG_FINISHED
+            )
         }
-
-        return MetadataPostProcessingResult.RETRYABLE_FAILURE
     }
 
     private suspend fun isDownloadMetadataPostProcessingEnabled(context: Context): Boolean {
@@ -20447,7 +20590,12 @@ object GlobalDownloadManager {
                 mergedSongs = upsertDownloadedSongCatalog(mergedSongs, song)
             }
             if (mergedSongs != _downloadedSongs.value) {
-                publishDownloadedSongs(context, mergedSongs, persistCatalog = true)
+                publishDownloadedSongs(
+                    context = context,
+                    songs = mergedSongs,
+                    persistCatalog = true,
+                    catalogPublishMode = CatalogPublishMode.DELTA
+                )
             }
         }
     }

@@ -59,6 +59,40 @@ internal class DownloadedSongCatalogStore(
         }
     }
 
+    /**
+     * 增量写入 catalog；Room 失败时使用同一份完整快照走既有 fallback
+     */
+    fun persistDelta(
+        context: Context,
+        delta: DownloadedSongCatalogDelta,
+        snapshot: List<DownloadedSong>
+    ): Boolean {
+        if (delta.isEmpty) return true
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            NPLogger.w(loggerTag, "主线程拒绝同步写入下载歌曲目录增量")
+            return false
+        }
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                persistDownloadedSongCatalogDeltaWithFallback(
+                    store = roomStore(context),
+                    delta = delta,
+                    snapshot = snapshot,
+                    onRoomFailure = { error ->
+                        NPLogger.e(
+                            loggerTag,
+                            "写入 Room 下载歌曲目录增量失败，降级完整目录",
+                            error
+                        )
+                    }
+                )
+            }
+        }.map { true }.getOrElse { error ->
+            NPLogger.e(loggerTag, "写入下载歌曲目录增量失败", error)
+            false
+        }
+    }
+
     fun persistConfirmedEmpty(context: Context): Boolean {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             NPLogger.w(loggerTag, "主线程拒绝同步写入空下载歌曲目录")
@@ -161,6 +195,14 @@ internal enum class DownloadedSongCatalogPersistTarget {
 internal interface DownloadedSongCatalogPersistenceStore {
     suspend fun persistCatalog(songs: List<DownloadedSong>)
 
+    suspend fun persistCatalogDelta(
+        delta: DownloadedSongCatalogDelta,
+        snapshot: List<DownloadedSong>
+    ) {
+        // 旧实现没有增量入口时仍以完整快照保持正确性
+        persistCatalog(snapshot)
+    }
+
     suspend fun persistLegacyFallback(songs: List<DownloadedSong>)
 }
 
@@ -175,6 +217,22 @@ internal suspend fun persistDownloadedSongCatalogWithFallback(
     }.getOrElse { error ->
         onRoomFailure(error)
         store.persistLegacyFallback(songs)
+        DownloadedSongCatalogPersistTarget.LEGACY_JSON
+    }
+}
+
+internal suspend fun persistDownloadedSongCatalogDeltaWithFallback(
+    store: DownloadedSongCatalogPersistenceStore,
+    delta: DownloadedSongCatalogDelta,
+    snapshot: List<DownloadedSong>,
+    onRoomFailure: (Throwable) -> Unit = {}
+): DownloadedSongCatalogPersistTarget {
+    return runCatching {
+        store.persistCatalogDelta(delta, snapshot)
+        DownloadedSongCatalogPersistTarget.ROOM
+    }.getOrElse { error ->
+        onRoomFailure(error)
+        store.persistLegacyFallback(snapshot)
         DownloadedSongCatalogPersistTarget.LEGACY_JSON
     }
 }

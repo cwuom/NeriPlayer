@@ -70,6 +70,7 @@ import moe.ouom.neriplayer.core.download.execution.isPostCoreDownloadOperationSt
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup
 import moe.ouom.neriplayer.core.download.shouldRollbackCancelledAudio
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
@@ -140,7 +141,7 @@ object AudioDownloadManager {
     private const val YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES = 4L * 1024L * 1024L
     private const val MAX_HLS_PLAYLIST_BYTES = 1L * 1024L * 1024L
     private const val MAX_HLS_SEGMENT_BYTES = 64L * 1024L * 1024L
-    internal const val MAX_COVER_RESPONSE_BYTES = 16L * 1024L * 1024L
+    internal const val MAX_COVER_RESPONSE_BYTES = MAX_SOURCE_COVER_BYTES
 
     private val backgroundDownloadClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AppContainer.sharedOkHttpClient.newBuilder()
@@ -1021,6 +1022,11 @@ object AudioDownloadManager {
                 }
             )
         }
+    }
+
+    internal enum class DownloadedSidecarStage {
+        COVER,
+        LYRICS
     }
 
     internal data class DownloadedPayloadSummary(
@@ -3442,7 +3448,8 @@ object AudioDownloadManager {
         context: Context,
         song: SongItem,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        operationId: String? = null
+        operationId: String? = null,
+        stageObserver: ((DownloadedSidecarStage, Boolean) -> Unit)? = null
     ): DownloadedSidecarReferences = withContext(Dispatchers.IO) {
         val songKey = song.stableKey()
         val normalizedOperationId = operationId
@@ -3473,7 +3480,8 @@ object AudioDownloadManager {
                     baseName = storedAudio.nameWithoutExtension,
                     storedAudio = storedAudio,
                     requireActiveAttempt = false,
-                    operationId = normalizedOperationId
+                    operationId = normalizedOperationId,
+                    stageObserver = stageObserver
                 )
             }.getOrElse { error ->
                 if (error is CancellationException) {
@@ -3602,7 +3610,8 @@ object AudioDownloadManager {
         batchSessionId: Long? = null,
         attemptId: Long? = null,
         requireActiveAttempt: Boolean = true,
-        operationId: String? = null
+        operationId: String? = null,
+        stageObserver: ((DownloadedSidecarStage, Boolean) -> Unit)? = null
     ): DownloadedSidecarReferences {
         ensureSongDownloadNotCancelled(
             songKey = songKey,
@@ -3619,28 +3628,38 @@ object AudioDownloadManager {
             allowSlowLookup = true
         )
         val references = if (useSequentialSidecarWrites) {
-            val lyricReferences = downloadLyrics(
-                context = context,
-                song = song,
-                songKey = songKey,
-                baseName = baseName,
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt,
-                operationId = operationId
-            )
-            val cachedCover = cacheCover(
-                context = context,
-                song = song,
-                songKey = songKey,
-                baseName = baseName,
-                storedAudio = storedAudio,
-                batchSessionId = batchSessionId,
-                attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt,
-                allowIndexedLookup = allowIndexedSidecarLookup,
-                operationId = operationId
-            )
+            val lyricReferences = observeSidecarStage(
+                stage = DownloadedSidecarStage.LYRICS,
+                observer = stageObserver
+            ) {
+                downloadLyrics(
+                    context = context,
+                    song = song,
+                    songKey = songKey,
+                    baseName = baseName,
+                    batchSessionId = batchSessionId,
+                    attemptId = attemptId,
+                    requireActiveAttempt = requireActiveAttempt,
+                    operationId = operationId
+                )
+            }
+            val cachedCover = observeSidecarStage(
+                stage = DownloadedSidecarStage.COVER,
+                observer = stageObserver
+            ) {
+                cacheCover(
+                    context = context,
+                    song = song,
+                    songKey = songKey,
+                    baseName = baseName,
+                    storedAudio = storedAudio,
+                    batchSessionId = batchSessionId,
+                    attemptId = attemptId,
+                    requireActiveAttempt = requireActiveAttempt,
+                    allowIndexedLookup = allowIndexedSidecarLookup,
+                    operationId = operationId
+                )
+            }
             DownloadedSidecarReferences(
                 coverReference = cachedCover?.reference,
                 createdCover = cachedCover?.created == true,
@@ -3658,31 +3677,41 @@ object AudioDownloadManager {
         } else {
             coroutineScope {
                 val lyricJob = async {
-                    downloadLyrics(
-                        context = context,
-                        song = song,
-                        songKey = songKey,
-                        baseName = baseName,
-                        serializeWrites = false,
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId,
-                        requireActiveAttempt = requireActiveAttempt,
-                        operationId = operationId
-                    )
+                    observeSidecarStage(
+                        stage = DownloadedSidecarStage.LYRICS,
+                        observer = stageObserver
+                    ) {
+                        downloadLyrics(
+                            context = context,
+                            song = song,
+                            songKey = songKey,
+                            baseName = baseName,
+                            serializeWrites = false,
+                            batchSessionId = batchSessionId,
+                            attemptId = attemptId,
+                            requireActiveAttempt = requireActiveAttempt,
+                            operationId = operationId
+                        )
+                    }
                 }
                 val coverJob = async {
-                    cacheCover(
-                        context = context,
-                        song = song,
-                        songKey = songKey,
-                        baseName = baseName,
-                        storedAudio = storedAudio,
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId,
-                        requireActiveAttempt = requireActiveAttempt,
-                        allowIndexedLookup = allowIndexedSidecarLookup,
-                        operationId = operationId
-                    )
+                    observeSidecarStage(
+                        stage = DownloadedSidecarStage.COVER,
+                        observer = stageObserver
+                    ) {
+                        cacheCover(
+                            context = context,
+                            song = song,
+                            songKey = songKey,
+                            baseName = baseName,
+                            storedAudio = storedAudio,
+                            batchSessionId = batchSessionId,
+                            attemptId = attemptId,
+                            requireActiveAttempt = requireActiveAttempt,
+                            allowIndexedLookup = allowIndexedSidecarLookup,
+                            operationId = operationId
+                        )
+                    }
                 }
                 val lyricReferences = lyricJob.await()
                 val cachedCover = coverJob.await()
@@ -3707,6 +3736,19 @@ object AudioDownloadManager {
             completedAudioReferenceRegistry.peekPartialSidecarReferences(songKey)
                 ?.retainCreatedOnly()
         )
+    }
+
+    private suspend fun <T> observeSidecarStage(
+        stage: DownloadedSidecarStage,
+        observer: ((DownloadedSidecarStage, Boolean) -> Unit)?,
+        block: suspend () -> T
+    ): T {
+        runCatching { observer?.invoke(stage, true) }
+        return try {
+            block()
+        } finally {
+            runCatching { observer?.invoke(stage, false) }
+        }
     }
 
     private suspend fun cacheCover(

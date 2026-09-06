@@ -111,6 +111,39 @@ internal class DownloadedSongCatalogRoomStore(
         }
     }
 
+    override suspend fun persistCatalogDelta(
+        delta: DownloadedSongCatalogDelta,
+        snapshot: List<DownloadedSong>
+    ) {
+        if (delta.isEmpty) return
+        globalMutex.withLock {
+            val rootKey = snapshotCacheKeyProvider(context)
+            ManagedLibraryItemRoomStore.applyPreviewDelta(
+                context = context,
+                upserts = delta.upserts,
+                removedStableKeys = delta.removedStableKeys,
+                database = database,
+                stateForSong = { song ->
+                    if (song.filePath.contains(PENDING_AUDIO_WRITE_MARKER)) {
+                        "CORE_COMMITTED"
+                    } else {
+                        "FINALIZED"
+                    }
+                }
+            )
+            if (snapshot.isNotEmpty()) {
+                clearConfirmedEmptyMarker(rootKey)
+                database.syncMetadataDao().deleteMigrationMetadata(
+                    listOf(CONFIRMED_EMPTY_METADATA_KEY)
+                )
+            }
+            // 预览行先以 delta 更新，完整备份只按同一批 snapshot 写一次
+            if (writeManagedCatalogBackup(rootKey, snapshot)) {
+                markRoomPrimary(rootKey)
+            }
+        }
+    }
+
     /** 全库物理删除确认后清空 Room 行，并留下可跨进程恢复的空目录事实 */
     suspend fun persistConfirmedEmpty() {
         globalMutex.withLock {

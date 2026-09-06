@@ -32,6 +32,14 @@ internal enum class DownloadOperationTracePhase {
     CORE_COMMITTED,
     ENRICHMENT_ENQUEUED,
     ENRICHMENT_STARTED,
+    ENRICHMENT_METADATA_STARTED,
+    ENRICHMENT_METADATA_FINISHED,
+    ENRICHMENT_COVER_STARTED,
+    ENRICHMENT_COVER_FINISHED,
+    ENRICHMENT_LYRICS_STARTED,
+    ENRICHMENT_LYRICS_FINISHED,
+    ENRICHMENT_TAG_STARTED,
+    ENRICHMENT_TAG_FINISHED,
     ENRICHMENT_FINISHED,
     TERMINAL
 }
@@ -112,6 +120,30 @@ internal data class DownloadOperationTiming(
         get() = elapsed(
             DownloadOperationTracePhase.ENRICHMENT_STARTED,
             DownloadOperationTracePhase.ENRICHMENT_FINISHED
+        )
+
+    val metadataNs: Long?
+        get() = elapsed(
+            DownloadOperationTracePhase.ENRICHMENT_METADATA_STARTED,
+            DownloadOperationTracePhase.ENRICHMENT_METADATA_FINISHED
+        )
+
+    val coverNs: Long?
+        get() = elapsed(
+            DownloadOperationTracePhase.ENRICHMENT_COVER_STARTED,
+            DownloadOperationTracePhase.ENRICHMENT_COVER_FINISHED
+        )
+
+    val lyricsNs: Long?
+        get() = elapsed(
+            DownloadOperationTracePhase.ENRICHMENT_LYRICS_STARTED,
+            DownloadOperationTracePhase.ENRICHMENT_LYRICS_FINISHED
+        )
+
+    val tagNs: Long?
+        get() = elapsed(
+            DownloadOperationTracePhase.ENRICHMENT_TAG_STARTED,
+            DownloadOperationTracePhase.ENRICHMENT_TAG_FINISHED
         )
 
     val lifetimeNs: Long?

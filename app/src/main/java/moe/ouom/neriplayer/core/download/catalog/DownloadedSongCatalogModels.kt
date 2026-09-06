@@ -78,6 +78,129 @@ internal data class DownloadedSongCatalogIndex(
     }
 }
 
+/**
+ * catalog 发布时只携带发生变化的条目，Room 端可以在一个事务中应用这些变化
+ */
+internal data class DownloadedSongCatalogDelta(
+    val upserts: List<DownloadedSong>,
+    val removedStableKeys: Set<String>,
+    val requiresFullPersistence: Boolean = false
+) {
+    val isEmpty: Boolean
+        get() = upserts.isEmpty() && removedStableKeys.isEmpty()
+}
+
+internal fun downloadedSongCatalogEntryKey(song: DownloadedSong): String {
+    return song.stableKey
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?.let { "stable:$it" }
+        ?: "reference:${song.mediaUri?.trim()?.takeIf { it.isNotBlank() } ?: song.filePath}"
+}
+
+internal fun buildDownloadedSongCatalogDelta(
+    previousSongs: List<DownloadedSong>,
+    currentSongs: List<DownloadedSong>
+): DownloadedSongCatalogDelta {
+    val previousByKey = previousSongs.associateBy(::downloadedSongCatalogEntryKey)
+    val currentByKey = currentSongs.associateBy(::downloadedSongCatalogEntryKey)
+    val upserts = currentSongs.filter { song ->
+        previousByKey[downloadedSongCatalogEntryKey(song)] != song
+    }
+    val removedStableKeys = previousSongs.asSequence()
+        .mapNotNull { song ->
+            val stableKey = song.stableKey?.trim()?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            stableKey.takeUnless { currentByKey.containsKey("stable:$it") }
+        }
+        .toCollection(linkedSetOf())
+    return DownloadedSongCatalogDelta(
+        upserts = upserts,
+        removedStableKeys = removedStableKeys,
+        requiresFullPersistence = previousSongs.any { it.stableKey?.trim().isNullOrBlank() } ||
+            currentSongs.any { it.stableKey?.trim().isNullOrBlank() }
+    )
+}
+
+/**
+ * 仅重建受影响的索引桶，避免每首完成后重新为整个 catalog 分配所有 map/list
+ */
+internal fun applyDownloadedSongCatalogDelta(
+    previousIndex: DownloadedSongCatalogIndex,
+    previousSongs: List<DownloadedSong>,
+    currentSongs: List<DownloadedSong>
+): DownloadedSongCatalogIndex {
+    if (previousSongs == currentSongs) return previousIndex
+    val previousByKey = previousSongs.associateBy(::downloadedSongCatalogEntryKey)
+    val currentByKey = currentSongs.associateBy(::downloadedSongCatalogEntryKey)
+    val changedKeys = (previousByKey.keys + currentByKey.keys)
+        .filterTo(linkedSetOf()) { key -> previousByKey[key] != currentByKey[key] }
+    if (changedKeys.isEmpty()) return previousIndex
+
+    val affectedSongs = changedKeys.flatMap { key ->
+        listOfNotNull(previousByKey[key], currentByKey[key])
+    }
+    val affectedReferences = affectedSongs.flatMapTo(linkedSetOf()) { song ->
+        listOfNotNull(
+            song.filePath.takeIf(String::isNotBlank),
+            song.mediaUri?.takeIf(String::isNotBlank)
+        )
+    }
+    val affectedFileNames = affectedSongs
+        .flatMapTo(linkedSetOf(), ::downloadedSongLocalFileNames)
+    val affectedStableKeys = affectedSongs
+        .mapNotNull { song -> song.catalogStableKey()?.takeIf(String::isNotBlank) }
+        .toSet()
+    val affectedLegacyKeys = affectedSongs
+        .filter(DownloadedSong::isLegacyRemoteIdentityMissing)
+        .map { song -> downloadedSongCatalogIdentityKey(song.id, song.name, song.artist) }
+        .toSet()
+
+    val songsByLocalReference = previousIndex.songsByLocalReference.toMutableMap()
+    affectedReferences.forEach { reference ->
+        currentSongs.firstOrNull { song ->
+            song.filePath == reference || song.mediaUri == reference
+        }?.let { replacement ->
+            songsByLocalReference[reference] = replacement
+        } ?: songsByLocalReference.remove(reference)
+    }
+
+    val songsByStableIdentityKey = previousIndex.songsByStableIdentityKey.toMutableMap()
+    affectedStableKeys.forEach { stableKey ->
+        currentSongs.firstOrNull { song -> song.catalogStableKey() == stableKey }
+            ?.let { replacement -> songsByStableIdentityKey[stableKey] = replacement }
+            ?: songsByStableIdentityKey.remove(stableKey)
+    }
+
+    val songsByLegacyIdentityKey = previousIndex.songsByLegacyIdentityKey.toMutableMap()
+    affectedLegacyKeys.forEach { legacyKey ->
+        currentSongs.firstOrNull { song ->
+            song.isLegacyRemoteIdentityMissing() &&
+                downloadedSongCatalogIdentityKey(song.id, song.name, song.artist) == legacyKey
+        }?.let { replacement -> songsByLegacyIdentityKey[legacyKey] = replacement }
+            ?: songsByLegacyIdentityKey.remove(legacyKey)
+    }
+
+    val songsByLocalFileName = previousIndex.songsByLocalFileName.toMutableMap()
+    affectedFileNames.forEach { fileName ->
+        val replacements = currentSongs
+            .filter { song -> fileName in downloadedSongLocalFileNames(song) }
+            .distinctBy(DownloadedSong::deletionIdentity)
+        if (replacements.isEmpty()) {
+            songsByLocalFileName.remove(fileName)
+        } else {
+            songsByLocalFileName[fileName] = replacements
+        }
+    }
+
+    return DownloadedSongCatalogIndex(
+        songsByLocalReference = songsByLocalReference,
+        songsByStableIdentityKey = songsByStableIdentityKey,
+        songsByLegacyIdentityKey = songsByLegacyIdentityKey,
+        songsByLocalFileName = songsByLocalFileName
+    )
+}
+
 private fun DownloadedSongCatalogIndex.findUniqueLegacyLocalMatch(
     song: SongItem
 ): DownloadedSong? {

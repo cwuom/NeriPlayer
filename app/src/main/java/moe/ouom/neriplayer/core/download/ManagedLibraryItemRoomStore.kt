@@ -189,6 +189,67 @@ internal object ManagedLibraryItemRoomStore {
         }
     }
 
+    /**
+     * 在一个 Room 事务中应用 catalog 增量，避免每个完成条目各自开启事务
+     */
+    suspend fun applyPreviewDelta(
+        context: Context,
+        upserts: List<DownloadedSong>,
+        removedStableKeys: Set<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        stateForSong: (DownloadedSong) -> String = { "FINALIZED" },
+        metadataRevision: Long = System.currentTimeMillis()
+    ) {
+        val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(context)
+        val dao = database.managedLibraryItemDao()
+        database.withTransaction {
+            removedStableKeys.forEach { stableKey ->
+                dao.delete(libraryId, stableKey)
+            }
+            upserts.forEach { song ->
+                val stableKey = song.stableKey?.trim().takeIf { !it.isNullOrBlank() }
+                    ?: return@forEach
+                val reference = song.mediaUri?.takeIf(String::isNotBlank)
+                    ?: song.filePath.takeIf(String::isNotBlank)
+                    ?: return@forEach
+                val audioName = song.filePath.substringAfterLast('/')
+                    .takeIf(String::isNotBlank)
+                val state = stateForSong(song)
+                val preview = ManagedLibraryItemEntity(
+                    rootKey = libraryId,
+                    stableKey = stableKey,
+                    artifactId = "managed:$libraryId:$stableKey",
+                    state = state,
+                    audioReference = reference,
+                    audioName = audioName,
+                    fileSize = song.fileSize,
+                    updatedAtMs = metadataRevision,
+                    needsReconcile = state != "FINALIZED",
+                    metadataName = null,
+                    locatorHint = reference,
+                    titlePreview = song.displayName(),
+                    artistPreview = song.displayArtist(),
+                    downloadedAtMs = song.downloadTime.takeIf { it > 0L },
+                    metadataRevision = metadataRevision
+                )
+                upsertPreviewInTransaction(
+                    database = database,
+                    item = preview,
+                    audioReference = reference,
+                    audioName = audioName,
+                    fileSize = song.fileSize.takeIf { it > 0L },
+                    downloadedAtMs = song.downloadTime.takeIf { it > 0L },
+                    metadataName = null,
+                    locatorHint = reference,
+                    titlePreview = song.displayName(),
+                    artistPreview = song.displayArtist(),
+                    coverKeyPreview = null,
+                    metadataRevision = metadataRevision
+                )
+            }
+        }
+    }
+
     private suspend fun upsertPreviewInTransaction(
         database: NeriUserDataDatabase,
         item: ManagedLibraryItemEntity,
