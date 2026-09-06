@@ -54,6 +54,11 @@ internal fun isPostCoreDownloadOperationState(state: String?): Boolean {
     )
 }
 
+/** retry deadline 由持久化时钟判断，缺失 deadline 的旧记录仍可立即调度 */
+internal fun isRetryDeadlineReady(nextRetryAtMs: Long?, nowMs: Long): Boolean {
+    return nextRetryAtMs == null || nextRetryAtMs <= nowMs
+}
+
 internal object DownloadOperationStateTransitions {
     private val coreCommittedStates = listOf(
         DownloadOperationState.CORE_COMMITTED,

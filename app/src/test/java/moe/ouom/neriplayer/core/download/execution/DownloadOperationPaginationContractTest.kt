@@ -72,6 +72,7 @@ class DownloadOperationPaginationContractTest {
         assertTrue(query.contains("queue_order > :afterQueueOrder"))
         assertTrue(query.contains("updated_at_ms > :afterUpdatedAtMs"))
         assertTrue(query.contains("operation_id > :afterOperationId"))
+        assertTrue(query.contains("next_retry_at_ms IS NULL OR next_retry_at_ms <= :nowMs"))
         assertTrue(query.contains("ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC"))
         assertFalse(query.contains("OFFSET"))
 
@@ -104,6 +105,14 @@ class DownloadOperationPaginationContractTest {
         assertTrue(requestMappingIndex > nextCursorIndex)
         assertTrue(pumpReader.contains("headers.size == boundedLimit"))
         assertTrue(pumpReader.contains("malformedHeaders.forEach"))
+        assertTrue(pumpReader.contains("nowMs = nowMs"))
+    }
+
+    @Test
+    fun `retry deadline is inclusive and missing deadline stays immediately ready`() {
+        assertTrue(isRetryDeadlineReady(null, 1_000L))
+        assertTrue(isRetryDeadlineReady(1_000L, 1_000L))
+        assertFalse(isRetryDeadlineReady(1_001L, 1_000L))
     }
 
     @Test

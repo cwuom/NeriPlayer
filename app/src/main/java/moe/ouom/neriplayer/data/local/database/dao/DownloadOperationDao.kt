@@ -337,6 +337,7 @@ internal interface DownloadOperationDao {
     @Query(
         "SELECT * FROM download_operation " +
             "WHERE state IN (:states) AND stop_requested_by_user = 0 " +
+            "AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= :nowMs) " +
             "AND (" +
             ":afterQueueOrder IS NULL " +
             "OR queue_order > :afterQueueOrder " +
@@ -354,7 +355,8 @@ internal interface DownloadOperationDao {
         afterQueueOrder: Int?,
         afterUpdatedAtMs: Long?,
         afterOperationId: String?,
-        limit: Int
+        limit: Int,
+        nowMs: Long
     ): List<DownloadOperationEntity>
 
     @Query(
@@ -363,7 +365,8 @@ internal interface DownloadOperationDao {
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
             "updated_at_ms, host_process_token, host_admitted_at_ms " +
             "FROM download_operation WHERE state IN (:states) " +
-            "AND stop_requested_by_user = 0 AND (" +
+            "AND stop_requested_by_user = 0 " +
+            "AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= :nowMs) AND (" +
             ":afterQueueOrder IS NULL OR queue_order > :afterQueueOrder OR " +
             "(queue_order = :afterQueueOrder AND updated_at_ms > :afterUpdatedAtMs) OR " +
             "(queue_order = :afterQueueOrder AND updated_at_ms = :afterUpdatedAtMs " +
@@ -376,7 +379,8 @@ internal interface DownloadOperationDao {
         afterQueueOrder: Int?,
         afterUpdatedAtMs: Long?,
         afterOperationId: String?,
-        limit: Int
+        limit: Int,
+        nowMs: Long
     ): List<DownloadOperationHeaderRow>
 
     /** 跨目录恢复也必须使用稳定游标，不能依赖会变化的更新时间排序 */

@@ -185,8 +185,8 @@ internal object DownloadExecutionRoomStore {
         DownloadExecutionRoomReadStore.listByState(context, state, database)
     suspend fun countByStates(context: Context, states: List<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
         DownloadExecutionRoomReadStore.countByStates(context, states, database)
-    suspend fun listSchedulableForPumpPage(context: Context, afterCursor: DownloadExecutionPumpCursor?, limit: Int, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
-        DownloadExecutionRoomReadStore.listSchedulableForPumpPage(context, afterCursor, limit, database)
+    suspend fun listSchedulableForPumpPage(context: Context, afterCursor: DownloadExecutionPumpCursor?, limit: Int, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context), nowMs: Long = System.currentTimeMillis()) =
+        DownloadExecutionRoomReadStore.listSchedulableForPumpPage(context, afterCursor, limit, database, nowMs)
     suspend fun listByStates(context: Context, states: List<String>, excludeUserStoppedOperations: Boolean = false, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
         DownloadExecutionRoomReadStore.listByStates(context, states, excludeUserStoppedOperations, database)
     suspend fun listByStatesAnyLibrary(context: Context, states: List<String>, excludeUserStoppedOperations: Boolean = false, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
@@ -449,7 +449,8 @@ internal object DownloadExecutionRoomStore {
         context: Context,
         operationId: String,
         allowExistingRunning: Boolean = false,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
     ): Boolean {
         return database.withTransaction {
             val dao = database.downloadOperationDao()
@@ -472,6 +473,12 @@ internal object DownloadExecutionRoomStore {
                 target = dao.findHeader(operationId) ?: return@withTransaction false
             }
             if (target.stopRequestedByUser) return@withTransaction false
+            if (
+                target.state == DownloadOperationState.RETRYABLE.wireName &&
+                    !isRetryDeadlineReady(target.nextRetryAtMs, nowMs)
+            ) {
+                return@withTransaction false
+            }
             val expectedStates = buildList {
                 add("PENDING_QUEUE")
                 add("QUEUED")

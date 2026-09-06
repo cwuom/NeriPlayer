@@ -317,7 +317,8 @@ internal object DownloadExecutionRoomReadStore {
         context: Context,
         afterCursor: DownloadExecutionPumpCursor?,
         limit: Int,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
     ): DownloadExecutionPumpPage {
         val boundedLimit = limit.coerceIn(1, DownloadExecutionRoomStore.Access.PUMP_QUERY_MAX_ITEMS)
         val (headers, decodedRequests) = database.withTransaction {
@@ -327,7 +328,8 @@ internal object DownloadExecutionRoomReadStore {
                 afterQueueOrder = afterCursor?.queueOrder,
                 afterUpdatedAtMs = afterCursor?.updatedAtMs,
                 afterOperationId = afterCursor?.operationId,
-                limit = boundedLimit
+                limit = boundedLimit,
+                nowMs = nowMs
             )
             headers to headers.map { header ->
                 header to DownloadExecutionRoomStore.Access.readRequestFromHeader(dao, header)
