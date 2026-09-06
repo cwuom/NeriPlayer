@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.download.resource
 
-import android.os.StatFs
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
+import java.nio.file.Files
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CancellationException
@@ -17,7 +17,9 @@ import java.util.concurrent.CancellationException
 internal class DownloadStorageSpaceGuard(
     private val minimumFreeBytes: Long = DEFAULT_MINIMUM_FREE_BYTES,
     private val unknownReservationBytes: Long = DEFAULT_UNKNOWN_RESERVATION_BYTES,
-    private val usableSpaceOf: (File) -> Long = { root -> StatFs(root.path).availableBytes }
+    private val usableSpaceOf: (File) -> Long = { root ->
+        Files.getFileStore(root.toPath()).usableSpace
+    }
 ) {
     init {
         require(minimumFreeBytes >= 0L) {
