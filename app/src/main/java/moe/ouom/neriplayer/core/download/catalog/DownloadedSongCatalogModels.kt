@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.catalog
 
 import android.net.Uri
+import androidx.core.net.toUri
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.remoteSourceIdentityOrNull as downloadedRemoteSourceIdentityOrNull
 import moe.ouom.neriplayer.core.download.remoteSourceStableKeyOrNull
@@ -274,7 +275,7 @@ private fun downloadedSongLocalFileNames(song: DownloadedSong): Set<String> {
 
 private fun normalizedLocalFileName(reference: String?): String? {
     val raw = reference?.trim()?.takeIf(String::isNotBlank) ?: return null
-    val segment = runCatching { Uri.parse(raw).lastPathSegment }
+    val segment = runCatching { raw.toUri().lastPathSegment }
         .getOrNull()
         ?.takeIf(String::isNotBlank)
         ?: raw.substringBefore('?').substringBefore('#').substringAfterLast('/')

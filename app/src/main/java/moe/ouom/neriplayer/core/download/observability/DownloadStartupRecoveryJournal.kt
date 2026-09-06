@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.observability
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
@@ -159,16 +160,17 @@ internal object DownloadStartupRecoveryJournal {
                 return
             }
             runCatching {
-                val editor = preferences.edit().clear()
-                DownloadStartupRecoveryJournalCodec.encode(record).forEach { (key, value) ->
-                    when (value) {
-                        is Boolean -> editor.putBoolean(key, value)
-                        is Long -> editor.putLong(key, value)
-                        is String -> editor.putString(key, value)
-                        null -> Unit
+                preferences.edit {
+                    clear()
+                    DownloadStartupRecoveryJournalCodec.encode(record).forEach { (key, value) ->
+                        when (value) {
+                            is Boolean -> putBoolean(key, value)
+                            is Long -> putLong(key, value)
+                            is String -> putString(key, value)
+                            null -> Unit
+                        }
                     }
                 }
-                editor.apply()
                 lastPersistedGeneration = record.generation
                 lastPersistedPhaseRank = currentPhaseRank
             }.onFailure { error ->
