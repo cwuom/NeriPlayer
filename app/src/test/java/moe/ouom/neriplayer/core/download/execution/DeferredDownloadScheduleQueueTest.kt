@@ -80,6 +80,44 @@ class DeferredDownloadScheduleQueueTest {
         assertNull(queue.poll())
     }
 
+    @Test
+    fun `repeated queued updates compact stale nodes and keep the newest request`() {
+        val queue = DeferredDownloadScheduleQueue(maxRequests = 2)
+        val original = request("operation-update", 1L, attemptId = 1L)
+        queue.enqueue(original)
+
+        val newest = (2L..128L).fold(original) { current, attemptId ->
+            current.copy(attemptId = attemptId).also(queue::enqueue)
+        }
+
+        val snapshot = queue.snapshot()
+        assertEquals(1, snapshot.requestCount)
+        assertEquals(true, snapshot.compactionCount > 0L)
+        assertEquals(true, snapshot.readyNodeCount <= 20)
+        assertEquals(true, snapshot.orderNodeCount <= 20)
+        assertEquals(newest, queue.poll())
+        assertNull(queue.poll())
+    }
+
+    @Test
+    fun `removal leaves stale nodes fenced without reviving the request`() {
+        val queue = DeferredDownloadScheduleQueue(maxRequests = 2)
+        val removed = request("operation-removed", 1L)
+        val next = request("operation-next", 2L)
+
+        queue.enqueue(removed)
+        repeat(32) { attemptId ->
+            queue.enqueue(removed.copy(attemptId = attemptId.toLong() + 1L))
+        }
+        queue.remove(removed.operationId)
+        queue.enqueue(next)
+
+        assertEquals(next, queue.poll())
+        assertNull(queue.poll())
+        queue.remove(next)
+        assertEquals(0, queue.size())
+    }
+
     private fun request(
         operationId: String,
         songId: Long,
