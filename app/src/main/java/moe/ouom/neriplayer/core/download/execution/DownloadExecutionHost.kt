@@ -42,7 +42,11 @@ class DefaultDownloadExecutionHost(
     private val sdkInt: Int = Build.VERSION.SDK_INT,
     private val downloadParallelismProvider: (Context) -> Int =
         ::currentDownloadParallelism,
-    private val pendingUidtGraceDelayProvider: ((Context, DownloadExecutionRequest) -> Long)? = null
+    private val pendingUidtGraceDelayProvider: ((Context, DownloadExecutionRequest) -> Long)? = null,
+    private val retryDeadlineWakeCoordinator: DownloadRetryDeadlineWakeCoordinator =
+        DownloadRetryDeadlineWakeCoordinator { context, delayMs ->
+            ForegroundDownloadWorker.schedulePump(context, initialDelayMs = delayMs)
+        }
 ) : DownloadExecutionHost {
     private val operationIdsBySongKey = ConcurrentHashMap<String, String>()
     private val executingOperationIds = ConcurrentHashMap.newKeySet<String>()
@@ -65,6 +69,7 @@ class DefaultDownloadExecutionHost(
         val requests: List<DownloadExecutionRequest>,
         val hasSchedulableRequest: Boolean,
         val shortestPendingUidtGraceDelayMs: Long?,
+        val nextRetryAtMs: Long?,
         val nextCursor: DownloadExecutionPumpCursor?,
         val exhausted: Boolean,
         val pendingPage: PumpPendingPage?
@@ -1598,6 +1603,7 @@ class DefaultDownloadExecutionHost(
     ): DownloadExecutionPumpResult = pumpMutex.withLock {
         withContext(Dispatchers.IO) {
             val appContext = context.applicationContext
+            retryDeadlineWakeCoordinator.onPumpStarted()
             if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
                 return@withContext DownloadExecutionPumpResult.Completed
             }
@@ -1626,6 +1632,13 @@ class DefaultDownloadExecutionHost(
                 pumpPendingPage = selection.pendingPage
                 val candidates = selection.requests
                 if (candidates.isEmpty() && !selection.hasSchedulableRequest) {
+                    val nextRetryAtMs = selection.nextRetryAtMs
+                    if (
+                        nextRetryAtMs != null &&
+                            !retryDeadlineWakeCoordinator.schedule(appContext, nextRetryAtMs)
+                    ) {
+                        return@withContext DownloadExecutionPumpResult.Retry
+                    }
                     return@withContext if (sawRetry) {
                         // 单个 operation 的可恢复失败已经写回 RETRYABLE。共享泵本身没有失败，
                         // 不应返回 WorkManager Result.retry() 触发至少 10 秒的系统 backoff。
@@ -1705,6 +1718,7 @@ class DefaultDownloadExecutionHost(
         val observedStableKeys = mutableSetOf<String>()
         var hasSchedulableRequest = false
         var shortestPendingUidtGraceDelayMs: Long? = null
+        var nextRetryAtMs: Long? = null
         var rowsRead = 0
         var pagesRead = 0
         var rowsFilteredAttempted = 0
@@ -1731,6 +1745,11 @@ class DefaultDownloadExecutionHost(
                 rowsRead += page.requests.size
                 pendingRequests.addAll(page.requests)
                 pendingContinuationCursor = page.nextCursor
+                page.nextRetryAtMs?.let { pageDeadlineMs ->
+                    nextRetryAtMs = nextRetryAtMs
+                        ?.coerceAtMost(pageDeadlineMs)
+                        ?: pageDeadlineMs
+                }
                 if (pendingRequests.isEmpty() && pendingContinuationCursor == null) {
                     exhausted = true
                     break
@@ -1819,6 +1838,7 @@ class DefaultDownloadExecutionHost(
             requests = candidates,
             hasSchedulableRequest = hasSchedulableRequest,
             shortestPendingUidtGraceDelayMs = shortestPendingUidtGraceDelayMs,
+            nextRetryAtMs = nextRetryAtMs,
             nextCursor = cursor,
             exhausted = exhausted,
             pendingPage = pendingRequests

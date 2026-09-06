@@ -402,6 +402,32 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `pump schedules one delayed wake for a future durable retry deadline`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal().apply {
+            nextPumpRetryDeadlineMs = 2_000L
+        }
+        val store = DownloadExecutionOperationStore { journal }
+        val delays = mutableListOf<Long>()
+        val wakeCoordinator = DownloadRetryDeadlineWakeCoordinator(
+            nowMs = { 1_000L },
+            schedulePump = { _, delayMs ->
+                delays += delayMs
+                true
+            }
+        )
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            sdkInt = 28,
+            retryDeadlineWakeCoordinator = wakeCoordinator
+        )
+
+        assertEquals(DownloadExecutionPumpResult.Completed, host.pump(context))
+        assertEquals(listOf(1_000L), delays)
+        assertEquals(2_000L, wakeCoordinator.scheduledDeadlineForTests())
+    }
+
+    @Test
     fun `pump scans past a UIDT grace blocked first page`() = runTest {
         val context = mockContext()
         val journal = InMemoryDownloadExecutionOperationJournal()

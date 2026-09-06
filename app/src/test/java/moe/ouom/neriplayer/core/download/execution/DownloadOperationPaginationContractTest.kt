@@ -106,6 +106,8 @@ class DownloadOperationPaginationContractTest {
         assertTrue(pumpReader.contains("headers.size == boundedLimit"))
         assertTrue(pumpReader.contains("malformedHeaders.forEach"))
         assertTrue(pumpReader.contains("nowMs = nowMs"))
+        assertTrue(daoSource.contains("findEarliestFutureRetryDeadlineForPump"))
+        assertTrue(roomStoreSource.contains("nextRetryAtMs = nextRetryAtMs"))
     }
 
     @Test

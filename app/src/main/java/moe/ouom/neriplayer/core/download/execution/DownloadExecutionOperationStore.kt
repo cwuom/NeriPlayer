@@ -16,7 +16,9 @@ internal data class DownloadExecutionPumpCursor(
 
 internal data class DownloadExecutionPumpPage(
     val requests: List<DownloadExecutionRequest> = emptyList(),
-    val nextCursor: DownloadExecutionPumpCursor? = null
+    val nextCursor: DownloadExecutionPumpCursor? = null,
+    /** 没有 ready 行时用于安排一次性唤醒，不把 retry 变成固定轮询 */
+    val nextRetryAtMs: Long? = null
 )
 
 internal val INTERRUPTED_DOWNLOAD_OPERATION_STATES: Set<String>

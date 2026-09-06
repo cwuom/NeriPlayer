@@ -321,7 +321,7 @@ internal object DownloadExecutionRoomReadStore {
         nowMs: Long = System.currentTimeMillis()
     ): DownloadExecutionPumpPage {
         val boundedLimit = limit.coerceIn(1, DownloadExecutionRoomStore.Access.PUMP_QUERY_MAX_ITEMS)
-        val (headers, decodedRequests) = database.withTransaction {
+        val (headers, decodedRequests, nextRetryAtMs) = database.withTransaction {
             val dao = database.downloadOperationDao()
             val headers = dao.findSchedulableForPumpAfterCursorHeaders(
                 states = DownloadExecutionRoomStore.Access.PUMP_OPERATION_STATES,
@@ -331,9 +331,20 @@ internal object DownloadExecutionRoomReadStore {
                 limit = boundedLimit,
                 nowMs = nowMs
             )
-            headers to headers.map { header ->
-                header to DownloadExecutionRoomStore.Access.readRequestFromHeader(dao, header)
-            }
+            Triple(
+                headers,
+                headers.map { header ->
+                    header to DownloadExecutionRoomStore.Access.readRequestFromHeader(dao, header)
+                },
+                if (headers.isEmpty() && afterCursor == null) {
+                    dao.findEarliestFutureRetryDeadlineForPump(
+                        states = DownloadExecutionRoomStore.Access.PUMP_OPERATION_STATES,
+                        nowMs = nowMs
+                    )
+                } else {
+                    null
+                }
+            )
         }
         val nextCursor = headers.lastOrNull()
             ?.takeIf { headers.size == boundedLimit }
@@ -356,7 +367,8 @@ internal object DownloadExecutionRoomReadStore {
         malformedHeaders.forEach { header -> DownloadExecutionRoomStore.Access.invalidateMalformedPayload(database, header) }
         return DownloadExecutionPumpPage(
             requests = requests,
-            nextCursor = nextCursor
+            nextCursor = nextCursor,
+            nextRetryAtMs = nextRetryAtMs
         )
     }
 

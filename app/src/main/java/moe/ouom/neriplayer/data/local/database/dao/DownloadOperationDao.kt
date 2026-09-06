@@ -383,6 +383,17 @@ internal interface DownloadOperationDao {
         nowMs: Long
     ): List<DownloadOperationHeaderRow>
 
+    /** 只有没有 ready 行时才读取此值，避免把正常 pump 变成第二次全量查询 */
+    @Query(
+        "SELECT MIN(next_retry_at_ms) FROM download_operation " +
+            "WHERE state IN (:states) AND stop_requested_by_user = 0 " +
+            "AND next_retry_at_ms > :nowMs"
+    )
+    suspend fun findEarliestFutureRetryDeadlineForPump(
+        states: List<String>,
+        nowMs: Long
+    ): Long?
+
     /** 跨目录恢复也必须使用稳定游标，不能依赖会变化的更新时间排序 */
     @Query(
         "SELECT * FROM download_operation " +

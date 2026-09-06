@@ -313,6 +313,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
     var lastHostAdmissionCapacity: Int? = null
     var hostAdmissionReleaseCount: Int = 0
     var pumpPageCallCount: Int = 0
+    var nextPumpRetryDeadlineMs: Long? = null
 
     override fun save(context: Context, request: DownloadExecutionRequest) {
         val queueOrder = entries[request.operationId]?.queueOrder ?: nextQueueOrder++
@@ -373,9 +374,11 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
                     operationId = entry.request.operationId
                 )
             }
+        val nextRetryAtMs = nextPumpRetryDeadlineMs.takeIf { page.isEmpty() }
         return DownloadExecutionPumpPage(
             requests = page.map(DownloadExecutionJournalEntry::request),
-            nextCursor = nextCursor
+            nextCursor = nextCursor,
+            nextRetryAtMs = nextRetryAtMs
         )
     }
 
