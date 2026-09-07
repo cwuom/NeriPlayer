@@ -485,6 +485,62 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
+    fun `batch preflight settles finalized audio before staging and retains waiting operations`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val batchBody = methodBody(source, "startBatchDownload")
+        val strictCompletionBody = methodBody(source, "findStrictlyCompletedBatchSongKeys")
+        val snapshotIndex = batchBody.indexOf("val initialDownloadLibrarySnapshot =")
+        val preflightIndex = batchBody.indexOf("val preflightCompletedSongKeys =")
+        val stagingIndex = batchBody.indexOf(
+            "val stagedQueue = stageAndPromotePendingDownloadQueue("
+        )
+
+        assertTrue(snapshotIndex >= 0)
+        assertTrue(preflightIndex > snapshotIndex)
+        assertTrue(stagingIndex > preflightIndex)
+        assertTrue(batchBody.contains("val songsToStage = stageCandidateSongs.filterNot"))
+        assertTrue(batchBody.contains("listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE)"))
+        assertTrue(
+            batchBody.contains(
+                "filterNot { songKey -> songKey in existingOperationSongKeys }"
+            )
+        )
+        assertTrue(strictCompletionBody.contains("snapshot?.takeIf { it.rootEntriesComplete }"))
+        assertTrue(
+            strictCompletionBody.contains("findDownloadedAudioIncludingMetadataLess")
+        )
+        assertTrue(strictCompletionBody.contains("isFinalizedDownloadedAudioEntry("))
+        assertTrue(strictCompletionBody.contains("isMetadataOwnedBySong(metadata, song)"))
+    }
+
+    @Test
+    fun `definitive storage exhaustion marks all operations before asynchronous clearing`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val audioSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+        val cancellationBody = methodBody(
+            managerSource,
+            "requestStorageExhaustionCancellation"
+        )
+        val failureBody = methodBody(audioSource, "handleDownloadAttemptFailure")
+
+        assertTrue(failureBody.contains("storageFailureKind.isDefinitive"))
+        assertTrue(failureBody.contains("cancelAllDownloads = true"))
+        assertTrue(failureBody.contains("STORAGE_SPACE_CONTENTION_RETRY_DELAY_MS"))
+        assertTrue(cancellationBody.contains("DownloadExecutionRoomStore.requestCancelAllFast"))
+        assertTrue(cancellationBody.contains("requestAllDownloadTaskCancellation()"))
+        assertTrue(
+            cancellationBody.indexOf("requestCancelAllFast") <
+                cancellationBody.indexOf("requestAllDownloadTaskCancellation()")
+        )
+    }
+
+    @Test
     fun `batch presentation snapshots active attempts once instead of scanning per song`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

@@ -6,6 +6,7 @@ import java.io.IOException
 import java.io.OutputStream
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -148,11 +149,105 @@ class DownloadStorageSpaceGuardTest {
         val error = IOException("write failed: ENOSPC")
 
         assertTrue(containsDownloadStorageSpaceFailure(error))
+        assertEquals(
+            DownloadStorageSpaceFailureKind.PROVIDER_FAILURE,
+            classifyDownloadStorageSpaceFailure(error)
+        )
         assertTrue(
             containsDownloadStorageSpaceFailure(
                 IllegalStateException("storage full", error)
             )
         )
+    }
+
+    @Test
+    fun `reservation contention is not treated as physical exhaustion`() {
+        val root = temporaryRoot()
+        try {
+            val guard = DownloadStorageSpaceGuard(
+                minimumFreeBytes = 10L,
+                unknownReservationBytes = 5L,
+                usableSpaceOf = { 100L }
+            )
+            val first = guard.reserve(root, "first", expectedAdditionalBytes = 60L)
+            val error = assertThrows(DownloadStorageSpaceException::class.java) {
+                guard.reserve(root, "second", expectedAdditionalBytes = 40L)
+            }
+            assertEquals(
+                DownloadStorageSpaceFailureKind.RESERVATION_CONTENTION,
+                error.failureKind
+            )
+            assertFalse(error.failureKind.isDefinitive)
+            first.close()
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `lease growth accounts for its own reservation when classifying exhaustion`() {
+        val root = temporaryRoot()
+        try {
+            val guard = DownloadStorageSpaceGuard(
+                minimumFreeBytes = 10L,
+                unknownReservationBytes = 5L,
+                usableSpaceOf = { 100L }
+            )
+            val lease = guard.reserve(root, "growing", expectedAdditionalBytes = 60L)
+            val error = assertThrows(DownloadStorageSpaceException::class.java) {
+                lease.ensureAdditionalBytes(91L)
+            }
+            assertEquals(60L, error.ownerReservedBytes)
+            assertEquals(31L, error.requestedBytes)
+            assertEquals(
+                DownloadStorageSpaceFailureKind.CAPACITY_EXHAUSTED,
+                error.failureKind
+            )
+            assertTrue(error.failureKind.isDefinitive)
+            lease.close()
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `unavailable space probe does not cancel downloads`() {
+        val root = temporaryRoot()
+        try {
+            val guard = DownloadStorageSpaceGuard(
+                minimumFreeBytes = 10L,
+                unknownReservationBytes = 5L,
+                usableSpaceOf = { throw IOException("probe unavailable") }
+            )
+            val error = assertThrows(DownloadStorageSpaceException::class.java) {
+                guard.reserve(root, "probe", expectedAdditionalBytes = 1L)
+            }
+            assertEquals(
+                DownloadStorageSpaceFailureKind.PROBE_UNAVAILABLE,
+                error.failureKind
+            )
+            assertFalse(error.failureKind.isDefinitive)
+            assertTrue(containsDownloadStorageSpaceFailure(error))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `capacity exhaustion is definitive`() {
+        val error = DownloadStorageSpaceException(
+            rootPath = "/tmp",
+            usableBytes = 4L,
+            reservedBytes = 0L,
+            requestedBytes = 8L,
+            minimumFreeBytes = 2L
+        )
+
+        assertEquals(
+            DownloadStorageSpaceFailureKind.CAPACITY_EXHAUSTED,
+            error.failureKind
+        )
+        assertTrue(error.failureKind.isDefinitive)
     }
 
     private fun temporaryRoot(): File {

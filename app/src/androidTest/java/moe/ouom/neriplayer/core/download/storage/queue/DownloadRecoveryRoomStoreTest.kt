@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.DOWNLOAD_RETRY_BASE_DELAY_MS
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
@@ -651,23 +652,28 @@ class DownloadRecoveryRoomStoreTest {
                 .copy(originalLyric = largeLyric)
             val normalSong = song(77L, "batch-readable-normal")
             val store = DownloadRecoveryRoomStore(context, database)
+            val roomDispatcher = Dispatchers.Default.limitedParallelism(1)
 
-            val operationIds = withTimeout(15_000L) {
-                store.upsertPendingDownloadQueue(
-                    songs = listOf(largeSong, normalSong),
-                    userInitiated = true
-                )
+            val operationIds = withContext(roomDispatcher) {
+                withTimeout(15_000L) {
+                    store.upsertPendingDownloadQueue(
+                        songs = listOf(largeSong, normalSong),
+                        userInitiated = true
+                    )
+                }
             }
             assertEquals(2, operationIds.size)
             val largeOperationId = operationIds[0]
             val normalOperationId = operationIds[1]
 
-            val snapshots = withTimeout(15_000L) {
-                DownloadExecutionRoomStore.readOperationSnapshots(
-                    context = context,
-                    operationIds = operationIds,
-                    database = database
-                )
+            val snapshots = withContext(roomDispatcher) {
+                withTimeout(15_000L) {
+                    DownloadExecutionRoomStore.readOperationSnapshots(
+                        context = context,
+                        operationIds = operationIds,
+                        database = database
+                    )
+                }
             }
             assertEquals(operationIds.toSet(), snapshots.keys)
             assertEquals(
@@ -679,14 +685,16 @@ class DownloadRecoveryRoomStoreTest {
                 snapshots[normalOperationId]?.request?.song?.stableKey()
             )
 
-            val operations = withTimeout(15_000L) {
-                DownloadExecutionRoomStore.findReadableOperationsBySongKeys(
-                    context = context,
-                    songKeys = listOf(largeSong.stableKey(), normalSong.stableKey()),
-                    states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
-                    excludeUserStoppedOperations = true,
-                    database = database
-                )
+            val operations = withContext(roomDispatcher) {
+                withTimeout(15_000L) {
+                    DownloadExecutionRoomStore.findReadableOperationsBySongKeys(
+                        context = context,
+                        songKeys = listOf(largeSong.stableKey(), normalSong.stableKey()),
+                        states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
+                        excludeUserStoppedOperations = true,
+                        database = database
+                    )
+                }
             }
             assertEquals(
                 setOf(largeSong.stableKey(), normalSong.stableKey()),
@@ -699,11 +707,13 @@ class DownloadRecoveryRoomStoreTest {
                 operations[largeSong.stableKey()]?.song?.originalLyric
             )
 
-            val refreshedOperationIds = withTimeout(15_000L) {
-                store.upsertPendingDownloadQueue(
-                    songs = listOf(largeSong, normalSong),
-                    userInitiated = true
-                )
+            val refreshedOperationIds = withContext(roomDispatcher) {
+                withTimeout(15_000L) {
+                    store.upsertPendingDownloadQueue(
+                        songs = listOf(largeSong, normalSong),
+                        userInitiated = true
+                    )
+                }
             }
             assertEquals(operationIds, refreshedOperationIds)
         } finally {
@@ -2050,15 +2060,29 @@ class DownloadRecoveryRoomStoreTest {
                 operationId = operationId,
                 state = "RETRYABLE",
                 errorCode = "COMMIT_FAILED",
-                database = database
+                database = database,
+                nowMs = 1_000L
             )
 
             assertEquals("RETRYABLE", database.downloadOperationDao().find(operationId)?.state)
+            assertEquals(
+                1_000L + DOWNLOAD_RETRY_BASE_DELAY_MS,
+                database.downloadOperationDao().find(operationId)?.nextRetryAtMs
+            )
+            assertFalse(
+                DownloadExecutionRoomStore.tryStart(
+                    context = context,
+                    operationId = operationId,
+                    database = database,
+                    nowMs = 1_000L
+                )
+            )
             assertTrue(
                 DownloadExecutionRoomStore.tryStart(
                     context = context,
                     operationId = operationId,
-                    database = database
+                    database = database,
+                    nowMs = 1_000L + DOWNLOAD_RETRY_BASE_DELAY_MS
                 )
             )
             assertEquals("RUNNING", database.downloadOperationDao().find(operationId)?.state)

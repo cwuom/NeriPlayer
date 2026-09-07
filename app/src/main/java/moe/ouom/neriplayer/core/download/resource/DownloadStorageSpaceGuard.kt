@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.resource
 
+import android.os.StatFs
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -18,7 +19,7 @@ internal class DownloadStorageSpaceGuard(
     private val minimumFreeBytes: Long = DEFAULT_MINIMUM_FREE_BYTES,
     private val unknownReservationBytes: Long = DEFAULT_UNKNOWN_RESERVATION_BYTES,
     private val usableSpaceOf: (File) -> Long = { root ->
-        Files.getFileStore(root.toPath()).usableSpace
+        readDefaultUsableSpace(root)
     }
 ) {
     init {
@@ -34,7 +35,8 @@ internal class DownloadStorageSpaceGuard(
         val rootPath: String,
         val usableBytes: Long,
         val reservedBytes: Long,
-        val ownerCount: Int
+        val ownerCount: Int,
+        val usableSpaceKnown: Boolean = true
     ) {
         val freeAfterReservations: Long
             get() = usableBytes - reservedBytes
@@ -145,11 +147,13 @@ internal class DownloadStorageSpaceGuard(
         synchronized(stateLock) {
             val state = statesByRoot[rootPath]
             val reservedBytes = state?.reservedBytes ?: 0L
+            val probe = readUsableSpace(existingRoot)
             return Snapshot(
                 rootPath = rootPath,
-                usableBytes = readUsableSpace(existingRoot),
+                usableBytes = probe.bytes,
                 reservedBytes = reservedBytes,
-                ownerCount = state?.owners?.size ?: 0
+                ownerCount = state?.owners?.size ?: 0,
+                usableSpaceKnown = probe.known
             )
         }
     }
@@ -165,14 +169,17 @@ internal class DownloadStorageSpaceGuard(
                     usableBytes = 0L,
                     reservedBytes = 0L,
                     requestedBytes = totalAdditionalBytes,
-                    minimumFreeBytes = minimumFreeBytes
+                    minimumFreeBytes = minimumFreeBytes,
+                    ownerReservedBytes = 0L,
+                    usableSpaceKnown = false
                 )
             val currentReservedBytes = lease.reservedBytes()
             val additionalBytes = (totalAdditionalBytes - currentReservedBytes)
                 .coerceAtLeast(0L)
             ensureAvailableLocked(
                 state = state,
-                additionalBytes = additionalBytes
+                additionalBytes = additionalBytes,
+                ownerReservedBytes = currentReservedBytes
             )
             if (additionalBytes > 0L) {
                 state.reservedBytes = safeAdd(state.reservedBytes, additionalBytes)
@@ -195,9 +202,22 @@ internal class DownloadStorageSpaceGuard(
 
     private fun ensureAvailableLocked(
         state: RootState,
-        additionalBytes: Long
+        additionalBytes: Long,
+        ownerReservedBytes: Long = 0L
     ) {
-        val usableBytes = readUsableSpace(state.root)
+        val probe = readUsableSpace(state.root)
+        if (!probe.known) {
+            throw DownloadStorageSpaceException(
+                rootPath = state.root.path,
+                usableBytes = 0L,
+                reservedBytes = state.reservedBytes,
+                requestedBytes = additionalBytes,
+                minimumFreeBytes = minimumFreeBytes,
+                ownerReservedBytes = ownerReservedBytes,
+                usableSpaceKnown = false
+            )
+        }
+        val usableBytes = probe.bytes
         val requiredReservedBytes = safeAdd(state.reservedBytes, additionalBytes)
         val requiredBytes = safeAdd(requiredReservedBytes, minimumFreeBytes)
         if (usableBytes < requiredBytes) {
@@ -206,14 +226,24 @@ internal class DownloadStorageSpaceGuard(
                 usableBytes = usableBytes,
                 reservedBytes = state.reservedBytes,
                 requestedBytes = additionalBytes,
-                minimumFreeBytes = minimumFreeBytes
+                minimumFreeBytes = minimumFreeBytes,
+                ownerReservedBytes = ownerReservedBytes,
+                usableSpaceKnown = true
             )
         }
     }
 
-    private fun readUsableSpace(root: File): Long {
+    private data class UsableSpaceProbe(
+        val bytes: Long,
+        val known: Boolean
+    )
+
+    private fun readUsableSpace(root: File): UsableSpaceProbe {
         return runCatching { usableSpaceOf(root).coerceAtLeast(0L) }
-            .getOrDefault(0L)
+            .fold(
+                onSuccess = { bytes -> UsableSpaceProbe(bytes = bytes, known = true) },
+                onFailure = { UsableSpaceProbe(bytes = 0L, known = false) }
+            )
     }
 
     private fun resolveExistingRoot(root: File): File {
@@ -239,6 +269,16 @@ internal class DownloadStorageSpaceGuard(
         const val DEFAULT_UNKNOWN_RESERVATION_BYTES = 8L * 1024L * 1024L
         val global: DownloadStorageSpaceGuard by lazy { DownloadStorageSpaceGuard() }
     }
+}
+
+/** Android 的 StatFs 才能正确反映应用所在卷，JVM 测试环境再退回 NIO */
+private fun readDefaultUsableSpace(root: File): Long {
+    val statFsBytes = runCatching { StatFs(root.path).availableBytes }.getOrNull()
+    // Android 单测里的 StatFs stub 可能返回 0；只有正值才覆盖 NIO，避免把
+    // JVM 测试环境误判成磁盘已满。真实磁盘为 0 时 NIO 通常也会返回 0
+    return statFsBytes
+        ?.takeIf { bytes -> bytes > 0L }
+        ?: Files.getFileStore(root.toPath()).usableSpace
 }
 
 internal class DownloadSpaceGuardedOutputStream(
@@ -294,7 +334,9 @@ internal class DownloadStorageSpaceException(
     val usableBytes: Long,
     val reservedBytes: Long,
     val requestedBytes: Long,
-    val minimumFreeBytes: Long
+    val minimumFreeBytes: Long,
+    val ownerReservedBytes: Long = 0L,
+    val usableSpaceKnown: Boolean = true
 ) : IOException(
     "download storage space is insufficient: root=$rootPath, " +
         "usable=$usableBytes, reserved=$reservedBytes, " +
@@ -303,19 +345,68 @@ internal class DownloadStorageSpaceException(
 
 internal const val DOWNLOAD_STORAGE_SPACE_ERROR_CODE = "INSUFFICIENT_STORAGE"
 
+internal enum class DownloadStorageSpaceFailureKind {
+    /** 进程内其它传输的预留暂时占用空间，不代表磁盘真的写不下 */
+    RESERVATION_CONTENTION,
+    /** 已知可用空间连当前写入和安全余量都无法容纳 */
+    CAPACITY_EXHAUSTED,
+    /** 无法可靠读取可用空间，不能据此误报磁盘已满 */
+    PROBE_UNAVAILABLE,
+    /** Provider/文件系统在实际写入时返回 ENOSPC 等确定错误 */
+    PROVIDER_FAILURE
+}
+
+internal val DownloadStorageSpaceException.failureKind: DownloadStorageSpaceFailureKind
+    get() {
+        if (!usableSpaceKnown) return DownloadStorageSpaceFailureKind.PROBE_UNAVAILABLE
+        val ownerRequired = if (ownerReservedBytes > Long.MAX_VALUE - requestedBytes) {
+            Long.MAX_VALUE
+        } else {
+            ownerReservedBytes + requestedBytes
+        }
+        val minimumRequired = if (ownerRequired > Long.MAX_VALUE - minimumFreeBytes) {
+            Long.MAX_VALUE
+        } else {
+            ownerRequired + minimumFreeBytes
+        }
+        return if (usableBytes < minimumRequired) {
+            DownloadStorageSpaceFailureKind.CAPACITY_EXHAUSTED
+        } else {
+            DownloadStorageSpaceFailureKind.RESERVATION_CONTENTION
+        }
+    }
+
 internal class DownloadStorageSpaceDeferredException(
-    val operationId: String
+    val operationId: String,
+    val failureKind: DownloadStorageSpaceFailureKind =
+        DownloadStorageSpaceFailureKind.CAPACITY_EXHAUSTED,
+    val cancelAllDownloads: Boolean = failureKind.isDefinitive
 ) : CancellationException(
     "download operation waits for storage space: $operationId"
 )
 
-internal fun containsDownloadStorageSpaceFailure(error: Throwable): Boolean {
+internal fun classifyDownloadStorageSpaceFailure(
+    error: Throwable
+): DownloadStorageSpaceFailureKind? {
     return generateSequence(error) { it.cause }
-        .any { cause ->
-            cause is DownloadStorageSpaceException ||
-                cause.message.orEmpty().let(::looksLikeNoSpaceFailure)
+        .mapNotNull { cause ->
+            when (cause) {
+                is DownloadStorageSpaceException -> cause.failureKind
+                else -> cause.message
+                    ?.takeIf(::looksLikeNoSpaceFailure)
+                    ?.let { DownloadStorageSpaceFailureKind.PROVIDER_FAILURE }
+            }
         }
+        .firstOrNull()
 }
+
+internal fun containsDownloadStorageSpaceFailure(error: Throwable): Boolean {
+    return classifyDownloadStorageSpaceFailure(error) != null
+}
+
+internal val DownloadStorageSpaceFailureKind.isDefinitive: Boolean
+    get() = this == DownloadStorageSpaceFailureKind.CAPACITY_EXHAUSTED ||
+        this == DownloadStorageSpaceFailureKind.PROVIDER_FAILURE
 
 /** Provider 或文件系统可能在预留之后才报告 ENOSPC，也必须进入同一恢复状态 */
 private fun looksLikeNoSpaceFailure(message: String): Boolean {

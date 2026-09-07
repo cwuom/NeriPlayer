@@ -328,10 +328,9 @@ internal class AudioDownloadFileTransfer(
                     songKey = songKey,
                     file = destFile
                 ),
-                expectedAdditionalBytes = total
-                    .takeIf { it > 0L }
-                    ?.minus(initialBytes)
-                    ?.coerceAtLeast(0L)
+                // 响应长度只是服务器提示，不能在并发批量启动时一次性预留整首歌
+                // 否则会把进程内预留竞争误报成磁盘已满
+                expectedAdditionalBytes = null
             )
             guardedOutput.use { guarded ->
                 guarded.sink().buffer().use { sink ->

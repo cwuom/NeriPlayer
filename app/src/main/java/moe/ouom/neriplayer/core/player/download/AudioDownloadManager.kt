@@ -56,8 +56,8 @@ import moe.ouom.neriplayer.core.download.boundManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.resource.DownloadTransferPermitRegistry
 import moe.ouom.neriplayer.core.download.resource.DownloadTransferWatchdog
 import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
-import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
-import moe.ouom.neriplayer.core.download.resource.containsDownloadStorageSpaceFailure
+import moe.ouom.neriplayer.core.download.resource.classifyDownloadStorageSpaceFailure
+import moe.ouom.neriplayer.core.download.resource.isDefinitive
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
@@ -126,6 +126,7 @@ object AudioDownloadManager {
     private const val TRANSIENT_DOWNLOAD_OFFLINE_RECOVERY_WAIT_MS = 12_000L
     private const val TRANSIENT_DOWNLOAD_NETWORK_SETTLE_MS = 750L
     private const val DOWNLOAD_RETRY_POLL_SLICE_MS = 250L
+    private const val STORAGE_SPACE_CONTENTION_RETRY_DELAY_MS = 750L
     private const val DOWNLOAD_CLIENT_MAX_REQUESTS = 24
     private const val RECOVERY_OPPORTUNITY_COOLDOWN_MS = 2_500L
     private const val DOWNLOAD_CLIENT_MAX_REQUESTS_PER_HOST = 12
@@ -2937,29 +2938,8 @@ object AudioDownloadManager {
             clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
             throw error
         }
-        if (containsDownloadStorageSpaceFailure(error)) {
-            val markedWaiting = try {
-                DownloadExecutionRoomStore.markWaitingForStorageMutation(
-                    context = context.applicationContext,
-                    operationId = effectiveOperationId,
-                    errorCode = DOWNLOAD_STORAGE_SPACE_ERROR_CODE
-                )
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (persistError: Throwable) {
-                NPLogger.w(
-                    TAG,
-                    "磁盘空间不足等待状态写入失败: ${persistError.message}"
-                )
-                false
-            }
-            if (!markedWaiting) {
-                NPLogger.w(
-                    TAG,
-                    "磁盘空间不足但未能写入等待状态，保留工作文件等待下一次恢复: " +
-                        "operationId=$effectiveOperationId"
-                )
-            }
+        val storageFailureKind = classifyDownloadStorageSpaceFailure(error)
+        if (storageFailureKind != null) {
             publishRetryWaitingProgress(
                 songId = song.id,
                 songKey = songKey,
@@ -2973,12 +2953,35 @@ object AudioDownloadManager {
                 attemptId = attemptId,
                 operationId = effectiveOperationId
             )
-            clearVisibleProgressForSong(
-                songKey = songKey,
-                expectedAttemptId = attemptId,
-                expectedOperationId = effectiveOperationId
+            if (storageFailureKind.isDefinitive) {
+                clearVisibleProgressForSong(
+                    songKey = songKey,
+                    expectedAttemptId = attemptId,
+                    expectedOperationId = effectiveOperationId
+                )
+                // 只有已知真实容量耗尽或 Provider 返回 ENOSPC 才进入全局取消，
+                // 进程内预留竞争和空间探测失败继续保留工作文件重试
+                throw DownloadStorageSpaceDeferredException(
+                    operationId = effectiveOperationId,
+                    failureKind = storageFailureKind,
+                    cancelAllDownloads = true
+                )
+            }
+            NPLogger.w(
+                TAG,
+                "下载空间检查暂不可用，保留工作文件短暂重试: " +
+                    "song=${song.name}, operationId=$effectiveOperationId, " +
+                    "kind=$storageFailureKind"
             )
-            throw DownloadStorageSpaceDeferredException(effectiveOperationId)
+            waitForRetryOrCancellation(
+                context = context,
+                songKey = songKey,
+                delayMs = STORAGE_SPACE_CONTENTION_RETRY_DELAY_MS,
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                operationId = effectiveOperationId
+            )
+            return DownloadAttemptFailureAction.RETRY
         }
         val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
         val preserveCancellationArtifacts =

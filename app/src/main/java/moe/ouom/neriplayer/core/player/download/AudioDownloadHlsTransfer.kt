@@ -270,10 +270,9 @@ internal class AudioDownloadHlsTransfer(
                     songKey = songKey,
                     file = destFile
                 ),
-                expectedAdditionalBytes = totalBytesHint
-                    .takeIf { it > 0L }
-                    ?.minus(attemptStartBytes)
-                    ?.coerceAtLeast(0L)
+                // HLS 长度提示可能包含误差，按实际写入增长预留，避免批量并发时
+                // 把总长度提示叠加成虚假的空间不足
+                expectedAdditionalBytes = null
             )
             guardedOutput.use { guarded ->
                 guarded.sink().buffer().use { sink ->

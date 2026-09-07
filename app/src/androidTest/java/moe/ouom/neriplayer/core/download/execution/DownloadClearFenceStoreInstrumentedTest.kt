@@ -23,7 +23,15 @@ class DownloadClearFenceStoreInstrumentedTest {
         PersistentDownloadClearFenceStore.clear(context)
         try {
             assertFalse(PersistentDownloadClearFenceStore.isActive(context))
+            val clearEpoch = PersistentDownloadClearFenceStore.beginClear()
             assertTrue(PersistentDownloadClearFenceStore.activate(context))
+            assertTrue(
+                PersistentDownloadClearFenceStore.setOwnership(
+                    context = context,
+                    expectedEpoch = clearEpoch,
+                    ownership = DownloadClearOwnership()
+                )
+            )
             assertTrue(PersistentDownloadClearFenceStore.isActive(context))
         } finally {
             assertTrue(PersistentDownloadClearFenceStore.clear(context))
@@ -36,7 +44,15 @@ class DownloadClearFenceStoreInstrumentedTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         PersistentDownloadClearFenceStore.clear(context)
         try {
-            PersistentDownloadClearFenceStore.beginClear()
+            val clearEpoch = PersistentDownloadClearFenceStore.beginClear()
+            assertTrue(PersistentDownloadClearFenceStore.activate(context))
+            assertTrue(
+                PersistentDownloadClearFenceStore.setOwnership(
+                    context = context,
+                    expectedEpoch = clearEpoch,
+                    ownership = DownloadClearOwnership()
+                )
+            )
 
             assertTrue(PersistentDownloadClearFenceStore.isActive(context))
             assertTrue(loadExplicitDownloadResumeCandidates(context).isEmpty())
@@ -65,7 +81,7 @@ class DownloadClearFenceStoreInstrumentedTest {
     }
 
     @Test
-    fun supersededClearCannotRemoveTheNewerFence() {
+    fun repeatedClearRequestReusesCurrentFenceUntilOwnerCaptureCompletes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         PersistentDownloadClearFenceStore.clear(context)
         val firstEpoch = PersistentDownloadClearFenceStore.beginClear()
@@ -73,8 +89,9 @@ class DownloadClearFenceStoreInstrumentedTest {
             assertTrue(PersistentDownloadClearFenceStore.activate(context))
             val secondEpoch = PersistentDownloadClearFenceStore.beginClear()
 
+            assertEquals(firstEpoch, secondEpoch)
             assertEquals(
-                DownloadClearFenceReleaseResult.SUPERSEDED,
+                DownloadClearFenceReleaseResult.FAILED,
                 PersistentDownloadClearFenceStore.clearIfCurrent(context, firstEpoch)
             )
             assertTrue(PersistentDownloadClearFenceStore.isActive(context))
@@ -87,7 +104,13 @@ class DownloadClearFenceStoreInstrumentedTest {
                 )
             )
 
-            assertTrue(PersistentDownloadClearFenceStore.activate(context))
+            assertTrue(
+                PersistentDownloadClearFenceStore.setOwnership(
+                    context = context,
+                    expectedEpoch = secondEpoch,
+                    ownership = DownloadClearOwnership()
+                )
+            )
             assertEquals(
                 DownloadClearFenceReleaseResult.RELEASED,
                 PersistentDownloadClearFenceStore.clearIfCurrent(context, secondEpoch)
@@ -100,7 +123,7 @@ class DownloadClearFenceStoreInstrumentedTest {
     }
 
     @Test
-    fun clearActivationWaitsForCurrentPermitAndRejectsLateScheduling() {
+    fun clearActivationDoesNotBlockCurrentScheduleAndRejectsLateScheduling() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val enteredSchedulingPermit = CountDownLatch(1)
         val releaseSchedulingPermit = CountDownLatch(1)
@@ -122,22 +145,29 @@ class DownloadClearFenceStoreInstrumentedTest {
         try {
             schedulingThread.start()
             assertTrue(enteredSchedulingPermit.await(1, TimeUnit.SECONDS))
-            PersistentDownloadClearFenceStore.beginClear()
+            val clearEpoch = PersistentDownloadClearFenceStore.beginClear()
             val activationThread = Thread {
                 activationSucceeded.set(PersistentDownloadClearFenceStore.activate(context))
                 activationFinished.countDown()
             }
             activationThread.start()
 
-            assertFalse(activationFinished.await(200, TimeUnit.MILLISECONDS))
+            assertTrue(activationFinished.await(200, TimeUnit.MILLISECONDS))
+            assertTrue(activationSucceeded.get())
             releaseSchedulingPermit.countDown()
             schedulingThread.join(1_000L)
             activationThread.join(1_000L)
 
             assertFalse(schedulingThread.isAlive)
             assertFalse(activationThread.isAlive)
-            assertTrue(activationSucceeded.get())
             assertEquals("scheduled", firstScheduleResult)
+            assertTrue(
+                PersistentDownloadClearFenceStore.setOwnership(
+                    context = context,
+                    expectedEpoch = clearEpoch,
+                    ownership = DownloadClearOwnership()
+                )
+            )
             assertEquals(
                 "blocked",
                 PersistentDownloadClearFenceStore.withSchedulingPermit(
