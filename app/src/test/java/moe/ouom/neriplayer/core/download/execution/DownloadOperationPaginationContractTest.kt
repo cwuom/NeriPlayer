@@ -118,6 +118,30 @@ class DownloadOperationPaginationContractTest {
     }
 
     @Test
+    fun `retry transitions persist a fenced backoff and clear it on claim`() {
+        val roomStore = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadExecutionRoomStore.kt"
+        )
+        val dao = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/data/local/database/dao/" +
+                "DownloadOperationDao.kt"
+        )
+
+        assertTrue(roomStore.contains("planDownloadRetry("))
+        assertTrue(roomStore.contains("expectedUpdatedAtMs = current.updatedAtMs"))
+        assertTrue(roomStore.contains("database.withTransaction {"))
+        assertTrue(dao.contains("suspend fun transitionToRetryable("))
+        assertTrue(dao.contains("retry_count = :retryCount"))
+        assertTrue(dao.contains("updated_at_ms = :expectedUpdatedAtMs"))
+        assertTrue(
+            dao.contains(
+                "next_retry_at_ms = CASE WHEN :state = 'RETRYABLE'"
+            )
+        )
+    }
+
+    @Test
     fun `progress checkpoint SQL keeps byte and known total watermarks`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/data/local/database/dao/" +

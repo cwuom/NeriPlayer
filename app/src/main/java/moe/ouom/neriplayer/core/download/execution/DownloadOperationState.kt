@@ -59,6 +59,48 @@ internal fun isRetryDeadlineReady(nextRetryAtMs: Long?, nowMs: Long): Boolean {
     return nextRetryAtMs == null || nextRetryAtMs <= nowMs
 }
 
+internal const val DOWNLOAD_RETRY_BASE_DELAY_MS = 1_000L
+internal const val DOWNLOAD_RETRY_MAX_DELAY_MS = 5 * 60 * 1_000L
+internal const val DOWNLOAD_RETRY_MAX_COUNT = 31
+
+/** 网络策略和取消收敛由专用唤醒器负责，不能再叠加一个盲目延迟 */
+private val IMMEDIATE_DOWNLOAD_RETRY_ERROR_CODES = setOf(
+    "NETWORK_POLICY_WAITING",
+    "CANCELLATION_SETTLEMENT_PENDING"
+)
+
+internal data class DownloadRetryPlan(
+    val retryCount: Int,
+    val nextRetryAtMs: Long?
+)
+
+internal fun planDownloadRetry(
+    currentRetryCount: Int,
+    errorCode: String?,
+    nowMs: Long
+): DownloadRetryPlan {
+    val retryCount = currentRetryCount.coerceAtLeast(0)
+        .coerceAtMost(DOWNLOAD_RETRY_MAX_COUNT - 1) + 1
+    if (errorCode in IMMEDIATE_DOWNLOAD_RETRY_ERROR_CODES) {
+        return DownloadRetryPlan(
+            retryCount = retryCount,
+            nextRetryAtMs = null
+        )
+    }
+    val exponent = (retryCount - 1).coerceAtMost(30)
+    val delayMs = (DOWNLOAD_RETRY_BASE_DELAY_MS shl exponent)
+        .coerceAtMost(DOWNLOAD_RETRY_MAX_DELAY_MS)
+    val deadline = if (nowMs > Long.MAX_VALUE - delayMs) {
+        Long.MAX_VALUE
+    } else {
+        nowMs + delayMs
+    }
+    return DownloadRetryPlan(
+        retryCount = retryCount,
+        nextRetryAtMs = deadline
+    )
+}
+
 internal object DownloadOperationStateTransitions {
     private val coreCommittedStates = listOf(
         DownloadOperationState.CORE_COMMITTED,

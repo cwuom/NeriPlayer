@@ -520,7 +520,11 @@ internal interface DownloadOperationDao {
     @Query(
         "UPDATE download_operation SET state = :state, " +
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
-            "last_error_code = :errorCode " +
+            "last_error_code = :errorCode, " +
+            "next_retry_at_ms = CASE WHEN :state = 'RETRYABLE' " +
+            "THEN next_retry_at_ms ELSE NULL END, " +
+            "retry_count = CASE WHEN :state IN ('COMPLETED', 'FINALIZED', " +
+            "'CANCELLED', 'INVALID') THEN 0 ELSE retry_count END " +
             "WHERE operation_id = :operationId AND state IN (:expectedStates) " +
             "AND stop_requested_by_user = 0"
     )
@@ -528,6 +532,27 @@ internal interface DownloadOperationDao {
         operationId: String,
         expectedStates: List<String>,
         state: String,
+        updatedAtMs: Long,
+        errorCode: String?
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET state = 'RETRYABLE', " +
+            "retry_count = :retryCount, next_retry_at_ms = :nextRetryAtMs, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
+            "last_error_code = :errorCode " +
+            "WHERE operation_id = :operationId AND state IN (:expectedStates) " +
+            "AND retry_count = :expectedRetryCount " +
+            "AND updated_at_ms = :expectedUpdatedAtMs " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun transitionToRetryable(
+        operationId: String,
+        expectedStates: List<String>,
+        expectedRetryCount: Int,
+        expectedUpdatedAtMs: Long,
+        retryCount: Int,
+        nextRetryAtMs: Long?,
         updatedAtMs: Long,
         errorCode: String?
     ): Int
@@ -560,7 +585,11 @@ internal interface DownloadOperationDao {
     @Query(
         "UPDATE download_operation SET state = :state, " +
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
-            "last_error_code = :errorCode " +
+            "last_error_code = :errorCode, " +
+            "next_retry_at_ms = CASE WHEN :state = 'RETRYABLE' " +
+            "THEN next_retry_at_ms ELSE NULL END, " +
+            "retry_count = CASE WHEN :state IN ('COMPLETED', 'FINALIZED', " +
+            "'CANCELLED', 'INVALID') THEN 0 ELSE retry_count END " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +
             "AND state IN (:expectedStates) AND stop_requested_by_user = 0"
     )

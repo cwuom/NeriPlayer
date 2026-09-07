@@ -83,12 +83,74 @@ class DownloadOperationDaoFreshStartTest {
         }
     }
 
+    @Test
+    fun retryableTransitionPersistsBackoffAndClaimClearsDeadline() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).build()
+        try {
+            val dao = database.downloadOperationDao()
+            dao.upsert(
+                operation(
+                    operationId = "retryable",
+                    stableKey = "song",
+                    state = "RUNNING",
+                    stopRequestedByUser = false,
+                    lastErrorCode = null,
+                    retryCount = 2,
+                    updatedAtMs = 10L
+                )
+            )
+
+            assertEquals(
+                1,
+                dao.transitionToRetryable(
+                    operationId = "retryable",
+                    expectedStates = listOf("RUNNING"),
+                    expectedRetryCount = 2,
+                    expectedUpdatedAtMs = 10L,
+                    retryCount = 3,
+                    nextRetryAtMs = 4_010L,
+                    updatedAtMs = 4_000L,
+                    errorCode = "IO_FAILURE"
+                )
+            )
+            val retryable = requireNotNull(dao.find("retryable"))
+            assertEquals("RETRYABLE", retryable.state)
+            assertEquals(3, retryable.retryCount)
+            assertEquals(4_010L, retryable.nextRetryAtMs)
+            assertEquals("IO_FAILURE", retryable.lastErrorCode)
+
+            assertEquals(
+                1,
+                dao.transitionState(
+                    operationId = "retryable",
+                    expectedStates = listOf("RETRYABLE"),
+                    state = "RUNNING",
+                    updatedAtMs = 5_000L,
+                    errorCode = null
+                )
+            )
+            val claimed = requireNotNull(dao.find("retryable"))
+            assertEquals("RUNNING", claimed.state)
+            assertEquals(3, claimed.retryCount)
+            assertNull(claimed.nextRetryAtMs)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun operation(
         operationId: String,
         stableKey: String,
         state: String,
         stopRequestedByUser: Boolean,
-        lastErrorCode: String?
+        lastErrorCode: String?,
+        retryCount: Int = 0,
+        nextRetryAtMs: Long? = null,
+        updatedAtMs: Long = 1L
     ): DownloadOperationEntity {
         return DownloadOperationEntity(
             operationId = operationId,
@@ -101,12 +163,12 @@ class DownloadOperationDaoFreshStartTest {
             bytesWritten = 0L,
             totalBytes = null,
             resumeJson = null,
-            retryCount = 0,
-            nextRetryAtMs = null,
+            retryCount = retryCount,
+            nextRetryAtMs = nextRetryAtMs,
             lastErrorCode = lastErrorCode,
             stopRequestedByUser = stopRequestedByUser,
             createdAtMs = 1L,
-            updatedAtMs = 1L,
+            updatedAtMs = updatedAtMs,
             hostProcessToken = null,
             hostAdmittedAtMs = null
         )

@@ -148,7 +148,8 @@ internal object DownloadExecutionRoomStore {
                     totalBytes = existingHeader?.totalBytes,
                     resumeJson = readResumeJson(dao, existingHeader),
                     retryCount = existingHeader?.retryCount ?: 0,
-                    nextRetryAtMs = existingHeader?.nextRetryAtMs,
+                    nextRetryAtMs = existingHeader?.nextRetryAtMs
+                        ?.takeIf { state == DownloadOperationState.RETRYABLE.wireName },
                     lastErrorCode = existingHeader?.lastErrorCode,
                     stopRequestedByUser = if (restartForNewAttempt) {
                         false
@@ -261,19 +262,40 @@ internal object DownloadExecutionRoomStore {
         operationId: String,
         state: String,
         errorCode: String? = null,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
     ): Boolean {
-        val dao = database.downloadOperationDao()
-        val current = dao.findHeader(operationId) ?: return false
-        val nextState = resolveDownloadOperationState(current.state, state) ?: return false
-        if (nextState == current.state) return !current.stopRequestedByUser
-        return dao.transitionState(
-            operationId = operationId,
-            expectedStates = listOf(current.state),
-            state = nextState,
-            updatedAtMs = System.currentTimeMillis(),
-            errorCode = errorCode
-        ) > 0
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val current = dao.findHeader(operationId) ?: return@withTransaction false
+            val nextState = resolveDownloadOperationState(current.state, state)
+                ?: return@withTransaction false
+            if (nextState == current.state) return@withTransaction !current.stopRequestedByUser
+            if (nextState == DownloadOperationState.RETRYABLE.wireName) {
+                val retryPlan = planDownloadRetry(
+                    currentRetryCount = current.retryCount,
+                    errorCode = errorCode,
+                    nowMs = nowMs
+                )
+                return@withTransaction dao.transitionToRetryable(
+                    operationId = operationId,
+                    expectedStates = listOf(current.state),
+                    expectedRetryCount = current.retryCount,
+                    expectedUpdatedAtMs = current.updatedAtMs,
+                    retryCount = retryPlan.retryCount,
+                    nextRetryAtMs = retryPlan.nextRetryAtMs,
+                    updatedAtMs = nowMs,
+                    errorCode = errorCode
+                ) > 0
+            }
+            dao.transitionState(
+                operationId = operationId,
+                expectedStates = listOf(current.state),
+                state = nextState,
+                updatedAtMs = nowMs,
+                errorCode = errorCode
+            ) > 0
+        }
     }
 
     /**
@@ -314,17 +336,39 @@ internal object DownloadExecutionRoomStore {
         operationId: String,
         stableKey: String,
         errorCode: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
     ): Boolean {
         val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
-        return database.downloadOperationDao().transitionStateForStableKey(
-            operationId = operationId,
-            stableKey = normalizedKey,
-            expectedStates = REUSABLE_OPERATION_STATES,
-            state = "RETRYABLE",
-            updatedAtMs = System.currentTimeMillis(),
-            errorCode = errorCode
-        ) > 0
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val current = dao.findHeader(operationId) ?: return@withTransaction false
+            if (
+                current.stableKey != normalizedKey ||
+                    current.stopRequestedByUser ||
+                    current.state !in REUSABLE_OPERATION_STATES
+            ) {
+                return@withTransaction false
+            }
+            if (current.state == DownloadOperationState.RETRYABLE.wireName) {
+                return@withTransaction true
+            }
+            val retryPlan = planDownloadRetry(
+                currentRetryCount = current.retryCount,
+                errorCode = errorCode,
+                nowMs = nowMs
+            )
+            dao.transitionToRetryable(
+                operationId = operationId,
+                expectedStates = listOf(current.state),
+                expectedRetryCount = current.retryCount,
+                expectedUpdatedAtMs = current.updatedAtMs,
+                retryCount = retryPlan.retryCount,
+                nextRetryAtMs = retryPlan.nextRetryAtMs,
+                updatedAtMs = nowMs,
+                errorCode = errorCode
+            ) > 0
+        }
     }
 
     suspend fun markWaitingForStorageMutation(
