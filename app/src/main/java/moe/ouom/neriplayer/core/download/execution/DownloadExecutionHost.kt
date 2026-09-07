@@ -1633,9 +1633,11 @@ class DefaultDownloadExecutionHost(
                 val candidates = selection.requests
                 if (candidates.isEmpty() && !selection.hasSchedulableRequest) {
                     val nextRetryAtMs = selection.nextRetryAtMs
+                    val retryWakeResult = nextRetryAtMs?.let { deadlineMs ->
+                        retryDeadlineWakeCoordinator.schedule(appContext, deadlineMs)
+                    }
                     if (
-                        nextRetryAtMs != null &&
-                            !retryDeadlineWakeCoordinator.schedule(appContext, nextRetryAtMs)
+                        retryWakeResult == DownloadRetryDeadlineWakeCoordinator.ScheduleResult.FAILED
                     ) {
                         return@withContext DownloadExecutionPumpResult.Retry
                     }

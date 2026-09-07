@@ -12,6 +12,12 @@ class DownloadRetryDeadlineWakeCoordinator(
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val schedulePump: (Context, Long) -> Boolean
 ) {
+    enum class ScheduleResult {
+        SCHEDULED,
+        ALREADY_SCHEDULED,
+        FAILED
+    }
+
     private val lock = Any()
     private var scheduledDeadlineMs: Long? = null
 
@@ -21,15 +27,17 @@ class DownloadRetryDeadlineWakeCoordinator(
     }
 
     /** 只保留最早 deadline；失败不写预约，下次 pump 可继续恢复 */
-    fun schedule(context: Context, deadlineMs: Long): Boolean = synchronized(lock) {
+    fun schedule(context: Context, deadlineMs: Long): ScheduleResult = synchronized(lock) {
         val existing = scheduledDeadlineMs
-        if (existing != null && existing <= deadlineMs) return@synchronized false
+        if (existing != null && existing <= deadlineMs) {
+            return@synchronized ScheduleResult.ALREADY_SCHEDULED
+        }
         val delayMs = (deadlineMs - nowMs()).coerceAtLeast(0L)
         if (!schedulePump(context.applicationContext, delayMs)) {
-            return@synchronized false
+            return@synchronized ScheduleResult.FAILED
         }
         scheduledDeadlineMs = deadlineMs
-        true
+        ScheduleResult.SCHEDULED
     }
 
     internal fun scheduledDeadlineForTests(): Long? = synchronized(lock) {

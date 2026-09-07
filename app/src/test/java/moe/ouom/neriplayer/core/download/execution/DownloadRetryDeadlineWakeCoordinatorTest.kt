@@ -2,8 +2,6 @@ package moe.ouom.neriplayer.core.download.execution
 
 import android.content.Context
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
@@ -21,9 +19,18 @@ class DownloadRetryDeadlineWakeCoordinatorTest {
             }
         )
 
-        assertTrue(coordinator.schedule(context, 3_000L))
-        assertFalse(coordinator.schedule(context, 5_000L))
-        assertTrue(coordinator.schedule(context, 2_000L))
+        assertEquals(
+            DownloadRetryDeadlineWakeCoordinator.ScheduleResult.SCHEDULED,
+            coordinator.schedule(context, 3_000L)
+        )
+        assertEquals(
+            DownloadRetryDeadlineWakeCoordinator.ScheduleResult.ALREADY_SCHEDULED,
+            coordinator.schedule(context, 5_000L)
+        )
+        assertEquals(
+            DownloadRetryDeadlineWakeCoordinator.ScheduleResult.SCHEDULED,
+            coordinator.schedule(context, 2_000L)
+        )
 
         assertEquals(listOf(2_000L, 1_000L), scheduledDelays)
         assertEquals(2_000L, coordinator.scheduledDeadlineForTests())
@@ -41,9 +48,15 @@ class DownloadRetryDeadlineWakeCoordinatorTest {
             }
         )
 
-        assertFalse(coordinator.schedule(context, 5_000L))
+        assertEquals(
+            DownloadRetryDeadlineWakeCoordinator.ScheduleResult.FAILED,
+            coordinator.schedule(context, 5_000L)
+        )
         assertEquals(null, coordinator.scheduledDeadlineForTests())
-        assertTrue(coordinator.schedule(context, 5_000L))
+        assertEquals(
+            DownloadRetryDeadlineWakeCoordinator.ScheduleResult.SCHEDULED,
+            coordinator.schedule(context, 5_000L)
+        )
         coordinator.onPumpStarted()
         assertEquals(null, coordinator.scheduledDeadlineForTests())
     }
