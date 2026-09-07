@@ -20,6 +20,43 @@ import org.junit.Test
  */
 class DownloadPipelineScaleBenchmarkTest {
     @Test
+    fun `core commit delay keeps uncommitted payloads within network permit window`() {
+        val rows = mutableListOf<DownloadPipelineBenchmarkResult>()
+        listOf(0L, 100L, 2_000L).forEach { coreCommitMs ->
+            listOf(10, 1_000).forEach { operationCount ->
+                listOf(6, 8).forEach { networkLanes ->
+                    val result = runScenario(
+                        operationCount = operationCount,
+                        networkLanes = networkLanes,
+                        enrichmentDelayMs = 0L,
+                        audioOnly = true,
+                        coreCommitMs = coreCommitMs
+                    )
+                    assertScenarioComplete(result)
+                    assertTrue(
+                        "core delay must not exceed the network permit window: " +
+                            "delay=${coreCommitMs}ms lanes=$networkLanes " +
+                            "peak=${result.maxUncommittedPayloads}",
+                        result.maxUncommittedPayloads <= networkLanes
+                    )
+                    if (coreCommitMs > 0L) {
+                        assertTrue(result.maxUncommittedPayloads > 0)
+                    }
+                    rows += result
+                }
+            }
+        }
+
+        val output = File(
+            System.getProperty("neriplayer.downloadBenchmark.coreDelayOutput")
+                ?: "build/reports/download-benchmark/core-delay.json"
+        )
+        output.parentFile?.mkdirs()
+        output.writeText(DownloadPipelineBenchmarkReport.toJson(rows))
+        println("DOWNLOAD_BENCHMARK_CORE_DELAY_JSON=${output.absolutePath}")
+    }
+
+    @Test
     fun `scale matrix keeps enrichment off the network lane and exports evidence`() {
         val rows = mutableListOf<DownloadPipelineBenchmarkResult>()
         listOf(10, 100, 500, 1_000).forEach { operationCount ->
@@ -90,7 +127,8 @@ class DownloadPipelineScaleBenchmarkTest {
         operationCount: Int,
         networkLanes: Int,
         enrichmentDelayMs: Long,
-        audioOnly: Boolean
+        audioOnly: Boolean,
+        coreCommitMs: Long = CORE_COMMIT_MS
     ): DownloadPipelineBenchmarkResult {
         val queue = DeferredDownloadScheduleQueue(maxRequests = MATERIALIZED_WINDOW)
         val requests = (0 until operationCount).map { index ->
@@ -163,9 +201,9 @@ class DownloadPipelineScaleBenchmarkTest {
             val networkFinishAtMs = networkStartAtMs + TRANSFER_MS
             val coreStartAtMs = coreAvailability.reserveStartAt(
                 requestedAtMs = networkFinishAtMs,
-                durationMs = CORE_COMMIT_MS
+                durationMs = coreCommitMs
             )
-            val coreFinishAtMs = coreStartAtMs + CORE_COMMIT_MS
+            val coreFinishAtMs = coreStartAtMs + coreCommitMs
             networkAvailability.extendLastReservation(coreFinishAtMs)
             val enrichmentStartAtMs = if (audioOnly) {
                 coreFinishAtMs
@@ -220,6 +258,26 @@ class DownloadPipelineScaleBenchmarkTest {
         }
 
         assertTrue(queue.isEmpty())
+        val uncommittedEvents = timings.flatMap { timing ->
+            val networkFinishedAtMs = timing.markNs(DownloadOperationTracePhase.NETWORK_FINISHED)
+                ?.div(NANOS_PER_MILLISECOND)
+                ?: return@flatMap emptyList()
+            val coreCommittedAtMs = timing.markNs(DownloadOperationTracePhase.CORE_COMMITTED)
+                ?.div(NANOS_PER_MILLISECOND)
+                ?: return@flatMap emptyList()
+            listOf(
+                UncommittedPayloadEvent(networkFinishedAtMs, delta = 1),
+                UncommittedPayloadEvent(coreCommittedAtMs, delta = -1)
+            )
+        }
+        var uncommittedPayloads = 0
+        var maxUncommittedPayloads = 0
+        uncommittedEvents
+            .sortedWith(compareBy<UncommittedPayloadEvent> { it.atMs }.thenBy { it.delta })
+            .forEach { event ->
+                uncommittedPayloads += event.delta
+                maxUncommittedPayloads = maxOf(maxUncommittedPayloads, uncommittedPayloads)
+            }
         return DownloadPipelineBenchmarkResult(
             operationCount = operationCount,
             networkLanes = networkLanes,
@@ -234,6 +292,7 @@ class DownloadPipelineScaleBenchmarkTest {
             maxQueueResident = maxQueueResident,
             queueResidentAfterRun = queue.size(),
             maxMaterializedRequests = maxMaterializedRequests,
+            maxUncommittedPayloads = maxUncommittedPayloads,
             networkStartTimesMs = networkStartTimesMs,
             queueWaitP95Ms = percentileMs(timings.mapNotNull(DownloadOperationTiming::queueWaitNs)),
             permitWaitP95Ms = percentileMs(timings.mapNotNull(DownloadOperationTiming::networkPermitWaitNs)),
@@ -338,6 +397,7 @@ class DownloadPipelineScaleBenchmarkTest {
         val maxQueueResident: Int,
         val queueResidentAfterRun: Int,
         val maxMaterializedRequests: Int,
+        val maxUncommittedPayloads: Int,
         val networkStartTimesMs: List<Long>,
         val queueWaitP95Ms: Long,
         val permitWaitP95Ms: Long,
@@ -373,6 +433,8 @@ class DownloadPipelineScaleBenchmarkTest {
                     .append(",\"networkBytes\":").append(row.networkBytes)
                     .append(",\"maxQueueResident\":").append(row.maxQueueResident)
                     .append(",\"maxMaterialized\":").append(row.maxMaterializedRequests)
+                    .append(",\"maxUncommittedPayloads\":")
+                    .append(row.maxUncommittedPayloads)
                     .append(",\"queueWaitP95Ms\":").append(row.queueWaitP95Ms)
                     .append(",\"permitWaitP95Ms\":").append(row.permitWaitP95Ms)
                     .append(",\"transferP95Ms\":").append(row.transferP95Ms)
@@ -406,4 +468,9 @@ class DownloadPipelineScaleBenchmarkTest {
         private const val STREAM_BUFFER_BYTES = 64L * 1024L
         private const val NANOS_PER_MILLISECOND = 1_000_000L
     }
+
+    private data class UncommittedPayloadEvent(
+        val atMs: Long,
+        val delta: Int
+    )
 }
