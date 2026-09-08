@@ -1831,7 +1831,7 @@ class DownloadRecoveryRoomStoreTest {
             assertTrue(
                 store.upsertWaitingStorageMutation(
                     songs = listOf(cancelledSong),
-                    userInitiated = true
+                    userInitiated = false
                 ).isEmpty()
             )
 
@@ -1854,8 +1854,80 @@ class DownloadRecoveryRoomStoreTest {
             assertTrue(
                 store.upsertWaitingStorageMutation(
                     songs = listOf(stoppedSong),
-                    userInitiated = true
+                    userInitiated = false
                 ).isEmpty()
+            )
+            assertEquals(
+                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                database.downloadOperationDao().find(stoppedOperationId)?.state
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun userRetryCreatesReplacementForCancelledOrStoppedWaitingMutation() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val cancelledSong = song(780L, "retry-cancelled-storage-mutation")
+            val stoppedSong = song(781L, "retry-stopped-storage-mutation")
+            val store = DownloadRecoveryRoomStore(context, database)
+
+            val cancelledOperationId = store.upsertWaitingStorageMutation(
+                songs = listOf(cancelledSong),
+                userInitiated = true
+            ).single()
+            val cancellation = DownloadExecutionRoomStore.requestCancel(
+                context = context,
+                operationId = cancelledOperationId,
+                database = database
+            )
+            assertTrue(cancellation)
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.finalizeRequestedCancellations(
+                    context = context,
+                    operationIds = setOf(cancelledOperationId),
+                    database = database
+                )
+            )
+
+            val cancelledReplacementId = store.upsertWaitingStorageMutation(
+                songs = listOf(cancelledSong),
+                userInitiated = true
+            ).single()
+            assertNotEquals(cancelledOperationId, cancelledReplacementId)
+            assertEquals(
+                "CANCELLED",
+                database.downloadOperationDao().find(cancelledOperationId)?.state
+            )
+            assertEquals(
+                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                database.downloadOperationDao().find(cancelledReplacementId)?.state
+            )
+
+            val stoppedOperationId = store.upsertWaitingStorageMutation(
+                songs = listOf(stoppedSong),
+                userInitiated = true
+            ).single()
+            database.downloadOperationDao().requestUserStop(
+                operationId = stoppedOperationId,
+                updatedAtMs = 300L
+            )
+
+            val stoppedReplacementId = store.upsertWaitingStorageMutation(
+                songs = listOf(stoppedSong),
+                userInitiated = true
+            ).single()
+            assertNotEquals(stoppedOperationId, stoppedReplacementId)
+            assertEquals(
+                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                database.downloadOperationDao().find(stoppedReplacementId)?.state
             )
             assertEquals(
                 WAITING_STORAGE_MUTATION_OPERATION_STATE,

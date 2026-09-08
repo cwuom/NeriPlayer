@@ -238,8 +238,7 @@ internal class DownloadRecoveryRoomStore(
                 .mapValues { (_, request) -> request.operationId }
             val blockedOperationIds = linkedMapOf<String, String>()
             songKeys.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).forEach { stableKeyChunk ->
-                dao.findAllHeadersByStableKeys(
-                    libraryId = libraryId,
+                dao.findAllHeadersByStableKeysAnyLibrary(
                     stableKeys = stableKeyChunk,
                     states = WAITING_STORAGE_MUTATION_BLOCKING_STATES
                 ).forEach { header ->
@@ -250,8 +249,7 @@ internal class DownloadRecoveryRoomStore(
             }
             val stoppedWaitingOperationIds = linkedMapOf<String, String>()
             songKeys.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).forEach { stableKeyChunk ->
-                dao.findAllHeadersByStableKeys(
-                    libraryId = libraryId,
+                dao.findAllHeadersByStableKeysAnyLibrary(
                     stableKeys = stableKeyChunk,
                     states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE)
                 ).forEach { header ->
@@ -286,12 +284,15 @@ internal class DownloadRecoveryRoomStore(
             val requestsByOperationId = linkedMapOf<String, DownloadExecutionRequest>()
             val operationIds = distinctSongs.mapNotNull { song ->
                 val key = song.stableKey()
-                if (
-                    inFlightOperationIds[key] != null ||
-                        reusableOperationIds[key] != null ||
-                        blockedOperationIds[key] != null ||
-                        stoppedWaitingOperationIds[key] != null
-                ) {
+                if (inFlightOperationIds[key] != null || reusableOperationIds[key] != null) {
+                    return@mapNotNull null
+                }
+                // 清空和新请求可以在同一时间窗内交错到达。旧取消行不能吞掉
+                // 用户的新意图：用户主动重试时创建新的等待 operation，旧行仍
+                // 由取消收敛负责，避免复用旧 lease 或让两代请求互相覆盖
+                val blockedByCancellation = blockedOperationIds[key] != null ||
+                    stoppedWaitingOperationIds[key] != null
+                if (blockedByCancellation && !userInitiated && key !in forceNewKeys) {
                     return@mapNotNull null
                 }
                 val existing = waitingWinners[key]
@@ -302,12 +303,14 @@ internal class DownloadRecoveryRoomStore(
                     deterministicOperationId
                 ]
                 val mustReplaceDeterministicOperation =
-                    key in forceNewKeys ||
+                    blockedByCancellation ||
+                        key in forceNewKeys ||
                         deterministicOperationId in excludedIds ||
                         deterministicOperationState in
                         WAITING_STORAGE_MUTATION_REPLACED_TERMINAL_STATES
                 val existingOperationId = existing?.metadata?.operationId
-                val mustCreateReplacement = key in forceNewKeys ||
+                val mustCreateReplacement = blockedByCancellation ||
+                    key in forceNewKeys ||
                     existingOperationId in excludedIds ||
                     (existingOperationId == null && mustReplaceDeterministicOperation)
                 val operationId = if (mustCreateReplacement) {

@@ -2100,12 +2100,12 @@ object GlobalDownloadManager {
                         error
                     )
                     return@withLock recovery.copy(
-                        leaseAcquired = directoryMutationLeaseOwned || mutationLease != null,
+                        leaseAcquired = true,
                         pendingScanComplete = false
                     )
                 }
                 val summary = recovery.copy(
-                    leaseAcquired = directoryMutationLeaseOwned || mutationLease != null,
+                    leaseAcquired = true,
                     pendingScanComplete = pendingScan.isComplete,
                     // metadata-only 凭据会被迁移保留，只有与 pending 音频配对的项需要恢复
                     remainingArtifactCount = pendingScan.migrationBlockingArtifactCount
@@ -2417,7 +2417,7 @@ object GlobalDownloadManager {
 
         // 快照索引若因旧版本或 provider 延迟漏掉了目标，才扩展到全部 pending
         // 候选。正常取消路径不会为每首歌重复读取整棵目录
-        if (cachedSnapshot != null && !forceRefreshSnapshot) {
+        if (cachedSnapshot != null) {
             return resolveCoreRecoveryAudioCandidate(
                 context = context,
                 song = song,
@@ -2791,7 +2791,6 @@ object GlobalDownloadManager {
                                             expectedAttemptId = null,
                                             operationId = currentMetadata.operationId,
                                             expectedArtifactLeaseId = artifactLeaseId,
-                                            refreshCatalog = false,
                                             allowMissingTask = true,
                                             admissionTicket = admissionTicket
                                         )
@@ -2958,7 +2957,6 @@ object GlobalDownloadManager {
                             expectedAttemptId = null,
                             operationId = currentMetadata.operationId,
                             expectedArtifactLeaseId = artifactLeaseId,
-                            refreshCatalog = false,
                             allowMissingTask = true,
                             admissionTicket = admissionTicket
                         )
@@ -4203,7 +4201,7 @@ object GlobalDownloadManager {
         }
     }
 
-    private suspend fun scheduleWifiBoundDownloadWakeups(
+    private fun scheduleWifiBoundDownloadWakeups(
         context: Context,
         songKeys: Set<String>
     ) {
@@ -5306,7 +5304,7 @@ object GlobalDownloadManager {
         }
     }
 
-    private suspend fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress) {
+    private fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress) {
         val appContext = AppContainer.applicationContext
         val binding = activeProgressCheckpointBindings[progress.songKey]
         if (binding != null) {
@@ -6679,8 +6677,7 @@ object GlobalDownloadManager {
             }
             val cancellationState = currentState == "CANCEL_REQUESTED" ||
                 currentState == "CANCELLED" ||
-                currentState == "STOPPED" ||
-                songCancelled
+                currentState == "STOPPED"
             val statePersisted = if (
                 recoveryOperationId != null && !cancellationState
             ) {
@@ -7375,7 +7372,6 @@ object GlobalDownloadManager {
                     expectedAttemptId = expectedAttemptId,
                     operationId = operationId,
                     expectedArtifactLeaseId = artifactLeaseId,
-                    refreshCatalog = refreshCatalog,
                     allowMissingTask = allowMissingTask,
                     admissionTicket = admissionTicket
                 )
@@ -7738,7 +7734,6 @@ object GlobalDownloadManager {
         expectedAttemptId: Long?,
         operationId: String?,
         expectedArtifactLeaseId: String?,
-        refreshCatalog: Boolean,
         allowMissingTask: Boolean,
         admissionTicket: Long? = null
     ): Boolean {
@@ -7842,8 +7837,8 @@ object GlobalDownloadManager {
                 promotion.terminalTemporaryWriteCleanupRecorded
         )
         // publishCompletedDownloadOptimistically 已经写入内存和 Room delta；
-        // 正常完成不再为每首歌曲触发一次完整目录扫描。refreshCatalog 仅保留给
-        // 调用方的兼容参数，真正需要对账的异常路径会显式请求 forceRefresh
+        // 正常完成不再为每首歌曲触发一次完整目录扫描。真正需要对账的异常路径
+        // 会显式请求 forceRefresh
         return true
     }
 
@@ -10654,8 +10649,7 @@ object GlobalDownloadManager {
      */
     private fun probeDownloadedSongReferences(
         context: Context,
-        song: DownloadedSong,
-        catalogEntryAvailable: Boolean = true
+        song: DownloadedSong
     ): DownloadedSongReferenceProbe {
         var sawMissing = false
         var sawUncertain = false
@@ -10666,8 +10660,7 @@ object GlobalDownloadManager {
             }
             if (!isOptimisticPlaybackCatalogEntryAllowed(
                     context = context,
-                    reference = reference,
-                    catalogEntryAvailable = catalogEntryAvailable
+                    reference = reference
                 )
             ) {
                 sawUncertain = true
@@ -10705,7 +10698,7 @@ object GlobalDownloadManager {
             ?: true
         if (
             shouldEvictMissingDownloadedSongCatalogEntry(
-                sawMissing = probe.sawMissing,
+                sawMissing = true,
                 sawUncertain = probe.sawUncertain,
                 hasActiveDownload = hasActiveDownload
             )
@@ -10768,8 +10761,7 @@ object GlobalDownloadManager {
 
             val directReferenceProbe = probeDownloadedSongReferences(
                 context = context,
-                song = downloadedSong,
-                catalogEntryAvailable = true
+                song = downloadedSong
             )
             directReferenceProbe.reference?.let { directReference ->
                 return DownloadedPlaybackResolution(
@@ -11104,8 +11096,7 @@ object GlobalDownloadManager {
         if (cachedSong != null) {
             val probe = probeDownloadedSongReferences(
                 context = context,
-                song = cachedSong,
-                catalogEntryAvailable = true
+                song = cachedSong
             )
             probe.reference?.let { return it }
             scheduleDownloadedSongReferenceReconcile(
@@ -11127,8 +11118,7 @@ object GlobalDownloadManager {
         val downloadedSong = findFastCachedDownloadedSong(context, song) ?: return null
         val probe = probeDownloadedSongReferences(
             context = context,
-            song = downloadedSong,
-            catalogEntryAvailable = true
+            song = downloadedSong
         )
         probe.reference?.let { return it }
         scheduleDownloadedSongReferenceReconcile(
@@ -11147,8 +11137,7 @@ object GlobalDownloadManager {
 
     private fun isOptimisticPlaybackCatalogEntryAllowed(
         context: Context,
-        reference: String,
-        catalogEntryAvailable: Boolean = false
+        reference: String
     ): Boolean {
         if (!reference.contains(PENDING_AUDIO_WRITE_MARKER, ignoreCase = true)) {
             return true
@@ -11158,7 +11147,7 @@ object GlobalDownloadManager {
             restorePersisted = false
         ) ?: return shouldAllowPendingCatalogPlayback(
             referenceIsPending = true,
-            catalogEntryAvailable = catalogEntryAvailable,
+            catalogEntryAvailable = true,
             snapshotAvailable = false
         )
         val audio = snapshot.audioEntriesByLookupKey[reference]
@@ -11172,7 +11161,7 @@ object GlobalDownloadManager {
             }
             ?: return shouldAllowPendingCatalogPlayback(
                 referenceIsPending = true,
-                catalogEntryAvailable = catalogEntryAvailable,
+                catalogEntryAvailable = true,
                 snapshotAvailable = false
             )
         val metadata = ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
@@ -11184,7 +11173,7 @@ object GlobalDownloadManager {
         )
         return shouldAllowPendingCatalogPlayback(
             referenceIsPending = true,
-            catalogEntryAvailable = catalogEntryAvailable,
+            catalogEntryAvailable = true,
             snapshotAvailable = true,
             durableCoreCommitAvailable = durableCoreCommitAvailable
         ) && isReadableManagedAudioPlaybackAllowed(
@@ -11200,8 +11189,7 @@ object GlobalDownloadManager {
         val downloadedSong = findFastCachedDownloadedSong(context, song) ?: return null
         val probe = probeDownloadedSongReferences(
             context = context,
-            song = downloadedSong,
-            catalogEntryAvailable = true
+            song = downloadedSong
         )
         probe.reference?.let { return it }
         scheduleDownloadedSongReferenceReconcile(
@@ -11825,7 +11813,7 @@ object GlobalDownloadManager {
                     )
                 } catch (cancellation: CancellationException) {
                     throw cancellation
-                } catch (deferred: DownloadStorageMutationDeferredException) {
+                } catch (_: DownloadStorageMutationDeferredException) {
                     NPLogger.d(
                         TAG,
                         "core operation 收尾遇到目录迁移，保留恢复凭据: " +
@@ -12266,17 +12254,6 @@ object GlobalDownloadManager {
     )
 
     /** 只携带已经通过准入检查的传输上下文，网络阶段不再持有歌曲锁 */
-    private data class ConfirmedDownloadTransferPlan(
-        val song: SongItem,
-        val songKey: String,
-        val requestGeneration: Long,
-        val admissionTicket: Long?,
-        val operationId: String?,
-        val acquiredLeaseId: String?,
-        val attemptId: Long,
-        val downloadAudioQuality: DownloadAudioQualitySelection?
-    )
-
     /** claim 和任务创建必须与清空快照使用同一张准入锁 */
     private suspend fun prepareConfirmedDownload(
         context: Context,
@@ -13480,13 +13457,9 @@ object GlobalDownloadManager {
                     userInitiated = userInitiated
                 )
                 if (stagedQueue.skippedSongKeys.isNotEmpty()) {
-                    removeBatchDownloadPresentationMembers(
-                        batchId = batchPresentationId,
-                        songKeys = stagedQueue.skippedSongKeys
-                    )
                     NPLogger.w(
                         TAG,
-                        "批量下载跳过无法提升的持久化意图，继续其余歌曲: " +
+                        "批量下载暂未能提升部分持久化意图，保留批次成员等待恢复: " +
                             "skipped=${stagedQueue.skippedSongKeys.size}, " +
                             "requested=${songsToStage.size}"
                     )
@@ -13527,7 +13500,8 @@ object GlobalDownloadManager {
                     if (
                         inFlightOperationSongKeys.isEmpty() &&
                             postClearInFlightSongKeys.isEmpty() &&
-                            handedOffSongKeys.isEmpty()
+                            handedOffSongKeys.isEmpty() &&
+                            stagedQueue.skippedSongKeys.isEmpty()
                     ) {
                         clearBatchDownloadPresentation(batchPresentationId)
                     }
@@ -14302,7 +14276,7 @@ object GlobalDownloadManager {
             )
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (deferred: DownloadStorageMutationDeferredException) {
+        } catch (_: DownloadStorageMutationDeferredException) {
             NPLogger.d(
                 TAG,
                 "批量下载 artifact 收尾遇到目录迁移，保留 recovery operation: " +
@@ -16274,7 +16248,7 @@ object GlobalDownloadManager {
             ) ?: return@mapNotNull null
             if (
                 isFinalizedDownloadedAudioEntry(
-                    rootEntriesComplete = currentSnapshot.rootEntriesComplete,
+                    rootEntriesComplete = true,
                     isPendingAudioWrite = audio.isPendingAudioWrite,
                     metadata = metadata
                 ) && isMetadataOwnedBySong(metadata, song)
@@ -17749,12 +17723,11 @@ object GlobalDownloadManager {
         return scope.launch {
             // 持久化、Room 和 Provider 工作都在下载管理器后台调度器执行
             // 持久栅栏必须在后台确认成功后才推进取消阶段
-            val fenceActivatedImmediately = clearToken.ownsClear &&
-                PersistentDownloadClearFenceStore.activate(
-                    context = appContext,
-                    ownership = clearOwnership
-                )
-            val startFastClearUndispatched = clearToken.ownsClear &&
+            val fenceActivatedImmediately = PersistentDownloadClearFenceStore.activate(
+                context = appContext,
+                ownership = clearOwnership
+            )
+            val startFastClearUndispatched =
                 purpose == DownloadClearPurpose.TASK_PROGRESS &&
                 !forceConvergence &&
                 fenceActivatedImmediately
@@ -17794,7 +17767,7 @@ object GlobalDownloadManager {
                         persistDownloadClearProgress(appContext, clearToken)
                     }
                 }
-                if (clearToken.ownsClear && !startFastClearUndispatched) {
+                if (!startFastClearUndispatched) {
                     if (!hadPersistedClearFence) {
                         clearPersistedDownloadClearProgress(appContext)
                     } else {
@@ -18390,10 +18363,8 @@ object GlobalDownloadManager {
                             return@runClear
                         } catch (error: Exception) {
                             clearConvergenceRound += 1
-                            val failureReason = if (
-                                error is DownloadClearRoomTimeoutException
-                            ) {
-                                "room_timeout"
+                            val failureReason = if (error is java.io.IOException) {
+                                "io_exception"
                             } else {
                                 "exception"
                             }

@@ -8,8 +8,11 @@ import androidx.work.NetworkType
 import androidx.work.ListenableWorker
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -327,6 +330,78 @@ class DownloadExecutionHostTest {
         assertEquals(setOf(failed.operationId, later.operationId), executed.toSet())
         assertEquals("RETRYABLE", store.currentState(context, failed.operationId))
         assertEquals("COMPLETED", store.currentState(context, later.operationId))
+    }
+
+    @Test
+    fun `pump refills a freed window before slower operations finish`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val requests = (0..3).map { index ->
+            DownloadExecutionRequest(
+                operationId = "operation-pump-refill-$index",
+                song = sampleSong().copy(id = 50_000L + index)
+            )
+        }
+        requests.forEach { request -> store.save(context, request) }
+        val firstCompleted = CompletableDeferred<Unit>()
+        val slowStarted = CompletableDeferred<Unit>()
+        val thirdStarted = CompletableDeferred<Unit>()
+        val fourthStarted = CompletableDeferred<Unit>()
+        val releaseSlow = CompletableDeferred<Unit>()
+        val releaseThird = CompletableDeferred<Unit>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, request ->
+                when (request.operationId) {
+                    requests[0].operationId -> {
+                        firstCompleted.complete(Unit)
+                        DownloadExecutionResult.Accepted
+                    }
+
+                    requests[1].operationId -> {
+                        slowStarted.complete(Unit)
+                        releaseSlow.await()
+                        DownloadExecutionResult.Accepted
+                    }
+
+                    requests[2].operationId -> {
+                        thirdStarted.complete(Unit)
+                        releaseThird.await()
+                        DownloadExecutionResult.Accepted
+                    }
+
+                    requests[3].operationId -> {
+                        fourthStarted.complete(Unit)
+                        DownloadExecutionResult.Accepted
+                    }
+
+                    else -> DownloadExecutionResult.Accepted
+                }
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 }
+        )
+
+        val pump = async { host.pump(context) }
+        try {
+            withContext(Dispatchers.Default) {
+                withTimeout(2_000L) {
+                    firstCompleted.await()
+                    slowStarted.await()
+                    thirdStarted.await()
+                    fourthStarted.await()
+                }
+            }
+            assertFalse(pump.isCompleted)
+        } finally {
+            releaseSlow.complete(Unit)
+            releaseThird.complete(Unit)
+        }
+        assertEquals(DownloadExecutionPumpResult.Completed, pump.await())
+        requests.forEach { request ->
+            assertEquals("COMPLETED", store.currentState(context, request.operationId))
+        }
     }
 
     @Test

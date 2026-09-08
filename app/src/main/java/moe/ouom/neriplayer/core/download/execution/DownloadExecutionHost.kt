@@ -8,17 +8,18 @@ import androidx.annotation.RequiresApi
 import androidx.core.content.edit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.selects.select
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
@@ -1608,101 +1609,151 @@ class DefaultDownloadExecutionHost(
                 return@withContext DownloadExecutionPumpResult.Completed
             }
             DownloadStartupTrace.markQueueReady()
-            var completedBatches = 0
-            var sawRetry = false
-            var waitedForPendingUidtGrace = false
-            val attemptedOperationIds = mutableSetOf<String>()
-            val attemptedStableKeys = mutableSetOf<String>()
-            var pumpCursor: DownloadExecutionPumpCursor? = null
-            var pumpPendingPage: PumpPendingPage? = null
-            while (completedBatches < PUMP_MAX_BATCHES_PER_RUN) {
-                if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
-                    return@withContext DownloadExecutionPumpResult.Completed
-                }
-                val dispatchWindow = configuredDispatchWindow(appContext)
-                val selection = collectPumpCandidates(
-                    context = appContext,
-                    capacity = dispatchWindow,
-                    attemptedOperationIds = attemptedOperationIds,
-                    attemptedStableKeys = attemptedStableKeys,
-                    afterCursor = pumpCursor,
-                    pendingPage = pumpPendingPage
-                )
-                pumpCursor = selection.nextCursor
-                pumpPendingPage = selection.pendingPage
-                val candidates = selection.requests
-                if (candidates.isEmpty() && !selection.hasSchedulableRequest) {
-                    val nextRetryAtMs = selection.nextRetryAtMs
-                    val retryWakeResult = nextRetryAtMs?.let { deadlineMs ->
-                        retryDeadlineWakeCoordinator.schedule(appContext, deadlineMs)
-                    }
+            // 使用滑动窗口而不是批次屏障：某个慢 operation 收尾时，已经完成的
+            // operation 立即释放位置并补入下一首，避免并行数在批次尾部降到 0
+            supervisorScope {
+                var completedOperations = 0
+                // 旧实现每轮最多执行 PUMP_MAX_BATCHES_PER_RUN 个完整窗口。
+                // 滑动窗口按单个完成计数，保持同等上限，避免大队列被过早切成
+                // 多次 WorkManager pump 并重复扫描已读页面
+                val maxCompletedOperations = PUMP_MAX_BATCHES_PER_RUN *
+                    configuredDispatchWindow(appContext)
+                var sawRetry = false
+                var waitedForPendingUidtGrace = false
+                var queueExhausted = false
+                var lastSelection: PumpCandidateSelection? = null
+                var nextRetryAtMs: Long? = null
+                val attemptedOperationIds = mutableSetOf<String>()
+                val attemptedStableKeys = mutableSetOf<String>()
+                var pumpCursor: DownloadExecutionPumpCursor? = null
+                var pumpPendingPage: PumpPendingPage? = null
+                val running = linkedSetOf<Deferred<DownloadExecutionResult>>()
+
+                while (completedOperations < maxCompletedOperations) {
                     if (
-                        retryWakeResult == DownloadRetryDeadlineWakeCoordinator.ScheduleResult.FAILED
+                        ForegroundDownloadWorker.isPumpBlocked(appContext) &&
+                            running.isEmpty()
                     ) {
-                        return@withContext DownloadExecutionPumpResult.Retry
+                        return@supervisorScope DownloadExecutionPumpResult.Completed
                     }
-                    return@withContext if (sawRetry) {
-                        // 单个 operation 的可恢复失败已经写回 RETRYABLE。共享泵本身没有失败，
-                        // 不应返回 WorkManager Result.retry() 触发至少 10 秒的系统 backoff。
-                        DownloadExecutionPumpResult.ContinueAfterRetry
-                    } else {
-                        DownloadExecutionPumpResult.Completed
-                    }
-                }
-                if (candidates.isEmpty()) {
-                    val graceDelayMs = selection.shortestPendingUidtGraceDelayMs
-                    if (graceDelayMs != null && !waitedForPendingUidtGrace) {
-                        waitedForPendingUidtGrace = true
-                        if (selection.exhausted) {
-                            // 延后项可能位于本轮 cursor 之前，等待后必须重新观察队首
-                            pumpCursor = null
-                            pumpPendingPage = null
+
+                    // 每次只填满当前剩余容量。collectPumpCandidates 会保留页内
+                    // 未选中的请求，因此下一轮不会跳过任何 durable operation
+                    while (!queueExhausted && running.size < configuredDispatchWindow(appContext)) {
+                        val capacity = configuredDispatchWindow(appContext) - running.size
+                        val selection = collectPumpCandidates(
+                            context = appContext,
+                            capacity = capacity,
+                            attemptedOperationIds = attemptedOperationIds,
+                            attemptedStableKeys = attemptedStableKeys,
+                            afterCursor = pumpCursor,
+                            pendingPage = pumpPendingPage
+                        )
+                        lastSelection = selection
+                        nextRetryAtMs = selection.nextRetryAtMs?.let { deadlineMs ->
+                            nextRetryAtMs?.coerceAtMost(deadlineMs) ?: deadlineMs
                         }
-                        delay(graceDelayMs)
-                        continue
+                        pumpCursor = selection.nextCursor
+                        pumpPendingPage = selection.pendingPage
+                        if (selection.requests.isEmpty()) {
+                            if (selection.exhausted) queueExhausted = true
+                            break
+                        }
+                        waitedForPendingUidtGrace = false
+                        selection.requests.forEach { request ->
+                            attemptedOperationIds += request.operationId
+                            attemptedStableKeys += request.song.stableKey()
+                            val execution = async(Dispatchers.IO) {
+                                executePumpCandidateIsolated(request.operationId) {
+                                    execute(appContext, request.operationId)
+                                }
+                            }
+                            running += execution
+                        }
+                        if (selection.exhausted) queueExhausted = true
                     }
-                    if (sawRetry) {
-                        return@withContext DownloadExecutionPumpResult.ContinueAfterRetry
-                    }
-                    // 已尝试的 operation 或仍在 UIDT 队列的 operation 只需要短间隔继续泵，
-                    // 不能走 WorkManager retry，否则会被最小 10 秒 backoff 放大成启动停顿
-                    return@withContext DownloadExecutionPumpResult.ContinueSoon
-                }
-                waitedForPendingUidtGrace = false
-                attemptedOperationIds += candidates.map(DownloadExecutionRequest::operationId)
-                attemptedStableKeys += candidates.map { request -> request.song.stableKey() }
-                // 单个 operation 的用户取消、宿主停止或旧代次竞态不能取消同批其他歌曲
-                // supervisorScope 只隔离子任务失败，泵自身被取消时仍会正常退出
-                val results = supervisorScope {
-                    candidates.map { request ->
-                        async(Dispatchers.IO) {
-                            executePumpCandidateIsolated(request.operationId) {
-                                execute(appContext, request.operationId)
+
+                    if (running.isNotEmpty()) {
+                        // 任一 operation 完成就继续填充窗口，不等待同一轮其它慢任务
+                        val completed = select<Pair<Deferred<DownloadExecutionResult>, DownloadExecutionResult>> {
+                            running.forEach { execution ->
+                                execution.onAwait { result -> execution to result }
                             }
                         }
-                    }.awaitAll()
-                }
-                completedBatches++
-                sawRetry = sawRetry || results.any(::requiresPumpRetry)
-                if (selection.exhausted) {
-                    val graceDelayMs = selection.shortestPendingUidtGraceDelayMs
-                    if (graceDelayMs != null && !waitedForPendingUidtGrace) {
-                        waitedForPendingUidtGrace = true
-                        // grace 结束后从队首重新观察，之前的 cursor 只服务于本轮扫描
-                        pumpCursor = null
-                        pumpPendingPage = null
-                        delay(graceDelayMs)
-                        continue
+                        running.remove(completed.first)
+                        completedOperations++
+                        sawRetry = sawRetry || requiresPumpRetry(completed.second)
+                        if (running.isNotEmpty()) continue
+
+                        val selection = lastSelection
+                        val graceDelayMs = selection?.shortestPendingUidtGraceDelayMs
+                        if (queueExhausted && graceDelayMs != null && !waitedForPendingUidtGrace) {
+                            waitedForPendingUidtGrace = true
+                            // UIDT 延后项可能位于当前游标之前，等待后从队首重读
+                            pumpCursor = null
+                            pumpPendingPage = null
+                            queueExhausted = false
+                            delay(graceDelayMs)
+                            continue
+                        }
+                        if (queueExhausted) {
+                            val retryWakeResult = nextRetryAtMs?.let { deadlineMs ->
+                                retryDeadlineWakeCoordinator.schedule(appContext, deadlineMs)
+                            }
+                            if (
+                                retryWakeResult == DownloadRetryDeadlineWakeCoordinator.ScheduleResult.FAILED
+                            ) {
+                                return@supervisorScope DownloadExecutionPumpResult.Retry
+                            }
+                            return@supervisorScope if (sawRetry) {
+                                DownloadExecutionPumpResult.ContinueAfterRetry
+                            } else if (selection?.hasSchedulableRequest == true &&
+                                selection.requests.isEmpty()
+                            ) {
+                                // durable 行仍在队列中，但本轮已尝试过或正在 UIDT
+                                // grace 中，短唤醒即可，不能触发系统长 backoff
+                                DownloadExecutionPumpResult.ContinueSoon
+                            } else {
+                                DownloadExecutionPumpResult.Completed
+                            }
+                        }
+                    } else {
+                        val selection = lastSelection
+                        val graceDelayMs = selection?.shortestPendingUidtGraceDelayMs
+                        if (graceDelayMs != null && !waitedForPendingUidtGrace) {
+                            waitedForPendingUidtGrace = true
+                            if (selection.exhausted) {
+                                pumpCursor = null
+                                pumpPendingPage = null
+                                queueExhausted = false
+                            }
+                            delay(graceDelayMs)
+                            continue
+                        }
+                        if (selection?.hasSchedulableRequest != true) {
+                            val retryWakeResult = nextRetryAtMs?.let { deadlineMs ->
+                                retryDeadlineWakeCoordinator.schedule(appContext, deadlineMs)
+                            }
+                            if (
+                                retryWakeResult == DownloadRetryDeadlineWakeCoordinator.ScheduleResult.FAILED
+                            ) {
+                                return@supervisorScope DownloadExecutionPumpResult.Retry
+                            }
+                            return@supervisorScope if (sawRetry) {
+                                DownloadExecutionPumpResult.ContinueAfterRetry
+                            } else {
+                                DownloadExecutionPumpResult.Completed
+                            }
+                        }
+                        return@supervisorScope if (sawRetry) {
+                            DownloadExecutionPumpResult.ContinueAfterRetry
+                        } else {
+                            DownloadExecutionPumpResult.ContinueSoon
+                        }
                     }
-                    if (sawRetry) return@withContext DownloadExecutionPumpResult.ContinueAfterRetry
-                    // 页面未填满 dispatch window 时已经到达 durable 队列尾部
-                    if (candidates.size < dispatchWindow) {
-                        return@withContext DownloadExecutionPumpResult.Completed
-                    }
-                    return@withContext DownloadExecutionPumpResult.ContinueSoon
                 }
+                DownloadExecutionPumpResult.ContinueSoon
             }
-            DownloadExecutionPumpResult.ContinueSoon
         }
     }
 
