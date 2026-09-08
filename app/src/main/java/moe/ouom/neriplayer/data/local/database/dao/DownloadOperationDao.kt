@@ -488,15 +488,11 @@ internal interface DownloadOperationDao {
         limit: Int
     ): List<DownloadOperationIdentityRow>
 
+    /** owner 快照必须包含快速阶段已标记的取消态和提交边界 stop 行 */
     @Query(
         "SELECT operation_id, stable_key, state, created_at_ms, " +
             "stop_requested_by_user FROM download_operation " +
             "WHERE state IN (:states) AND operation_id > :afterOperationId " +
-            "AND ((state IN ('PENDING_QUEUE', 'QUEUED', " +
-            "'WAITING_STORAGE_MUTATION', 'RUNNING', 'RETRYABLE') " +
-            "AND stop_requested_by_user = 0) OR state = 'STOPPED' OR " +
-            "(state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
-            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 0)) " +
             "ORDER BY operation_id ASC LIMIT :limit"
     )
     suspend fun findCancellationIdentitiesAfterOperationId(

@@ -1909,6 +1909,22 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `startup progress restore recreates the aggregate presentation`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val restoreBody = source.substringAfter(
+            "private suspend fun restorePersistedDownloadProgress(context: Context)"
+        ).substringBefore("private suspend fun reconcilePendingDownloadArtifacts")
+
+        assertTrue(restoreBody.contains("RECOVERED_BATCH_DOWNLOAD_PRESENTATION_ID"))
+        assertTrue(restoreBody.contains("recoveredMemberAttemptIds"))
+        assertTrue(restoreBody.contains("recoveredMaximumObservedFractions"))
+        assertTrue(restoreBody.contains("_batchDownloadPresentations.update"))
+        assertTrue(restoreBody.contains("BatchDownloadPresentationState("))
+    }
+
+    @Test
     fun `startup recovery keeps the outer admission ticket`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
@@ -2046,7 +2062,7 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `Wi-Fi wake keeps its current work retryable until recovery reaches a terminal state`() {
+    fun `Wi-Fi wake completes after handing durable candidates to the shared pump`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -2054,17 +2070,23 @@ class GlobalDownloadManagerStartupPolicyTest {
             "internal suspend fun recoverPendingDownloadsFromWifiWake"
         ).substringBefore("private suspend fun cancelDownloadTaskInBackground")
 
-        val activeBranchIndex = wakeBody.indexOf("if (hasBlockingActiveDownloadOperationsForRecovery())")
+        val activeBranchIndex = wakeBody.indexOf(
+            "if (shouldHandoffBlockedWifiRecoveryToSharedPump("
+        )
         val acceptedIndex = wakeBody.indexOf("val accepted = recoverPendingResumableDownloads")
 
         assertTrue(wakeBody.contains("withPendingDownloadRecoverySlot(\"wifi_wake\")"))
         assertFalse(wakeBody.contains("tryBeginPendingDownloadRecovery"))
         assertTrue(activeBranchIndex >= 0)
+        val activeBranch = wakeBody.substring(
+            activeBranchIndex,
+            wakeBody.indexOf("} else", activeBranchIndex)
+        )
+        assertTrue(activeBranch.contains("val pumpScheduled = wakeDownloadExecutionPump"))
+        assertTrue(activeBranch.trim().endsWith("pumpScheduled"))
+        assertFalse(activeBranch.contains("\n                    false"))
         assertTrue(
-            wakeBody.substring(
-                activeBranchIndex,
-                wakeBody.indexOf("} else", activeBranchIndex)
-            ).contains("false")
+            activeBranch.contains("wakeDownloadExecutionPump")
         )
         assertTrue(acceptedIndex >= 0)
         assertTrue(
@@ -2076,6 +2098,28 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertFalse(wakeBody.contains("WifiBoundDownloadWakeWorker.rearmAll(appContext)"))
         assertFalse(wakeBody.contains("rearmWifiWakeAfterCompletion"))
         assertTrue(wakeBody.contains("WIFI 唤醒恢复尚未成为终态，保留 WorkManager 重试"))
+    }
+
+    @Test
+    fun `blocked wifi recovery hands durable candidates to the shared pump`() {
+        assertTrue(
+            shouldHandoffBlockedWifiRecoveryToSharedPump(
+                hasPendingCandidates = true,
+                hasBlockingActiveOperations = true
+            )
+        )
+        assertFalse(
+            shouldHandoffBlockedWifiRecoveryToSharedPump(
+                hasPendingCandidates = false,
+                hasBlockingActiveOperations = true
+            )
+        )
+        assertFalse(
+            shouldHandoffBlockedWifiRecoveryToSharedPump(
+                hasPendingCandidates = true,
+                hasBlockingActiveOperations = false
+            )
+        )
     }
 
     @Test
@@ -2463,6 +2507,23 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertFalse(captureBody.contains("listPendingResumableDownloads"))
         assertFalse(captureBody.contains("DOWNLOAD_CLEAR_OWNERSHIP_CAPTURE_TIMEOUT_MS"))
         assertTrue(captureBody.contains("pendingWorkingDownloads = emptyList()"))
+    }
+
+    @Test
+    fun `clear owner identity projection keeps already marked cancellation rows`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/data/local/database/dao/DownloadOperationDao.kt"
+        ).readText()
+        val queryStart = source.indexOf(
+            "SELECT operation_id, stable_key, state, created_at_ms"
+        )
+        val queryEnd = source.indexOf("suspend fun findCancellationIdentitiesAfterOperationId")
+        assertTrue(queryStart >= 0)
+        assertTrue(queryEnd > queryStart)
+        val query = source.substring(queryStart, queryEnd)
+        assertTrue(query.contains("WHERE state IN (:states)"))
+        assertTrue(query.contains("operation_id > :afterOperationId"))
+        assertFalse(query.contains("stop_requested_by_user = 0"))
     }
 
     @Test

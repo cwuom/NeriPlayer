@@ -846,3 +846,11 @@ internal fun hasRecoveryBlockingDownloadOperations(
         task.status == DownloadStatus.DOWNLOADING
     }
 }
+
+/** 活动传输存在时也要把持久队列交给共享泵，不能让 WIFI 唤醒机会空转 */
+internal fun shouldHandoffBlockedWifiRecoveryToSharedPump(
+    hasPendingCandidates: Boolean,
+    hasBlockingActiveOperations: Boolean
+): Boolean {
+    return hasPendingCandidates && hasBlockingActiveOperations
+}

@@ -465,6 +465,8 @@ object GlobalDownloadManager {
     private val corePublicationCoordinator = DownloadCorePublicationCoordinator()
     private val requestGenerationTracker = DownloadRequestGenerationTracker()
     private val batchDownloadPresentationIdGenerator = AtomicLong(0L)
+    /** 进程重启后用固定 id 回填持久 operation，避免重复创建恢复横幅 */
+    private const val RECOVERED_BATCH_DOWNLOAD_PRESENTATION_ID = Long.MIN_VALUE
     private val _batchDownloadPresentations =
         MutableStateFlow<Map<Long, BatchDownloadPresentationState>>(emptyMap())
     val downloadTasks: StateFlow<List<DownloadTask>> = combine(
@@ -3398,6 +3400,33 @@ object GlobalDownloadManager {
                     )
                 }
                 restoredCount = taskStore.restoreProgressBatch(restoredProgresses)
+                val recoveredMemberAttemptIds = latestEntries.associate { entry ->
+                    val songKey = entry.request.song.stableKey()
+                    songKey to (
+                        entry.request.attemptId?.takeIf { attemptId -> attemptId > 0L }
+                            ?: effectiveAttemptIds[songKey]
+                        )
+                }
+                val recoveredMaximumObservedFractions = restoredProgresses
+                    .associate { progress ->
+                        progress.songKey to downloadProgressFraction(progress)
+                    }
+                    .filterValues { fraction -> fraction > 0f }
+                _batchDownloadPresentations.update { presentations ->
+                    if (recoveredMemberAttemptIds.isEmpty()) {
+                        presentations - RECOVERED_BATCH_DOWNLOAD_PRESENTATION_ID
+                    } else {
+                        presentations + (
+                            RECOVERED_BATCH_DOWNLOAD_PRESENTATION_ID to
+                                BatchDownloadPresentationState(
+                                    id = RECOVERED_BATCH_DOWNLOAD_PRESENTATION_ID,
+                                    memberAttemptIds = recoveredMemberAttemptIds,
+                                    maximumObservedFractions =
+                                        recoveredMaximumObservedFractions
+                                )
+                        )
+                    }
+                }
             }
             if (!admitted || blockedByDurableClear) {
                 NPLogger.i(
@@ -4599,7 +4628,24 @@ object GlobalDownloadManager {
                 }
                 waitForActiveDownloadJobsToSettle()
                 waitForQueuedTasksToAttachToBatch()
-                if (hasBlockingActiveDownloadOperationsForRecovery()) {
+                val hasBlockingActiveOperations = hasBlockingActiveDownloadOperationsForRecovery()
+                if (shouldHandoffBlockedWifiRecoveryToSharedPump(
+                        hasPendingCandidates = true,
+                        hasBlockingActiveOperations = hasBlockingActiveOperations
+                    )
+                ) {
+                    val pumpScheduled = wakeDownloadExecutionPump(
+                        context = appContext,
+                        reason = "network_recovery_active_handoff"
+                    )
+                    if (!pumpScheduled) {
+                        WifiBoundDownloadWakeWorker.scheduleAll(appContext)
+                    }
+                    NPLogger.d(
+                        TAG,
+                        "WIFI 恢复仍有活动传输，已交给共享下载泵继续排队: " +
+                            "pump=$pumpScheduled"
+                    )
                     return@withPendingDownloadRecoverySlot
                 }
                 recoverPendingResumableDownloads(
@@ -19557,12 +19603,22 @@ object GlobalDownloadManager {
                 }
                 waitForActiveDownloadJobsToSettle()
                 waitForQueuedTasksToAttachToBatch()
-                if (hasBlockingActiveDownloadOperationsForRecovery()) {
+                val hasBlockingActiveOperations = hasBlockingActiveDownloadOperationsForRecovery()
+                if (shouldHandoffBlockedWifiRecoveryToSharedPump(
+                        hasPendingCandidates = true,
+                        hasBlockingActiveOperations = hasBlockingActiveOperations
+                    )
+                ) {
+                    val pumpScheduled = wakeDownloadExecutionPump(
+                        context = appContext,
+                        reason = "wifi_wake_active_handoff"
+                    )
                     NPLogger.d(
                         TAG,
-                        "WIFI 唤醒恢复已有活动下载，保留 WorkManager 重试"
+                        "WIFI 唤醒仍有活动传输，已交给共享下载泵继续排队: " +
+                            "pump=$pumpScheduled"
                     )
-                    false
+                    pumpScheduled
                 } else {
                     val accepted = recoverPendingResumableDownloads(
                         context = appContext,
