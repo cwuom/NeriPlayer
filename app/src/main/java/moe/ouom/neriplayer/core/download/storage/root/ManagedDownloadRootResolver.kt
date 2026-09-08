@@ -12,6 +12,8 @@ import moe.ouom.neriplayer.core.download.storage.TREE_ROOT_CACHE_VALIDATE_INTERV
 import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 
+private const val JVM_FALLBACK_DIRECTORY_NAME = "neriplayer-jvm"
+
 internal class ManagedDownloadRootResolver(
     private val locks: ConcurrentHashMap<String, Any>
 ) {
@@ -164,8 +166,24 @@ internal class ManagedDownloadRootResolver(
             "com.android.externalstorage.documents"
 
         internal fun defaultRootDirectory(context: Context): File {
-            val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+            // Android 单元测试的 Context 可能返回空或相对路径，避免把回退目录落到项目中
+            val externalFilesDir = runCatching {
+                context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+            }.getOrNull()
+            val filesDir = runCatching { context.filesDir }.getOrNull()
+            val baseDir = externalFilesDir?.takeIf { it.isAbsolute }
+                ?: filesDir?.takeIf { it.isAbsolute }
+                ?: jvmFallbackDirectory()
             return File(baseDir, ROOT_DIR_NAME)
+        }
+
+        private fun jvmFallbackDirectory(): File {
+            val tempDir = System.getProperty("java.io.tmpdir")
+                ?.takeIf(String::isNotBlank)
+                ?.let(::File)
+                ?.takeIf { it.isAbsolute }
+                ?: error("java.io.tmpdir must be an absolute path")
+            return File(tempDir, JVM_FALLBACK_DIRECTORY_NAME)
         }
     }
 

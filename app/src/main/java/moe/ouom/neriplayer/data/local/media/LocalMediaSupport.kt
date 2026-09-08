@@ -54,6 +54,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.data.model.SongItem
@@ -4477,8 +4478,7 @@ object LocalMediaSupport {
     }
 
     fun downloadDirectory(context: Context): File {
-        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-        return File(baseDir, "NeriPlayer")
+        return ManagedDownloadRootResolver.defaultRootDirectory(context)
     }
 
     // 优先直接分享受控目录中的文件，无法直出时再复制到缓存 staging 后分享

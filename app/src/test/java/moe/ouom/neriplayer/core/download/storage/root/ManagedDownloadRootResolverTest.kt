@@ -2,9 +2,11 @@ package moe.ouom.neriplayer.core.download.storage.root
 
 import android.content.ContentResolver
 import android.content.Context
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
+import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -16,6 +18,21 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 
 class ManagedDownloadRootResolverTest {
+
+    @Test
+    fun `missing context directories use the JVM temporary directory`() {
+        val context = mock(Context::class.java)
+
+        val root = ManagedDownloadRootResolver.defaultRootDirectory(context)
+        val temporaryRoot = File(
+            requireNotNull(System.getProperty("java.io.tmpdir")),
+            "neriplayer-jvm"
+        )
+
+        assertEquals(ROOT_DIR_NAME, root.name)
+        assertEquals(File(temporaryRoot, ROOT_DIR_NAME).absolutePath, root.absolutePath)
+        assertTrue(root.isAbsolute)
+    }
 
     @Test
     fun `invalid persisted permission never falls back to private root`() {
