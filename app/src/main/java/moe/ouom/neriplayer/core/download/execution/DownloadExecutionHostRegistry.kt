@@ -24,6 +24,32 @@ object DownloadExecutionHosts {
         )
     }
 
+    internal fun onCoreCommitted(
+        context: Context,
+        operationId: String,
+        attemptId: Long? = null,
+        transferOwnerToken: Long? = null
+    ): Boolean {
+        return default.onCoreCommitted(
+            context = context,
+            operationId = operationId,
+            attemptId = attemptId,
+            transferOwnerToken = transferOwnerToken
+        )
+    }
+
+    internal fun onTransferStarted(
+        context: Context,
+        operationId: String,
+        attemptId: Long? = null
+    ): Long? {
+        return default.onTransferStarted(
+            context = context,
+            operationId = operationId,
+            attemptId = attemptId
+        )
+    }
+
     internal fun stopForSystemRetry(
         context: Context,
         operationId: String

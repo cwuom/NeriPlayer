@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -34,6 +35,7 @@ import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.data.model.stableKey
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class DefaultDownloadExecutionHost(
     private val operationStore: DownloadExecutionOperationStore =
@@ -51,6 +53,15 @@ class DefaultDownloadExecutionHost(
 ) : DownloadExecutionHost {
     private val operationIdsBySongKey = ConcurrentHashMap<String, String>()
     private val executingOperationIds = ConcurrentHashMap.newKeySet<String>()
+    /** 传输槽位只保留到 Core Commit，后续 enrichment 不再占用共享泵窗口 */
+    private val activeTransferOwners = ConcurrentHashMap<String, TransferSlotOwner>()
+    /** 泵已选中但尚未完成 execute claim 的保留位，避免外部 worker 竞态超发 */
+    private val transferReservationOwners = ConcurrentHashMap<String, TransferSlotOwner>()
+    private val transferOwnerSequence = AtomicLong(0L)
+    private val transferReleaseInFlightTokens = ConcurrentHashMap.newKeySet<Long>()
+    /** Core Commit 的 durable 释放失败时保留 owner，等待同一 token 的回调重试 */
+    private val transferReleasePendingTokens = ConcurrentHashMap.newKeySet<Long>()
+    private val transferReleaseSignals = Channel<String>(Channel.CONFLATED)
     private val systemRetryStopOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val explicitSchedulerStopOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val executionAdmissionLock = Any()
@@ -81,6 +92,16 @@ class DefaultDownloadExecutionHost(
         val continuationCursor: DownloadExecutionPumpCursor?
     )
 
+    private data class PumpExecutionCompletion(
+        val operationId: String,
+        val execution: Deferred<DownloadExecutionResult>,
+        val result: DownloadExecutionResult
+    )
+
+    private data class PumpTransferRelease(
+        val operationId: String
+    )
+
     /** 调度期间绑定的清空代次和 operation 身份，避免长 I/O 返回后越过新代次 */
     private data class ScheduleTicket(
         val operationId: String,
@@ -93,6 +114,13 @@ class DefaultDownloadExecutionHost(
     private data class BackendOwner(
         val ticket: ScheduleTicket,
         val backend: DownloadExecutionSchedule.Backend
+    )
+
+    /** transfer lane 的唯一 owner，避免旧 execute 的 finally 释放新 attempt 的槽位 */
+    private data class TransferSlotOwner(
+        val token: Long,
+        val attemptId: Long?,
+        val ticket: ScheduleTicket?
     )
 
     override fun schedule(
@@ -864,17 +892,16 @@ class DefaultDownloadExecutionHost(
             }
         }
         val idleOperationIds = synchronized(executionAdmissionLock) {
-            normalizedIds.filterNot(executingOperationIds::contains).also { idleIds ->
-                idleIds.forEach(hostAdmissionOwners::remove)
-            }
+            normalizedIds.filterNot(executingOperationIds::contains)
         }
         operationIdsBySongKey.entries.removeIf { entry -> entry.value in normalizedIds }
         withDeferredSchedulingLock {
             deferredRequests.removeAll(normalizedIds)
         }
         if (idleOperationIds.isNotEmpty()) {
-            operationStore.releaseHostAdmissions(appContext, idleOperationIds)
-            triggerDeferredSchedules(appContext)
+            idleOperationIds.forEach { operationId ->
+                releaseHostAdmissionIfIdle(appContext, operationId)
+            }
         }
     }
 
@@ -900,11 +927,11 @@ class DefaultDownloadExecutionHost(
             }
         }
         val idleOperationIds = synchronized(executionAdmissionLock) {
-            ownedOperationIds.filterNot(executingOperationIds::contains).also { idleIds ->
-                idleIds.forEach(hostAdmissionOwners::remove)
-            }
+            ownedOperationIds.filterNot(executingOperationIds::contains)
         }
-        operationStore.releaseHostAdmissions(appContext, idleOperationIds)
+        idleOperationIds.forEach { operationId ->
+            releaseHostAdmissionIfIdle(appContext, operationId)
+        }
         scheduleOwners.clear()
         synchronized(backendOwnershipLock) {
             backendOwners.clear()
@@ -1101,6 +1128,232 @@ class DefaultDownloadExecutionHost(
         return executingOperationIds.contains(operationId)
     }
 
+    override fun onTransferStarted(
+        context: Context,
+        operationId: String,
+        attemptId: Long?
+    ): Long? {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return null
+        if (attemptId != null && attemptId <= 0L) return null
+        val normalizedAttemptId = attemptId
+        val persistedRequest = try {
+            operationStore.read(context.applicationContext, normalizedId)
+        } catch (error: Throwable) {
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "读取 transfer attempt 失败，拒绝启动回调: " +
+                    "operationId=$normalizedId, error=${error.message}",
+                error
+            )
+            return null
+        } ?: return null
+        if (persistedRequest.attemptId != normalizedAttemptId) return null
+        val configuredCapacity = configuredDownloadParallelism(context.applicationContext)
+        return synchronized(executionAdmissionLock) {
+            if (!executingOperationIds.contains(normalizedId)) return@synchronized null
+            val activeOwner = activeTransferOwners[normalizedId]
+            if (activeOwner != null) {
+                return@synchronized activeOwner
+                    .takeIf { owner -> owner.attemptId == normalizedAttemptId }
+                    ?.token
+            }
+            val reservation = transferReservationOwners[normalizedId]
+            if (reservation != null && reservation.attemptId != normalizedAttemptId) {
+                return@synchronized null
+            }
+            if (
+                reservation == null &&
+                    activeTransferOwners.size + transferReservationOwners.size >=
+                        configuredCapacity
+            ) {
+                return@synchronized null
+            }
+            val owner = reservation ?: TransferSlotOwner(
+                token = nextTransferOwnerToken(),
+                attemptId = normalizedAttemptId,
+                ticket = hostAdmissionOwners[normalizedId]
+            )
+            if (reservation != null) {
+                transferReservationOwners.remove(normalizedId, reservation)
+            }
+            activeTransferOwners[normalizedId] = owner.copy(
+                attemptId = normalizedAttemptId,
+                ticket = hostAdmissionOwners[normalizedId] ?: owner.ticket
+            )
+            owner.token
+        }
+    }
+
+    override fun onCoreCommitted(
+        context: Context,
+        operationId: String,
+        attemptId: Long?,
+        transferOwnerToken: Long?
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        if (attemptId != null && attemptId <= 0L) return false
+        if (transferOwnerToken == null) return false
+        val normalizedAttemptId = attemptId
+        val persistedRequest = try {
+            operationStore.read(context.applicationContext, normalizedId)
+        } catch (error: Throwable) {
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "读取 Core Commit attempt 失败，拒绝释放 transfer owner: " +
+                    "operationId=$normalizedId, error=${error.message}",
+                error
+            )
+            return false
+        } ?: return false
+        if (persistedRequest.attemptId != normalizedAttemptId) return false
+        val owner = synchronized(executionAdmissionLock) {
+            val current = activeTransferOwners[normalizedId] ?: return@synchronized null
+            if (current.attemptId != normalizedAttemptId) return@synchronized null
+            if (transferOwnerToken != current.token) {
+                return@synchronized null
+            }
+            if (!transferReleaseInFlightTokens.add(current.token)) {
+                return@synchronized null
+            }
+            current
+        } ?: return false
+
+        val admissionReleased = runCatching {
+            // execute() 仍可能在 enrichment 阶段运行，不能调用只接受 idle 的释放入口
+            operationStore.releaseHostAdmission(context.applicationContext, normalizedId)
+        }.onFailure { error ->
+            synchronized(executionAdmissionLock) {
+                transferReleaseInFlightTokens.remove(owner.token)
+                transferReleasePendingTokens.add(owner.token)
+            }
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "Core Commit 后释放宿主准入失败，保留传输 owner 等待 finally/retry: " +
+                    "operationId=$normalizedId, error=${error.message}",
+                error
+            )
+        }.isSuccess
+        if (!admissionReleased) return false
+
+        val released = synchronized(executionAdmissionLock) {
+            val current = activeTransferOwners[normalizedId]
+            if (current?.token != owner.token) {
+                transferReleaseInFlightTokens.remove(owner.token)
+                false
+            } else {
+                activeTransferOwners.remove(normalizedId, current)
+                transferReleaseInFlightTokens.remove(owner.token)
+                transferReleasePendingTokens.remove(owner.token)
+                current.ticket?.let { ticket ->
+                    hostAdmissionOwners.remove(normalizedId, ticket)
+                }
+                true
+            }
+        }
+        if (!released) return false
+        transferReleaseSignals.trySend(normalizedId)
+        triggerDeferredSchedules(context.applicationContext)
+        return true
+    }
+
+    private fun nextTransferOwnerToken(): Long {
+        return transferOwnerSequence.incrementAndGet().coerceAtLeast(1L)
+    }
+
+    private fun reserveTransferSlot(
+        operationId: String,
+        attemptId: Long?,
+        capacity: Int
+    ): Long? {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return null
+        if (attemptId != null && attemptId <= 0L) return null
+        synchronized(executionAdmissionLock) {
+            if (
+                activeTransferOwners.containsKey(normalizedId) ||
+                    transferReservationOwners.containsKey(normalizedId)
+            ) {
+                return null
+            }
+            if (activeTransferOwners.size + transferReservationOwners.size >= capacity) {
+                return null
+            }
+            val token = nextTransferOwnerToken()
+            transferReservationOwners[normalizedId] = TransferSlotOwner(
+                token = token,
+                attemptId = attemptId,
+                ticket = null
+            )
+            return token
+        }
+    }
+
+    private fun bindTransferReservationAttempt(
+        operationId: String,
+        ticket: ScheduleTicket
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        synchronized(executionAdmissionLock) {
+            val reservation = transferReservationOwners[normalizedId] ?: return true
+            if (
+                reservation.attemptId != null &&
+                    reservation.attemptId != ticket.attemptId
+            ) {
+                return false
+            }
+            transferReservationOwners[normalizedId] = reservation.copy(
+                attemptId = ticket.attemptId,
+                ticket = ticket
+            )
+            return true
+        }
+    }
+
+    private fun releaseTransferReservation(
+        operationId: String,
+        reservationToken: Long
+    ) {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+        val released = synchronized(executionAdmissionLock) {
+            val reservation = transferReservationOwners[normalizedId]
+            if (reservation?.token != reservationToken) {
+                false
+            } else {
+                transferReservationOwners.remove(normalizedId, reservation)
+                true
+            }
+        }
+        if (released) transferReleaseSignals.trySend(normalizedId)
+    }
+
+    private fun transferLaneOccupancy(): Int = synchronized(executionAdmissionLock) {
+        activeTransferOwners.size + transferReservationOwners.size
+    }
+
+    private fun releaseTransferSlot(
+        operationId: String,
+        attemptId: Long? = null,
+        ticket: ScheduleTicket? = null
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        if (attemptId != null && attemptId <= 0L) return false
+        val released = synchronized(executionAdmissionLock) {
+            val owner = activeTransferOwners[normalizedId] ?: return@synchronized false
+            if (owner.attemptId != attemptId) return@synchronized false
+            if (ticket != null && owner.ticket != null && owner.ticket != ticket) {
+                return@synchronized false
+            }
+            if (transferReleaseInFlightTokens.contains(owner.token)) {
+                return@synchronized false
+            }
+            if (transferReleasePendingTokens.contains(owner.token)) {
+                return@synchronized false
+            }
+            activeTransferOwners.remove(normalizedId, owner)
+        }
+        if (released) transferReleaseSignals.trySend(normalizedId)
+        return released
+    }
+
     override fun markUserRequestedProcessExitOperations(context: Context): Set<String> {
         if (sdkInt < Build.VERSION_CODES.R) return emptySet()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptySet()
@@ -1261,6 +1514,11 @@ class DefaultDownloadExecutionHost(
                 ticket = executionTicket
             )
         }
+        if (synchronized(executionAdmissionLock) { executingOperationIds.contains(normalizedId) }) {
+            return@withContext resolveConcurrentExecutionResult(
+                systemRetryStopPending = systemRetryStopOperationIds.contains(normalizedId)
+            )
+        }
         // Room 访问必须发生在短内存临界区之外，避免清空或进度回调被
         // 一个挂起的数据库操作长期阻塞
         DownloadOperationTrace.mark(
@@ -1275,6 +1533,7 @@ class DefaultDownloadExecutionHost(
             )
         }
         val stateBeforeClaim = operationStore.currentStateSuspending(appContext, normalizedId)
+        var executionClaimed = false
         val claimResult = synchronized(executionAdmissionLock) {
             when {
                 !hostAdmissionAcquired -> resolvePreExecutionResult(stateBeforeClaim)
@@ -1283,6 +1542,7 @@ class DefaultDownloadExecutionHost(
                     systemRetryStopPending = systemRetryStopOperationIds.contains(normalizedId)
                 )
                 else -> {
+                    executionClaimed = true
                     val existingOwner = hostAdmissionOwners[normalizedId]
                     when {
                         existingOwner == null -> {
@@ -1299,13 +1559,18 @@ class DefaultDownloadExecutionHost(
             }
         }
         if (claimResult != null) {
+            if (hostAdmissionAcquired && !executionClaimed) {
+                releaseLostExecutionAdmissionIfUnowned(appContext, normalizedId)
+            }
             return@withContext claimResult
         }
         try {
             if (!operationStore.tryStartSuspending(
                     context = appContext,
                     operationId = normalizedId,
-                    allowExistingRunning = true
+                    allowExistingRunning = true,
+                    currentNetworkGeneration =
+                        AudioDownloadManager.currentDownloadNetworkGeneration()
                 )
             ) {
                 return@withContext resolveClaimFailureResult(
@@ -1351,6 +1616,13 @@ class DefaultDownloadExecutionHost(
                 )
             }
             executionTicket = reboundTicket
+            if (!bindTransferReservationAttempt(normalizedId, executionTicket)) {
+                return@withContext rejectStaleExecution(
+                    context = appContext,
+                    request = request,
+                    ticket = executionTicket
+                )
+            }
             operationTraceToken = DownloadOperationTrace.begin(
                 operationId = normalizedId,
                 attemptId = executionTicket.attemptId
@@ -1596,6 +1868,11 @@ class DefaultDownloadExecutionHost(
                 operationId = normalizedId,
                 ticket = executionTicket
             )
+            releaseTransferSlot(
+                operationId = normalizedId,
+                attemptId = finishedTicket.attemptId,
+                ticket = finishedTicket
+            )
         }
     }
 
@@ -1627,20 +1904,25 @@ class DefaultDownloadExecutionHost(
                 val attemptedStableKeys = mutableSetOf<String>()
                 var pumpCursor: DownloadExecutionPumpCursor? = null
                 var pumpPendingPage: PumpPendingPage? = null
-                val running = linkedSetOf<Deferred<DownloadExecutionResult>>()
+                val transferRunning = linkedMapOf<String, Deferred<DownloadExecutionResult>>()
+                val sideChannelRunning = linkedMapOf<String, Deferred<DownloadExecutionResult>>()
 
                 while (completedOperations < maxCompletedOperations) {
                     if (
                         ForegroundDownloadWorker.isPumpBlocked(appContext) &&
-                            running.isEmpty()
+                            transferRunning.isEmpty() && sideChannelRunning.isEmpty()
                     ) {
                         return@supervisorScope DownloadExecutionPumpResult.Completed
                     }
 
                     // 每次只填满当前剩余容量。collectPumpCandidates 会保留页内
                     // 未选中的请求，因此下一轮不会跳过任何 durable operation
-                    while (!queueExhausted && running.size < configuredDispatchWindow(appContext)) {
-                        val capacity = configuredDispatchWindow(appContext) - running.size
+                    while (
+                            !queueExhausted &&
+                            transferLaneOccupancy() < configuredDownloadParallelism(appContext)
+                    ) {
+                        val capacity = configuredDownloadParallelism(appContext) -
+                            transferLaneOccupancy()
                         val selection = collectPumpCandidates(
                             context = appContext,
                             capacity = capacity,
@@ -1663,27 +1945,81 @@ class DefaultDownloadExecutionHost(
                         selection.requests.forEach { request ->
                             attemptedOperationIds += request.operationId
                             attemptedStableKeys += request.song.stableKey()
+                            val reservationToken = reserveTransferSlot(
+                                operationId = request.operationId,
+                                attemptId = request.attemptId,
+                                capacity = configuredDownloadParallelism(appContext)
+                            ) ?: run {
+                                return@forEach
+                            }
                             val execution = async(Dispatchers.IO) {
-                                executePumpCandidateIsolated(request.operationId) {
-                                    execute(appContext, request.operationId)
+                                try {
+                                    executePumpCandidateIsolated(request.operationId) {
+                                        execute(appContext, request.operationId)
+                                    }
+                                } finally {
+                                    releaseTransferReservation(
+                                        operationId = request.operationId,
+                                        reservationToken = reservationToken
+                                    )
                                 }
                             }
-                            running += execution
+                            transferRunning[request.operationId] = execution
                         }
                         if (selection.exhausted) queueExhausted = true
                     }
 
-                    if (running.isNotEmpty()) {
+                    if (transferRunning.isNotEmpty() || sideChannelRunning.isNotEmpty()) {
                         // 任一 operation 完成就继续填充窗口，不等待同一轮其它慢任务
-                        val completed = select<Pair<Deferred<DownloadExecutionResult>, DownloadExecutionResult>> {
-                            running.forEach { execution ->
-                                execution.onAwait { result -> execution to result }
+                        val completed = select<Any> {
+                            transferRunning.forEach { (operationId, execution) ->
+                                execution.onAwait { result ->
+                                    PumpExecutionCompletion(
+                                        operationId = operationId,
+                                        execution = execution,
+                                        result = result
+                                    )
+                                }
+                            }
+                            sideChannelRunning.forEach { (operationId, execution) ->
+                                execution.onAwait { result ->
+                                    PumpExecutionCompletion(
+                                        operationId = operationId,
+                                        execution = execution,
+                                        result = result
+                                    )
+                                }
+                            }
+                            transferReleaseSignals.onReceive { operationId ->
+                                PumpTransferRelease(operationId)
                             }
                         }
-                        running.remove(completed.first)
-                        completedOperations++
-                        sawRetry = sawRetry || requiresPumpRetry(completed.second)
-                        if (running.isNotEmpty()) continue
+                        when (completed) {
+                            is PumpTransferRelease -> {
+                                // Core Commit 释放 transfer lane 后，把 execute deferred
+                                // 移到 enrichment side channel，不再把它当作传输中的任务
+                                transferRunning.remove(completed.operationId)?.let { execution ->
+                                    sideChannelRunning[completed.operationId] = execution
+                                }
+                                continue
+                            }
+
+                            is PumpExecutionCompletion -> {
+                                val removed = when {
+                                    transferRunning[completed.operationId] === completed.execution -> {
+                                        transferRunning.remove(completed.operationId)
+                                    }
+                                    sideChannelRunning[completed.operationId] === completed.execution -> {
+                                        sideChannelRunning.remove(completed.operationId)
+                                    }
+                                    else -> null
+                                }
+                                if (removed == null) continue
+                                completedOperations++
+                                sawRetry = sawRetry || requiresPumpRetry(completed.result)
+                            }
+                        }
+                        if (transferRunning.isNotEmpty() || sideChannelRunning.isNotEmpty()) continue
 
                         val selection = lastSelection
                         val graceDelayMs = selection?.shortestPendingUidtGraceDelayMs
@@ -2069,27 +2405,68 @@ class DefaultDownloadExecutionHost(
         releaseHostAdmissionIfIdle(context.applicationContext, operationId)
     }
 
+    /** 并发 claim 失败时，仅回收本次孤立准入，不碰仍有 owner 的执行 */
+    private suspend fun releaseLostExecutionAdmissionIfUnowned(
+        context: Context,
+        operationId: String
+    ) {
+        val unowned = synchronized(executionAdmissionLock) {
+            !hostAdmissionOwners.containsKey(operationId)
+        }
+        if (!unowned) return
+        try {
+            operationStore.releaseHostAdmissionSuspending(context, operationId)
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "并发 claim 失败后回收孤立宿主准入失败: " +
+                    "operationId=$operationId, error=${error.message}",
+                error
+            )
+        }
+    }
+
     private fun releaseHostAdmissionIfIdle(
         context: Context,
         operationId: String,
         ticket: ScheduleTicket? = null
     ) {
-        val released = synchronized(executionAdmissionLock) {
-            if (executingOperationIds.contains(operationId)) {
-                false
+        val releaseDecision = synchronized(executionAdmissionLock) {
+            if (
+                executingOperationIds.contains(operationId) ||
+                    hasPendingTransferReleaseLocked(operationId)
+            ) {
+                false to null
             } else if (ticket != null) {
-                hostAdmissionOwners.remove(operationId, ticket)
+                val owner = hostAdmissionOwners[operationId]
+                    ?.takeIf { owner -> owner == ticket }
+                (owner != null) to owner
             } else {
-                hostAdmissionOwners.remove(operationId)
-                true
+                true to hostAdmissionOwners[operationId]
             }
         }
-        if (released) {
-            runCatching {
-                operationStore.releaseHostAdmission(context, operationId)
+        if (!releaseDecision.first) return
+        val ownerToRelease = releaseDecision.second
+        val released = runCatching {
+            operationStore.releaseHostAdmission(context, operationId)
+        }.onFailure { error ->
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "释放空闲宿主准入失败，保留 owner 供后续重试: " +
+                    "operationId=$operationId, error=${error.message}",
+                error
+            )
+        }.isSuccess
+        if (!released) return
+        synchronized(executionAdmissionLock) {
+            if (ticket != null) {
+                hostAdmissionOwners.remove(operationId, ticket)
+            } else if (ownerToRelease != null) {
+                hostAdmissionOwners.remove(operationId, ownerToRelease)
             }
-            triggerDeferredSchedules(context.applicationContext)
         }
+        triggerDeferredSchedules(context.applicationContext)
     }
 
     private suspend fun releaseHostAdmissionIfIdleSuspending(
@@ -2097,22 +2474,49 @@ class DefaultDownloadExecutionHost(
         operationId: String,
         ticket: ScheduleTicket? = null
     ) {
-        val released = synchronized(executionAdmissionLock) {
-            if (executingOperationIds.contains(operationId)) {
-                false
+        val releaseDecision = synchronized(executionAdmissionLock) {
+            if (
+                executingOperationIds.contains(operationId) ||
+                    hasPendingTransferReleaseLocked(operationId)
+            ) {
+                false to null
             } else if (ticket != null) {
-                hostAdmissionOwners.remove(operationId, ticket)
+                val owner = hostAdmissionOwners[operationId]
+                    ?.takeIf { owner -> owner == ticket }
+                (owner != null) to owner
             } else {
-                hostAdmissionOwners.remove(operationId)
-                true
+                true to hostAdmissionOwners[operationId]
             }
         }
-        if (released) {
-            runCatching {
-                operationStore.releaseHostAdmissionSuspending(context, operationId)
-            }
-            triggerDeferredSchedules(context.applicationContext)
+        if (!releaseDecision.first) return
+        val ownerToRelease = releaseDecision.second
+        val released = try {
+            operationStore.releaseHostAdmissionSuspending(context, operationId)
+            true
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "释放空闲宿主准入失败，保留 owner 供后续重试: " +
+                    "operationId=$operationId, error=${error.message}",
+                error
+            )
+            false
         }
+        if (!released) return
+        synchronized(executionAdmissionLock) {
+            if (ticket != null) {
+                hostAdmissionOwners.remove(operationId, ticket)
+            } else if (ownerToRelease != null) {
+                hostAdmissionOwners.remove(operationId, ownerToRelease)
+            }
+        }
+        triggerDeferredSchedules(context.applicationContext)
+    }
+
+    private fun hasPendingTransferReleaseLocked(operationId: String): Boolean {
+        val owner = activeTransferOwners[operationId] ?: return false
+        return transferReleasePendingTokens.contains(owner.token)
     }
 }
 

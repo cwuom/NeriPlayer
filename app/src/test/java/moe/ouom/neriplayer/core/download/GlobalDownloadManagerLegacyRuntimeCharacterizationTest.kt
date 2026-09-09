@@ -471,7 +471,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val body = methodBody(source, "stageAndPromotePendingDownloadQueue")
+        val body = methodBody(source, "stageAndPromotePendingDownloadQueuePage")
         val lookupIndex = body.indexOf("existingReusableOperationIds")
         val deferIndex = body.indexOf("markWaitingForStorageMutation")
         val returnedIdsIndex = body.indexOf("allWaitingOperationIds")

@@ -18,10 +18,13 @@ data class DownloadTask(
 internal data class BatchDownloadPresentationState(
     val id: Long,
     val memberAttemptIds: Map<String, Long?>,
+    val memberOperationIds: Map<String, String> = emptyMap(),
     val terminalStates: Map<String, BatchDownloadTerminalState> = emptyMap(),
     val maximumObservedFractions: Map<String, Float> = emptyMap(),
     /** 当前目录已经确认完成的成员, 等待真实传输时再清除 */
-    val initiallyCompletedSongKeys: Set<String> = emptySet()
+    val initiallyCompletedSongKeys: Set<String> = emptySet(),
+    val batchId: String? = null,
+    val batchGeneration: Long? = null
 )
 
 internal enum class BatchDownloadTerminalState {
@@ -175,6 +178,7 @@ internal fun mergeBatchDownloadPresentations(
                         presentationId = presentation.id,
                         attemptId = attemptId,
                         terminalState = presentation.terminalStates[songKey],
+                        operationId = presentation.memberOperationIds[songKey],
                         maximumObservedFraction =
                             presentation.maximumObservedFractions[songKey] ?: 0f,
                         initiallyCompleted = songKey in presentation.initiallyCompletedSongKeys
@@ -187,6 +191,7 @@ internal fun mergeBatchDownloadPresentations(
 
     val tasksBySongKey = tasks.associateBy { task -> task.song.stableKey() }
     val memberAttemptIds = linkedMapOf<String, Long?>()
+    val memberOperationIds = linkedMapOf<String, String>()
     val terminalStates = linkedMapOf<String, BatchDownloadTerminalState>()
     val maximumObservedFractions = linkedMapOf<String, Float>()
     val initiallyCompletedSongKeys = linkedSetOf<String>()
@@ -196,6 +201,9 @@ internal fun mergeBatchDownloadPresentations(
             task = tasksBySongKey[songKey]
         )
         memberAttemptIds[songKey] = selected.attemptId
+        selected.operationId?.let { operationId ->
+            memberOperationIds[songKey] = operationId
+        }
         selected.terminalState?.let { terminalState ->
             terminalStates[songKey] = terminalState
         }
@@ -210,15 +218,23 @@ internal fun mergeBatchDownloadPresentations(
     return BatchDownloadPresentationState(
         id = presentations.maxOf(BatchDownloadPresentationState::id),
         memberAttemptIds = memberAttemptIds,
+        memberOperationIds = memberOperationIds,
         terminalStates = terminalStates,
         maximumObservedFractions = maximumObservedFractions,
-        initiallyCompletedSongKeys = initiallyCompletedSongKeys
+        initiallyCompletedSongKeys = initiallyCompletedSongKeys,
+        batchId = presentations
+            .maxByOrNull(BatchDownloadPresentationState::id)
+            ?.batchId,
+        batchGeneration = presentations
+            .maxByOrNull(BatchDownloadPresentationState::id)
+            ?.batchGeneration
     )
 }
 
 private data class BatchPresentationMember(
     val presentationId: Long,
     val attemptId: Long?,
+    val operationId: String?,
     val terminalState: BatchDownloadTerminalState?,
     val maximumObservedFraction: Float,
     val initiallyCompleted: Boolean
@@ -470,13 +486,20 @@ internal enum class BatchOperationScheduleAction {
 
 internal fun resolveBatchOperationScheduleAction(
     operationState: String?,
-    requestMatchesSong: Boolean
+    requestMatchesSong: Boolean,
+    isExecuting: Boolean = true
 ): BatchOperationScheduleAction {
     if (operationState == null || !requestMatchesSong) {
         return BatchOperationScheduleAction.INVALID
     }
     if (operationState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES) {
-        return BatchOperationScheduleAction.HANDED_OFF
+        // Room 状态可能在进程死亡或宿主异常退出后滞留为 RUNNING。
+        // 只有当前进程仍持有执行标记时才能把它当作已交接，否则必须重新入宿主。
+        return if (isExecuting) {
+            BatchOperationScheduleAction.HANDED_OFF
+        } else {
+            BatchOperationScheduleAction.SCHEDULE
+        }
     }
     if (operationState in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES) {
         return BatchOperationScheduleAction.SCHEDULE
@@ -491,13 +514,15 @@ internal fun shouldPreserveBatchPreparationForHandedOffOperation(
     operationState: String?,
     requestMatchesSong: Boolean,
     attemptId: Long?,
-    requestGenerationCurrent: Boolean
+    requestGenerationCurrent: Boolean,
+    isExecuting: Boolean = true
 ): Boolean {
     return attemptId != null &&
         requestGenerationCurrent &&
         resolveBatchOperationScheduleAction(
             operationState = operationState,
-            requestMatchesSong = requestMatchesSong
+            requestMatchesSong = requestMatchesSong,
+            isExecuting = isExecuting
         ) == BatchOperationScheduleAction.HANDED_OFF
 }
 

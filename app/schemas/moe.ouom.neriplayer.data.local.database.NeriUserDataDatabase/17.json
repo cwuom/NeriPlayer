@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 17,
-    "identityHash": "9fad93529a1598d4ed0d605096c14a30",
+    "identityHash": "ed865dd030652152fb60029469a1992b",
     "entities": [
       {
         "tableName": "local_playlist",
@@ -2373,7 +2373,7 @@
       },
       {
         "tableName": "download_operation",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operation_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `library_id` TEXT NOT NULL, `state` TEXT NOT NULL, `queue_order` INTEGER NOT NULL, `source_hint_json` TEXT NOT NULL, `staging_dir_name` TEXT NOT NULL, `bytes_written` INTEGER NOT NULL, `total_bytes` INTEGER, `resume_json` TEXT, `retry_count` INTEGER NOT NULL, `next_retry_at_ms` INTEGER, `last_error_code` TEXT, `stop_requested_by_user` INTEGER NOT NULL DEFAULT 0, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`operation_id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operation_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `library_id` TEXT NOT NULL, `state` TEXT NOT NULL, `queue_order` INTEGER NOT NULL, `source_hint_json` TEXT NOT NULL, `staging_dir_name` TEXT NOT NULL, `bytes_written` INTEGER NOT NULL, `total_bytes` INTEGER, `resume_json` TEXT, `retry_count` INTEGER NOT NULL, `next_retry_at_ms` INTEGER, `last_error_code` TEXT, `stop_requested_by_user` INTEGER NOT NULL DEFAULT 0, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, `host_process_token` TEXT, `host_admitted_at_ms` INTEGER, `batch_id` TEXT, `batch_generation` INTEGER, PRIMARY KEY(`operation_id`))",
         "fields": [
           {
             "fieldPath": "operationId",
@@ -2467,6 +2467,26 @@
             "columnName": "updated_at_ms",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "hostProcessToken",
+            "columnName": "host_process_token",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "hostAdmittedAtMs",
+            "columnName": "host_admitted_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "batchId",
+            "columnName": "batch_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "batchGeneration",
+            "columnName": "batch_generation",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -2485,34 +2505,77 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_download_operation_state_queue` ON `${TABLE_NAME}` (`state`, `queue_order`)"
+          },
+          {
+            "name": "index_download_operation_host_process_library",
+            "unique": false,
+            "columnNames": [
+              "host_process_token",
+              "library_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_operation_host_process_library` ON `${TABLE_NAME}` (`host_process_token`, `library_id`)"
+          },
+          {
+            "name": "index_download_operation_batch",
+            "unique": false,
+            "columnNames": [
+              "batch_id",
+              "batch_generation"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_operation_batch` ON `${TABLE_NAME}` (`batch_id`, `batch_generation`)"
           }
         ]
       },
       {
-        "tableName": "download_host_admission",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operation_id` TEXT NOT NULL, `library_id` TEXT NOT NULL, `process_token` TEXT NOT NULL, `admitted_at_ms` INTEGER NOT NULL, PRIMARY KEY(`operation_id`))",
+        "tableName": "download_batch",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`batch_id` TEXT NOT NULL, `generation` INTEGER NOT NULL, `total_count` INTEGER NOT NULL, `state_bits` INTEGER NOT NULL, `clear_epoch` INTEGER NOT NULL, `network_generation` INTEGER, `updated_at_ms` INTEGER NOT NULL, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`batch_id`))",
         "fields": [
           {
-            "fieldPath": "operationId",
-            "columnName": "operation_id",
+            "fieldPath": "batchId",
+            "columnName": "batch_id",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "libraryId",
-            "columnName": "library_id",
-            "affinity": "TEXT",
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "processToken",
-            "columnName": "process_token",
-            "affinity": "TEXT",
+            "fieldPath": "totalCount",
+            "columnName": "total_count",
+            "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "admittedAtMs",
-            "columnName": "admitted_at_ms",
+            "fieldPath": "stateBits",
+            "columnName": "state_bits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clearEpoch",
+            "columnName": "clear_epoch",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "networkGeneration",
+            "columnName": "network_generation",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -2520,19 +2583,125 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "operation_id"
+            "batch_id"
           ]
         },
         "indices": [
           {
-            "name": "index_download_host_admission_process_library",
+            "name": "index_download_batch_state_updated",
             "unique": false,
             "columnNames": [
-              "process_token",
-              "library_id"
+              "state_bits",
+              "updated_at_ms"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_host_admission_process_library` ON `${TABLE_NAME}` (`process_token`, `library_id`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_batch_state_updated` ON `${TABLE_NAME}` (`state_bits`, `updated_at_ms`)"
+          },
+          {
+            "name": "index_download_batch_generation",
+            "unique": true,
+            "columnNames": [
+              "generation"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_download_batch_generation` ON `${TABLE_NAME}` (`generation`)"
+          }
+        ]
+      },
+      {
+        "tableName": "download_batch_member",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`batch_id` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `stable_key` TEXT NOT NULL, `terminal_bits` INTEGER NOT NULL, `max_fraction_milli` INTEGER NOT NULL, `initially_completed` INTEGER NOT NULL, `operation_id` TEXT, `attempt_id` INTEGER, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`batch_id`, `stable_key`))",
+        "fields": [
+          {
+            "fieldPath": "batchId",
+            "columnName": "batch_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stableKey",
+            "columnName": "stable_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "terminalBits",
+            "columnName": "terminal_bits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxFractionMilli",
+            "columnName": "max_fraction_milli",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "initiallyCompleted",
+            "columnName": "initially_completed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationId",
+            "columnName": "operation_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attemptId",
+            "columnName": "attempt_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "batch_id",
+            "stable_key"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_download_batch_member_order",
+            "unique": true,
+            "columnNames": [
+              "batch_id",
+              "ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_download_batch_member_order` ON `${TABLE_NAME}` (`batch_id`, `ordinal`)"
+          },
+          {
+            "name": "index_download_batch_member_terminal",
+            "unique": false,
+            "columnNames": [
+              "batch_id",
+              "terminal_bits",
+              "ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_batch_member_terminal` ON `${TABLE_NAME}` (`batch_id`, `terminal_bits`, `ordinal`)"
+          },
+          {
+            "name": "index_download_batch_member_operation",
+            "unique": false,
+            "columnNames": [
+              "operation_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_batch_member_operation` ON `${TABLE_NAME}` (`operation_id`)"
           }
         ]
       },
@@ -3022,7 +3191,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9fad93529a1598d4ed0d605096c14a30')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ed865dd030652152fb60029469a1992b')"
     ]
   }
 }

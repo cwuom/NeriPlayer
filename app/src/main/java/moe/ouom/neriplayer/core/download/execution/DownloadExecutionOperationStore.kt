@@ -156,7 +156,8 @@ internal interface DownloadExecutionOperationJournal {
     suspend fun tryStartSuspending(
         context: Context,
         operationId: String,
-        allowExistingRunning: Boolean = false
+        allowExistingRunning: Boolean = false,
+        currentNetworkGeneration: Long? = null
     ): Boolean {
         return tryStart(context, operationId, allowExistingRunning)
     }
@@ -420,12 +421,14 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
     override suspend fun tryStartSuspending(
         context: Context,
         operationId: String,
-        allowExistingRunning: Boolean
+        allowExistingRunning: Boolean,
+        currentNetworkGeneration: Long?
     ): Boolean {
         return DownloadExecutionRoomStore.tryStart(
             context = context,
             operationId = operationId,
-            allowExistingRunning = allowExistingRunning
+            allowExistingRunning = allowExistingRunning,
+            currentNetworkGeneration = currentNetworkGeneration
         )
     }
 
@@ -617,14 +620,16 @@ class DownloadExecutionOperationStore internal constructor(
     suspend fun tryStartSuspending(
         context: Context,
         operationId: String,
-        allowExistingRunning: Boolean = false
+        allowExistingRunning: Boolean = false,
+        currentNetworkGeneration: Long? = null
     ): Boolean {
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
         val appContext = context.applicationContext
         return journalProvider(appContext).tryStartSuspending(
             appContext,
             normalizedId,
-            allowExistingRunning
+            allowExistingRunning,
+            currentNetworkGeneration
         )
     }
 

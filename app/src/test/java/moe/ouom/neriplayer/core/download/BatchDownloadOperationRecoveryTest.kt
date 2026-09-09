@@ -192,6 +192,14 @@ class BatchDownloadOperationRecoveryTest {
             resolveBatchOperationScheduleAction("RUNNING", requestMatchesSong = true)
         )
         assertEquals(
+            BatchOperationScheduleAction.SCHEDULE,
+            resolveBatchOperationScheduleAction(
+                operationState = "RUNNING",
+                requestMatchesSong = true,
+                isExecuting = false
+            )
+        )
+        assertEquals(
             BatchOperationScheduleAction.INVALID,
             resolveBatchOperationScheduleAction("RUNNING", requestMatchesSong = false)
         )
@@ -249,6 +257,15 @@ class BatchDownloadOperationRecoveryTest {
                 requestGenerationCurrent = false
             )
         )
+        assertFalse(
+            shouldPreserveBatchPreparationForHandedOffOperation(
+                operationState = "RUNNING",
+                requestMatchesSong = true,
+                attemptId = 42L,
+                requestGenerationCurrent = true,
+                isExecuting = false
+            )
+        )
     }
 
     @Test
@@ -273,6 +290,16 @@ class BatchDownloadOperationRecoveryTest {
         )
         assertTrue(artifactBody.contains("session.handedOffSongKeys += songKey"))
         assertTrue(artifactBody.contains("session.scheduledSongKeys += songKey"))
+        assertTrue(
+            artifactBody.contains(
+                "isExecuting = DownloadExecutionHosts.default.isExecuting(operationId)"
+            )
+        )
+        assertTrue(
+            methodBody(source, "schedulePendingBatchDownload").contains(
+                "isExecuting = DownloadExecutionHosts.default.isExecuting(operationId)"
+            )
+        )
         assertTrue(
             preparationBody.contains(
                 "val settledAttemptIds = session.settledAttemptIds.filterKeys"
@@ -302,23 +329,23 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
-    fun `batch publishes its membership before preparation and hands off prepared songs early`() {
+    fun `batch persists its membership before publishing and hands off prepared songs early`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val startBody = methodBody(source, "startBatchDownload")
         val preparationBody = methodBody(source, "prepareAndScheduleBatchDownloadSession")
 
-        assertTrue(
-            startBody.indexOf("beginBatchDownloadPresentation(requestedSongs)") <
-                startBody.indexOf("scope.launch")
-        )
+        val durableSnapshotIndex = startBody.indexOf("ensureDurableBatchSnapshot(")
+        val beginPresentationIndex = startBody.indexOf("beginBatchDownloadPresentation(")
+        val batchAdmissionIndex = startBody.indexOf("val batchCreated = admitDownloadMutationForStableKeys")
+
+        assertTrue(durableSnapshotIndex >= 0)
+        assertTrue(beginPresentationIndex > durableSnapshotIndex)
+        assertTrue(durableSnapshotIndex > batchAdmissionIndex)
         assertTrue(startBody.contains("seedInitialBatchDownloadPresentation"))
-        assertTrue(startBody.contains("removeBatchDownloadPresentationMembers"))
-        assertTrue(
-            startBody.indexOf("beginBatchDownloadPresentation(requestedSongs)") <
-                startBody.indexOf("openDownloadAdmissionTicketForStableKeysOrNull")
-        )
+        assertTrue(startBody.contains("cancelBatchDownloadPresentationMembers"))
+        assertFalse(startBody.contains("beginBatchDownloadPresentation(requestedSongs)"))
         assertTrue(preparationBody.contains("pendingSongs.lastOrNull"))
         assertFalse(preparationBody.contains("BATCH_DOWNLOAD_EARLY_HANDOFF_LIMIT"))
         val earlyHandoffIndex = preparationBody.indexOf(
@@ -378,7 +405,7 @@ class BatchDownloadOperationRecoveryTest {
         )
         assertTrue(
             preparationBody.contains(
-                "if (!prepareBatchDownloadTasks(session, claimableSongs)) {\n" +
+                "if (!prepareBatchDownloadTasks(session, claimableWindow)) {\n" +
                     "            clearBatchDownloadPresentation(session.batchPresentationId)"
             )
         )
@@ -452,6 +479,113 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
+    fun `post core rows without an audio reference reenter the transfer path`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val roomSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomStore.kt"
+        ).readText()
+        val executeBody = methodBody(managerSource, "executeDownloadOperation")
+
+        val reopenIndex = executeBody.indexOf(
+            "reopenMissingPostCoreArtifactForFreshTransfer("
+        )
+        val recoveryIndex = executeBody.indexOf(
+            "recoverPostCoreDownloadOperation("
+        )
+
+        assertTrue(reopenIndex >= 0)
+        assertTrue(recoveryIndex > reopenIndex)
+        assertTrue(executeBody.contains("!restartMissingPostCoreArtifact"))
+        assertTrue(
+            managerSource.contains(
+                "shouldRestartPostCoreOperationForFreshTransfer"
+            )
+        )
+        assertTrue(
+            roomSource.contains(
+                "reopenMissingPostCoreArtifactForFreshTransfer"
+            )
+        )
+        assertTrue(
+            roomSource.contains("state = \"RUNNING\"")
+        )
+    }
+
+    @Test
+    fun `user requested unavailable artifact bypasses recovery and enters a fresh transfer`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val prepareBody = methodBody(managerSource, "prepareConfirmedDownload")
+        val startBody = methodBody(managerSource, "startDownloadConfirmed")
+        val batchArtifactBody = methodBody(managerSource, "claimAndPrepareBatchArtifact")
+
+        assertTrue(
+            prepareBody.contains(
+                "allowFreshTransferReclaim = persistedOperationRequest?.userInitiated == true"
+            )
+        )
+        assertTrue(
+            batchArtifactBody.contains(
+                "allowFreshTransferReclaim = operationRequest.userInitiated"
+            )
+        )
+        assertTrue(startBody.contains("preservesExistingReference == true"))
+        assertTrue(startBody.contains("val forceFreshTransfer"))
+        assertTrue(startBody.contains("if (forceFreshTransfer)"))
+        assertTrue(
+            startBody.contains("cleanupBeforeStart && !preserveArtifactForRepair")
+        )
+        assertTrue(
+            locateProjectFile(
+                "app/src/main/java/moe/ouom/neriplayer/core/download/artifact/" +
+                    "ManagedDownloadArtifactCoordinator.kt"
+            ).readText().contains(
+                "shouldForceFreshTransferForUser"
+            )
+        )
+    }
+
+    @Test
+    fun `new user request promotes reused inflight operation intent`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val roomSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomStore.kt"
+        ).readText()
+        val batchBody = methodBody(managerSource, "startBatchDownload")
+        val singleBody = managerSource
+            .substringAfter("private fun scheduleUserDownload(")
+            .substringBefore("internal suspend fun executeDownloadOperation(")
+
+        assertTrue(batchBody.contains("promoteUserInitiatedInFlightRequests"))
+        assertTrue(batchBody.contains("userInitiated = userInitiated"))
+        assertTrue(singleBody.contains("findReadableOperationsBySongKeys("))
+        assertTrue(singleBody.contains("inFlightRequestToRecover"))
+        assertTrue(roomSource.contains("suspend fun promoteUserInitiatedOperation("))
+        assertTrue(roomSource.contains("request.copy(userInitiated = true)"))
+        assertTrue(roomSource.contains("val effectiveUserInitiated = request.userInitiated ||"))
+        assertTrue(roomSource.contains("existingRequest?.userInitiated == true"))
+        assertTrue(
+            roomSource.contains(
+                "header.state !in IN_FLIGHT_OPERATION_STATES + REUSABLE_OPERATION_STATES"
+            )
+        )
+        assertTrue(
+            managerSource.contains("effectiveExistingReusableOperationsBySongKey")
+        )
+        assertTrue(
+            managerSource.contains("val latestPromotedRequest = operationId?.let")
+        )
+        assertTrue(
+            managerSource.contains("reason = \"user_retry_intent_promoted\"")
+        )
+    }
+
+    @Test
     fun `batch staging uses bounded operation snapshots instead of per song reads`() {
         val managerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
@@ -463,14 +597,20 @@ class BatchDownloadOperationRecoveryTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/DownloadRecoveryRoomStore.kt"
         ).readText()
         val stagingBody = methodBody(managerSource, "stageAndPromotePendingDownloadQueue")
+        val stagingPageBody = methodBody(
+            managerSource,
+            "stageAndPromotePendingDownloadQueuePage"
+        )
         val batchBody = methodBody(managerSource, "startBatchDownload")
         val pendingUpsertBody = methodBody(recoveryStoreSource, "upsertPendingDownloadQueue")
         val waitingUpsertBody = methodBody(recoveryStoreSource, "upsertWaitingStorageMutation")
 
-        assertTrue(stagingBody.contains("readOperationRequestMetadata("))
-        assertTrue(stagingBody.contains("readOperationIdentities("))
-        assertTrue(stagingBody.contains("promoteWaitingStorageMutations("))
-        assertFalse(stagingBody.contains("rememberPendingDownloadQueue("))
+        assertTrue(stagingBody.contains("chunked(BATCH_OPERATION_STAGE_PAGE_SIZE)"))
+        assertTrue(stagingBody.contains("onPageReady(pageIndex, stagedPage)"))
+        assertTrue(stagingPageBody.contains("readOperationRequestMetadata("))
+        assertTrue(stagingPageBody.contains("readOperationIdentities("))
+        assertTrue(stagingPageBody.contains("promoteWaitingStorageMutations("))
+        assertFalse(stagingPageBody.contains("rememberPendingDownloadQueue("))
         assertTrue(batchBody.contains("val operationHeaders"))
         assertFalse(batchBody.contains("val operationSnapshots"))
         assertTrue(
@@ -757,7 +897,14 @@ class BatchDownloadOperationRecoveryTest {
             .firstOrNull { index -> index >= 0 }
             ?: -1
         require(signatureStart >= 0) { "method not found: $methodName" }
-        val bodyStart = source.indexOf('{', signatureStart)
+        var parenthesesDepth = 0
+        val bodyStart = (signatureStart until source.length).firstOrNull { index ->
+            when (source[index]) {
+                '(' -> parenthesesDepth++
+                ')' -> parenthesesDepth--
+            }
+            source[index] == '{' && parenthesesDepth == 0
+        } ?: -1
         require(bodyStart >= 0) { "method body not found: $methodName" }
         var depth = 0
         for (index in bodyStart until source.length) {

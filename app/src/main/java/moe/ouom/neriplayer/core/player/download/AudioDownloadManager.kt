@@ -63,7 +63,9 @@ import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceToken
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
+import moe.ouom.neriplayer.core.download.execution.DownloadTransferAdmissionDeferredException
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.isPostCoreDownloadOperationState
@@ -110,6 +112,8 @@ import java.util.concurrent.TimeUnit
 object AudioDownloadManager {
 
     private const val TAG = "NERI-Downloader"
+    private const val DOWNLOAD_NETWORK_POLICY_PREFS = "download_network_policy_state"
+    private const val NETWORK_GENERATION_PREF = "network_generation"
     private val SHA256_HEX_REGEX = Regex("[0-9a-fA-F]{64}")
     private const val BILI_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     private const val BILI_REFERER = "https://www.bilibili.com"
@@ -620,6 +624,20 @@ object AudioDownloadManager {
         return operationRegistry.isOperationDownloadActive(operationId)
     }
 
+    internal fun currentDownloadNetworkGeneration(): Long =
+        downloadNetworkPolicyTracker.currentGeneration()
+
+    private fun persistDownloadNetworkGeneration(context: Context, generation: Long) {
+        val persisted = context.applicationContext
+            .getSharedPreferences(DOWNLOAD_NETWORK_POLICY_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putLong(NETWORK_GENERATION_PREF, generation.coerceAtLeast(0L))
+            .commit()
+        if (!persisted) {
+            NPLogger.w(TAG, "持久化下载网络代次失败: generation=$generation")
+        }
+    }
+
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         synchronized(networkRecoveryMonitorLock) {
@@ -632,7 +650,14 @@ object AudioDownloadManager {
             val initialNetworkType = initialNetwork
                 ?.let { network -> connectivityManager.getNetworkCapabilities(network) }
                 ?.downloadNetworkTypeOrNull()
-            downloadNetworkPolicyTracker.seed(initialNetwork, initialNetworkType)
+            val persistedNetworkGeneration = appContext
+                .getSharedPreferences(DOWNLOAD_NETWORK_POLICY_PREFS, Context.MODE_PRIVATE)
+                .getLong(NETWORK_GENERATION_PREF, 0L)
+            downloadNetworkPolicyTracker.seed(
+                networkKey = initialNetwork,
+                networkType = initialNetworkType,
+                initialGeneration = persistedNetworkGeneration
+            )
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     handleDefaultDownloadNetworkCallback(
@@ -772,10 +797,14 @@ object AudioDownloadManager {
             activeNetworkKey = network,
             activeNetworkKnown = activeNetworkKnown
         )
+        if (observation.changed) {
+            persistDownloadNetworkGeneration(context, observation.generation)
+        }
         if (observation.becameWifi) {
             GlobalDownloadManager.onWifiBoundDownloadNetworkRestored(
                 context = context,
-                reason = reason
+                reason = reason,
+                networkGeneration = observation.generation
             )
             GlobalDownloadManager.scheduleWifiRecoveryProbe(
                 context = context,
@@ -785,7 +814,8 @@ object AudioDownloadManager {
         if (observation.shouldPause) {
             interruptDownloadsForWifiLoss(
                 networkType = networkType,
-                reason = reason
+                reason = reason,
+                networkGeneration = observation.generation
             )
         }
     }
@@ -808,6 +838,11 @@ object AudioDownloadManager {
             activeNetworkKey = activeNetworkSnapshot,
             activeNetworkKnown = true
         )
+        val networkGeneration = downloadNetworkPolicyTracker.currentGeneration()
+        persistDownloadNetworkGeneration(
+            context = context,
+            generation = networkGeneration
+        )
         val nextNetworkType = context.currentDownloadNetworkTypeOrNull()
         if (nextNetworkType == TrafficNetworkType.WIFI) {
             // onLost 可能和新的 WIFI 回调竞态，这里补一次恢复触发
@@ -824,13 +859,15 @@ object AudioDownloadManager {
         downloadNetworkPolicyTracker.markWifiLossHandled()
         interruptDownloadsForWifiLoss(
             networkType = nextNetworkType,
-            reason = "network_lost"
+            reason = "network_lost",
+            networkGeneration = networkGeneration
         )
     }
 
     private fun interruptDownloadsForWifiLoss(
         networkType: TrafficNetworkType?,
-        reason: String
+        reason: String,
+        networkGeneration: Long? = null
     ) {
         if (networkType != TrafficNetworkType.WIFI) {
             NPLogger.w(
@@ -838,7 +875,10 @@ object AudioDownloadManager {
                 "WIFI 下载环境已切换，准备中断下载: reason=$reason, " +
                     "nextType=${networkType ?: "UNKNOWN"}"
             )
-            GlobalDownloadManager.interruptDownloadsForWifiDisconnected(networkType)
+            GlobalDownloadManager.interruptDownloadsForWifiDisconnected(
+                callbackNetworkType = networkType,
+                networkGeneration = networkGeneration
+            )
         }
     }
 
@@ -1070,7 +1110,9 @@ object AudioDownloadManager {
 
     private data class CoreCommittedAudio(
         val audio: ManagedDownloadStorage.StoredEntry,
-        val transferredBytes: Long
+        val transferredBytes: Long,
+        val operationCoreCommitted: Boolean,
+        val transferOwnerToken: Long? = null
     )
 
     internal data class HlsResumeState(
@@ -2102,7 +2144,8 @@ object AudioDownloadManager {
         batchSessionId: Long? = null,
         attemptId: Long? = null,
         operationId: String? = null,
-        downloadAudioQuality: DownloadAudioQualitySelection? = null
+        downloadAudioQuality: DownloadAudioQualitySelection? = null,
+        forceFreshTransfer: Boolean = false
     ) {
         downloadSongOnIo(
             context = context,
@@ -2110,7 +2153,8 @@ object AudioDownloadManager {
             batchSessionId = batchSessionId,
             attemptId = attemptId,
             operationId = operationId,
-            downloadAudioQuality = downloadAudioQuality
+            downloadAudioQuality = downloadAudioQuality,
+            forceFreshTransfer = forceFreshTransfer
         )
     }
 
@@ -2120,7 +2164,8 @@ object AudioDownloadManager {
         batchSessionId: Long?,
         attemptId: Long?,
         operationId: String?,
-        downloadAudioQuality: DownloadAudioQualitySelection?
+        downloadAudioQuality: DownloadAudioQualitySelection?,
+        forceFreshTransfer: Boolean
     ) {
         withContext(Dispatchers.IO) {
             executeDownloadSong(
@@ -2129,7 +2174,8 @@ object AudioDownloadManager {
                 batchSessionId = batchSessionId,
                 attemptId = attemptId,
                 operationId = operationId,
-                downloadAudioQuality = downloadAudioQuality
+                downloadAudioQuality = downloadAudioQuality,
+                forceFreshTransfer = forceFreshTransfer
             )
         }
     }
@@ -2140,7 +2186,8 @@ object AudioDownloadManager {
         batchSessionId: Long?,
         attemptId: Long?,
         operationId: String?,
-        downloadAudioQuality: DownloadAudioQualitySelection?
+        downloadAudioQuality: DownloadAudioQualitySelection?,
+        forceFreshTransfer: Boolean
     ) {
         val songKey = song.stableKey()
         val effectiveOperationId = operationId?.trim()
@@ -2178,7 +2225,7 @@ object AudioDownloadManager {
                 return
             }
 
-            if (hasFastCachedManagedDownloadForStart(context, song)) {
+            if (!forceFreshTransfer && hasFastCachedManagedDownloadForStart(context, song)) {
                 NPLogger.d(
                     TAG,
                     "${context.getString(R.string.download_file_exists, song.name)}, songKey=$songKey"
@@ -2254,7 +2301,8 @@ object AudioDownloadManager {
     ): Nothing {
         if (
             error is DownloadStorageMutationDeferredException ||
-                error is DownloadStorageSpaceDeferredException
+                error is DownloadStorageSpaceDeferredException ||
+                error is DownloadTransferAdmissionDeferredException
         ) {
             clearVisibleProgressForSong(
                 songKey = songKey,
@@ -2816,8 +2864,10 @@ object AudioDownloadManager {
         val committedAudio = withTransferCyclePermit(
             context = context,
             ownerKey = ownerKey,
-            traceToken = traceToken
-        ) { permit, markNetworkFinished ->
+            traceToken = traceToken,
+            operationId = effectiveOperationId,
+            attemptId = attemptId
+        ) { permit, markNetworkFinished, transferOwnerToken ->
             val downloadedPayload = transferWatchdog.run(permit) {
                 downloadPayloadForTransport(
                     transportKind = prepared.transportKind,
@@ -2884,10 +2934,24 @@ object AudioDownloadManager {
                 traceToken,
                 DownloadOperationTracePhase.CORE_COMMITTED
             )
-            committedAudio
+            committedAudio.copy(transferOwnerToken = transferOwnerToken)
         }
-        // Core durable commit 成功后 permit 已在 helper finally 中释放，立即补位下一首
-        GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(context)
+        // 只有 operation journal 的 CAS 成功后才释放宿主传输槽位；pending
+        // 音频已经落盘但 journal 失败时必须留给恢复路径收敛
+        if (committedAudio.operationCoreCommitted) {
+            GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(
+                context = context,
+                operationId = effectiveOperationId,
+                attemptId = attemptId,
+                transferOwnerToken = committedAudio.transferOwnerToken
+            )
+        } else {
+            NPLogger.w(
+                TAG,
+                "Core Commit journal 未确认，暂不释放传输槽位: " +
+                    "operationId=$effectiveOperationId, attemptId=$attemptId"
+            )
+        }
         state.storedAudio = committedAudio.audio
         publishStageProgress(
             songId = prepared.workingSong.id,
@@ -2928,7 +2992,10 @@ object AudioDownloadManager {
         error: Exception
     ): DownloadAttemptFailureAction {
         val songKey = song.stableKey()
-        if (error is DownloadStorageMutationDeferredException) {
+        if (
+            error is DownloadStorageMutationDeferredException ||
+                error is DownloadTransferAdmissionDeferredException
+        ) {
             clearVisibleProgressForSong(
                 songKey = songKey,
                 expectedAttemptId = attemptId,
@@ -3440,7 +3507,8 @@ object AudioDownloadManager {
         )
         return CoreCommittedAudio(
             audio = committedAudio,
-            transferredBytes = transferredBytes
+            transferredBytes = transferredBytes,
+            operationCoreCommitted = coreOperationMarked
         )
         } finally {
             directoryCommitLease.close()
@@ -3556,9 +3624,12 @@ object AudioDownloadManager {
         context: Context,
         ownerKey: String,
         traceToken: DownloadOperationTraceToken?,
+        operationId: String? = null,
+        attemptId: Long? = null,
         block: suspend (
             permit: DownloadTransferPermitRegistry.Permit,
-            markNetworkFinished: () -> Unit
+            markNetworkFinished: () -> Unit,
+            transferOwnerToken: Long?
         ) -> T
     ): T {
         val configured = currentDownloadParallelismSnapshot(context)
@@ -3585,13 +3656,26 @@ object AudioDownloadManager {
                 traceToken,
                 DownloadOperationTracePhase.NETWORK_PERMIT_GRANTED
             )
+            val transferOwnerToken = operationId?.let { normalizedOperationId ->
+                DownloadExecutionHosts.onTransferStarted(
+                    context = context.applicationContext,
+                    operationId = normalizedOperationId,
+                    attemptId = attemptId
+                )
+            }
+            if (operationId != null && transferOwnerToken == null) {
+                throw DownloadTransferAdmissionDeferredException(
+                    operationId = operationId,
+                    attemptId = attemptId
+                )
+            }
             permit.markNetworkIoStarted()
             DownloadOperationTrace.mark(
                 traceToken,
                 DownloadOperationTracePhase.NETWORK_STARTED
             )
             DownloadStartupTrace.markTransferStarted()
-            return block(permit, ::markNetworkFinished)
+            return block(permit, ::markNetworkFinished, transferOwnerToken)
         } finally {
             withContext(NonCancellable) {
                 markNetworkFinished()
@@ -4073,6 +4157,9 @@ object AudioDownloadManager {
             requestedParallelism = configuredValue,
             reason = "user_setting",
             configurationRevision = configurationRevision
+        )
+        GlobalDownloadManager.wakeDownloadExecutionPumpAfterParallelismChanged(
+            AppContainer.applicationContext
         )
     }
 

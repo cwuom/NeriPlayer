@@ -1967,7 +1967,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val progressBody = source.substringAfter(
-            "private suspend fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress)"
+            "private fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress)"
         ).substringBefore("private suspend fun restoreTaskProgressCheckpoint")
         val latestStateIndex = progressBody.indexOf(
             "val latestProgress = recordLatestDownloadProgress(progress)"
@@ -2000,7 +2000,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             "private suspend fun flushProgressCheckpoints()"
         ).substringBefore("private suspend fun updateDownloadProgress")
         val updateBody = source.substringAfter(
-            "private suspend fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress)"
+            "private fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress)"
         ).substringBefore("private suspend fun restoreTaskProgressCheckpoint")
 
         assertTrue(flushBody.contains("stableKey = checkpoint.progress.songKey"))

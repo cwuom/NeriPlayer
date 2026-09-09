@@ -380,7 +380,9 @@ class DownloadExecutionHostTest {
                 }
             },
             sdkInt = 28,
-            downloadParallelismProvider = { 1 }
+            // transfer lane capacity is the configured parallelism; this fixture needs
+            // three concurrent transfers to exercise sliding-window refill
+            downloadParallelismProvider = { 3 }
         )
 
         val pump = async { host.pump(context) }
@@ -402,6 +404,170 @@ class DownloadExecutionHostTest {
         requests.forEach { request ->
             assertEquals("COMPLETED", store.currentState(context, request.operationId))
         }
+    }
+
+    @Test
+    fun `core commit releases one transfer lane before enrichment finishes`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val requests = (0..2).map { index ->
+            DownloadExecutionRequest(
+                operationId = "operation-pump-core-release-$index",
+                song = sampleSong().copy(id = 51_000L + index)
+            )
+        }
+        requests.forEach { request -> store.save(context, request) }
+        val firstEnrichment = CompletableDeferred<Unit>()
+        val secondEnrichment = CompletableDeferred<Unit>()
+        val firstStarted = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        val thirdStarted = CompletableDeferred<Unit>()
+        lateinit var host: DefaultDownloadExecutionHost
+        host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+                val token = host.onTransferStarted(
+                    context = entryContext,
+                    operationId = request.operationId,
+                    attemptId = request.attemptId
+                )
+                assertNotNull(token)
+                when (request.operationId) {
+                    requests[0].operationId -> {
+                        firstStarted.complete(Unit)
+                        assertTrue(
+                            host.onCoreCommitted(
+                                context = entryContext,
+                                operationId = request.operationId,
+                                attemptId = request.attemptId,
+                                transferOwnerToken = token
+                            )
+                        )
+                        firstEnrichment.await()
+                    }
+
+                    requests[1].operationId -> {
+                        secondStarted.complete(Unit)
+                        assertTrue(
+                            host.onCoreCommitted(
+                                context = entryContext,
+                                operationId = request.operationId,
+                                attemptId = request.attemptId,
+                                transferOwnerToken = token
+                            )
+                        )
+                        secondEnrichment.await()
+                    }
+
+                    requests[2].operationId -> thirdStarted.complete(Unit)
+                }
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 2 }
+        )
+
+        val pump = async { host.pump(context) }
+        try {
+            withContext(Dispatchers.Default) {
+                withTimeout(2_000L) {
+                    firstStarted.await()
+                    secondStarted.await()
+                    // The first two execute calls remain in enrichment, but the third
+                    // can enter after their Core Commit callbacks release transfer lanes
+                    thirdStarted.await()
+                }
+            }
+            assertTrue(host.isExecuting(requests[0].operationId))
+            assertTrue(host.isExecuting(requests[1].operationId))
+        } finally {
+            firstEnrichment.complete(Unit)
+            secondEnrichment.complete(Unit)
+        }
+        assertEquals(DownloadExecutionPumpResult.Completed, pump.await())
+        requests.forEach { request ->
+            assertEquals("COMPLETED", store.currentState(context, request.operationId))
+        }
+    }
+
+    @Test
+    fun `core commit fences stale attempt and duplicate owner callbacks`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-core-fence",
+            song = sampleSong(),
+            attemptId = 7L
+        )
+        store.save(context, request)
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        lateinit var host: DefaultDownloadExecutionHost
+        host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                started.complete(Unit)
+                finish.await()
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28
+        )
+
+        val execution = async { host.execute(context, request.operationId) }
+        started.await()
+        val ownerToken = host.onTransferStarted(
+            context = context,
+            operationId = request.operationId,
+            attemptId = request.attemptId
+        )
+        assertNotNull(ownerToken)
+        assertFalse(
+            host.onCoreCommitted(
+                context = context,
+                operationId = request.operationId,
+                attemptId = request.attemptId,
+                transferOwnerToken = null
+            )
+        )
+        assertFalse(
+            host.onCoreCommitted(
+                context = context,
+                operationId = request.operationId,
+                attemptId = request.attemptId!! + 1L,
+                transferOwnerToken = ownerToken
+            )
+        )
+        assertFalse(
+            host.onCoreCommitted(
+                context = context,
+                operationId = request.operationId,
+                attemptId = request.attemptId,
+                transferOwnerToken = ownerToken!! + 1L
+            )
+        )
+        assertTrue(
+            host.onCoreCommitted(
+                context = context,
+                operationId = request.operationId,
+                attemptId = request.attemptId,
+                transferOwnerToken = ownerToken
+            )
+        )
+        assertFalse(
+            host.onCoreCommitted(
+                context = context,
+                operationId = request.operationId,
+                attemptId = request.attemptId,
+                transferOwnerToken = ownerToken
+            )
+        )
+        assertEquals(1, journal.hostAdmissionReleaseCount)
+
+        finish.complete(Unit)
+        assertEquals(DownloadExecutionResult.Accepted, execution.await())
+        assertEquals(1, journal.hostAdmissionReleaseCount)
     }
 
     @Test

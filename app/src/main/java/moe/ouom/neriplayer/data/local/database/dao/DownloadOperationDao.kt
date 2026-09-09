@@ -21,7 +21,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation WHERE operation_id = :operationId LIMIT 1"
     )
     suspend fun findHeader(operationId: String): DownloadOperationHeaderRow?
@@ -74,7 +74,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation " +
             "WHERE library_id = :libraryId AND stable_key = :stableKey " +
             "AND state IN (:states) " +
@@ -90,7 +90,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation WHERE stable_key = :stableKey " +
             "AND state IN (:states) " +
             "ORDER BY updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
@@ -104,7 +104,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation WHERE operation_id IN (:operationIds)"
     )
     suspend fun findAllHeadersByOperationIds(
@@ -129,7 +129,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation " +
             "WHERE library_id = :libraryId AND stable_key IN (:stableKeys) " +
             "AND state IN (:states) " +
@@ -145,7 +145,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation WHERE stable_key IN (:stableKeys) " +
             "AND state IN (:states) " +
             "ORDER BY stable_key ASC, updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
@@ -159,7 +159,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation " +
             "WHERE library_id = :libraryId AND state IN (:states) " +
             "AND operation_id > :afterOperationId " +
@@ -176,7 +176,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation WHERE state IN (:states) " +
             "AND operation_id > :afterOperationId " +
             "ORDER BY operation_id ASC LIMIT :limit"
@@ -338,15 +338,15 @@ internal interface DownloadOperationDao {
         "SELECT * FROM download_operation " +
             "WHERE state IN (:states) AND stop_requested_by_user = 0 " +
             "AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= :nowMs) " +
-            "AND (" +
-            ":afterQueueOrder IS NULL " +
+            "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
+            "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
+            "AND batch.generation = download_operation.batch_generation " +
+            "AND (batch.state_bits & 1) != 0 AND (batch.state_bits & 2) = 0)) " +
+            "AND (:afterQueueOrder IS NULL " +
             "OR queue_order > :afterQueueOrder " +
-            "OR (queue_order = :afterQueueOrder " +
-            "AND updated_at_ms > :afterUpdatedAtMs) " +
-            "OR (queue_order = :afterQueueOrder " +
-            "AND updated_at_ms = :afterUpdatedAtMs " +
-            "AND operation_id > :afterOperationId)" +
-            ") " +
+            "OR (queue_order = :afterQueueOrder AND updated_at_ms > :afterUpdatedAtMs) " +
+            "OR (queue_order = :afterQueueOrder AND updated_at_ms = :afterUpdatedAtMs " +
+            "AND operation_id > :afterOperationId)) " +
             "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
             "LIMIT :limit"
     )
@@ -363,11 +363,15 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation WHERE state IN (:states) " +
             "AND stop_requested_by_user = 0 " +
-            "AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= :nowMs) AND (" +
-            ":afterQueueOrder IS NULL OR queue_order > :afterQueueOrder OR " +
+            "AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= :nowMs) " +
+            "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
+            "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
+            "AND batch.generation = download_operation.batch_generation " +
+            "AND (batch.state_bits & 1) != 0 AND (batch.state_bits & 2) = 0)) " +
+            "AND (:afterQueueOrder IS NULL OR queue_order > :afterQueueOrder OR " +
             "(queue_order = :afterQueueOrder AND updated_at_ms > :afterUpdatedAtMs) OR " +
             "(queue_order = :afterQueueOrder AND updated_at_ms = :afterUpdatedAtMs " +
             "AND operation_id > :afterOperationId)) " +
@@ -427,7 +431,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation WHERE state IN (:states) AND (" +
             "(state IN ('PENDING_QUEUE', 'QUEUED', 'WAITING_STORAGE_MUTATION', " +
             "'RUNNING', 'RETRYABLE') AND stop_requested_by_user = 0) OR " +
@@ -655,6 +659,23 @@ internal interface DownloadOperationDao {
     suspend fun updateRequestPayload(
         operationId: String,
         stableKey: String,
+        sourceHintJson: String,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET batch_id = :batchId, " +
+            "batch_generation = :batchGeneration, source_hint_json = :sourceHintJson, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND ((batch_id IS NULL AND batch_generation IS NULL) " +
+            "OR (batch_id = :batchId AND batch_generation = :batchGeneration))"
+    )
+    suspend fun bindBatchIdentityIfUnbound(
+        operationId: String,
+        stableKey: String,
+        batchId: String,
+        batchGeneration: Long,
         sourceHintJson: String,
         updatedAtMs: Long
     ): Int
@@ -952,7 +973,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation WHERE stop_requested_by_user = 1"
     )
     suspend fun findUserStoppedHeaders(): List<DownloadOperationHeaderRow>
@@ -967,7 +988,7 @@ internal interface DownloadOperationDao {
         "SELECT operation_id, stable_key, library_id, state, queue_order, " +
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
-            "updated_at_ms, host_process_token, host_admitted_at_ms " +
+            "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
             "FROM download_operation " +
             "WHERE library_id = :libraryId AND stop_requested_by_user = 1"
     )

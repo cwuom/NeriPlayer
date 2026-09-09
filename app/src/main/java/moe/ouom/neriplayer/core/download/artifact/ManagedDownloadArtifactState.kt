@@ -29,7 +29,9 @@ internal enum class ManagedDownloadArtifactState {
 
 internal sealed interface ManagedDownloadArtifactClaim {
     data class Acquired(
-        val artifact: ManagedDownloadArtifactEntity
+        val artifact: ManagedDownloadArtifactEntity,
+        /** 用户明确重新下载时保留旧的、无法确认归属的引用，不做破坏性清理 */
+        val preservesExistingReference: Boolean = false
     ) : ManagedDownloadArtifactClaim
 
     data class AlreadyDownloaded(
@@ -75,8 +77,16 @@ internal object ManagedDownloadArtifactPolicy {
 
             ManagedDownloadArtifactState.CORE_COMMITTED,
             ManagedDownloadArtifactState.ASSETS_ENRICHING,
-            ManagedDownloadArtifactState.DEGRADED_COMPLETE ->
-                ManagedDownloadArtifactDecision.AlreadyDownloaded
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE -> {
+                // 这些状态只有在有 durable 音频引用时才代表可恢复的已下载文件。
+                // 旧版本或中断写入可能只留下状态行；不能让这种行把新请求
+                // 永久导向 finalization recovery，否则真实传输永远不会开始
+                if (existing.audioReference.isNullOrBlank()) {
+                    ManagedDownloadArtifactDecision.Acquire
+                } else {
+                    ManagedDownloadArtifactDecision.AlreadyDownloaded
+                }
+            }
 
             ManagedDownloadArtifactState.MISSING_CONFIRMED ->
                 ManagedDownloadArtifactDecision.Acquire
@@ -217,6 +227,69 @@ internal fun classifyManagedDownloadArtifactReference(
         is ManagedDownloadReferenceLookup.Result.ProviderFailure ->
             ManagedDownloadArtifactReferenceState.REPAIR_REQUIRED
     }
+}
+
+/** 用户明确重下时，只有无法确认的旧引用才允许让出 artifact lease */
+internal fun shouldReclaimUnavailableArtifactForFreshTransfer(
+    artifactState: ManagedDownloadArtifactState,
+    referenceState: ManagedDownloadArtifactReferenceState,
+    userInitiated: Boolean,
+    currentLeaseId: String?,
+    leaseOwnerId: String?
+): Boolean {
+    if (!userInitiated || referenceState == ManagedDownloadArtifactReferenceState.PRESENT) {
+        return false
+    }
+    if (currentLeaseId != null && currentLeaseId != leaseOwnerId) {
+        return false
+    }
+    return artifactState in setOf(
+        ManagedDownloadArtifactState.CORE_COMMITTED,
+        ManagedDownloadArtifactState.ASSETS_ENRICHING,
+        ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+        ManagedDownloadArtifactState.FINALIZED,
+        ManagedDownloadArtifactState.REPAIR_REQUIRED
+    )
+}
+
+/** 最终化证据不完整时，用户明确重试可保留旧引用并重新传输 */
+internal fun shouldReclaimUnavailableFinalizationForFreshTransfer(
+    artifactState: ManagedDownloadArtifactState,
+    disposition: ManagedDownloadArtifactFinalizationDisposition,
+    userInitiated: Boolean,
+    currentLeaseId: String?,
+    leaseOwnerId: String?
+): Boolean {
+    if (
+        !userInitiated ||
+            artifactState != ManagedDownloadArtifactState.FINALIZED ||
+            disposition != ManagedDownloadArtifactFinalizationDisposition.UNAVAILABLE
+    ) {
+        return false
+    }
+    return currentLeaseId == null || currentLeaseId == leaseOwnerId
+}
+
+/** post-core 行仍有旧引用时，用户明确重新下载也必须能重新取得传输租约 */
+internal fun shouldForceFreshTransferForUser(
+    artifactState: ManagedDownloadArtifactState,
+    userInitiated: Boolean,
+    currentLeaseId: String?,
+    leaseOwnerId: String?
+): Boolean {
+    if (!userInitiated) return false
+    if (artifactState in setOf(
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE
+        )
+    ) {
+        // post-core 已证明音频传输不再由旧 lease 持有。用户明确重试时可以
+        // 让新的 operation 接管，旧 enrichment 的 lease CAS 会自行变为 stale
+        return true
+    }
+    return artifactState == ManagedDownloadArtifactState.REPAIR_REQUIRED &&
+        (currentLeaseId == null || currentLeaseId == leaseOwnerId)
 }
 
 internal fun resolveArtifactStateUpdate(

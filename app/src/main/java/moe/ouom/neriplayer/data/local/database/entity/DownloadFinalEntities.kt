@@ -15,7 +15,8 @@ import androidx.room.Index
         Index(
             value = ["host_process_token", "library_id"],
             name = "index_download_operation_host_process_library"
-        )
+        ),
+        Index(value = ["batch_id", "batch_generation"], name = "index_download_operation_batch")
     ]
 )
 internal data class DownloadOperationEntity(
@@ -37,7 +38,9 @@ internal data class DownloadOperationEntity(
     @ColumnInfo(name = "created_at_ms") val createdAtMs: Long,
     @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long,
     @ColumnInfo(name = "host_process_token") val hostProcessToken: String? = null,
-    @ColumnInfo(name = "host_admitted_at_ms") val hostAdmittedAtMs: Long? = null
+    @ColumnInfo(name = "host_admitted_at_ms") val hostAdmittedAtMs: Long? = null,
+    @ColumnInfo(name = "batch_id") val batchId: String? = null,
+    @ColumnInfo(name = "batch_generation") val batchGeneration: Long? = null
 )
 
 /** 表头查询不携带可能包含完整歌词的 source_hint_json */
@@ -57,7 +60,9 @@ internal data class DownloadOperationHeaderRow(
     @ColumnInfo(name = "created_at_ms") val createdAtMs: Long,
     @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long,
     @ColumnInfo(name = "host_process_token") val hostProcessToken: String?,
-    @ColumnInfo(name = "host_admitted_at_ms") val hostAdmittedAtMs: Long?
+    @ColumnInfo(name = "host_admitted_at_ms") val hostAdmittedAtMs: Long?,
+    @ColumnInfo(name = "batch_id") val batchId: String?,
+    @ColumnInfo(name = "batch_generation") val batchGeneration: Long?
 )
 
 internal data class DownloadOperationIdentityRow(

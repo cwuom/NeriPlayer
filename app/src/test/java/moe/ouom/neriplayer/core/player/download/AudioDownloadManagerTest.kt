@@ -1150,11 +1150,17 @@ class AudioDownloadManagerTest {
             coreRequestedIndex
         )
         val wakeIndex = transferBody.indexOf(
-            "GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(context)",
+            "GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(",
             coreCommittedIndex
         )
         val cycleBody = methodBody(source, "withTransferCyclePermit")
-        val blockIndex = cycleBody.indexOf("return block(permit, ::markNetworkFinished)")
+        val blockIndex = cycleBody.indexOf(
+            "return block(permit, ::markNetworkFinished, transferOwnerToken)"
+        )
+        val admissionRejectedIndex = cycleBody.indexOf(
+            "operationId != null && transferOwnerToken == null"
+        )
+        val networkStartedIndex = cycleBody.indexOf("permit.markNetworkIoStarted()")
         val releaseIndex = cycleBody.indexOf("permit.release()")
 
         assertTrue(transferIndex >= 0)
@@ -1162,6 +1168,10 @@ class AudioDownloadManagerTest {
         assertTrue(coreRequestedIndex > networkFinishedIndex)
         assertTrue(coreCommittedIndex > coreRequestedIndex)
         assertTrue(wakeIndex > coreCommittedIndex)
+        assertTrue(transferBody.contains("transferOwnerToken = committedAudio.transferOwnerToken"))
+        assertTrue(cycleBody.contains("DownloadExecutionHosts.onTransferStarted("))
+        assertTrue(admissionRejectedIndex >= 0)
+        assertTrue(networkStartedIndex > admissionRejectedIndex)
         assertTrue(blockIndex >= 0)
         assertTrue(releaseIndex > blockIndex)
         assertFalse(source.contains("withConfiguredDownloadPermit"))
@@ -1264,6 +1274,22 @@ class AudioDownloadManagerTest {
         assertTrue(cachedLookupIndex >= 0)
         assertTrue(bridgeClearIndex > cachedLookupIndex)
         assertTrue(transportIndex > bridgeClearIndex)
+    }
+
+    @Test
+    fun `fresh transfer bypasses the audio manager fast cache`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+        val executionBody = methodBody(source, "executeDownloadSong")
+
+        assertTrue(source.contains("forceFreshTransfer: Boolean = false"))
+        assertTrue(
+            executionBody.contains(
+                "if (!forceFreshTransfer && hasFastCachedManagedDownloadForStart(context, song))"
+            )
+        )
+        assertTrue(source.contains("forceFreshTransfer = forceFreshTransfer"))
     }
 
     @Test

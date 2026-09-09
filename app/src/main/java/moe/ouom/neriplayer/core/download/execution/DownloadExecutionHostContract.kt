@@ -3,7 +3,16 @@ package moe.ouom.neriplayer.core.download.execution
 import android.content.Context
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import java.io.IOException
 import java.util.UUID
+
+/** 宿主未授予 transfer lane 时，调用方必须在未发起网络 I/O 前退出并交给持久队列重试 */
+internal class DownloadTransferAdmissionDeferredException(
+    operationId: String,
+    attemptId: Long?
+) : IOException(
+    "download host did not admit transfer: operationId=$operationId, attemptId=$attemptId"
+)
 
 /** 管理用户下载的持久调度和 operation 身份 */
 interface DownloadExecutionHost {
@@ -59,6 +68,24 @@ interface DownloadExecutionHost {
 
     fun isExecuting(operationId: String): Boolean = false
 
+    /**
+     * 网络 permit 真正拿到后才占用 transfer lane，并返回 Host 自己生成的 owner token。
+     * Core Commit 必须原样回传该 token；不要传下载 permit 的 generation
+     */
+    fun onTransferStarted(
+        context: Context,
+        operationId: String,
+        attemptId: Long? = null
+    ): Long? = null
+
+    /** 音频 Core Commit 已持久化，必须回传启动时的 owner token 才能释放 transfer lane */
+    fun onCoreCommitted(
+        context: Context,
+        operationId: String,
+        attemptId: Long? = null,
+        transferOwnerToken: Long? = null
+    ): Boolean = false
+
     suspend fun execute(
         context: Context,
         operationId: String
@@ -78,7 +105,9 @@ data class DownloadExecutionRequest(
     val attemptId: Long? = null,
     val artifactLeaseId: String = UUID.randomUUID().toString(),
     val userInitiated: Boolean = true,
-    val downloadAudioQuality: DownloadAudioQualitySelection? = null
+    val downloadAudioQuality: DownloadAudioQualitySelection? = null,
+    val batchId: String? = null,
+    val batchGeneration: Long? = null
 ) {
     init {
         require(normalizeDownloadOperationId(operationId) == operationId) {
@@ -86,6 +115,15 @@ data class DownloadExecutionRequest(
         }
         require(artifactLeaseId.isNotBlank()) {
             "artifactLeaseId must be non-empty"
+        }
+        require((batchId == null) == (batchGeneration == null)) {
+            "batchId and batchGeneration must be provided together"
+        }
+        if (batchId != null) {
+            require(normalizeDownloadOperationId(batchId) == batchId) {
+                "batchId must be a safe, non-empty identifier"
+            }
+            require(batchGeneration!! > 0L) { "batchGeneration must be positive" }
         }
     }
 }

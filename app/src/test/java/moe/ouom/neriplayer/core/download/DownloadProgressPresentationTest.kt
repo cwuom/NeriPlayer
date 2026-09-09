@@ -12,6 +12,101 @@ import org.junit.Test
 class DownloadProgressPresentationTest {
 
     @Test
+    fun `p0 batch keeps fixed total and completed watermark after task rows disappear`() {
+        val songs = (1L..800L).map(::song)
+        val completedKeys = songs.take(300).mapTo(linkedSetOf(), SongItem::stableKey)
+        val presentation = BatchDownloadPresentationState(
+            id = 100L,
+            memberAttemptIds = songs.associate { it.stableKey() to null },
+            terminalStates = completedKeys.associateWith {
+                BatchDownloadTerminalState.COMPLETED
+            },
+            initiallyCompletedSongKeys = completedKeys
+        )
+
+        val beforePrune = aggregateBatchDownloadProgress(
+            presentation,
+            songs.drop(300).map { song ->
+                DownloadTask(song, null, DownloadStatus.QUEUED)
+            }
+        )
+        val afterPrune = aggregateBatchDownloadProgress(presentation, emptyList())
+
+        assertEquals(800, beforePrune?.totalSongs)
+        assertEquals(300, beforePrune?.completedSongs)
+        assertEquals(800, afterPrune?.totalSongs)
+        assertEquals(300, afterPrune?.completedSongs)
+    }
+
+    @Test
+    fun `p0 incomplete snapshot does not clear initially completed members`() {
+        val completed = (1L..300L).map(::song)
+        val pending = (301L..800L).map(::song)
+        val completedKeys = completed.mapTo(linkedSetOf(), SongItem::stableKey)
+        val presentation = BatchDownloadPresentationState(
+            id = 101L,
+            memberAttemptIds = (completed + pending).associate { it.stableKey() to null },
+            terminalStates = completedKeys.associateWith {
+                BatchDownloadTerminalState.COMPLETED
+            },
+            initiallyCompletedSongKeys = completedKeys
+        )
+
+        // An incomplete directory snapshot is represented by no task rows here;
+        // confirmed terminal members must remain part of the durable presentation.
+        val aggregate = requireNotNull(aggregateBatchDownloadProgress(presentation, emptyList()))
+
+        assertEquals(800, aggregate.totalSongs)
+        assertEquals(300, aggregate.completedSongs)
+    }
+
+    @Test
+    fun `p0 old attempt cannot change the new attempt progress`() {
+        val selected = song(801L)
+        val presentation = BatchDownloadPresentationState(
+            id = 102L,
+            memberAttemptIds = mapOf(selected.stableKey() to 2L)
+        )
+        val oldAttempt = DownloadTask(
+            selected,
+            progress(selected.stableKey(), 1L, bytesRead = 100L),
+            DownloadStatus.DOWNLOADING,
+            attemptId = 1L
+        )
+
+        val aggregate = requireNotNull(
+            aggregateBatchDownloadProgress(presentation, listOf(oldAttempt))
+        )
+
+        assertEquals(0, aggregate.completedSongs)
+        assertEquals(0, aggregate.percentage)
+    }
+
+    @Test
+    fun `p0 repeated stable key contributes one member`() {
+        val first = song(802L, name = "first")
+        val duplicate = first.copy(name = "same identity, different fields")
+        val firstBatch = BatchDownloadPresentationState(
+            id = 103L,
+            memberAttemptIds = mapOf(first.stableKey() to 1L)
+        )
+        val secondBatch = BatchDownloadPresentationState(
+            id = 104L,
+            memberAttemptIds = mapOf(duplicate.stableKey() to 2L)
+        )
+
+        val merged = requireNotNull(
+            mergeBatchDownloadPresentations(listOf(firstBatch, secondBatch), emptyList())
+        )
+        val aggregate = requireNotNull(
+            aggregateBatchDownloadProgress(listOf(firstBatch, secondBatch), emptyList())
+        )
+
+        assertEquals(1, merged.memberAttemptIds.size)
+        assertEquals(1, aggregate.totalSongs)
+    }
+
+    @Test
     fun `progress page hides queued and waiting songs before work starts`() {
         val queued = DownloadTask(
             song = song(1L),
@@ -714,10 +809,10 @@ class DownloadProgressPresentationTest {
         )
     }
 
-    private fun song(id: Long): SongItem {
+    private fun song(id: Long, name: String = "Song $id"): SongItem {
         return SongItem(
             id = id,
-            name = "Song $id",
+            name = name,
             artist = "Artist",
             album = "Album",
             albumId = 1L,

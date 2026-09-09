@@ -785,14 +785,63 @@ class NeriUserDataDatabaseMigrationTest {
     }
 
     @Test
-    fun finalVersion16EmbedsHostAdmissionWithoutCreatingAThirdDownloadTable() {
+    fun migrateFromVersion16ToVersion17KeepsExistingOperationAndAddsBatchSchema() {
+        val databaseName = "migration-v16-to-v17-${System.nanoTime()}"
+        helper.createDatabase(databaseName, 16).apply {
+            execSQL(
+                """
+                INSERT INTO download_operation (
+                  operation_id, stable_key, library_id, state, queue_order,
+                  source_hint_json, staging_dir_name, bytes_written, total_bytes,
+                  resume_json, retry_count, next_retry_at_ms, last_error_code,
+                  stop_requested_by_user, created_at_ms, updated_at_ms,
+                  host_process_token, host_admitted_at_ms
+                ) VALUES (
+                  'op-v16', 'song-v16', 'root', 'QUEUED', 1,
+                  '{}', 'stage-v16', 0, NULL, NULL, 0, NULL, NULL,
+                  0, 10, 10, NULL, NULL
+                )
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            databaseName,
+            17,
+            false,
+            NeriUserDataDatabase.MIGRATION_16_17
+        )
+
+        try {
+            assertEquals("song-v16", migrated.stringFor(
+                "SELECT stable_key FROM download_operation WHERE operation_id = 'op-v16'"
+            ))
+            assertEquals(1L, migrated.longFor(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'download_batch'"
+            ))
+            assertEquals(1L, migrated.longFor(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'download_batch_member'"
+            ))
+            assertEquals(2L, migrated.longFor(
+                "SELECT COUNT(*) FROM pragma_table_info('download_operation') " +
+                    "WHERE name IN ('batch_id', 'batch_generation')"
+            ))
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun finalVersion17EmbedsBatchTablesWithoutCreatingAThirdDownloadTable() {
         helper.createDatabase(TEST_DATABASE_VERSION_15_HOST_ADMISSION_NAME, 15).close()
 
         val migrated = helper.runMigrationsAndValidate(
             TEST_DATABASE_VERSION_15_HOST_ADMISSION_NAME,
             NeriUserDataDatabase.FINAL_DB_VERSION,
             false,
-            NeriUserDataDatabase.MIGRATION_15_FINAL
+            NeriUserDataDatabase.MIGRATION_15_FINAL,
+            NeriUserDataDatabase.MIGRATION_16_17
         )
 
         try {
@@ -856,7 +905,8 @@ class NeriUserDataDatabaseMigrationTest {
             TEST_DATABASE_VERSION_15_TO_FINAL_NAME,
             NeriUserDataDatabase.FINAL_DB_VERSION,
             false,
-            NeriUserDataDatabase.MIGRATION_15_FINAL
+            NeriUserDataDatabase.MIGRATION_15_FINAL,
+            NeriUserDataDatabase.MIGRATION_16_17
         )
 
         try {

@@ -2,19 +2,18 @@ package moe.ouom.neriplayer.core.download.execution
 
 import android.content.Context
 import androidx.room.withTransaction
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
-import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.HeaderRequestRead
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.OperationIdentity
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.OperationRequestMetadata
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.OperationSnapshot
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.ProgressCheckpoint
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.ProgressEntry
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.StateEntry
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.HeaderRequestRead
-import org.json.JSONObject
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import org.json.JSONObject
 
 /**
  * Room operation 的只读、分页和进度查询边界
@@ -336,14 +335,11 @@ internal object DownloadExecutionRoomReadStore {
                 headers.map { header ->
                     header to DownloadExecutionRoomStore.Access.readRequestFromHeader(dao, header)
                 },
-                if (headers.isEmpty() && afterCursor == null) {
-                    dao.findEarliestFutureRetryDeadlineForPump(
-                        states = DownloadExecutionRoomStore.Access.PUMP_OPERATION_STATES,
-                        nowMs = nowMs
-                    )
-                } else {
-                    null
-                }
+                // 每个 keyset 页都返回最早 retry 截止时间，避免前页没有可调度行时丢失定时器唤醒
+                dao.findEarliestFutureRetryDeadlineForPump(
+                    states = DownloadExecutionRoomStore.Access.PUMP_OPERATION_STATES,
+                    nowMs = nowMs
+                )
             )
         }
         val nextCursor = headers.lastOrNull()

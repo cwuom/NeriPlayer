@@ -8,6 +8,10 @@ import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.dao.DownloadOperationDao
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -93,6 +97,63 @@ internal object DownloadExecutionRoomStore {
         val queueOrder: Int = 0
     )
 
+    internal data class DownloadBatchIdentity(
+        val batchId: String,
+        val generation: Long
+    )
+
+    internal data class DownloadBatchRecoverySnapshot(
+        val batch: DownloadBatchEntity,
+        val members: List<DownloadBatchMemberEntity>,
+        val isConsistent: Boolean = batch.totalCount == members.size &&
+            members.map { member -> member.ordinal } == members.indices.toList() &&
+            members.map { member -> member.stableKey }.distinct().size == members.size &&
+            members.all { member -> member.batchId == batch.batchId }
+    )
+
+    internal data class DownloadBatchNetworkPolicy(
+        val identity: DownloadBatchIdentity,
+        val stateBits: Int,
+        val networkGeneration: Long?
+    ) {
+        val isWaitingForNetwork: Boolean
+            get() = stateBits and DownloadBatchState.NETWORK_WAIT != 0
+
+        fun allowsMobileData(currentNetworkGeneration: Long): Boolean {
+            return !isWaitingForNetwork &&
+                stateBits and DownloadBatchState.USER_MOBILE_ALLOWED != 0 &&
+                networkGeneration == currentNetworkGeneration
+        }
+    }
+
+    internal fun canStartBatchForCurrentNetwork(
+        batch: DownloadBatchEntity,
+        currentNetworkGeneration: Long?
+    ): Boolean {
+        val hasMobileDataAllowance =
+            batch.stateBits and DownloadBatchState.USER_MOBILE_ALLOWED != 0
+        if (hasMobileDataAllowance) {
+            val currentGeneration = currentNetworkGeneration?.takeIf { generation -> generation >= 0L }
+                ?: return false
+            if (batch.networkGeneration != currentGeneration) return false
+        }
+        if (batch.stateBits and DownloadBatchState.NETWORK_WAIT != 0) return false
+        return true
+    }
+
+    internal enum class BatchMemberMutation {
+        APPLIED,
+        IDEMPOTENT,
+        STALE,
+        MISSING
+    }
+
+    internal data class BatchMemberBinding(
+        val stableKey: String,
+        val operationId: String,
+        val attemptId: Long?
+    )
+
     suspend fun upsert(
         context: Context,
         request: DownloadExecutionRequest,
@@ -121,14 +182,27 @@ internal object DownloadExecutionRoomStore {
                 userInitiated = request.userInitiated
             )
             val existingRequest = existing?.let(::requestFromEntity)
+            val preservedBatchId = request.batchId ?: existingRequest?.batchId ?: existingHeader?.batchId
+            val preservedBatchGeneration = request.batchGeneration
+                ?: existingRequest?.batchGeneration
+                ?: existingHeader?.batchGeneration
+            val effectiveUserInitiated = request.userInitiated ||
+                existingRequest?.userInitiated == true
+            val requestWithMonotonicIntent = request.copy(
+                userInitiated = effectiveUserInitiated
+            )
             val persistedRequest = when {
-                restartForNewAttempt -> request.copy(
-                    artifactLeaseId = UUID.randomUUID().toString()
+                restartForNewAttempt -> requestWithMonotonicIntent.copy(
+                    artifactLeaseId = UUID.randomUUID().toString(),
+                    batchId = preservedBatchId,
+                    batchGeneration = preservedBatchGeneration
                 )
-                existingRequest != null -> request.copy(
-                    artifactLeaseId = existingRequest.artifactLeaseId
+                existingRequest != null -> requestWithMonotonicIntent.copy(
+                    artifactLeaseId = existingRequest.artifactLeaseId,
+                    batchId = preservedBatchId,
+                    batchGeneration = preservedBatchGeneration
                 )
-                else -> request
+                else -> requestWithMonotonicIntent
             }
             dao.upsert(
                 DownloadOperationEntity(
@@ -159,7 +233,9 @@ internal object DownloadExecutionRoomStore {
                     createdAtMs = existingHeader?.createdAtMs ?: requestedCreatedAtMs,
                     updatedAtMs = payloadUpdatedAtMs,
                     hostProcessToken = existingHeader?.hostProcessToken,
-                    hostAdmittedAtMs = existingHeader?.hostAdmittedAtMs
+                    hostAdmittedAtMs = existingHeader?.hostAdmittedAtMs,
+                    batchId = persistedRequest.batchId,
+                    batchGeneration = persistedRequest.batchGeneration
                 )
             )
         }
@@ -331,6 +407,48 @@ internal object DownloadExecutionRoomStore {
         }
     }
 
+    /**
+     * 旧版本可能留下 core 状态但没有持久音频引用
+     * 只有 artifact 已由同一 operation 重新取得 lease 时才允许回到传输阶段
+     */
+    suspend fun reopenMissingPostCoreArtifactForFreshTransfer(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        expectedAttemptId: Long?,
+        errorCode: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        if (operationId.isBlank()) return false
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val header = dao.findHeader(operationId) ?: return@withTransaction false
+            if (
+                header.stableKey != normalizedKey ||
+                    header.stopRequestedByUser ||
+                    header.state !in MISSING_POST_CORE_ARTIFACT_REOPEN_STATES
+            ) {
+                return@withTransaction false
+            }
+            val request = readRequestFromHeader(dao, header).request
+                ?: return@withTransaction false
+            if (
+                request.song.stableKey() != normalizedKey ||
+                    expectedAttemptId != null && request.attemptId != expectedAttemptId
+            ) {
+                return@withTransaction false
+            }
+            dao.transitionState(
+                operationId = operationId,
+                expectedStates = MISSING_POST_CORE_ARTIFACT_REOPEN_STATES,
+                state = "RUNNING",
+                updatedAtMs = System.currentTimeMillis(),
+                errorCode = errorCode
+            ) > 0
+        }
+    }
+
     suspend fun markScheduleRejectedRetryable(
         context: Context,
         operationId: String,
@@ -455,6 +573,54 @@ internal object DownloadExecutionRoomStore {
         }
     }
 
+    /** 用户重新点击下载时，只提升可恢复 operation 的意图，不重置租约或进度 */
+    suspend fun promoteUserInitiatedOperation(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): DownloadExecutionRequest? {
+        val normalizedOperationId = operationId.trim().takeIf(String::isNotBlank) ?: return null
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return null
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val header = dao.findHeader(normalizedOperationId) ?: return@withTransaction null
+            if (
+                header.stableKey != normalizedKey ||
+                    header.state !in IN_FLIGHT_OPERATION_STATES + REUSABLE_OPERATION_STATES ||
+                    header.stopRequestedByUser
+            ) {
+                return@withTransaction null
+            }
+            val decoded = readRequestFromHeader(dao, header)
+            val request = decoded.request ?: run {
+                if (decoded.payloadWasRead) {
+                    invalidateMalformedPayloadInTransaction(database, header)
+                }
+                return@withTransaction null
+            }
+            if (request.song.stableKey() != normalizedKey) {
+                invalidateMalformedPayloadInTransaction(database, header)
+                return@withTransaction null
+            }
+            if (request.userInitiated) return@withTransaction request
+            val promoted = request.copy(userInitiated = true)
+            if (
+                dao.updateRequestPayload(
+                    operationId = normalizedOperationId,
+                    stableKey = normalizedKey,
+                    sourceHintJson = requestToJson(promoted).toString(),
+                    updatedAtMs = nextPayloadUpdatedAt(
+                        previousUpdatedAtMs = header.updatedAtMs
+                    )
+                ) <= 0
+            ) {
+                return@withTransaction null
+            }
+            promoted
+        }
+    }
+
     /** 为没有进度身份的旧记录持久化新生成的尝试编号 */
     suspend fun ensureAttemptId(
         context: Context,
@@ -493,6 +659,7 @@ internal object DownloadExecutionRoomStore {
         context: Context,
         operationId: String,
         allowExistingRunning: Boolean = false,
+        currentNetworkGeneration: Long? = null,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
         nowMs: Long = System.currentTimeMillis()
     ): Boolean {
@@ -534,6 +701,20 @@ internal object DownloadExecutionRoomStore {
             if (target.state !in expectedStates) return@withTransaction false
             if (hasOtherValidWaitingStorageMutation(database, target)) {
                 return@withTransaction false
+            }
+            val batchId = target.batchId
+            val batchGeneration = target.batchGeneration
+            if (batchId != null || batchGeneration != null) {
+                if (batchId == null || batchGeneration == null) {
+                    return@withTransaction false
+                }
+                val batch = database.downloadBatchDao()
+                    .findBatch(batchId, batchGeneration)
+                    ?: return@withTransaction false
+                // 网络代际和 RUNNING 转换必须在同一事务内检查，避免旧确认越过新等待态
+                if (!canStartBatchForCurrentNetwork(batch, currentNetworkGeneration)) {
+                    return@withTransaction false
+                }
             }
 
             val contenders = dao.findAllHeadersByStableKey(
@@ -899,17 +1080,909 @@ internal object DownloadExecutionRoomStore {
         }
     }
 
-    suspend fun markCoreCommitted(context: Context, operationId: String): Boolean {
-        val dao = NeriUserDataDatabase.getInstance(context).downloadOperationDao()
-        if (dao.markCoreCommitted(
-                operationId = operationId,
+    suspend fun markCoreCommitted(
+        context: Context,
+        operationId: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedOperationId = normalizeDownloadOperationId(operationId) ?: return false
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val entity = dao.find(normalizedOperationId)
+                ?: return@withTransaction false
+            val request = requestFromEntity(entity)
+            val attemptId = request?.attemptId
+            val changed = dao.markCoreCommitted(
+                operationId = normalizedOperationId,
                 expectedStates = CORE_COMMIT_SOURCE_STATES,
                 updatedAtMs = System.currentTimeMillis()
             ) > 0
-        ) {
-            return true
+            val currentState = dao.findState(normalizedOperationId)
+            val committed = changed || currentState in CORE_COMMITTED_STATES
+            if (committed) {
+                markMembersCompletedForOperationInTransaction(
+                    database = database,
+                    operationId = normalizedOperationId,
+                    stableKey = entity.stableKey,
+                    attemptId = attemptId
+                )
+            }
+            committed
         }
-        return dao.findState(operationId) in CORE_COMMITTED_STATES
+    }
+
+    /** Creates one durable user-selection snapshot and all of its members atomically. */
+    suspend fun createBatchSnapshot(
+        context: Context,
+        songs: Collection<SongItem>,
+        initiallyCompletedSongKeys: Set<String> = emptySet(),
+        clearEpoch: Long = 0L,
+        networkGeneration: Long? = null,
+        nowMs: Long = System.currentTimeMillis(),
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): DownloadBatchIdentity {
+        val normalizedSongs = songs
+            .map { song -> song to song.stableKey().trim() }
+            .filter { (_, key) -> key.isNotBlank() }
+            .distinctBy { (_, key) -> key }
+            .map { (song, _) -> song }
+        require(normalizedSongs.isNotEmpty()) { "songs must not be empty" }
+        return database.withTransaction {
+            val batchDao = database.downloadBatchDao()
+            val previousGeneration = batchDao.findMaxGeneration() ?: 0L
+            require(previousGeneration < Long.MAX_VALUE) {
+                "download batch generation exhausted"
+            }
+            val identity = DownloadBatchIdentity(
+                batchId = UUID.randomUUID().toString(),
+                generation = (previousGeneration + 1L).coerceAtLeast(1L)
+            )
+            val completedKeys = initiallyCompletedSongKeys
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .toSet()
+            val members = normalizedSongs.mapIndexed { ordinal, song ->
+                val stableKey = song.stableKey()
+                val initiallyCompleted = stableKey in completedKeys
+                DownloadBatchMemberEntity(
+                    batchId = identity.batchId,
+                    ordinal = ordinal,
+                    stableKey = stableKey,
+                    terminalBits = if (initiallyCompleted) {
+                        DownloadBatchMemberTerminal.COMPLETED
+                    } else {
+                        DownloadBatchMemberTerminal.NONE
+                    },
+                    maxFractionMilli = if (initiallyCompleted) 1000 else 0,
+                    initiallyCompleted = initiallyCompleted,
+                    updatedAtMs = nowMs
+                )
+            }
+            val batch = DownloadBatchEntity(
+                batchId = identity.batchId,
+                generation = identity.generation,
+                totalCount = members.size,
+                stateBits = DownloadBatchState.OPEN,
+                clearEpoch = clearEpoch.coerceAtLeast(0L),
+                networkGeneration = networkGeneration,
+                updatedAtMs = nowMs,
+                createdAtMs = nowMs
+            )
+            insertBatchSnapshotInTransaction(database, batch, members)
+            if (members.all { member -> member.terminalBits != DownloadBatchMemberTerminal.NONE }) {
+                batchDao.markCompletedIfAllMembersTerminal(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    nowMs = nowMs
+                )
+            }
+            identity
+        }
+    }
+
+    /** Compatibility overload used by migration fixtures and focused tests. */
+    suspend fun createBatchSnapshot(
+        context: Context,
+        batch: DownloadBatchEntity,
+        members: List<DownloadBatchMemberEntity>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ) = database.withTransaction {
+        insertBatchSnapshotInTransaction(database, batch, members)
+    }
+
+    private suspend fun insertBatchSnapshotInTransaction(
+        database: NeriUserDataDatabase,
+        batch: DownloadBatchEntity,
+        members: List<DownloadBatchMemberEntity>
+    ) {
+        require(members.size == batch.totalCount) {
+            "batch member count does not match total count"
+        }
+        require(members.map { member -> member.stableKey }.toSet().size == members.size) {
+            "batch members must have unique stable keys"
+        }
+        require(members.map { member -> member.ordinal }.toSet().size == members.size) {
+            "batch members must have unique ordinals"
+        }
+        require(members.map { member -> member.ordinal }.sorted() == members.indices.toList()) {
+            "batch member ordinals must be contiguous"
+        }
+        require(members.all { member -> member.batchId == batch.batchId }) {
+            "batch member belongs to a different batch"
+        }
+        database.downloadBatchDao().insertBatch(batch)
+        database.downloadBatchDao().insertMembers(members)
+    }
+
+    suspend fun readOpenBatchSnapshots(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): List<DownloadBatchRecoverySnapshot> {
+        val batchDao = database.downloadBatchDao()
+        return database.withTransaction {
+            batchDao.findOpenBatches().map { batch ->
+                DownloadBatchRecoverySnapshot(
+                    batch = batch,
+                    members = batchDao.listMembers(batch.batchId)
+                )
+            }
+        }
+    }
+
+    suspend fun readBatchNetworkPolicy(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): DownloadBatchNetworkPolicy? {
+        return database.downloadBatchDao().findBatch(identity.batchId, identity.generation)
+            ?.let { batch ->
+                DownloadBatchNetworkPolicy(
+                    identity = identity,
+                    stateBits = batch.stateBits,
+                    networkGeneration = batch.networkGeneration
+                )
+            }
+    }
+
+    suspend fun bindBatchMemberOperation(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        stableKey: String,
+        operationId: String,
+        attemptId: Long?,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): BatchMemberMutation {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return BatchMemberMutation.STALE
+        val normalizedOperationId = normalizeDownloadOperationId(operationId)
+            ?: return BatchMemberMutation.STALE
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            if (dao.findBatch(identity.batchId, identity.generation) == null) {
+                return@withTransaction BatchMemberMutation.MISSING
+            }
+            val updated = dao.bindMemberOperationCAS(
+                batchId = identity.batchId,
+                batchGeneration = identity.generation,
+                stableKey = normalizedKey,
+                operationId = normalizedOperationId,
+                attemptId = attemptId?.takeIf { it > 0L },
+                nowMs = nowMs
+            )
+            if (updated > 0) {
+                BatchMemberMutation.APPLIED
+            } else {
+                val current = dao.findMember(identity.batchId, normalizedKey)
+                if (
+                    current?.operationId == normalizedOperationId &&
+                        current.attemptId == attemptId?.takeIf { it > 0L }
+                ) {
+                    BatchMemberMutation.IDEMPOTENT
+                } else {
+                    BatchMemberMutation.STALE
+                }
+            }
+        }
+    }
+
+    /** 按批次成员捕获网络策略作用域，避免使用 stableKey 扫描所有批次。 */
+    suspend fun findOpenBatchIdentitiesForStableKeys(
+        context: Context,
+        stableKeys: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): List<DownloadBatchIdentity> {
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).toSet()
+        if (keys.isEmpty()) return emptyList()
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            dao.findOpenBatches().mapNotNull { batch ->
+                dao.listMembers(batch.batchId)
+                    .any { member -> member.stableKey in keys }
+                    .takeIf { it }
+                    ?.let {
+                        DownloadBatchIdentity(
+                            batchId = batch.batchId,
+                            generation = batch.generation
+                        )
+                    }
+            }
+        }
+    }
+
+    /** 在一个 Room 事务内绑定一页实际 attempt，避免批量启动逐成员提交造成空窗 */
+    suspend fun bindBatchMemberOperations(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        bindings: Collection<BatchMemberBinding>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val normalizedBindings = bindings.mapNotNull { binding ->
+            val key = binding.stableKey.trim().takeIf(String::isNotBlank) ?: return@mapNotNull null
+            val operationId = normalizeDownloadOperationId(binding.operationId)
+                ?: return@mapNotNull null
+            BatchMemberBinding(key, operationId, binding.attemptId?.takeIf { it > 0L })
+        }.distinctBy { binding -> binding.stableKey }
+        if (normalizedBindings.isEmpty()) return 0
+        return database.withTransaction {
+            val operationDao = database.downloadOperationDao()
+            val batchDao = database.downloadBatchDao()
+            if (batchDao.findBatch(identity.batchId, identity.generation) == null) {
+                return@withTransaction 0
+            }
+            normalizedBindings.count { binding ->
+                val header = operationDao.findHeader(binding.operationId)
+                if (
+                    header == null ||
+                        header.stableKey != binding.stableKey ||
+                        header.batchId != identity.batchId ||
+                        header.batchGeneration != identity.generation
+                ) {
+                    false
+                } else {
+                    batchDao.bindMemberOperationCAS(
+                        batchId = identity.batchId,
+                        batchGeneration = identity.generation,
+                        stableKey = binding.stableKey,
+                        operationId = binding.operationId,
+                        attemptId = binding.attemptId,
+                        nowMs = nowMs
+                    ) > 0
+                }
+            }
+        }
+    }
+
+    /** 把一批已存在的 operation 绑定到批次，保留旧 operation 的身份并避免覆盖别的批次 */
+    suspend fun attachBatchIdentity(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        requests: Collection<DownloadExecutionRequest>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val distinctRequests = requests
+            .asSequence()
+            .filter { request -> request.song.stableKey().isNotBlank() }
+            .distinctBy(DownloadExecutionRequest::operationId)
+            .toList()
+        if (distinctRequests.isEmpty()) return 0
+        return database.withTransaction {
+            val operationDao = database.downloadOperationDao()
+            val batchDao = database.downloadBatchDao()
+            if (batchDao.findBatch(identity.batchId, identity.generation) == null) {
+                return@withTransaction 0
+            }
+            var boundMembers = 0
+            distinctRequests.forEach { request ->
+                val stableKey = request.song.stableKey()
+                val header = operationDao.findHeader(request.operationId) ?: return@forEach
+                if (header.stableKey != stableKey) return@forEach
+                val existingRequest = readSourceHintJson(operationDao, header)
+                    ?.let { sourceHintJson ->
+                        requestFromEntity(header.toEntity(sourceHintJson))
+                    }
+                val existingBatchId = existingRequest?.batchId ?: header.batchId
+                val existingBatchGeneration =
+                    existingRequest?.batchGeneration ?: header.batchGeneration
+                val operationBoundToTarget = when {
+                    existingBatchId == null && existingBatchGeneration == null -> {
+                        operationDao.bindBatchIdentityIfUnbound(
+                            operationId = request.operationId,
+                            stableKey = stableKey,
+                            batchId = identity.batchId,
+                            batchGeneration = identity.generation,
+                            sourceHintJson = requestToJson(
+                                request.copy(
+                                    batchId = identity.batchId,
+                                    batchGeneration = identity.generation
+                                )
+                            ).toString(),
+                            updatedAtMs = nowMs
+                        ) > 0
+                    }
+
+                    existingBatchId == identity.batchId &&
+                        existingBatchGeneration == identity.generation -> true
+
+                    else -> false
+                }
+                if (!operationBoundToTarget) {
+                    // 一个 operation 只能归属一个批次。不能把旧批次的 operation
+                    // 再挂到新批次，否则同一回调会同时推进两个批次
+                    return@forEach
+                }
+                val effectiveAttemptId = request.attemptId
+                    ?: existingRequest?.attemptId
+                val changed = batchDao.bindMemberOperationCAS(
+                    batchId = identity.batchId,
+                    batchGeneration = identity.generation,
+                    stableKey = stableKey,
+                    operationId = request.operationId,
+                    attemptId = effectiveAttemptId?.takeIf { it > 0L },
+                    nowMs = nowMs
+                )
+                if (changed > 0) boundMembers++
+            }
+            boundMembers
+        }
+    }
+
+    /** 已有音频被重新排入传输时，撤销创建批次时的初始完成标记 */
+    suspend fun prepareBatchMemberForTransfer(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        stableKey: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            if (dao.findBatch(identity.batchId, identity.generation) == null) {
+                return@withTransaction false
+            }
+            dao.clearInitialMemberCompletionCAS(
+                batchId = identity.batchId,
+                stableKey = normalizedKey,
+                nowMs = nowMs
+            )
+            dao.findMember(identity.batchId, normalizedKey)?.terminalBits ==
+                DownloadBatchMemberTerminal.NONE
+        }
+    }
+
+    /** 一页清除重新传输前的初始完成标记，保持批量选择的事务边界 */
+    suspend fun prepareBatchMembersForTransfer(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        stableKeys: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
+        if (keys.isEmpty()) return 0
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            if (dao.findBatch(identity.batchId, identity.generation) == null) {
+                return@withTransaction 0
+            }
+            keys.sumOf { stableKey ->
+                dao.clearInitialMemberCompletionCAS(
+                    batchId = identity.batchId,
+                    stableKey = stableKey,
+                    nowMs = nowMs
+                )
+            }
+        }
+    }
+
+    suspend fun updateBatchMemberProgress(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        stableKey: String,
+        operationId: String,
+        attemptId: Long?,
+        fractionMilli: Int,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): BatchMemberMutation {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return BatchMemberMutation.STALE
+        val normalizedOperationId = normalizeDownloadOperationId(operationId)
+            ?: return BatchMemberMutation.STALE
+        val fraction = fractionMilli.coerceIn(0, 1000)
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            if (dao.findBatch(identity.batchId, identity.generation) == null) {
+                return@withTransaction BatchMemberMutation.MISSING
+            }
+            val normalizedAttemptId = attemptId?.takeIf { it > 0L }
+            val updated = dao.updateMemberFractionMaxCAS(
+                batchId = identity.batchId,
+                stableKey = normalizedKey,
+                operationId = normalizedOperationId,
+                attemptId = normalizedAttemptId,
+                fraction = fraction,
+                nowMs = nowMs
+            )
+            if (updated > 0) {
+                BatchMemberMutation.APPLIED
+            } else {
+                val current = dao.findMember(identity.batchId, normalizedKey)
+                if (
+                    current?.operationId == normalizedOperationId &&
+                        current.attemptId == normalizedAttemptId &&
+                        current.maxFractionMilli >= fraction
+                ) {
+                    BatchMemberMutation.IDEMPOTENT
+                } else {
+                    BatchMemberMutation.STALE
+                }
+            }
+        }
+    }
+
+    suspend fun markBatchMemberTerminal(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        stableKey: String,
+        operationId: String,
+        attemptId: Long?,
+        terminalBits: Int,
+        fractionMilli: Int = 1000,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): BatchMemberMutation {
+        require(terminalBits in DownloadBatchMemberTerminal.VALID_BITS) {
+            "invalid batch member terminal bits"
+        }
+        require(terminalBits != DownloadBatchMemberTerminal.NONE) {
+            "terminal bits must not be NONE"
+        }
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return BatchMemberMutation.STALE
+        val normalizedOperationId = normalizeDownloadOperationId(operationId)
+            ?: return BatchMemberMutation.STALE
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            if (dao.findBatch(identity.batchId, identity.generation) == null) {
+                return@withTransaction BatchMemberMutation.MISSING
+            }
+            val normalizedAttemptId = attemptId?.takeIf { it > 0L }
+            val updated = dao.markMemberTerminalCAS(
+                batchId = identity.batchId,
+                stableKey = normalizedKey,
+                operationId = normalizedOperationId,
+                attemptId = normalizedAttemptId,
+                terminalBits = terminalBits,
+                fraction = fractionMilli.coerceIn(0, 1000),
+                nowMs = nowMs
+            )
+            val result = if (updated > 0) {
+                BatchMemberMutation.APPLIED
+            } else {
+                val current = dao.findMember(identity.batchId, normalizedKey)
+                if (
+                    current?.operationId == normalizedOperationId &&
+                        current.attemptId == normalizedAttemptId &&
+                        current.terminalBits == terminalBits
+                ) {
+                    BatchMemberMutation.IDEMPOTENT
+                } else {
+                    BatchMemberMutation.STALE
+                }
+            }
+            if (result == BatchMemberMutation.APPLIED || result == BatchMemberMutation.IDEMPOTENT) {
+                dao.markCompletedIfAllMembersTerminal(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    nowMs = nowMs
+                )
+            }
+            result
+        }
+    }
+
+    /** 依据 operation 身份更新所有引用该 operation 的批次成员，旧 attempt 会被 CAS 拒绝 */
+    suspend fun updateBatchMembersForOperation(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        attemptId: Long?,
+        fractionMilli: Int,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val normalizedOperationId = normalizeDownloadOperationId(operationId) ?: return 0
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return 0
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            val incomingAttemptId = attemptId?.takeIf { it > 0L }
+            dao.findMembersByOperation(normalizedOperationId)
+                .filter { member ->
+                    member.stableKey == normalizedKey && member.attemptId == incomingAttemptId
+                }
+                .sumOf { member ->
+                    dao.updateMemberFractionMaxCAS(
+                        batchId = member.batchId,
+                        stableKey = member.stableKey,
+                        operationId = normalizedOperationId,
+                        attemptId = incomingAttemptId,
+                        fraction = fractionMilli.coerceIn(0, 1000),
+                        nowMs = nowMs
+                    )
+                }
+        }
+    }
+
+    suspend fun markBatchMembersForOperation(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        attemptId: Long?,
+        terminalBits: Int,
+        fractionMilli: Int = 0,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        require(terminalBits in DownloadBatchMemberTerminal.VALID_BITS)
+        require(terminalBits != DownloadBatchMemberTerminal.NONE)
+        val normalizedOperationId = normalizeDownloadOperationId(operationId) ?: return 0
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return 0
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            val incomingAttemptId = attemptId?.takeIf { it > 0L }
+            var changed = 0
+            dao.findMembersByOperation(normalizedOperationId)
+                .filter { member ->
+                    member.stableKey == normalizedKey && member.attemptId == incomingAttemptId
+                }
+                .forEach { member ->
+                    changed += dao.markMemberTerminalCAS(
+                        batchId = member.batchId,
+                        stableKey = member.stableKey,
+                        operationId = normalizedOperationId,
+                        attemptId = incomingAttemptId,
+                        terminalBits = terminalBits,
+                        fraction = if (terminalBits == DownloadBatchMemberTerminal.COMPLETED) {
+                            1000
+                        } else {
+                            maxOf(member.maxFractionMilli, fractionMilli.coerceIn(0, 1000))
+                        },
+                        nowMs = nowMs
+                    )
+                    dao.findBatchById(member.batchId)?.let { batch ->
+                        dao.markCompletedIfAllMembersTerminal(
+                            batchId = batch.batchId,
+                            generation = batch.generation,
+                            nowMs = nowMs
+                        )
+                    }
+                }
+            changed
+        }
+    }
+
+    /** operation 身份未知时按 stableKey/attempt 查找成员，仍由 CAS 过滤迟到回调 */
+    suspend fun markBatchMembersForStableKey(
+        context: Context,
+        stableKey: String,
+        attemptId: Long?,
+        terminalBits: Int,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        require(terminalBits in DownloadBatchMemberTerminal.VALID_BITS)
+        require(terminalBits != DownloadBatchMemberTerminal.NONE)
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return 0
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            var changed = 0
+            dao.findMembersByStableKey(normalizedKey).forEach { member ->
+                val operationId = member.operationId ?: return@forEach
+                val expectedAttemptId = member.attemptId
+                val incomingAttemptId = attemptId?.takeIf { it > 0L }
+                if (
+                    expectedAttemptId != null &&
+                        expectedAttemptId != incomingAttemptId
+                ) {
+                    return@forEach
+                }
+                changed += dao.markMemberTerminalCAS(
+                    batchId = member.batchId,
+                    stableKey = normalizedKey,
+                    operationId = operationId,
+                    attemptId = expectedAttemptId,
+                    terminalBits = terminalBits,
+                    fraction = if (terminalBits == DownloadBatchMemberTerminal.COMPLETED) {
+                        1000
+                    } else {
+                        member.maxFractionMilli
+                    },
+                    nowMs = nowMs
+                )
+                dao.findBatchById(member.batchId)?.let { batch ->
+                    dao.markCompletedIfAllMembersTerminal(
+                        batchId = batch.batchId,
+                        generation = batch.generation,
+                        nowMs = nowMs
+                    )
+                }
+            }
+            changed
+        }
+    }
+
+    suspend fun markBatchesCancelled(
+        context: Context,
+        identities: Collection<DownloadBatchIdentity>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val distinctIdentities = identities.distinct()
+        if (distinctIdentities.isEmpty()) return 0
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            var changed = 0
+            distinctIdentities.forEach { identity ->
+                dao.markMembersCancelled(identity.batchId, nowMs)
+                changed += dao.markCancelled(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    nowMs = nowMs
+                )
+            }
+            changed
+        }
+    }
+
+    suspend fun markBatchMembersCancelled(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        stableKeys: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
+        if (keys.isEmpty()) return 0
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            if (dao.findBatch(identity.batchId, identity.generation) == null) {
+                return@withTransaction 0
+            }
+            keys.sumOf { stableKey ->
+                dao.markMemberCancelled(
+                    batchId = identity.batchId,
+                    stableKey = stableKey,
+                    nowMs = nowMs
+                )
+            }.also {
+                dao.markCompletedIfAllMembersTerminal(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    nowMs = nowMs
+                )
+            }
+        }
+    }
+
+    suspend fun markAllOpenBatchesCancelled(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int = database.withTransaction {
+        val dao = database.downloadBatchDao()
+        dao.markMembersCancelledForAllOpenBatches(nowMs)
+        dao.markAllOpenBatchesCancelled(nowMs)
+    }
+
+    /** 网络策略等待必须落在批次状态中，进程重启后才能继续等待或恢复。 */
+    suspend fun markBatchesNetworkWaiting(
+        context: Context,
+        stableKeys: Collection<String>,
+        networkGeneration: Long,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).toSet()
+        if (keys.isEmpty()) return 0
+        require(networkGeneration >= 0L) { "networkGeneration must not be negative" }
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            var changed = 0
+            dao.findOpenBatches().forEach { batch ->
+                if (dao.listMembers(batch.batchId).none { member -> member.stableKey in keys }) {
+                    return@forEach
+                }
+                changed += dao.markNetworkWaitingCAS(
+                    batchId = batch.batchId,
+                    generation = batch.generation,
+                    networkGeneration = networkGeneration,
+                    expectedNetworkGeneration = batch.networkGeneration,
+                    nowMs = nowMs
+                )
+            }
+            changed
+        }
+    }
+
+    /** 仅按已捕获批次身份写网络等待，避免同 stableKey 的不同批次互相污染 */
+    suspend fun markBatchesNetworkWaiting(
+        context: Context,
+        identities: Collection<DownloadBatchIdentity>,
+        networkGeneration: Long,
+        expectedNetworkGeneration: Long?,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val distinctIdentities = identities.distinct()
+        if (distinctIdentities.isEmpty()) return 0
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            distinctIdentities.sumOf { identity ->
+                val batch = dao.findBatch(identity.batchId, identity.generation)
+                    ?: return@sumOf 0
+                if (expectedNetworkGeneration != null &&
+                    batch.networkGeneration != expectedNetworkGeneration
+                ) {
+                    return@sumOf 0
+                }
+                dao.markNetworkWaitingCAS(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    networkGeneration = networkGeneration,
+                    expectedNetworkGeneration = batch.networkGeneration,
+                    nowMs = nowMs
+                )
+            }
+        }
+    }
+
+    /** 旧 stableKey 入口不再允许空集合，避免一次恢复清除所有批次。 */
+    suspend fun clearBatchesNetworkWaiting(
+        context: Context,
+        stableKeys: Collection<String> = emptySet(),
+        networkGeneration: Long,
+        expectedNetworkGeneration: Long? = null,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).toSet()
+        if (keys.isEmpty()) return 0
+        require(networkGeneration >= 0L) { "networkGeneration must not be negative" }
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            var changed = 0
+            dao.findOpenBatches().forEach { batch ->
+                if (keys.isNotEmpty() &&
+                    dao.listMembers(batch.batchId).none { member -> member.stableKey in keys }
+                ) {
+                    return@forEach
+                }
+                changed += dao.clearNetworkWaitingCAS(
+                    batchId = batch.batchId,
+                    generation = batch.generation,
+                    networkGeneration = networkGeneration,
+                    expectedNetworkGeneration = expectedNetworkGeneration,
+                    nowMs = nowMs
+                )
+            }
+            changed
+        }
+    }
+
+    /** 按已捕获身份清除网络等待，并在事务内读取每个批次的期望代次。 */
+    suspend fun clearBatchesNetworkWaitingForIdentities(
+        context: Context,
+        identities: Collection<DownloadBatchIdentity>,
+        networkGeneration: Long,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val distinctIdentities = identities.distinct()
+        if (distinctIdentities.isEmpty()) return 0
+        require(networkGeneration >= 0L) { "networkGeneration must not be negative" }
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            distinctIdentities.sumOf { identity ->
+                val batch = dao.findBatch(identity.batchId, identity.generation)
+                    ?: return@sumOf 0
+                dao.clearNetworkWaitingCAS(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    networkGeneration = networkGeneration,
+                    expectedNetworkGeneration = batch.networkGeneration,
+                    nowMs = nowMs
+                )
+            }
+        }
+    }
+
+    /** 用户确认只允许请求中捕获的批次在同一网络代际使用移动数据 */
+    suspend fun allowBatchesMobileData(
+        context: Context,
+        identities: Collection<DownloadBatchIdentity>,
+        expectedNetworkGeneration: Long,
+        networkGeneration: Long,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val distinctIdentities = identities.distinct()
+        if (distinctIdentities.isEmpty()) return 0
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            distinctIdentities.sumOf { identity ->
+                dao.allowMobileDataCAS(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    expectedNetworkGeneration = expectedNetworkGeneration,
+                    networkGeneration = networkGeneration,
+                    nowMs = nowMs
+                )
+            }
+        }
+    }
+
+    suspend fun markInitialBatchMembersCompleted(
+        context: Context,
+        identity: DownloadBatchIdentity,
+        stableKeys: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
+        if (keys.isEmpty()) return 0
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            var updated = 0
+            keys.forEach { stableKey ->
+                updated += dao.markInitialMemberTerminalCAS(
+                    batchId = identity.batchId,
+                    stableKey = stableKey,
+                    terminalBits = DownloadBatchMemberTerminal.COMPLETED,
+                    fraction = 1000,
+                    nowMs = nowMs
+                )
+            }
+            dao.markCompletedIfAllMembersTerminal(
+                batchId = identity.batchId,
+                generation = identity.generation,
+                nowMs = nowMs
+            )
+            updated
+        }
+    }
+
+    private suspend fun markMembersCompletedForOperationInTransaction(
+        database: NeriUserDataDatabase,
+        operationId: String,
+        stableKey: String,
+        attemptId: Long?
+    ) {
+        val dao = database.downloadBatchDao()
+        val incomingAttemptId = attemptId?.takeIf { it > 0L }
+        dao.findMembersByOperation(operationId)
+            .filter { member ->
+                member.stableKey == stableKey &&
+                    member.attemptId == incomingAttemptId
+            }
+            .forEach { member ->
+                dao.markMemberTerminalCAS(
+                    batchId = member.batchId,
+                    stableKey = member.stableKey,
+                    operationId = operationId,
+                    attemptId = incomingAttemptId,
+                    terminalBits = DownloadBatchMemberTerminal.COMPLETED,
+                    fraction = 1000,
+                    nowMs = System.currentTimeMillis()
+                )
+                dao.findBatchById(member.batchId)?.let { batch ->
+                    dao.markCompletedIfAllMembersTerminal(
+                        batchId = batch.batchId,
+                        generation = batch.generation,
+                        nowMs = System.currentTimeMillis()
+                    )
+                }
+            }
     }
 
     /** 失败重试时重新确认提交边界，不把取消或停止的 operation 重新变成可执行任务 */
@@ -1012,6 +2085,12 @@ internal object DownloadExecutionRoomStore {
                             updatedAtMs = System.currentTimeMillis()
                         ) > 0
                     ) {
+                        markMembersCompletedForOperationInTransaction(
+                            database = database,
+                            operationId = normalizedOperationId,
+                            stableKey = requestStableKey,
+                            attemptId = request.attemptId
+                        )
                         return@withTransaction CoreCommitJournalRecovery(
                             outcome = CoreCommitJournalRecovery.Outcome.COMMITTED,
                             state = "CORE_COMMITTED",
@@ -1042,6 +2121,12 @@ internal object DownloadExecutionRoomStore {
                                 updatedAtMs = System.currentTimeMillis()
                             ) > 0
                         ) {
+                            markMembersCompletedForOperationInTransaction(
+                                database = database,
+                                operationId = normalizedOperationId,
+                                stableKey = requestStableKey,
+                                attemptId = request.attemptId
+                            )
                             return@withTransaction CoreCommitJournalRecovery(
                                 outcome = CoreCommitJournalRecovery.Outcome.COMMITTED,
                                 state = "CORE_COMMITTED",
@@ -1260,6 +2345,8 @@ internal object DownloadExecutionRoomStore {
             put("userInitiated", request.userInitiated)
             request.attemptId?.let { attemptId -> put("attemptId", attemptId) }
             put("artifactLeaseId", request.artifactLeaseId)
+            request.batchId?.let { put("batchId", it) }
+            request.batchGeneration?.let { put("batchGeneration", it) }
             request.downloadAudioQuality?.let { quality ->
                 put(
                     "downloadAudioQuality",
@@ -1336,7 +2423,9 @@ internal object DownloadExecutionRoomStore {
                         youtubeQuality = quality.optString("youtubeQuality"),
                         biliQuality = quality.optString("biliQuality")
                     )
-                }
+                },
+                batchId = root.optString("batchId").takeIf(String::isNotBlank) ?: entity.batchId,
+                batchGeneration = root.optLong("batchGeneration", 0L).takeIf { it > 0L } ?: entity.batchGeneration
             )
         }.onFailure { error ->
             logDecodeFailure(entity, "request_decode", error)
@@ -1441,7 +2530,9 @@ internal object DownloadExecutionRoomStore {
             createdAtMs = createdAtMs,
             updatedAtMs = updatedAtMs,
             hostProcessToken = hostProcessToken,
-            hostAdmittedAtMs = hostAdmittedAtMs
+            hostAdmittedAtMs = hostAdmittedAtMs,
+            batchId = batchId,
+            batchGeneration = batchGeneration
         )
     }
 
@@ -1617,9 +2708,8 @@ internal object DownloadExecutionRoomStore {
         "QUEUED",
         "RETRYABLE"
     )
-    /** 共享泵必须覆盖核心写入后的收尾状态，避免延迟调度丢失后永久悬挂 */
-    internal val PUMP_OPERATION_STATES =
-        REUSABLE_OPERATION_STATES + DownloadOperationStateTransitions.resumableCoreWireNames.toList()
+    /** 共享泵只接管可新开始传输的 operation，core 后的收尾由独立恢复路径处理 */
+    internal val PUMP_OPERATION_STATES = REUSABLE_OPERATION_STATES
     internal val IN_FLIGHT_OPERATION_STATES = listOf(
         "RUNNING",
         "COMMITTING",
@@ -1724,6 +2814,11 @@ internal object DownloadExecutionRoomStore {
     )
 
     private val DURABLE_CORE_EXECUTION_STATES = setOf(
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
+    )
+    private val MISSING_POST_CORE_ARTIFACT_REOPEN_STATES = listOf(
         "CORE_COMMITTED",
         "ASSETS_ENRICHING",
         "DEGRADED_COMPLETE"

@@ -17,11 +17,15 @@ internal class DownloadNetworkPolicyTracker {
     private var networkGeneration = 0L
 
     @Synchronized
-    fun seed(networkKey: Any?, networkType: TrafficNetworkType?) {
+    fun seed(
+        networkKey: Any?,
+        networkType: TrafficNetworkType?,
+        initialGeneration: Long = 0L
+    ) {
         currentDefaultNetworkKey = networkKey
         currentTrafficNetworkType = networkType
         wifiLossHandled = false
-        networkGeneration = 0L
+        networkGeneration = initialGeneration.coerceAtLeast(0L)
     }
 
     @Synchronized

@@ -87,7 +87,8 @@ internal class ManagedDownloadArtifactCoordinator {
         context: Context,
         song: SongItem,
         reconcileStorage: Boolean = false,
-        leaseOwnerId: String? = null
+        leaseOwnerId: String? = null,
+        allowFreshTransferReclaim: Boolean = false
     ): ManagedDownloadArtifactClaim {
         val appContext = context.applicationContext
         val normalizedLeaseOwnerId = leaseOwnerId
@@ -127,7 +128,8 @@ internal class ManagedDownloadArtifactCoordinator {
                 nowMs = nowMs,
                 rootKey = foreign.rootKey,
                 stableKey = stableKey,
-                leaseOwnerId = normalizedLeaseOwnerId
+                leaseOwnerId = normalizedLeaseOwnerId,
+                allowFreshTransferReclaim = allowFreshTransferReclaim
             )
         }
         val discovered = if (current == null && reconcileStorage) {
@@ -153,7 +155,8 @@ internal class ManagedDownloadArtifactCoordinator {
                 nowMs = nowMs,
                 rootKey = rootKey,
                 stableKey = stableKey,
-                leaseOwnerId = normalizedLeaseOwnerId
+                leaseOwnerId = normalizedLeaseOwnerId,
+                allowFreshTransferReclaim = allowFreshTransferReclaim
             )
         }
         if (discovered != null) {
@@ -170,7 +173,8 @@ internal class ManagedDownloadArtifactCoordinator {
                         nowMs = nowMs,
                         rootKey = rootKey,
                         stableKey = stableKey,
-                        leaseOwnerId = normalizedLeaseOwnerId
+                        leaseOwnerId = normalizedLeaseOwnerId,
+                        allowFreshTransferReclaim = allowFreshTransferReclaim
                     )
                 }
                 ?: unavailableClaim(discovered)
@@ -195,9 +199,10 @@ internal class ManagedDownloadArtifactCoordinator {
                     database = database,
                     current = winner,
                     nowMs = nowMs,
-                    rootKey = rootKey,
-                    stableKey = stableKey,
-                    leaseOwnerId = normalizedLeaseOwnerId
+                        rootKey = rootKey,
+                        stableKey = stableKey,
+                        leaseOwnerId = normalizedLeaseOwnerId,
+                        allowFreshTransferReclaim = allowFreshTransferReclaim
                 )
             }
             ?: unavailableClaim(acquired)
@@ -837,6 +842,7 @@ internal class ManagedDownloadArtifactCoordinator {
         rootKey: String,
         stableKey: String,
         leaseOwnerId: String?,
+        allowFreshTransferReclaim: Boolean,
         retryCount: Int = 0
     ): ManagedDownloadArtifactClaim {
         val dao = database.managedDownloadArtifactDao()
@@ -855,6 +861,83 @@ internal class ManagedDownloadArtifactCoordinator {
                         ManagedDownloadReferenceLookup.inspect(context, reference)
                     )
                 }
+                val finalizationDisposition = if (
+                    artifactState == ManagedDownloadArtifactState.FINALIZED
+                ) {
+                    inspectFinalizedArtifactCompletion(
+                        context = context,
+                        current = current,
+                        stableKey = stableKey
+                    )
+                } else {
+                    null
+                }
+                if (
+                    shouldForceFreshTransferForUser(
+                        artifactState = artifactState,
+                        userInitiated = allowFreshTransferReclaim,
+                        currentLeaseId = current.leaseId,
+                        leaseOwnerId = leaseOwnerId
+                    )
+                ) {
+                    return acquireExistingClaim(
+                        context = context,
+                        database = database,
+                        current = current,
+                        nowMs = nowMs,
+                        rootKey = rootKey,
+                        stableKey = stableKey,
+                        leaseOwnerId = leaseOwnerId,
+                        allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        retryCount = retryCount,
+                        preservesExistingReference = !reference.isNullOrBlank()
+                    )
+                }
+                if (
+                    shouldReclaimUnavailableArtifactForFreshTransfer(
+                        artifactState = artifactState,
+                        referenceState = referenceState,
+                        userInitiated = allowFreshTransferReclaim,
+                        currentLeaseId = current.leaseId,
+                        leaseOwnerId = leaseOwnerId
+                    )
+                ) {
+                    return acquireExistingClaim(
+                        context = context,
+                        database = database,
+                        current = current,
+                        nowMs = nowMs,
+                        rootKey = rootKey,
+                        stableKey = stableKey,
+                        leaseOwnerId = leaseOwnerId,
+                        allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        retryCount = retryCount,
+                        preservesExistingReference = !reference.isNullOrBlank()
+                    )
+                }
+                if (
+                    shouldReclaimUnavailableFinalizationForFreshTransfer(
+                        artifactState = artifactState,
+                        disposition = finalizationDisposition
+                            ?: ManagedDownloadArtifactFinalizationDisposition.UNAVAILABLE,
+                        userInitiated = allowFreshTransferReclaim,
+                        currentLeaseId = current.leaseId,
+                        leaseOwnerId = leaseOwnerId
+                    )
+                ) {
+                    return acquireExistingClaim(
+                        context = context,
+                        database = database,
+                        current = current,
+                        nowMs = nowMs,
+                        rootKey = rootKey,
+                        stableKey = stableKey,
+                        leaseOwnerId = leaseOwnerId,
+                        allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        retryCount = retryCount,
+                        preservesExistingReference = !reference.isNullOrBlank()
+                    )
+                }
                 if (artifactState == ManagedDownloadArtifactState.FINALIZED) {
                     if (
                         !reference.isNullOrBlank() &&
@@ -869,11 +952,8 @@ internal class ManagedDownloadArtifactCoordinator {
                         )
                     }
                     when (
-                        inspectFinalizedArtifactCompletion(
-                            context = context,
-                            current = current,
-                            stableKey = stableKey
-                        )
+                        finalizationDisposition
+                            ?: ManagedDownloadArtifactFinalizationDisposition.UNAVAILABLE
                     ) {
                         ManagedDownloadArtifactFinalizationDisposition.SETTLED -> {
                             return ManagedDownloadArtifactClaim.AlreadyDownloaded(current)
@@ -888,6 +968,7 @@ internal class ManagedDownloadArtifactCoordinator {
                                 rootKey = rootKey,
                                 stableKey = stableKey,
                                 leaseOwnerId = leaseOwnerId,
+                                allowFreshTransferReclaim = allowFreshTransferReclaim,
                                 retryCount = retryCount
                             )
                         }
@@ -971,7 +1052,8 @@ internal class ManagedDownloadArtifactCoordinator {
                         nowMs = repairUpdatedAtMs,
                         rootKey = rootKey,
                         stableKey = stableKey,
-                        leaseOwnerId = leaseOwnerId
+                        leaseOwnerId = leaseOwnerId,
+                        allowFreshTransferReclaim = allowFreshTransferReclaim
                     )
                 } else if (retryCount < 2) {
                     dao.find(rootKey, stableKey)?.let { winner ->
@@ -983,6 +1065,7 @@ internal class ManagedDownloadArtifactCoordinator {
                             rootKey = rootKey,
                             stableKey = stableKey,
                             leaseOwnerId = leaseOwnerId,
+                            allowFreshTransferReclaim = allowFreshTransferReclaim,
                             retryCount = retryCount + 1
                         )
                     } ?: ManagedDownloadArtifactClaim.RepairRequired(current)
@@ -994,8 +1077,43 @@ internal class ManagedDownloadArtifactCoordinator {
             ManagedDownloadArtifactDecision.InFlight ->
                 ManagedDownloadArtifactClaim.InFlight(current)
 
-            ManagedDownloadArtifactDecision.RepairRequired ->
-                ManagedDownloadArtifactClaim.RepairRequired(current)
+            ManagedDownloadArtifactDecision.RepairRequired -> {
+                val artifactState = ManagedDownloadArtifactState.fromPersisted(current.state)
+                val referenceState = withContext(Dispatchers.IO) {
+                    classifyManagedDownloadArtifactReference(
+                        ManagedDownloadReferenceLookup.inspect(context, current.audioReference)
+                    )
+                }
+                if (
+                    shouldForceFreshTransferForUser(
+                        artifactState = artifactState,
+                        userInitiated = allowFreshTransferReclaim,
+                        currentLeaseId = current.leaseId,
+                        leaseOwnerId = leaseOwnerId
+                    ) || shouldReclaimUnavailableArtifactForFreshTransfer(
+                        artifactState = artifactState,
+                        referenceState = referenceState,
+                        userInitiated = allowFreshTransferReclaim,
+                        currentLeaseId = current.leaseId,
+                        leaseOwnerId = leaseOwnerId
+                    )
+                ) {
+                    acquireExistingClaim(
+                        context = context,
+                        database = database,
+                        current = current,
+                        nowMs = nowMs,
+                        rootKey = rootKey,
+                        stableKey = stableKey,
+                        leaseOwnerId = leaseOwnerId,
+                        allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        retryCount = retryCount,
+                        preservesExistingReference = !current.audioReference.isNullOrBlank()
+                    )
+                } else {
+                    ManagedDownloadArtifactClaim.RepairRequired(current)
+                }
+            }
 
             ManagedDownloadArtifactDecision.Acquire -> acquireExistingClaim(
                 context = context,
@@ -1005,6 +1123,7 @@ internal class ManagedDownloadArtifactCoordinator {
                 rootKey = rootKey,
                 stableKey = stableKey,
                 leaseOwnerId = leaseOwnerId,
+                allowFreshTransferReclaim = allowFreshTransferReclaim,
                 retryCount = retryCount
             )
         }
@@ -1018,7 +1137,9 @@ internal class ManagedDownloadArtifactCoordinator {
         rootKey: String,
         stableKey: String,
         leaseOwnerId: String?,
-        retryCount: Int
+        allowFreshTransferReclaim: Boolean,
+        retryCount: Int,
+        preservesExistingReference: Boolean = false
     ): ManagedDownloadArtifactClaim {
         val dao = database.managedDownloadArtifactDao()
         val acquired = newLeaseArtifact(
@@ -1039,7 +1160,10 @@ internal class ManagedDownloadArtifactCoordinator {
             updatedAtMs = nowMs
         )
         if (updated == 1) {
-            return ManagedDownloadArtifactClaim.Acquired(acquired)
+            return ManagedDownloadArtifactClaim.Acquired(
+                artifact = acquired,
+                preservesExistingReference = preservesExistingReference
+            )
         }
         if (retryCount >= 2) {
             return dao.find(rootKey, stableKey)
@@ -1056,6 +1180,7 @@ internal class ManagedDownloadArtifactCoordinator {
                     rootKey = rootKey,
                     stableKey = stableKey,
                     leaseOwnerId = leaseOwnerId,
+                    allowFreshTransferReclaim = allowFreshTransferReclaim,
                     retryCount = retryCount + 1
                 )
             }

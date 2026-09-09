@@ -262,6 +262,156 @@ class ManagedDownloadArtifactPolicyTest {
     }
 
     @Test
+    fun `post core state without an audio reference can acquire a fresh file`() {
+        listOf(
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE
+        ).forEach { state ->
+            assertEquals(
+                state.name,
+                ManagedDownloadArtifactDecision.Acquire,
+                ManagedDownloadArtifactPolicy.decide(
+                    existing = artifact(state, updatedAtMs = 100L),
+                    nowMs = 1_000L
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `explicit retry can reclaim an unavailable post core reference without stealing another lease`() {
+        assertTrue(
+            shouldReclaimUnavailableArtifactForFreshTransfer(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                referenceState = ManagedDownloadArtifactReferenceState.REPAIR_REQUIRED,
+                userInitiated = true,
+                currentLeaseId = "operation-42",
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertTrue(
+            shouldReclaimUnavailableArtifactForFreshTransfer(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                referenceState = ManagedDownloadArtifactReferenceState.MISSING,
+                userInitiated = true,
+                currentLeaseId = null,
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertFalse(
+            shouldReclaimUnavailableArtifactForFreshTransfer(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                referenceState = ManagedDownloadArtifactReferenceState.PRESENT,
+                userInitiated = true,
+                currentLeaseId = "operation-42",
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertFalse(
+            shouldReclaimUnavailableArtifactForFreshTransfer(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                referenceState = ManagedDownloadArtifactReferenceState.REPAIR_REQUIRED,
+                userInitiated = false,
+                currentLeaseId = "operation-42",
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertFalse(
+            shouldReclaimUnavailableArtifactForFreshTransfer(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                referenceState = ManagedDownloadArtifactReferenceState.REPAIR_REQUIRED,
+                userInitiated = true,
+                currentLeaseId = "operation-42",
+                leaseOwnerId = "operation-43"
+            )
+        )
+    }
+
+    @Test
+    fun `explicit retry forces fresh transfer for a post core row with a present reference`() {
+        assertTrue(
+            shouldForceFreshTransferForUser(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                userInitiated = true,
+                currentLeaseId = "operation-42",
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertTrue(
+            shouldForceFreshTransferForUser(
+                artifactState = ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+                userInitiated = true,
+                currentLeaseId = null,
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertFalse(
+            shouldForceFreshTransferForUser(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                userInitiated = true,
+                currentLeaseId = "operation-42",
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertFalse(
+            shouldForceFreshTransferForUser(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                userInitiated = false,
+                currentLeaseId = "operation-42",
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertTrue(
+            shouldForceFreshTransferForUser(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                userInitiated = true,
+                currentLeaseId = "operation-42",
+                leaseOwnerId = "operation-43"
+            )
+        )
+        assertFalse(
+            shouldForceFreshTransferForUser(
+                artifactState = ManagedDownloadArtifactState.REPAIR_REQUIRED,
+                userInitiated = true,
+                currentLeaseId = "operation-42",
+                leaseOwnerId = "operation-43"
+            )
+        )
+    }
+
+    @Test
+    fun `explicit retry can reclaim finalized rows when completion evidence is unavailable`() {
+        assertTrue(
+            shouldReclaimUnavailableFinalizationForFreshTransfer(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                disposition = ManagedDownloadArtifactFinalizationDisposition.UNAVAILABLE,
+                userInitiated = true,
+                currentLeaseId = null,
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertFalse(
+            shouldReclaimUnavailableFinalizationForFreshTransfer(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                disposition = ManagedDownloadArtifactFinalizationDisposition.FINALIZATION_REQUIRED,
+                userInitiated = true,
+                currentLeaseId = null,
+                leaseOwnerId = "operation-42"
+            )
+        )
+        assertFalse(
+            shouldReclaimUnavailableFinalizationForFreshTransfer(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                disposition = ManagedDownloadArtifactFinalizationDisposition.UNAVAILABLE,
+                userInitiated = true,
+                currentLeaseId = "operation-41",
+                leaseOwnerId = "operation-42"
+            )
+        )
+    }
+
+    @Test
     fun `confirmed missing artifact can be acquired again`() {
         assertEquals(
             ManagedDownloadArtifactDecision.Acquire,
