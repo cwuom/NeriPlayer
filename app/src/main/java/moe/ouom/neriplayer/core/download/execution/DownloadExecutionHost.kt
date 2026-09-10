@@ -1161,11 +1161,8 @@ class DefaultDownloadExecutionHost(
             if (reservation != null && reservation.attemptId != normalizedAttemptId) {
                 return@synchronized null
             }
-            if (
-                reservation == null &&
-                    activeTransferOwners.size + transferReservationOwners.size >=
-                        configuredCapacity
-            ) {
+            // 网络 permit 已在调用方取得，泵的预留位不是正在传输的第二份占用
+            if (activeTransferOwners.size >= configuredCapacity) {
                 return@synchronized null
             }
             val owner = reservation ?: TransferSlotOwner(
@@ -1269,7 +1266,8 @@ class DefaultDownloadExecutionHost(
         if (attemptId != null && attemptId <= 0L) return null
         synchronized(executionAdmissionLock) {
             if (
-                activeTransferOwners.containsKey(normalizedId) ||
+                executingOperationIds.contains(normalizedId) ||
+                    activeTransferOwners.containsKey(normalizedId) ||
                     transferReservationOwners.containsKey(normalizedId)
             ) {
                 return null
@@ -1316,6 +1314,32 @@ class DefaultDownloadExecutionHost(
         val released = synchronized(executionAdmissionLock) {
             val reservation = transferReservationOwners[normalizedId]
             if (reservation?.token != reservationToken) {
+                false
+            } else if (
+                executingOperationIds.contains(normalizedId) &&
+                    !activeTransferOwners.containsKey(normalizedId)
+            ) {
+                // 另一个宿主可能已经赢得 execute claim，保留泵预留位，
+                // 让它在真正开始网络传输时完成交接
+                false
+            } else {
+                transferReservationOwners.remove(normalizedId, reservation)
+                true
+            }
+        }
+        if (released) transferReleaseSignals.trySend(normalizedId)
+    }
+
+    /** execute 结束时回收仍未提升为 active owner 的泵预留位 */
+    private fun releaseUnclaimedTransferReservation(
+        operationId: String,
+        reservationToken: Long?
+    ) {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+        val token = reservationToken ?: return
+        val released = synchronized(executionAdmissionLock) {
+            val reservation = transferReservationOwners[normalizedId]
+            if (reservation?.token != token) {
                 false
             } else {
                 transferReservationOwners.remove(normalizedId, reservation)
@@ -1534,6 +1558,7 @@ class DefaultDownloadExecutionHost(
         }
         val stateBeforeClaim = operationStore.currentStateSuspending(appContext, normalizedId)
         var executionClaimed = false
+        var executionReservationToken: Long? = null
         val claimResult = synchronized(executionAdmissionLock) {
             when {
                 !hostAdmissionAcquired -> resolvePreExecutionResult(stateBeforeClaim)
@@ -1542,14 +1567,21 @@ class DefaultDownloadExecutionHost(
                     systemRetryStopPending = systemRetryStopOperationIds.contains(normalizedId)
                 )
                 else -> {
-                    executionClaimed = true
                     val existingOwner = hostAdmissionOwners[normalizedId]
                     when {
                         existingOwner == null -> {
                             hostAdmissionOwners[normalizedId] = executionTicket
+                            executionReservationToken =
+                                transferReservationOwners[normalizedId]?.token
+                            executionClaimed = true
                             null
                         }
-                        existingOwner == executionTicket -> null
+                        existingOwner == executionTicket -> {
+                            executionReservationToken =
+                                transferReservationOwners[normalizedId]?.token
+                            executionClaimed = true
+                            null
+                        }
                         else -> {
                             executingOperationIds.remove(normalizedId)
                             DownloadExecutionResult.Cancelled
@@ -1856,23 +1888,31 @@ class DefaultDownloadExecutionHost(
                 DownloadOperationTracePhase.TERMINAL
             )
             val finishedTicket = executionTicket
-            scheduleOwners.remove(normalizedId, finishedTicket)
-            removeBackendOwnerIfMatches(normalizedId, finishedTicket)
-            synchronized(executionAdmissionLock) {
-                executingOperationIds.remove(normalizedId)
-                systemRetryStopOperationIds.remove(normalizedId)
-                explicitSchedulerStopOperationIds.remove(normalizedId)
+            releaseUnclaimedTransferReservation(
+                operationId = normalizedId,
+                reservationToken = executionReservationToken
+            )
+            if (executionClaimed) {
+                // 先释放传输 owner，再撤销 execution 标记，避免新代次在
+                // 两步之间抢到同一 operation 后被旧 owner 拒绝
+                releaseTransferSlot(
+                    operationId = normalizedId,
+                    attemptId = finishedTicket.attemptId,
+                    ticket = finishedTicket
+                )
+                scheduleOwners.remove(normalizedId, finishedTicket)
+                removeBackendOwnerIfMatches(normalizedId, finishedTicket)
+                synchronized(executionAdmissionLock) {
+                    executingOperationIds.remove(normalizedId)
+                    systemRetryStopOperationIds.remove(normalizedId)
+                    explicitSchedulerStopOperationIds.remove(normalizedId)
+                }
+                releaseHostAdmissionIfIdleSuspending(
+                    context = appContext,
+                    operationId = normalizedId,
+                    ticket = executionTicket
+                )
             }
-            releaseHostAdmissionIfIdleSuspending(
-                context = appContext,
-                operationId = normalizedId,
-                ticket = executionTicket
-            )
-            releaseTransferSlot(
-                operationId = normalizedId,
-                attemptId = finishedTicket.attemptId,
-                ticket = finishedTicket
-            )
         }
     }
 

@@ -1864,6 +1864,243 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `duplicate execution does not clear the active transfer owner`() = runTest {
+        val context = mockContext()
+        val store = DownloadExecutionOperationStore { testJournal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-duplicate-owner",
+            song = sampleSong(),
+            attemptId = 11L
+        )
+        store.save(context, request)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                started.complete(Unit)
+                release.await()
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28
+        )
+
+        val activeExecution = async { host.execute(context, request.operationId) }
+        started.await()
+
+        assertEquals(
+            DownloadExecutionResult.AlreadyHandled,
+            host.execute(context, request.operationId)
+        )
+        assertTrue(host.isExecuting(request.operationId))
+        assertNotNull(
+            host.onTransferStarted(
+                context = context,
+                operationId = request.operationId,
+                attemptId = request.attemptId
+            )
+        )
+
+        release.complete(Unit)
+        assertEquals(DownloadExecutionResult.Accepted, activeExecution.await())
+    }
+
+    @Test
+    fun `uidt winner keeps the pump reservation until transfer starts`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-uidt-reservation-handoff",
+            song = sampleSong(),
+            attemptId = 17L
+        )
+        store.save(context, request)
+        val reserve = DefaultDownloadExecutionHost::class.java
+            .getDeclaredMethod(
+                "reserveTransferSlot",
+                String::class.java,
+                Long::class.javaObjectType,
+                Int::class.javaPrimitiveType
+            )
+            .apply { isAccessible = true }
+        val release = DefaultDownloadExecutionHost::class.java
+            .getDeclaredMethod(
+                "releaseTransferReservation",
+                String::class.java,
+                Long::class.javaPrimitiveType
+            )
+            .apply { isAccessible = true }
+        val started = CompletableDeferred<Unit>()
+        val allowTransfer = CompletableDeferred<Unit>()
+        var targetToken = 0L
+        lateinit var host: DefaultDownloadExecutionHost
+        host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { entryContext, entryRequest ->
+                started.complete(Unit)
+                allowTransfer.await()
+                assertEquals(
+                    targetToken,
+                    host.onTransferStarted(
+                        context = entryContext,
+                        operationId = entryRequest.operationId,
+                        attemptId = entryRequest.attemptId
+                    )
+                )
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 3 }
+        )
+
+        targetToken = reserve.invoke(
+            host,
+            request.operationId,
+            request.attemptId,
+            4
+        ) as Long
+        reserve.invoke(host, "operation-reservation-peer-1", 21L, 4)
+        reserve.invoke(host, "operation-reservation-peer-2", 22L, 4)
+        reserve.invoke(host, "operation-reservation-peer-3", 23L, 4)
+
+        val execution = async { host.execute(context, request.operationId) }
+        started.await()
+        release.invoke(host, request.operationId, targetToken)
+        allowTransfer.complete(Unit)
+
+        assertEquals(DownloadExecutionResult.Accepted, execution.await())
+    }
+
+    @Test
+    fun `pump does not reserve a slot for an already executing operation`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-pump-after-uidt-claim",
+            song = sampleSong(),
+            attemptId = 19L
+        )
+        store.save(context, request)
+        val reserve = DefaultDownloadExecutionHost::class.java
+            .getDeclaredMethod(
+                "reserveTransferSlot",
+                String::class.java,
+                Long::class.javaObjectType,
+                Int::class.javaPrimitiveType
+            )
+            .apply { isAccessible = true }
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                started.complete(Unit)
+                finish.await()
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 3 }
+        )
+
+        val execution = async { host.execute(context, request.operationId) }
+        started.await()
+
+        assertNull(
+            reserve.invoke(
+                host,
+                request.operationId,
+                request.attemptId,
+                3
+            )
+        )
+        assertNotNull(
+            host.onTransferStarted(
+                context = context,
+                operationId = request.operationId,
+                attemptId = request.attemptId
+            )
+        )
+
+        finish.complete(Unit)
+        assertEquals(DownloadExecutionResult.Accepted, execution.await())
+    }
+
+    @Test
+    fun `uidt transfer is not blocked by pump reservations`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-uidt-behind-pump-reservations",
+            song = sampleSong(),
+            attemptId = 23L
+        )
+        store.save(context, request)
+        val reserve = DefaultDownloadExecutionHost::class.java
+            .getDeclaredMethod(
+                "reserveTransferSlot",
+                String::class.java,
+                Long::class.javaObjectType,
+                Int::class.javaPrimitiveType
+            )
+            .apply { isAccessible = true }
+        val release = DefaultDownloadExecutionHost::class.java
+            .getDeclaredMethod(
+                "releaseTransferReservation",
+                String::class.java,
+                Long::class.javaPrimitiveType
+            )
+            .apply { isAccessible = true }
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                started.complete(Unit)
+                finish.await()
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 3 }
+        )
+        val peerTokens = (1..3).map { index ->
+            checkNotNull(
+                reserve.invoke(
+                    host,
+                    "operation-pump-reservation-peer-$index",
+                    index.toLong(),
+                    3
+                ) as? Long
+            )
+        }
+
+        val execution = async { host.execute(context, request.operationId) }
+        started.await()
+        try {
+            assertNotNull(
+                host.onTransferStarted(
+                    context = context,
+                    operationId = request.operationId,
+                    attemptId = request.attemptId
+                )
+            )
+        } finally {
+            finish.complete(Unit)
+            peerTokens.forEach { token ->
+                release.invoke(
+                    host,
+                    "operation-pump-reservation-peer-${peerTokens.indexOf(token) + 1}",
+                    token
+                )
+            }
+        }
+
+        assertEquals(DownloadExecutionResult.Accepted, execution.await())
+    }
+
+    @Test
     fun `fresh host resumes interrupted commit and enrichment operations`() = runTest {
         val context = mockContext()
         val store = DownloadExecutionOperationStore { testJournal }
