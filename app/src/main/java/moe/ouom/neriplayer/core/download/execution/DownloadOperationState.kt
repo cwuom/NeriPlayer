@@ -250,7 +250,10 @@ internal object DownloadOperationStateTransitions {
         if (requested == DownloadOperationState.COMPLETED) {
             return requestedState.takeIf {
                 current in setOf(
+                    DownloadOperationState.PENDING_QUEUE,
+                    DownloadOperationState.QUEUED,
                     DownloadOperationState.RUNNING,
+                    DownloadOperationState.RETRYABLE,
                     DownloadOperationState.COMMITTING,
                     DownloadOperationState.CORE_COMMITTED,
                     DownloadOperationState.ASSETS_ENRICHING,

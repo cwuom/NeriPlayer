@@ -77,4 +77,14 @@ class DownloadOperationStateTest {
             resolveDownloadOperationState("WAITING_STORAGE_MUTATION", "COMPLETED")
         )
     }
+
+    @Test
+    fun `verified cached audio can close every pre-core transfer state`() {
+        listOf("PENDING_QUEUE", "QUEUED", "RUNNING", "RETRYABLE").forEach { state ->
+            assertEquals(
+                "COMPLETED",
+                resolveDownloadOperationState(state, "COMPLETED")
+            )
+        }
+    }
 }

@@ -22,10 +22,24 @@ internal interface DownloadBatchDao {
     suspend fun findBatchById(batchId: String): DownloadBatchEntity?
     @Query(
         "SELECT * FROM download_batch " +
-            "WHERE state_bits & 1 != 0 AND state_bits & 24 = 0 " +
+            "WHERE state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
             "ORDER BY updated_at_ms ASC, generation ASC"
     )
     suspend fun findOpenBatches(): List<DownloadBatchEntity>
+
+    /** 清空只捕获当前 fence 之前的批次，已进入 CLEARING 的行可幂等重试 */
+    @Query(
+        "SELECT * FROM download_batch " +
+            "WHERE state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND ((state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND clear_epoch < :clearEpoch) " +
+            "OR (state_bits & ${DownloadBatchState.CLEARING} != 0 " +
+            "AND clear_epoch <= :clearEpoch)) " +
+            "ORDER BY updated_at_ms ASC, generation ASC"
+    )
+    suspend fun findBatchesForClear(clearEpoch: Long): List<DownloadBatchEntity>
 
     @Query(
         "SELECT * FROM download_batch_member WHERE batch_id = :batchId " +
@@ -44,7 +58,9 @@ internal interface DownloadBatchDao {
             "WHERE batch_id = :batchId AND stable_key = :stableKey " +
             "AND EXISTS (SELECT 1 FROM download_batch " +
             "WHERE batch_id = :batchId AND generation = :batchGeneration " +
-            "AND state_bits & 1 != 0 AND state_bits & 24 = 0) " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0) " +
             "AND EXISTS (SELECT 1 FROM download_operation " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +
             "AND batch_id = :batchId AND batch_generation = :batchGeneration) " +
@@ -67,9 +83,14 @@ internal interface DownloadBatchDao {
             "updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND stable_key = :stableKey " +
             "AND EXISTS (SELECT 1 FROM download_batch " +
-            "WHERE batch_id = :batchId AND state_bits & 1 != 0 AND state_bits & 24 = 0) " +
+            "WHERE batch_id = :batchId " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0) " +
             "AND terminal_bits = 0 AND operation_id = :operationId " +
-            "AND ((attempt_id IS NULL AND :attemptId IS NULL) OR attempt_id = :attemptId)"
+            // legacy 成员可能尚未写入 attempt；operation identity 仍提供边界，
+            // 已有 attempt 时继续精确匹配
+            "AND (attempt_id IS NULL OR attempt_id = :attemptId)"
     )
     suspend fun updateMemberFractionMaxCAS(
         batchId: String,
@@ -87,9 +108,12 @@ internal interface DownloadBatchDao {
             "updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND stable_key = :stableKey " +
             "AND EXISTS (SELECT 1 FROM download_batch " +
-            "WHERE batch_id = :batchId AND state_bits & 1 != 0 AND state_bits & 24 = 0) " +
+            "WHERE batch_id = :batchId " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0) " +
             "AND terminal_bits = 0 AND operation_id = :operationId " +
-            "AND ((attempt_id IS NULL AND :attemptId IS NULL) OR attempt_id = :attemptId)"
+            "AND (attempt_id IS NULL OR attempt_id = :attemptId)"
     )
     suspend fun markMemberTerminalCAS(
         batchId: String,
@@ -107,7 +131,10 @@ internal interface DownloadBatchDao {
             "max_fraction_milli = 1000, updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND stable_key = :stableKey " +
             "AND EXISTS (SELECT 1 FROM download_batch " +
-            "WHERE batch_id = :batchId AND state_bits & 1 != 0 AND state_bits & 24 = 0) " +
+            "WHERE batch_id = :batchId " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0) " +
             "AND terminal_bits = 0 AND operation_id = :operationId " +
             "AND ((attempt_id IS NULL AND :attemptId IS NULL) OR attempt_id = :attemptId)"
     )
@@ -127,7 +154,10 @@ internal interface DownloadBatchDao {
             "updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND stable_key = :stableKey " +
             "AND EXISTS (SELECT 1 FROM download_batch " +
-            "WHERE batch_id = :batchId AND state_bits & 1 != 0 AND state_bits & 24 = 0) " +
+            "WHERE batch_id = :batchId " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0) " +
             "AND terminal_bits = 0 AND operation_id IS NULL"
     )
     suspend fun markInitialMemberTerminalCAS(
@@ -174,7 +204,10 @@ internal interface DownloadBatchDao {
             "updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND stable_key = :stableKey " +
             "AND EXISTS (SELECT 1 FROM download_batch " +
-            "WHERE batch_id = :batchId AND state_bits & 1 != 0 AND state_bits & 24 = 0) " +
+            "WHERE batch_id = :batchId " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0) " +
             "AND terminal_bits = 1 AND initially_completed = 1"
     )
     suspend fun clearInitialMemberCompletionCAS(
@@ -186,7 +219,9 @@ internal interface DownloadBatchDao {
     @Query(
         "UPDATE download_batch SET state_bits = :stateBits, updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND generation = :generation " +
-            "AND state_bits & 1 != 0 AND state_bits & 24 = 0"
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0"
     )
     suspend fun updateStateBitsCAS(
         batchId: String,
@@ -200,7 +235,9 @@ internal interface DownloadBatchDao {
             "(state_bits | ${DownloadBatchState.NETWORK_WAIT}) & ~${DownloadBatchState.USER_MOBILE_ALLOWED}, " +
             "network_generation = :networkGeneration, updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND generation = :generation " +
-            "AND state_bits & 1 != 0 AND state_bits & 24 = 0 " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
             "AND ((:expectedNetworkGeneration IS NULL AND network_generation IS NULL) " +
             "OR network_generation = :expectedNetworkGeneration) " +
             "AND (network_generation IS NULL OR network_generation <= :networkGeneration)"
@@ -231,7 +268,10 @@ internal interface DownloadBatchDao {
         "UPDATE download_batch_member SET terminal_bits = ${moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal.CANCELLED}, " +
             "updated_at_ms = :nowMs " +
             "WHERE batch_id IN (SELECT batch_id FROM download_batch " +
-            "WHERE state_bits & 1 != 0 AND state_bits & 24 = 0) AND terminal_bits = 0"
+            "WHERE state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0) " +
+            "AND terminal_bits = 0"
     )
     suspend fun markMembersCancelledForAllOpenBatches(nowMs: Long): Int
 
@@ -239,8 +279,10 @@ internal interface DownloadBatchDao {
         "UPDATE download_batch SET state_bits = state_bits & ~${DownloadBatchState.NETWORK_WAIT}, " +
             "network_generation = :networkGeneration, updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND generation = :generation " +
-            "AND state_bits & 1 != 0 AND state_bits & ${DownloadBatchState.NETWORK_WAIT} != 0 " +
-            "AND state_bits & 24 = 0 " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.NETWORK_WAIT} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
             "AND ((:expectedNetworkGeneration IS NULL AND network_generation IS NULL) " +
             "OR network_generation = :expectedNetworkGeneration) " +
             "AND (network_generation IS NULL OR network_generation <= :networkGeneration)"
@@ -258,8 +300,11 @@ internal interface DownloadBatchDao {
             "(state_bits & ~${DownloadBatchState.NETWORK_WAIT}) | ${DownloadBatchState.USER_MOBILE_ALLOWED}, " +
             "network_generation = :networkGeneration, updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND generation = :generation " +
-            "AND state_bits & 1 != 0 AND state_bits & ${DownloadBatchState.NETWORK_WAIT} != 0 " +
-            "AND state_bits & 24 = 0 AND network_generation = :expectedNetworkGeneration " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.NETWORK_WAIT} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
+            "AND network_generation = :expectedNetworkGeneration " +
             "AND :networkGeneration = :expectedNetworkGeneration"
     )
     suspend fun allowMobileDataCAS(
@@ -274,7 +319,9 @@ internal interface DownloadBatchDao {
         "UPDATE download_batch SET state_bits = " +
             "(state_bits & ~1) | 8, updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND generation = :generation " +
-            "AND state_bits & 1 != 0 AND state_bits & 24 = 0 " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
             "AND (SELECT COUNT(*) FROM download_batch_member " +
             "WHERE batch_id = :batchId) = total_count " +
             "AND NOT EXISTS (SELECT 1 FROM download_batch_member " +
@@ -289,7 +336,10 @@ internal interface DownloadBatchDao {
     @Query(
         "UPDATE download_batch SET state_bits = (state_bits & ~1) | 16, " +
             "updated_at_ms = :nowMs WHERE batch_id = :batchId " +
-            "AND generation = :generation AND state_bits & 1 != 0 AND state_bits & 24 = 0"
+            "AND generation = :generation " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0"
     )
     suspend fun markCancelled(
         batchId: String,
@@ -299,7 +349,42 @@ internal interface DownloadBatchDao {
 
     @Query(
         "UPDATE download_batch SET state_bits = (state_bits & ~1) | 16, " +
-            "updated_at_ms = :nowMs WHERE state_bits & 1 != 0 AND state_bits & 24 = 0"
+            "updated_at_ms = :nowMs WHERE state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0"
     )
     suspend fun markAllOpenBatchesCancelled(nowMs: Long): Int
+
+    @Query(
+        "UPDATE download_batch SET state_bits = state_bits | ${DownloadBatchState.CLEARING}, " +
+            "clear_epoch = MAX(clear_epoch, :clearEpoch), updated_at_ms = :nowMs " +
+            "WHERE batch_id = :batchId AND generation = :generation " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND ((state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND clear_epoch < :clearEpoch) " +
+            "OR (state_bits & ${DownloadBatchState.CLEARING} != 0 " +
+            "AND clear_epoch <= :clearEpoch))"
+    )
+    suspend fun markBatchClearingCAS(
+        batchId: String,
+        generation: Long,
+        clearEpoch: Long,
+        nowMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_batch SET state_bits = " +
+            "(state_bits & ~(${DownloadBatchState.OPEN} | " +
+            "${DownloadBatchState.CLEARING} | ${DownloadBatchState.NETWORK_WAIT} | " +
+            "${DownloadBatchState.USER_MOBILE_ALLOWED})) | ${DownloadBatchState.CANCELLED}, " +
+            "updated_at_ms = :nowMs " +
+            "WHERE batch_id = :batchId AND generation = :generation " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0"
+    )
+    suspend fun finalizeBatchClearingCAS(
+        batchId: String,
+        generation: Long,
+        nowMs: Long
+    ): Int
 }

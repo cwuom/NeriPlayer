@@ -102,6 +102,12 @@ internal object DownloadExecutionRoomStore {
         val generation: Long
     )
 
+    internal data class DownloadBatchClearCapture(
+        val identities: List<DownloadBatchIdentity>,
+        val operationIdentities: List<OperationIdentity>,
+        val stableKeys: Set<String>
+    )
+
     internal data class DownloadBatchRecoverySnapshot(
         val batch: DownloadBatchEntity,
         val members: List<DownloadBatchMemberEntity>,
@@ -130,6 +136,7 @@ internal object DownloadExecutionRoomStore {
         batch: DownloadBatchEntity,
         currentNetworkGeneration: Long?
     ): Boolean {
+        if (batch.stateBits and DownloadBatchState.CLEARING != 0) return false
         val hasMobileDataAllowance =
             batch.stateBits and DownloadBatchState.USER_MOBILE_ALLOWED != 0
         if (hasMobileDataAllowance) {
@@ -371,6 +378,113 @@ internal object DownloadExecutionRoomStore {
                 updatedAtMs = nowMs,
                 errorCode = errorCode
             ) > 0
+        }
+    }
+
+    /**
+     * 已有可播放音频时，把仍处于传输前/传输中的 operation 原子收口
+     *
+     * 直接命中缓存不能只删除 transient task，否则执行宿主会把 RUNNING 行再次
+     * 解释为 Retry。这里同时校验 operation、stableKey、payload attempt 和版本，
+     * 并在同一事务内推进批次成员；等待目录变更或已跨过 Core Commit 的状态不走此捷径
+     */
+    suspend fun markAlreadyDownloadedCompleted(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        expectedAttemptId: Long? = null,
+        errorCode: String = "DOWNLOAD_ALREADY_PRESENT",
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        val normalizedOperationId = normalizeDownloadOperationId(operationId) ?: return false
+        val normalizedStableKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        val normalizedExpectedAttemptId = expectedAttemptId?.takeIf { it > 0L }
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val header = dao.findHeader(normalizedOperationId)
+                ?: return@withTransaction false
+            if (
+                header.stableKey != normalizedStableKey ||
+                    header.stopRequestedByUser
+            ) {
+                return@withTransaction false
+            }
+            if (
+                header.state == DownloadOperationState.COMPLETED.wireName ||
+                    header.state == DownloadOperationState.FINALIZED.wireName
+            ) {
+                val request = readRequestFromHeader(dao, header).request
+                if (
+                    request?.song?.stableKey() == normalizedStableKey &&
+                        (normalizedExpectedAttemptId == null ||
+                            request.attemptId == null ||
+                            request.attemptId == normalizedExpectedAttemptId)
+                ) {
+                    markMembersCompletedForOperationInTransaction(
+                        database = database,
+                        operationId = normalizedOperationId,
+                        stableKey = normalizedStableKey,
+                        attemptId = request.attemptId ?: normalizedExpectedAttemptId
+                    )
+                    // 终态 operation 不再需要占用宿主准入；即使是旧进程留下的
+                    // handoff 记录也要在本事务内释放，避免新任务等待租约过期
+                    dao.deleteHostAdmission(normalizedOperationId)
+                    return@withTransaction true
+                }
+                return@withTransaction false
+            }
+            if (header.state !in DIRECT_CACHED_COMPLETION_SOURCE_STATES) {
+                return@withTransaction false
+            }
+            val decoded = readRequestFromHeader(dao, header)
+            val request = decoded.request ?: run {
+                if (decoded.payloadWasRead) {
+                    invalidateMalformedPayloadInTransaction(database, header)
+                }
+                return@withTransaction false
+            }
+            if (
+                request.song.stableKey() != normalizedStableKey ||
+                    normalizedExpectedAttemptId != null &&
+                        request.attemptId != null &&
+                        request.attemptId != normalizedExpectedAttemptId
+            ) {
+                return@withTransaction false
+            }
+            val nextState = resolveDownloadOperationState(
+                currentState = header.state,
+                requestedState = DownloadOperationState.COMPLETED.wireName
+            ) ?: return@withTransaction false
+            val changed = dao.transitionDirectCachedStateAtVersion(
+                operationId = normalizedOperationId,
+                stableKey = normalizedStableKey,
+                expectedStates = listOf(header.state),
+                expectedUpdatedAtMs = header.updatedAtMs,
+                state = nextState,
+                updatedAtMs = nowMs,
+                errorCode = errorCode
+            ) > 0
+            if (!changed) {
+                val settledState = dao.findState(normalizedOperationId)
+                if (settledState in setOf(
+                    DownloadOperationState.COMPLETED.wireName,
+                    DownloadOperationState.FINALIZED.wireName
+                )) {
+                    dao.deleteHostAdmission(normalizedOperationId)
+                    return@withTransaction true
+                }
+                return@withTransaction false
+            }
+            markMembersCompletedForOperationInTransaction(
+                database = database,
+                operationId = normalizedOperationId,
+                stableKey = normalizedStableKey,
+                attemptId = request.attemptId ?: normalizedExpectedAttemptId
+            )
+            // 收口成功后立即释放旧宿主准入，下一首可以马上补位
+            dao.deleteHostAdmission(normalizedOperationId)
+            true
         }
     }
 
@@ -1439,7 +1553,13 @@ internal object DownloadExecutionRoomStore {
         val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
         return database.withTransaction {
             val dao = database.downloadBatchDao()
-            if (dao.findBatch(identity.batchId, identity.generation) == null) {
+            val batch = dao.findBatch(identity.batchId, identity.generation)
+            if (
+                batch == null ||
+                    batch.stateBits and DownloadBatchState.OPEN == 0 ||
+                    batch.stateBits and DownloadBatchState.CLEARING != 0 ||
+                    batch.stateBits and DownloadBatchState.TERMINAL_MASK != 0
+            ) {
                 return@withTransaction false
             }
             dao.clearInitialMemberCompletionCAS(
@@ -1464,7 +1584,13 @@ internal object DownloadExecutionRoomStore {
         if (keys.isEmpty()) return 0
         return database.withTransaction {
             val dao = database.downloadBatchDao()
-            if (dao.findBatch(identity.batchId, identity.generation) == null) {
+            val batch = dao.findBatch(identity.batchId, identity.generation)
+            if (
+                batch == null ||
+                    batch.stateBits and DownloadBatchState.OPEN == 0 ||
+                    batch.stateBits and DownloadBatchState.CLEARING != 0 ||
+                    batch.stateBits and DownloadBatchState.TERMINAL_MASK != 0
+            ) {
                 return@withTransaction 0
             }
             keys.sumOf { stableKey ->
@@ -1599,7 +1725,8 @@ internal object DownloadExecutionRoomStore {
             val incomingAttemptId = attemptId?.takeIf { it > 0L }
             dao.findMembersByOperation(normalizedOperationId)
                 .filter { member ->
-                    member.stableKey == normalizedKey && member.attemptId == incomingAttemptId
+                    member.stableKey == normalizedKey &&
+                        (member.attemptId == null || member.attemptId == incomingAttemptId)
                 }
                 .sumOf { member ->
                     dao.updateMemberFractionMaxCAS(
@@ -1634,7 +1761,8 @@ internal object DownloadExecutionRoomStore {
             var changed = 0
             dao.findMembersByOperation(normalizedOperationId)
                 .filter { member ->
-                    member.stableKey == normalizedKey && member.attemptId == incomingAttemptId
+                    member.stableKey == normalizedKey &&
+                        (member.attemptId == null || member.attemptId == incomingAttemptId)
                 }
                 .forEach { member ->
                     changed += dao.markMemberTerminalCAS(
@@ -1732,6 +1860,98 @@ internal object DownloadExecutionRoomStore {
                 )
             }
             changed
+        }
+    }
+
+    /**
+     * 在持久清空 fence 已激活后，以 clearEpoch 为边界捕获旧批次并设置 CLEARING
+     *
+     * 成员取消和批次状态写入同一事务，晚到的 operation 回调会被 DAO 的 CLEARING CAS 拒绝
+     */
+    suspend fun beginBatchClear(
+        context: Context,
+        clearEpoch: Long,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): DownloadBatchClearCapture {
+        if (clearEpoch <= 0L) {
+            return DownloadBatchClearCapture(
+                identities = emptyList(),
+                operationIdentities = emptyList(),
+                stableKeys = emptySet()
+            )
+        }
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            val identities = linkedSetOf<DownloadBatchIdentity>()
+            val operationIdentities = linkedMapOf<String, OperationIdentity>()
+            val stableKeys = linkedSetOf<String>()
+            dao.findBatchesForClear(clearEpoch).forEach { batch ->
+                val identity = DownloadBatchIdentity(
+                    batchId = batch.batchId,
+                    generation = batch.generation
+                )
+                if (
+                    dao.markBatchClearingCAS(
+                        batchId = batch.batchId,
+                        generation = batch.generation,
+                        clearEpoch = clearEpoch,
+                        nowMs = nowMs
+                    ) <= 0
+                ) {
+                    return@forEach
+                }
+                val members = dao.listMembers(batch.batchId)
+                members.filter { member ->
+                    member.terminalBits == DownloadBatchMemberTerminal.NONE
+                }.forEach { member ->
+                    stableKeys += member.stableKey
+                    member.operationId
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                        ?.let { operationId ->
+                            operationIdentities.putIfAbsent(
+                                operationId,
+                                OperationIdentity(
+                                    operationId = operationId,
+                                    stableKey = member.stableKey,
+                                    createdAtMs = batch.createdAtMs
+                                )
+                            )
+                        }
+                }
+                dao.markMembersCancelled(batch.batchId, nowMs)
+                identities += identity
+            }
+            DownloadBatchClearCapture(
+                identities = identities.toList(),
+                operationIdentities = operationIdentities.values.toList(),
+                stableKeys = stableKeys
+            )
+        }
+    }
+
+    /** 将已捕获的 CLEARING 批次原子收敛到 CANCELLED，允许恢复重试幂等调用。 */
+    suspend fun finalizeBatchClear(
+        context: Context,
+        identities: Collection<DownloadBatchIdentity>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        val distinctIdentities = identities.distinct()
+        if (distinctIdentities.isEmpty()) return true
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            distinctIdentities.all { identity ->
+                dao.markMembersCancelled(identity.batchId, nowMs)
+                dao.finalizeBatchClearingCAS(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    nowMs = nowMs
+                )
+                val batch = dao.findBatch(identity.batchId, identity.generation)
+                batch == null || batch.stateBits and DownloadBatchState.CLEARING == 0
+            }
         }
     }
 
@@ -1963,14 +2183,15 @@ internal object DownloadExecutionRoomStore {
         dao.findMembersByOperation(operationId)
             .filter { member ->
                 member.stableKey == stableKey &&
-                    member.attemptId == incomingAttemptId
+                    (member.attemptId == incomingAttemptId || member.attemptId == null)
             }
             .forEach { member ->
+                val memberAttemptId = member.attemptId ?: incomingAttemptId
                 dao.markMemberTerminalCAS(
                     batchId = member.batchId,
                     stableKey = member.stableKey,
                     operationId = operationId,
-                    attemptId = incomingAttemptId,
+                    attemptId = memberAttemptId,
                     terminalBits = DownloadBatchMemberTerminal.COMPLETED,
                     fraction = 1000,
                     nowMs = System.currentTimeMillis()
@@ -2708,6 +2929,13 @@ internal object DownloadExecutionRoomStore {
         "QUEUED",
         "RETRYABLE"
     )
+    /** states that may be closed after a verified, already-present audio hit */
+    internal val DIRECT_CACHED_COMPLETION_SOURCE_STATES = listOf(
+        "PENDING_QUEUE",
+        "QUEUED",
+        "RUNNING",
+        "RETRYABLE"
+    )
     /** 共享泵只接管可新开始传输的 operation，core 后的收尾由独立恢复路径处理 */
     internal val PUMP_OPERATION_STATES = REUSABLE_OPERATION_STATES
     internal val IN_FLIGHT_OPERATION_STATES = listOf(
@@ -2852,6 +3080,8 @@ internal object DownloadExecutionRoomStore {
             get() = DownloadExecutionRoomStore.PROGRESS_CHECKPOINT_OPERATION_STATES
         internal val REUSABLE_OPERATION_STATES: List<String>
             get() = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+        internal val DIRECT_CACHED_COMPLETION_SOURCE_STATES: List<String>
+            get() = DownloadExecutionRoomStore.DIRECT_CACHED_COMPLETION_SOURCE_STATES
         internal val PUMP_OPERATION_STATES: List<String>
             get() = DownloadExecutionRoomStore.PUMP_OPERATION_STATES
 

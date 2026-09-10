@@ -191,7 +191,10 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         val bridgeIndex = body.indexOf("rememberCompletedAudioReference(")
         val markFinalizedIndex = body.indexOf("managedDownloadArtifactCoordinator.markFinalized(")
         val publishIndex = body.indexOf("publishCompletedDownloadOptimistically(")
-        val releaseIndex = body.indexOf("releaseCompletedAudioReference(")
+        val releaseIndex = body.indexOf(
+            "releaseCompletedAudioReference(",
+            publishIndex
+        )
 
         assertTrue(
             "the final URI must replace the invalidated pending bridge immediately",
@@ -203,6 +206,28 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
                 publishIndex > markFinalizedIndex &&
                 releaseIndex > publishIndex
         )
+    }
+
+    @Test
+    fun `final publication does not close the operation when artifact finalization is unconfirmed`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "publishFinalizedDownload")
+        val artifactResultIndex = body.indexOf("val artifactFinalized")
+        val rejectionIndex = body.indexOf("if (!artifactFinalized)", artifactResultIndex)
+        val catalogIndex = body.indexOf("publishCompletedDownloadOptimistically(", rejectionIndex)
+        val taskCompletionIndex = body.indexOf("DownloadStatus.COMPLETED", rejectionIndex)
+        val operationFinalizedIndex = body.indexOf("state = \"FINALIZED\"", rejectionIndex)
+
+        assertTrue(artifactResultIndex >= 0)
+        assertTrue(rejectionIndex > artifactResultIndex)
+        assertTrue(catalogIndex > rejectionIndex)
+        assertTrue(taskCompletionIndex > catalogIndex)
+        assertTrue(operationFinalizedIndex > taskCompletionIndex)
+        val rejectionBody = body.substring(rejectionIndex, catalogIndex)
+        assertTrue(rejectionBody.contains("scheduleStartupArtifactRecovery"))
+        assertTrue(rejectionBody.contains("return false"))
     }
 
     @Test

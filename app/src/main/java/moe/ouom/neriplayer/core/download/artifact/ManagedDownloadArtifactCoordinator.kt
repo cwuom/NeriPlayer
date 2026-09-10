@@ -367,6 +367,65 @@ internal class ManagedDownloadArtifactCoordinator {
         }
     }
 
+    /**
+     * 用轻量 artifact ledger 预检已经提交的音频，避免目录 catalog 尚未恢复时重复建队
+     *
+     * 这里只返回有正式音频引用且 provider 明确可读的 post-core 条目；未知或异常引用
+     * 交给后续 claim/recovery 路径处理，不能在启动预检阶段乐观跳过
+     */
+    suspend fun findReadableCompletedStableKeys(
+        context: Context,
+        stableKeys: Collection<String>
+    ): Set<String> {
+        val normalizedKeys = stableKeys
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+        if (normalizedKeys.isEmpty()) return emptySet()
+        val appContext = context.applicationContext
+        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
+        val artifacts = database(appContext).managedDownloadArtifactDao()
+            .let { dao ->
+                normalizedKeys
+                    .chunked(BATCH_ARTIFACT_QUERY_CHUNK_SIZE)
+                    .flatMap { chunk -> dao.findAllByRootKeyAndStableKeys(rootKey, chunk) }
+            }
+            .groupBy(ManagedDownloadArtifactEntity::stableKey)
+            .mapValues { (_, entries) ->
+                entries.maxWithOrNull(
+                    compareBy<ManagedDownloadArtifactEntity> { it.updatedAtMs }
+                        .thenBy { it.audioReference.orEmpty() }
+                )
+            }
+        val completedStates = setOf(
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.FINALIZED,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+            ManagedDownloadArtifactState.REPAIR_REQUIRED
+        )
+        return normalizedKeys.mapNotNull { stableKey ->
+            val artifact = artifacts[stableKey] ?: return@mapNotNull null
+            val state = ManagedDownloadArtifactState.fromPersisted(artifact.state)
+            if (state !in completedStates) return@mapNotNull null
+            val references = listOfNotNull(
+                artifact.audioReference?.trim()?.takeIf(String::isNotBlank),
+                artifact.audioName?.trim()?.takeIf { reference ->
+                    reference.startsWith("/") || reference.contains("://")
+                }
+            ).distinct()
+            if (references.any { reference ->
+                    ManagedDownloadReferenceLookup.inspect(appContext, reference) is
+                        ManagedDownloadReferenceLookup.Result.Present
+                }
+            ) {
+                stableKey
+            } else {
+                null
+            }
+        }.toSet()
+    }
+
     suspend fun currentLeaseId(
         context: Context,
         song: SongItem,
@@ -593,13 +652,13 @@ internal class ManagedDownloadArtifactCoordinator {
         song: SongItem,
         storedAudio: ManagedDownloadStorage.StoredEntry,
         expectedLeaseId: String? = null
-    ) {
+    ): Boolean {
         val appContext = context.applicationContext
-        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return false
         val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
         val database = database(appContext)
         val nowMs = System.currentTimeMillis()
-        database.withTransaction {
+        return database.withTransaction {
             val dao = database.managedDownloadArtifactDao()
             val current = dao.find(rootKey, stableKey)
                 ?: expectedLeaseId?.let { leaseId ->
@@ -607,10 +666,10 @@ internal class ManagedDownloadArtifactCoordinator {
                         .firstOrNull { artifact -> artifact.leaseId == leaseId }
                 }
             if (current == null && expectedLeaseId != null) {
-                return@withTransaction
+                return@withTransaction false
             }
             if (current != null && !matchesLease(current, expectedLeaseId)) {
-                return@withTransaction
+                return@withTransaction false
             }
             val base = current ?: newLeaseArtifact(
                 rootKey = rootKey,
@@ -634,6 +693,7 @@ internal class ManagedDownloadArtifactCoordinator {
                     lastErrorCode = null
                 )
             )
+            true
         }
     }
 

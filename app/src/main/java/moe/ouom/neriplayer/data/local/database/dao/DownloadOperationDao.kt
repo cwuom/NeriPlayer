@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadCancellationIdentityRow
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationIdentityRow
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 
 @Dao
 internal interface DownloadOperationDao {
@@ -341,7 +342,8 @@ internal interface DownloadOperationDao {
             "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
             "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
             "AND batch.generation = download_operation.batch_generation " +
-            "AND (batch.state_bits & 1) != 0 AND (batch.state_bits & 2) = 0)) " +
+            "AND (batch.state_bits & 1) != 0 AND (batch.state_bits & 2) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) = 0)) " +
             "AND (:afterQueueOrder IS NULL " +
             "OR queue_order > :afterQueueOrder " +
             "OR (queue_order = :afterQueueOrder AND updated_at_ms > :afterUpdatedAtMs) " +
@@ -370,7 +372,8 @@ internal interface DownloadOperationDao {
             "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
             "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
             "AND batch.generation = download_operation.batch_generation " +
-            "AND (batch.state_bits & 1) != 0 AND (batch.state_bits & 2) = 0)) " +
+            "AND (batch.state_bits & 1) != 0 AND (batch.state_bits & 2) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) = 0)) " +
             "AND (:afterQueueOrder IS NULL OR queue_order > :afterQueueOrder OR " +
             "(queue_order = :afterQueueOrder AND updated_at_ms > :afterUpdatedAtMs) OR " +
             "(queue_order = :afterQueueOrder AND updated_at_ms = :afterUpdatedAtMs " +
@@ -591,12 +594,40 @@ internal interface DownloadOperationDao {
             "retry_count = CASE WHEN :state IN ('COMPLETED', 'FINALIZED', " +
             "'CANCELLED', 'INVALID') THEN 0 ELSE retry_count END " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +
-            "AND state IN (:expectedStates) AND stop_requested_by_user = 0"
+            "AND state IN (:expectedStates) AND stop_requested_by_user = 0 " +
+            "AND NOT EXISTS (SELECT 1 FROM download_batch batch " +
+            "WHERE batch.batch_id = download_operation.batch_id " +
+            "AND batch.generation = download_operation.batch_generation " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) != 0)"
     )
     suspend fun transitionStateForStableKey(
         operationId: String,
         stableKey: String,
         expectedStates: List<String>,
+        state: String,
+        updatedAtMs: Long,
+        errorCode: String?
+    ): Int
+
+    /** Direct-cache settlement must not overwrite a newer payload/attempt. */
+    @Query(
+        "UPDATE download_operation SET state = :state, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
+            "last_error_code = :errorCode, " +
+            "next_retry_at_ms = NULL, retry_count = 0 " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND updated_at_ms = :expectedUpdatedAtMs " +
+            "AND state IN (:expectedStates) AND stop_requested_by_user = 0 " +
+            "AND NOT EXISTS (SELECT 1 FROM download_batch batch " +
+            "WHERE batch.batch_id = download_operation.batch_id " +
+            "AND batch.generation = download_operation.batch_generation " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) != 0)"
+    )
+    suspend fun transitionDirectCachedStateAtVersion(
+        operationId: String,
+        stableKey: String,
+        expectedStates: List<String>,
+        expectedUpdatedAtMs: Long,
         state: String,
         updatedAtMs: Long,
         errorCode: String?
@@ -669,7 +700,12 @@ internal interface DownloadOperationDao {
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +
             "AND ((batch_id IS NULL AND batch_generation IS NULL) " +
-            "OR (batch_id = :batchId AND batch_generation = :batchGeneration))"
+            "OR (batch_id = :batchId AND batch_generation = :batchGeneration)) " +
+            "AND EXISTS (SELECT 1 FROM download_batch batch " +
+            "WHERE batch.batch_id = :batchId AND batch.generation = :batchGeneration " +
+            "AND (batch.state_bits & 1) != 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.TERMINAL_MASK}) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) = 0)"
     )
     suspend fun bindBatchIdentityIfUnbound(
         operationId: String,
@@ -1002,7 +1038,11 @@ internal interface DownloadOperationDao {
             "last_error_code = CASE WHEN stop_requested_by_user = 1 " +
             "AND last_error_code = 'USER_CANCELLED' THEN last_error_code ELSE NULL END " +
             "WHERE operation_id = :operationId " +
-            "AND state IN (:expectedStates)"
+            "AND state IN (:expectedStates) " +
+            "AND NOT EXISTS (SELECT 1 FROM download_batch batch " +
+            "WHERE batch.batch_id = download_operation.batch_id " +
+            "AND batch.generation = download_operation.batch_generation " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) != 0)"
     )
     suspend fun markCoreCommitted(
         operationId: String,
