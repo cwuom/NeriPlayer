@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import java.io.File
 import java.util.UUID
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
@@ -194,6 +195,9 @@ internal class DownloadRecoveryRoomStore(
         }
         val requestedExcludedIds = excludedOperationIds.normalizedOperationIds()
         val forceNewKeys = forceNewOperationForStableKeys.normalizedStableKeys()
+        // 清空只删除 durable 行，旧的 UIDT/Worker 协程仍可能在返回路径中访问
+        // operationId。把清空代次纳入新等待 operation 的身份，避免旧回调误写新任务
+        val clearEpoch = PersistentDownloadClearFenceStore.currentEpoch(appContext)
         return database.withTransaction {
             val dao = database.downloadOperationDao()
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
@@ -262,7 +266,11 @@ internal class DownloadRecoveryRoomStore(
                 }
             }
             val deterministicOperationIdsBySongKey = distinctSongs.associate { song ->
-                song.stableKey() to waitingStorageMutationOperationId(libraryId, song.stableKey())
+                song.stableKey() to waitingStorageMutationOperationId(
+                    libraryId = libraryId,
+                    stableKey = song.stableKey(),
+                    clearEpoch = clearEpoch
+                )
             }
             val deterministicOperationsById = linkedMapOf<String, String>()
             deterministicOperationIdsBySongKey.values
@@ -284,7 +292,10 @@ internal class DownloadRecoveryRoomStore(
             val requestsByOperationId = linkedMapOf<String, DownloadExecutionRequest>()
             val operationIds = distinctSongs.mapNotNull { song ->
                 val key = song.stableKey()
-                if (inFlightOperationIds[key] != null || reusableOperationIds[key] != null) {
+                if (
+                    key !in forceNewKeys &&
+                        (inFlightOperationIds[key] != null || reusableOperationIds[key] != null)
+                ) {
                     return@mapNotNull null
                 }
                 // 清空和新请求可以在同一时间窗内交错到达。旧取消行不能吞掉
@@ -309,10 +320,16 @@ internal class DownloadRecoveryRoomStore(
                         deterministicOperationState in
                         WAITING_STORAGE_MUTATION_REPLACED_TERMINAL_STATES
                 val existingOperationId = existing?.metadata?.operationId
+                // 没有可复用 winner 的用户请求必须拥有新的 operation 身份。
+                // 旧版本的固定 waiting id 可能刚被清空/取消协程持有，复用它会
+                // 让迟到回调把新批次重新写回旧任务。
+                val mustCreateFreshUserOperation = userInitiated &&
+                    existingOperationId == null
                 val mustCreateReplacement = blockedByCancellation ||
                     key in forceNewKeys ||
                     existingOperationId in excludedIds ||
-                    (existingOperationId == null && mustReplaceDeterministicOperation)
+                    (existingOperationId == null && mustReplaceDeterministicOperation) ||
+                    mustCreateFreshUserOperation
                 val operationId = if (mustCreateReplacement) {
                     UUID.randomUUID().toString()
                 } else {
@@ -797,12 +814,19 @@ internal class DownloadRecoveryRoomStore(
             ).toString()
         }
 
-        private fun waitingStorageMutationOperationId(
+        internal fun waitingStorageMutationOperationId(
             libraryId: String,
-            stableKey: String
+            stableKey: String,
+            clearEpoch: Long = 0L
         ): String {
+            val identity = if (clearEpoch > 0L) {
+                "waiting-storage-mutation:$libraryId:$clearEpoch:$stableKey"
+            } else {
+                // 保留首代 operation 身份，兼容已经落盘的旧数据库
+                "waiting-storage-mutation:$libraryId:$stableKey"
+            }
             return UUID.nameUUIDFromBytes(
-                "waiting-storage-mutation:$libraryId:$stableKey".toByteArray(Charsets.UTF_8)
+                identity.toByteArray(Charsets.UTF_8)
             ).toString()
         }
 

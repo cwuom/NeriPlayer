@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.download.storage.queue
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -99,6 +101,40 @@ class DownloadRecoveryRoomStoreRuntimeCharacterizationTest {
             isLegacyQueueImportSuppressed(DownloadRecoveryRoomStore.ROOM_PRIMARY_STATE)
         )
         assertFalse(isLegacyQueueImportSuppressed(null))
+    }
+
+    @Test
+    fun `waiting operation identity changes with the clear epoch`() {
+        val firstEpoch = DownloadRecoveryRoomStore.waitingStorageMutationOperationId(
+            libraryId = "library",
+            stableKey = "netease:42",
+            clearEpoch = 1L
+        )
+        val sameEpoch = DownloadRecoveryRoomStore.waitingStorageMutationOperationId(
+            libraryId = "library",
+            stableKey = "netease:42",
+            clearEpoch = 1L
+        )
+        val nextEpoch = DownloadRecoveryRoomStore.waitingStorageMutationOperationId(
+            libraryId = "library",
+            stableKey = "netease:42",
+            clearEpoch = 2L
+        )
+
+        assertEquals(firstEpoch, sameEpoch)
+        assertNotEquals(firstEpoch, nextEpoch)
+    }
+
+    @Test
+    fun `forced fresh starts do not let a readable predecessor suppress replacement staging`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/" +
+                "DownloadRecoveryRoomStore.kt"
+        ).readText()
+        val waitingBody = methodBody(source, "upsertWaitingStorageMutationWithRequests")
+
+        assertTrue(waitingBody.contains("key !in forceNewKeys"))
+        assertTrue(waitingBody.contains("mustCreateFreshUserOperation"))
     }
 
     private fun methodBody(source: String, methodName: String): String {

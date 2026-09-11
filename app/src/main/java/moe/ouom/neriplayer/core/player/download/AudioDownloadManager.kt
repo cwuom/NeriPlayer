@@ -2861,6 +2861,7 @@ object AudioDownloadManager {
             attemptId = attemptId,
             stableKey = prepared.workingSong.stableKey()
         )
+        var coreTransferReleaseDispatched = false
         val committedAudio = withTransferCyclePermit(
             context = context,
             ownerKey = ownerKey,
@@ -2934,22 +2935,33 @@ object AudioDownloadManager {
                 traceToken,
                 DownloadOperationTracePhase.CORE_COMMITTED
             )
-            committedAudio.copy(transferOwnerToken = transferOwnerToken)
+            val committedWithOwner = committedAudio.copy(transferOwnerToken = transferOwnerToken)
+            if (committedWithOwner.operationCoreCommitted) {
+                // permit 仍在本次传输的 finally 之前，先释放 host owner 并唤醒补位，
+                // 避免下一个 operation 抢到网络 permit 后又被旧 owner 拒绝
+                coreTransferReleaseDispatched = GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(
+                    context = context,
+                    operationId = effectiveOperationId,
+                    attemptId = attemptId,
+                    transferOwnerToken = transferOwnerToken
+                )
+            }
+            committedWithOwner
         }
         // 只有 operation journal 的 CAS 成功后才释放宿主传输槽位；pending
         // 音频已经落盘但 journal 失败时必须留给恢复路径收敛
-        if (committedAudio.operationCoreCommitted) {
-            GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(
-                context = context,
-                operationId = effectiveOperationId,
-                attemptId = attemptId,
-                transferOwnerToken = committedAudio.transferOwnerToken
-            )
-        } else {
+        if (!committedAudio.operationCoreCommitted) {
             NPLogger.w(
                 TAG,
                 "Core Commit journal 未确认，暂不释放传输槽位: " +
                     "operationId=$effectiveOperationId, attemptId=$attemptId"
+            )
+        } else if (!coreTransferReleaseDispatched) {
+            coreTransferReleaseDispatched = GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(
+                context = context,
+                operationId = effectiveOperationId,
+                attemptId = attemptId,
+                transferOwnerToken = committedAudio.transferOwnerToken
             )
         }
         state.storedAudio = committedAudio.audio

@@ -61,7 +61,12 @@ class DefaultDownloadExecutionHost(
     private val transferReleaseInFlightTokens = ConcurrentHashMap.newKeySet<Long>()
     /** Core Commit 的 durable 释放失败时保留 owner，等待同一 token 的回调重试 */
     private val transferReleasePendingTokens = ConcurrentHashMap.newKeySet<Long>()
+    /**
+     * 释放通知只负责唤醒泵，具体 operation 身份放在集合里保留，避免多个
+     * Core Commit 在同一帧内发送时被 CONFLATED 通道覆盖
+     */
     private val transferReleaseSignals = Channel<String>(Channel.CONFLATED)
+    private val pendingTransferReleaseOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val systemRetryStopOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val explicitSchedulerStopOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val executionAdmissionLock = Any()
@@ -99,7 +104,7 @@ class DefaultDownloadExecutionHost(
     )
 
     private data class PumpTransferRelease(
-        val operationId: String
+        val operationIds: Set<String>
     )
 
     /** 调度期间绑定的清空代次和 operation 身份，避免长 I/O 返回后越过新代次 */
@@ -1248,9 +1253,24 @@ class DefaultDownloadExecutionHost(
             }
         }
         if (!released) return false
-        transferReleaseSignals.trySend(normalizedId)
+        signalTransferRelease(normalizedId)
         triggerDeferredSchedules(context.applicationContext)
         return true
+    }
+
+    /** 把多个释放事件折叠成一次唤醒，但不丢掉任何 operation 身份 */
+    private fun signalTransferRelease(operationId: String) {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+        pendingTransferReleaseOperationIds.add(normalizedId)
+        transferReleaseSignals.trySend(normalizedId)
+    }
+
+    private fun drainTransferReleaseOperationIds(signalOperationId: String): Set<String> {
+        val operationIds = linkedSetOf<String>()
+        normalizeDownloadOperationId(signalOperationId)?.let(operationIds::add)
+        operationIds += pendingTransferReleaseOperationIds
+        operationIds.forEach(pendingTransferReleaseOperationIds::remove)
+        return operationIds
     }
 
     private fun nextTransferOwnerToken(): Long {
@@ -1327,7 +1347,7 @@ class DefaultDownloadExecutionHost(
                 true
             }
         }
-        if (released) transferReleaseSignals.trySend(normalizedId)
+        if (released) signalTransferRelease(normalizedId)
     }
 
     /** execute 结束时回收仍未提升为 active owner 的泵预留位 */
@@ -1346,7 +1366,7 @@ class DefaultDownloadExecutionHost(
                 true
             }
         }
-        if (released) transferReleaseSignals.trySend(normalizedId)
+        if (released) signalTransferRelease(normalizedId)
     }
 
     private fun transferLaneOccupancy(): Int = synchronized(executionAdmissionLock) {
@@ -1374,7 +1394,7 @@ class DefaultDownloadExecutionHost(
             }
             activeTransferOwners.remove(normalizedId, owner)
         }
-        if (released) transferReleaseSignals.trySend(normalizedId)
+        if (released) signalTransferRelease(normalizedId)
         return released
     }
 
@@ -1557,12 +1577,24 @@ class DefaultDownloadExecutionHost(
             )
         }
         val stateBeforeClaim = operationStore.currentStateSuspending(appContext, normalizedId)
+        if (!hostAdmissionAcquired) {
+            resolvePreExecutionResult(stateBeforeClaim)?.let { result ->
+                return@withContext result
+            }
+            // 宿主窗口暂满时保留 operation，但不要让它停留在 QUEUED 等待
+            // 普通退避；Core Commit 或 owner 释放会立即唤醒共享泵
+            operationStore.updateStateSuspending(
+                context = appContext,
+                operationId = normalizedId,
+                state = "RETRYABLE",
+                errorCode = "HOST_ADMISSION_FULL"
+            )
+            return@withContext DownloadExecutionResult.Retry
+        }
         var executionClaimed = false
         var executionReservationToken: Long? = null
         val claimResult = synchronized(executionAdmissionLock) {
             when {
-                !hostAdmissionAcquired -> resolvePreExecutionResult(stateBeforeClaim)
-                    ?: DownloadExecutionResult.Retry
                 !executingOperationIds.add(normalizedId) -> resolveConcurrentExecutionResult(
                     systemRetryStopPending = systemRetryStopOperationIds.contains(normalizedId)
                 )
@@ -1940,10 +1972,15 @@ class DefaultDownloadExecutionHost(
                 var queueExhausted = false
                 var lastSelection: PumpCandidateSelection? = null
                 var nextRetryAtMs: Long? = null
+                val deferredTransferOperationIds = mutableSetOf<String>()
                 val attemptedOperationIds = mutableSetOf<String>()
                 val attemptedStableKeys = mutableSetOf<String>()
                 var pumpCursor: DownloadExecutionPumpCursor? = null
                 var pumpPendingPage: PumpPendingPage? = null
+                var blockedLaneProbeUsed = false
+                // Core Commit 可能在 deferred 放入 transferRunning 前完成；
+                // 先记住释放身份，插入时直接走 enrichment side channel
+                val releasedBeforeTransferRegistration = mutableSetOf<String>()
                 val transferRunning = linkedMapOf<String, Deferred<DownloadExecutionResult>>()
                 val sideChannelRunning = linkedMapOf<String, Deferred<DownloadExecutionResult>>()
 
@@ -1957,12 +1994,19 @@ class DefaultDownloadExecutionHost(
 
                     // 每次只填满当前剩余容量。collectPumpCandidates 会保留页内
                     // 未选中的请求，因此下一轮不会跳过任何 durable operation
-                    while (
-                            !queueExhausted &&
-                            transferLaneOccupancy() < configuredDownloadParallelism(appContext)
-                    ) {
-                        val capacity = configuredDownloadParallelism(appContext) -
-                            transferLaneOccupancy()
+                    while (!queueExhausted) {
+                        val configuredCapacity = configuredDownloadParallelism(appContext)
+                        val occupancy = transferLaneOccupancy()
+                        val laneHasCapacity = occupancy < configuredCapacity
+                        val mayProbeBlockedLane = !laneHasCapacity &&
+                            !blockedLaneProbeUsed &&
+                            transferRunning.isEmpty() &&
+                            sideChannelRunning.isEmpty()
+                        if (!laneHasCapacity && !mayProbeBlockedLane) break
+                        if (mayProbeBlockedLane) blockedLaneProbeUsed = true
+                        // 槽位已满时仍探测一页，才能把“有 durable 请求但被外部
+                        // UIDT 占位”区分为暂缓，而不是错误地收敛成 Completed
+                        val capacity = (configuredCapacity - occupancy).coerceAtLeast(1)
                         val selection = collectPumpCandidates(
                             context = appContext,
                             capacity = capacity,
@@ -1983,15 +2027,27 @@ class DefaultDownloadExecutionHost(
                         }
                         waitedForPendingUidtGrace = false
                         selection.requests.forEach { request ->
-                            attemptedOperationIds += request.operationId
-                            attemptedStableKeys += request.song.stableKey()
                             val reservationToken = reserveTransferSlot(
                                 operationId = request.operationId,
                                 attemptId = request.attemptId,
                                 capacity = configuredDownloadParallelism(appContext)
                             ) ?: run {
+                                // 外部 UIDT/Worker 可能在候选扫描后先占满槽位。不要
+                                // 把这首标记成已尝试，否则槽位释放后本轮无法补位；
+                                // 同时回退到有界 successor，避免空转 WorkManager
+                                // worker 持续以毫秒级间隔互相接力
+                                deferredTransferOperationIds += request.operationId
+                                queueExhausted = false
+                                pumpPendingPage = PumpPendingPage(
+                                    requests = listOf(request) +
+                                        pumpPendingPage?.requests.orEmpty(),
+                                    continuationCursor = pumpPendingPage?.continuationCursor
+                                )
                                 return@forEach
                             }
+                            deferredTransferOperationIds.remove(request.operationId)
+                            attemptedOperationIds += request.operationId
+                            attemptedStableKeys += request.song.stableKey()
                             val execution = async(Dispatchers.IO) {
                                 try {
                                     executePumpCandidateIsolated(request.operationId) {
@@ -2004,9 +2060,22 @@ class DefaultDownloadExecutionHost(
                                     )
                                 }
                             }
-                            transferRunning[request.operationId] = execution
+                            if (releasedBeforeTransferRegistration.remove(request.operationId)) {
+                                sideChannelRunning[request.operationId] = execution
+                            } else {
+                                transferRunning[request.operationId] = execution
+                            }
                         }
-                        if (selection.exhausted) queueExhausted = true
+                        if (selection.exhausted && deferredTransferOperationIds.isEmpty()) {
+                            queueExhausted = true
+                        }
+                        if (
+                            deferredTransferOperationIds.isNotEmpty() &&
+                                transferRunning.isEmpty() &&
+                                sideChannelRunning.isEmpty()
+                        ) {
+                            break
+                        }
                     }
 
                     if (transferRunning.isNotEmpty() || sideChannelRunning.isNotEmpty()) {
@@ -2031,15 +2100,19 @@ class DefaultDownloadExecutionHost(
                                 }
                             }
                             transferReleaseSignals.onReceive { operationId ->
-                                PumpTransferRelease(operationId)
+                                PumpTransferRelease(
+                                    drainTransferReleaseOperationIds(operationId)
+                                )
                             }
                         }
                         when (completed) {
                             is PumpTransferRelease -> {
                                 // Core Commit 释放 transfer lane 后，把 execute deferred
                                 // 移到 enrichment side channel，不再把它当作传输中的任务
-                                transferRunning.remove(completed.operationId)?.let { execution ->
-                                    sideChannelRunning[completed.operationId] = execution
+                                completed.operationIds.forEach { operationId ->
+                                    transferRunning.remove(operationId)?.let { execution ->
+                                        sideChannelRunning[operationId] = execution
+                                    } ?: releasedBeforeTransferRegistration.add(operationId)
                                 }
                                 continue
                             }
@@ -2081,6 +2154,11 @@ class DefaultDownloadExecutionHost(
                             ) {
                                 return@supervisorScope DownloadExecutionPumpResult.Retry
                             }
+                            if (deferredTransferOperationIds.isNotEmpty()) {
+                                // 这是槽位竞争而不是网络/传输失败，使用短唤醒让释放后的
+                                // 补位不必等待常规重试窗口
+                                return@supervisorScope DownloadExecutionPumpResult.ContinueSoon
+                            }
                             return@supervisorScope if (sawRetry) {
                                 DownloadExecutionPumpResult.ContinueAfterRetry
                             } else if (selection?.hasSchedulableRequest == true &&
@@ -2115,13 +2193,18 @@ class DefaultDownloadExecutionHost(
                             ) {
                                 return@supervisorScope DownloadExecutionPumpResult.Retry
                             }
+                            if (deferredTransferOperationIds.isNotEmpty()) {
+                                return@supervisorScope DownloadExecutionPumpResult.ContinueSoon
+                            }
                             return@supervisorScope if (sawRetry) {
                                 DownloadExecutionPumpResult.ContinueAfterRetry
                             } else {
                                 DownloadExecutionPumpResult.Completed
                             }
                         }
-                        return@supervisorScope if (sawRetry) {
+                        return@supervisorScope if (deferredTransferOperationIds.isNotEmpty()) {
+                            DownloadExecutionPumpResult.ContinueSoon
+                        } else if (sawRetry) {
                             DownloadExecutionPumpResult.ContinueAfterRetry
                         } else {
                             DownloadExecutionPumpResult.ContinueSoon
@@ -2186,7 +2269,16 @@ class DefaultDownloadExecutionHost(
             }
             while (pendingRequests.isNotEmpty() && candidates.size < capacity) {
                 val request = pendingRequests.removeFirst()
-                hasSchedulableRequest = true
+                val graceDelayMs = pendingUidtGraceDelayMs(context, request)
+                if (graceDelayMs > 0L) {
+                    // 即使同曲目的 replacement 已经尝试过，UIDT grace 仍需
+                    // 被记录，否则旧 predecessor 会让泵错误地提前收口
+                    hasSchedulableRequest = true
+                    rowsDeferredUidt++
+                    shortestPendingUidtGraceDelayMs =
+                        shortestPendingUidtGraceDelayMs?.coerceAtMost(graceDelayMs) ?: graceDelayMs
+                    continue
+                }
                 if (
                     request.operationId in attemptedOperationIds
                 ) {
@@ -2201,15 +2293,11 @@ class DefaultDownloadExecutionHost(
                     rowsFilteredStableKey++
                     continue
                 }
-                val graceDelayMs = pendingUidtGraceDelayMs(context, request)
-                if (graceDelayMs > 0L) {
-                    rowsDeferredUidt++
-                    shortestPendingUidtGraceDelayMs =
-                        shortestPendingUidtGraceDelayMs?.coerceAtMost(graceDelayMs) ?: graceDelayMs
-                } else if (
+                if (
                     candidates.size < capacity &&
                         observedStableKeys.add(request.song.stableKey())
                 ) {
+                    hasSchedulableRequest = true
                     candidates += request
                     val traceToken = DownloadOperationTrace.begin(
                         operationId = request.operationId,

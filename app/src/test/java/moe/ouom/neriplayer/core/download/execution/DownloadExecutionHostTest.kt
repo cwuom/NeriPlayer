@@ -407,6 +407,61 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `pump defers a candidate when an external reservation fills the lane`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-pump-reservation-deferred",
+            song = sampleSong().copy(id = 50_100L)
+        )
+        store.save(context, request)
+        val reserve = DefaultDownloadExecutionHost::class.java
+            .getDeclaredMethod(
+                "reserveTransferSlot",
+                String::class.java,
+                Long::class.javaObjectType,
+                Int::class.javaPrimitiveType
+            )
+            .apply { isAccessible = true }
+        val release = DefaultDownloadExecutionHost::class.java
+            .getDeclaredMethod(
+                "releaseTransferReservation",
+                String::class.java,
+                Long::class.javaPrimitiveType
+            )
+            .apply { isAccessible = true }
+        val executed = mutableListOf<String>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, candidate ->
+                executed += candidate.operationId
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 }
+        )
+
+        val peerToken = reserve.invoke(
+            host,
+            "operation-pump-reservation-peer",
+            31L,
+            1
+        ) as Long
+
+        assertEquals(
+            DownloadExecutionPumpResult.ContinueSoon,
+            host.pump(context)
+        )
+        assertTrue(executed.isEmpty())
+
+        release.invoke(host, "operation-pump-reservation-peer", peerToken)
+        assertEquals(DownloadExecutionPumpResult.Completed, host.pump(context))
+        assertEquals(listOf(request.operationId), executed)
+        assertEquals("COMPLETED", store.currentState(context, request.operationId))
+    }
+
+    @Test
     fun `core commit releases one transfer lane before enrichment finishes`() = runTest {
         val context = mockContext()
         val journal = InMemoryDownloadExecutionOperationJournal()
@@ -1154,6 +1209,7 @@ class DownloadExecutionHostTest {
 
         assertEquals(DownloadExecutionResult.Retry, host.execute(context, request.operationId))
         assertEquals(0, executions)
+        assertEquals("RETRYABLE", store.currentState(context, request.operationId))
         assertEquals(1, journal.hostAdmissionAcquireCount)
         assertEquals(0, journal.hostAdmissionReleaseCount)
 

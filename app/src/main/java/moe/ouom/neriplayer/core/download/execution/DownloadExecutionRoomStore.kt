@@ -1708,7 +1708,7 @@ internal object DownloadExecutionRoomStore {
         }
     }
 
-    /** 依据 operation 身份更新所有引用该 operation 的批次成员，旧 attempt 会被 CAS 拒绝 */
+    /** 依据 operation 身份更新所有引用该 operation 的批次成员；有 attempt 时继续精确匹配 */
     suspend fun updateBatchMembersForOperation(
         context: Context,
         operationId: String,
@@ -1726,14 +1726,19 @@ internal object DownloadExecutionRoomStore {
             dao.findMembersByOperation(normalizedOperationId)
                 .filter { member ->
                     member.stableKey == normalizedKey &&
-                        (member.attemptId == null || member.attemptId == incomingAttemptId)
+                        (incomingAttemptId == null ||
+                            member.attemptId == null ||
+                            member.attemptId == incomingAttemptId)
                 }
                 .sumOf { member ->
+                    // operation 身份已经限定了批次边界；恢复回调缺少 attempt 时，
+                    // 使用成员自身的 attempt 让 DAO 的 CAS 仍能命中旧版行
+                    val effectiveAttemptId = member.attemptId ?: incomingAttemptId
                     dao.updateMemberFractionMaxCAS(
                         batchId = member.batchId,
                         stableKey = member.stableKey,
                         operationId = normalizedOperationId,
-                        attemptId = incomingAttemptId,
+                        attemptId = effectiveAttemptId,
                         fraction = fractionMilli.coerceIn(0, 1000),
                         nowMs = nowMs
                     )
@@ -1762,14 +1767,19 @@ internal object DownloadExecutionRoomStore {
             dao.findMembersByOperation(normalizedOperationId)
                 .filter { member ->
                     member.stableKey == normalizedKey &&
-                        (member.attemptId == null || member.attemptId == incomingAttemptId)
+                        (incomingAttemptId == null ||
+                            member.attemptId == null ||
+                            member.attemptId == incomingAttemptId)
                 }
                 .forEach { member ->
+                    // operation 身份已经限定了批次边界；恢复回调缺少 attempt 时，
+                    // 使用成员自身的 attempt 让 DAO 的 CAS 仍能命中旧版行
+                    val effectiveAttemptId = member.attemptId ?: incomingAttemptId
                     changed += dao.markMemberTerminalCAS(
                         batchId = member.batchId,
                         stableKey = member.stableKey,
                         operationId = normalizedOperationId,
-                        attemptId = incomingAttemptId,
+                        attemptId = effectiveAttemptId,
                         terminalBits = terminalBits,
                         fraction = if (terminalBits == DownloadBatchMemberTerminal.COMPLETED) {
                             1000
@@ -2183,7 +2193,9 @@ internal object DownloadExecutionRoomStore {
         dao.findMembersByOperation(operationId)
             .filter { member ->
                 member.stableKey == stableKey &&
-                    (member.attemptId == incomingAttemptId || member.attemptId == null)
+                    (incomingAttemptId == null ||
+                        member.attemptId == null ||
+                        member.attemptId == incomingAttemptId)
             }
             .forEach { member ->
                 val memberAttemptId = member.attemptId ?: incomingAttemptId

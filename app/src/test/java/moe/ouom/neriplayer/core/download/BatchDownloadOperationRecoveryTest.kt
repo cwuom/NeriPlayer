@@ -504,12 +504,72 @@ class BatchDownloadOperationRecoveryTest {
             )
         )
         assertTrue(
+            managerSource.contains("findPendingAudioForFinalization(")
+        )
+        assertTrue(
             roomSource.contains(
                 "reopenMissingPostCoreArtifactForFreshTransfer"
             )
         )
         assertTrue(
             roomSource.contains("state = \"RUNNING\"")
+        )
+    }
+
+    @Test
+    fun `automatic post core recovery never reclaims a referenced artifact`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val reopenBody = methodBody(
+            source,
+            "reopenMissingPostCoreArtifactForFreshTransfer"
+        )
+
+        assertTrue(reopenBody.contains("allowFreshTransferReclaim = false"))
+        assertTrue(
+            methodBody(
+                source,
+                "shouldRestartPostCoreOperationForFreshTransfer"
+            ).contains("acquiredArtifact.audioReference.isNullOrBlank()")
+        )
+        assertTrue(
+            reopenBody.contains("已有可恢复音频，跳过重新传输")
+        )
+    }
+
+    @Test
+    fun `post core recovery uses the current artifact lease instead of a stale request lease`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val recoveryBody = methodBody(source, "recoverPostCoreDownloadOperation")
+
+        assertTrue(recoveryBody.contains("val expectedArtifactLeaseId = when"))
+        assertTrue(
+            recoveryBody.contains("artifact != null -> artifact.leaseId")
+        )
+        assertTrue(recoveryBody.contains("expectedArtifactLeaseId = expectedArtifactLeaseId"))
+        assertTrue(recoveryBody.contains("expectedLeaseId = expectedArtifactLeaseId"))
+    }
+
+    @Test
+    fun `operation identity can settle a batch member when task attempt is unavailable`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val terminalBody = methodBody(source, "markBatchDownloadPresentationTerminal")
+
+        assertTrue(
+            terminalBody.contains(
+                "if (normalizedAttemptId == null && operationId.isNullOrBlank())"
+            )
+        )
+        assertTrue(
+            terminalBody.contains("val effectiveAttemptId = normalizedAttemptId ?: memberAttemptId")
+        )
+        assertTrue(
+            terminalBody.contains("attemptId = normalizedAttemptId")
         )
     }
 
@@ -887,10 +947,42 @@ class BatchDownloadOperationRecoveryTest {
         assertTrue(returnTypeIndex > signatureIndex)
     }
 
+    @Test
+    fun `batch clears stale cancellation identities before reading in flight operations`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val batchBody = methodBody(source, "startBatchDownload")
+        val admittedIndex = batchBody.indexOf("val admittedSongs =")
+        val clearIndex = batchBody.indexOf(
+            "clearSongCancellationForFreshStart(",
+            admittedIndex
+        )
+        val inFlightIndex = batchBody.indexOf("val inFlightOperationsBySongKey =", admittedIndex)
+
+        assertTrue(admittedIndex >= 0)
+        assertTrue("fresh-start fence must precede in-flight reuse", clearIndex > admittedIndex)
+        assertTrue("in-flight lookup must follow the fresh-start fence", inFlightIndex > clearIndex)
+    }
+
+    @Test
+    fun `user waiting requests do not reuse a legacy deterministic identity`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/" +
+                "DownloadRecoveryRoomStore.kt"
+        ).readText()
+        val waitingBody = methodBody(source, "upsertWaitingStorageMutationWithRequests")
+
+        assertTrue(waitingBody.contains("mustCreateFreshUserOperation"))
+        assertTrue(waitingBody.contains("mustCreateReplacement"))
+    }
+
     private fun methodBody(source: String, methodName: String): String {
         val signatureStart = listOf(
             "private fun $methodName(",
             "private suspend fun $methodName(",
+            "internal fun $methodName(",
+            "internal suspend fun $methodName(",
             "suspend fun $methodName("
         ).asSequence()
             .map(source::indexOf)

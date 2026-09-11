@@ -1153,6 +1153,10 @@ class AudioDownloadManagerTest {
             "GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(",
             coreCommittedIndex
         )
+        val transferPermitReturnIndex = transferBody.indexOf(
+            "// 只有 operation journal 的 CAS 成功后才释放宿主传输槽位",
+            coreCommittedIndex
+        )
         val cycleBody = methodBody(source, "withTransferCyclePermit")
         val blockIndex = cycleBody.indexOf(
             "return block(permit, ::markNetworkFinished, transferOwnerToken)"
@@ -1168,6 +1172,7 @@ class AudioDownloadManagerTest {
         assertTrue(coreRequestedIndex > networkFinishedIndex)
         assertTrue(coreCommittedIndex > coreRequestedIndex)
         assertTrue(wakeIndex > coreCommittedIndex)
+        assertTrue(wakeIndex < transferPermitReturnIndex)
         assertTrue(transferBody.contains("transferOwnerToken = committedAudio.transferOwnerToken"))
         assertTrue(cycleBody.contains("DownloadExecutionHosts.onTransferStarted("))
         assertTrue(admissionRejectedIndex >= 0)

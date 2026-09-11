@@ -87,4 +87,17 @@ class DownloadOperationStateTest {
             )
         }
     }
+
+    @Test
+    fun `host capacity handoff retries without exponential backoff`() {
+        listOf("HOST_ADMISSION_FULL", "HOST_TRANSFER_ADMISSION_DEFERRED").forEach { errorCode ->
+            assertNull(
+                planDownloadRetry(
+                    currentRetryCount = 0,
+                    errorCode = errorCode,
+                    nowMs = 1_000L
+                ).nextRetryAtMs
+            )
+        }
+    }
 }

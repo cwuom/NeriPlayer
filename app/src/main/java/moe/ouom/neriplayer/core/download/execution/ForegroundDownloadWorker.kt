@@ -236,25 +236,30 @@ class ForegroundDownloadWorker(
         /** 所有新下载共用一个持久泵，operation 载荷始终保存在 Room */
         internal fun schedulePump(
             context: Context,
-            initialDelayMs: Long = 0L
+            initialDelayMs: Long = 0L,
+            requestSuccessorWhenBusy: Boolean = true
         ): Boolean {
             return schedulePumpWithPolicy(
                 context = context,
                 existingWorkPolicy = pumpExistingWorkPolicy,
-                initialDelayMs = initialDelayMs
+                initialDelayMs = initialDelayMs,
+                requestSuccessorWhenBusy = requestSuccessorWhenBusy
             )
         }
 
         private fun schedulePumpWithPolicy(
             context: Context,
             existingWorkPolicy: ExistingWorkPolicy,
-            initialDelayMs: Long
+            initialDelayMs: Long,
+            requestSuccessorWhenBusy: Boolean = true
         ): Boolean {
             val appContext = context.applicationContext
             if (isPumpBlocked(appContext)) {
                 return false
             }
-            val generation = pumpScheduleCoordinator.request() ?: return true
+            val generation = pumpScheduleCoordinator.request(
+                requestSuccessorWhenBusy = requestSuccessorWhenBusy
+            ) ?: return true
             if (isPumpBlocked(appContext)) {
                 pumpScheduleCoordinator.cancelUnclaimed(generation)
                 return false
@@ -268,8 +273,12 @@ class ForegroundDownloadWorker(
         }
 
         /** 预留同一个协调器代次，供进程内泵和持久 Worker 共同完成 */
-        internal fun reservePumpGeneration(): Long? {
-            return pumpScheduleCoordinator.reserveImmediate()
+        internal fun reservePumpGeneration(
+            requestSuccessorWhenBusy: Boolean = true
+        ): Long? {
+            return pumpScheduleCoordinator.reserveImmediate(
+                requestSuccessorWhenBusy = requestSuccessorWhenBusy
+            )
         }
 
         /** 为已预留代次入队，入队失败仍由协调器保留有界重试入口 */
@@ -325,6 +334,9 @@ class ForegroundDownloadWorker(
             initialDelayMs: Long
         ): Boolean {
             val delayMs = initialDelayMs.coerceAtLeast(0L)
+            if (!pumpScheduleCoordinator.markWorkEnqueueStarted(generation)) {
+                return true
+            }
             return runCatching {
                 val operation = WorkManager.getInstance(context)
                     .enqueueUniqueWork(
@@ -574,11 +586,23 @@ internal class DownloadPumpScheduleCoordinator {
     private var claimedGeneration: Long? = null
     /** 进程内泵完成后仍保护重试代次，直到 Worker 真正接管 */
     private var immediateGeneration: Long? = null
+    /** 进程内泵完成后仍在 WorkManager 队列中的同一代次 */
+    private var queuedGeneration: Long? = null
+    /** Worker 已观察到进程内 owner，进程内 owner 退出后必须重新交接一代 */
+    private var workerObservedImmediateGeneration: Long? = null
     private var successorRequested = false
 
-    fun request(): Long? = synchronized(lock) {
+    fun request(requestSuccessorWhenBusy: Boolean = true): Long? = synchronized(lock) {
         if (activeGeneration != null) {
-            successorRequested = true
+            if (requestSuccessorWhenBusy) {
+                successorRequested = true
+            }
+            return@synchronized null
+        }
+        if (queuedGeneration != null) {
+            if (requestSuccessorWhenBusy) {
+                successorRequested = true
+            }
             return@synchronized null
         }
         latestGeneration += 1L
@@ -588,8 +612,10 @@ internal class DownloadPumpScheduleCoordinator {
         }
     }
 
-    fun reserveImmediate(): Long? = synchronized(lock) {
-        val generation = request() ?: return@synchronized null
+    fun reserveImmediate(requestSuccessorWhenBusy: Boolean = true): Long? = synchronized(lock) {
+        val generation = request(
+            requestSuccessorWhenBusy = requestSuccessorWhenBusy
+        ) ?: return@synchronized null
         claimedGeneration = generation
         immediateGeneration = generation
         generation
@@ -599,15 +625,25 @@ internal class DownloadPumpScheduleCoordinator {
         if (generation < latestGeneration) {
             return@synchronized false
         }
+        // 进程内泵仍持有同一代次时，Worker 只是观察到已入队，不能先清掉
+        // queued 标记。否则进程内泵结束时会误以为没有持久 owner，再追加
+        // successor，形成 WorkManager 快速自旋。
+        if (activeGeneration == generation && claimedGeneration == generation) {
+            if (immediateGeneration == generation) {
+                workerObservedImmediateGeneration = generation
+            }
+            return@synchronized false
+        }
+        if (queuedGeneration == generation) {
+            queuedGeneration = null
+        }
         when (activeGeneration) {
             generation -> {
-                if (claimedGeneration == generation) {
-                    return@synchronized false
-                }
                 // 进程内泵的重试代次可以由持久 Worker 接管，接管后
                 // 异步 enqueue 回调不能再把运行中的 Worker 清掉
                 immediateGeneration = null
                 claimedGeneration = generation
+                workerObservedImmediateGeneration = null
                 true
             }
             null -> {
@@ -615,11 +651,21 @@ internal class DownloadPumpScheduleCoordinator {
                 activeGeneration = generation
                 claimedGeneration = generation
                 immediateGeneration = null
+                workerObservedImmediateGeneration = null
                 true
             }
 
             else -> false
         }
+    }
+
+    /** 在调用 WorkManager 前登记队列，避免进程内泵结束后的唤醒重复入队 */
+    fun markWorkEnqueueStarted(generation: Long): Boolean = synchronized(lock) {
+        if (activeGeneration != generation || queuedGeneration != null) {
+            return@synchronized false
+        }
+        queuedGeneration = generation
+        true
     }
 
     fun complete(
@@ -660,12 +706,47 @@ internal class DownloadPumpScheduleCoordinator {
         generation: Long,
         result: DownloadExecutionPumpResult
     ): DownloadPumpCompletion {
-        return if (result == DownloadExecutionPumpResult.Completed) {
-            complete(generation, workWillRetry = false)
-        } else {
-            // 进程内泵没有可依赖的 WorkManager retry owner，所有非完成结果
-            // 都必须释放当前代次并交给新的持久 successor
-            completeWithSuccessor(generation)
+        return synchronized(lock) {
+            if (activeGeneration != generation) {
+                return@synchronized DownloadPumpCompletion.IGNORED
+            }
+            // 同一代次已经有持久 Worker 兜底时，不能在进程内泵结束时再追加
+            // successor。Worker 会接管这一代，随后按 successorRequested 决定是否续跑。
+            if (queuedGeneration == generation) {
+                claimedGeneration = null
+                immediateGeneration = null
+                if (workerObservedImmediateGeneration == generation) {
+                    workerObservedImmediateGeneration = null
+                    queuedGeneration = null
+                    activeGeneration = null
+                    val shouldScheduleSuccessor = result != DownloadExecutionPumpResult.Completed ||
+                        successorRequested
+                    successorRequested = false
+                    return@synchronized if (shouldScheduleSuccessor) {
+                        DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+                    } else {
+                        DownloadPumpCompletion.COMPLETED
+                    }
+                }
+                return@synchronized DownloadPumpCompletion.COMPLETED
+            }
+            claimedGeneration = null
+            immediateGeneration = null
+            workerObservedImmediateGeneration = null
+            activeGeneration = null
+            if (result == DownloadExecutionPumpResult.Completed) {
+                if (successorRequested) {
+                    successorRequested = false
+                    DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+                } else {
+                    DownloadPumpCompletion.COMPLETED
+                }
+            } else {
+                // 进程内泵没有可依赖的 WorkManager retry owner，所有非完成结果
+                // 都必须释放当前代次并交给新的持久 successor
+                successorRequested = false
+                DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+            }
         }
     }
 
@@ -673,6 +754,8 @@ internal class DownloadPumpScheduleCoordinator {
         if (activeGeneration != generation) {
             return@synchronized false
         }
+        queuedGeneration = null
+        workerObservedImmediateGeneration = null
         // enqueue 的异步失败回调可能晚于进程内泵或 Worker 的 claim。
         // 这两种 owner 都必须自行提交完成结果，不能由回调释放代次
         if (claimedGeneration == generation || immediateGeneration == generation) {
@@ -693,6 +776,8 @@ internal class DownloadPumpScheduleCoordinator {
         if (activeGeneration != generation || claimedGeneration == generation) {
             return@synchronized false
         }
+        queuedGeneration = null
+        workerObservedImmediateGeneration = null
         immediateGeneration = null
         activeGeneration = null
         successorRequested = false
@@ -704,6 +789,8 @@ internal class DownloadPumpScheduleCoordinator {
         activeGeneration = null
         claimedGeneration = null
         immediateGeneration = null
+        queuedGeneration = null
+        workerObservedImmediateGeneration = null
         successorRequested = false
     }
 }

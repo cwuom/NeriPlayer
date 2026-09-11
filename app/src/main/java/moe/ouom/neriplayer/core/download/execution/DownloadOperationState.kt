@@ -66,7 +66,9 @@ internal const val DOWNLOAD_RETRY_MAX_COUNT = 31
 /** 网络策略和取消收敛由专用唤醒器负责，不能再叠加一个盲目延迟 */
 private val IMMEDIATE_DOWNLOAD_RETRY_ERROR_CODES = setOf(
     "NETWORK_POLICY_WAITING",
-    "CANCELLATION_SETTLEMENT_PENDING"
+    "CANCELLATION_SETTLEMENT_PENDING",
+    "HOST_ADMISSION_FULL",
+    "HOST_TRANSFER_ADMISSION_DEFERRED"
 )
 
 internal data class DownloadRetryPlan(

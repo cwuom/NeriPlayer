@@ -22,6 +22,20 @@ class DownloadPumpScheduleCoordinatorTest {
     }
 
     @Test
+    fun `core commit wake does not manufacture a successor while the pump is busy`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.request()!!
+
+        assertNull(coordinator.request(requestSuccessorWhenBusy = false))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED,
+            coordinator.complete(generation, workWillRetry = false)
+        )
+        // 没有 successor 时，下一次真实请求可以直接取得新代次
+        assertTrue(coordinator.request() != null)
+    }
+
+    @Test
     fun `retry keeps the current request authoritative`() {
         val coordinator = DownloadPumpScheduleCoordinator()
         val generation = coordinator.request()!!
@@ -108,6 +122,84 @@ class DownloadPumpScheduleCoordinatorTest {
                 DownloadExecutionPumpResult.Retry
             )
         )
+        assertTrue(coordinator.request() != null)
+    }
+
+    @Test
+    fun `queued worker keeps repeated release wakes from creating more generations`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.reserveImmediate()!!
+
+        assertTrue(coordinator.markWorkEnqueueStarted(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED,
+            coordinator.completeImmediate(
+                generation,
+                DownloadExecutionPumpResult.Completed
+            )
+        )
+        assertNull(coordinator.request())
+        assertNull(coordinator.request())
+        assertTrue(coordinator.claimWorker(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR,
+            coordinator.complete(generation, workWillRetry = false)
+        )
+        assertTrue(coordinator.request() != null)
+    }
+
+    @Test
+    fun `immediate owner keeps queued marker when worker starts before it releases`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.reserveImmediate()!!
+
+        assertTrue(coordinator.markWorkEnqueueStarted(generation))
+        // Worker 观察到进程内泵仍是 owner 时不能清掉 queued fallback；
+        // 进程内泵退出后必须交给新代次，避免留下永久 active generation
+        assertFalse(coordinator.claimWorker(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR,
+            coordinator.completeImmediate(
+                generation,
+                DownloadExecutionPumpResult.ContinueSoon
+            )
+        )
+        assertTrue(coordinator.request() != null)
+        assertFalse(coordinator.claimWorker(generation))
+    }
+
+    @Test
+    fun `observed worker clears completed immediate generation without successor`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.reserveImmediate()!!
+
+        assertTrue(coordinator.markWorkEnqueueStarted(generation))
+        assertFalse(coordinator.claimWorker(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED,
+            coordinator.completeImmediate(
+                generation,
+                DownloadExecutionPumpResult.Completed
+            )
+        )
+        assertTrue(coordinator.request() != null)
+    }
+
+    @Test
+    fun `enqueue failure clears the queued fallback after immediate completion`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.reserveImmediate()!!
+
+        assertTrue(coordinator.markWorkEnqueueStarted(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED,
+            coordinator.completeImmediate(
+                generation,
+                DownloadExecutionPumpResult.Completed
+            )
+        )
+        // 失败回调到达时仍应能释放这一个代次，而不是留下永久 active。
+        assertTrue(coordinator.failEnqueue(generation))
         assertTrue(coordinator.request() != null)
     }
 
