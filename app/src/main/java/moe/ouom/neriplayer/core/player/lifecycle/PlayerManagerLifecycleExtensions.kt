@@ -141,6 +141,7 @@ import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidateForRecovery
+import moe.ouom.neriplayer.data.settings.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.CacheSizePolicy
@@ -394,6 +395,10 @@ internal fun PlayerManager.initializeImpl(
         externalBluetoothTranslationEnabled = false
         dynamicIslandLyricsEnabled = false
         amllLyricsEnabled = initialPlaybackPreferences.amllLyricsEnabled
+        preferWordTimedLyrics = initialPlaybackPreferences.preferWordTimedLyrics
+        defaultLyricSource = LyricSourcePreferencePolicy.fromStorage(
+            initialPlaybackPreferences.defaultLyricSource
+        )
         lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
         LyriconManager.setEnabled(lyriconEnabled)
         if (lyriconEnabled && !LyriconManager.isInitialized()) {
@@ -1108,9 +1113,25 @@ internal fun PlayerManager.initializeImpl(
                 val changed = amllLyricsEnabled != enabled
                 amllLyricsEnabled = enabled
                 if (changed) {
-                    ytMusicLyricsCache.evictAll()
-                    PlayerLyricsProvider.clearAmllLyricsCache()
-                    syncExternalBluetoothLyrics(_currentSongFlow.value)
+                    evictLyricCachesForSourcePreferenceChange()
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.preferWordTimedLyricsFlow.collect { enabled ->
+                val changed = preferWordTimedLyrics != enabled
+                preferWordTimedLyrics = enabled
+                if (changed) {
+                    evictLyricCachesForSourcePreferenceChange()
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.defaultLyricSourceFlow.collect { source ->
+                val changed = defaultLyricSource != source
+                defaultLyricSource = source
+                if (changed) {
+                    evictLyricCachesForSourcePreferenceChange()
                 }
             }
         }
@@ -4051,4 +4072,17 @@ internal fun PlayerManager.releaseImpl() {
         UsbExclusiveSystemSoundGuard.forceRelease(application, "player_release_finally")
         StartupAudioFocusController.forceRelease("player_release_finally")
     }
+}
+
+/**
+ * 歌词来源相关设置变更后必须清空全部歌词缓存。
+ *
+ * 这些缓存都没有 TTL, 只靠设置变化时主动失效来维持一致, 否则改完设置后
+ * 当前歌曲会继续沿用旧来源的歌词, 表现为"设置没生效"。
+ */
+private fun PlayerManager.evictLyricCachesForSourcePreferenceChange() {
+    ytMusicLyricsCache.evictAll()
+    neteaseLyricsCache.evictAll()
+    PlayerLyricsProvider.clearAmllLyricsCache()
+    syncExternalBluetoothLyrics(_currentSongFlow.value)
 }

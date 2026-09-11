@@ -95,6 +95,8 @@ private const val PLAYBACK_CLOUD_MUSIC_LYRIC_OFFSET_KEY = "cloud_music_lyric_def
 private const val PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY = "qq_music_lyric_default_offset_ms"
 private const val PLAYBACK_LYRICON_ENABLED_KEY = "lyricon_enabled"
 private const val PLAYBACK_AMLL_LYRICS_ENABLED_KEY = "amll_lyrics_enabled"
+private const val PLAYBACK_PREFER_WORD_TIMED_LYRICS_KEY = "prefer_word_timed_lyrics"
+private const val PLAYBACK_DEFAULT_LYRIC_SOURCE_KEY = "default_lyric_source"
 private const val DEFAULT_MAX_CACHE_SIZE_BYTES = 1024L * 1024 * 1024
 private val playbackPreferenceSnapshotWarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val playbackPreferenceSnapshotWarmLock = Any()
@@ -156,6 +158,8 @@ data class PlaybackPreferenceSnapshot(
     val qqMusicLyricDefaultOffsetMs: Long = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
     val lyriconEnabled: Boolean = false,
     val amllLyricsEnabled: Boolean = true,
+    val preferWordTimedLyrics: Boolean = true,
+    val defaultLyricSource: String = DEFAULT_LYRIC_SOURCE,
     val maxCacheSizeBytes: Long = DEFAULT_MAX_CACHE_SIZE_BYTES
 ) {
     fun sanitized(): PlaybackPreferenceSnapshot {
@@ -204,6 +208,7 @@ data class PlaybackPreferenceSnapshot(
             ),
             cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
             qqMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(qqMusicLyricDefaultOffsetMs),
+            defaultLyricSource = LyricSourcePreferencePolicy.normalize(defaultLyricSource),
             maxCacheSizeBytes = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSizeBytes)
         )
     }
@@ -401,6 +406,14 @@ internal fun persistPlaybackPreferenceSnapshot(
                     PLAYBACK_AMLL_LYRICS_ENABLED_KEY,
                     normalizedSnapshot.amllLyricsEnabled
                 )
+                .putBoolean(
+                    PLAYBACK_PREFER_WORD_TIMED_LYRICS_KEY,
+                    normalizedSnapshot.preferWordTimedLyrics
+                )
+                .putString(
+                    PLAYBACK_DEFAULT_LYRIC_SOURCE_KEY,
+                    normalizedSnapshot.defaultLyricSource
+                )
                 .putLong(PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY, normalizedSnapshot.maxCacheSizeBytes)
         }
     }
@@ -507,6 +520,8 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
                 ?: DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
         lyriconEnabled = this[SettingsKeys.LYRICON_ENABLED] ?: false,
         amllLyricsEnabled = this[SettingsKeys.AMLL_LYRICS_ENABLED] ?: true,
+        preferWordTimedLyrics = this[SettingsKeys.PREFER_WORD_TIMED_LYRICS] ?: true,
+        defaultLyricSource = this[SettingsKeys.DEFAULT_LYRIC_SOURCE] ?: DEFAULT_LYRIC_SOURCE,
         maxCacheSizeBytes =
             this[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: DEFAULT_MAX_CACHE_SIZE_BYTES
     ).sanitized()
@@ -654,6 +669,9 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         ),
         lyriconEnabled = prefs.getBoolean(PLAYBACK_LYRICON_ENABLED_KEY, false),
         amllLyricsEnabled = prefs.getBoolean(PLAYBACK_AMLL_LYRICS_ENABLED_KEY, true),
+        preferWordTimedLyrics = prefs.getBoolean(PLAYBACK_PREFER_WORD_TIMED_LYRICS_KEY, true),
+        defaultLyricSource = prefs.getString(PLAYBACK_DEFAULT_LYRIC_SOURCE_KEY, null)
+            ?: DEFAULT_LYRIC_SOURCE,
         maxCacheSizeBytes = prefs.getLong(
             PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY,
             DEFAULT_MAX_CACHE_SIZE_BYTES

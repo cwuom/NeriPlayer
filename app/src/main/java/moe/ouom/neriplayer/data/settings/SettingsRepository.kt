@@ -253,6 +253,13 @@ class SettingsRepository(private val context: Context) {
     val amllLyricsEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.amllLyricsEnabledFlow
 
+    val preferWordTimedLyricsFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.lyricSource.preferWordTimedLyrics)
+
+    val defaultLyricSourceFlow: Flow<LyricSourcePreference> =
+        settingFlow(AutoSettingsSchema.lyricSource.defaultLyricSource)
+            .map(LyricSourcePreferencePolicy::fromStorage)
+
     val statusBarLyricsEnabledFlow : Flow<Boolean> =
         autoSettingsRepository.statusBarLyricsFlow
 
@@ -670,6 +677,20 @@ class SettingsRepository(private val context: Context) {
     suspend fun setYouTubePlaybackSource(source: YouTubePlaybackSourcePreference) {
         setSetting(
             setting = AutoSettingsSchema.playback.youtubePlaybackSource,
+            value = source.storageValue
+        )
+    }
+
+    suspend fun setPreferWordTimedLyrics(enabled: Boolean) {
+        setSetting(
+            setting = AutoSettingsSchema.lyricSource.preferWordTimedLyrics,
+            value = enabled
+        )
+    }
+
+    suspend fun setDefaultLyricSource(source: LyricSourcePreference) {
+        setSetting(
+            setting = AutoSettingsSchema.lyricSource.defaultLyricSource,
             value = source.storageValue
         )
     }

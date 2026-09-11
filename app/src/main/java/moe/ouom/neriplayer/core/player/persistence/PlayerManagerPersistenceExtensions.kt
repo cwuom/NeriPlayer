@@ -970,6 +970,8 @@ internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntr
         editableLyricsMatcher = AppContainer.editableLyricsMatcher,
         amllTtmlClient = amllTtmlClient,
         amllLyricsEnabled = amllLyricsEnabled,
+        preferWordTimedLyrics = preferWordTimedLyrics,
+        defaultLyricSource = defaultLyricSource,
         ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
     )
