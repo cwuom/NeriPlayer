@@ -82,6 +82,18 @@ class UidtStopCoordinatorTest {
     }
 
     @Test
+    fun `UIDT explicitly receives scheduler network changes`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "UidtDownloadJobService.kt"
+        ).readText()
+        val onNetworkChanged = methodBody(source, "override fun onNetworkChanged(")
+
+        assertTrue(onNetworkChanged.contains("params.network"))
+        assertTrue(onNetworkChanged.contains("UIDT 下载任务网络切换"))
+    }
+
+    @Test
     fun `cancelling a legacy fallback removes both historical per operation works`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +

@@ -558,33 +558,47 @@ internal class ManagedDownloadArtifactCoordinator {
         storedAudio: ManagedDownloadStorage.StoredEntry,
         expectedLeaseId: String? = null,
         rootKeyOverride: String? = null
-    ): Boolean {
+    ): ManagedDownloadArtifactMutationResult {
         val appContext = context.applicationContext
-        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return false
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank)
+            ?: return ManagedDownloadArtifactMutationResult.INVALID_STABLE_KEY
+        val normalizedLeaseId = expectedLeaseId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
         val rootKey = rootKeyOverride
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?: ManagedDownloadStorage.currentSnapshotRootKey(appContext)
         val database = database(appContext)
         val nowMs = System.currentTimeMillis()
-        var committed = false
-        database.withTransaction {
+        return database.withTransaction {
             val dao = database.managedDownloadArtifactDao()
-            val current = dao.find(rootKey, stableKey)
-                ?: expectedLeaseId?.let { leaseId ->
+            val currentAtRoot = dao.find(rootKey, stableKey)
+            val current = selectManagedDownloadArtifactForLeaseMutation(
+                current = currentAtRoot,
+                sameKeyArtifacts = if (normalizedLeaseId != null &&
+                    currentAtRoot?.leaseId != normalizedLeaseId
+                ) {
                     dao.findAllByStableKey(stableKey)
-                        .firstOrNull { artifact -> artifact.leaseId == leaseId }
-                }
-            if (current == null && expectedLeaseId != null) return@withTransaction
-            if (current != null && !matchesLease(current, expectedLeaseId)) return@withTransaction
+                } else {
+                    emptyList()
+                },
+                expectedLeaseId = normalizedLeaseId
+            )
+            if (current == null && normalizedLeaseId != null) {
+                return@withTransaction ManagedDownloadArtifactMutationResult.EXPECTED_LEASE_NOT_FOUND
+            }
+            if (current != null && !matchesLease(current, normalizedLeaseId)) {
+                return@withTransaction ManagedDownloadArtifactMutationResult.EXPECTED_LEASE_NOT_FOUND
+            }
             val base = current ?: newLeaseArtifact(
                 rootKey = rootKey,
                 stableKey = stableKey,
                 artifactId = artifactId(rootKey, stableKey),
                 previous = null,
                 nowMs = nowMs,
-                leaseOwnerId = expectedLeaseId
-            ).copy(leaseId = expectedLeaseId)
+                leaseOwnerId = normalizedLeaseId
+            ).copy(leaseId = normalizedLeaseId)
             dao.upsert(
                 base.copy(
                     state = ManagedDownloadArtifactState.CORE_COMMITTED.name,
@@ -598,9 +612,8 @@ internal class ManagedDownloadArtifactCoordinator {
                     lastErrorCode = null
                 )
             )
-            committed = true
+            ManagedDownloadArtifactMutationResult.APPLIED
         }
-        return committed
     }
 
     suspend fun markAssetsEnriching(
@@ -621,14 +634,15 @@ internal class ManagedDownloadArtifactCoordinator {
         context: Context,
         song: SongItem,
         expectedLeaseId: String?,
-        errorCode: String?
+        errorCode: String?,
+        retainLease: Boolean = false
     ) {
         updateState(
             context = context,
             song = song,
             expectedLeaseId = expectedLeaseId,
             state = ManagedDownloadArtifactState.DEGRADED_COMPLETE,
-            clearLease = true,
+            clearLease = !retainLease,
             errorCode = errorCode
         )
     }
@@ -652,24 +666,35 @@ internal class ManagedDownloadArtifactCoordinator {
         song: SongItem,
         storedAudio: ManagedDownloadStorage.StoredEntry,
         expectedLeaseId: String? = null
-    ): Boolean {
+    ): ManagedDownloadArtifactMutationResult {
         val appContext = context.applicationContext
-        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return false
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank)
+            ?: return ManagedDownloadArtifactMutationResult.INVALID_STABLE_KEY
+        val normalizedLeaseId = expectedLeaseId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
         val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
         val database = database(appContext)
         val nowMs = System.currentTimeMillis()
         return database.withTransaction {
             val dao = database.managedDownloadArtifactDao()
-            val current = dao.find(rootKey, stableKey)
-                ?: expectedLeaseId?.let { leaseId ->
+            val currentAtRoot = dao.find(rootKey, stableKey)
+            val current = selectManagedDownloadArtifactForLeaseMutation(
+                current = currentAtRoot,
+                sameKeyArtifacts = if (normalizedLeaseId != null &&
+                    currentAtRoot?.leaseId != normalizedLeaseId
+                ) {
                     dao.findAllByStableKey(stableKey)
-                        .firstOrNull { artifact -> artifact.leaseId == leaseId }
-                }
-            if (current == null && expectedLeaseId != null) {
-                return@withTransaction false
+                } else {
+                    emptyList()
+                },
+                expectedLeaseId = normalizedLeaseId
+            )
+            if (current == null && normalizedLeaseId != null) {
+                return@withTransaction ManagedDownloadArtifactMutationResult.EXPECTED_LEASE_NOT_FOUND
             }
-            if (current != null && !matchesLease(current, expectedLeaseId)) {
-                return@withTransaction false
+            if (current != null && !matchesLease(current, normalizedLeaseId)) {
+                return@withTransaction ManagedDownloadArtifactMutationResult.EXPECTED_LEASE_NOT_FOUND
             }
             val base = current ?: newLeaseArtifact(
                 rootKey = rootKey,
@@ -677,8 +702,8 @@ internal class ManagedDownloadArtifactCoordinator {
                 artifactId = artifactId(rootKey, stableKey),
                 previous = null,
                 nowMs = nowMs,
-                leaseOwnerId = expectedLeaseId
-            ).copy(leaseId = expectedLeaseId)
+                leaseOwnerId = normalizedLeaseId
+            ).copy(leaseId = normalizedLeaseId)
             dao.upsert(
                 base.copy(
                     state = ManagedDownloadArtifactState.FINALIZED.name,
@@ -693,7 +718,7 @@ internal class ManagedDownloadArtifactCoordinator {
                     lastErrorCode = null
                 )
             )
-            true
+            ManagedDownloadArtifactMutationResult.APPLIED
         }
     }
 
@@ -1585,19 +1610,28 @@ internal class ManagedDownloadArtifactCoordinator {
         errorCode: String? = null
     ) {
         val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return
+        val normalizedLeaseId = expectedLeaseId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
         val appContext = context.applicationContext
         val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
         val database = database(appContext)
         val nowMs = System.currentTimeMillis()
         database.withTransaction {
             val dao = database.managedDownloadArtifactDao()
-            val current = dao.find(rootKey, stableKey)
-                ?: expectedLeaseId?.let { leaseId ->
+            val currentAtRoot = dao.find(rootKey, stableKey)
+            val current = selectManagedDownloadArtifactForLeaseMutation(
+                current = currentAtRoot,
+                sameKeyArtifacts = if (normalizedLeaseId != null &&
+                    currentAtRoot?.leaseId != normalizedLeaseId
+                ) {
                     dao.findAllByStableKey(stableKey)
-                        .firstOrNull { artifact -> artifact.leaseId == leaseId }
-                }
-                ?: return@withTransaction
-            if (!matchesLease(current, expectedLeaseId)) {
+                } else {
+                    emptyList()
+                },
+                expectedLeaseId = normalizedLeaseId
+            ) ?: return@withTransaction
+            if (!matchesLease(current, normalizedLeaseId)) {
                 return@withTransaction
             }
             val nextState = resolveArtifactStateUpdate(

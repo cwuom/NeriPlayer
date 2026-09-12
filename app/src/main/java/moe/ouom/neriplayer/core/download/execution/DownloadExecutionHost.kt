@@ -46,6 +46,9 @@ class DefaultDownloadExecutionHost(
     private val downloadParallelismProvider: (Context) -> Int =
         ::currentDownloadParallelism,
     private val pendingUidtGraceDelayProvider: ((Context, DownloadExecutionRequest) -> Long)? = null,
+    private val transferPermitOwnersProvider: () -> Set<String> = {
+        AudioDownloadManager.transferPermitSnapshot().heldPermitOwners
+    },
     private val retryDeadlineWakeCoordinator: DownloadRetryDeadlineWakeCoordinator =
         DownloadRetryDeadlineWakeCoordinator { context, delayMs ->
             ForegroundDownloadWorker.schedulePump(context, initialDelayMs = delayMs)
@@ -125,7 +128,9 @@ class DefaultDownloadExecutionHost(
     private data class TransferSlotOwner(
         val token: Long,
         val attemptId: Long?,
-        val ticket: ScheduleTicket?
+        val ticket: ScheduleTicket?,
+        /** 仅生产传输会携带真实 permit owner，测试和旧调用保持 null */
+        val transferPermitOwnerKey: String? = null
     )
 
     override fun schedule(
@@ -1136,11 +1141,23 @@ class DefaultDownloadExecutionHost(
     override fun onTransferStarted(
         context: Context,
         operationId: String,
-        attemptId: Long?
+        attemptId: Long?,
+        transferPermitOwnerKey: String?
     ): Long? {
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return null
         if (attemptId != null && attemptId <= 0L) return null
         val normalizedAttemptId = attemptId
+        val normalizedPermitOwnerKey = transferPermitOwnerKey
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+        if (transferPermitOwnerKey != null && normalizedPermitOwnerKey == null) {
+            logTransferAdmissionRejected(
+                operationId = normalizedId,
+                attemptId = normalizedAttemptId,
+                reason = "blank_permit_owner"
+            )
+            return null
+        }
         val persistedRequest = try {
             operationStore.read(context.applicationContext, normalizedId)
         } catch (error: Throwable) {
@@ -1152,10 +1169,27 @@ class DefaultDownloadExecutionHost(
             )
             return null
         } ?: return null
-        if (persistedRequest.attemptId != normalizedAttemptId) return null
+        if (persistedRequest.attemptId != normalizedAttemptId) {
+            logTransferAdmissionRejected(
+                operationId = normalizedId,
+                attemptId = normalizedAttemptId,
+                reason = "persisted_attempt_mismatch"
+            )
+            return null
+        }
+        // 网络 permit 才是物理并发的唯一权威。Core Commit、网络断开或宿主停止
+        // 的回调即使遗漏，也不能让旧的内存镜像永久占住下一首的补位窗口
+        reconcileInactiveTransferOwners(context.applicationContext)
         val configuredCapacity = configuredDownloadParallelism(context.applicationContext)
         return synchronized(executionAdmissionLock) {
-            if (!executingOperationIds.contains(normalizedId)) return@synchronized null
+            if (!executingOperationIds.contains(normalizedId)) {
+                logTransferAdmissionRejected(
+                    operationId = normalizedId,
+                    attemptId = normalizedAttemptId,
+                    reason = "operation_not_executing"
+                )
+                return@synchronized null
+            }
             val activeOwner = activeTransferOwners[normalizedId]
             if (activeOwner != null) {
                 return@synchronized activeOwner
@@ -1164,10 +1198,24 @@ class DefaultDownloadExecutionHost(
             }
             val reservation = transferReservationOwners[normalizedId]
             if (reservation != null && reservation.attemptId != normalizedAttemptId) {
+                logTransferAdmissionRejected(
+                    operationId = normalizedId,
+                    attemptId = normalizedAttemptId,
+                    reason = "reservation_attempt_mismatch"
+                )
                 return@synchronized null
             }
-            // 网络 permit 已在调用方取得，泵的预留位不是正在传输的第二份占用
-            if (activeTransferOwners.size >= configuredCapacity) {
+            // 兼容旧调用时仍保持原有保护。生产调用已经持有真实 permit，重复
+            // 使用宿主镜像限流会在网络切换或回调遗漏后产生错误拒绝
+            if (
+                normalizedPermitOwnerKey == null &&
+                    activeTransferOwners.size >= configuredCapacity
+            ) {
+                logTransferAdmissionRejected(
+                    operationId = normalizedId,
+                    attemptId = normalizedAttemptId,
+                    reason = "legacy_host_capacity_full"
+                )
                 return@synchronized null
             }
             val owner = reservation ?: TransferSlotOwner(
@@ -1180,10 +1228,69 @@ class DefaultDownloadExecutionHost(
             }
             activeTransferOwners[normalizedId] = owner.copy(
                 attemptId = normalizedAttemptId,
-                ticket = hostAdmissionOwners[normalizedId] ?: owner.ticket
+                ticket = hostAdmissionOwners[normalizedId] ?: owner.ticket,
+                transferPermitOwnerKey = normalizedPermitOwnerKey
             )
             owner.token
         }
+    }
+
+    /**
+     * 真实 permit 已释放时，回收没有机会收到 Core Commit 或 finally 回调的内存
+     * 槽位。仅处理携带 permit 身份的生产 owner，不触碰旧入口和测试的显式 owner
+     */
+    private fun reconcileInactiveTransferOwners(context: Context? = null): Set<String> {
+        val heldPermitOwners = runCatching {
+            transferPermitOwnersProvider()
+        }.onFailure { error ->
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "读取真实下载 permit 快照失败，跳过宿主槽位修复: ${error.message}",
+                error
+            )
+        }.getOrNull() ?: return emptySet()
+        val releasedOperationIds = synchronized(executionAdmissionLock) {
+            activeTransferOwners.entries
+                .toList()
+                .mapNotNull { (operationId, owner) ->
+                    val permitOwnerKey = owner.transferPermitOwnerKey ?: return@mapNotNull null
+                    if (permitOwnerKey in heldPermitOwners) return@mapNotNull null
+                    if (!activeTransferOwners.remove(operationId, owner)) return@mapNotNull null
+                    transferReleaseInFlightTokens.remove(owner.token)
+                    transferReleasePendingTokens.remove(owner.token)
+                    operationId
+                }
+                .toSet()
+        }
+        releasedOperationIds.forEach(::signalTransferRelease)
+        // Core Commit 的宿主准入持久化释放可能先失败。真实 permit 已经消失时，
+        // 不能只清理内存 owner，否则后续多个失败会把 Room 准入窗口逐步占满
+        context?.applicationContext?.let { appContext ->
+            releasedOperationIds.forEach { operationId ->
+                releaseHostAdmissionIfIdle(appContext, operationId)
+            }
+        }
+        if (releasedOperationIds.isNotEmpty()) {
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "真实 permit 已释放，回收失联传输槽位: " +
+                    "operations=${releasedOperationIds.size}"
+            )
+        }
+        return releasedOperationIds
+    }
+
+    private fun logTransferAdmissionRejected(
+        operationId: String,
+        attemptId: Long?,
+        reason: String
+    ) {
+        moe.ouom.neriplayer.core.logging.NPLogger.w(
+            "DownloadExecutionHost",
+            "拒绝传输槽位: operationId=$operationId, attemptId=$attemptId, " +
+                "reason=$reason, active=${activeTransferOwners.size}, " +
+                "reservations=${transferReservationOwners.size}"
+        )
     }
 
     override fun onCoreCommitted(
@@ -1382,8 +1489,11 @@ class DefaultDownloadExecutionHost(
         if (released) signalTransferRelease(normalizedId)
     }
 
-    private fun transferLaneOccupancy(): Int = synchronized(executionAdmissionLock) {
-        activeTransferOwners.size + transferReservationOwners.size
+    private fun transferLaneOccupancy(context: Context): Int {
+        reconcileInactiveTransferOwners(context.applicationContext)
+        return synchronized(executionAdmissionLock) {
+            activeTransferOwners.size + transferReservationOwners.size
+        }
     }
 
     private fun releaseTransferSlot(
@@ -2009,7 +2119,7 @@ class DefaultDownloadExecutionHost(
                     // 未选中的请求，因此下一轮不会跳过任何 durable operation
                     while (!queueExhausted) {
                         val configuredCapacity = configuredDownloadParallelism(appContext)
-                        val occupancy = transferLaneOccupancy()
+                        val occupancy = transferLaneOccupancy(appContext)
                         val laneHasCapacity = occupancy < configuredCapacity
                         val mayProbeBlockedLane = !laneHasCapacity &&
                             !blockedLaneProbeUsed &&

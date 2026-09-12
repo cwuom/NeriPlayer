@@ -19,10 +19,14 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
             "managedDownloadArtifactCoordinator.markCoreCommitted("
         )
         val artifactResultIndex = body.lastIndexOf(
+            "val artifactCommitResult",
+            artifactCallIndex
+        )
+        val artifactCommittedIndex = body.indexOf(
             "val artifactCommitted",
             artifactCallIndex
         )
-        val rejectionIndex = body.indexOf("if (!artifactCommitted)", artifactResultIndex)
+        val rejectionIndex = body.indexOf("if (!artifactCommitted)", artifactCommittedIndex)
         val bridgeIndex = body.indexOf(
             "AudioDownloadManager.rememberCompletedAudioReference(",
             rejectionIndex
@@ -38,9 +42,13 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         val enrichmentIndex = body.indexOf("assetEnrichmentCoordinator.enqueue(", rejectionIndex)
 
         assertTrue(artifactResultIndex >= 0)
-        assertTrue(rejectionIndex > artifactResultIndex)
+        assertTrue(artifactCommittedIndex > artifactCallIndex)
+        assertTrue(rejectionIndex > artifactCommittedIndex)
         assertTrue(
-            body.substring(artifactResultIndex, rejectionIndex).contains("getOrElse")
+            body.substring(artifactResultIndex, artifactCommittedIndex).contains("getOrNull")
+        )
+        assertTrue(
+            body.substring(artifactCommittedIndex, rejectionIndex).contains("isApplied")
         )
         assertTrue(bridgeIndex > rejectionIndex)
         assertTrue(catalogIndex > rejectionIndex)
@@ -227,7 +235,11 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         assertTrue(operationFinalizedIndex > taskCompletionIndex)
         val rejectionBody = body.substring(rejectionIndex, catalogIndex)
         assertTrue(rejectionBody.contains("scheduleStartupArtifactRecovery"))
-        assertTrue(rejectionBody.contains("return false"))
+        assertTrue(
+            rejectionBody.contains(
+                "return FinalizedDownloadPublicationResult.RECOVERY_REQUIRED"
+            )
+        )
     }
 
     @Test
@@ -296,7 +308,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     }
 
     @Test
-    fun `post core cancellation releases its artifact lease before retry evaluation`() {
+    fun `post core cancellation retains its artifact lease before retry handoff`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -308,17 +320,43 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
             "val currentState =",
             cancellationIndex
         )
-        val leaseSettlementIndex = body.indexOf(
-            "settleLeaseAnyRoot(",
+        val retryEligibilityIndex = body.indexOf(
+            "val canRetry =",
             cancellationIndex
         )
+        val leaseRetentionIndex = body.indexOf(
+            "retainLease = true",
+            cancellationIndex
+        )
+        val leaseSettlementIndex = body.indexOf("settleLeaseAnyRoot(", cancellationIndex)
 
         assertTrue(cancellationIndex >= 0)
-        assertTrue(leaseSettlementIndex > cancellationIndex)
-        assertTrue(currentStateIndex > leaseSettlementIndex)
+        assertTrue(currentStateIndex > cancellationIndex)
+        assertTrue(retryEligibilityIndex > currentStateIndex)
+        assertTrue(leaseRetentionIndex > retryEligibilityIndex)
+        assertTrue(leaseSettlementIndex > leaseRetentionIndex)
         assertTrue(
-            body.substring(leaseSettlementIndex, currentStateIndex)
-                .contains("requestedState = ManagedDownloadArtifactState.DEGRADED_COMPLETE")
+            body.substring(leaseRetentionIndex, leaseSettlementIndex)
+                .contains("ASSET_ENRICHMENT_CANCELLED")
+        )
+    }
+
+    @Test
+    fun `stale final publication does not enter post core failure retry`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "enrichCoreCommittedDownload")
+        val staleIndex = body.indexOf("FinalizedDownloadPublicationResult.STALE")
+        val returnIndex = body.indexOf("return", staleIndex)
+        val failureCatchIndex = body.indexOf("} catch (error: Throwable)", staleIndex)
+
+        assertTrue(staleIndex >= 0)
+        assertTrue(returnIndex > staleIndex)
+        assertTrue(failureCatchIndex > returnIndex)
+        assertFalse(
+            body.substring(staleIndex, returnIndex)
+                .contains("settlePostCoreEnrichmentFailure")
         )
     }
 

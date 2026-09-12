@@ -1175,6 +1175,7 @@ class AudioDownloadManagerTest {
         assertTrue(wakeIndex < transferPermitReturnIndex)
         assertTrue(transferBody.contains("transferOwnerToken = committedAudio.transferOwnerToken"))
         assertTrue(cycleBody.contains("DownloadExecutionHosts.onTransferStarted("))
+        assertTrue(cycleBody.contains("transferPermitOwnerKey = permit.ownerKey"))
         assertTrue(admissionRejectedIndex >= 0)
         assertTrue(networkStartedIndex > admissionRejectedIndex)
         assertTrue(blockIndex >= 0)

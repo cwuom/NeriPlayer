@@ -146,6 +146,16 @@ internal fun requiresFinalizedPublicationRecovery(
     )
 }
 
+/** 最终发布被新代次接管时不能再把旧回调当成可重试故障 */
+internal enum class FinalizedDownloadPublicationResult {
+    PUBLISHED,
+    STALE,
+    RECOVERY_REQUIRED;
+
+    val requiresRecovery: Boolean
+        get() = this == RECOVERY_REQUIRED
+}
+
 /**
  * 只有带有当前操作凭据的活动替换才需要把正式文件退回 pending
  * 旧版本或待修复元信息不能因为缺少完成标记而暂时失去可播放引用

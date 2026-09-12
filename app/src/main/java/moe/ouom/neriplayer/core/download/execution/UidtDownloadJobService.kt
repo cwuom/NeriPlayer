@@ -141,6 +141,17 @@ class UidtDownloadJobService : JobService() {
         return true
     }
 
+    override fun onNetworkChanged(params: JobParameters) {
+        val operationId = params.extras
+            .getString(OPERATION_ID_KEY)
+            ?.let(::normalizeDownloadOperationId)
+        NPLogger.d(
+            TAG,
+            "UIDT 下载任务网络切换: operationId=${operationId ?: "unknown"}, " +
+                "jobId=${params.jobId}, network=${params.network}"
+        )
+    }
+
     override fun onStopJob(params: JobParameters): Boolean {
         val stopAction = resolveUidtStopAction(
             stopReason = params.stopReason,

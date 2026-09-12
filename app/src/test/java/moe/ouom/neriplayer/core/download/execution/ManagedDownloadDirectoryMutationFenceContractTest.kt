@@ -447,7 +447,8 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
             "val promoted = ManagedDownloadStorage.promoteCoreCommittedPendingAudio("
         )
         assertTrue(afterPromotion.contains("managedDownloadArtifactCoordinator.markCoreCommitted("))
-        assertTrue(afterPromotion.contains("val artifactCommitted = runCatching"))
+        assertTrue(afterPromotion.contains("val artifactCommitResult = runCatching"))
+        assertTrue(afterPromotion.contains("artifactCommitResult?.isApplied == true"))
         assertTrue(afterPromotion.contains("if (artifactCommitted)"))
     }
 

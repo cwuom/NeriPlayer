@@ -144,6 +144,18 @@ class BatchDownloadExecutionHostCharacterizationTest {
         )
     }
 
+    @Test
+    fun `queued host stages publish through the durable task projection`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val stageBody = methodBody(source, "publishDownloadStage")
+
+        assertTrue(stageBody.contains("updateDownloadProgress("))
+        assertTrue(stageBody.contains("AudioDownloadManager.DownloadProgress("))
+        assertFalse(stageBody.contains("AudioDownloadManager.publishStageProgress("))
+    }
+
     private fun locateProjectFile(path: String): File {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {

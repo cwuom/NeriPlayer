@@ -75,7 +75,9 @@ interface DownloadExecutionHost {
     fun onTransferStarted(
         context: Context,
         operationId: String,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        /** 来自真实网络 permit 的不透明 owner key，用于回收失联的宿主镜像 */
+        transferPermitOwnerKey: String? = null
     ): Long? = null
 
     /** 音频 Core Commit 已持久化，必须回传启动时的 owner token 才能释放 transfer lane */

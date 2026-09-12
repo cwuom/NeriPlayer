@@ -2984,7 +2984,7 @@ object GlobalDownloadManager {
                                                     song = song,
                                                     rootKeyOverride = sourceArtifactRootKey
                                                 )
-                                            val artifactCommitted = runCatching {
+                                            val artifactCommitResult = runCatching {
                                                 managedDownloadArtifactCoordinator.markCoreCommitted(
                                                     context = context,
                                                     song = song,
@@ -2992,22 +2992,22 @@ object GlobalDownloadManager {
                                                     expectedLeaseId = artifactLeaseId,
                                                     rootKeyOverride = sourceArtifactRootKey
                                                 )
-                                            }.getOrElse { error ->
+                                            }.onFailure { error ->
                                                 NPLogger.w(
                                                     TAG,
                                                     "迁移前 pending 提升后写入 artifact 状态失败，保留恢复入口: " +
                                                         "song=${song.name}, error=${error.message}",
                                                     error
                                                 )
-                                                false
-                                            }
+                                            }.getOrNull()
+                                            val artifactCommitted = artifactCommitResult?.isApplied == true
                                             if (artifactCommitted) {
                                                 itemResolved = true
                                             } else {
                                                 NPLogger.w(
                                                     TAG,
                                                     "迁移前 pending 提升后的 artifact 状态未确认，保留恢复入口: " +
-                                                        "song=${song.name}"
+                                                        "song=${song.name}, result=$artifactCommitResult"
                                                 )
                                             }
                                         }
@@ -3035,7 +3035,7 @@ object GlobalDownloadManager {
                                         }
                                         ?: managedDownloadArtifactCoordinator.currentLeaseId(context, song)
                                     if (isFinalizedDownloadedMetadata(currentMetadata)) {
-                                        val published = publishFinalizedDownload(
+                                        val publicationResult = publishFinalizedDownload(
                                             context = context,
                                             song = song,
                                             storedAudio = pendingAudio,
@@ -3046,14 +3046,27 @@ object GlobalDownloadManager {
                                             allowMissingTask = true,
                                             admissionTicket = admissionTicket
                                         )
-                                        if (!published) {
-                                            NPLogger.w(
-                                                TAG,
-                                                "pending 音频已有完成凭据但提升未确认，保留等待恢复: " +
-                                                    "song=${song.name}, file=${pendingAudio.name}"
-                                            )
-                                        } else {
-                                            itemResolved = true
+                                        when (publicationResult) {
+                                            FinalizedDownloadPublicationResult.PUBLISHED -> {
+                                                itemResolved = true
+                                            }
+
+                                            FinalizedDownloadPublicationResult.STALE -> {
+                                                itemResolved = true
+                                                NPLogger.d(
+                                                    TAG,
+                                                    "pending 音频最终发布已被新代次接管: " +
+                                                        "song=${song.name}, file=${pendingAudio.name}"
+                                                )
+                                            }
+
+                                            FinalizedDownloadPublicationResult.RECOVERY_REQUIRED -> {
+                                                NPLogger.w(
+                                                    TAG,
+                                                    "pending 音频已有完成凭据但提升未确认，保留等待恢复: " +
+                                                        "song=${song.name}, file=${pendingAudio.name}"
+                                                )
+                                            }
                                         }
                                         return@withSongExecutionLock
                                     }
@@ -3201,7 +3214,7 @@ object GlobalDownloadManager {
                                 artifactState = artifactState
                             )
                     ) {
-                        val published = publishFinalizedDownload(
+                        val publicationResult = publishFinalizedDownload(
                             context = context,
                             song = song,
                             storedAudio = audio,
@@ -3212,7 +3225,7 @@ object GlobalDownloadManager {
                             allowMissingTask = true,
                             admissionTicket = admissionTicket
                         )
-                        if (!published) {
+                        if (publicationResult.requiresRecovery) {
                             NPLogger.w(
                                 TAG,
                                 "恢复完成凭据后的发布失败，保留等待重试: " +
@@ -6645,11 +6658,11 @@ object GlobalDownloadManager {
             return
         }
 
-        val artifactCommitted = if (
+        val artifactCommitResult = if (
             directoryMutationLeaseOwned &&
                 (sourceArtifactRootKey == null || sourceArtifactLeaseLookupFailed)
         ) {
-            false
+            null
         } else {
             runCatching {
                 managedDownloadArtifactCoordinator.markCoreCommitted(
@@ -6659,7 +6672,7 @@ object GlobalDownloadManager {
                     expectedLeaseId = artifactLeaseForCommit,
                     rootKeyOverride = sourceArtifactRootKey
                 )
-            }.getOrElse { error ->
+            }.onFailure { error ->
                 if (error is CancellationException) {
                     throw error
                 }
@@ -6669,9 +6682,9 @@ object GlobalDownloadManager {
                         "song=${song.name}, error=${error.message}",
                     error
                 )
-                false
-            }
+            }.getOrNull()
         }
+        val artifactCommitted = artifactCommitResult?.isApplied == true
         if (
             admissionTicket != null &&
                 !isDownloadAdmissionTicketCurrent(
@@ -6712,7 +6725,8 @@ object GlobalDownloadManager {
                 TAG,
                 "core committed artifact 未确认，保留 core 音频，跳过播放桥和目录发布，" +
                     "按完成态结算并安排恢复: " +
-                    "song=${song.name}, operationId=$recoveryOperationId"
+                    "song=${song.name}, operationId=$recoveryOperationId, " +
+                    "result=$artifactCommitResult"
             )
             settlePostCoreEnrichmentFailure(
                 context = context,
@@ -6919,7 +6933,8 @@ object GlobalDownloadManager {
                                             context = context,
                                             song = song,
                                             expectedLeaseId = artifactLeaseId,
-                                            errorCode = "ASSET_ENRICHMENT_TIMEOUT"
+                                            errorCode = "ASSET_ENRICHMENT_TIMEOUT",
+                                            retainLease = true
                                         )
                                     }
                                     val degradedStatePersisted = runCatching {
@@ -7303,7 +7318,7 @@ object GlobalDownloadManager {
             val canSchedulePersistentRetry = statePersisted ||
                 currentState == "DEGRADED_COMPLETE"
             if (recoveryOperationId != null && !cancellationState) {
-                val pendingArtifactCommitted = runCatching {
+                val pendingArtifactCommitResult = runCatching {
                     // artifact 记录可以暂存 pending 引用，但不能把它误写成最终完成。
                     // 这样下一次 claim 会走“已有 core，优先收尾”分支，不会清掉可恢复音频
                     managedDownloadArtifactCoordinator.markCoreCommitted(
@@ -7312,7 +7327,7 @@ object GlobalDownloadManager {
                         storedAudio = audio,
                         expectedLeaseId = artifactLeaseId
                     )
-                }.getOrElse { error ->
+                }.onFailure { error ->
                     NPLogger.w(
                         TAG,
                         "pending core artifact 凭据写入失败，仍保留 metadata 恢复入口: " +
@@ -7320,13 +7335,14 @@ object GlobalDownloadManager {
                             "error=${error.message}",
                         error
                     )
-                    false
-                }
+                }.getOrNull()
+                val pendingArtifactCommitted = pendingArtifactCommitResult?.isApplied == true
                 if (!pendingArtifactCommitted) {
                     NPLogger.w(
                         TAG,
                         "pending core artifact 未确认，下一轮仍需优先保护 staging: " +
-                            "song=${song.name}, operationId=$recoveryOperationId"
+                            "song=${song.name}, operationId=$recoveryOperationId, " +
+                            "result=$pendingArtifactCommitResult"
                     )
                 }
                 runCatching {
@@ -7965,7 +7981,7 @@ object GlobalDownloadManager {
             ) {
                 return
             }
-            check(
+            when (
                 publishFinalizedDownload(
                     context = context,
                     song = song,
@@ -7977,32 +7993,27 @@ object GlobalDownloadManager {
                     allowMissingTask = allowMissingTask,
                     admissionTicket = admissionTicket
                 )
-            ) { "pending audio promotion failed" }
+            ) {
+                FinalizedDownloadPublicationResult.PUBLISHED -> Unit
+                FinalizedDownloadPublicationResult.STALE -> {
+                    NPLogger.d(
+                        TAG,
+                        "最终发布已由新代次接管，跳过旧收尾重试: " +
+                            "song=${song.name}, operationId=$operationId"
+                    )
+                    return
+                }
+
+                FinalizedDownloadPublicationResult.RECOVERY_REQUIRED -> {
+                    error("pending audio promotion failed")
+                }
+            }
             NPLogger.d(
                 TAG,
                 "下载资产补齐完成: song=${song.name}, operationId=$operationId"
             )
         } catch (error: CancellationException) {
             val retryScheduled = withContext(NonCancellable) {
-                if (!artifactLeaseId.isNullOrBlank()) {
-                    runCatching {
-                        managedDownloadArtifactCoordinator.settleLeaseAnyRoot(
-                            context = context,
-                            song = song,
-                            expectedLeaseId = artifactLeaseId,
-                            requestedState = ManagedDownloadArtifactState.DEGRADED_COMPLETE,
-                            errorCode = "ASSET_ENRICHMENT_CANCELLED"
-                        )
-                    }.onFailure { leaseError ->
-                        NPLogger.w(
-                            TAG,
-                            "资产增强取消后的 artifact 租约收尾失败: " +
-                                "song=${song.name}, operationId=$operationId, " +
-                                "error=${leaseError.message}",
-                            leaseError
-                        )
-                    }
-                }
                 runCatching {
                     val currentState = DownloadExecutionRoomStore.state(context, operationId)
                     val userStopped = DownloadExecutionRoomStore.isStopped(context, operationId)
@@ -8011,15 +8022,35 @@ object GlobalDownloadManager {
                         stableKey = song.stableKey(),
                         operationId = operationId
                     )
-                    val canRetry = !clearBlocked && !userStopped &&
-                        !isSongCancelled(song.stableKey()) &&
-                        currentState in setOf(
-                            "CORE_COMMITTED",
-                            "ASSETS_ENRICHING",
-                            "DEGRADED_COMPLETE",
-                            "COMPLETED"
+                    val canRetry = !clearBlocked &&
+                        shouldSchedulePostCoreEnrichmentRetry(
+                            coreAudioCommitted = true,
+                            operationState = currentState,
+                            metadataActionRequired = false,
+                            userStopped = userStopped,
+                            allowInFlightState = true,
+                            songCancelled = isSongCancelled(song.stableKey())
                         )
                     if (canRetry) {
+                        if (!artifactLeaseId.isNullOrBlank()) {
+                            runCatching {
+                                managedDownloadArtifactCoordinator.markDegradedComplete(
+                                    context = context,
+                                    song = song,
+                                    expectedLeaseId = artifactLeaseId,
+                                    errorCode = "ASSET_ENRICHMENT_CANCELLED",
+                                    retainLease = true
+                                )
+                            }.onFailure { leaseError ->
+                                NPLogger.w(
+                                    TAG,
+                                    "资产增强取消后的 artifact 租约保留失败: " +
+                                        "song=${song.name}, operationId=$operationId, " +
+                                        "error=${leaseError.message}",
+                                    leaseError
+                                )
+                            }
+                        }
                         val statePersisted = if (currentState == "COMPLETED") {
                             // 普通状态机禁止 COMPLETED 回退，旧宿主取消仍需打开可恢复入口
                             DownloadExecutionRoomStore.reopenCorePublicationRecovery(
@@ -8056,6 +8087,24 @@ object GlobalDownloadManager {
                             admissionTicket = admissionTicket,
                             allowInFlightState = true
                         )
+                    } else if (!artifactLeaseId.isNullOrBlank()) {
+                        runCatching {
+                            managedDownloadArtifactCoordinator.settleLeaseAnyRoot(
+                                context = context,
+                                song = song,
+                                expectedLeaseId = artifactLeaseId,
+                                requestedState = ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+                                errorCode = "ASSET_ENRICHMENT_CANCELLED"
+                            )
+                        }.onFailure { leaseError ->
+                            NPLogger.w(
+                                TAG,
+                                "资产增强取消后的 artifact 租约收尾失败: " +
+                                    "song=${song.name}, operationId=$operationId, " +
+                                    "error=${leaseError.message}",
+                                leaseError
+                            )
+                        }
                     }
                     canRetry
                 }.getOrElse { retryError ->
@@ -8117,7 +8166,8 @@ object GlobalDownloadManager {
                     context = context,
                     song = song,
                     expectedLeaseId = artifactLeaseId,
-                    errorCode = "ASSET_ENRICHMENT_FAILED"
+                    errorCode = "ASSET_ENRICHMENT_FAILED",
+                    retainLease = true
                 )
             }
             val degradedStatePersisted = runCatching {
@@ -8338,7 +8388,7 @@ object GlobalDownloadManager {
         expectedArtifactLeaseId: String?,
         allowMissingTask: Boolean,
         admissionTicket: Long? = null
-    ): Boolean {
+    ): FinalizedDownloadPublicationResult {
         if (
             admissionTicket != null &&
                 !isDownloadAdmissionTicketCurrent(
@@ -8350,10 +8400,10 @@ object GlobalDownloadManager {
         ) {
             NPLogger.d(
                 TAG,
-                "最终发布票据已失效，保留 core 凭据等待恢复: " +
+                "最终发布票据已失效，由当前代次接管: " +
                     "song=${song.name}, operationId=$operationId"
             )
-            return false
+            return FinalizedDownloadPublicationResult.STALE
         }
         val songKey = song.stableKey()
         val currentTask = taskStore.findTask(songKey)
@@ -8366,7 +8416,7 @@ object GlobalDownloadManager {
                 "跳过过期下载最终发布: song=${song.name}, " +
                     "expectedAttemptId=$expectedAttemptId"
             )
-            return false
+            return FinalizedDownloadPublicationResult.STALE
         }
         val terminalTemporaryWriteTargets =
             finalizedTemporaryWriteTargetNames(
@@ -8376,7 +8426,14 @@ object GlobalDownloadManager {
         val promotion = ManagedDownloadStorage.promoteFinalizedPendingAudio(
             context = context,
             audio = storedAudio
-        ) ?: return false
+        ) ?: run {
+            NPLogger.w(
+                TAG,
+                "最终发布音频提升未确认，保留恢复凭据: " +
+                    "song=${song.name}, operationId=$operationId"
+            )
+            return FinalizedDownloadPublicationResult.RECOVERY_REQUIRED
+        }
         val finalizedAudio = promotion.audio
         // promotion 会让旧 pending 引用立即失效。先把内存桥接切到正式引用，
         // 再发布 artifact 和 catalog，避免首播线程在这个窗口内拿到失效 URI
@@ -8384,7 +8441,7 @@ object GlobalDownloadManager {
             song = song,
             storedAudio = finalizedAudio
         )
-        val artifactFinalized = runCatching {
+        val artifactFinalizationResult = runCatching {
             managedDownloadArtifactCoordinator.markFinalized(
                 context = context,
                 song = song,
@@ -8399,7 +8456,8 @@ object GlobalDownloadManager {
                     "error=${error.message}",
                 error
             )
-        }.getOrDefault(false)
+        }.getOrNull()
+        val artifactFinalized = artifactFinalizationResult?.isApplied == true
         if (!artifactFinalized) {
             // promotion 已经把音频移出 pending，不能再让 catalog、task 或 operation
             // 先进入完成态。保留有界播放桥并安排恢复，下一轮会用同一正式引用重试
@@ -8412,9 +8470,10 @@ object GlobalDownloadManager {
             NPLogger.w(
                 TAG,
                 "最终发布 artifact 未确认，跳过 catalog/task/operation 收口: " +
-                    "song=${song.name}, operationId=$operationId"
+                    "song=${song.name}, operationId=$operationId, " +
+                    "result=$artifactFinalizationResult"
             )
-            return false
+            return FinalizedDownloadPublicationResult.RECOVERY_REQUIRED
         }
         publishCompletedDownloadOptimistically(
             context = context,
@@ -8468,7 +8527,7 @@ object GlobalDownloadManager {
         // publishCompletedDownloadOptimistically 已经写入内存和 Room delta；
         // 正常完成不再为每首歌曲触发一次完整目录扫描。真正需要对账的异常路径
         // 会显式请求 forceRefresh
-        return true
+        return FinalizedDownloadPublicationResult.PUBLISHED
     }
 
     private suspend fun cleanupFinalizedPendingArtifacts(
@@ -9998,7 +10057,7 @@ object GlobalDownloadManager {
             )
         }.onFailure { error ->
             NPLogger.w(TAG, "写入下载 artifact 完成状态失败: ${error.message}")
-        }.getOrDefault(false)
+        }.getOrNull()?.isApplied == true
     }
 
     private suspend fun markDownloadArtifactRetryable(
@@ -12472,14 +12531,14 @@ object GlobalDownloadManager {
             preferredAudioReference = acquiredArtifact.audioReference
         )
         if (recoverableAudio != null) {
-            val rebound = runCatching {
+            val reboundResult = runCatching {
                 managedDownloadArtifactCoordinator.markCoreCommitted(
                     context = context,
                     song = song,
                     storedAudio = recoverableAudio,
                     expectedLeaseId = leaseId
                 )
-            }.getOrElse { error ->
+            }.onFailure { error ->
                 NPLogger.w(
                     TAG,
                     "已有可恢复音频但 artifact 引用回写失败，保留收尾恢复: " +
@@ -12487,8 +12546,8 @@ object GlobalDownloadManager {
                         "error=${error.message}",
                     error
                 )
-                false
-            }
+            }.getOrNull()
+            val rebound = reboundResult?.isApplied == true
             if (rebound) {
                 managedDownloadArtifactLeases[song.stableKey()] = leaseId
                 NPLogger.d(
@@ -12496,6 +12555,12 @@ object GlobalDownloadManager {
                     "core operation 已有可恢复音频，跳过重新传输: " +
                         "song=${song.name}, operationId=$operationId, " +
                         "file=${recoverableAudio.name}"
+                )
+            } else {
+                NPLogger.w(
+                    TAG,
+                    "已有可恢复音频但 artifact 引用未确认，保留收尾恢复: " +
+                        "song=${song.name}, operationId=$operationId, result=$reboundResult"
                 )
             }
             return false
@@ -17681,15 +17746,20 @@ object GlobalDownloadManager {
         bytesRead: Long = 0L,
         totalBytes: Long = 0L
     ) {
-        AudioDownloadManager.publishStageProgress(
-            songId = song.id,
-            songKey = song.stableKey(),
-            fileName = ManagedDownloadStorage.buildDisplayBaseName(song),
-            stage = stage,
-            attemptId = attemptId,
-            operationId = operationId,
-            bytesRead = bytesRead,
-            totalBytes = totalBytes
+        // 宿主入队尚未进入 AudioDownloadManager 的 operation 生命周期。队列阶段
+        // 必须由已持有 durable task 身份的全局投影发布，不能被音频引用租约误判为旧回调
+        updateDownloadProgress(
+            AudioDownloadManager.DownloadProgress(
+                songKey = song.stableKey(),
+                songId = song.id,
+                fileName = ManagedDownloadStorage.buildDisplayBaseName(song),
+                bytesRead = bytesRead.coerceAtLeast(0L),
+                totalBytes = totalBytes.coerceAtLeast(0L),
+                speedBytesPerSec = 0L,
+                stage = stage,
+                attemptId = attemptId,
+                operationId = operationId
+            )
         )
     }
 

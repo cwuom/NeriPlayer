@@ -499,6 +499,48 @@ class ManagedDownloadArtifactPolicyTest {
     }
 
     @Test
+    fun `expected lease selects its owner instead of a stale current root row`() {
+        val staleCurrent = artifact(
+            state = ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+            updatedAtMs = 200L,
+            audioReference = "content://current/song.mp3",
+            leaseId = "new-operation"
+        ).copy(rootKey = "current-root")
+        val expectedOwner = artifact(
+            state = ManagedDownloadArtifactState.CORE_COMMITTED,
+            updatedAtMs = 100L,
+            audioReference = "content://source/song.mp3",
+            leaseId = "operation-42"
+        ).copy(rootKey = "source-root")
+
+        assertEquals(
+            expectedOwner,
+            selectManagedDownloadArtifactForLeaseMutation(
+                current = staleCurrent,
+                sameKeyArtifacts = listOf(staleCurrent, expectedOwner),
+                expectedLeaseId = "operation-42"
+            )
+        )
+    }
+
+    @Test
+    fun `missing expected lease never falls back to a different owner`() {
+        val current = artifact(
+            state = ManagedDownloadArtifactState.CORE_COMMITTED,
+            updatedAtMs = 100L,
+            leaseId = "new-operation"
+        )
+
+        assertNull(
+            selectManagedDownloadArtifactForLeaseMutation(
+                current = current,
+                sameKeyArtifacts = listOf(current),
+                expectedLeaseId = "old-operation"
+            )
+        )
+    }
+
+    @Test
     fun `only an acquired artifact exposes a mutation lease`() {
         val acquired = artifact(
             state = ManagedDownloadArtifactState.DOWNLOADING,

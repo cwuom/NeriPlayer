@@ -3672,7 +3672,8 @@ object AudioDownloadManager {
                 DownloadExecutionHosts.onTransferStarted(
                     context = context.applicationContext,
                     operationId = normalizedOperationId,
-                    attemptId = attemptId
+                    attemptId = attemptId,
+                    transferPermitOwnerKey = permit.ownerKey
                 )
             }
             if (operationId != null && transferOwnerToken == null) {

@@ -208,6 +208,13 @@ class DownloadCoreCommitPolicyTest {
     }
 
     @Test
+    fun `stale final publication is not retried as an enrichment failure`() {
+        assertFalse(FinalizedDownloadPublicationResult.PUBLISHED.requiresRecovery)
+        assertFalse(FinalizedDownloadPublicationResult.STALE.requiresRecovery)
+        assertTrue(FinalizedDownloadPublicationResult.RECOVERY_REQUIRED.requiresRecovery)
+    }
+
+    @Test
     fun `recovery stops only after operation or artifact is durably settled`() {
         assertTrue(
             isDownloadFinalizationDurablySettled(

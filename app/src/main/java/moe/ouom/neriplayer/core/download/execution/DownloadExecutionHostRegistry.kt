@@ -41,12 +41,14 @@ object DownloadExecutionHosts {
     internal fun onTransferStarted(
         context: Context,
         operationId: String,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        transferPermitOwnerKey: String? = null
     ): Long? {
         return default.onTransferStarted(
             context = context,
             operationId = operationId,
-            attemptId = attemptId
+            attemptId = attemptId,
+            transferPermitOwnerKey = transferPermitOwnerKey
         )
     }
 

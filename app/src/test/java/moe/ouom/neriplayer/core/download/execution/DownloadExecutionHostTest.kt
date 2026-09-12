@@ -547,6 +547,192 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `released physical permit repairs a lost host transfer callback before pump refill`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val first = DownloadExecutionRequest(
+            operationId = "operation-lost-transfer-first",
+            song = sampleSong().copy(id = 51_100L),
+            attemptId = 31L
+        )
+        val second = DownloadExecutionRequest(
+            operationId = "operation-lost-transfer-second",
+            song = sampleSong().copy(id = 51_101L),
+            attemptId = 32L
+        )
+        store.save(context, first)
+        store.save(context, second)
+        val heldPermitOwners = linkedSetOf<String>()
+        val firstStarted = CompletableDeferred<Unit>()
+        val firstCleanup = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        lateinit var host: DefaultDownloadExecutionHost
+        host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+                when (request.operationId) {
+                    first.operationId -> {
+                        assertNotNull(
+                            host.onTransferStarted(
+                                context = entryContext,
+                                operationId = request.operationId,
+                                attemptId = request.attemptId,
+                                transferPermitOwnerKey = "permit-first"
+                            )
+                        )
+                        firstStarted.complete(Unit)
+                        firstCleanup.await()
+                    }
+
+                    second.operationId -> {
+                        assertNotNull(
+                            host.onTransferStarted(
+                                context = entryContext,
+                                operationId = request.operationId,
+                                attemptId = request.attemptId,
+                                transferPermitOwnerKey = "permit-second"
+                            )
+                        )
+                        secondStarted.complete(Unit)
+                    }
+                }
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 },
+            transferPermitOwnersProvider = {
+                synchronized(heldPermitOwners) { heldPermitOwners.toSet() }
+            }
+        )
+
+        synchronized(heldPermitOwners) {
+            heldPermitOwners += "permit-first"
+        }
+        val firstExecution = async { host.execute(context, first.operationId) }
+        firstStarted.await()
+
+        // 模拟网络断开或宿主停止：真实 permit 已在 finally 释放，但旧宿主回调尚未到达
+        synchronized(heldPermitOwners) {
+            heldPermitOwners.remove("permit-first")
+            heldPermitOwners += "permit-second"
+        }
+        try {
+            withContext(Dispatchers.Default) {
+                withTimeout(2_000L) {
+                    assertEquals(DownloadExecutionPumpResult.Completed, host.pump(context))
+                    secondStarted.await()
+                }
+            }
+            assertEquals("COMPLETED", store.currentState(context, second.operationId))
+        } finally {
+            firstCleanup.complete(Unit)
+        }
+        assertEquals(DownloadExecutionResult.Accepted, firstExecution.await())
+    }
+
+    @Test
+    fun `released physical permit retries failed durable admission release`() = runTest {
+        val context = mockContext()
+        val delegate = InMemoryDownloadExecutionOperationJournal()
+        val journal = CapacityBoundDownloadExecutionJournal(
+            delegate = delegate,
+            admissionCapacity = 1,
+            releaseFailuresBeforeSuccess = 1
+        )
+        val store = DownloadExecutionOperationStore { journal }
+        val first = DownloadExecutionRequest(
+            operationId = "operation-lost-admission-first",
+            song = sampleSong().copy(id = 51_110L),
+            attemptId = 41L
+        )
+        val second = DownloadExecutionRequest(
+            operationId = "operation-lost-admission-second",
+            song = sampleSong().copy(id = 51_111L),
+            attemptId = 42L
+        )
+        store.save(context, first)
+        store.save(context, second)
+        val heldPermitOwners = linkedSetOf<String>()
+        val firstStarted = CompletableDeferred<Unit>()
+        val coreReleaseFailed = CompletableDeferred<Unit>()
+        val firstCleanup = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        lateinit var host: DefaultDownloadExecutionHost
+        host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+                when (request.operationId) {
+                    first.operationId -> {
+                        val token = checkNotNull(
+                            host.onTransferStarted(
+                                context = entryContext,
+                                operationId = request.operationId,
+                                attemptId = request.attemptId,
+                                transferPermitOwnerKey = "permit-admission-first"
+                            )
+                        )
+                        firstStarted.complete(Unit)
+                        assertFalse(
+                            host.onCoreCommitted(
+                                context = entryContext,
+                                operationId = request.operationId,
+                                attemptId = request.attemptId,
+                                transferOwnerToken = token
+                            )
+                        )
+                        coreReleaseFailed.complete(Unit)
+                        firstCleanup.await()
+                    }
+
+                    second.operationId -> {
+                        assertNotNull(
+                            host.onTransferStarted(
+                                context = entryContext,
+                                operationId = request.operationId,
+                                attemptId = request.attemptId,
+                                transferPermitOwnerKey = "permit-admission-second"
+                            )
+                        )
+                        secondStarted.complete(Unit)
+                    }
+                }
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 },
+            transferPermitOwnersProvider = {
+                synchronized(heldPermitOwners) { heldPermitOwners.toSet() }
+            }
+        )
+
+        synchronized(heldPermitOwners) {
+            heldPermitOwners += "permit-admission-first"
+        }
+        val firstExecution = async { host.execute(context, first.operationId) }
+        firstStarted.await()
+        coreReleaseFailed.await()
+
+        // 模拟网络 finally 已经归还真实 permit，但 Core Commit 的 Room 释放曾失败
+        synchronized(heldPermitOwners) {
+            heldPermitOwners.remove("permit-admission-first")
+            heldPermitOwners += "permit-admission-second"
+        }
+        firstCleanup.complete(Unit)
+        assertEquals(DownloadExecutionResult.Accepted, firstExecution.await())
+        assertEquals(0, delegate.hostAdmissionReleaseCount)
+
+        withContext(Dispatchers.Default) {
+            withTimeout(2_000L) {
+                assertEquals(DownloadExecutionPumpResult.Completed, host.pump(context))
+                secondStarted.await()
+            }
+        }
+        assertEquals(2, delegate.hostAdmissionReleaseCount)
+        assertEquals("COMPLETED", store.currentState(context, second.operationId))
+    }
+
+    @Test
     fun `core commit fences stale attempt and duplicate owner callbacks`() = runTest {
         val context = mockContext()
         val journal = InMemoryDownloadExecutionOperationJournal()
@@ -673,9 +859,9 @@ class DownloadExecutionHostTest {
             )
         )
         val occupancy = DefaultDownloadExecutionHost::class.java
-            .getDeclaredMethod("transferLaneOccupancy")
+            .getDeclaredMethod("transferLaneOccupancy", Context::class.java)
             .apply { isAccessible = true }
-            .invoke(host) as Int
+            .invoke(host, context) as Int
         assertEquals(0, occupancy)
         // the old transfer release also frees the same-generation host admission
         assertEquals(1, journal.hostAdmissionReleaseCount)
@@ -2546,10 +2732,12 @@ class DownloadExecutionHostTest {
 
     private class CapacityBoundDownloadExecutionJournal(
         private val delegate: InMemoryDownloadExecutionOperationJournal,
-        private val admissionCapacity: Int
+        private val admissionCapacity: Int,
+        releaseFailuresBeforeSuccess: Int = 0
     ) : DownloadExecutionOperationJournal by delegate {
         private val lock = Any()
         private val admittedOperationIds = linkedSetOf<String>()
+        private var remainingReleaseFailures = releaseFailuresBeforeSuccess
 
         override fun tryAcquireHostAdmission(
             context: Context,
@@ -2573,6 +2761,10 @@ class DownloadExecutionHostTest {
 
         override fun releaseHostAdmission(context: Context, operationId: String) {
             synchronized(lock) {
+                if (remainingReleaseFailures > 0) {
+                    remainingReleaseFailures--
+                    throw IllegalStateException("synthetic host admission release failure")
+                }
                 if (admittedOperationIds.remove(operationId)) {
                     delegate.hostAdmissionReleaseCount++
                 }

@@ -177,6 +177,42 @@ internal fun matchesManagedDownloadArtifactLease(
     return currentLeaseId == expectedLeaseId
 }
 
+/** artifact 状态写入的结果必须区分租约缺失和实际写入成功 */
+internal enum class ManagedDownloadArtifactMutationResult {
+    APPLIED,
+    INVALID_STABLE_KEY,
+    EXPECTED_LEASE_NOT_FOUND;
+
+    val isApplied: Boolean
+        get() = this == APPLIED
+}
+
+/**
+ * 当前根目录可能留有旧行，租约 owner 才是跨根收尾时的唯一写入身份
+ */
+internal fun selectManagedDownloadArtifactForLeaseMutation(
+    current: ManagedDownloadArtifactEntity?,
+    sameKeyArtifacts: Collection<ManagedDownloadArtifactEntity>,
+    expectedLeaseId: String?
+): ManagedDownloadArtifactEntity? {
+    val normalizedLeaseId = expectedLeaseId
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+    if (normalizedLeaseId == null) {
+        return current
+    }
+    if (current?.leaseId == normalizedLeaseId) {
+        return current
+    }
+    return sameKeyArtifacts
+        .asSequence()
+        .filter { artifact -> artifact.leaseId == normalizedLeaseId }
+        .maxWithOrNull(
+            compareBy<ManagedDownloadArtifactEntity> { artifact -> artifact.updatedAtMs }
+                .thenBy { artifact -> artifact.rootKey }
+        )
+}
+
 internal fun canApplyLeaseFreeArtifactTransition(
     currentState: ManagedDownloadArtifactState,
     currentLeaseId: String?,
