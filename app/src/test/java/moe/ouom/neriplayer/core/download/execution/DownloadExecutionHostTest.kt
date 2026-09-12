@@ -626,6 +626,145 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `core commit releases the old transfer lane when the durable attempt refreshes`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-core-attempt-refresh",
+            song = sampleSong(),
+            attemptId = 7L
+        )
+        store.save(context, request)
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        lateinit var host: DefaultDownloadExecutionHost
+        host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                started.complete(Unit)
+                finish.await()
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 }
+        )
+
+        val execution = async { host.execute(context, request.operationId) }
+        started.await()
+        val ownerToken = checkNotNull(
+            host.onTransferStarted(
+                context = context,
+                operationId = request.operationId,
+                attemptId = request.attemptId
+            )
+        )
+
+        // a retry/user-intent refresh can update the payload while the old
+        // transfer is already durable. the old callback must still free its lanes
+        journal.forceRequest(request.copy(attemptId = 19L))
+
+        assertTrue(
+            host.onCoreCommitted(
+                context = context,
+                operationId = request.operationId,
+                attemptId = request.attemptId,
+                transferOwnerToken = ownerToken
+            )
+        )
+        val occupancy = DefaultDownloadExecutionHost::class.java
+            .getDeclaredMethod("transferLaneOccupancy")
+            .apply { isAccessible = true }
+            .invoke(host) as Int
+        assertEquals(0, occupancy)
+        // the old transfer release also frees the same-generation host admission
+        assertEquals(1, journal.hostAdmissionReleaseCount)
+
+        finish.complete(Unit)
+        assertEquals(DownloadExecutionResult.Accepted, execution.await())
+        assertEquals(1, journal.hostAdmissionReleaseCount)
+    }
+
+    @Test
+    fun `durable attempt refresh frees admission for a successor before enrichment finishes`() = runTest {
+        val context = mockContext()
+        val delegate = InMemoryDownloadExecutionOperationJournal()
+        val journal = CapacityBoundDownloadExecutionJournal(delegate, admissionCapacity = 1)
+        val store = DownloadExecutionOperationStore { journal }
+        val first = DownloadExecutionRequest(
+            operationId = "operation-core-successor-first",
+            song = sampleSong().copy(id = 43L),
+            attemptId = 7L
+        )
+        val second = DownloadExecutionRequest(
+            operationId = "operation-core-successor-second",
+            song = sampleSong().copy(id = 44L),
+            attemptId = 8L
+        )
+        store.save(context, first)
+        store.save(context, second)
+        val firstStarted = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        lateinit var host: DefaultDownloadExecutionHost
+        host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+                val ownerToken = checkNotNull(
+                    host.onTransferStarted(
+                        context = entryContext,
+                        operationId = request.operationId,
+                        attemptId = request.attemptId
+                    )
+                )
+                if (request.operationId == first.operationId) {
+                    firstStarted.complete(Unit)
+                    delegate.forceRequest(first.copy(attemptId = 19L))
+                    assertTrue(
+                        host.onCoreCommitted(
+                            context = entryContext,
+                            operationId = first.operationId,
+                            attemptId = first.attemptId,
+                            transferOwnerToken = ownerToken
+                        )
+                    )
+                    releaseFirst.await()
+                } else {
+                    secondStarted.complete(Unit)
+                    assertTrue(
+                        host.onCoreCommitted(
+                            context = entryContext,
+                            operationId = second.operationId,
+                            attemptId = second.attemptId,
+                            transferOwnerToken = ownerToken
+                        )
+                    )
+                }
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 }
+        )
+
+        val pump = async { host.pump(context) }
+        try {
+            withContext(Dispatchers.Default) {
+                withTimeout(2_000L) {
+                    firstStarted.await()
+                    secondStarted.await()
+                }
+            }
+            assertFalse(releaseFirst.isCompleted)
+        } finally {
+            releaseFirst.complete(Unit)
+        }
+        assertEquals(DownloadExecutionPumpResult.Completed, pump.await())
+        assertEquals("COMPLETED", store.currentState(context, first.operationId))
+        assertEquals("COMPLETED", store.currentState(context, second.operationId))
+        assertEquals(2, delegate.hostAdmissionReleaseCount)
+    }
+
+    @Test
     fun `pump drains rows left behind by a full database page`() = runTest {
         val context = mockContext()
         val journal = InMemoryDownloadExecutionOperationJournal()
@@ -2402,6 +2541,49 @@ class DownloadExecutionHostTest {
                 updates[key] = value
                 removals.remove(key)
             }
+        }
+    }
+
+    private class CapacityBoundDownloadExecutionJournal(
+        private val delegate: InMemoryDownloadExecutionOperationJournal,
+        private val admissionCapacity: Int
+    ) : DownloadExecutionOperationJournal by delegate {
+        private val lock = Any()
+        private val admittedOperationIds = linkedSetOf<String>()
+
+        override fun tryAcquireHostAdmission(
+            context: Context,
+            operationId: String,
+            capacity: Int
+        ): Boolean = synchronized(lock) {
+            delegate.hostAdmissionAcquireCount++
+            delegate.lastHostAdmissionCapacity = capacity
+            if (!delegate.hostAdmissionAllowed || capacity <= 0) return@synchronized false
+            if (operationId in admittedOperationIds) return@synchronized true
+            if (admittedOperationIds.size >= admissionCapacity) return@synchronized false
+            admittedOperationIds += operationId
+            true
+        }
+
+        override suspend fun tryAcquireHostAdmissionSuspending(
+            context: Context,
+            operationId: String,
+            capacity: Int
+        ): Boolean = tryAcquireHostAdmission(context, operationId, capacity)
+
+        override fun releaseHostAdmission(context: Context, operationId: String) {
+            synchronized(lock) {
+                if (admittedOperationIds.remove(operationId)) {
+                    delegate.hostAdmissionReleaseCount++
+                }
+            }
+        }
+
+        override suspend fun releaseHostAdmissionSuspending(
+            context: Context,
+            operationId: String
+        ) {
+            releaseHostAdmission(context, operationId)
         }
     }
 

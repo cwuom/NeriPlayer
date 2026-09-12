@@ -1196,18 +1196,6 @@ class DefaultDownloadExecutionHost(
         if (attemptId != null && attemptId <= 0L) return false
         if (transferOwnerToken == null) return false
         val normalizedAttemptId = attemptId
-        val persistedRequest = try {
-            operationStore.read(context.applicationContext, normalizedId)
-        } catch (error: Throwable) {
-            moe.ouom.neriplayer.core.logging.NPLogger.w(
-                "DownloadExecutionHost",
-                "读取 Core Commit attempt 失败，拒绝释放 transfer owner: " +
-                    "operationId=$normalizedId, error=${error.message}",
-                error
-            )
-            return false
-        } ?: return false
-        if (persistedRequest.attemptId != normalizedAttemptId) return false
         val owner = synchronized(executionAdmissionLock) {
             val current = activeTransferOwners[normalizedId] ?: return@synchronized null
             if (current.attemptId != normalizedAttemptId) return@synchronized null
@@ -1220,21 +1208,44 @@ class DefaultDownloadExecutionHost(
             current
         } ?: return false
 
-        val admissionReleased = runCatching {
-            // execute() 仍可能在 enrichment 阶段运行，不能调用只接受 idle 的释放入口
-            operationStore.releaseHostAdmission(context.applicationContext, normalizedId)
-        }.onFailure { error ->
-            synchronized(executionAdmissionLock) {
-                transferReleaseInFlightTokens.remove(owner.token)
-                transferReleasePendingTokens.add(owner.token)
-            }
-            moe.ouom.neriplayer.core.logging.NPLogger.w(
+        // core commit 回调携带的 owner token 才是传输槽位的权威身份。持久
+        // attempt 可能已经被重试/用户意图刷新，不能用它阻塞下一首补位。
+        // 只有清空代次或歌曲身份发生变化时，才保留新代次的宿主准入。
+        val admissionOwner = synchronized(executionAdmissionLock) {
+            hostAdmissionOwners[normalizedId]
+        }
+        val shouldReleaseAdmission = admissionOwner == null ||
+            owner.ticket?.let { ticket ->
+                sameScheduleGeneration(admissionOwner, ticket)
+            } == true
+        if (!shouldReleaseAdmission) {
+            moe.ouom.neriplayer.core.logging.NPLogger.d(
                 "DownloadExecutionHost",
-                "Core Commit 后释放宿主准入失败，保留传输 owner 等待 finally/retry: " +
-                    "operationId=$normalizedId, error=${error.message}",
-                error
+                "Core Commit 仅释放旧 transfer lane，保留新代次宿主准入: " +
+                    "operationId=$normalizedId, callbackAttempt=$normalizedAttemptId, " +
+                    "admissionOwner=$admissionOwner"
             )
-        }.isSuccess
+        }
+
+        val admissionReleased = if (!shouldReleaseAdmission) {
+            true
+        } else {
+            runCatching {
+                // execute() 仍可能在 enrichment 阶段运行，不能调用只接受 idle 的释放入口
+                operationStore.releaseHostAdmission(context.applicationContext, normalizedId)
+            }.onFailure { error ->
+                synchronized(executionAdmissionLock) {
+                    transferReleaseInFlightTokens.remove(owner.token)
+                    transferReleasePendingTokens.add(owner.token)
+                }
+                moe.ouom.neriplayer.core.logging.NPLogger.w(
+                    "DownloadExecutionHost",
+                    "Core Commit 后释放宿主准入失败，保留传输 owner 等待 finally/retry: " +
+                        "operationId=$normalizedId, error=${error.message}",
+                    error
+                )
+            }.isSuccess
+        }
         if (!admissionReleased) return false
 
         val released = synchronized(executionAdmissionLock) {
@@ -1246,8 +1257,10 @@ class DefaultDownloadExecutionHost(
                 activeTransferOwners.remove(normalizedId, current)
                 transferReleaseInFlightTokens.remove(owner.token)
                 transferReleasePendingTokens.remove(owner.token)
-                current.ticket?.let { ticket ->
-                    hostAdmissionOwners.remove(normalizedId, ticket)
+                if (shouldReleaseAdmission) {
+                    admissionOwner?.let { ticket ->
+                        hostAdmissionOwners.remove(normalizedId, ticket)
+                    }
                 }
                 true
             }
