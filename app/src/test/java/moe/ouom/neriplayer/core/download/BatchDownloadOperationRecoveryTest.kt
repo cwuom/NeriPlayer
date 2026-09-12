@@ -348,6 +348,12 @@ class BatchDownloadOperationRecoveryTest {
         assertFalse(startBody.contains("beginBatchDownloadPresentation(requestedSongs)"))
         assertTrue(preparationBody.contains("pendingSongs.lastOrNull"))
         assertFalse(preparationBody.contains("BATCH_DOWNLOAD_EARLY_HANDOFF_LIMIT"))
+        assertTrue(
+            preparationBody.contains(
+                "resolveDownloadDispatchWindow(currentDownloadParallelism(session.context))"
+            )
+        )
+        assertFalse(preparationBody.contains("BATCH_PENDING_MEMORY_LIMIT"))
         val earlyHandoffIndex = preparationBody.indexOf(
             "val request = session.pendingSongs.lastOrNull"
         )

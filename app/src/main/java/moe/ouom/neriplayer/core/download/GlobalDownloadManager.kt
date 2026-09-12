@@ -134,7 +134,9 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadedSidecarStage
 import moe.ouom.neriplayer.core.player.download.DownloadProgressProjectionStore
+import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
 import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
+import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
@@ -176,7 +178,6 @@ object GlobalDownloadManager {
     private const val DOWNLOAD_CATALOG_RECONCILE_DELAY_MS = 1_200L
     /** 批量 operation 持久化使用有界页，避免单个 Room 事务占满大批选择 */
     private const val BATCH_OPERATION_STAGE_PAGE_SIZE = 64
-    private const val BATCH_PENDING_MEMORY_LIMIT = 1_024
     /** 首次选择只对有限索引窗口做同步 Present 校验，余量交给共享泵对账 */
     private const val BATCH_FAST_COMPLETION_PROBE_CHUNK_SIZE = 64
     private const val DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS = 5_000L
@@ -15148,8 +15149,12 @@ object GlobalDownloadManager {
             clearBatchDownloadPresentation(session.batchPresentationId)
             return
         }
-        // task/artifact 预处理保持有界，剩余 operation 由共享水泵从 Room 分页接管
-        val claimableWindow = claimableSongs.take(BATCH_PENDING_MEMORY_LIMIT)
+        // 全部成员已持久化在 Room，但只有当前调度窗口需要预先创建 task/lease。
+        // 否则 606/10000 首任务会在首个网络传输前做同量的 artifact 预处理，
+        // 下载数量越多启动越慢；余量由共享泵按页接管
+        val claimableWindow = claimableSongs.take(
+            resolveDownloadDispatchWindow(currentDownloadParallelism(session.context))
+        )
         val hasUnpreparedClaimableSongs = claimableSongs.size > claimableWindow.size
         if (!prepareBatchDownloadTasks(session, claimableWindow)) {
             clearBatchDownloadPresentation(session.batchPresentationId)

@@ -1196,14 +1196,22 @@ class DefaultDownloadExecutionHost(
                     .takeIf { owner -> owner.attemptId == normalizedAttemptId }
                     ?.token
             }
-            val reservation = transferReservationOwners[normalizedId]
+            var reservation = transferReservationOwners[normalizedId]
             if (reservation != null && reservation.attemptId != normalizedAttemptId) {
-                logTransferAdmissionRejected(
+                reservation = rebindTransferReservationForCurrentAttempt(
+                    context = context.applicationContext,
                     operationId = normalizedId,
-                    attemptId = normalizedAttemptId,
-                    reason = "reservation_attempt_mismatch"
-                )
-                return@synchronized null
+                    persistedRequest = persistedRequest,
+                    reservation = reservation,
+                    attemptId = normalizedAttemptId
+                ) ?: run {
+                    logTransferAdmissionRejected(
+                        operationId = normalizedId,
+                        attemptId = normalizedAttemptId,
+                        reason = "reservation_attempt_mismatch"
+                    )
+                    return@synchronized null
+                }
             }
             // 兼容旧调用时仍保持原有保护。生产调用已经持有真实 permit，重复
             // 使用宿主镜像限流会在网络切换或回调遗漏后产生错误拒绝
@@ -1444,6 +1452,42 @@ class DefaultDownloadExecutionHost(
             )
             return true
         }
+    }
+
+    /**
+     * 批量任务会先创建下载 task，随后在真正传输前把同一 operation 的 attempt
+     * 刷新为 task 的当前身份。只要歌曲和清空代次未变，泵的预留位必须跟随该
+     * 已持久化的身份，不能让旧 attempt 永久占住并发窗口
+     */
+    private fun rebindTransferReservationForCurrentAttempt(
+        context: Context,
+        operationId: String,
+        persistedRequest: DownloadExecutionRequest,
+        reservation: TransferSlotOwner,
+        attemptId: Long?
+    ): TransferSlotOwner? {
+        val normalizedAttemptId = attemptId?.takeIf { it > 0L } ?: return null
+        val ticket = reservation.ticket ?: return null
+        if (
+            reservation.attemptId != ticket.attemptId ||
+                ticket.operationId != operationId ||
+                ticket.stableKey != persistedRequest.song.stableKey() ||
+                !isScheduleTicketCurrent(context, ticket)
+        ) {
+            return null
+        }
+        val admissionOwner = hostAdmissionOwners[operationId]
+        if (admissionOwner != null && !sameScheduleGeneration(admissionOwner, ticket)) {
+            return null
+        }
+        val rebound = reservation.copy(attemptId = normalizedAttemptId)
+        transferReservationOwners[operationId] = rebound
+        moe.ouom.neriplayer.core.logging.NPLogger.d(
+            "DownloadExecutionHost",
+            "传输预留位跟随当前 durable attempt: operationId=$operationId, " +
+                "from=${reservation.attemptId}, to=$normalizedAttemptId"
+        )
+        return rebound
     }
 
     private fun releaseTransferReservation(

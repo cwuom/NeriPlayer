@@ -547,6 +547,85 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `pump reservation follows the current durable attempt before transfer starts`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val first = DownloadExecutionRequest(
+            operationId = "operation-pump-reservation-attempt-first",
+            song = sampleSong().copy(id = 51_050L),
+            attemptId = 7L
+        )
+        val second = DownloadExecutionRequest(
+            operationId = "operation-pump-reservation-attempt-second",
+            song = sampleSong().copy(id = 51_051L),
+            attemptId = 8L
+        )
+        store.save(context, first)
+        store.save(context, second)
+        val firstCommitted = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        lateinit var host: DefaultDownloadExecutionHost
+        host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+                if (request.operationId == first.operationId) {
+                    val refreshedAttemptId = 19L
+                    journal.forceRequest(first.copy(attemptId = refreshedAttemptId))
+                    val token = checkNotNull(
+                        host.onTransferStarted(
+                            context = entryContext,
+                            operationId = request.operationId,
+                            attemptId = refreshedAttemptId
+                        )
+                    )
+                    assertTrue(
+                        host.onCoreCommitted(
+                            context = entryContext,
+                            operationId = request.operationId,
+                            attemptId = refreshedAttemptId,
+                            transferOwnerToken = token
+                        )
+                    )
+                    firstCommitted.complete(Unit)
+                    secondStarted.await()
+                } else {
+                    val token = checkNotNull(
+                        host.onTransferStarted(
+                            context = entryContext,
+                            operationId = request.operationId,
+                            attemptId = request.attemptId
+                        )
+                    )
+                    assertTrue(
+                        host.onCoreCommitted(
+                            context = entryContext,
+                            operationId = request.operationId,
+                            attemptId = request.attemptId,
+                            transferOwnerToken = token
+                        )
+                    )
+                    secondStarted.complete(Unit)
+                }
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 }
+        )
+
+        val pump = async { host.pump(context) }
+        withContext(Dispatchers.Default) {
+            withTimeout(2_000L) {
+                firstCommitted.await()
+                secondStarted.await()
+            }
+        }
+        assertEquals(DownloadExecutionPumpResult.Completed, pump.await())
+        assertEquals("COMPLETED", store.currentState(context, first.operationId))
+        assertEquals("COMPLETED", store.currentState(context, second.operationId))
+    }
+
+    @Test
     fun `released physical permit repairs a lost host transfer callback before pump refill`() = runTest {
         val context = mockContext()
         val journal = InMemoryDownloadExecutionOperationJournal()
