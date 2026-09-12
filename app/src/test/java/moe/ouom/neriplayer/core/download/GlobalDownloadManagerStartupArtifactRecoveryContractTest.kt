@@ -200,6 +200,33 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     }
 
     @Test
+    fun `finalized recovery reconciles the current artifact lease before publication`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val pendingBody = methodBody(source, "recoverPendingAudioWritesFromRoot")
+        val publishedBody = methodBody(source, "recoverUnfinalizedPublishedAudioFromRoot")
+        val leaseBody = methodBody(source, "prepareFinalizedPublicationArtifactLease")
+
+        listOf(pendingBody, publishedBody).forEach { body ->
+            val leaseIndex = body.indexOf("prepareFinalizedPublicationArtifactLease(")
+            val publicationIndex = body.indexOf("publishFinalizedDownload(", leaseIndex)
+
+            assertTrue(leaseIndex >= 0)
+            assertTrue(publicationIndex > leaseIndex)
+            assertTrue(
+                body.substring(leaseIndex, publicationIndex + 800)
+                    .contains("expectedArtifactLeaseId = publicationLease.leaseId")
+            )
+        }
+        assertTrue(leaseBody.contains("managedDownloadArtifactCoordinator.claim("))
+        assertTrue(leaseBody.contains("finalizedPublicationRecoveryLeaseOwnerId("))
+        assertTrue(leaseBody.contains("leaseOwnerId = recoveryLeaseOwnerId"))
+        assertTrue(leaseBody.contains("allowFreshTransferReclaim = false"))
+        assertTrue(leaseBody.contains("finalizedPublicationLeaseOrNull()"))
+    }
+
+    @Test
     fun `core artifact commit failure settles task and schedules in-process recovery`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

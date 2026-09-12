@@ -34,9 +34,16 @@ class TerminalTemporaryWriteCleanupRetryPolicyTest {
         ).substringBefore("private fun isDurableCoreOperationState")
 
         assertTrue(schedulingBody.contains("cleanupPersistedTerminalTemporaryWriteArtifacts"))
+        assertTrue(schedulingBody.contains("immediatelyRetryableFailedCount"))
+        assertTrue(schedulingBody.contains("externalSignalRequiredCount"))
         assertTrue(schedulingBody.contains("delayMsForFailedAttempt"))
         assertTrue(schedulingBody.contains("retryPending = true"))
         assertTrue(schedulingBody.contains("delay(retryDelayMs)"))
+        val externalWaitBody = schedulingBody
+            .substringAfter("if (retryableFailedCount == 0)")
+            .substringBefore("} else {")
+        assertTrue(externalWaitBody.contains("failedAttempt = 0"))
+        assertFalse(externalWaitBody.contains("delay("))
         assertFalse(
             schedulingBody.contains(
                 "terminalTemporaryWriteCleanupMutex.withLock {\n" +

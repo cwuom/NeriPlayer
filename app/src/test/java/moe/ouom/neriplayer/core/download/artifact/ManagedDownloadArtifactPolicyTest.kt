@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.download.isAcceptedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -560,6 +561,35 @@ class ManagedDownloadArtifactPolicyTest {
         assertNull(ManagedDownloadArtifactClaim.RepairRequired(repair).ownedLeaseIdOrNull())
         assertNull(ManagedDownloadArtifactClaim.AlreadyDownloaded(repair).ownedLeaseIdOrNull())
         assertNull(null.ownedLeaseIdOrNull())
+    }
+
+    @Test
+    fun `final publication accepts owned or lease-free artifacts but not another owner`() {
+        val owned = artifact(
+            state = ManagedDownloadArtifactState.DOWNLOADING,
+            updatedAtMs = 100L,
+            leaseId = "operation-42"
+        )
+        val leaseFree = artifact(
+            state = ManagedDownloadArtifactState.CORE_COMMITTED,
+            updatedAtMs = 200L,
+            audioReference = "content://downloads/song.mp3"
+        ).copy(leaseId = null)
+
+        assertEquals(
+            "operation-42",
+            ManagedDownloadArtifactClaim.Acquired(owned)
+                .finalizedPublicationLeaseOrNull()
+                ?.leaseId
+        )
+        val leaseFreePublication = ManagedDownloadArtifactClaim.AlreadyDownloaded(leaseFree)
+            .finalizedPublicationLeaseOrNull()
+        assertNotNull(leaseFreePublication)
+        assertNull(leaseFreePublication?.leaseId)
+        assertNull(
+            ManagedDownloadArtifactClaim.InFlight(owned)
+                .finalizedPublicationLeaseOrNull()
+        )
     }
 
     @Test

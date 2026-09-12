@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.core.download
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupSkipReason
+import moe.ouom.neriplayer.core.download.storage.backend.StorageConfidence
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupFinalizationPreparation
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupRoot
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupRootType
@@ -51,6 +53,53 @@ class TerminalTemporaryWriteCleanupTargetTest {
                 ),
                 targetCount = 3
             )
+        )
+    }
+
+    @Test
+    fun `permission loss waits for an external signal instead of hot retrying`() {
+        val permissionLost = ManagedTemporaryWriteCleanupResult.Skipped(
+            ManagedTemporaryWriteCleanupSkipReason.IncompleteDirectory(
+                StorageConfidence.PermissionLost
+            )
+        )
+        val mixedMutationFailures = ManagedTemporaryWriteCleanupResult.Completed(
+            deletedCount = 0,
+            missingCount = 0,
+            retainedActiveCount = 0,
+            failures = listOf(
+                StorageMutationResult.PermissionLost,
+                StorageMutationResult.ProviderFailure(IllegalStateException("provider busy"))
+            )
+        )
+
+        assertEquals(
+            3,
+            ManagedDownloadStorage.terminalTemporaryWriteCleanupExternalSignalRequiredCount(
+                result = permissionLost,
+                targetCount = 3
+            )
+        )
+        assertEquals(
+            1,
+            ManagedDownloadStorage.terminalTemporaryWriteCleanupExternalSignalRequiredCount(
+                result = mixedMutationFailures,
+                targetCount = 3
+            )
+        )
+        assertEquals(
+            0,
+            ManagedDownloadStorage.StartupRecoveryResult(
+                failedCount = 3,
+                externalSignalRequiredCount = 3
+            ).immediatelyRetryableFailedCount
+        )
+        assertEquals(
+            1,
+            ManagedDownloadStorage.StartupRecoveryResult(
+                failedCount = 2,
+                externalSignalRequiredCount = 1
+            ).immediatelyRetryableFailedCount
         )
     }
 

@@ -111,6 +111,20 @@ class DownloadOperationPaginationContractTest {
     }
 
     @Test
+    fun `core commit reads large operation payloads through bounded chunks`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadExecutionRoomStore.kt"
+        )
+        val body = source.substringAfter("suspend fun markCoreCommitted(")
+            .substringBefore("/** Creates one durable user-selection snapshot")
+
+        assertTrue(body.contains("dao.findHeader(normalizedOperationId)"))
+        assertTrue(body.contains("readRequestFromHeader(dao, header)"))
+        assertFalse(body.contains("dao.find(normalizedOperationId)"))
+    }
+
+    @Test
     fun `retry deadline is inclusive and missing deadline stays immediately ready`() {
         assertTrue(isRetryDeadlineReady(null, 1_000L))
         assertTrue(isRetryDeadlineReady(1_000L, 1_000L))

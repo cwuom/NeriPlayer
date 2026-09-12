@@ -147,6 +147,8 @@ import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLock
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult
+import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupSkipReason
+import moe.ouom.neriplayer.core.download.storage.backend.StorageConfidence
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
@@ -491,7 +493,12 @@ internal object ManagedDownloadStorage {
                         failedCount = stagingRecovery.failedCount +
                             pendingAudioRecovery.failedCount +
                             metadataRecovery.failedCount +
-                            terminalTemporaryWriteRecovery.failedCount
+                            terminalTemporaryWriteRecovery.failedCount,
+                        externalSignalRequiredCount =
+                            stagingRecovery.externalSignalRequiredCount +
+                                pendingAudioRecovery.externalSignalRequiredCount +
+                                metadataRecovery.externalSignalRequiredCount +
+                                terminalTemporaryWriteRecovery.externalSignalRequiredCount
                     )
                 }.onFailure { error ->
                     NPLogger.w(TAG, "后台初始化下载存储失败: ${error.message}")
@@ -611,6 +618,8 @@ internal object ManagedDownloadStorage {
     internal data class StartupRecoveryResult(
         val cleanedCount: Int = 0,
         val failedCount: Int = 0,
+        /** 权限或作用域恢复前立即重试没有意义，但持久记录仍必须保留 */
+        val externalSignalRequiredCount: Int = 0,
         /** 已跨过核心提交边界的 pending，不属于清空失败或待重试项 */
         val protectedCount: Int = 0,
         /** 本轮已确认属于持久核心的引用，供清空快照复用，避免再次读取 SAF 元数据 */
@@ -620,6 +629,9 @@ internal object ManagedDownloadStorage {
     ) {
         val hasRecoveredEntries: Boolean
             get() = cleanedCount > 0 || failedCount > 0
+
+        val immediatelyRetryableFailedCount: Int
+            get() = (failedCount - externalSignalRequiredCount).coerceAtLeast(0)
     }
 
     /** 只把实际删除失败的引用归属到歌曲，避免把整批 operation 误报成残留 */
@@ -6631,6 +6643,7 @@ internal object ManagedDownloadStorage {
             StartupRecoveryResult(
                 cleanedCount = deletedReferences.size + temporaryCleanup.cleanedCount,
                 failedCount = failedCount,
+                externalSignalRequiredCount = temporaryCleanup.externalSignalRequiredCount,
                 protectedCount = protectedPendingEntryCount,
                 protectedReferences = protectedPendingReferences,
                 failedStableKeys = failedStableKeys
@@ -6838,10 +6851,12 @@ internal object ManagedDownloadStorage {
             is TerminalTemporaryWriteCleanupJournalSnapshot.Available -> {
                 var cleanedCount = 0
                 var failedCount = 0
+                var externalSignalRequiredCount = 0
                 snapshot.entries.forEach { entry ->
                     val root = resolveTerminalTemporaryWriteCleanupRoot(context, entry)
                     if (root == null) {
                         failedCount += entry.targetNames.size
+                        externalSignalRequiredCount += entry.targetNames.size
                         NPLogger.w(
                             TAG,
                             "终态临时写入清理目录不可恢复，保留等待恢复: " +
@@ -6856,16 +6871,21 @@ internal object ManagedDownloadStorage {
                     )
                     cleanedCount += recovery.cleanedCount
                     failedCount += recovery.failedCount
+                    externalSignalRequiredCount += recovery.externalSignalRequiredCount
                 }
                 StartupRecoveryResult(
                     cleanedCount = cleanedCount,
-                    failedCount = failedCount
+                    failedCount = failedCount,
+                    externalSignalRequiredCount = externalSignalRequiredCount
                 )
             }
         }
         StartupRecoveryResult(
             cleanedCount = preparationRecovery.cleanedCount + terminalRecovery.cleanedCount,
-            failedCount = preparationRecovery.failedCount + terminalRecovery.failedCount
+            failedCount = preparationRecovery.failedCount + terminalRecovery.failedCount,
+            externalSignalRequiredCount =
+                preparationRecovery.externalSignalRequiredCount +
+                    terminalRecovery.externalSignalRequiredCount
         )
     }
 
@@ -6879,13 +6899,15 @@ internal object ManagedDownloadStorage {
     ): StartupRecoveryResult {
         var cleanedCount = 0
         var failedCount = 0
+        var externalSignalRequiredCount = 0
         var currentEntry = entry
         var currentRoot = root
 
         fun aggregate(extraFailedCount: Int = 0): StartupRecoveryResult {
             return StartupRecoveryResult(
                 cleanedCount = cleanedCount,
-                failedCount = failedCount + extraFailedCount
+                failedCount = failedCount + extraFailedCount,
+                externalSignalRequiredCount = externalSignalRequiredCount
             )
         }
 
@@ -6905,7 +6927,10 @@ internal object ManagedDownloadStorage {
                         "root=${currentEntry.root.identity}, " +
                         "targets=${currentEntry.targetNames.size}, error=${error.message}"
                 )
-                StartupRecoveryResult(failedCount = currentEntry.targetNames.size)
+                StartupRecoveryResult(
+                    failedCount = currentEntry.targetNames.size,
+                    externalSignalRequiredCount = currentEntry.targetNames.size
+                )
             } catch (error: Exception) {
                 NPLogger.w(
                     TAG,
@@ -6918,6 +6943,7 @@ internal object ManagedDownloadStorage {
             }
             cleanedCount += recovery.cleanedCount
             failedCount += recovery.failedCount
+            externalSignalRequiredCount += recovery.externalSignalRequiredCount
             if (recovery.failedCount > 0) {
                 return aggregate()
             }
@@ -7105,10 +7131,12 @@ internal object ManagedDownloadStorage {
 
                 is TerminalTemporaryWriteCleanupPreparationSnapshot.Available -> {
                     var failedCount = 0
+                    var externalSignalRequiredCount = 0
                     snapshot.entries.forEach { preparation ->
                         val root = resolveTerminalTemporaryWriteCleanupRoot(context, preparation)
                         if (root == null) {
                             failedCount += preparation.targetNames.size
+                            externalSignalRequiredCount += preparation.targetNames.size
                             NPLogger.w(
                                 TAG,
                                 "最终发布准备目录不可恢复，保留等待恢复: " +
@@ -7145,14 +7173,17 @@ internal object ManagedDownloadStorage {
                             )
                         }
                     }
-                    StartupRecoveryResult(failedCount = failedCount)
+                    StartupRecoveryResult(
+                        failedCount = failedCount,
+                        externalSignalRequiredCount = externalSignalRequiredCount
+                    )
                 }
             }
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: SecurityException) {
             NPLogger.w(TAG, "最终发布准备恢复缺少权限，保留等待恢复: ${error.message}")
-            StartupRecoveryResult(failedCount = 1)
+            StartupRecoveryResult(failedCount = 1, externalSignalRequiredCount = 1)
         } catch (error: Exception) {
             NPLogger.w(
                 TAG,
@@ -7316,6 +7347,7 @@ internal object ManagedDownloadStorage {
         }
         var cleanedCount = 0
         var failedCount = 0
+        var externalSignalRequiredCount = 0
         when (
             val result = backend.cleanupTerminalTemporaryWrites(
                 normalizedTargets.map(targetForCleanupTarget)
@@ -7327,6 +7359,11 @@ internal object ManagedDownloadStorage {
                     result = result,
                     targetCount = normalizedTargets.size
                 )
+                externalSignalRequiredCount +=
+                    terminalTemporaryWriteCleanupExternalSignalRequiredCount(
+                        result = result,
+                        targetCount = normalizedTargets.size
+                    )
                 if (result.retainedActiveCount > 0) {
                     NPLogger.d(
                         TAG,
@@ -7348,6 +7385,11 @@ internal object ManagedDownloadStorage {
                     result = result,
                     targetCount = normalizedTargets.size
                 )
+                externalSignalRequiredCount +=
+                    terminalTemporaryWriteCleanupExternalSignalRequiredCount(
+                        result = result,
+                        targetCount = normalizedTargets.size
+                    )
                 NPLogger.w(
                     TAG,
                     "终态临时写入清理跳过非完整目录枚举: " +
@@ -7360,7 +7402,8 @@ internal object ManagedDownloadStorage {
         }
         return StartupRecoveryResult(
             cleanedCount = cleanedCount,
-            failedCount = failedCount
+            failedCount = failedCount,
+            externalSignalRequiredCount = externalSignalRequiredCount
         )
     }
 
@@ -7489,6 +7532,36 @@ internal object ManagedDownloadStorage {
             }
 
             is ManagedTemporaryWriteCleanupResult.Skipped -> normalizedTargetCount
+        }
+    }
+
+    internal fun terminalTemporaryWriteCleanupExternalSignalRequiredCount(
+        result: ManagedTemporaryWriteCleanupResult,
+        targetCount: Int
+    ): Int {
+        val normalizedTargetCount = targetCount.coerceAtLeast(1)
+        return when (result) {
+            is ManagedTemporaryWriteCleanupResult.Completed -> {
+                result.failures.count { failure ->
+                    failure == StorageMutationResult.PermissionLost ||
+                        failure == StorageMutationResult.OutOfScope
+                }
+            }
+
+            is ManagedTemporaryWriteCleanupResult.Skipped -> when (val reason = result.reason) {
+                is ManagedTemporaryWriteCleanupSkipReason.IncompleteDirectory -> when (
+                    reason.confidence
+                ) {
+                    StorageConfidence.PermissionLost,
+                    StorageConfidence.OutOfScope -> normalizedTargetCount
+
+                    StorageConfidence.Complete,
+                    StorageConfidence.Missing,
+                    is StorageConfidence.ProviderFailure -> 0
+                }
+
+                ManagedTemporaryWriteCleanupSkipReason.TargetParentMismatch -> 0
+            }
         }
     }
 
@@ -11287,6 +11360,9 @@ internal object ManagedDownloadStorage {
             failedCount = pending.failedCount +
                 unfinalized.failedCount +
                 terminal.failedCount,
+            externalSignalRequiredCount = pending.externalSignalRequiredCount +
+                unfinalized.externalSignalRequiredCount +
+                terminal.externalSignalRequiredCount,
             protectedCount = pending.protectedCount +
                 unfinalized.protectedCount +
                 terminal.protectedCount,

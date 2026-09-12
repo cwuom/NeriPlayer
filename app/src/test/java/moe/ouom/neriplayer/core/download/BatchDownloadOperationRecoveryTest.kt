@@ -667,17 +667,28 @@ class BatchDownloadOperationRecoveryTest {
             managerSource,
             "stageAndPromotePendingDownloadQueuePage"
         )
+        val bindingRequestsBody = methodBody(
+            managerSource,
+            "resolveOperationRequestsForBatchBinding"
+        )
         val batchBody = methodBody(managerSource, "startBatchDownload")
         val pendingUpsertBody = methodBody(recoveryStoreSource, "upsertPendingDownloadQueue")
         val waitingUpsertBody = methodBody(recoveryStoreSource, "upsertWaitingStorageMutation")
 
         assertTrue(stagingBody.contains("chunked(BATCH_OPERATION_STAGE_PAGE_SIZE)"))
         assertTrue(stagingBody.contains("onPageReady(pageIndex, stagedPage)"))
+        assertTrue(stagingBody.contains("resolveOperationRequestsForBatchBinding("))
+        assertTrue(bindingRequestsBody.contains("val missingOperationIds = normalizedOperationIds"))
+        assertTrue(bindingRequestsBody.contains("if (missingOperationIds.isEmpty())"))
+        assertTrue(bindingRequestsBody.contains("operationIds = missingOperationIds"))
         assertTrue(stagingPageBody.contains("readOperationRequestMetadata("))
         assertTrue(stagingPageBody.contains("readOperationIdentities("))
         assertTrue(stagingPageBody.contains("promoteWaitingStorageMutations("))
         assertFalse(stagingPageBody.contains("rememberPendingDownloadQueue("))
-        assertTrue(batchBody.contains("val operationHeaders"))
+        assertTrue(batchBody.contains("var operationHeaders"))
+        assertTrue(batchBody.contains("val operationIdsMissingBatchIdentity"))
+        assertTrue(batchBody.contains("if (operationIdsMissingBatchIdentity.isNotEmpty())"))
+        assertTrue(batchBody.contains("resolveOperationRequestsForBatchBinding("))
         assertFalse(batchBody.contains("val operationSnapshots"))
         assertTrue(
             roomReadStoreSource.contains(

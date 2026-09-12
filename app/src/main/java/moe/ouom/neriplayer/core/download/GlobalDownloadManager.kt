@@ -63,7 +63,9 @@ import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactCoordinator
+import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactPublicationLease
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
+import moe.ouom.neriplayer.core.download.artifact.finalizedPublicationLeaseOrNull
 import moe.ouom.neriplayer.core.download.artifact.ownedLeaseIdOrNull
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuildItem
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
@@ -1031,6 +1033,38 @@ object GlobalDownloadManager {
         val operationRequestsBySongKey: Map<String, DownloadExecutionRequest> = emptyMap()
     )
 
+    /** 已在当前入队事务拿到的请求不再从 Room 解码完整歌词载荷 */
+    private suspend fun resolveOperationRequestsForBatchBinding(
+        context: Context,
+        operationIds: Collection<String>,
+        knownRequests: Collection<DownloadExecutionRequest>
+    ): List<DownloadExecutionRequest> {
+        val normalizedOperationIds = operationIds
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .toList()
+        val requestedOperationIds = normalizedOperationIds.toHashSet()
+        val knownRequestsByOperationId = knownRequests
+            .asSequence()
+            .filter { request -> request.operationId in requestedOperationIds }
+            .distinctBy(DownloadExecutionRequest::operationId)
+            .associateBy(DownloadExecutionRequest::operationId)
+        val missingOperationIds = normalizedOperationIds
+            .filterNot(knownRequestsByOperationId::containsKey)
+        if (missingOperationIds.isEmpty()) {
+            return normalizedOperationIds.mapNotNull(knownRequestsByOperationId::get)
+        }
+        val restoredRequests = DownloadExecutionRoomStore.readOperationSnapshots(
+            context = context.applicationContext,
+            operationIds = missingOperationIds
+        ).mapValues { (_, snapshot) -> snapshot.request }
+        return normalizedOperationIds.mapNotNull { operationId ->
+            knownRequestsByOperationId[operationId] ?: restoredRequests[operationId]
+        }
+    }
+
     /**
      * 按页永久化大批歌曲，保持同一次用户请求的创建时间。每页独立事务，避免 847/10000 首占用单个事务
      */
@@ -1074,11 +1108,11 @@ object GlobalDownloadManager {
                 operationCreatedAtMs = operationCreatedAtMs
             )
             if (batchIdentity != null && stagedPage.operationIds.isNotEmpty()) {
-                val pageRequests = stagedPage.operationRequestsBySongKey.values +
-                    DownloadExecutionRoomStore.readOperationSnapshots(
-                        context = context.applicationContext,
-                        operationIds = stagedPage.operationIds
-                    ).values.map { snapshot -> snapshot.request }
+                val pageRequests = resolveOperationRequestsForBatchBinding(
+                    context = context.applicationContext,
+                    operationIds = stagedPage.operationIds,
+                    knownRequests = stagedPage.operationRequestsBySongKey.values
+                )
                 DownloadExecutionRoomStore.attachBatchIdentity(
                     context = context.applicationContext,
                     identity = batchIdentity,
@@ -3029,13 +3063,13 @@ object GlobalDownloadManager {
                                         )
                                         return@withSongExecutionLock
                                     }
-                                    val artifactLeaseId = currentMetadata.operationId
-                                        ?.let { operationId ->
-                                            DownloadExecutionRoomStore.read(context, operationId)
-                                                ?.artifactLeaseId
-                                        }
-                                        ?: managedDownloadArtifactCoordinator.currentLeaseId(context, song)
                                     if (isFinalizedDownloadedMetadata(currentMetadata)) {
+                                        val publicationLease =
+                                            prepareFinalizedPublicationArtifactLease(
+                                                context = context,
+                                                song = song,
+                                                operationId = currentMetadata.operationId
+                                            ) ?: return@withSongExecutionLock
                                         val publicationResult = publishFinalizedDownload(
                                             context = context,
                                             song = song,
@@ -3043,7 +3077,7 @@ object GlobalDownloadManager {
                                             sidecarReferences = null,
                                             expectedAttemptId = null,
                                             operationId = currentMetadata.operationId,
-                                            expectedArtifactLeaseId = artifactLeaseId,
+                                            expectedArtifactLeaseId = publicationLease.leaseId,
                                             allowMissingTask = true,
                                             admissionTicket = admissionTicket
                                         )
@@ -3071,6 +3105,12 @@ object GlobalDownloadManager {
                                         }
                                         return@withSongExecutionLock
                                     }
+                                    val artifactLeaseId = currentMetadata.operationId
+                                        ?.let { operationId ->
+                                            DownloadExecutionRoomStore.read(context, operationId)
+                                                ?.artifactLeaseId
+                                        }
+                                        ?: managedDownloadArtifactCoordinator.currentLeaseId(context, song)
                                     NPLogger.d(
                                         TAG,
                                         "从 pending 音频恢复元信息收尾: " +
@@ -3197,11 +3237,6 @@ object GlobalDownloadManager {
                         )
                         return@withSongExecutionLock
                     }
-                    val artifactLeaseId = currentMetadata.operationId
-                        ?.let { operationId ->
-                            DownloadExecutionRoomStore.read(context, operationId)?.artifactLeaseId
-                        }
-                        ?: managedDownloadArtifactCoordinator.currentLeaseId(context, song)
                     val operationState = currentMetadata.operationId
                         ?.let { operationId -> DownloadExecutionRoomStore.state(context, operationId) }
                     val artifactState = managedDownloadArtifactCoordinator.currentState(context, song)
@@ -3215,6 +3250,11 @@ object GlobalDownloadManager {
                                 artifactState = artifactState
                             )
                     ) {
+                        val publicationLease = prepareFinalizedPublicationArtifactLease(
+                            context = context,
+                            song = song,
+                            operationId = currentMetadata.operationId
+                        ) ?: return@withSongExecutionLock
                         val publicationResult = publishFinalizedDownload(
                             context = context,
                             song = song,
@@ -3222,7 +3262,7 @@ object GlobalDownloadManager {
                             sidecarReferences = null,
                             expectedAttemptId = null,
                             operationId = currentMetadata.operationId,
-                            expectedArtifactLeaseId = artifactLeaseId,
+                            expectedArtifactLeaseId = publicationLease.leaseId,
                             allowMissingTask = true,
                             admissionTicket = admissionTicket
                         )
@@ -3238,6 +3278,11 @@ object GlobalDownloadManager {
                     if (!isUnfinalizedDownloadedMetadata(currentMetadata)) {
                         return@withSongExecutionLock
                     }
+                    val artifactLeaseId = currentMetadata.operationId
+                        ?.let { operationId ->
+                            DownloadExecutionRoomStore.read(context, operationId)?.artifactLeaseId
+                        }
+                        ?: managedDownloadArtifactCoordinator.currentLeaseId(context, song)
                     finalizeCompletedDownload(
                         context = context,
                         song = song,
@@ -3262,6 +3307,54 @@ object GlobalDownloadManager {
                     TAG,
                     "恢复未最终化已发布音频失败，保留等待重试: " +
                         "song=${song.name}, file=${audio.name}, error=${error.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * 已完成元数据可能晚于 operation lease 释放才被恢复。先按持久 operation owner
+     * 重新 claim；无主的 post-core artifact 可以 lease-free 收口，新 owner 则必须等待
+     */
+    private suspend fun prepareFinalizedPublicationArtifactLease(
+        context: Context,
+        song: SongItem,
+        operationId: String?
+    ): ManagedDownloadArtifactPublicationLease? {
+        val normalizedOperationId = operationId?.trim()?.takeIf(String::isNotBlank)
+        val request = normalizedOperationId
+            ?.let { persistedOperationId ->
+                DownloadExecutionRoomStore.read(context, persistedOperationId)
+            }
+            ?.takeIf { persisted -> persisted.song.stableKey() == song.stableKey() }
+        val recoveryLeaseOwnerId = request?.artifactLeaseId
+            ?: finalizedPublicationRecoveryLeaseOwnerId(
+                stableKey = song.stableKey(),
+                operationId = normalizedOperationId
+            )
+        val claim = runCatching {
+            managedDownloadArtifactCoordinator.claim(
+                context = context,
+                song = song,
+                reconcileStorage = false,
+                leaseOwnerId = recoveryLeaseOwnerId,
+                allowFreshTransferReclaim = false
+            )
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "恢复最终发布 artifact lease 失败，保留等待重试: " +
+                    "song=${song.name}, operationId=$normalizedOperationId, " +
+                    "error=${error.message}",
+                error
+            )
+        }.getOrNull() ?: return null
+        return claim.finalizedPublicationLeaseOrNull().also { publicationLease ->
+            if (publicationLease == null) {
+                NPLogger.d(
+                    TAG,
+                    "恢复最终发布遇到新的 artifact owner，保留等待接管者收口: " +
+                        "song=${song.name}, operationId=$normalizedOperationId"
                 )
             }
         }
@@ -8645,10 +8738,9 @@ object GlobalDownloadManager {
                                 targets to requested
                             }
                         if (cleanupRequested || retryPending) {
-                            val failedCount = try {
+                            val cleanupResult = try {
                                 ManagedDownloadStorage
                                     .cleanupPersistedTerminalTemporaryWriteArtifacts(appContext)
-                                    .failedCount
                             } catch (cancellation: CancellationException) {
                                 throw cancellation
                             } catch (error: Exception) {
@@ -8658,33 +8750,50 @@ object GlobalDownloadManager {
                                         "targets=${targets.size}, error=${error.message}",
                                     error
                                 )
-                                targets.size.coerceAtLeast(1)
+                                ManagedDownloadStorage.StartupRecoveryResult(
+                                    failedCount = targets.size.coerceAtLeast(1)
+                                )
                             }
+                            val failedCount = cleanupResult.failedCount
+                            val retryableFailedCount =
+                                cleanupResult.immediatelyRetryableFailedCount
                             if (failedCount > 0) {
-                                failedAttempt += 1
-                                val retryDelayMs =
-                                    TerminalTemporaryWriteCleanupRetryPolicy
-                                        .delayMsForFailedAttempt(failedAttempt)
-                                if (retryDelayMs != null) {
+                                if (retryableFailedCount == 0) {
                                     NPLogger.w(
                                         TAG,
-                                        "最终发布后临时写入清理未完全确认，延后重试: " +
+                                        "最终发布后临时写入清理等待权限或目录恢复: " +
                                             "targets=${targets.size}, failed=$failedCount, " +
-                                            "attempt=$failedAttempt/" +
-                                            "${TerminalTemporaryWriteCleanupRetryPolicy.MAX_FAILED_ATTEMPTS}, " +
-                                            "delayMs=$retryDelayMs"
+                                            "external=${cleanupResult.externalSignalRequiredCount}"
                                     )
-                                    retryPending = true
-                                    delay(retryDelayMs)
-                                    continue
+                                    failedAttempt = 0
+                                } else {
+                                    failedAttempt += 1
+                                    val retryDelayMs =
+                                        TerminalTemporaryWriteCleanupRetryPolicy
+                                            .delayMsForFailedAttempt(failedAttempt)
+                                    if (retryDelayMs != null) {
+                                        NPLogger.w(
+                                            TAG,
+                                            "最终发布后临时写入清理未完全确认，延后重试: " +
+                                                "targets=${targets.size}, " +
+                                                "failed=$retryableFailedCount, " +
+                                                "attempt=$failedAttempt/" +
+                                                "${TerminalTemporaryWriteCleanupRetryPolicy.MAX_FAILED_ATTEMPTS}, " +
+                                                "delayMs=$retryDelayMs"
+                                        )
+                                        retryPending = true
+                                        delay(retryDelayMs)
+                                        continue
+                                    }
+                                    NPLogger.w(
+                                        TAG,
+                                        "最终发布后临时写入清理重试次数已用尽，保留下次恢复: " +
+                                            "targets=${targets.size}, " +
+                                            "failed=$retryableFailedCount, " +
+                                            "attempts=$failedAttempt"
+                                    )
+                                    failedAttempt = 0
                                 }
-                                NPLogger.w(
-                                    TAG,
-                                    "最终发布后临时写入清理重试次数已用尽，保留下次恢复: " +
-                                        "targets=${targets.size}, failed=$failedCount, " +
-                                        "attempts=$failedAttempt"
-                                )
-                                failedAttempt = 0
                             } else {
                                 failedAttempt = 0
                             }
@@ -14887,23 +14996,32 @@ object GlobalDownloadManager {
                 }
                 val operationIds = stagedQueue.operationIds
                 val operationIdsBySongKey = stagedQueue.operationIdsBySongKey
-                val operationRequestsForBinding = (
-                    stagedQueue.operationRequestsBySongKey.values +
-                        inFlightOperationRequests +
-                        DownloadExecutionRoomStore.readOperationSnapshots(
-                            context = appContext,
-                            operationIds = operationIds
-                        ).values.map { snapshot -> snapshot.request }
-                    ).distinctBy(DownloadExecutionRequest::operationId)
-                DownloadExecutionRoomStore.attachBatchIdentity(
-                    context = appContext,
-                    identity = checkNotNull(durableBatchIdentity),
-                    requests = operationRequestsForBinding
-                )
-                val operationHeaders = DownloadExecutionRoomStore.readOperationHeaders(
+                val batchIdentity = checkNotNull(durableBatchIdentity)
+                var operationHeaders = DownloadExecutionRoomStore.readOperationHeaders(
                     context = appContext,
                     operationIds = operationIds
                 )
+                val operationIdsMissingBatchIdentity = operationIds.filter { operationId ->
+                    val header = operationHeaders[operationId]
+                    header?.batchId != batchIdentity.batchId ||
+                        header.batchGeneration != batchIdentity.generation
+                }
+                if (operationIdsMissingBatchIdentity.isNotEmpty()) {
+                    val operationRequestsForBinding = resolveOperationRequestsForBatchBinding(
+                        context = appContext,
+                        operationIds = operationIdsMissingBatchIdentity,
+                        knownRequests = stagedQueue.operationRequestsBySongKey.values
+                    )
+                    DownloadExecutionRoomStore.attachBatchIdentity(
+                        context = appContext,
+                        identity = batchIdentity,
+                        requests = operationRequestsForBinding
+                    )
+                    operationHeaders = DownloadExecutionRoomStore.readOperationHeaders(
+                        context = appContext,
+                        operationIds = operationIds
+                    )
+                }
                 val handedOffSongKeys = operationIdsBySongKey
                     .filterValues { operationId ->
                         operationHeaders[operationId]?.state in

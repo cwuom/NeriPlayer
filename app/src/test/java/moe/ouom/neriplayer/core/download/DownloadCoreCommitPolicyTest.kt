@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -294,6 +295,28 @@ class DownloadCoreCommitPolicyTest {
                 metadataFinalized = null,
                 operationState = "CORE_COMMITTED",
                 artifactState = "ASSETS_ENRICHING"
+            )
+        )
+    }
+
+    @Test
+    fun `orphan final publication keeps a deterministic recovery owner across restarts`() {
+        val first = finalizedPublicationRecoveryLeaseOwnerId(
+            stableKey = "netease|1|album",
+            operationId = "operation-1"
+        )
+
+        assertEquals(
+            first,
+            finalizedPublicationRecoveryLeaseOwnerId(
+                stableKey = "netease|1|album",
+                operationId = "operation-1"
+            )
+        )
+        assertFalse(
+            first == finalizedPublicationRecoveryLeaseOwnerId(
+                stableKey = "netease|1|album",
+                operationId = "operation-2"
             )
         )
     }

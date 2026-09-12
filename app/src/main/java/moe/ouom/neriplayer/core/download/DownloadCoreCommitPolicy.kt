@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import java.util.Locale
+import java.util.UUID
 
 /**
  * tracks the point after which a cancellation no longer owns the committed media
@@ -144,6 +145,16 @@ internal fun requiresFinalizedPublicationRecovery(
         "ASSETS_ENRICHING",
         "DEGRADED_COMPLETE"
     )
+}
+
+/** 缺少 operation 行时仍使用跨进程稳定的恢复 owner，避免崩溃后等待 stale lease */
+internal fun finalizedPublicationRecoveryLeaseOwnerId(
+    stableKey: String,
+    operationId: String?
+): String {
+    val normalizedOperationId = operationId?.trim()?.takeIf(String::isNotBlank).orEmpty()
+    val seed = "finalized-publication-v1\u0000${stableKey.trim()}\u0000$normalizedOperationId"
+    return UUID.nameUUIDFromBytes(seed.toByteArray(Charsets.UTF_8)).toString()
 }
 
 /** 最终发布被新代次接管时不能再把旧回调当成可重试故障 */

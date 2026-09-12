@@ -825,7 +825,6 @@ class DefaultDownloadExecutionHost(
     }
 
     private companion object {
-        private const val PUMP_QUERY_LIMIT = 64
         private const val PUMP_MAX_BATCHES_PER_RUN = 256
         private val SCHEDULABLE_OPERATION_STATES = setOf(
             "PENDING_QUEUE",
@@ -2392,6 +2391,7 @@ class DefaultDownloadExecutionHost(
         pendingPage: PumpPendingPage?
     ): PumpCandidateSelection {
         val selectionStartedNs = System.nanoTime()
+        val pumpQueryLimit = configuredDispatchWindow(context)
         val candidates = mutableListOf<DownloadExecutionRequest>()
         val observedOperationIds = mutableSetOf<String>()
         val observedStableKeys = mutableSetOf<String>()
@@ -2417,7 +2417,7 @@ class DefaultDownloadExecutionHost(
                 val page = operationStore.listSchedulableForPumpPageSuspending(
                     context = context,
                     afterCursor = cursor,
-                    limit = PUMP_QUERY_LIMIT
+                    limit = pumpQueryLimit
                 )
                 roomQueryNs += (System.nanoTime() - queryStartedNs).coerceAtLeast(0L)
                 pagesRead++

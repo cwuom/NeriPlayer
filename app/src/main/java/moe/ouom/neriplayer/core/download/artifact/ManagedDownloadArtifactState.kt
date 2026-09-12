@@ -51,6 +51,27 @@ internal fun ManagedDownloadArtifactClaim?.ownedLeaseIdOrNull(): String? {
     return (this as? ManagedDownloadArtifactClaim.Acquired)?.artifact?.leaseId
 }
 
+/** 用包装对象区分“无主 lease 可安全收口”和“仍由其它下载占用” */
+internal data class ManagedDownloadArtifactPublicationLease(
+    val leaseId: String?
+)
+
+internal fun ManagedDownloadArtifactClaim.finalizedPublicationLeaseOrNull():
+    ManagedDownloadArtifactPublicationLease? {
+    return when (this) {
+        is ManagedDownloadArtifactClaim.Acquired ->
+            ManagedDownloadArtifactPublicationLease(artifact.leaseId)
+
+        is ManagedDownloadArtifactClaim.AlreadyDownloaded ->
+            ManagedDownloadArtifactPublicationLease(artifact.leaseId)
+
+        is ManagedDownloadArtifactClaim.RepairRequired ->
+            ManagedDownloadArtifactPublicationLease(artifact.leaseId)
+
+        is ManagedDownloadArtifactClaim.InFlight -> null
+    }
+}
+
 internal object ManagedDownloadArtifactPolicy {
     const val DEFAULT_STALE_LEASE_MS = 15 * 60 * 1_000L
 

@@ -1202,9 +1202,9 @@ internal object DownloadExecutionRoomStore {
         val normalizedOperationId = normalizeDownloadOperationId(operationId) ?: return false
         return database.withTransaction {
             val dao = database.downloadOperationDao()
-            val entity = dao.find(normalizedOperationId)
+            val header = dao.findHeader(normalizedOperationId)
                 ?: return@withTransaction false
-            val request = requestFromEntity(entity)
+            val request = readRequestFromHeader(dao, header).request
             val attemptId = request?.attemptId
             val changed = dao.markCoreCommitted(
                 operationId = normalizedOperationId,
@@ -1217,7 +1217,7 @@ internal object DownloadExecutionRoomStore {
                 markMembersCompletedForOperationInTransaction(
                     database = database,
                     operationId = normalizedOperationId,
-                    stableKey = entity.stableKey,
+                    stableKey = header.stableKey,
                     attemptId = attemptId
                 )
             }

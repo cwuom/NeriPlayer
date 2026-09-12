@@ -1080,7 +1080,7 @@ class DownloadExecutionHostTest {
                     DownloadExecutionResult.Accepted
                 },
                 sdkInt = 28,
-                downloadParallelismProvider = { 6 }
+                downloadParallelismProvider = { 8 }
             )
 
             DownloadPumpSelectionTrace.clearForTests()
@@ -1092,11 +1092,12 @@ class DownloadExecutionHostTest {
             }
             assertEquals(DownloadExecutionPumpResult.Completed, pumpResult)
 
-            val expectedPageCount = (size + 63) / 64
+            val dispatchWindow = resolveDownloadDispatchWindow(8)
+            val expectedPageCount = (size + dispatchWindow - 1) / dispatchWindow
             assertTrue(journal.pumpPageCallCount <= expectedPageCount + 1)
             assertTrue(
                 DownloadPumpSelectionTrace.snapshot()
-                    .maxOf { sample -> sample.rowsRead } <= 64
+                    .maxOf { sample -> sample.rowsRead } <= dispatchWindow
             )
         }
     }
