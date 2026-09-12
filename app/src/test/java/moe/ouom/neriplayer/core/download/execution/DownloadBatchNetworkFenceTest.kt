@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.execution
 import java.io.File
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,6 +42,52 @@ class DownloadBatchNetworkFenceTest {
         assertTrue(tryStartBody.contains("findBatch(batchId, batchGeneration)"))
         assertTrue(fenceIndex >= 0)
         assertTrue(transitionIndex > fenceIndex)
+    }
+
+    @Test
+    fun `confirmed Wi-Fi bulk release clears wait and mobile allowance together`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/data/local/database/dao/DownloadBatchDao.kt"
+        ).readText()
+        val releaseQuery = source.substringBefore(
+            "suspend fun clearAllOpenNetworkPolicyFencesAtOrBeforeGeneration"
+        ).substringAfterLast("@Query(")
+
+        assertTrue(releaseQuery.contains("DownloadBatchState.NETWORK_WAIT"))
+        assertTrue(releaseQuery.contains("DownloadBatchState.USER_MOBILE_ALLOWED"))
+        assertTrue(releaseQuery.contains("network_generation <= :networkGeneration"))
+        assertTrue(releaseQuery.contains("DownloadBatchState.CLEARING"))
+    }
+
+    @Test
+    fun `network policy cache never lets an older payload replace a newer one`() {
+        val operationId = "network-policy-cache-${System.nanoTime()}"
+
+        DownloadExecutionRoomStore.cacheNetworkPolicy(
+            operationId = operationId,
+            requiresWifiNetwork = true,
+            updatedAtMs = 20L
+        )
+        DownloadExecutionRoomStore.cacheNetworkPolicy(
+            operationId = operationId,
+            requiresWifiNetwork = false,
+            updatedAtMs = 19L
+        )
+
+        assertEquals(
+            true,
+            DownloadExecutionRoomStore.cachedNetworkPolicy(operationId)
+        )
+
+        DownloadExecutionRoomStore.cacheNetworkPolicy(
+            operationId = operationId,
+            requiresWifiNetwork = false,
+            updatedAtMs = 21L
+        )
+        assertEquals(
+            false,
+            DownloadExecutionRoomStore.cachedNetworkPolicy(operationId)
+        )
     }
 
     private fun batch(

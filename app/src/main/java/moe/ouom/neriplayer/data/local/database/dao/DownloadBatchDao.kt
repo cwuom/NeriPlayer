@@ -29,6 +29,20 @@ internal interface DownloadBatchDao {
     )
     suspend fun findOpenBatches(): List<DownloadBatchEntity>
 
+    /** 按成员键直接定位开放批次，避免网络边沿逐批加载全部成员 */
+    @Query(
+        "SELECT * FROM download_batch WHERE batch_id IN (" +
+            "SELECT DISTINCT batch_id FROM download_batch_member " +
+            "WHERE stable_key IN (:stableKeys) AND terminal_bits = 0) " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
+            "ORDER BY updated_at_ms ASC, generation ASC"
+    )
+    suspend fun findOpenBatchesForStableKeys(
+        stableKeys: List<String>
+    ): List<DownloadBatchEntity>
+
     /** 清空只捕获当前 fence 之前的批次，已进入 CLEARING 的行可幂等重试 */
     @Query(
         "SELECT * FROM download_batch " +
@@ -180,6 +194,22 @@ internal interface DownloadBatchDao {
     @Query("SELECT * FROM download_batch_member WHERE batch_id = :batchId ORDER BY ordinal ASC")
     suspend fun listMembers(batchId: String): List<DownloadBatchMemberEntity>
 
+    /** 只取仍未终态的成员键，供网络等待展示和计数使用 */
+    @Query(
+        "SELECT stable_key FROM download_batch_member " +
+            "WHERE batch_id = :batchId AND terminal_bits = 0 " +
+            "AND EXISTS (SELECT 1 FROM download_batch " +
+            "WHERE batch_id = :batchId AND generation = :generation " +
+            "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0) " +
+            "ORDER BY ordinal ASC"
+    )
+    suspend fun listPendingStableKeysForOpenBatch(
+        batchId: String,
+        generation: Long
+    ): List<String>
+
     @Query(
         "SELECT * FROM download_batch_member " +
             "WHERE batch_id = :batchId AND stable_key = :stableKey LIMIT 1"
@@ -292,6 +322,26 @@ internal interface DownloadBatchDao {
         generation: Long,
         networkGeneration: Long,
         expectedNetworkGeneration: Long?,
+        nowMs: Long
+    ): Int
+
+    /**
+     * 已确认 WIFI 后一次性解除旧等待和旧移动网络许可，代次条件阻止旧 WIFI
+     * 回调清掉随后由移动网络回调写入的新状态
+     */
+    @Query(
+        "UPDATE download_batch SET state_bits = state_bits & " +
+            "~(${DownloadBatchState.NETWORK_WAIT} | ${DownloadBatchState.USER_MOBILE_ALLOWED}), " +
+            "network_generation = :networkGeneration, updated_at_ms = :nowMs " +
+            "WHERE state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND state_bits & (${DownloadBatchState.NETWORK_WAIT} | " +
+            "${DownloadBatchState.USER_MOBILE_ALLOWED}) != 0 " +
+            "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
+            "AND (network_generation IS NULL OR network_generation <= :networkGeneration)"
+    )
+    suspend fun clearAllOpenNetworkPolicyFencesAtOrBeforeGeneration(
+        networkGeneration: Long,
         nowMs: Long
     ): Int
 

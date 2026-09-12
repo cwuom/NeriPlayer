@@ -70,6 +70,13 @@ internal data class DownloadOperationIdentityRow(
     @ColumnInfo(name = "stable_key") val stableKey: String
 )
 
+/** 网络回调只读取策略位，不把可能包含完整歌词的请求 JSON 搬进 JVM */
+internal data class DownloadOperationNetworkPolicyRow(
+    @ColumnInfo(name = "operation_id") val operationId: String,
+    @ColumnInfo(name = "stable_key") val stableKey: String,
+    @ColumnInfo(name = "requires_wifi_network") val requiresWifiNetwork: Boolean
+)
+
 internal data class DownloadCancellationIdentityRow(
     @ColumnInfo(name = "operation_id") val operationId: String,
     @ColumnInfo(name = "stable_key") val stableKey: String,

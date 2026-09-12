@@ -670,7 +670,8 @@ internal object DownloadExecutionRoomCancellationStore {
             .filter(String::isNotBlank)
             .toSet()
         val libraryId = DownloadExecutionRoomStore.Access.currentLibraryId(context)
-        return database.withTransaction {
+        val persistedNetworkPolicies = mutableListOf<Triple<String, Boolean, Long>>()
+        val rehydratedStableKeys = database.withTransaction {
             val dao = database.downloadOperationDao()
             val candidatesByStableKey = linkedMapOf<String, MutableList<DownloadOperationHeaderRow>>()
             songsByStableKey.keys.chunked(DownloadExecutionRoomStore.Access.SQLITE_IN_QUERY_CHUNK_SIZE).forEach { stableKeyChunk ->
@@ -683,7 +684,7 @@ internal object DownloadExecutionRoomCancellationStore {
                     candidatesByStableKey.getOrPut(header.stableKey) { mutableListOf() } += header
                 }
             }
-            val rehydratedStableKeys = linkedSetOf<String>()
+            val recoveredKeys = linkedSetOf<String>()
             songsByStableKey.forEach { (stableKey, song) ->
                 val candidates = candidatesByStableKey[stableKey]
                     .orEmpty()
@@ -708,24 +709,38 @@ internal object DownloadExecutionRoomCancellationStore {
                     userInitiated = userInitiated,
                     downloadAudioQuality = downloadAudioQuality
                 )
+                val payloadUpdatedAtMs = DownloadExecutionRoomStore.Access.nextPayloadUpdatedAt(
+                    previousUpdatedAtMs = existing.updatedAtMs,
+                    requestedAtMs = updatedAtMs
+                )
                 val replaced = dao.replaceMalformedReusablePayload(
                     operationId = existing.operationId,
                     libraryId = libraryId,
                     stableKey = stableKey,
                     expectedStates = DownloadExecutionRoomStore.Access.REUSABLE_OPERATION_STATES,
                     sourceHintJson = DownloadExecutionRoomStore.Access.requestToJson(request).toString(),
-                    updatedAtMs = DownloadExecutionRoomStore.Access.nextPayloadUpdatedAt(
-                        previousUpdatedAtMs = existing.updatedAtMs,
-                        requestedAtMs = updatedAtMs
-                    )
+                    updatedAtMs = payloadUpdatedAtMs
                 ) > 0
                 if (replaced) {
                     dao.deleteHostAdmission(existing.operationId)
-                    rehydratedStableKeys += stableKey
+                    recoveredKeys += stableKey
+                    persistedNetworkPolicies += Triple(
+                        existing.operationId,
+                        requiresWifiNetwork,
+                        payloadUpdatedAtMs
+                    )
                 }
             }
-            rehydratedStableKeys
+            recoveredKeys
         }
+        persistedNetworkPolicies.forEach { (operationId, requiresWifi, payloadUpdatedAtMs) ->
+            DownloadExecutionRoomStore.cacheNetworkPolicy(
+                operationId = operationId,
+                requiresWifiNetwork = requiresWifi,
+                updatedAtMs = payloadUpdatedAtMs
+            )
+        }
+        return rehydratedStableKeys
     }
 
 }

@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadCancellationIdentityRow
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationIdentityRow
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationNetworkPolicyRow
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 
 @Dao
@@ -111,6 +112,21 @@ internal interface DownloadOperationDao {
     suspend fun findAllHeadersByOperationIds(
         operationIds: List<String>
     ): List<DownloadOperationHeaderRow>
+
+    /**
+     * 旧 payload 没有 requiresWifiNetwork 时与解码器一致，按仅 WIFI 保守处理
+     * JSONObject.toString() 不会在冒号后插空格；同时匹配根字段两侧逗号，
+     * 避免歌曲文本里出现同名片段时误放行移动网络
+     */
+    @Query(
+        "SELECT operation_id, stable_key, " +
+            "CASE WHEN instr(source_hint_json, ',\"requiresWifiNetwork\":false,') > 0 " +
+            "THEN 0 ELSE 1 END AS requires_wifi_network " +
+            "FROM download_operation WHERE operation_id IN (:operationIds)"
+    )
+    suspend fun findNetworkPoliciesByOperationIds(
+        operationIds: List<String>
+    ): List<DownloadOperationNetworkPolicyRow>
 
     @Query(
         "UPDATE download_operation SET library_id = :libraryId, state = 'QUEUED', " +

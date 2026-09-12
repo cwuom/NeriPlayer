@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.Pr
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.ProgressEntry
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.StateEntry
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.dao.DownloadOperationDao
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
@@ -167,6 +168,131 @@ internal object DownloadExecutionRoomReadStore {
         }
         malformedHeaders.forEach { header -> DownloadExecutionRoomStore.Access.invalidateMalformedPayload(database, header) }
         return metadata
+    }
+
+    /**
+     * 按 stable key 读取最新网络策略。这里只返回 SQLite 投影出的布尔值，
+     * 不解析请求中的歌曲、歌词和封面载荷
+     */
+    suspend fun readLatestOperationNetworkPoliciesForStableKeys(
+        context: Context,
+        stableKeys: Collection<String>,
+        states: List<String>,
+        excludeUserStoppedOperations: Boolean = true,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Map<String, Boolean> {
+        val normalizedKeys = stableKeys
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .toList()
+        if (normalizedKeys.isEmpty() || states.isEmpty()) return emptyMap()
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val headers = normalizedKeys
+                .chunked(DownloadExecutionRoomStore.Access.SQLITE_IN_QUERY_CHUNK_SIZE)
+                .flatMap { keyChunk ->
+                    dao.findAllHeadersByStableKeysAnyLibrary(
+                        stableKeys = keyChunk,
+                        states = states
+                    )
+                }
+            readLatestNetworkPolicies(
+                dao = dao,
+                headers = headers,
+                excludeUserStoppedOperations = excludeUserStoppedOperations
+            )
+        }
+    }
+
+    /** 扫描轻量表头后只投影每首歌最新 operation 的网络策略 */
+    suspend fun readLatestOperationNetworkPoliciesByStatesAnyLibrary(
+        context: Context,
+        states: List<String>,
+        excludeUserStoppedOperations: Boolean = true,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Map<String, Boolean> {
+        if (states.isEmpty()) return emptyMap()
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val headers = mutableListOf<DownloadOperationHeaderRow>()
+            var afterOperationId = ""
+            while (true) {
+                val page = dao.findByStatesAfterOperationIdHeaders(
+                    states = states,
+                    afterOperationId = afterOperationId,
+                    limit = DownloadExecutionRoomStore.Access.OPERATION_QUERY_PAGE_SIZE
+                )
+                if (page.isEmpty()) break
+                headers += page
+                val nextOperationId = page.last().operationId
+                if (nextOperationId <= afterOperationId) break
+                afterOperationId = nextOperationId
+                if (page.size < DownloadExecutionRoomStore.Access.OPERATION_QUERY_PAGE_SIZE) break
+            }
+            readLatestNetworkPolicies(
+                dao = dao,
+                headers = headers,
+                excludeUserStoppedOperations = excludeUserStoppedOperations
+            )
+        }
+    }
+
+    private suspend fun readLatestNetworkPolicies(
+        dao: DownloadOperationDao,
+        headers: Collection<DownloadOperationHeaderRow>,
+        excludeUserStoppedOperations: Boolean
+    ): Map<String, Boolean> {
+        val latestHeadersByStableKey = linkedMapOf<String, DownloadOperationHeaderRow>()
+        headers.forEach { header ->
+            if (excludeUserStoppedOperations && header.stopRequestedByUser) {
+                return@forEach
+            }
+            val current = latestHeadersByStableKey[header.stableKey]
+            if (current == null || isNewerNetworkPolicyHeader(header, current)) {
+                latestHeadersByStableKey[header.stableKey] = header
+            }
+        }
+        if (latestHeadersByStableKey.isEmpty()) return emptyMap()
+        val latestHeadersByOperationId = latestHeadersByStableKey.values
+            .associateBy(DownloadOperationHeaderRow::operationId)
+        val policiesByOperationId = linkedMapOf<String, Boolean>()
+        val uncachedOperationIds = latestHeadersByStableKey.values.mapNotNull { header ->
+            val cached = DownloadExecutionRoomStore.cachedNetworkPolicy(header.operationId)
+                ?: return@mapNotNull header.operationId
+            policiesByOperationId[header.operationId] = cached
+            null
+        }
+        val operationIdChunks = uncachedOperationIds
+            .chunked(DownloadExecutionRoomStore.Access.SQLITE_IN_QUERY_CHUNK_SIZE)
+        for (operationIds in operationIdChunks) {
+            for (policy in dao.findNetworkPoliciesByOperationIds(operationIds)) {
+                policiesByOperationId[policy.operationId] = policy.requiresWifiNetwork
+                DownloadExecutionRoomStore.cacheNetworkPolicy(
+                    operationId = policy.operationId,
+                    requiresWifiNetwork = policy.requiresWifiNetwork,
+                    updatedAtMs = latestHeadersByOperationId[policy.operationId]
+                        ?.updatedAtMs ?: continue
+                )
+            }
+        }
+        return latestHeadersByStableKey.mapValues { (_, header) ->
+            policiesByOperationId[header.operationId] ?: true
+        }
+    }
+
+    private fun isNewerNetworkPolicyHeader(
+        candidate: DownloadOperationHeaderRow,
+        current: DownloadOperationHeaderRow
+    ): Boolean {
+        return when {
+            candidate.createdAtMs != current.createdAtMs ->
+                candidate.createdAtMs > current.createdAtMs
+            candidate.updatedAtMs != current.updatedAtMs ->
+                candidate.updatedAtMs > current.updatedAtMs
+            else -> candidate.operationId > current.operationId
+        }
     }
 
     suspend fun promoteWaitingStorageMutations(

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.execution
 import android.content.Context
 import androidx.room.withTransaction
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -24,6 +25,13 @@ internal object DownloadExecutionRoomStore {
     private const val OPERATION_QUERY_PAGE_SIZE = 64
     private const val CANCELLATION_QUERY_PAGE_SIZE = 256
     private const val PUMP_QUERY_MAX_ITEMS = 64
+    private data class CachedNetworkPolicy(
+        val requiresWifiNetwork: Boolean,
+        val updatedAtMs: Long
+    )
+
+    private val networkPolicyByOperationId =
+        ConcurrentHashMap<String, CachedNetworkPolicy>()
 
     internal data class StateEntry(
         val request: DownloadExecutionRequest,
@@ -169,7 +177,7 @@ internal object DownloadExecutionRoomStore {
         createdAtMs: Long? = null,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ) {
-        database.withTransaction {
+        val persistedNetworkPolicy = database.withTransaction {
             val requestedCreatedAtMs = createdAtMs ?: System.currentTimeMillis()
             val song = request.song
             val dao = database.downloadOperationDao()
@@ -245,7 +253,42 @@ internal object DownloadExecutionRoomStore {
                     batchGeneration = persistedRequest.batchGeneration
                 )
             )
+            CachedNetworkPolicy(
+                requiresWifiNetwork = persistedRequest.requiresWifiNetwork,
+                updatedAtMs = payloadUpdatedAtMs
+            )
         }
+        networkPolicyByOperationId.compute(request.operationId) { _, current ->
+            if (current == null || persistedNetworkPolicy.updatedAtMs >= current.updatedAtMs) {
+                persistedNetworkPolicy
+            } else {
+                current
+            }
+        }
+    }
+
+    internal fun cachedNetworkPolicy(operationId: String): Boolean? {
+        return networkPolicyByOperationId[operationId]?.requiresWifiNetwork
+    }
+
+    internal fun cacheNetworkPolicy(
+        operationId: String,
+        requiresWifiNetwork: Boolean,
+        updatedAtMs: Long
+    ) {
+        if (operationId.isNotBlank()) {
+            val policy = CachedNetworkPolicy(
+                requiresWifiNetwork = requiresWifiNetwork,
+                updatedAtMs = updatedAtMs
+            )
+            networkPolicyByOperationId.compute(operationId) { _, current ->
+                if (current == null || updatedAtMs >= current.updatedAtMs) policy else current
+            }
+        }
+    }
+
+    internal fun evictNetworkPolicy(operationId: String) {
+        networkPolicyByOperationId.remove(operationId)
     }
 
     // facade 保持既有调用面，读取、取消和状态查询分别由独立 store 承担
@@ -257,6 +300,10 @@ internal object DownloadExecutionRoomStore {
         DownloadExecutionRoomReadStore.readOperationHeaders(context, operationIds, database)
     suspend fun readOperationRequestMetadata(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
         DownloadExecutionRoomReadStore.readOperationRequestMetadata(context, operationIds, database)
+    suspend fun readLatestOperationNetworkPoliciesForStableKeys(context: Context, stableKeys: Collection<String>, states: List<String>, excludeUserStoppedOperations: Boolean = true, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.readLatestOperationNetworkPoliciesForStableKeys(context, stableKeys, states, excludeUserStoppedOperations, database)
+    suspend fun readLatestOperationNetworkPoliciesByStatesAnyLibrary(context: Context, states: List<String>, excludeUserStoppedOperations: Boolean = true, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomReadStore.readLatestOperationNetworkPoliciesByStatesAnyLibrary(context, states, excludeUserStoppedOperations, database)
     suspend fun promoteWaitingStorageMutations(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
         DownloadExecutionRoomReadStore.promoteWaitingStorageMutations(context, operationIds, database)
     suspend fun readOperationIdentities(context: Context, operationIds: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
@@ -1409,16 +1456,40 @@ internal object DownloadExecutionRoomStore {
         if (keys.isEmpty()) return emptyList()
         return database.withTransaction {
             val dao = database.downloadBatchDao()
-            dao.findOpenBatches().mapNotNull { batch ->
-                dao.listMembers(batch.batchId)
-                    .any { member -> member.stableKey in keys }
-                    .takeIf { it }
-                    ?.let {
-                        DownloadBatchIdentity(
-                            batchId = batch.batchId,
-                            generation = batch.generation
+            val batches = mutableListOf<DownloadBatchEntity>()
+            for (keyChunk in keys.toList().chunked(SQLITE_IN_QUERY_CHUNK_SIZE)) {
+                batches += dao.findOpenBatchesForStableKeys(keyChunk)
+            }
+            batches
+                .distinctBy { batch -> batch.batchId to batch.generation }
+                .map { batch ->
+                    DownloadBatchIdentity(
+                        batchId = batch.batchId,
+                        generation = batch.generation
+                    )
+                }
+        }
+    }
+
+    /** 按已捕获身份读取仍会被批次围栏阻塞的成员键 */
+    suspend fun findPendingStableKeysForOpenBatches(
+        context: Context,
+        identities: Collection<DownloadBatchIdentity>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Set<String> {
+        val distinctIdentities = identities.distinct()
+        if (distinctIdentities.isEmpty()) return emptySet()
+        return database.withTransaction {
+            val dao = database.downloadBatchDao()
+            buildSet {
+                distinctIdentities.forEach { identity ->
+                    addAll(
+                        dao.listPendingStableKeysForOpenBatch(
+                            batchId = identity.batchId,
+                            generation = identity.generation
                         )
-                    }
+                    )
+                }
             }
         }
     }
@@ -1481,7 +1552,8 @@ internal object DownloadExecutionRoomStore {
             .distinctBy(DownloadExecutionRequest::operationId)
             .toList()
         if (distinctRequests.isEmpty()) return 0
-        return database.withTransaction {
+        val persistedNetworkPolicies = mutableListOf<Triple<String, Boolean, Long>>()
+        val boundMemberCount = database.withTransaction {
             val operationDao = database.downloadOperationDao()
             val batchDao = database.downloadBatchDao()
             if (batchDao.findBatch(identity.batchId, identity.generation) == null) {
@@ -1501,7 +1573,11 @@ internal object DownloadExecutionRoomStore {
                     existingRequest?.batchGeneration ?: header.batchGeneration
                 val operationBoundToTarget = when {
                     existingBatchId == null && existingBatchGeneration == null -> {
-                        operationDao.bindBatchIdentityIfUnbound(
+                        val payloadUpdatedAtMs = nextPayloadUpdatedAt(
+                            previousUpdatedAtMs = header.updatedAtMs,
+                            requestedAtMs = nowMs
+                        )
+                        val bound = operationDao.bindBatchIdentityIfUnbound(
                             operationId = request.operationId,
                             stableKey = stableKey,
                             batchId = identity.batchId,
@@ -1512,8 +1588,16 @@ internal object DownloadExecutionRoomStore {
                                     batchGeneration = identity.generation
                                 )
                             ).toString(),
-                            updatedAtMs = nowMs
+                            updatedAtMs = payloadUpdatedAtMs
                         ) > 0
+                        if (bound) {
+                            persistedNetworkPolicies += Triple(
+                                request.operationId,
+                                request.requiresWifiNetwork,
+                                payloadUpdatedAtMs
+                            )
+                        }
+                        bound
                     }
 
                     existingBatchId == identity.batchId &&
@@ -1540,6 +1624,10 @@ internal object DownloadExecutionRoomStore {
             }
             boundMembers
         }
+        persistedNetworkPolicies.forEach { (operationId, requiresWifiNetwork, updatedAtMs) ->
+            cacheNetworkPolicy(operationId, requiresWifiNetwork, updatedAtMs)
+        }
+        return boundMemberCount
     }
 
     /** 已有音频被重新排入传输时，撤销创建批次时的初始完成标记 */
@@ -2127,6 +2215,21 @@ internal object DownloadExecutionRoomStore {
         }
     }
 
+    /** 已确认 WIFI 时原子解除所有不晚于当前网络代次的开放批次网络围栏 */
+    suspend fun clearAllOpenBatchNetworkPolicyFences(
+        context: Context,
+        networkGeneration: Long,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        require(networkGeneration >= 0L) { "networkGeneration must not be negative" }
+        return database.downloadBatchDao()
+            .clearAllOpenNetworkPolicyFencesAtOrBeforeGeneration(
+                networkGeneration = networkGeneration,
+                nowMs = nowMs
+            )
+    }
+
     /** 用户确认只允许请求中捕获的批次在同一网络代际使用移动数据 */
     suspend fun allowBatchesMobileData(
         context: Context,
@@ -2559,6 +2662,7 @@ internal object DownloadExecutionRoomStore {
             database.downloadOperationDao().deleteHostAdmission(operationId)
             database.downloadOperationDao().delete(operationId)
         }
+        evictNetworkPolicy(operationId)
     }
 
     private fun requestToJson(request: DownloadExecutionRequest): JSONObject {
@@ -2631,7 +2735,7 @@ internal object DownloadExecutionRoomStore {
             )
             return null
         }
-        return runCatching {
+        val request = runCatching {
             DownloadExecutionRequest(
                 operationId = entity.operationId,
                 song = song,
@@ -2663,6 +2767,14 @@ internal object DownloadExecutionRoomStore {
         }.onFailure { error ->
             logDecodeFailure(entity, "request_decode", error)
         }.getOrNull()
+        request?.let { decodedRequest ->
+            cacheNetworkPolicy(
+                operationId = entity.operationId,
+                requiresWifiNetwork = decodedRequest.requiresWifiNetwork,
+                updatedAtMs = entity.updatedAtMs
+            )
+        }
+        return request
     }
 
     internal data class HeaderRequestRead(

@@ -2849,12 +2849,103 @@ class GlobalDownloadManagerStartupPolicyTest {
 
         assertTrue(networkPolicyBody.contains("val interruptionSnapshotEpoch"))
         assertTrue(networkPolicyBody.contains("interruptionSnapshotEpoch = interruptionSnapshotEpoch"))
-        assertTrue(wifiDisconnectBody.contains("val interruptionSnapshotEpoch"))
-        assertTrue(wifiDisconnectBody.contains("interruptionSnapshotEpoch = interruptionSnapshotEpoch"))
+        assertTrue(
+            wifiDisconnectBody.contains("pauseActiveDownloadsForNetworkPolicyIfNeeded(")
+        )
+        assertTrue(
+            wifiDisconnectBody.contains(
+                "networkGeneration = capturedNetworkGeneration"
+            )
+        )
         assertTrue(publicationBody.contains("interruptionSnapshotEpoch: Long? = null"))
         assertTrue(
             publicationBody.contains("isMobileDataDownloadInterruptionSnapshotCurrent(")
         )
+    }
+
+    @Test
+    fun `network edge policy capture never decodes the full durable song payload`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val captureBody = source.substringAfter(
+            "private suspend fun captureWifiBoundNetworkPolicySnapshot"
+        ).substringBefore("private suspend fun durableNetworkPolicyBySongKey")
+        val allPolicyBody = source.substringAfter(
+            "private suspend fun durableNetworkPolicyBySongKey"
+        ).substringBefore("private suspend fun wifiBoundTasksForNetworkPolicy")
+        val targetedPolicyBody = source.substringAfter(
+            "private suspend fun durableWifiRequirementBySongKey"
+        ).substringBefore("private fun scheduleWifiBoundDownloadWakeups")
+
+        assertTrue(captureBody.contains("findPendingStableKeysForOpenBatches("))
+        assertTrue(
+            allPolicyBody.contains(
+                "readLatestOperationNetworkPoliciesByStatesAnyLibrary("
+            )
+        )
+        assertTrue(
+            targetedPolicyBody.contains(
+                "readLatestOperationNetworkPoliciesForStableKeys("
+            )
+        )
+        assertFalse(allPolicyBody.contains("listByStatesAnyLibrary("))
+        assertFalse(targetedPolicyBody.contains("listByStatesAnyLibrary("))
+    }
+
+    @Test
+    fun `confirmed Wi-Fi clears the durable batch fence before waking the pump`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val restoreBody = source.substringAfter(
+            "internal fun onWifiBoundDownloadNetworkRestored"
+        ).substringBefore("private fun isWifiBoundNetworkPolicyStillRequired")
+        val clearIndex = restoreBody.indexOf("clearAllOpenBatchNetworkPolicyFences(")
+        val generationCheckIndex = restoreBody.indexOf(
+            "currentDownloadNetworkGeneration() =="
+        )
+        val wakeIndex = restoreBody.indexOf("wakeDownloadExecutionPump(")
+
+        assertTrue(clearIndex >= 0)
+        assertTrue(generationCheckIndex > clearIndex)
+        assertTrue(wakeIndex > generationCheckIndex)
+        assertTrue(restoreBody.contains("WifiBoundDownloadWakeWorker.scheduleAll(appContext)"))
+    }
+
+    @Test
+    fun `network loss pauses durable Wi-Fi operations even before task cards are restored`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val pauseBody = source.substringAfter(
+            "private suspend fun pauseDownloadTasksForNetworkPolicy"
+        ).substringBefore("fun isSongCancelled")
+
+        assertTrue(
+            pauseBody.contains(
+                "AudioDownloadManager.pauseDownloadsForNetworkPolicy(\n" +
+                    "                policySnapshot.policyBoundSongKeys"
+            )
+        )
+    }
+
+    @Test
+    fun `startup reconciles a persisted Wi-Fi fence before its first pump`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("internal suspend fun reconcileMaterializedLegacyDownloads")
+        val restoreIndex = initializeBody.indexOf(
+            "onWifiBoundDownloadNetworkRestored(appContext, \"startup_immediate\")"
+        )
+        val fallbackWakeIndex = initializeBody.indexOf(
+            "wakeDownloadExecutionPump(appContext, \"startup_immediate\")"
+        )
+
+        assertTrue(restoreIndex >= 0)
+        assertTrue(fallbackWakeIndex > restoreIndex)
     }
 
     @Test
