@@ -112,6 +112,7 @@ internal fun settingsPageForSection(section: String): SettingsPage? {
         AutoSettingsSections.display -> SettingsPage.Personalization
         AutoSettingsSections.motion -> SettingsPage.Motion
         AutoSettingsSections.lyrics -> SettingsPage.Lyrics
+        AutoSettingsSections.lyricSource -> SettingsPage.LyricSource
         AutoSettingsSections.network -> SettingsPage.Network
         AutoSettingsSections.download -> SettingsPage.Downloads
         AutoSettingsSections.trafficManagement -> SettingsPage.TrafficManagement
@@ -791,6 +792,22 @@ private val PageSearchAliases = mapOf(
     SettingsPage.Playback to listOf("playback", "audio", "queue", "volume", "fade", "crossfade", "bofang"),
     SettingsPage.UsbExclusive to listOf("usb", "dac", "pcm", "uac", "exclusive", "bit perfect", "dizhan"),
     SettingsPage.PlaybackSource to listOf("source", "fallback", "bili", "netease", "yinyuan", "huanyuan"),
+    SettingsPage.LyricSource to listOf(
+        "lyric source",
+        "lyrics source",
+        "lyric provider",
+        "word timed",
+        "word by word",
+        "kugou",
+        "netease",
+        "qq music",
+        "lrclib",
+        "amll",
+        "ttml",
+        "geciyuan",
+        "geci",
+        "zhuci"
+    ),
     SettingsPage.AudioQuality to listOf("quality", "lossless", "hires", "dolby", "bitrate", "yinzhi"),
     SettingsPage.Storage to listOf(
         "storage",

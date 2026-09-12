@@ -90,7 +90,8 @@ class EditableLyricsMatcher(
                             kotlin.math.abs(expected - actual)
                         }
                     },
-                    confidence = EditableLyricMatchConfidence.LOW
+                    confidence = EditableLyricMatchConfidence.LOW,
+                    hasWordTiming = hasEditableLyricWordTiming(candidate.lyrics)
                 )
             }
             .sortedWith(

@@ -157,6 +157,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -1863,6 +1864,8 @@ fun NowPlayingScreen(
     val themeSeedColorHex by settingsRepo.themeSeedColorFlow.collectAsStateWithLifecycle(
         initialValue = ThemeDefaults.DEFAULT_SEED_COLOR_HEX
     )
+    val preferWordTimedLyrics by settingsRepo.preferWordTimedLyricsFlow
+        .collectAsStateWithLifecycle(initialValue = true)
     val targetNowPlayingColorScheme = LocalNeriTargetColorScheme.current
     val targetNowPlayingActiveIconColor = resolveNowPlayingActiveIconColor(
         accentColor = targetNowPlayingColorScheme.primary,
@@ -2242,7 +2245,8 @@ fun NowPlayingScreen(
         currentSong?.mediaUri,
         currentSong?.localFilePath,
         downloadPresenceVersion,
-        currentMediaUrl
+        currentMediaUrl,
+        preferWordTimedLyrics
     ) {
         val song = currentSong
         val loadedLyricsState = withContext(Dispatchers.IO) {
@@ -2373,7 +2377,11 @@ fun NowPlayingScreen(
                 }
                 !effectiveRawLyrics.isNullOrBlank() -> {
                     val parsedRawLyrics = parseNeteaseLyricsAuto(effectiveRawLyrics)
-                    if (parsedRawLyrics.hasWordTimedEntries() || song == null) {
+                    // 关闭"优先使用逐词歌词"后, 不再为了逐词去在线覆盖已有歌词
+                    if (!preferWordTimedLyrics ||
+                        parsedRawLyrics.hasWordTimedEntries() ||
+                        song == null
+                    ) {
                         parsedRawLyrics
                     } else {
                         PlayerManager.getLyrics(song)
@@ -5725,6 +5733,8 @@ fun LyricsEditorSheet(
     }
     var isLyricMatching by remember { mutableStateOf(false) }
     var lyricMatchError by remember { mutableStateOf<String?>(null) }
+    val preferWordTimedLyrics by AppContainer.settingsRepo.preferWordTimedLyricsFlow
+        .collectAsState(initial = true)
     var selectedLyricMatchSources by remember(originalSong.stableKey()) {
         mutableStateOf(
             defaultEditableLyricMatchSources(
@@ -5732,10 +5742,15 @@ fun LyricsEditorSheet(
             )
         )
     }
-    val visibleLyricMatchResults = remember(lyricMatchResultsBySource, selectedLyricMatchSources) {
+    val visibleLyricMatchResults = remember(
+        lyricMatchResultsBySource,
+        selectedLyricMatchSources,
+        preferWordTimedLyrics
+    ) {
         filterCachedLyricMatchResults(
             resultsBySource = lyricMatchResultsBySource,
-            selectedSources = selectedLyricMatchSources
+            selectedSources = selectedLyricMatchSources,
+            preferWordTimedLyrics = preferWordTimedLyrics
         )
     }
     val hasSearchedSelectedLyricSources = selectedLyricMatchSources.any { source ->
@@ -5800,6 +5815,7 @@ fun LyricsEditorSheet(
                             artistName = originalSong.customArtist ?: originalSong.artist,
                             albumName = originalSong.album,
                             durationMs = originalSong.durationMs,
+                            preferWordTimed = preferWordTimedLyrics,
                             sources = sourcesToSearch
                         )
                     )
@@ -6269,6 +6285,10 @@ private fun buildLyricMatchMetaText(result: RankedEditableLyricMatch): String {
     val candidate = result.candidate
     return buildString {
         append(stringResource(candidate.source.stringResId()))
+        if (result.hasWordTiming) {
+            append(" · ")
+            append(stringResource(R.string.lyrics_match_word_timed))
+        }
         if (candidate.durationMs > 0L) {
             append(" · ")
             append(formatDuration(candidate.durationMs))
@@ -6302,7 +6322,8 @@ private fun defaultEditableLyricsMatchKeyword(song: SongItem): String {
 
 private fun filterCachedLyricMatchResults(
     resultsBySource: Map<EditableLyricMatchSource, List<RankedEditableLyricMatch>>,
-    selectedSources: Set<EditableLyricMatchSource>
+    selectedSources: Set<EditableLyricMatchSource>,
+    preferWordTimedLyrics: Boolean = true
 ): List<RankedEditableLyricMatch> {
     if (selectedSources.isEmpty()) {
         return emptyList()
@@ -6316,7 +6337,8 @@ private fun filterCachedLyricMatchResults(
                     val index = lyricMatchSelectableSources.indexOf(source)
                     if (index >= 0) lyricMatchSelectableSources.size - index else 0
                 },
-                sourceFallbackRank = lyricMatchSelectableSources::indexOf
+                sourceFallbackRank = lyricMatchSelectableSources::indexOf,
+                preferWordTimed = preferWordTimedLyrics
             )
         )
         .toList()

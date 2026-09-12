@@ -222,6 +222,7 @@ import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.resolveEffectiveLyricOffsetMs
@@ -438,6 +439,10 @@ object PlayerManager {
     internal var lyriconEnabled = false
     @Volatile
     internal var amllLyricsEnabled = false
+    @Volatile
+    internal var preferWordTimedLyrics = true
+    @Volatile
+    internal var defaultLyricSource = LyricSourcePreference.Automatic
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false

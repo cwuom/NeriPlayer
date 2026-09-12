@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen.tab
+package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -181,6 +181,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.PlaybackServiceIdleS
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsBackupRestoreSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricSourceSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsMotionSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsPlaybackSection
@@ -1915,6 +1916,17 @@ fun SettingsScreen(
                             onClick = {
                                 onNeteaseAutoSourceSwitchChange(!neteaseAutoSourceSwitch)
                             }
+                        )
+                    }
+                }
+
+                SettingsPage.LyricSource -> {
+                    miuixSettingsSectionCardItem(key = "${selectedPage.name}:content") {
+                        SettingsLyricSourceSection(
+                            repository = AppContainer.settingsRepo,
+                            highlightTargetId = settingsHighlightTargetId,
+                            highlightPulse = settingsHighlightPulse,
+                            onHighlightFinished = onSettingsHighlightFinished
                         )
                     }
                 }

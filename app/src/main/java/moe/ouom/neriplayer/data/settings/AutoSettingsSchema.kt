@@ -939,6 +939,54 @@ object AutoSettingsSchema {
     }
 
     /*
+     * 歌词源设置
+     *
+     * 决定播放时歌词从哪里来, 以及是否为了逐词结果改变匹配顺序
+     * 两个默认值都与改造前行为一致: 跟随平台 + 优先逐词
+     */
+    @AutoSettingsSection(
+        order = 66
+    )
+    object lyricSource {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_lyric_source,
+            descriptionRes = R.string.settings_lyric_source_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
+            key = "prefer_word_timed_lyrics",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 10,
+            ui = SettingUiType.Switch
+        )
+        val preferWordTimedLyrics = autoSwitchSetting(
+            key = "prefer_word_timed_lyrics",
+            defaultValue = true,
+            titleRes = R.string.settings_prefer_word_timed_lyrics,
+            descriptionRes = R.string.settings_prefer_word_timed_lyrics_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
+            key = "default_lyric_source",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_LYRIC_SOURCE,
+            order = 11,
+            ui = SettingUiType.Custom,
+            normalizer = LyricSourcePreferencePolicy::class
+        )
+        val defaultLyricSource = autoStringSetting(
+            key = "default_lyric_source",
+            defaultValue = DEFAULT_LYRIC_SOURCE,
+            titleRes = R.string.settings_default_lyric_source,
+            descriptionRes = R.string.settings_default_lyric_source_desc,
+            icon = AutoSettingIcon.LibraryMusic
+        )
+    }
+
+    /*
      * 歌词设置
      *
      * 放歌词外观, 外部词幕适配和各来源默认歌词偏移

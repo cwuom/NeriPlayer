@@ -597,6 +597,83 @@ class EditableLyricMatchPolicyTest {
         )
     }
 
+    @Test
+    fun `preferWordTimed promotes word timed results above higher confidence line lyrics`() {
+        val request = EditableLyricMatchRequest(
+            keyword = "",
+            trackName = "爱你",
+            artistName = "陈芳语",
+            durationMs = 206_000L
+        )
+
+        val candidates = listOf(
+            candidate(
+                id = "line-lrc",
+                title = "爱你",
+                artist = "陈芳语",
+                durationMs = 206_000L,
+                format = EditableLyricFormat.LRC,
+                lyrics = "[00:00.00]爱你"
+            ),
+            // 身份更弱(缺歌手) => 中置信度, 但带逐词时间轴
+            candidate(
+                id = "word-yrc",
+                title = "爱你",
+                artist = "",
+                durationMs = 206_000L,
+                format = EditableLyricFormat.YRC
+            )
+        )
+
+        val preferred = rankEditableLyricMatches(request, candidates)
+        assertEquals(EditableLyricMatchConfidence.HIGH, preferred.first { it.candidate.id == "line-lrc" }.confidence)
+        assertEquals(EditableLyricMatchConfidence.MEDIUM, preferred.first { it.candidate.id == "word-yrc" }.confidence)
+        assertEquals("word-yrc", preferred.first().candidate.id)
+
+        val notPreferred = rankEditableLyricMatches(
+            request.copy(preferWordTimed = false),
+            candidates
+        )
+        assertEquals("line-lrc", notPreferred.first().candidate.id)
+        assertEquals(
+            listOf("line-lrc", "word-yrc"),
+            notPreferred.map { it.candidate.id }
+        )
+    }
+
+    @Test
+    fun `hasWordTiming stays reported when word timing is not preferred`() {
+        val ranked = rankEditableLyricMatches(
+            request = EditableLyricMatchRequest(
+                keyword = "",
+                trackName = "爱你",
+                artistName = "陈芳语",
+                durationMs = 206_000L,
+                preferWordTimed = false
+            ),
+            candidates = listOf(
+                candidate(
+                    id = "word-yrc",
+                    title = "爱你",
+                    artist = "陈芳语",
+                    durationMs = 206_000L,
+                    format = EditableLyricFormat.YRC
+                ),
+                candidate(
+                    id = "line-lrc",
+                    title = "爱你",
+                    artist = "陈芳语",
+                    durationMs = 206_000L,
+                    format = EditableLyricFormat.LRC,
+                    lyrics = "[00:00.00]爱你"
+                )
+            )
+        )
+
+        assertTrue(ranked.first { it.candidate.id == "word-yrc" }.hasWordTiming)
+        assertFalse(ranked.first { it.candidate.id == "line-lrc" }.hasWordTiming)
+    }
+
     private fun candidate(
         id: String,
         source: EditableLyricMatchSource = EditableLyricMatchSource.CLOUD_MUSIC,
