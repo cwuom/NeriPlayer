@@ -388,6 +388,10 @@ For release build and signing details, see
   NetEase, QQ Music, AMLL TTML, LRCLIB, and YouTube Music before manually
   matching lyrics, preferring word-level lyrics without hiding regular lyrics
   while automatically removing title and credit lines from matched lyrics.
+  A dedicated **Lyrics source** settings entry pins the preferred default source
+  (Automatic / NetEase / Kugou / QQ Music / LRCLIB / AMLL TTML) and toggles
+  **Prefer word-timed lyrics**; both keep the previous behavior as their default,
+  and changing either clears cached lyrics so the new preference applies immediately.
 - 🧠 **Media3 playback core**:
   `PlayerManager` handles playback resolution, queue state, shuffle/repeat,
   persistence, failure retry, playback URL refresh, YouTube prefetching, and
