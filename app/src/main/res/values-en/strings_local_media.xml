@@ -113,6 +113,7 @@
     <string name="local_lyrics_embedded_overwrite_confirm">Continue and Overwrite</string>
     <string name="local_lyrics_fill_write_confirm_message">Lyrics were saved to sidecar files. Also write them back to local audio metadata?</string>
     <string name="local_song_metadata_write_success">Local audio tags updated</string>
+    <string name="local_song_metadata_write_sidecar_only">Sidecar metadata was saved, but this audio format could not retain all embedded tags</string>
     <string name="local_song_metadata_write_catalog_sync_failed">Local audio tags updated, but the downloaded list could not be refreshed</string>
     <string name="local_song_metadata_write_not_writable">Could not write local audio tags. The changes were not saved.</string>
     <string name="local_song_metadata_write_unsupported">This audio cannot be read for tag write-back or its format is unsupported. The changes were not saved.</string>

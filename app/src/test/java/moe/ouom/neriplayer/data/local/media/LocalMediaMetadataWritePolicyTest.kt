@@ -524,43 +524,33 @@ class LocalMediaMetadataWritePolicyTest {
     }
 
     @Test
-    fun `failed m4a content write retries through a staged local file`() {
-        val song = editableLocalSong(
-            fileName = "bilibili - Artist - Song.m4a",
-            mediaUri = "content://documents/tree/music/document/music%2FSong.m4a"
-        )
-
+    fun `content metadata writes use a staged local file before touching the source`() {
         assertTrue(
-            LocalMediaSupport.shouldAttemptStagedContentMetadataWrite(
+            LocalMediaSupport.shouldUseTransactionalStagedWrite(
                 sourceScheme = "content",
-                sourcePathSegment = "Song.m4a",
-                song = song,
-                directOutcome = LocalMediaMetadataWriteOutcome.FAILED
-            )
-        )
-        assertFalse(
-            LocalMediaSupport.shouldAttemptStagedContentMetadataWrite(
-                sourceScheme = "content",
-                sourcePathSegment = "Song.m4a",
-                song = song,
-                directOutcome = LocalMediaMetadataWriteOutcome.SUCCESS
+                sourcePath = "/tree/music/Song.m4a"
             )
         )
     }
 
     @Test
-    fun `failed flac content write retries through a staged local file`() {
-        val song = editableLocalSong(
-            fileName = "Artist - Song.flac",
-            mediaUri = "content://documents/tree/music/document/music%2FSong.flac"
-        )
-
+    fun `direct file metadata writes also use the recoverable staged transaction`() {
         assertTrue(
-            LocalMediaSupport.shouldAttemptStagedContentMetadataWrite(
-                sourceScheme = "content",
-                sourcePathSegment = "Song.flac",
-                song = song,
-                directOutcome = LocalMediaMetadataWriteOutcome.FAILED
+            LocalMediaSupport.shouldUseTransactionalStagedWrite(
+                sourceScheme = "file",
+                sourcePath = "/music/Song.flac"
+            )
+        )
+        assertTrue(
+            LocalMediaSupport.shouldUseTransactionalStagedWrite(
+                sourceScheme = null,
+                sourcePath = "/music/Song.ape"
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.shouldUseTransactionalStagedWrite(
+                sourceScheme = "https",
+                sourcePath = "/Song.mp3"
             )
         )
     }

@@ -200,6 +200,79 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     }
 
     @Test
+    fun `stale core callback cannot recreate enrichment ownership after clear`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val coreBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val catalogPublishIndex = coreBody.indexOf("publishOptimisticDownloadedSongs(")
+        val finalAdmissionCheckIndex = coreBody.indexOf(
+            "core 发布后清空代次已失效，跳过资产增强 operation 登记",
+            startIndex = catalogPublishIndex
+        )
+        val ensureOperationIndex = coreBody.indexOf(
+            "val enrichmentOperationId = ensureCoreRecoveryOperation(",
+            startIndex = catalogPublishIndex
+        )
+        val statePersistIndex = coreBody.indexOf(
+            "val enrichmentStatePersisted =",
+            startIndex = ensureOperationIndex
+        )
+        val memoryOwnerIndex = coreBody.indexOf(
+            "AudioDownloadManager.markCoreCommittedOperation(enrichmentOperationId)",
+            startIndex = statePersistIndex
+        )
+        val enqueueIndex = coreBody.indexOf(
+            "assetEnrichmentCoordinator.enqueue(",
+            startIndex = memoryOwnerIndex
+        )
+
+        assertTrue(catalogPublishIndex >= 0)
+        assertTrue(finalAdmissionCheckIndex > catalogPublishIndex)
+        assertTrue(ensureOperationIndex > finalAdmissionCheckIndex)
+        assertTrue(statePersistIndex > ensureOperationIndex)
+        assertTrue(memoryOwnerIndex > statePersistIndex)
+        assertTrue(enqueueIndex > memoryOwnerIndex)
+
+        val rejectedStateBody = coreBody.substring(
+            coreBody.indexOf("if (!enrichmentStatePersisted)", startIndex = statePersistIndex),
+            memoryOwnerIndex
+        )
+        assertTrue(rejectedStateBody.contains("isEnrichmentAdmissionCurrent()"))
+        assertTrue(rejectedStateBody.contains("state_rejected_after_clear"))
+        assertTrue(
+            rejectedStateBody.indexOf("state_rejected_after_clear") <
+                rejectedStateBody.indexOf("资产增强 operation 未确认 ASSETS_ENRICHING")
+        )
+
+        val postOwnerBody = coreBody.substring(memoryOwnerIndex, enqueueIndex)
+        assertTrue(postOwnerBody.contains("releaseEnrichmentMemoryOwnership()"))
+        assertTrue(postOwnerBody.contains("memory_owner_registered"))
+    }
+
+    @Test
+    fun `missing persisted operation is rebuilt before asset enrichment`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val recoveryBody = methodBody(source, "ensureCoreRecoveryOperation")
+        val stateProbeIndex = recoveryBody.indexOf(
+            "DownloadExecutionRoomStore.state(context, preferredOperationId)"
+        )
+        val existingReturnIndex = recoveryBody.indexOf("return preferredOperationId")
+        val upsertIndex = recoveryBody.indexOf("DownloadExecutionRoomStore.upsert(")
+
+        assertTrue(stateProbeIndex >= 0)
+        assertTrue(existingReturnIndex > stateProbeIndex)
+        assertTrue(upsertIndex > existingReturnIndex)
+        assertTrue(
+            recoveryBody.substring(existingReturnIndex, upsertIndex)
+                .contains("val recoveryOperationId = preferredOperationId ?:")
+        )
+        assertTrue(recoveryBody.contains("state = \"CORE_COMMITTED\""))
+    }
+
+    @Test
     fun `finalized recovery reconciles the current artifact lease before publication`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

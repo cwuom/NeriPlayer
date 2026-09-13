@@ -12,6 +12,8 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore.St
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.dao.DownloadOperationDao
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import org.json.JSONObject
@@ -636,6 +638,7 @@ internal object DownloadExecutionRoomReadStore {
         val dao = database.downloadOperationDao()
         val entries = mutableListOf<ProgressEntry>()
         val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()
+        val batchCache = mutableMapOf<Pair<String, Long>, DownloadBatchEntity?>()
         var afterOperationId = ""
         while (true) {
             val page = dao.findByStatesInLibraryAfterOperationIdHeaders(
@@ -651,6 +654,11 @@ internal object DownloadExecutionRoomReadStore {
                 if (request == null) {
                     if (decoded.payloadWasRead) malformedHeaders += header
                 } else {
+                    val batchStateBits = progressBatchStateBits(
+                        database = database,
+                        request = request,
+                        cache = batchCache
+                    ) ?: if (request.batchId != null) return@forEach else null
                     entries += ProgressEntry(
                         request = request,
                         state = header.state,
@@ -658,7 +666,10 @@ internal object DownloadExecutionRoomReadStore {
                         totalBytes = header.totalBytes?.takeIf { it > 0L },
                         stopRequestedByUser = header.stopRequestedByUser,
                         updatedAtMs = header.updatedAtMs,
-                        queueOrder = header.queueOrder
+                        queueOrder = header.queueOrder,
+                        nextRetryAtMs = header.nextRetryAtMs,
+                        lastErrorCode = header.lastErrorCode,
+                        batchStateBits = batchStateBits
                     )
                 }
             }
@@ -686,6 +697,7 @@ internal object DownloadExecutionRoomReadStore {
         val dao = database.downloadOperationDao()
         val entries = mutableListOf<ProgressEntry>()
         val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()
+        val batchCache = mutableMapOf<Pair<String, Long>, DownloadBatchEntity?>()
         var afterOperationId = ""
         while (true) {
             val page = dao.findByStatesAfterOperationIdHeaders(
@@ -700,6 +712,11 @@ internal object DownloadExecutionRoomReadStore {
                 if (request == null) {
                     if (decoded.payloadWasRead) malformedHeaders += header
                 } else {
+                    val batchStateBits = progressBatchStateBits(
+                        database = database,
+                        request = request,
+                        cache = batchCache
+                    ) ?: if (request.batchId != null) return@forEach else null
                     entries += ProgressEntry(
                         request = request,
                         state = header.state,
@@ -707,7 +724,10 @@ internal object DownloadExecutionRoomReadStore {
                         totalBytes = header.totalBytes?.takeIf { it > 0L },
                         stopRequestedByUser = header.stopRequestedByUser,
                         updatedAtMs = header.updatedAtMs,
-                        queueOrder = header.queueOrder
+                        queueOrder = header.queueOrder,
+                        nextRetryAtMs = header.nextRetryAtMs,
+                        lastErrorCode = header.lastErrorCode,
+                        batchStateBits = batchStateBits
                     )
                 }
             }
@@ -725,6 +745,27 @@ internal object DownloadExecutionRoomReadStore {
                 .thenBy { it.request.operationId }
         )
         return entries
+    }
+
+    private suspend fun progressBatchStateBits(
+        database: NeriUserDataDatabase,
+        request: DownloadExecutionRequest,
+        cache: MutableMap<Pair<String, Long>, DownloadBatchEntity?>
+    ): Int? {
+        val batchId = request.batchId ?: return null
+        val generation = request.batchGeneration ?: return null
+        val identity = batchId to generation
+        val batch = if (identity in cache) {
+            cache[identity]
+        } else {
+            database.downloadBatchDao()
+                .findBatch(batchId, generation)
+                .also { cache[identity] = it }
+        } ?: return null
+        val isRecoverable = batch.stateBits and DownloadBatchState.OPEN != 0 &&
+            batch.stateBits and DownloadBatchState.TERMINAL_MASK == 0 &&
+            batch.stateBits and DownloadBatchState.CLEARING == 0
+        return batch.stateBits.takeIf { isRecoverable }
     }
 
     /** 迁移栅栏打开后重新绑定活动 operation，不改动其载荷内容 */

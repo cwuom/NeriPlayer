@@ -269,10 +269,7 @@ internal class DownloadTaskStore(
             ) {
                 return@synchronized false
             }
-            val effectiveProgress = mergeDownloadProgress(
-                current = currentTask.progress,
-                incoming = progress
-            )
+            val effectiveProgress = mergeRestoredProgress(currentTask, progress)
             if (currentTask.progress == effectiveProgress) {
                 return@synchronized true
             }
@@ -313,10 +310,7 @@ internal class DownloadTaskStore(
                     return@forEach
                 }
                 acceptedCount++
-                val effectiveProgress = mergeDownloadProgress(
-                    current = currentTask.progress,
-                    incoming = progress
-                )
+                val effectiveProgress = mergeRestoredProgress(currentTask, progress)
                 if (currentTask.progress == effectiveProgress) {
                     return@forEach
                 }
@@ -762,6 +756,19 @@ internal class DownloadTaskStore(
             index.putIfAbsent(task.song.stableKey(), i)
         }
         return index
+    }
+
+    /** 已开始执行的内存进度比启动检查点新，只合并字节高水位而不回退阶段 */
+    private fun mergeRestoredProgress(
+        task: DownloadTask,
+        restored: AudioDownloadManager.DownloadProgress
+    ): AudioDownloadManager.DownloadProgress {
+        val current = task.progress
+        return if (task.status == DownloadStatus.DOWNLOADING && current != null) {
+            mergeDownloadProgress(current = restored, incoming = current)
+        } else {
+            mergeDownloadProgress(current = current, incoming = restored)
+        }
     }
 
     private companion object {

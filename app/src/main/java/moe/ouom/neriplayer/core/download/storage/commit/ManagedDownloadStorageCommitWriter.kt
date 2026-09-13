@@ -701,7 +701,9 @@ internal class ManagedDownloadStorageCommitWriter(
             description = displayName
         )
         sourceEntry.lastModifiedMs.takeIf { it > 0L }?.let {
-            replacement.target.setLastModified(it)
+            if (!replacement.target.setLastModified(it)) {
+                throw IOException("无法保留迁移文件修改时间: $displayName")
+            }
         }
         val backupEntry = replacement.backup
             ?.takeIf(File::isFile)
@@ -960,7 +962,11 @@ internal class ManagedDownloadStorageCommitWriter(
         )
         sourceEntry.lastModifiedMs
             .takeIf { it > 0L }
-            ?.let { targetFile.setLastModified(it) }
+            ?.let { lastModifiedMs ->
+                if (!targetFile.setLastModified(lastModifiedMs)) {
+                    throw IOException("无法保留迁移文件修改时间: ${target.entry.name}")
+                }
+            }
         return StoredWriteResult(
             entry = ManagedDownloadStoredEntryMapper.fromFile(targetFile).copy(sizeBytes = verifiedSize),
             createdNew = true,
@@ -1264,7 +1270,11 @@ internal class ManagedDownloadStorageCommitWriter(
         )
         sourceEntry.lastModifiedMs
             .takeIf { it > 0L }
-            ?.let { targetFile.setLastModified(it) }
+            ?.let { lastModifiedMs ->
+                if (!targetFile.setLastModified(lastModifiedMs)) {
+                    throw IOException("无法保留迁移文件修改时间: ${target.entry.name}")
+                }
+            }
         return StoredWriteResult(
             entry = ManagedDownloadStoredEntryMapper.fromFile(targetFile).copy(sizeBytes = verifiedSize),
             createdNew = true,

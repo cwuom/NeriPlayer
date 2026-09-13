@@ -144,7 +144,7 @@ class SafStorageBackendWriteCapabilityTest {
                 DocumentsContract.createDocument(
                     resolver,
                     parentUri,
-                    "audio/mpeg",
+                    "application/octet-stream",
                     temporaryName
                 )
             }.thenReturn(temporaryUri)
@@ -310,7 +310,7 @@ class SafStorageBackendWriteCapabilityTest {
                     DocumentsContract.createDocument(
                         resolver,
                         parentUri,
-                        "audio/mpeg",
+                        "application/octet-stream",
                         temporaryName
                     )
                 }.thenReturn(temporaryUri)
@@ -390,7 +390,7 @@ class SafStorageBackendWriteCapabilityTest {
                     DocumentsContract.createDocument(
                         resolver,
                         parentUri,
-                        "audio/mpeg",
+                        "application/octet-stream",
                         temporaryName
                     )
                 }.thenReturn(temporaryUri)

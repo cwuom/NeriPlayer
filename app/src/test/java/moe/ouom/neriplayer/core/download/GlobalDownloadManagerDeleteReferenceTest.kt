@@ -329,6 +329,28 @@ class GlobalDownloadManagerDeleteReferenceTest {
     }
 
     @Test
+    fun `explicit select all keeps full library intent when catalog preview is incomplete`() {
+        assertTrue(
+            shouldDeleteEntireDownloadedLibrary(
+                explicitlyRequested = true,
+                pendingDeleteIntentExists = false
+            )
+        )
+        assertFalse(
+            shouldDeleteEntireDownloadedLibrary(
+                explicitlyRequested = false,
+                pendingDeleteIntentExists = false
+            )
+        )
+        assertTrue(
+            shouldDeleteEntireDownloadedLibrary(
+                explicitlyRequested = false,
+                pendingDeleteIntentExists = true
+            )
+        )
+    }
+
+    @Test
     fun `downloaded song creates a playback item from its managed media reference`() {
         val downloaded = downloadedSong(id = 42L, name = "managed").copy(
             filePath = "content://downloads/audio/managed.mp3",

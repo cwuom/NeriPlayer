@@ -42,8 +42,8 @@ internal fun downloadStageLabelResource(
         AudioDownloadManager.DownloadStage.COMMITTING_CORE -> R.string.download_committing_core
         AudioDownloadManager.DownloadStage.ASSETS_ENRICHING ->
             R.string.download_assets_enriching
+        AudioDownloadManager.DownloadStage.WAITING_RETRY -> R.string.download_waiting_retry
         AudioDownloadManager.DownloadStage.TRANSFERRING,
-        AudioDownloadManager.DownloadStage.WAITING_RETRY,
         AudioDownloadManager.DownloadStage.FINALIZING -> null
     }
 }
@@ -134,7 +134,13 @@ fun ActiveDownloadTaskList(
 
                         progress?.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY -> {
                             Text(
-                                text = stringResource(R.string.download_waiting_network_recovery),
+                                text = stringResource(
+                                    if (task.status == DownloadStatus.WAITING_NETWORK) {
+                                        R.string.download_waiting_network_recovery
+                                    } else {
+                                        R.string.download_waiting_retry
+                                    }
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

@@ -45,6 +45,7 @@
     <string name="download_queued_status">Waiting to start</string>
     <string name="download_finalizing">Audio has been written; lyrics, covers, and metadata are being sorted</string>
     <string name="download_waiting_network_recovery">Network is switching, download will resume automatically</string>
+    <string name="download_waiting_retry">Waiting for automatic retry</string>
     <string name="download_waiting_host">Waiting for system download host scheduling</string>
     <string name="download_waiting_delete_cleanup">Waiting for old file cleanup</string>
     <string name="download_resolving_source">Resolving download source</string>
@@ -56,6 +57,17 @@
     <string name="download_explicit_resume_status">Paused by the system. Tap to continue.</string>
     <string name="download_search_hint">Search downloaded songs…</string>
     <string name="download_delete_confirm">Are you sure you want to delete song "%s"? This action cannot be undone.</string>
+    <string name="download_delete_in_progress_title">Deleting downloads</string>
+    <string name="download_delete_phase_preparing">Preparing deletion</string>
+    <string name="download_delete_phase_waiting_directory">Waiting for the download directory</string>
+    <string name="download_delete_phase_stopping_downloads">Stopping related downloads</string>
+    <string name="download_delete_phase_waiting_downloads">Related downloads are still stopping; recovery is saved</string>
+    <string name="download_delete_phase_reading_plan">Reading the deletion list</string>
+    <string name="download_delete_phase_deleting_files">Deleting files</string>
+    <string name="download_delete_phase_verifying">Verifying deleted files</string>
+    <string name="download_delete_phase_finalizing">Finalizing indexes and recovery records</string>
+    <string name="download_delete_phase_completed">Deletion completed</string>
+    <string name="download_delete_phase_failed">Deletion could not be fully confirmed</string>
     <string name="download_starting">Starting download: %s</string>
     <string name="download_file_exists">File exists, skipping download: %s</string>
     <string name="download_no_url">Cannot get download URL: %s</string>

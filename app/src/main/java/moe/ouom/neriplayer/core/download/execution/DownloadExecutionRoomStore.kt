@@ -102,7 +102,10 @@ internal object DownloadExecutionRoomStore {
         val totalBytes: Long?,
         val stopRequestedByUser: Boolean,
         val updatedAtMs: Long,
-        val queueOrder: Int = 0
+        val queueOrder: Int = 0,
+        val nextRetryAtMs: Long? = null,
+        val lastErrorCode: String? = null,
+        val batchStateBits: Int? = null
     )
 
     internal data class DownloadBatchIdentity(

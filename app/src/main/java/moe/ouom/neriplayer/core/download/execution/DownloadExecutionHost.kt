@@ -276,7 +276,8 @@ class DefaultDownloadExecutionHost(
                 operationTraceToken,
                 DownloadOperationTracePhase.HOST_ADMISSION_REQUESTED
             )
-            if (!tryAcquireHostAdmission(
+            val hostAdmissionRequired = requiresTransferHostAdmission(currentState)
+            if (hostAdmissionRequired && !tryAcquireHostAdmission(
                     context = context,
                     operationId = request.operationId,
                     capacity = dispatchWindow
@@ -295,11 +296,13 @@ class DefaultDownloadExecutionHost(
                     "download host admission window is full"
                 )
             }
-            hostAdmissionAcquired = true
-            DownloadOperationTrace.mark(
-                operationTraceToken,
-                DownloadOperationTracePhase.HOST_ADMISSION_GRANTED
-            )
+            hostAdmissionAcquired = hostAdmissionRequired
+            if (hostAdmissionRequired) {
+                DownloadOperationTrace.mark(
+                    operationTraceToken,
+                    DownloadOperationTracePhase.HOST_ADMISSION_GRANTED
+                )
+            }
             val previousAdmissionOwner = synchronized(executionAdmissionLock) {
                 hostAdmissionOwners.putIfAbsent(request.operationId, boundTicket)
             }
@@ -437,7 +440,10 @@ class DefaultDownloadExecutionHost(
                     ticket = currentTicket
                 )
             }
-            if (hostAdmissionAcquired) {
+            if (
+                hostAdmissionAcquired ||
+                    hostAdmissionOwners[request.operationId] == currentTicket
+            ) {
                 releaseHostAdmissionIfIdle(
                     context = context,
                     operationId = request.operationId,
@@ -561,7 +567,10 @@ class DefaultDownloadExecutionHost(
             )
         }
 
-        if (hostAdmissionAcquired) {
+        if (
+            hostAdmissionAcquired ||
+                ticket != null && hostAdmissionOwners[request.operationId] == ticket
+        ) {
             releaseHostAdmissionIfIdle(
                 context = context,
                 operationId = request.operationId,
@@ -627,7 +636,10 @@ class DefaultDownloadExecutionHost(
                 retryable = false
             )
 
-        if (hostAdmissionAcquired) {
+        if (
+            hostAdmissionAcquired ||
+                ticket != null && hostAdmissionOwners[operationId] == ticket
+        ) {
             releaseHostAdmissionIfIdle(
                 context = context,
                 operationId = operationId,
@@ -1735,8 +1747,14 @@ class DefaultDownloadExecutionHost(
             operationTraceToken,
             DownloadOperationTracePhase.HOST_ADMISSION_REQUESTED
         )
-        val hostAdmissionAcquired = tryAcquireHostAdmissionSuspending(appContext, normalizedId)
-        if (hostAdmissionAcquired) {
+        val stateBeforeHostAdmission = operationStore.currentStateSuspending(
+            appContext,
+            normalizedId
+        )
+        val hostAdmissionRequired = requiresTransferHostAdmission(stateBeforeHostAdmission)
+        val hostAdmissionAcquired = !hostAdmissionRequired ||
+            tryAcquireHostAdmissionSuspending(appContext, normalizedId)
+        if (hostAdmissionRequired && hostAdmissionAcquired) {
             DownloadOperationTrace.mark(
                 operationTraceToken,
                 DownloadOperationTracePhase.HOST_ADMISSION_GRANTED
@@ -1789,7 +1807,7 @@ class DefaultDownloadExecutionHost(
             }
         }
         if (claimResult != null) {
-            if (hostAdmissionAcquired && !executionClaimed) {
+            if (hostAdmissionRequired && hostAdmissionAcquired && !executionClaimed) {
                 releaseLostExecutionAdmissionIfUnowned(appContext, normalizedId)
             }
             return@withContext claimResult
@@ -2327,7 +2345,7 @@ class DefaultDownloadExecutionHost(
                             if (deferredTransferOperationIds.isNotEmpty()) {
                                 // 这是槽位竞争而不是网络/传输失败，使用短唤醒让释放后的
                                 // 补位不必等待常规重试窗口
-                                return@supervisorScope DownloadExecutionPumpResult.ContinueSoon
+                                return@supervisorScope DownloadExecutionPumpResult.ContinueAfterContention
                             }
                             return@supervisorScope if (sawRetry) {
                                 DownloadExecutionPumpResult.ContinueAfterRetry
@@ -2336,7 +2354,11 @@ class DefaultDownloadExecutionHost(
                             ) {
                                 // durable 行仍在队列中，但本轮已尝试过或正在 UIDT
                                 // grace 中，短唤醒即可，不能触发系统长 backoff
-                                DownloadExecutionPumpResult.ContinueSoon
+                                if (graceDelayMs != null) {
+                                    DownloadExecutionPumpResult.ContinueAfterContention
+                                } else {
+                                    DownloadExecutionPumpResult.ContinueSoon
+                                }
                             } else {
                                 DownloadExecutionPumpResult.Completed
                             }
@@ -2364,7 +2386,7 @@ class DefaultDownloadExecutionHost(
                                 return@supervisorScope DownloadExecutionPumpResult.Retry
                             }
                             if (deferredTransferOperationIds.isNotEmpty()) {
-                                return@supervisorScope DownloadExecutionPumpResult.ContinueSoon
+                                return@supervisorScope DownloadExecutionPumpResult.ContinueAfterContention
                             }
                             return@supervisorScope if (sawRetry) {
                                 DownloadExecutionPumpResult.ContinueAfterRetry
@@ -2373,11 +2395,15 @@ class DefaultDownloadExecutionHost(
                             }
                         }
                         return@supervisorScope if (deferredTransferOperationIds.isNotEmpty()) {
-                            DownloadExecutionPumpResult.ContinueSoon
+                            DownloadExecutionPumpResult.ContinueAfterContention
                         } else if (sawRetry) {
                             DownloadExecutionPumpResult.ContinueAfterRetry
                         } else {
-                            DownloadExecutionPumpResult.ContinueSoon
+                            if (graceDelayMs != null) {
+                                DownloadExecutionPumpResult.ContinueAfterContention
+                            } else {
+                                DownloadExecutionPumpResult.ContinueSoon
+                            }
                         }
                     }
                 }
@@ -2845,6 +2871,15 @@ internal fun canScheduleDownloadOperation(currentState: String?): Boolean {
     return currentState == null ||
         currentState in setOf("PENDING_QUEUE", "QUEUED", "RETRYABLE") ||
         currentState in INTERRUPTED_DOWNLOAD_OPERATION_STATES
+}
+
+/** core 音频已持久提交后只占用资产收尾并发，不再挤占传输宿主窗口 */
+internal fun requiresTransferHostAdmission(currentState: String?): Boolean {
+    return currentState !in setOf(
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
+    )
 }
 
 internal fun shouldBlockExistingDownloadOperation(

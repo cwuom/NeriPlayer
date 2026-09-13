@@ -22,6 +22,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
+import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadManagedAudioPolicy
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
@@ -880,6 +881,58 @@ class ManagedDownloadStorageMigrationCompatTest {
                 allowMetadataLessAudio = false
             )
         )
+    }
+
+    @Test
+    fun `shouldTreatAudioAsManaged does not let numbered metadata claim unnumbered audio`() {
+        assertFalse(
+            ManagedDownloadStorage.shouldTreatAudioAsManaged(
+                audioName = "Artist - Song.mp3",
+                metadataAudioNames = setOf("Artist - Song (1).mp3"),
+                coverEntryNames = emptySet(),
+                lyricEntryNames = emptySet(),
+                allowMetadataLessAudio = false
+            )
+        )
+    }
+
+    @Test
+    fun `managed audio index performs one metadata lookup per exact audio name`() {
+        fun lookupCount(songCount: Int): Int {
+            val probes = AtomicInteger(0)
+            val names = (0 until songCount).mapTo(linkedSetOf()) { index ->
+                ManagedDownloadTreeNaming.canonicalLookupName("Artist - Song $index.mp3")
+            }
+            val countingNames = object : AbstractSet<String>() {
+                override val size: Int = names.size
+
+                override fun iterator(): Iterator<String> = names.iterator()
+
+                override fun contains(element: String): Boolean {
+                    probes.incrementAndGet()
+                    return element in names
+                }
+            }
+            val nameIndex = ManagedDownloadManagedAudioPolicy.NameIndex(
+                metadataAudioNames = countingNames,
+                coverEntryNames = emptySet(),
+                lyricEntryNames = emptySet(),
+                allowMetadataLessAudio = false
+            )
+
+            repeat(songCount) { index ->
+                assertTrue(
+                    ManagedDownloadManagedAudioPolicy.shouldTreatAudioAsManaged(
+                        audioName = "Artist - Song $index.mp3",
+                        nameIndex = nameIndex
+                    )
+                )
+            }
+            return probes.get()
+        }
+
+        assertEquals(1_000, lookupCount(1_000))
+        assertEquals(10_000, lookupCount(10_000))
     }
 
     @Test

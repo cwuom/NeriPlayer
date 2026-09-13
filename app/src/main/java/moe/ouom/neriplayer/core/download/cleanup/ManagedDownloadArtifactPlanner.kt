@@ -19,27 +19,8 @@ internal object ManagedDownloadArtifactPlanner {
     fun collectFullLibraryArtifactReferences(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): Set<String> {
-        val deletingAudioNames = snapshot.audioEntries
-            .mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
-        return linkedSetOf<String>().apply {
-            // 全库删除不能只依赖歌曲 catalog 关联的音频。完整目录快照中的
-            // metadata、封面、歌词和孤儿条目同样属于托管下载产物
-            addAll(snapshot.knownReferences)
-            snapshot.audioEntries.forEach { audio ->
-                val metadata = ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
-                addAll(
-                    collectArtifactReferences(
-                        snapshot = snapshot,
-                        storedAudio = audio,
-                        songId = metadata?.songId ?: 0L,
-                        candidateBaseNames = candidateManagedDownloadBaseNames(
-                            audio.nameWithoutExtension
-                        ),
-                        deletingAudioNames = deletingAudioNames
-                    )
-                )
-            }
-        }
+        // 完整快照已经收集全部托管音频、metadata、封面、歌词和 pending 引用
+        return snapshot.knownReferences
     }
 
     fun collectArtifactReferences(
@@ -382,15 +363,8 @@ internal object ManagedDownloadArtifactPlanner {
         reference: String,
         deletingAudioNames: Set<String> = emptySet()
     ): Boolean {
-        return snapshot.metadataByAudioName.any { (audioName, metadata) ->
-            audioName != currentAudioName &&
-                audioName !in deletingAudioNames &&
-                listOfNotNull(
-                    metadata.coverPath,
-                    metadata.lyricPath,
-                    metadata.translatedLyricPath,
-                    metadata.romanizedLyricPath
-                ).contains(reference)
+        return snapshot.artifactOwnerAudioNamesByReference[reference].orEmpty().any { audioName ->
+            audioName != currentAudioName && audioName !in deletingAudioNames
         }
     }
 }

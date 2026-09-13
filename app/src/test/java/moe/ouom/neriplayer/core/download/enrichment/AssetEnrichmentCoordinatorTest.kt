@@ -129,7 +129,7 @@ class AssetEnrichmentCoordinatorTest {
     }
 
     @Test
-    fun `queued enrichment times out while waiting for a permit`() = runBlocking {
+    fun `queued enrichment timeout starts after permit acquisition`() = runBlocking {
         val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val coordinator = AssetEnrichmentCoordinator(
             scope = scope,
@@ -160,10 +160,16 @@ class AssetEnrichmentCoordinatorTest {
         }
 
         try {
-            withTimeout(2_000L) { queuedJob.join() }
-            assertTrue(timeout.get() is kotlinx.coroutines.TimeoutCancellationException)
-            assertFalse(queuedJob.isCancelled)
+            delay(150L)
+            assertTrue(queuedJob.isActive)
+            assertEquals(null, timeout.get())
             assertEquals(0, queuedRuns.get())
+
+            releasePermit.complete(Unit)
+            withTimeout(2_000L) { queuedJob.join() }
+            assertEquals(null, timeout.get())
+            assertFalse(queuedJob.isCancelled)
+            assertEquals(1, queuedRuns.get())
             assertFalse("queued-operation" in coordinator.activeOperationIds())
         } finally {
             releasePermit.complete(Unit)

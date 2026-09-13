@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.execution.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
@@ -709,6 +711,100 @@ class DownloadProgressPresentationTest {
             resolveRecoveredDownloadProgress(
                 workingFileBytes = 101L,
                 checkpointTotalBytes = 100L
+            )
+        )
+    }
+
+    @Test
+    fun `restarted queue exposes the durable reason before bytes are known`() {
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "QUEUED",
+                stopRequestedByUser = false,
+                batchStateBits = DownloadBatchState.OPEN
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.WAITING_NETWORK,
+                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "QUEUED",
+                stopRequestedByUser = false,
+                batchStateBits = DownloadBatchState.OPEN or DownloadBatchState.NETWORK_WAIT
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "WAITING_STORAGE_MUTATION",
+                stopRequestedByUser = false,
+                batchStateBits = null
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "RETRYABLE",
+                stopRequestedByUser = false,
+                batchStateBits = null,
+                nextRetryAtMs = 2_000L,
+                nowMs = 1_000L
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "RETRYABLE",
+                stopRequestedByUser = false,
+                batchStateBits = null,
+                nextRetryAtMs = 500L,
+                nowMs = 1_000L
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.WAITING_NETWORK,
+                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "RETRYABLE",
+                stopRequestedByUser = false,
+                batchStateBits = null,
+                lastErrorCode = "NETWORK_POLICY_WAITING"
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "RETRYABLE",
+                stopRequestedByUser = false,
+                batchStateBits = null,
+                lastErrorCode = DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
+            )
+        )
+        assertNull(
+            recoveredDownloadTaskPresentation(
+                operationState = "STOPPED",
+                stopRequestedByUser = true,
+                batchStateBits = null
             )
         )
     }

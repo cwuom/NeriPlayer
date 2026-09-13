@@ -119,6 +119,8 @@ class ForegroundDownloadWorker(
                     generation = pumpGeneration,
                     workWillRetry = pumpResult == DownloadExecutionPumpResult.Retry,
                     continueSoon = pumpResult == DownloadExecutionPumpResult.ContinueSoon,
+                    continueAfterContention =
+                        pumpResult == DownloadExecutionPumpResult.ContinueAfterContention,
                     continueAfterRetry =
                         pumpResult == DownloadExecutionPumpResult.ContinueAfterRetry
                 )
@@ -312,17 +314,9 @@ class ForegroundDownloadWorker(
             // 否则 active generation 会永久挡住后续下载
             val completion = pumpScheduleCoordinator.completeImmediate(generation, result)
             if (completion == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR) {
-                val successorDelayMs = when (result) {
-                    DownloadExecutionPumpResult.ContinueSoon -> UIDT_SHARED_PUMP_GRACE_MS
-                    DownloadExecutionPumpResult.Retry,
-                    DownloadExecutionPumpResult.ContinueAfterRetry ->
-                        PUMP_OPERATION_RETRY_DELAY_MS
-
-                    DownloadExecutionPumpResult.Completed -> 0L
-                }
                 schedulePumpSuccessor(
                     context = context.applicationContext,
-                    initialDelayMs = successorDelayMs
+                    initialDelayMs = successorDelayMsFor(result)
                 )
             }
         }
@@ -375,9 +369,11 @@ class ForegroundDownloadWorker(
             generation: Long,
             workWillRetry: Boolean,
             continueSoon: Boolean = false,
+            continueAfterContention: Boolean = false,
             continueAfterRetry: Boolean = false
         ) {
-            val shouldScheduleSuccessor = continueSoon || continueAfterRetry
+            val shouldScheduleSuccessor = continueSoon || continueAfterContention ||
+                continueAfterRetry
             val completion = if (shouldScheduleSuccessor) {
                 pumpScheduleCoordinator.completeWithSuccessor(generation)
             } else {
@@ -387,15 +383,31 @@ class ForegroundDownloadWorker(
                 )
             }
             if (completion == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR) {
-                val successorDelayMs = when {
-                    continueAfterRetry -> PUMP_OPERATION_RETRY_DELAY_MS
-                    continueSoon -> UIDT_SHARED_PUMP_GRACE_MS
-                    else -> 0L
+                val completionResult = when {
+                    continueAfterRetry -> DownloadExecutionPumpResult.ContinueAfterRetry
+                    continueAfterContention ->
+                        DownloadExecutionPumpResult.ContinueAfterContention
+                    continueSoon -> DownloadExecutionPumpResult.ContinueSoon
+                    else -> DownloadExecutionPumpResult.Completed
                 }
                 schedulePumpSuccessor(
                     context = context,
-                    initialDelayMs = successorDelayMs
+                    initialDelayMs = successorDelayMsFor(completionResult)
                 )
+            }
+        }
+
+        internal fun successorDelayMsFor(result: DownloadExecutionPumpResult): Long {
+            return when (result) {
+                DownloadExecutionPumpResult.ContinueSoon,
+                DownloadExecutionPumpResult.Completed -> 0L
+
+                DownloadExecutionPumpResult.ContinueAfterContention ->
+                    UIDT_SHARED_PUMP_GRACE_MS
+
+                DownloadExecutionPumpResult.Retry,
+                DownloadExecutionPumpResult.ContinueAfterRetry ->
+                    PUMP_OPERATION_RETRY_DELAY_MS
             }
         }
 
@@ -844,6 +856,7 @@ internal fun DownloadExecutionPumpResult.toWorkerResult(): ListenableWorker.Resu
     return when (this) {
         DownloadExecutionPumpResult.Completed,
         DownloadExecutionPumpResult.ContinueSoon,
+        DownloadExecutionPumpResult.ContinueAfterContention,
         DownloadExecutionPumpResult.ContinueAfterRetry -> ListenableWorker.Result.success()
         DownloadExecutionPumpResult.Retry -> ListenableWorker.Result.retry()
     }

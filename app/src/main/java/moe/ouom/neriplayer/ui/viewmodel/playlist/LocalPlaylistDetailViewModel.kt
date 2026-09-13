@@ -473,6 +473,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                     val scanOptions = _scanPreviewState.value
                     val localPlaylists = repo.playlists.value.toList()
                     val completedProgress = LocalAudioScanProgress(
+                        scanId = _scanPreviewState.value.scanProgress.scanId,
                         phase = LocalAudioScanPhase.COMPLETED,
                         processed = result.songs.size,
                         total = result.songs.size,

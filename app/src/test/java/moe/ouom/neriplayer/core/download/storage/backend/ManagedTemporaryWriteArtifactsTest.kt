@@ -182,6 +182,160 @@ class ManagedTemporaryWriteArtifactsTest {
     }
 
     @Test
+    fun `SAF temporary names keep the target extension and remain target bound`() {
+        val parentUri = mock(Uri::class.java)
+        `when`(parentUri.toString()).thenReturn("content://provider/tree/root")
+        val target = StorageTarget.SafTarget(
+            parent = StorageReference.SafRef(parentUri),
+            displayName = "song.npmeta.json",
+            mimeType = "application/json"
+        )
+
+        val lease = ManagedTemporaryWriteArtifacts.acquire(
+            target = target,
+            nonce = "fad3561f8d7246d8"
+        )
+
+        requireNotNull(lease)
+        try {
+            assertTrue(lease.displayName.endsWith(".pending.json"))
+            assertTrue(
+                ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
+                    displayName = lease.displayName,
+                    target = target
+                )
+            )
+        } finally {
+            lease.close()
+        }
+    }
+
+    @Test
+    fun `SAF cleanup recognizes provider appended extension and retains active write`() {
+        runBlocking {
+            val parentUri = mock(Uri::class.java)
+            `when`(parentUri.toString()).thenReturn("content://provider/tree/root")
+            val target = StorageTarget.SafTarget(
+                parent = StorageReference.SafRef(parentUri),
+                displayName = "song.npmeta.json",
+                mimeType = "application/json"
+            )
+            val lease = ManagedTemporaryWriteArtifacts.acquire(
+                target = target,
+                nonce = "fad3561f8d7246d8"
+            )
+            requireNotNull(lease)
+            val providerDisplayName = "${lease.displayName}.json"
+            val temporaryReference = StorageReference.SafRef(mock(Uri::class.java))
+            val backend = RecordingBackend(
+                StorageDirectorySnapshot(
+                    entries = listOf(
+                        StorageStat(
+                            reference = temporaryReference,
+                            displayName = providerDisplayName,
+                            sizeBytes = 1L,
+                            lastModifiedMs = null,
+                            isDirectory = false
+                        )
+                    ),
+                    confidence = StorageConfidence.Complete
+                )
+            )
+
+            val activeResult = backend.cleanupTerminalTemporaryWrites(target)
+
+            assertEquals(
+                ManagedTemporaryWriteCleanupResult.Completed(
+                    deletedCount = 0,
+                    missingCount = 0,
+                    retainedActiveCount = 1,
+                    failures = emptyList()
+                ),
+                activeResult
+            )
+
+            lease.close()
+            val terminalResult = backend.cleanupTerminalTemporaryWrites(target)
+
+            assertEquals(
+                ManagedTemporaryWriteCleanupResult.Completed(
+                    deletedCount = 1,
+                    missingCount = 0,
+                    retainedActiveCount = 0,
+                    failures = emptyList()
+                ),
+                terminalResult
+            )
+        }
+    }
+
+    @Test
+    fun `SAF target ownership accepts bounded provider numbering variants`() {
+        val parentUri = mock(Uri::class.java)
+        `when`(parentUri.toString()).thenReturn("content://provider/tree/root")
+        val target = StorageTarget.SafTarget(
+            parent = StorageReference.SafRef(parentUri),
+            displayName = "song.npmeta.json",
+            mimeType = "application/json"
+        )
+        val lease = ManagedTemporaryWriteArtifacts.acquire(
+            target = target,
+            nonce = "fad3561f8d7246d8"
+        )
+        requireNotNull(lease)
+        try {
+            assertTrue(
+                ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
+                    displayName = "${lease.displayName} (1)",
+                    target = target
+                )
+            )
+            assertTrue(
+                ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
+                    displayName = lease.displayName.removeSuffix(".json") + " (2).json",
+                    target = target
+                )
+            )
+            assertFalse(
+                ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
+                    displayName = "${lease.displayName} (1) (2)",
+                    target = target
+                )
+            )
+        } finally {
+            lease.close()
+        }
+    }
+
+    @Test
+    fun `provider name keeps operation token distinct for the same target`() {
+        val parentUri = mock(Uri::class.java)
+        `when`(parentUri.toString()).thenReturn("content://provider/tree/root")
+        val target = StorageTarget.SafTarget(
+            parent = StorageReference.SafRef(parentUri),
+            displayName = "song.npmeta.json",
+            mimeType = "application/json"
+        )
+        val oldName = ManagedTemporaryWriteArtifacts.displayNameFor(
+            target = target,
+            nonce = "0123456789abcdef"
+        )
+        val newName = ManagedTemporaryWriteArtifacts.displayNameFor(
+            target = target,
+            nonce = "fedcba9876543210"
+        )
+
+        assertEquals(
+            ManagedTemporaryWriteArtifacts.managedWriteToken(oldName),
+            ManagedTemporaryWriteArtifacts.managedWriteToken("$oldName.json")
+        )
+        assertFalse(
+            ManagedTemporaryWriteArtifacts.managedWriteToken(oldName) ==
+                ManagedTemporaryWriteArtifacts.managedWriteToken(newName)
+        )
+    }
+
+    @Test
     fun `old pending operation cleanup does not select new operation temporary write`() {
         runBlocking {
             val root = Files.createTempDirectory("neriplayer-temporary-write").toFile()

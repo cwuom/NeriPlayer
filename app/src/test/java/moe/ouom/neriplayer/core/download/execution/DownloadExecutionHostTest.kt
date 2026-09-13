@@ -503,7 +503,7 @@ class DownloadExecutionHostTest {
         }
 
         assertEquals(
-            DownloadExecutionPumpResult.ContinueSoon,
+            DownloadExecutionPumpResult.ContinueAfterContention,
             host.pump(context)
         )
         assertTrue(executed.isEmpty())
@@ -1230,7 +1230,7 @@ class DownloadExecutionHostTest {
             }
         )
 
-        assertEquals(DownloadExecutionPumpResult.ContinueSoon, host.pump(context))
+        assertEquals(DownloadExecutionPumpResult.ContinueAfterContention, host.pump(context))
         assertEquals(listOf(runnableRequest.operationId), executedOperationIds)
         assertEquals(
             "COMPLETED",
@@ -1268,7 +1268,7 @@ class DownloadExecutionHostTest {
             }
         )
 
-        assertEquals(DownloadExecutionPumpResult.ContinueSoon, host.pump(context))
+        assertEquals(DownloadExecutionPumpResult.ContinueAfterContention, host.pump(context))
         assertEquals(listOf(replacement.operationId), executedOperationIds)
         assertEquals(
             "COMPLETED",
@@ -1362,6 +1362,28 @@ class DownloadExecutionHostTest {
         assertEquals(
             ListenableWorker.Result.success()::class,
             DownloadExecutionPumpResult.ContinueAfterRetry.toWorkerResult()::class
+        )
+    }
+
+    @Test
+    fun `ready pump successor has no WorkManager delay`() {
+        assertEquals(
+            0L,
+            ForegroundDownloadWorker.successorDelayMsFor(
+                DownloadExecutionPumpResult.ContinueSoon
+            )
+        )
+        assertEquals(
+            1_000L,
+            ForegroundDownloadWorker.successorDelayMsFor(
+                DownloadExecutionPumpResult.ContinueAfterRetry
+            )
+        )
+        assertEquals(
+            UIDT_SHARED_PUMP_GRACE_MS,
+            ForegroundDownloadWorker.successorDelayMsFor(
+                DownloadExecutionPumpResult.ContinueAfterContention
+            )
         )
     }
 
@@ -2281,6 +2303,17 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `post core recovery does not consume transfer host admission`() {
+        listOf("CORE_COMMITTED", "ASSETS_ENRICHING", "DEGRADED_COMPLETE").forEach { state ->
+            assertFalse(state, requiresTransferHostAdmission(state))
+        }
+        listOf(null, "PENDING_QUEUE", "QUEUED", "RETRYABLE", "RUNNING", "COMMITTING")
+            .forEach { state ->
+                assertTrue(state, requiresTransferHostAdmission(state))
+            }
+    }
+
+    @Test
     fun `worker cancellation cannot reschedule an explicitly stopped operation`() {
         assertTrue(
             shouldBlockHostReschedule(
@@ -2664,6 +2697,7 @@ class DownloadExecutionHostTest {
         }
 
         assertEquals(interruptedStates.size, executions)
+        assertEquals(1, testJournal.hostAdmissionAcquireCount)
     }
 
     @Test

@@ -53,6 +53,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
@@ -74,6 +75,7 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -119,7 +121,7 @@ private const val SAF_WRITE_READBACK_RETRY_COUNT = 3
 private const val DOCUMENT_NAVIGATION_CACHE_LIMIT = 512
 private const val LOCAL_LYRICS_PERF_LOG_LIMIT = 96
 private const val MAX_MEDIASTORE_DURATION_QUERY_IDS = 400
-private const val MAX_EDITABLE_COVER_BYTES = 8L * 1024L * 1024L
+private const val MAX_EDITABLE_COVER_BYTES = MAX_SOURCE_COVER_BYTES
 private const val MAX_EMBEDDED_COVER_CACHE_BYTES = 1024 * 1024
 private const val MAX_EMBEDDED_COVER_CACHE_DIMENSION_PX = 512
 private const val FRONT_COVER_PICTURE_TYPE = "Front Cover"
@@ -214,11 +216,6 @@ private val LOCAL_METADATA_PLACEHOLDERS = setOf(
     "未知艺术家",
     "未知专辑"
 )
-private val STAGED_CONTENT_REWRITE_EXTENSIONS = setOf(
-    "aac", "aif", "aiff", "ape", "flac", "m4a", "m4b", "mp3", "mp4",
-    "ogg", "opus", "tta", "wav", "wv"
-)
-
 data class LocalMediaDetails(
     val sourceUri: Uri,
     val displayName: String,
@@ -370,6 +367,7 @@ internal enum class EditableCoverMutation {
 
 internal enum class LocalMediaMetadataWriteOutcome {
     SUCCESS,
+    SIDECAR_ONLY,
     NOT_WRITABLE,
     UNSUPPORTED_OR_UNREADABLE,
     FAILED
@@ -392,7 +390,7 @@ internal fun combineEditableMetadataWriteOutcome(
     ) {
         // 部分 WAV 等容器不能由 TagLib 回写，但完整侧载已经通过读回校验。
         // 本地播放器以后以侧载为准，此时保存动作不应被不可用的嵌入路径否决。
-        return LocalMediaMetadataWriteOutcome.SUCCESS
+        return LocalMediaMetadataWriteOutcome.SIDECAR_ONLY
     }
     return directOutcome
 }
@@ -1001,15 +999,22 @@ object LocalMediaSupport {
         song: SongItem,
         coverReference: String? = song.customCoverUrl,
         writeCover: Boolean = coverReference != null,
-        writeLyrics: Boolean = false
+        writeLyrics: Boolean = false,
+        embeddedPropertyMapOverride: PropertyMap? = null,
+        requiredEmbeddedPropertyKeys: Set<String> = emptySet(),
+        persistCompanionSidecars: Boolean = true
     ): LocalMediaMetadataWriteOutcome {
         return try {
+            LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context.applicationContext)
             writeEditableMetadataInternal(
                 context = context,
                 song = song,
                 coverReference = coverReference,
                 writeCover = writeCover,
-                writeLyrics = writeLyrics
+                writeLyrics = writeLyrics,
+                embeddedPropertyMapOverride = embeddedPropertyMapOverride,
+                requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys,
+                persistCompanionSidecars = persistCompanionSidecars
             )
         } catch (error: CancellationException) {
             throw error
@@ -1030,7 +1035,10 @@ object LocalMediaSupport {
         song: SongItem,
         coverReference: String? = song.customCoverUrl,
         writeCover: Boolean = coverReference != null,
-        writeLyrics: Boolean = false
+        writeLyrics: Boolean = false,
+        embeddedPropertyMapOverride: PropertyMap? = null,
+        requiredEmbeddedPropertyKeys: Set<String> = emptySet(),
+        persistCompanionSidecars: Boolean = true
     ): LocalMediaMetadataWriteOutcome = withContext(Dispatchers.IO) {
         val startedAtMs = SystemClock.elapsedRealtime()
         val candidates = editableLocalMediaUriCandidates(context, song)
@@ -1041,18 +1049,8 @@ object LocalMediaSupport {
         var fallbackOutcome = LocalMediaMetadataWriteOutcome.NOT_WRITABLE
         candidates.forEach { sourceUri ->
             currentCoroutineContext().ensureActive()
-            val directTransaction = writeEditableMetadataDirectTransaction(
-                context = context,
-                song = song,
-                sourceUri = sourceUri,
-                coverReference = coverReference,
-                writeCover = writeCover,
-                writeLyrics = writeLyrics
-            )
-            val directOutcome = directTransaction.outcome
-            currentCoroutineContext().ensureActive()
-            val stagedAttempted = shouldAttemptStagedContentMetadataWrite(sourceUri, song, directOutcome)
-            val outcome = if (stagedAttempted) {
+            val stagedAttempted = shouldUseTransactionalStagedWrite(sourceUri)
+            val writeTransaction = if (stagedAttempted) {
                 writeEditableMetadataThroughStagedContentCopy(
                     context = context,
                     song = song,
@@ -1060,102 +1058,164 @@ object LocalMediaSupport {
                     coverReference = coverReference,
                     writeCover = writeCover,
                     writeLyrics = writeLyrics,
-                    directOutcome = directOutcome
+                    fallbackOutcome = LocalMediaMetadataWriteOutcome.FAILED,
+                    embeddedPropertyMapOverride = embeddedPropertyMapOverride,
+                    requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys
                 )
             } else {
-                directOutcome
+                writeEditableMetadataDirectTransaction(
+                    context = context,
+                    song = song,
+                    sourceUri = sourceUri,
+                    coverReference = coverReference,
+                    writeCover = writeCover,
+                    writeLyrics = writeLyrics,
+                    embeddedPropertyMapOverride = embeddedPropertyMapOverride,
+                    requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys
+                )
             }
-            // 嵌入标签和侧载文件是两条独立的恢复路径。TagLib 暂不支持某种
-            // 容器时仍必须保存 Lyrics 和 npmeta，不能让嵌入失败阻断侧载重建
-            // MediaStore 路径可能能通过 stat 但仍会被 scoped storage 拒绝读取
-            // 这类来源始终沿 SAF 引用写入
-            val localFile = resolveEditableSidecarFile(context, sourceUri)
-            val displayName = song.localFileName
-                ?.takeIf(String::isNotBlank)
-                ?: sourceUri.lastPathSegment.orEmpty()
-            val knownSidecarReferences = resolveContentSidecarReferences(
-                context = context,
-                sourceUri = sourceUri,
-                file = localFile,
-                displayName = displayName
-            )
-            val lyricsSidecarWritten = if (writeLyrics) {
-                currentCoroutineContext().ensureActive()
-                writeLocalLyricsSidecars(
+            val outcome = writeTransaction.outcome
+            var embeddedTransactionSettled = outcome != LocalMediaMetadataWriteOutcome.SUCCESS
+            try {
+                if (!persistCompanionSidecars) {
+                    var finalOutcome = outcome
+                    if (outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+                        val committed = runCatching {
+                            writeTransaction.commit?.invoke()
+                        }.onFailure { error ->
+                            logEditableMetadataFailure("commit_recovery_record", sourceUri, error)
+                        }.isSuccess
+                        if (!committed) {
+                            writeTransaction.rollback?.invoke()
+                            finalOutcome = LocalMediaMetadataWriteOutcome.FAILED
+                        }
+                        embeddedTransactionSettled = true
+                    }
+                    logEditableMetadataWriteTiming(
+                        sourceUri = sourceUri,
+                        startedAtMs = startedAtMs,
+                        outcome = finalOutcome,
+                        mode = if (stagedAttempted) "staged_embedded" else "direct_embedded"
+                    )
+                    if (finalOutcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+                        return@withContext finalOutcome
+                    }
+                    fallbackOutcome = selectEditableMetadataWriteFallback(
+                        current = fallbackOutcome,
+                        candidate = finalOutcome
+                    )
+                    return@forEach
+                }
+                // 嵌入标签和侧载文件是两条独立的恢复路径。TagLib 暂不支持某种
+                // 容器时仍必须保存 Lyrics 和 npmeta，不能让嵌入失败阻断侧载重建
+                // MediaStore 路径可能能通过 stat 但仍会被 scoped storage 拒绝读取
+                // 这类来源始终沿 SAF 引用写入
+                val localFile = resolveEditableSidecarFile(context, sourceUri)
+                val displayName = song.localFileName
+                    ?.takeIf(String::isNotBlank)
+                    ?: sourceUri.lastPathSegment.orEmpty()
+                val knownSidecarReferences = resolveContentSidecarReferences(
+                    context = context,
+                    sourceUri = sourceUri,
+                    file = localFile,
+                    displayName = displayName,
+                )
+                val lyricsSidecarWritten = if (writeLyrics) {
+                    currentCoroutineContext().ensureActive()
+                    writeLocalLyricsSidecars(
+                        context = context,
+                        sourceUri = sourceUri,
+                        file = localFile,
+                        displayName = displayName,
+                        song = song,
+                        knownReferences = knownSidecarReferences.lyricReferences
+                    )
+                } else {
+                    true
+                }
+                val coverSidecarWritten = if (writeCover) {
+                    currentCoroutineContext().ensureActive()
+                    writeLocalCoverSidecar(
+                        context = context,
+                        sourceUri = sourceUri,
+                        file = localFile,
+                        displayName = displayName,
+                        coverReference = coverReference,
+                        stableIdentityKey = editableMetadataSourceStableKey(song)
+                    )
+                } else {
+                    true
+                }
+                val metadataCoverReference = if (writeCover && !coverReference.isNullOrBlank()) {
+                    findNearbyCoverReference(
+                        context = context,
+                        uri = sourceUri,
+                        file = localFile,
+                        displayName = displayName
+                    ) ?: coverReference
+                } else {
+                    null
+                }
+                val metadataSidecarWritten = writeLocalLyricsMetadata(
                     context = context,
                     sourceUri = sourceUri,
                     file = localFile,
                     displayName = displayName,
                     song = song,
-                    knownReferences = knownSidecarReferences.lyricReferences
+                    knownReference = knownSidecarReferences.metadataReference,
+                    writeFullMetadata = true,
+                    writeLyricFields = writeLyrics,
+                    coverReference = metadataCoverReference,
+                    clearCoverReference = writeCover && coverReference.isNullOrBlank()
                 )
-            } else {
-                true
-            }
-            val coverSidecarWritten = if (writeCover) {
-                currentCoroutineContext().ensureActive()
-                writeLocalCoverSidecar(
-                    context = context,
+                val sidecarsWritten = lyricsSidecarWritten && coverSidecarWritten &&
+                    metadataSidecarWritten
+                var finalOutcome = combineEditableMetadataWriteOutcome(
+                    directOutcome = outcome,
+                    lyricsSidecarWritten = lyricsSidecarWritten && metadataSidecarWritten,
+                    coverSidecarWritten = coverSidecarWritten,
+                    allowSidecarAuthoritativeFallback = embeddedPropertyMapOverride == null
+                )
+                if (!sidecarsWritten && outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+                    writeTransaction.rollback?.invoke()
+                    embeddedTransactionSettled = true
+                    NPLogger.w(TAG, "write local metadata sidecar failed for $sourceUri")
+                } else if (!sidecarsWritten) {
+                    NPLogger.w(
+                        TAG,
+                        "write local metadata sidecar failed after embedded write failure: $sourceUri"
+                    )
+                }
+                if (sidecarsWritten && finalOutcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+                    val committed = runCatching {
+                        writeTransaction.commit?.invoke()
+                    }.onFailure { error ->
+                        logEditableMetadataFailure("commit_recovery_record", sourceUri, error)
+                    }.isSuccess
+                    if (!committed) {
+                        writeTransaction.rollback?.invoke()
+                        finalOutcome = LocalMediaMetadataWriteOutcome.FAILED
+                    }
+                    embeddedTransactionSettled = true
+                }
+                logEditableMetadataWriteTiming(
                     sourceUri = sourceUri,
-                    file = localFile,
-                    displayName = displayName,
-                    coverReference = coverReference,
-                    stableIdentityKey = editableMetadataSourceStableKey(song)
+                    startedAtMs = startedAtMs,
+                    outcome = finalOutcome,
+                    mode = if (stagedAttempted) "staged" else "direct"
                 )
-            } else {
-                true
-            }
-            val metadataCoverReference = if (writeCover && !coverReference.isNullOrBlank()) {
-                findNearbyCoverReference(
-                    context = context,
-                    uri = sourceUri,
-                    file = localFile,
-                    displayName = displayName
-                ) ?: coverReference
-            } else {
-                null
-            }
-            val metadataSidecarWritten = writeLocalLyricsMetadata(
-                context = context,
-                sourceUri = sourceUri,
-                file = localFile,
-                displayName = displayName,
-                song = song,
-                knownReference = knownSidecarReferences.metadataReference,
-                writeFullMetadata = true,
-                writeLyricFields = writeLyrics,
-                coverReference = metadataCoverReference,
-                clearCoverReference = writeCover && coverReference.isNullOrBlank()
-            )
-            val sidecarWritten = lyricsSidecarWritten && metadataSidecarWritten
-            val finalOutcome = combineEditableMetadataWriteOutcome(
-                directOutcome = outcome,
-                lyricsSidecarWritten = sidecarWritten,
-                coverSidecarWritten = coverSidecarWritten,
-                allowSidecarAuthoritativeFallback = true
-            )
-            if (!sidecarWritten && outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
-                directTransaction.rollback?.invoke()
-                NPLogger.w(TAG, "write local metadata sidecar failed for $sourceUri")
-            } else if (!sidecarWritten) {
-                NPLogger.w(
-                    TAG,
-                    "write local metadata sidecar failed after embedded write failure: $sourceUri"
+                if (finalOutcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+                    return@withContext finalOutcome
+                }
+                fallbackOutcome = selectEditableMetadataWriteFallback(
+                    current = fallbackOutcome,
+                    candidate = finalOutcome
                 )
+            } finally {
+                if (!embeddedTransactionSettled) {
+                    writeTransaction.rollback?.invoke()
+                }
             }
-            logEditableMetadataWriteTiming(
-                sourceUri = sourceUri,
-                startedAtMs = startedAtMs,
-                outcome = finalOutcome,
-                mode = if (stagedAttempted) "staged" else "direct"
-            )
-            if (finalOutcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
-                return@withContext finalOutcome
-            }
-            fallbackOutcome = selectEditableMetadataWriteFallback(
-                current = fallbackOutcome,
-                candidate = finalOutcome
-            )
         }
         logEditableMetadataWriteTiming(
             sourceUri = candidates.lastOrNull(),
@@ -1176,7 +1236,13 @@ object LocalMediaSupport {
         val message = "local metadata write finished: uri=$sourceUri, " +
             "mode=$mode, outcome=$outcome, elapsedMs=$elapsedMs"
         if (elapsedMs >= EDITABLE_METADATA_WRITE_BUDGET_MS) {
-            NPLogger.w(TAG, "$message, overBudget=true")
+            if (outcome == LocalMediaMetadataWriteOutcome.SUCCESS ||
+                outcome == LocalMediaMetadataWriteOutcome.SIDECAR_ONLY
+            ) {
+                NPLogger.i(TAG, "$message, overBudget=true")
+            } else {
+                NPLogger.w(TAG, "$message, overBudget=true")
+            }
         } else {
             NPLogger.d(TAG, "$message, overBudget=false")
         }
@@ -2642,6 +2708,10 @@ object LocalMediaSupport {
         candidate: LocalMediaMetadataWriteOutcome
     ): LocalMediaMetadataWriteOutcome {
         return when {
+            current == LocalMediaMetadataWriteOutcome.SIDECAR_ONLY ||
+                candidate == LocalMediaMetadataWriteOutcome.SIDECAR_ONLY -> {
+                LocalMediaMetadataWriteOutcome.SIDECAR_ONLY
+            }
             current == LocalMediaMetadataWriteOutcome.FAILED ||
                 candidate == LocalMediaMetadataWriteOutcome.FAILED -> LocalMediaMetadataWriteOutcome.FAILED
             current == LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE ||
@@ -2652,31 +2722,13 @@ object LocalMediaSupport {
         }
     }
 
-    internal fun shouldAttemptStagedContentMetadataWrite(
-        sourceUri: Uri,
-        song: SongItem,
-        directOutcome: LocalMediaMetadataWriteOutcome
-    ): Boolean = shouldAttemptStagedContentMetadataWrite(
-        sourceScheme = sourceUri.scheme,
-        sourcePathSegment = sourceUri.lastPathSegment,
-        song = song,
-        directOutcome = directOutcome
-    )
-
-    internal fun shouldAttemptStagedContentMetadataWrite(
+    internal fun shouldUseTransactionalStagedWrite(
         sourceScheme: String?,
-        sourcePathSegment: String?,
-        song: SongItem,
-        directOutcome: LocalMediaMetadataWriteOutcome
+        sourcePath: String?
     ): Boolean {
-        if (directOutcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
-            return false
-        }
-        if (!sourceScheme.equals("content", ignoreCase = true)) {
-            return false
-        }
-        return resolveEditableMediaExtension(song, sourcePathSegment) in
-            STAGED_CONTENT_REWRITE_EXTENSIONS
+        return sourceScheme.equals("content", ignoreCase = true) ||
+            sourceScheme.equals("file", ignoreCase = true) ||
+            (sourceScheme.isNullOrBlank() && sourcePath?.startsWith('/') == true)
     }
 
     internal fun resolveEditableMediaExtension(song: SongItem, sourceUri: Uri): String =
@@ -2701,8 +2753,13 @@ object LocalMediaSupport {
 
     private data class EditableMetadataWriteTransaction(
         val outcome: LocalMediaMetadataWriteOutcome,
-        val rollback: (() -> Unit)? = null
+        val rollback: (() -> Unit)? = null,
+        val commit: (() -> Unit)? = null
     )
+
+    /** 所有外部成品音频先在完整副本上改标签，原地写只用于应用私有暂存副本 */
+    private fun shouldUseTransactionalStagedWrite(sourceUri: Uri): Boolean =
+        shouldUseTransactionalStagedWrite(sourceUri.scheme, sourceUri.path)
 
     private fun writeEditableMetadataDirect(
         context: Context,
@@ -2710,14 +2767,18 @@ object LocalMediaSupport {
         sourceUri: Uri,
         coverReference: String?,
         writeCover: Boolean,
-        writeLyrics: Boolean
+        writeLyrics: Boolean,
+        embeddedPropertyMapOverride: PropertyMap? = null,
+        requiredEmbeddedPropertyKeys: Set<String> = emptySet()
     ): LocalMediaMetadataWriteOutcome = writeEditableMetadataDirectTransaction(
         context = context,
         song = song,
         sourceUri = sourceUri,
         coverReference = coverReference,
         writeCover = writeCover,
-        writeLyrics = writeLyrics
+        writeLyrics = writeLyrics,
+        embeddedPropertyMapOverride = embeddedPropertyMapOverride,
+        requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys
     ).outcome
 
     private fun writeEditableMetadataDirectTransaction(
@@ -2726,7 +2787,9 @@ object LocalMediaSupport {
         sourceUri: Uri,
         coverReference: String?,
         writeCover: Boolean,
-        writeLyrics: Boolean
+        writeLyrics: Boolean,
+        embeddedPropertyMapOverride: PropertyMap? = null,
+        requiredEmbeddedPropertyKeys: Set<String> = emptySet()
     ): EditableMetadataWriteTransaction {
         val resolved = runCatching {
             resolveInspectableLocalMedia(
@@ -2760,17 +2823,18 @@ object LocalMediaSupport {
             } else {
                 null
             }
-            val updated = applyEditableMetadata(
-                propertyMap = existing,
-                title = song.displayName(),
-                artist = song.displayArtist(),
-                lyrics = lyrics,
-                translatedLyrics = translatedLyrics,
-                romanizedLyrics = romanizedLyrics,
-                audioExtension = resolved.fileExtension,
-                writeLyrics = writeLyrics,
-                sourceStableKey = editableMetadataSourceStableKey(song)
-            )
+            val updated = embeddedPropertyMapOverride?.let(::copyEditablePropertyMap)
+                ?: applyEditableMetadata(
+                    propertyMap = existing,
+                    title = song.displayName(),
+                    artist = song.displayArtist(),
+                    lyrics = lyrics,
+                    translatedLyrics = translatedLyrics,
+                    romanizedLyrics = romanizedLyrics,
+                    audioExtension = resolved.fileExtension,
+                    writeLyrics = writeLyrics,
+                    sourceStableKey = editableMetadataSourceStableKey(song)
+                )
             val picturePlan = buildEditableCoverWritePlan(
                 context = context,
                 descriptor = target,
@@ -2785,7 +2849,8 @@ object LocalMediaSupport {
                 expectedStandardLyrics = mergeLyricsForExternalPlayers(lyrics, translatedLyrics),
                 sourceStableKey = editableMetadataSourceStableKey(song),
                 writesLyrics = writeLyrics,
-                clearsMissingLyrics = writeLyrics
+                clearsMissingLyrics = writeLyrics,
+                requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys
             )
         } ?: run {
             logEditableMetadataFailure(
@@ -2939,31 +3004,41 @@ object LocalMediaSupport {
                 file = resolved.file
             )?.use { target ->
                 val propertyMap = loadTagLibPropertyMap(target) ?: return@use false
-                val propertiesMatch = hasExpectedEditableMetadata(
-                    propertyMap = propertyMap,
-                    title = song.displayName(),
-                    artist = song.displayArtist(),
-                    lyrics = if (metadataSnapshot.writesLyrics) {
-                        song.matchedLyric ?: song.originalLyric
-                    } else {
-                        null
-                    },
-                    translatedLyrics = if (metadataSnapshot.writesLyrics) {
-                        song.matchedTranslatedLyric ?: song.originalTranslatedLyric
-                    } else {
-                        null
-                    },
-                    romanizedLyrics = if (metadataSnapshot.writesLyrics) {
-                        song.matchedRomanizedLyric ?: song.originalRomanizedLyric
-                    } else {
-                        null
-                    },
-                    audioExtension = resolved.fileExtension,
-                    expectedStandardLyrics = metadataSnapshot.expectedStandardLyrics,
-                    verifyStandardLyrics = metadataSnapshot.writesLyrics,
-                    verifyMissingLyrics = metadataSnapshot.clearsMissingLyrics,
-                    sourceStableKey = metadataSnapshot.sourceStableKey
-                )
+                val propertiesMatch = if (
+                    metadataSnapshot.requiredEmbeddedPropertyKeys.isNotEmpty()
+                ) {
+                    hasExpectedPropertyMapValues(
+                        actual = propertyMap,
+                        expected = metadataSnapshot.updatedProperties,
+                        requiredKeys = metadataSnapshot.requiredEmbeddedPropertyKeys
+                    )
+                } else {
+                    hasExpectedEditableMetadata(
+                        propertyMap = propertyMap,
+                        title = song.displayName(),
+                        artist = song.displayArtist(),
+                        lyrics = if (metadataSnapshot.writesLyrics) {
+                            song.matchedLyric ?: song.originalLyric
+                        } else {
+                            null
+                        },
+                        translatedLyrics = if (metadataSnapshot.writesLyrics) {
+                            song.matchedTranslatedLyric ?: song.originalTranslatedLyric
+                        } else {
+                            null
+                        },
+                        romanizedLyrics = if (metadataSnapshot.writesLyrics) {
+                            song.matchedRomanizedLyric ?: song.originalRomanizedLyric
+                        } else {
+                            null
+                        },
+                        audioExtension = resolved.fileExtension,
+                        expectedStandardLyrics = metadataSnapshot.expectedStandardLyrics,
+                        verifyStandardLyrics = metadataSnapshot.writesLyrics,
+                        verifyMissingLyrics = metadataSnapshot.clearsMissingLyrics,
+                        sourceStableKey = metadataSnapshot.sourceStableKey
+                    )
+                }
                 val coverMatch = when (val picturePlan = metadataSnapshot.picturePlan) {
                     EditableCoverWritePlan.Unchanged -> true
                     EditableCoverWritePlan.Unreadable -> false
@@ -3011,29 +3086,38 @@ object LocalMediaSupport {
         coverReference: String?,
         writeCover: Boolean,
         writeLyrics: Boolean,
-        directOutcome: LocalMediaMetadataWriteOutcome
-    ): LocalMediaMetadataWriteOutcome {
+        fallbackOutcome: LocalMediaMetadataWriteOutcome,
+        embeddedPropertyMapOverride: PropertyMap? = null,
+        requiredEmbeddedPropertyKeys: Set<String> = emptySet()
+    ): EditableMetadataWriteTransaction {
         val startedAtMs = SystemClock.elapsedRealtime()
-        val stagingDirectory = File(context.cacheDir, STAGED_METADATA_WRITE_DIRECTORY)
+        val stagingDirectory = LocalMediaMetadataRecoveryStore.stagingDirectory(context)
         if (!stagingDirectory.exists() && !stagingDirectory.mkdirs()) {
             NPLogger.w(TAG, "create staged metadata directory failed")
-            return directOutcome
+            return EditableMetadataWriteTransaction(fallbackOutcome)
         }
         val extension = resolveEditableMediaExtension(song, sourceUri)
         val backup = runCatching {
             File.createTempFile("metadata-source-", ".${extension}", stagingDirectory)
-        }.getOrNull() ?: return directOutcome
+        }.getOrNull() ?: return EditableMetadataWriteTransaction(fallbackOutcome)
         val updated = runCatching {
             File.createTempFile("metadata-updated-", ".${extension}", stagingDirectory)
         }.getOrNull() ?: run {
             backup.delete()
-            return directOutcome
+            return EditableMetadataWriteTransaction(fallbackOutcome)
         }
+        var recoveryRecord: LocalMetadataRecoveryRecord? = null
+        var transactionReturned = false
         try {
-            val sourceExpectedBytes = queryContentInfo(context, sourceUri).sizeBytes
-            val copied = context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                backup.outputStream().use { output ->
+            val sourceInfo = queryContentInfo(context, sourceUri)
+            val sourceFile = directFilePath(sourceUri)?.let(::File)?.takeIf(File::isFile)
+            val sourceExpectedBytes = sourceInfo.sizeBytes ?: sourceFile?.length()
+            val sourceInput = sourceFile?.inputStream()
+                ?: context.contentResolver.openInputStream(sourceUri)
+            val copied = sourceInput?.use { input ->
+                FileOutputStream(backup).use { output ->
                     val copiedBytes = input.copyTo(output)
+                    output.fd.sync()
                     if (copiedBytes <= 0L) {
                         throw IOException("staged source copy is empty")
                     }
@@ -3054,9 +3138,14 @@ object LocalMediaSupport {
                     "暂存元数据写入源音频为空或不可读: " +
                         "stage=staged_copy, uri=$sourceUri"
                 )
-                return directOutcome
+                return EditableMetadataWriteTransaction(fallbackOutcome)
             }
-            backup.copyTo(updated, overwrite = true)
+            FileInputStream(backup).use { input ->
+                FileOutputStream(updated).use { output ->
+                    input.copyTo(output)
+                    output.fd.sync()
+                }
+            }
             val stagedSong = song.copy(
                 mediaUri = Uri.fromFile(updated).toString(),
                 localFilePath = updated.absolutePath,
@@ -3068,7 +3157,9 @@ object LocalMediaSupport {
                 sourceUri = Uri.fromFile(updated),
                 coverReference = coverReference,
                 writeCover = writeCover,
-                writeLyrics = writeLyrics
+                writeLyrics = writeLyrics,
+                embeddedPropertyMapOverride = embeddedPropertyMapOverride,
+                requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys
             )
             if (stagedOutcome != LocalMediaMetadataWriteOutcome.SUCCESS) {
                 NPLogger.w(
@@ -3076,13 +3167,41 @@ object LocalMediaSupport {
                     "暂存 TagLib 回写未确认，保留原音频并等待重试: " +
                         "stage=staged_taglib, uri=$sourceUri, outcome=$stagedOutcome"
                 )
-                return directOutcome
+                return EditableMetadataWriteTransaction(fallbackOutcome)
             }
+            val preparedRecord = LocalMediaMetadataRecoveryStore.begin(
+                context = context,
+                targetReference = sourceUri.toString(),
+                backupFile = backup,
+                updatedFile = updated,
+                originalLastModifiedMs = sourceFile?.lastModified()
+                    ?.takeIf { it > 0L }
+                    ?: sourceInfo.lastModifiedMs?.takeIf { it > 0L }
+            )
+            recoveryRecord = preparedRecord
             val replaceStartedAtMs = SystemClock.elapsedRealtime()
-            if (!replaceContentUriWithFile(context, sourceUri, updated)) {
-                restoreContentUriFromFile(context, sourceUri, backup)
-                return directOutcome
+            var activeRecord = LocalMediaMetadataRecoveryStore.markReplacing(preparedRecord)
+            recoveryRecord = activeRecord
+            if (!LocalMediaMetadataRecoveryStore.replaceTargetFromFile(
+                    context = context,
+                    targetReference = sourceUri.toString(),
+                    source = updated,
+                    lastModifiedMs = activeRecord.originalLastModifiedMs
+                ) || !retryEditableMetadataReadback(sourceUri.scheme) {
+                    LocalMediaMetadataRecoveryStore.targetMatches(
+                        context = context,
+                        targetReference = sourceUri.toString(),
+                        expectedSha256 = activeRecord.updatedSha256
+                    )
+                }
+            ) {
+                if (!LocalMediaMetadataRecoveryStore.rollback(context, activeRecord)) {
+                    NPLogger.e(TAG, "元信息替换失败且原音频恢复未确认: $sourceUri")
+                }
+                return EditableMetadataWriteTransaction(fallbackOutcome)
             }
+            activeRecord = LocalMediaMetadataRecoveryStore.markTargetVerified(activeRecord)
+            recoveryRecord = activeRecord
             if (writeCover) {
                 val resolvedSource = runCatching {
                     resolveInspectableLocalMedia(
@@ -3107,105 +3226,42 @@ object LocalMediaSupport {
             } else {
                 NPLogger.d(TAG, "$message, overBudget=false")
             }
-            return LocalMediaMetadataWriteOutcome.SUCCESS
-        } catch (error: Exception) {
-            logEditableMetadataFailure("staged_copy", sourceUri, error)
-            return directOutcome
-        } finally {
-            if (backup.exists() && !backup.delete()) {
-                NPLogger.w(TAG, "delete staged metadata backup failed: ${backup.name}")
-            }
-            if (updated.exists() && !updated.delete()) {
-                NPLogger.w(TAG, "delete staged metadata update failed: ${updated.name}")
-            }
-        }
-    }
-
-    private fun replaceContentUriWithFile(context: Context, uri: Uri, source: File): Boolean {
-        val expectedBytes = source.length().takeIf { it > 0L }
-            ?: run {
-                NPLogger.w(
-                    TAG,
-                    "替换 SAF 音频失败: stage=staged_replace, uri=$uri, " +
-                        "reason=source_empty"
-                )
-                return false
-            }
-        val openFailures = mutableListOf<Throwable>()
-        val output = runCatching {
-            context.contentResolver.openOutputStream(uri, "rwt")
-        }.onFailure(openFailures::add).getOrNull() ?: runCatching {
-            context.contentResolver.openOutputStream(uri, "wt")
-        }.onFailure(openFailures::add).getOrNull()
-        if (output == null) {
-            logEditableMetadataFailure(
-                "staged_replace_open",
-                uri,
-                openFailures.lastOrNull() ?: IOException("SAF output stream unavailable")
+            val verifiedRecord = activeRecord
+            transactionReturned = true
+            return EditableMetadataWriteTransaction(
+                outcome = LocalMediaMetadataWriteOutcome.SUCCESS,
+                rollback = {
+                    if (!LocalMediaMetadataRecoveryStore.rollback(context, verifiedRecord)) {
+                        NPLogger.e(TAG, "回滚完整音频备份失败，恢复凭据已保留: $sourceUri")
+                    }
+                },
+                commit = { LocalMediaMetadataRecoveryStore.complete(verifiedRecord) }
             )
-            return false
-        }
-        return runCatching {
-            val copiedBytes = output.use { target ->
-                source.inputStream().use { input ->
-                    input.copyTo(target)
-                }.also {
-                    target.flush()
+        } catch (error: CancellationException) {
+            recoveryRecord?.let { record ->
+                if (!LocalMediaMetadataRecoveryStore.rollback(context, record)) {
+                    NPLogger.e(TAG, "元信息取消后原音频恢复未确认: $sourceUri")
                 }
             }
-            if (!isStagedReplacementComplete(
-                    expectedBytes = expectedBytes,
-                    copiedBytes = copiedBytes,
-                    providerBytes = null
-                )
-            ) {
-                throw IOException(
-                    "staged replacement byte count mismatch: $copiedBytes/$expectedBytes"
-                )
+            throw error
+        } catch (error: Exception) {
+            logEditableMetadataFailure("staged_copy", sourceUri, error)
+            recoveryRecord?.let { record ->
+                if (!LocalMediaMetadataRecoveryStore.rollback(context, record)) {
+                    NPLogger.e(TAG, "元信息异常后原音频恢复未确认: $sourceUri")
+                }
             }
-            val providerBytes = queryContentInfo(context, uri).sizeBytes
-            if (!isStagedReplacementComplete(
-                    expectedBytes = expectedBytes,
-                    copiedBytes = copiedBytes,
-                    providerBytes = providerBytes
-                )
-            ) {
-                throw IOException(
-                    "staged replacement provider size mismatch: $providerBytes/$expectedBytes"
-                )
+            return EditableMetadataWriteTransaction(fallbackOutcome)
+        } finally {
+            val journalRetained = recoveryRecord?.journalFile?.exists() == true
+            if (!transactionReturned && !journalRetained) {
+                if (backup.exists() && !backup.delete()) {
+                    NPLogger.w(TAG, "delete staged metadata backup failed: ${backup.name}")
+                }
+                if (updated.exists() && !updated.delete()) {
+                    NPLogger.w(TAG, "delete staged metadata update failed: ${updated.name}")
+                }
             }
-            NPLogger.d(
-                TAG,
-                "SAF 元数据替换已确认: uri=$uri, bytes=$copiedBytes, " +
-                    "providerBytes=${providerBytes ?: -1L}"
-            )
-            true
-        }.getOrElse { error ->
-            NPLogger.w(
-                TAG,
-                "replace content metadata source failed: stage=staged_replace, " +
-                    "uri=$uri, expectedBytes=$expectedBytes, " +
-                    "error=${error.javaClass.simpleName}: ${error.message}",
-                error
-            )
-            false
-        }
-    }
-
-    internal fun isStagedReplacementComplete(
-        expectedBytes: Long,
-        copiedBytes: Long,
-        providerBytes: Long?
-    ): Boolean {
-        if (expectedBytes <= 0L || copiedBytes != expectedBytes) {
-            return false
-        }
-        return providerBytes == null || providerBytes <= 0L || providerBytes == expectedBytes
-    }
-
-    private fun restoreContentUriFromFile(context: Context, uri: Uri, backup: File) {
-        if (!backup.isFile || !replaceContentUriWithFile(context, uri, backup)) {
-            NPLogger.e(TAG, "restore content metadata source failed for $uri")
         }
     }
 
@@ -5968,8 +6024,32 @@ object LocalMediaSupport {
         val expectedStandardLyrics: String?,
         val sourceStableKey: String,
         val writesLyrics: Boolean,
-        val clearsMissingLyrics: Boolean
+        val clearsMissingLyrics: Boolean,
+        val requiredEmbeddedPropertyKeys: Set<String>
     )
+
+    private fun copyEditablePropertyMap(source: PropertyMap): PropertyMap {
+        val copied: PropertyMap = hashMapOf()
+        source.forEach { (key, values) -> copied[key] = values.copyOf() }
+        return copied
+    }
+
+    internal fun hasExpectedPropertyMapValues(
+        actual: PropertyMap,
+        expected: PropertyMap,
+        requiredKeys: Set<String>
+    ): Boolean {
+        fun PropertyMap.normalizedValues(key: String): List<String> = entries
+            .firstOrNull { (candidate, _) -> candidate.equals(key, ignoreCase = true) }
+            ?.value
+            ?.map(String::trim)
+            ?.filter(String::isNotBlank)
+            .orEmpty()
+
+        return requiredKeys.all { key ->
+            actual.normalizedValues(key) == expected.normalizedValues(key)
+        }
+    }
 
     private fun editableMetadataSourceStableKey(song: SongItem): String {
         return song.sourceStableKey

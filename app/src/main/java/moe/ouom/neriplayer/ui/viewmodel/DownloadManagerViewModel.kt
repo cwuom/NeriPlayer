@@ -26,13 +26,19 @@ package moe.ouom.neriplayer.ui.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.DownloadedSongDeleteResult
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 
 class DownloadManagerViewModel(application: Application) : AndroidViewModel(application) {
 
     val downloadedSongs = GlobalDownloadManager.downloadedSongs
     val isRefreshing = GlobalDownloadManager.isRefreshing
+    val downloadedSongDeleteProgress = GlobalDownloadManager.downloadedSongDeleteProgress
 
     fun refreshDownloadedSongs(forceRefresh: Boolean = false) {
         val appContext = getApplication<Application>()
@@ -42,14 +48,29 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
         )
     }
 
-    fun deleteDownloadedSong(song: DownloadedSong) {
-        val appContext = getApplication<Application>()
-        GlobalDownloadManager.deleteDownloadedSong(appContext, song)
+    fun deleteDownloadedSong(
+        song: DownloadedSong,
+        onResult: (DownloadedSongDeleteResult) -> Unit = {}
+    ) {
+        deleteDownloadedSongs(songs = listOf(song), onResult = onResult)
     }
 
-    fun deleteDownloadedSongs(songs: List<DownloadedSong>) {
+    fun deleteDownloadedSongs(
+        songs: List<DownloadedSong>,
+        deleteEntireLibrary: Boolean = false,
+        onResult: (DownloadedSongDeleteResult) -> Unit = {}
+    ) {
         val appContext = getApplication<Application>()
-        GlobalDownloadManager.deleteDownloadedSongs(appContext, songs)
+        viewModelScope.launch {
+            val result = withContext(NonCancellable) {
+                GlobalDownloadManager.deleteDownloadedSongsWithResult(
+                    context = appContext,
+                    songs = songs,
+                    deleteEntireLibrary = deleteEntireLibrary
+                )
+            }
+            onResult(result)
+        }
     }
 
     fun playDownloadedSong(song: DownloadedSong) {

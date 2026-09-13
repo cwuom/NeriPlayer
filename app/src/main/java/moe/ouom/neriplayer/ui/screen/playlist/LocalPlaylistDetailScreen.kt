@@ -3501,8 +3501,27 @@ private fun LocalScanPreviewScreen(
                                 style = MaterialTheme.typography.bodyLarge
                             )
                             Spacer(Modifier.height(4.dp))
+                            val phaseElapsedSeconds =
+                                ((scanProgress.phaseElapsedMs + 999L) / 1_000L)
+                                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                                    .toInt()
                             Text(
                                 text = when (scanProgress.phase) {
+                                    LocalAudioScanPhase.PREPARING -> pluralStringResource(
+                                        R.plurals.local_playlist_scan_progress_preparing,
+                                        phaseElapsedSeconds,
+                                        phaseElapsedSeconds
+                                    )
+                                    LocalAudioScanPhase.READING_DOWNLOAD_INDEX -> pluralStringResource(
+                                        R.plurals.local_playlist_scan_progress_download_index,
+                                        phaseElapsedSeconds,
+                                        phaseElapsedSeconds
+                                    )
+                                    LocalAudioScanPhase.QUERYING_MEDIA_STORE -> pluralStringResource(
+                                        R.plurals.local_playlist_scan_progress_media_store,
+                                        phaseElapsedSeconds,
+                                        phaseElapsedSeconds
+                                    )
                                     LocalAudioScanPhase.TRAVERSING -> stringResource(
                                         R.string.local_playlist_scan_progress_traversing,
                                         scanProgress.visitedDirectories,
@@ -3513,11 +3532,15 @@ private fun LocalScanPreviewScreen(
                                         scanProgress.processed,
                                         scanProgress.total
                                     )
-                                    LocalAudioScanPhase.BUILDING_ENTRIES,
-                                    LocalAudioScanPhase.COMPLETED -> stringResource(
+                                    LocalAudioScanPhase.BUILDING_ENTRIES -> stringResource(
                                         R.string.local_playlist_scan_progress_building,
                                         scanProgress.processed,
                                         scanProgress.total
+                                    )
+                                    LocalAudioScanPhase.COMPLETED -> pluralStringResource(
+                                        R.plurals.local_playlist_scan_progress_completed,
+                                        scanProgress.discoveredSongs,
+                                        scanProgress.discoveredSongs
                                     )
                                 },
                                 style = MaterialTheme.typography.bodySmall,

@@ -18,8 +18,11 @@ import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAs
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.execution.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.isFormalManagedAudioReference
 import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
@@ -454,6 +457,48 @@ internal fun resolveRecoveredDownloadProgress(
     )
 }
 
+internal data class RecoveredDownloadTaskPresentation(
+    val status: DownloadStatus,
+    val stage: AudioDownloadManager.DownloadStage
+)
+
+internal fun recoveredDownloadTaskPresentation(
+    operationState: String,
+    stopRequestedByUser: Boolean,
+    batchStateBits: Int?,
+    nextRetryAtMs: Long? = null,
+    lastErrorCode: String? = null,
+    nowMs: Long = System.currentTimeMillis()
+): RecoveredDownloadTaskPresentation? {
+    // STOPPED 由显式恢复列表展示并等待用户操作，不能伪装成普通排队卡片
+    if (stopRequestedByUser || operationState == "STOPPED") return null
+    val normalizedErrorCode = lastErrorCode?.trim()?.takeIf(String::isNotBlank)
+    val waitsForNetwork =
+        (batchStateBits ?: 0) and DownloadBatchState.NETWORK_WAIT != 0 ||
+            normalizedErrorCode == "NETWORK_POLICY_WAITING"
+    return when {
+        waitsForNetwork -> RecoveredDownloadTaskPresentation(
+            status = DownloadStatus.WAITING_NETWORK,
+            stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+        )
+        operationState == "WAITING_STORAGE_MUTATION" ||
+            normalizedErrorCode == DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR ->
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
+            )
+        operationState == "RETRYABLE" || nextRetryAtMs?.let { it > nowMs } == true ->
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            )
+        else -> RecoveredDownloadTaskPresentation(
+            status = DownloadStatus.QUEUED,
+            stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+        )
+    }
+}
+
 internal fun finalizedTemporaryWriteTargetNames(
     audioName: String,
     pendingAudioName: String? = null
@@ -684,3 +729,8 @@ internal fun shouldPersistDownloadClearProgress(
     }
     return nowMs - lastPersistedAtMs >= minIntervalMs.coerceAtLeast(0L)
 }
+
+internal fun shouldDeleteEntireDownloadedLibrary(
+    explicitlyRequested: Boolean,
+    pendingDeleteIntentExists: Boolean
+): Boolean = explicitlyRequested || pendingDeleteIntentExists

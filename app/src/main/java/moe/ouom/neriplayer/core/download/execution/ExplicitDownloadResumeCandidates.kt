@@ -26,7 +26,7 @@ internal suspend fun loadExplicitDownloadResumeCandidates(
     if (PersistentDownloadClearFenceStore.isActive(appContext)) {
         return@withContext emptyList()
     }
-    val entries = DownloadExecutionRoomStore.listByStates(
+    val entries = DownloadExecutionRoomStore.listByStatesAnyLibrary(
         context = appContext,
         states = EXPLICIT_RESUME_OPERATION_STATES
     )

@@ -28,6 +28,8 @@ import moe.ouom.neriplayer.core.download.storage.SAF_PARENT_DOCUMENT_CACHE_VALID
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class FileStorageBackend(
     private val root: File
@@ -588,12 +590,17 @@ internal class SafStorageBackend(
         }
         val temporaryLease = ManagedTemporaryWriteArtifacts.acquire(safTarget)
         val temporaryName = temporaryLease.displayName
+        var createdTemporaryUri: Uri? = null
+        var temporaryWriteCompleted = false
         try {
         val temporaryUri = try {
             DocumentsContract.createDocument(
                 context.contentResolver,
                 parentUri,
-                safTarget.mimeType,
+                ManagedDownloadTreeNaming.documentCreateMimeType(
+                    desiredName = temporaryName,
+                    mimeType = safTarget.mimeType
+                ),
                 temporaryName
             )
         } catch (error: CancellationException) {
@@ -611,6 +618,21 @@ internal class SafStorageBackend(
             invalidateParentDocument(parentUri)
             return@withContext StorageWriteResult.ProviderFailure(
                 IllegalStateException("provider refused temporary file creation")
+            )
+        }
+        createdTemporaryUri = temporaryUri
+        if (!PersistentManagedTemporaryWriteJournal.recordCreated(
+                context = context,
+                temporaryUri = temporaryUri,
+                target = safTarget,
+                requestedDisplayName = temporaryName
+            )
+        ) {
+            return@withContext cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.ProviderFailure(
+                    IllegalStateException("temporary write recovery journal unavailable")
+                )
             )
         }
 
@@ -661,7 +683,7 @@ internal class SafStorageBackend(
             )
         }
 
-        return@withContext ManagedDownloadTreeMutationLocks.withLock(parentUri) commit@{
+        val writeResult = ManagedDownloadTreeMutationLocks.withLock(parentUri) commit@{
         val temporaryStat = when (val result = queryDocument(temporaryUri)) {
             SafQueryResult.Missing -> {
                 return@commit cleanupTemporarySafWriteFailure(
@@ -697,6 +719,18 @@ internal class SafStorageBackend(
                 StorageWriteResult.ProviderFailure(
                     IllegalStateException("provider created a directory for a file write")
                 )
+            )
+        }
+        if (!PersistentManagedTemporaryWriteJournal.recordActualDisplayName(
+                context = context,
+                temporaryUri = temporaryUri,
+                requestedDisplayName = temporaryName,
+                actualDisplayName = temporaryStat.displayName
+            )
+        ) {
+            NPLogger.w(
+                "SafStorageBackend",
+                "更新 SAF 临时文件实际名称失败，保留 URI 恢复凭据: $temporaryUri"
             )
         }
 
@@ -1039,7 +1073,24 @@ internal class SafStorageBackend(
             }
         }
         }
+        temporaryWriteCompleted = writeResult is StorageWriteResult.Written
+        return@withContext writeResult
         } finally {
+            createdTemporaryUri?.let { temporaryUri ->
+                if (temporaryWriteCompleted) {
+                    PersistentManagedTemporaryWriteJournal.completeCreatedUri(
+                        context = context,
+                        temporaryUri = temporaryUri,
+                        requestedDisplayName = temporaryName
+                    )
+                } else {
+                    PersistentManagedTemporaryWriteJournal.reconcileCreatedUri(
+                        context = context,
+                        temporaryUri = temporaryUri,
+                        requestedDisplayName = temporaryName
+                    )
+                }
+            }
             temporaryLease.close()
         }
     }

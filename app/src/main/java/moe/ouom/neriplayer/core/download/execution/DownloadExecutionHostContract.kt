@@ -162,6 +162,7 @@ sealed interface DownloadExecutionResult {
 enum class DownloadExecutionPumpResult {
     Completed,
     ContinueSoon,
+    ContinueAfterContention,
     ContinueAfterRetry,
     Retry
 }

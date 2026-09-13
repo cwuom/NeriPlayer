@@ -1870,6 +1870,9 @@ private fun PlayerManager.showLocalEditableMetadataWriteFeedback(
             }
             else -> R.string.local_song_metadata_write_success
         }
+        LocalMediaMetadataWriteOutcome.SIDECAR_ONLY -> {
+            R.string.local_song_metadata_write_sidecar_only
+        }
         LocalMediaMetadataWriteOutcome.NOT_WRITABLE -> R.string.local_song_metadata_write_not_writable
         LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE -> {
             R.string.local_song_metadata_write_unsupported

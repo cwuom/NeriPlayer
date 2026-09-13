@@ -94,11 +94,13 @@ internal object ManagedDownloadSnapshotIndex {
         val audioEntriesByMediaUri = mutableMapOf<String, MutableList<ManagedDownloadStorage.StoredEntry>>()
         val audioEntriesByRemoteTrackKey = mutableMapOf<String, MutableList<ManagedDownloadStorage.StoredEntry>>()
         val audioEntriesWithoutMetadata = mutableListOf<ManagedDownloadStorage.StoredEntry>()
+        val metadataLookupIndex = buildMetadataLookupIndex(normalizedMetadataByAudioName)
 
         normalizedAudioEntries.forEach { entry ->
             // metadata 可能按逻辑文件名保存，索引时要同时接受两种命名
             val metadata = metadataForAudioEntry(
                 metadataByAudioName = normalizedMetadataByAudioName,
+                lookupIndex = metadataLookupIndex,
                 audio = entry
             )
             if (metadata == null) {
@@ -157,33 +159,56 @@ internal object ManagedDownloadSnapshotIndex {
     }
 
     private fun metadataForAudioEntry(
-    metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
-    audio: ManagedDownloadStorage.StoredEntry
-): ManagedDownloadStorage.DownloadedAudioMetadata? {
-    return metadataByAudioName[audio.name]
-        ?: metadataByAudioName[audio.logicalName]
-        ?: metadataByAudioName.entries.firstOrNull { (name, _) ->
-            ManagedDownloadTreeNaming.canonicalLookupName(name) ==
-                ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
-                ManagedDownloadTreeNaming.canonicalLookupName(name) ==
-                    ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
-        }?.value
-        ?: metadataByAudioName.values.firstOrNull { metadata ->
-            val metadataFileName = metadata.audioFileName
+        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+        lookupIndex: MetadataLookupIndex,
+        audio: ManagedDownloadStorage.StoredEntry
+    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+        val canonicalAudioName = ManagedDownloadTreeNaming.canonicalLookupName(audio.name)
+        val canonicalLogicalName = ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
+        return metadataByAudioName[audio.name]
+            ?: metadataByAudioName[audio.logicalName]
+            ?: lookupIndex.byMapKey[canonicalAudioName]
+            ?: lookupIndex.byMapKey[canonicalLogicalName]
+            ?: lookupIndex.byDeclaredAudioName[canonicalAudioName]
+            ?: lookupIndex.byDeclaredAudioName[canonicalLogicalName]
+            ?: lookupIndex.byReference[audio.reference]
+            ?: lookupIndex.byReference[audio.mediaUri]
+            ?: audio.localFilePath?.let(lookupIndex.byReference::get)
+    }
+
+    private fun buildMetadataLookupIndex(
+        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
+    ): MetadataLookupIndex {
+        val byMapKey = linkedMapOf<String, ManagedDownloadStorage.DownloadedAudioMetadata>()
+        val byDeclaredAudioName = linkedMapOf<String, ManagedDownloadStorage.DownloadedAudioMetadata>()
+        val byReference = linkedMapOf<String, ManagedDownloadStorage.DownloadedAudioMetadata>()
+        metadataByAudioName.forEach { (audioName, metadata) ->
+            byMapKey.putIfAbsent(
+                ManagedDownloadTreeNaming.canonicalLookupName(audioName),
+                metadata
+            )
+            metadata.audioFileName
                 ?.trim()
                 ?.takeIf(String::isNotBlank)
-            val fileNameMatches = metadataFileName != null &&
-                (ManagedDownloadTreeNaming.canonicalLookupName(metadataFileName) ==
-                    ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
-                    ManagedDownloadTreeNaming.canonicalLookupName(metadataFileName) ==
-                    ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName))
-            val metadataReference = metadata.mediaUri
+                ?.let(ManagedDownloadTreeNaming::canonicalLookupName)
+                ?.let { key -> byDeclaredAudioName.putIfAbsent(key, metadata) }
+            metadata.mediaUri
                 ?.trim()
                 ?.takeIf(String::isNotBlank)
-            fileNameMatches || metadataReference != null &&
-                metadataReference in setOf(audio.reference, audio.mediaUri, audio.localFilePath)
+                ?.let { reference -> byReference.putIfAbsent(reference, metadata) }
         }
-}
+        return MetadataLookupIndex(
+            byMapKey = byMapKey,
+            byDeclaredAudioName = byDeclaredAudioName,
+            byReference = byReference
+        )
+    }
+
+    private data class MetadataLookupIndex(
+        val byMapKey: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+        val byDeclaredAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+        val byReference: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
+    )
 
     fun serializePayload(
         cacheKey: String,

@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download
 
 import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
+import java.io.File
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as MetadataDownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.storage.metadata.MAX_COVER_PIXELS
@@ -15,6 +16,18 @@ import org.junit.Test
 import moe.ouom.neriplayer.data.model.SongItem
 
 class DownloadedAudioTagWriterTest {
+    @Test
+    fun `download tag write does not repeat companion sidecar persistence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/metadata/" +
+                "DownloadedAudioTagWriter.kt"
+        ).readText()
+        val editableWrite = source.substringAfter("LocalMediaSupport.writeEditableMetadata(")
+            .substringBefore("if (outcome != LocalMediaMetadataWriteOutcome.SUCCESS)")
+
+        assertTrue(editableWrite.contains("persistCompanionSidecars = false"))
+    }
+
     @Test
     fun `cover pixel budget uses long multiplication and rejects overflow`() {
         assertTrue(isCoverPixelBudgetWithin(4_000, 4_000))
@@ -267,6 +280,66 @@ class DownloadedAudioTagWriterTest {
                 propertyMap = propertyMap,
                 song = song,
                 sidecarReferences = sidecars,
+                audioExtension = "flac"
+            )
+        )
+    }
+
+    @Test
+    fun `completed embedded metadata requires exact managed values`() {
+        val expected: PropertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Artist"),
+            "ALBUM" to arrayOf("Album"),
+            "ALBUMARTIST" to arrayOf("Artist"),
+            "TRACKNUMBER" to arrayOf("7"),
+            "LYRICS" to arrayOf("[00:01.00]new lyric"),
+            "LYRICS:TRANSLATION" to arrayOf("[00:01.00]新歌词"),
+            "NERI_LYRICS_ORIGINAL" to arrayOf("[00:01.00]new lyric"),
+            "NERI_LYRICS_TRANSLATED" to arrayOf("[00:01.00]新歌词"),
+            "NERI_LYRICS_ROMANIZED" to arrayOf("[00:01.00]xin ge ci"),
+            "NERI_STABLE_KEY" to arrayOf("stable"),
+            "NERI_MEDIA_URI" to arrayOf("https://example.com/song"),
+            "NERI_SOURCE" to arrayOf("NETEASE"),
+            "COMMENT" to arrayOf("metadata")
+        )
+        val actual: PropertyMap = hashMapOf<String, Array<String>>().apply {
+            expected.forEach { (key, values) -> put(key, values.copyOf()) }
+        }
+
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+                actual = actual,
+                expected = expected,
+                audioExtension = "flac"
+            )
+        )
+        actual["LYRICS"] = arrayOf("[00:01.00]stale but non-empty lyric")
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+                actual = actual,
+                expected = expected,
+                audioExtension = "flac"
+            )
+        )
+    }
+
+    @Test
+    fun `completed embedded metadata verifies cleared managed values`() {
+        val expected: PropertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Artist")
+        )
+        val actual: PropertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Artist"),
+            "ALBUM" to arrayOf("stale album")
+        )
+
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+                actual = actual,
+                expected = expected,
                 audioExtension = "flac"
             )
         )
@@ -533,4 +606,14 @@ class DownloadedAudioTagWriterTest {
         durationMs = 180_000L,
         coverUrl = null
     )
+
+    private fun locateProjectFile(path: String): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile ?: return@repeat
+        }
+        error("project source file not found: $path")
+    }
 }

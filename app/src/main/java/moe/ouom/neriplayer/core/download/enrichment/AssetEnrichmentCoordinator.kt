@@ -66,8 +66,8 @@ internal class AssetEnrichmentCoordinator(
             )
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
-                    withTimeout(timeoutMs) {
-                        semaphore.withPermit {
+                    semaphore.withPermit {
+                        withTimeout(timeoutMs) {
                             DownloadOperationTrace.mark(
                                 operationTraceToken,
                                 DownloadOperationTracePhase.ENRICHMENT_STARTED

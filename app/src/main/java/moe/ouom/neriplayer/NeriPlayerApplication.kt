@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.UidtDownloadJobService
+import moe.ouom.neriplayer.core.download.storage.backend.PersistentManagedTemporaryWriteJournal
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -45,6 +46,7 @@ import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
 import moe.ouom.neriplayer.core.startup.app.WebViewDataDirectorySuffix
 import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
+import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.util.crash.AnrWatchdog
@@ -137,6 +139,21 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
 
             NativeCrashHandler.init(this)
             AppContainer.initialize(this)
+            AppContainer.launchBackgroundIo {
+                val recoveredMetadataWrites = LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(
+                    this@NeriPlayerApplication
+                )
+                val recoveredTemporaryWrites = PersistentManagedTemporaryWriteJournal.recover(
+                    this@NeriPlayerApplication
+                )
+                if (recoveredMetadataWrites > 0 || recoveredTemporaryWrites > 0) {
+                    NPLogger.i(
+                        "NeriPlayerApplication",
+                        "启动恢复未完成写入: metadata=$recoveredMetadataWrites, " +
+                            "temporary=$recoveredTemporaryWrites"
+                    )
+                }
+            }
 
             // 后台预热收藏仓库: 首次构造会同步 loadFromDisk, 放到 IO 线程避免首个 UI 触达在主线程读盘
             AppContainer.launchBackgroundIo {

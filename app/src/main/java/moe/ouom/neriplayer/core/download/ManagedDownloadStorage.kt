@@ -1058,7 +1058,69 @@ internal object ManagedDownloadStorage {
         val pendingAudioEntries: List<StoredEntry> = emptyList(),
         /** pending metadata 与正式 metadata 同名时, 为 pending 音频保留独立凭据 */
         val pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap()
-    )
+    ) {
+        internal val metadataEntriesByCanonicalAudioName: Map<String, StoredEntry> by lazy {
+            buildMap {
+                metadataEntriesByAudioName.forEach { (audioName, entry) ->
+                    val key = ManagedDownloadTreeNaming.canonicalLookupName(audioName)
+                    if (key !in this) put(key, entry)
+                }
+            }
+        }
+        internal val metadataByCanonicalAudioName: Map<String, DownloadedAudioMetadata> by lazy {
+            buildMap {
+                metadataByAudioName.forEach { (audioName, metadata) ->
+                    val key = ManagedDownloadTreeNaming.canonicalLookupName(audioName)
+                    if (key !in this) put(key, metadata)
+                }
+            }
+        }
+        internal val pendingMetadataByCanonicalAudioName: Map<String, DownloadedAudioMetadata> by lazy {
+            buildMap {
+                pendingMetadataByAudioName.forEach { (audioName, metadata) ->
+                    val key = ManagedDownloadTreeNaming.canonicalLookupName(audioName)
+                    if (key !in this) put(key, metadata)
+                }
+            }
+        }
+        internal val metadataByDeclaredAudioName: Map<String, DownloadedAudioMetadata> by lazy {
+            buildMap {
+                metadataByAudioName.values.forEach { metadata ->
+                    val key = metadata.audioFileName
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                        ?.let(ManagedDownloadTreeNaming::canonicalLookupName)
+                        ?: return@forEach
+                    if (key !in this) put(key, metadata)
+                }
+            }
+        }
+        internal val metadataByStoredReference: Map<String, DownloadedAudioMetadata> by lazy {
+            buildMap {
+                metadataByAudioName.values.forEach { metadata ->
+                    val reference = metadata.mediaUri
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                        ?: return@forEach
+                    if (reference !in this) put(reference, metadata)
+                }
+            }
+        }
+        internal val artifactOwnerAudioNamesByReference: Map<String, Set<String>> by lazy {
+            buildMap<String, MutableSet<String>> {
+                metadataByAudioName.forEach { (audioName, metadata) ->
+                    listOfNotNull(
+                        metadata.coverPath,
+                        metadata.lyricPath,
+                        metadata.translatedLyricPath,
+                        metadata.romanizedLyricPath
+                    ).forEach { reference ->
+                        getOrPut(reference) { linkedSetOf() }.add(audioName)
+                    }
+                }
+            }
+        }
+    }
 
     internal fun metadataForAudioEntry(
         snapshot: DownloadLibrarySnapshot?,
@@ -1067,48 +1129,21 @@ internal object ManagedDownloadStorage {
         val metadataByAudioName = snapshot?.metadataByAudioName ?: return null
         if (audio.isPendingAudioWrite) {
             snapshot.pendingMetadataByAudioName[audio.logicalName]?.let { return it }
-            snapshot.pendingMetadataByAudioName.entries.firstOrNull { (name, _) ->
-                ManagedDownloadTreeNaming.canonicalLookupName(name) ==
-                    ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
-            }?.value?.let { return it }
+            snapshot.pendingMetadataByCanonicalAudioName[
+                ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
+            ]?.let { return it }
         }
+        val canonicalAudioName = ManagedDownloadTreeNaming.canonicalLookupName(audio.name)
+        val canonicalLogicalName = ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
         return metadataByAudioName[audio.name]
             ?: metadataByAudioName[audio.logicalName]
-            ?: metadataByAudioName.entries.firstOrNull { (name, _) ->
-                ManagedDownloadTreeNaming.canonicalLookupName(name) ==
-                    ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
-                    ManagedDownloadTreeNaming.canonicalLookupName(name) ==
-                        ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
-            }?.value
-            ?: metadataByAudioName.values.firstOrNull { metadata ->
-                metadataMatchesStoredAudio(metadata, audio)
-            }
-    }
-
-    private fun metadataMatchesStoredAudio(
-        metadata: DownloadedAudioMetadata,
-        audio: StoredEntry
-    ): Boolean {
-        val metadataFileName = metadata.audioFileName
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-        if (metadataFileName != null) {
-            val canonicalMetadataName = ManagedDownloadTreeNaming.canonicalLookupName(
-                metadataFileName
-            )
-            if (
-                canonicalMetadataName == ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
-                    canonicalMetadataName ==
-                    ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
-            ) {
-                return true
-            }
-        }
-        val metadataReference = metadata.mediaUri
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-        return metadataReference != null &&
-            metadataReference in setOf(audio.reference, audio.mediaUri, audio.localFilePath)
+            ?: snapshot.metadataByCanonicalAudioName[canonicalAudioName]
+            ?: snapshot.metadataByCanonicalAudioName[canonicalLogicalName]
+            ?: snapshot.metadataByDeclaredAudioName[canonicalAudioName]
+            ?: snapshot.metadataByDeclaredAudioName[canonicalLogicalName]
+            ?: snapshot.metadataByStoredReference[audio.reference]
+            ?: snapshot.metadataByStoredReference[audio.mediaUri]
+            ?: audio.localFilePath?.let(snapshot.metadataByStoredReference::get)
     }
 
     data class DownloadedLyricsBundle(
@@ -4975,13 +5010,16 @@ internal object ManagedDownloadStorage {
         val lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name)
         val allowMetadataLessAudio = includeMetadataLessAudioForLegacyUpgrade ||
             shouldIndexMetadataLessAudio()
-        val managedAudioEntries = audioEntries.filter { entry ->
-            shouldTreatAudioAsManaged(
-                audioName = entry.name,
+        val managedAudioNameIndex = ManagedDownloadManagedAudioPolicy.buildNameIndex(
                 metadataAudioNames = metadataEntriesByAudioName.keys,
                 coverEntryNames = coverEntriesByName.keys,
                 lyricEntryNames = lyricEntriesByName.keys,
                 allowMetadataLessAudio = allowMetadataLessAudio
+        )
+        val managedAudioEntries = audioEntries.filter { entry ->
+            ManagedDownloadManagedAudioPolicy.shouldTreatAudioAsManaged(
+                audioName = entry.name,
+                nameIndex = managedAudioNameIndex
             )
         }
         val canonicalAudioEntries = ManagedDownloadStorageLookup.selectCanonicalAudioEntries(
@@ -5180,12 +5218,11 @@ internal object ManagedDownloadStorage {
         withContext(Dispatchers.IO) {
         val snapshot = resolveSnapshotForIndexedLookup(context)
             ?: buildDownloadLibrarySnapshotBlocking(context)
+        val canonicalAudioName = ManagedDownloadTreeNaming.canonicalLookupName(audio.name)
+        val canonicalLogicalName = ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
         snapshot.metadataEntriesByAudioName[audio.logicalName]
-            ?: snapshot.metadataEntriesByAudioName.entries.firstOrNull { (name, _) ->
-                val canonicalName = ManagedDownloadTreeNaming.canonicalLookupName(name)
-                canonicalName == ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
-                    canonicalName == ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
-            }?.value
+            ?: snapshot.metadataEntriesByCanonicalAudioName[canonicalAudioName]
+            ?: snapshot.metadataEntriesByCanonicalAudioName[canonicalLogicalName]
             ?: findMetadataByDirectLookup(context, audio)
     }
 
@@ -5235,12 +5272,11 @@ internal object ManagedDownloadStorage {
         rootOverride: RootHandle? = null
     ): StoredEntry? {
         val snapshot = rootOverride?.let { null } ?: resolveSnapshotForIndexedLookup(context)
+        val canonicalAudioName = ManagedDownloadTreeNaming.canonicalLookupName(audio.name)
+        val canonicalLogicalName = ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
         return snapshot?.metadataEntriesByAudioName?.get(audio.logicalName)
-            ?: snapshot?.metadataEntriesByAudioName?.entries?.firstOrNull { (name, _) ->
-                val canonicalName = ManagedDownloadTreeNaming.canonicalLookupName(name)
-                canonicalName == ManagedDownloadTreeNaming.canonicalLookupName(audio.name) ||
-                    canonicalName == ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
-            }?.value
+            ?: snapshot?.metadataEntriesByCanonicalAudioName?.get(canonicalAudioName)
+            ?: snapshot?.metadataEntriesByCanonicalAudioName?.get(canonicalLogicalName)
             ?: findMetadataByDirectLookup(context, audio, rootOverride)
     }
 
@@ -7870,7 +7906,11 @@ internal object ManagedDownloadStorage {
     /**
      * 兼容旧业务调用，真正的删除只在策略验证后进入 typed 执行器
      */
-    suspend fun deleteReferences(context: Context, references: Collection<String?>): Set<String> =
+    suspend fun deleteReferences(
+        context: Context,
+        references: Collection<String?>,
+        onDeleteAttemptFinished: (String, Boolean) -> Unit = { _, _ -> }
+    ): Set<String> =
         withContext(Dispatchers.IO) {
             batchReferenceDeleteMutex.withLock {
                 val deletePolicy = buildManagedDeletePolicy(context)
@@ -7878,7 +7918,10 @@ internal object ManagedDownloadStorage {
                     context = context,
                     references = resolveTrustedManagedReferences(references, deletePolicy),
                     deletePolicy = deletePolicy,
-                    invalidateSnapshot = true
+                    invalidateSnapshot = true,
+                    onDeleteAttemptFinished = { reference, deleted ->
+                        onDeleteAttemptFinished(reference.externalReference, deleted)
+                    }
                 )
             }
         }
@@ -11912,11 +11955,15 @@ internal object ManagedDownloadStorage {
         if (lastModifiedMs <= 0L) {
             return
         }
-        entry.localFilePath
+        val localFile = entry.localFilePath
             ?.let(::File)
             ?.takeIf(File::exists)
-            ?.setLastModified(lastModifiedMs)
-            ?.let { return }
+        if (localFile != null) {
+            if (!localFile.setLastModified(lastModifiedMs)) {
+                throw IOException("无法保留迁移文件修改时间: ${entry.name}")
+            }
+            return
+        }
         // SAF Provider 决定物理时间，来源时间保存在元数据中
     }
 

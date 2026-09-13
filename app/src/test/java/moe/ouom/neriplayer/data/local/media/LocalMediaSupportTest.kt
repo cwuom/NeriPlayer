@@ -37,31 +37,6 @@ class LocalMediaSupportTest {
     }
 
     @Test
-    fun `staged replacement requires an exact copied byte count`() {
-        assertTrue(
-            LocalMediaSupport.isStagedReplacementComplete(
-                expectedBytes = 128L,
-                copiedBytes = 128L,
-                providerBytes = null
-            )
-        )
-        assertFalse(
-            LocalMediaSupport.isStagedReplacementComplete(
-                expectedBytes = 128L,
-                copiedBytes = 127L,
-                providerBytes = null
-            )
-        )
-        assertFalse(
-            LocalMediaSupport.isStagedReplacementComplete(
-                expectedBytes = 128L,
-                copiedBytes = 128L,
-                providerBytes = 127L
-            )
-        )
-    }
-
-    @Test
     fun `document sidecar mutation requires the exact source document id`() {
         val children = listOf("primary:Music/other.mp3")
         assertFalse(
@@ -137,6 +112,19 @@ class LocalMediaSupportTest {
                 directOutcome = LocalMediaMetadataWriteOutcome.FAILED,
                 lyricsSidecarWritten = true,
                 coverSidecarWritten = true
+            )
+        )
+    }
+
+    @Test
+    fun `verified sidecars do not masquerade as embedded metadata success`() {
+        assertEquals(
+            LocalMediaMetadataWriteOutcome.SIDECAR_ONLY,
+            combineEditableMetadataWriteOutcome(
+                directOutcome = LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE,
+                lyricsSidecarWritten = true,
+                coverSidecarWritten = true,
+                allowSidecarAuthoritativeFallback = true
             )
         )
     }

@@ -33,4 +33,12 @@
         <item quantity="one">Scan failed: %d item</item>
         <item quantity="other">Scan failed: %d items</item>
     </plurals>
+    <plurals name="download_delete_in_progress_message">
+        <item quantity="one">Confirming deletion of %d song…</item>
+        <item quantity="other">Confirming deletion of %d songs…</item>
+    </plurals>
+    <plurals name="download_delete_reference_progress">
+        <item quantity="one">Confirmed %1$d/%2$d file reference</item>
+        <item quantity="other">Confirmed %1$d/%2$d file references</item>
+    </plurals>
 </resources>

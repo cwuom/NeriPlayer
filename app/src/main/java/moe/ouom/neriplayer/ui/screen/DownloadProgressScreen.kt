@@ -1364,7 +1364,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
             }
             if (progress.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY) {
                 Text(
-                    text = stringResource(R.string.download_waiting_network_recovery),
+                    text = stringResource(R.string.download_waiting_retry),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -3009,6 +3009,23 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `startup clears recovered Wi-Fi fences before rejecting incomplete batch cards`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val restoreBody = source.substringAfter(
+            "private suspend fun restorePersistedBatchDownloadPresentations"
+        ).substringBefore("private suspend fun restorePersistedDownloadProgress")
+        val clearIndex = restoreBody.indexOf("clearAllOpenBatchNetworkPolicyFences(")
+        val consistencyIndex = restoreBody.indexOf("val consistentSnapshots")
+        val emptySnapshotReturnIndex = restoreBody.indexOf("if (consistentSnapshots.isEmpty())")
+
+        assertTrue(clearIndex >= 0)
+        assertTrue(consistencyIndex > clearIndex)
+        assertTrue(emptySnapshotReturnIndex > consistencyIndex)
+    }
+
+    @Test
     fun `network loss pauses durable Wi-Fi operations even before task cards are restored`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

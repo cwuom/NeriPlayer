@@ -239,6 +239,48 @@ class DownloadTaskStoreTest {
     }
 
     @Test
+    fun `durable batch restore cannot downgrade a transfer that already started`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(101L)
+            val attemptId = store.prepareDownloadTask(downloadSong)
+                ?: error("download task was not prepared")
+            val liveProgress = progress(
+                song = downloadSong,
+                attemptId = attemptId,
+                bytesRead = 128L,
+                stage = AudioDownloadManager.DownloadStage.RESOLVING_SOURCE
+            )
+            assertTrue(store.updateProgress(liveProgress))
+
+            assertEquals(
+                1,
+                store.restoreProgressBatch(
+                    listOf(
+                        progress(
+                            song = downloadSong,
+                            attemptId = attemptId,
+                            bytesRead = 512L,
+                            stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+                        )
+                    )
+                )
+            )
+
+            val merged = requireNotNull(store.findTask(downloadSong.stableKey())?.progress)
+            assertEquals(512L, merged.bytesRead)
+            assertEquals(AudioDownloadManager.DownloadStage.RESOLVING_SOURCE, merged.stage)
+            assertEquals(liveProgress.speedBytesPerSec, merged.speedBytesPerSec)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `wifi recovery keeps restored progress when it resumes the same durable attempt`() {
         val scope = CoroutineScope(SupervisorJob())
         try {

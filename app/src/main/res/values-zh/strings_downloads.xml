@@ -45,6 +45,7 @@
     <string name="download_queued_status">等待开始</string>
     <string name="download_finalizing">音频已写入，正在整理歌词、封面和元信息</string>
     <string name="download_waiting_network_recovery">网络切换中，恢复后会自动继续</string>
+    <string name="download_waiting_retry">等待自动重试</string>
     <string name="download_waiting_host">等待系统下载主机调度</string>
     <string name="download_waiting_delete_cleanup">等待旧文件清理完成</string>
     <string name="download_resolving_source">正在解析下载来源</string>
@@ -56,6 +57,17 @@
     <string name="download_explicit_resume_status">系统已暂停，点击继续下载</string>
     <string name="download_search_hint">搜索已下载的歌曲…</string>
     <string name="download_delete_confirm">确定要删除歌曲 "%s" 吗？此操作不可撤销。</string>
+    <string name="download_delete_in_progress_title">正在删除下载文件</string>
+    <string name="download_delete_phase_preparing">正在准备删除</string>
+    <string name="download_delete_phase_waiting_directory">正在等待下载目录可用</string>
+    <string name="download_delete_phase_stopping_downloads">正在停止关联下载</string>
+    <string name="download_delete_phase_waiting_downloads">关联下载尚未停止，已保留恢复任务</string>
+    <string name="download_delete_phase_reading_plan">正在读取删除清单</string>
+    <string name="download_delete_phase_deleting_files">正在删除文件</string>
+    <string name="download_delete_phase_verifying">正在回读确认删除结果</string>
+    <string name="download_delete_phase_finalizing">正在收尾索引与恢复凭据</string>
+    <string name="download_delete_phase_completed">删除已完成</string>
+    <string name="download_delete_phase_failed">删除未完全确认</string>
     <string name="download_starting">开始下载：%s</string>
     <string name="download_file_exists">文件已存在,跳过下载: %s</string>
     <string name="download_no_url">无法获取下载链接: %s</string>

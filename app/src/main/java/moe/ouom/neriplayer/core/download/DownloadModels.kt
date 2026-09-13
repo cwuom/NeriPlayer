@@ -269,6 +269,29 @@ data class DownloadedSongDeleteResult(
     }
 }
 
+enum class DownloadedSongDeletePhase {
+    PREPARING,
+    WAITING_FOR_DIRECTORY,
+    STOPPING_DOWNLOADS,
+    WAITING_FOR_DOWNLOADS,
+    READING_DELETE_PLAN,
+    DELETING_REFERENCES,
+    VERIFYING_REFERENCES,
+    FINALIZING,
+    COMPLETED,
+    FAILED
+}
+
+data class DownloadedSongDeleteProgress(
+    val deleteId: Long,
+    val phase: DownloadedSongDeletePhase,
+    val requestedSongCount: Int,
+    val totalReferenceCount: Int? = null,
+    val completedReferenceCount: Int = 0,
+    val failedReferenceCount: Int = 0,
+    val fullLibraryDelete: Boolean = false
+)
+
 internal fun resolveDownloadedSongDeleteResult(
     deletePlans: List<ManagedDownloadSongDeletePlan>,
     deletedReferences: Set<String>

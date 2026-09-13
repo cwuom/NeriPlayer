@@ -145,15 +145,18 @@ internal object ManagedDownloadMigrationEntryCollector {
             .mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
         val lyricEntryNames = lyricEntries
             .mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
+        val managedAudioNameIndex = ManagedDownloadManagedAudioPolicy.buildNameIndex(
+            metadataAudioNames = metadataAudioNames,
+            coverEntryNames = coverEntryNames,
+            lyricEntryNames = lyricEntryNames,
+            allowMetadataLessAudio = allowMetadataLessAudio
+        )
         return rootEntries.any { entry ->
             !entry.isDirectory &&
                 entry.extension in audioExtensions &&
                 ManagedDownloadManagedAudioPolicy.shouldTreatAudioAsManaged(
                     audioName = entry.name,
-                    metadataAudioNames = metadataAudioNames,
-                    coverEntryNames = coverEntryNames,
-                    lyricEntryNames = lyricEntryNames,
-                    allowMetadataLessAudio = allowMetadataLessAudio
+                    nameIndex = managedAudioNameIndex
                 )
         }
     }
@@ -184,13 +187,16 @@ internal object ManagedDownloadMigrationEntryCollector {
             }
         val coverEntryNames = coverEntries.mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
         val lyricEntryNames = lyricEntries.mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
+        val managedAudioNameIndex = ManagedDownloadManagedAudioPolicy.buildNameIndex(
+            metadataAudioNames = metadataEntriesByAudioName.keys,
+            coverEntryNames = coverEntryNames,
+            lyricEntryNames = lyricEntryNames,
+            allowMetadataLessAudio = allowMetadataLessAudio
+        )
         val managedAudioEntries = audioEntries.filter { entry ->
             ManagedDownloadManagedAudioPolicy.shouldTreatAudioAsManaged(
                 audioName = entry.name,
-                metadataAudioNames = metadataEntriesByAudioName.keys,
-                coverEntryNames = coverEntryNames,
-                lyricEntryNames = lyricEntryNames,
-                allowMetadataLessAudio = allowMetadataLessAudio
+                nameIndex = managedAudioNameIndex
             )
         }
         if (managedAudioEntries.isEmpty() && metadataEntriesByAudioName.isEmpty()) {

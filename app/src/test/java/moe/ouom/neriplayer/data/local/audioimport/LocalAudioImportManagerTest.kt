@@ -311,6 +311,22 @@ class LocalAudioImportManagerTest {
                 probeLimit = 256
             )
         )
+        assertTrue(
+            hasUsableMediaStoreContentReference(
+                rowOrdinal = 257,
+                hasResolvedFile = false,
+                probeSucceeded = false,
+                probeLimit = 256
+            )
+        )
+        assertFalse(
+            hasUsableMediaStoreContentReference(
+                rowOrdinal = 256,
+                hasResolvedFile = false,
+                probeSucceeded = false,
+                probeLimit = 256
+            )
+        )
     }
 
     @Test

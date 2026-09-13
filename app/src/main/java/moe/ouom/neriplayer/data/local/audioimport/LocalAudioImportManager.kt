@@ -25,8 +25,10 @@ package moe.ouom.neriplayer.data.local.audioimport
 
 
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.CancellationSignal
 import android.os.Environment
 import android.os.SystemClock
 import android.provider.DocumentsContract
@@ -42,7 +44,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.ManagedDownloadSizePolicy
@@ -52,6 +56,7 @@ import moe.ouom.neriplayer.core.download.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.LocalKnownSidecarReferences
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -67,16 +72,24 @@ import moe.ouom.neriplayer.data.local.media.validateCoverReference
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.coroutineContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 enum class LocalAudioScanPhase {
+    PREPARING,
+    READING_DOWNLOAD_INDEX,
+    QUERYING_MEDIA_STORE,
     TRAVERSING,
     BUILDING_ENTRIES,
     HYDRATING_METADATA,
@@ -84,12 +97,15 @@ enum class LocalAudioScanPhase {
 }
 
 data class LocalAudioScanProgress(
-    val phase: LocalAudioScanPhase = LocalAudioScanPhase.COMPLETED,
+    val scanId: Long = 0L,
+    val phase: LocalAudioScanPhase = LocalAudioScanPhase.PREPARING,
     val processed: Int = 0,
     val total: Int = 0,
     val discoveredSongs: Int = 0,
     val visitedDirectories: Int = 0,
-    val elapsedMs: Long = 0L
+    val elapsedMs: Long = 0L,
+    val phaseElapsedMs: Long = 0L,
+    val waitingForProvider: Boolean = false
 ) {
     val fraction: Float?
         get() = total.takeIf { it > 0 }?.let {
@@ -98,10 +114,17 @@ data class LocalAudioScanProgress(
 }
 
 private class LocalAudioScanProgressEmitter(
+    private val scanId: Long,
     private val startedAt: Long,
     private val onProgress: (LocalAudioScanProgress) -> Unit
 ) {
     private var lastReportedAt = 0L
+    private var phaseStartedAt = startedAt
+    private var currentPhase = LocalAudioScanPhase.PREPARING
+    private var lastProcessed = 0
+    private var lastTotal = 0
+    private var lastDiscoveredSongs = 0
+    private var lastVisitedDirectories = 0
 
     fun emit(
         phase: LocalAudioScanPhase,
@@ -109,6 +132,7 @@ private class LocalAudioScanProgressEmitter(
         total: Int,
         discoveredSongs: Int,
         visitedDirectories: Int,
+        waitingForProvider: Boolean = false,
         force: Boolean = false
     ) {
         val now = SystemClock.elapsedRealtime()
@@ -116,15 +140,26 @@ private class LocalAudioScanProgressEmitter(
             return
         }
         lastReportedAt = now
+        if (phase != currentPhase) {
+            currentPhase = phase
+            phaseStartedAt = now
+        }
+        lastProcessed = processed
+        lastTotal = total
+        lastDiscoveredSongs = discoveredSongs
+        lastVisitedDirectories = visitedDirectories
         try {
             onProgress(
                 LocalAudioScanProgress(
+                    scanId = scanId,
                     phase = phase,
                     processed = processed,
                     total = total,
                     discoveredSongs = discoveredSongs,
                     visitedDirectories = visitedDirectories,
-                    elapsedMs = now - startedAt
+                    elapsedMs = now - startedAt,
+                    phaseElapsedMs = now - phaseStartedAt,
+                    waitingForProvider = waitingForProvider
                 )
             )
         } catch (error: CancellationException) {
@@ -132,6 +167,18 @@ private class LocalAudioScanProgressEmitter(
         } catch (error: Exception) {
             NPLogger.w(TAG, "scan progress callback failed: ${error.message}")
         }
+    }
+
+    fun emitWaitingHeartbeat(phase: LocalAudioScanPhase) {
+        emit(
+            phase = phase,
+            processed = lastProcessed,
+            total = lastTotal,
+            discoveredSongs = lastDiscoveredSongs,
+            visitedDirectories = lastVisitedDirectories,
+            waitingForProvider = true,
+            force = true
+        )
     }
 
     private companion object {
@@ -184,6 +231,20 @@ internal fun shouldProbeMediaStoreContentReference(
     probeLimit: Int = 256
 ): Boolean {
     return hasResolvedFile || rowOrdinal in 1..probeLimit
+}
+
+internal fun hasUsableMediaStoreContentReference(
+    rowOrdinal: Int,
+    hasResolvedFile: Boolean,
+    probeSucceeded: Boolean,
+    probeLimit: Int = 256
+): Boolean {
+    return hasResolvedFile ||
+        !shouldProbeMediaStoreContentReference(
+            rowOrdinal = rowOrdinal,
+            hasResolvedFile = false,
+            probeLimit = probeLimit
+        ) || probeSucceeded
 }
 
 internal fun shouldDeferExpensiveScanMetadata(
@@ -586,6 +647,15 @@ private data class CompletedScanSongs(
     val songs: List<SongItem>,
     val metadataDeferred: Boolean
 )
+
+private data class MediaStoreQueryResult(
+    val cursor: Cursor,
+    val totalCount: Int
+) : Closeable {
+    override fun close() {
+        cursor.close()
+    }
+}
 
 internal data class ExternalStorageFolderMediaStoreScope(
     val volumeName: String,
@@ -1259,6 +1329,7 @@ internal fun buildNearbySidecarCopyPlans(
 
 object LocalAudioImportManager {
     private const val TAG = "LocalAudioImport"
+    private val scanIdGenerator = AtomicLong(0L)
     private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
         "com.android.externalstorage.documents"
     private const val EXTERNAL_STORAGE_PRIMARY_VOLUME_ID = "primary"
@@ -1269,9 +1340,9 @@ object LocalAudioImportManager {
     private const val COMPLETE_SCAN_BATCH_SIZE = COMPLETE_SCAN_PARALLELISM * 4
     // SAF 在几百首规模就可能因逐首容器解析超过刷新预算，超过阈值先返回
     // 目录行和侧车元数据，嵌入标签在后台或详情页按需读取
-    // 对没有 _data 的 MediaStore 行做有界可读性确认，覆盖常见千首目录
-    // 超出上限的行不会直接发布，后续刷新会继续验证，避免出现不可播放条目
+    // 对没有 _data 的 MediaStore 行做有界可读性确认，超出上限后信任同次查询返回的 content URI
     private const val COMPLETE_SCAN_CONTENT_PROBE_LIMIT = 4_096
+    private const val SCAN_WAIT_HEARTBEAT_MS = 500L
     // 超过小批量后不在刷新路径解析音频容器，避免大曲库拖慢首屏和扫描
     private const val COMPLETE_SCAN_METADATA_DEFER_THRESHOLD = 256
     private const val LOCAL_SIDECAR_INDEX_MAX_ENTRIES = 8_192
@@ -1315,6 +1386,7 @@ object LocalAudioImportManager {
     )
 
     suspend fun importExternalSongs(context: Context, uris: List<Uri>): LocalAudioImportResult = withContext(Dispatchers.IO) {
+        LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context.applicationContext)
         val songs = mutableListOf<SongItem>()
         var failedCount = 0
         var withheldManagedCount = 0
@@ -1459,8 +1531,26 @@ object LocalAudioImportManager {
         mediaStoreScan: suspend (LocalAudioScanProgressEmitter) -> LocalAudioImportResult?
     ): LocalAudioImportResult {
         val scanStartedAt = SystemClock.elapsedRealtime()
-        val progress = LocalAudioScanProgressEmitter(scanStartedAt, onProgress)
+        val progress = LocalAudioScanProgressEmitter(
+            scanId = scanIdGenerator.incrementAndGet(),
+            startedAt = scanStartedAt,
+            onProgress = onProgress
+        )
         NPLogger.d(TAG, "scanFolderSongs start: uri=$folderUri")
+        progress.emit(
+            phase = LocalAudioScanPhase.PREPARING,
+            processed = 0,
+            total = 0,
+            discoveredSongs = 0,
+            visitedDirectories = 0,
+            force = true
+        )
+        awaitScanStage(
+            progress = progress,
+            phase = LocalAudioScanPhase.PREPARING
+        ) {
+            LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context.applicationContext)
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val mediaStoreResult = mediaStoreScan(progress)
@@ -1479,7 +1569,7 @@ object LocalAudioImportManager {
             )
         }
         val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
-            snapshot = loadManagedDownloadSnapshotForScan(context),
+            snapshot = loadManagedDownloadSnapshotForScan(context, progress),
             treeDocumentId = configuredManagedDownloadTreeDocumentId()
         )
 
@@ -1650,15 +1740,107 @@ object LocalAudioImportManager {
     }
 
     private suspend fun loadManagedDownloadSnapshotForScan(
-        context: Context
+        context: Context,
+        progress: LocalAudioScanProgressEmitter? = null
     ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
+        val cachedSnapshot = runCatching {
+            if (progress == null) {
+                ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
+            } else {
+                awaitScanStage(
+                    progress = progress,
+                    phase = LocalAudioScanPhase.READING_DOWNLOAD_INDEX
+                ) {
+                    ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
+                }
+            }
+        }.getOrNull()
+        if (
+            cachedSnapshot != null &&
+                cachedSnapshot.rootEntriesComplete &&
+                cachedSnapshot.sidecarEntriesComplete
+        ) {
+            return cachedSnapshot
+        }
         return runCatching {
-            ManagedDownloadStorage.buildDownloadLibrarySnapshot(
-                context = context,
-                forceRefresh = true
-            )
+            if (progress == null) {
+                ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                    context = context,
+                    forceRefresh = true
+                )
+            } else {
+                awaitScanStage(
+                    progress = progress,
+                    phase = LocalAudioScanPhase.READING_DOWNLOAD_INDEX
+                ) {
+                    ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                        context = context,
+                        forceRefresh = true
+                    )
+                }
+            }
         }.getOrRethrowCancellation { error ->
             NPLogger.w(TAG, "managed download snapshot unavailable for local scan: ${error.message}")
+        }
+    }
+
+    private suspend fun <T> awaitScanStage(
+        progress: LocalAudioScanProgressEmitter,
+        phase: LocalAudioScanPhase,
+        block: suspend () -> T
+    ): T = coroutineScope {
+        progress.emitWaitingHeartbeat(phase)
+        val pending = async(Dispatchers.IO) { block() }
+        while (!pending.isCompleted) {
+            withTimeoutOrNull(SCAN_WAIT_HEARTBEAT_MS) {
+                pending.join()
+            }
+            if (!pending.isCompleted) {
+                progress.emitWaitingHeartbeat(phase)
+            }
+        }
+        pending.await()
+    }
+
+    private suspend fun queryMediaStoreWithProgress(
+        context: Context,
+        uri: Uri,
+        projection: Array<String>,
+        selection: String?,
+        selectionArgs: Array<String>?,
+        progress: LocalAudioScanProgressEmitter
+    ): MediaStoreQueryResult? = awaitScanStage(
+        progress = progress,
+        phase = LocalAudioScanPhase.QUERYING_MEDIA_STORE
+    ) {
+        suspendCancellableCoroutine { continuation ->
+            val cancellationSignal = CancellationSignal()
+            continuation.invokeOnCancellation { cancellationSignal.cancel() }
+            var cursor: Cursor? = null
+            try {
+                cursor = context.contentResolver.query(
+                    uri,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    null,
+                    cancellationSignal
+                )
+                val result = cursor?.let { queriedCursor ->
+                    MediaStoreQueryResult(
+                        cursor = queriedCursor,
+                        totalCount = queriedCursor.count
+                    )
+                }
+                continuation.resume(result) { _, cancelledResult, _ ->
+                    cancelledResult?.close()
+                }
+            } catch (error: Throwable) {
+                cursor?.close()
+                if (continuation.isActive) {
+                    continuation.resumeWithException(error)
+                }
+            }
         }
     }
 
@@ -2000,7 +2182,7 @@ object LocalAudioImportManager {
             .takeIf(String::isNotBlank)
             ?.let { relativePath -> arrayOf("${escapeMediaStoreLikeValue(relativePath)}%") }
         val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
-            snapshot = loadManagedDownloadSnapshotForScan(context),
+            snapshot = loadManagedDownloadSnapshotForScan(context, progress),
             treeDocumentId = configuredManagedDownloadTreeDocumentId()
         )
         val knownSidecarReferences = HashMap<String, LocalKnownSidecarReferences>()
@@ -2018,14 +2200,16 @@ object LocalAudioImportManager {
         var mediaStoreQueryTotalCount = 0
 
         val rawResult = try {
-            context.contentResolver.query(
-                audioUri,
-                projection,
-                selection,
-                selectionArgs,
-                null
-            )?.use { cursor ->
-                val totalCount = cursor.count
+            queryMediaStoreWithProgress(
+                context = context,
+                uri = audioUri,
+                projection = projection,
+                selection = selection,
+                selectionArgs = selectionArgs,
+                progress = progress
+            )?.use { query ->
+                val cursor = query.cursor
+                val totalCount = query.totalCount
                 mediaStoreQueryTotalCount = totalCount.coerceAtLeast(0)
                 val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val titleIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
@@ -2126,12 +2310,18 @@ object LocalAudioImportManager {
                         relativePath = rowRelativePath,
                         displayName = displayName
                     )
-                    val hasReadableMediaStoreReference = resolvedFile != null ||
-                        (shouldProbeMediaStoreContentReference(
-                            rowOrdinal = scannedRowCount,
-                            hasResolvedFile = false,
-                            probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
-                        ) && probeReadableContentReference(context, contentUri))
+                    val shouldProbeContentReference = shouldProbeMediaStoreContentReference(
+                        rowOrdinal = scannedRowCount,
+                        hasResolvedFile = resolvedFile != null,
+                        probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+                    )
+                    val hasReadableMediaStoreReference = hasUsableMediaStoreContentReference(
+                        rowOrdinal = scannedRowCount,
+                        hasResolvedFile = resolvedFile != null,
+                        probeSucceeded = !shouldProbeContentReference ||
+                            probeReadableContentReference(context, contentUri),
+                        probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+                    )
                     if (!shouldKeepMediaStoreAudioRow(
                             hasResolvedFile = resolvedFile != null,
                             hasProviderAudioReference = !safAudioReference.isNullOrBlank(),
@@ -2386,8 +2576,26 @@ object LocalAudioImportManager {
         onProgress: (LocalAudioScanProgress) -> Unit = {}
     ): LocalAudioImportResult = withContext(Dispatchers.IO) {
         val scanStartedAt = SystemClock.elapsedRealtime()
-        val progress = LocalAudioScanProgressEmitter(scanStartedAt, onProgress)
+        val progress = LocalAudioScanProgressEmitter(
+            scanId = scanIdGenerator.incrementAndGet(),
+            startedAt = scanStartedAt,
+            onProgress = onProgress
+        )
         NPLogger.d(TAG, "scanDeviceSongs start")
+        progress.emit(
+            phase = LocalAudioScanPhase.PREPARING,
+            processed = 0,
+            total = 0,
+            discoveredSongs = 0,
+            visitedDirectories = 0,
+            force = true
+        )
+        awaitScanStage(
+            progress = progress,
+            phase = LocalAudioScanPhase.PREPARING
+        ) {
+            LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context.applicationContext)
+        }
         val songs = mutableListOf<SongItem>()
         var failed = 0
         var completed = false
@@ -2398,7 +2606,7 @@ object LocalAudioImportManager {
         var withheldManagedRowCount = 0
         var mediaStoreQueryTotalCount = 0
         val managedSidecarIndex = ManagedMediaStoreSidecarIndex(
-            snapshot = loadManagedDownloadSnapshotForScan(context),
+            snapshot = loadManagedDownloadSnapshotForScan(context, progress),
             treeDocumentId = configuredManagedDownloadTreeDocumentId()
         )
         val indexedManagedSidecarReferences = HashMap<String, LocalKnownSidecarReferences>()
@@ -2423,8 +2631,16 @@ object LocalAudioImportManager {
         val selection = "${MediaStore.Audio.Media.IS_MUSIC}!=0"
 
         runCatching {
-            context.contentResolver.query(audioUri, projection, selection, null, null)?.use { cursor ->
-                mediaStoreQueryTotalCount = cursor.count.coerceAtLeast(0)
+            queryMediaStoreWithProgress(
+                context = context,
+                uri = audioUri,
+                projection = projection,
+                selection = selection,
+                selectionArgs = null,
+                progress = progress
+            )?.use { query ->
+                val cursor = query.cursor
+                mediaStoreQueryTotalCount = query.totalCount.coerceAtLeast(0)
                 val idxId = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val idxTitle = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val idxArtist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -2489,12 +2705,18 @@ object LocalAudioImportManager {
                         withheldManagedRowCount++
                         continue
                     }
-                    val hasReadableMediaStoreReference = resolvedFile != null ||
-                        (shouldProbeMediaStoreContentReference(
-                            rowOrdinal = rawRowCount,
-                            hasResolvedFile = false,
-                            probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
-                        ) && probeReadableContentReference(context, contentUri))
+                    val shouldProbeContentReference = shouldProbeMediaStoreContentReference(
+                        rowOrdinal = rawRowCount,
+                        hasResolvedFile = resolvedFile != null,
+                        probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+                    )
+                    val hasReadableMediaStoreReference = hasUsableMediaStoreContentReference(
+                        rowOrdinal = rawRowCount,
+                        hasResolvedFile = resolvedFile != null,
+                        probeSucceeded = !shouldProbeContentReference ||
+                            probeReadableContentReference(context, contentUri),
+                        probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+                    )
                     if (!shouldKeepMediaStoreAudioRow(
                             hasResolvedFile = resolvedFile != null,
                             hasProviderAudioReference = false,
@@ -4380,7 +4602,11 @@ object LocalAudioImportManager {
         resolvedCopyInfo.sourceLastModifiedAt
             ?.takeIf { it > 0L }
             ?.let { sourceLastModifiedAt ->
-                runCatching { targetFile.setLastModified(sourceLastModifiedAt) }
+                runCatching {
+                    if (!targetFile.setLastModified(sourceLastModifiedAt)) {
+                        throw IOException("无法保留导入文件修改时间: ${targetFile.name}")
+                    }
+                }
                     .onFailure { error ->
                         NPLogger.d(
                             TAG,
@@ -4388,6 +4614,7 @@ object LocalAudioImportManager {
                                 "error=${error.message}"
                         )
                     }
+                    .getOrThrow()
             }
 
         resolvedSourceFile?.let { sourceFile ->

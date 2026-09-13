@@ -77,7 +77,10 @@ internal object ManagedTemporaryWriteArtifacts {
     ): ManagedTemporaryWriteLease? {
         val parentIdentity = parentIdentity(target)
         val displayName = displayNameFor(target, nonce)
-        val identity = TemporaryWriteIdentity(parentIdentity, displayName)
+        val identity = TemporaryWriteIdentity(
+            parentIdentity = parentIdentity,
+            writeToken = requireNotNull(managedWriteToken(displayName))
+        )
         return if (activeWrites.add(identity)) {
             ManagedTemporaryWriteLease(parentIdentity, displayName)
         } else {
@@ -119,7 +122,8 @@ internal object ManagedTemporaryWriteArtifacts {
         }) {
             "temporary write nonce"
         }
-        return targetNamePrefix(target) + normalizedNonce + TEMPORARY_WRITE_NAME_SUFFIX
+        return targetNamePrefix(target) + normalizedNonce + TEMPORARY_WRITE_NAME_SUFFIX +
+            providerCompatibleExtension(target)
     }
 
     fun planTerminalCleanup(
@@ -182,21 +186,32 @@ internal object ManagedTemporaryWriteArtifacts {
     }
 
     internal fun release(parentIdentity: String, displayName: String) {
-        activeWrites.remove(TemporaryWriteIdentity(parentIdentity, displayName))
+        val writeToken = managedWriteToken(displayName) ?: return
+        activeWrites.remove(TemporaryWriteIdentity(parentIdentity, writeToken))
+    }
+
+    internal fun isActiveSafWrite(parentUri: String, displayName: String): Boolean {
+        return isActive(parentIdentity = "saf:$parentUri", displayName = displayName)
     }
 
     private fun isManagedNameForTarget(displayName: String, targetPrefix: String): Boolean {
         return managedTargetPrefix(displayName) == targetPrefix
     }
 
-    private fun managedTargetPrefix(displayName: String): String? {
+    internal fun managedTargetPrefix(displayName: String): String? {
+        val writeToken = managedWriteToken(displayName) ?: return null
         val targetPrefixLength = TEMPORARY_WRITE_NAME_PREFIX.length +
             TEMPORARY_WRITE_TARGET_FINGERPRINT_LENGTH + 1
-        val expectedLength = targetPrefixLength +
+        return writeToken.substring(0, targetPrefixLength)
+    }
+
+    internal fun managedWriteToken(displayName: String): String? {
+        val targetPrefixLength = TEMPORARY_WRITE_NAME_PREFIX.length +
+            TEMPORARY_WRITE_TARGET_FINGERPRINT_LENGTH + 1
+        val tokenLength = targetPrefixLength +
             TEMPORARY_WRITE_NONCE_LENGTH + TEMPORARY_WRITE_NAME_SUFFIX.length
-        if (displayName.length != expectedLength ||
-            !displayName.startsWith(TEMPORARY_WRITE_NAME_PREFIX) ||
-            !displayName.endsWith(TEMPORARY_WRITE_NAME_SUFFIX)
+        if (displayName.length < tokenLength ||
+            !displayName.startsWith(TEMPORARY_WRITE_NAME_PREFIX)
         ) {
             return null
         }
@@ -211,14 +226,54 @@ internal object ManagedTemporaryWriteArtifacts {
         }) {
             return null
         }
-        return displayName.substring(0, targetPrefixLength)
+        val token = displayName.substring(0, tokenLength)
+        if (!token.endsWith(TEMPORARY_WRITE_NAME_SUFFIX)) return null
+        val providerSuffix = displayName.substring(tokenLength)
+        if (providerSuffix.isNotEmpty() && !isProviderManagedSuffix(providerSuffix)) {
+            return null
+        }
+        return token
     }
 
     private fun isActive(parentIdentity: String, displayName: String): Boolean {
-        return TemporaryWriteIdentity(parentIdentity, displayName) in activeWrites
+        val writeToken = managedWriteToken(displayName) ?: return false
+        return TemporaryWriteIdentity(parentIdentity, writeToken) in activeWrites
     }
 
-    private fun targetNamePrefix(target: StorageTarget): String {
+    private fun providerCompatibleExtension(target: StorageTarget): String {
+        if (target !is StorageTarget.SafTarget) return ""
+        val extension = target.displayName
+            .substringAfterLast('.', missingDelimiterValue = "")
+            .lowercase()
+        return if (
+            extension.length in 1..16 &&
+                extension.all { character -> character in 'a'..'z' || character in '0'..'9' }
+        ) {
+            ".$extension"
+        } else {
+            ""
+        }
+    }
+
+    private fun isProviderManagedSuffix(suffix: String): Boolean {
+        if (suffix.length > 45) return false
+        val numberPattern = Regex(""" \([1-9][0-9]{0,3}\)""")
+        val numberMatches = numberPattern.findAll(suffix).toList()
+        if (numberMatches.size > 1) return false
+        val extensions = numberPattern.replace(suffix, "")
+        if (extensions.isEmpty()) return numberMatches.size == 1
+        val parts = extensions.split('.').drop(1)
+        return extensions.startsWith('.') &&
+            parts.size in 1..2 &&
+            parts.all { part ->
+                part.length in 1..16 && part.all { character ->
+                    character in 'a'..'z' || character in 'A'..'Z' ||
+                        character in '0'..'9'
+                }
+            }
+    }
+
+    internal fun targetNamePrefix(target: StorageTarget): String {
         val fingerprint = sha256(parentIdentity(target) + "\u0000" + targetName(target))
             .take(TEMPORARY_WRITE_TARGET_FINGERPRINT_LENGTH)
         return "${TEMPORARY_WRITE_NAME_PREFIX}${fingerprint}_"
@@ -278,7 +333,7 @@ internal object ManagedTemporaryWriteArtifacts {
 
     private data class TemporaryWriteIdentity(
         val parentIdentity: String,
-        val displayName: String
+        val writeToken: String
     )
 }
 

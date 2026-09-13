@@ -45,4 +45,20 @@
         <item quantity="one">Restored playlist "%2$s"</item>
         <item quantity="other">Restored %1$d playlists</item>
     </plurals>
+    <plurals name="local_playlist_scan_progress_preparing">
+        <item quantity="one">Preparing the scan, waiting for %d second</item>
+        <item quantity="other">Preparing the scan, waiting for %d seconds</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_download_index">
+        <item quantity="one">Reading the download directory index, waiting for %d second</item>
+        <item quantity="other">Reading the download directory index, waiting for %d seconds</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_media_store">
+        <item quantity="one">Reading the system media library, waiting for %d second</item>
+        <item quantity="other">Reading the system media library, waiting for %d seconds</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_completed">
+        <item quantity="one">Scan complete, found %d song</item>
+        <item quantity="other">Scan complete, found %d songs</item>
+    </plurals>
 </resources>
