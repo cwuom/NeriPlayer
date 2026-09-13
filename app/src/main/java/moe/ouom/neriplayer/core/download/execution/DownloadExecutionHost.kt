@@ -2161,7 +2161,9 @@ class DefaultDownloadExecutionHost(
                     // 每次只填满当前剩余容量。collectPumpCandidates 会保留页内
                     // 未选中的请求，因此下一轮不会跳过任何 durable operation
                     while (!queueExhausted) {
-                        val configuredCapacity = configuredDownloadParallelism(appContext)
+                        // 网络 permit 严格限制真实传输数；这里使用带少量预热名额的
+                        // 调度窗口，让源解析和文件准备不会挤占用户配置的传输槽位
+                        val configuredCapacity = configuredDispatchWindow(appContext)
                         val occupancy = transferLaneOccupancy(appContext)
                         val laneHasCapacity = occupancy < configuredCapacity
                         val mayProbeBlockedLane = !laneHasCapacity &&
@@ -2196,7 +2198,7 @@ class DefaultDownloadExecutionHost(
                             val reservationToken = reserveTransferSlot(
                                 operationId = request.operationId,
                                 attemptId = request.attemptId,
-                                capacity = configuredDownloadParallelism(appContext)
+                                capacity = configuredCapacity
                             ) ?: run {
                                 // 外部 UIDT/Worker 可能在候选扫描后先占满槽位。不要
                                 // 把这首标记成已尝试，否则槽位释放后本轮无法补位；

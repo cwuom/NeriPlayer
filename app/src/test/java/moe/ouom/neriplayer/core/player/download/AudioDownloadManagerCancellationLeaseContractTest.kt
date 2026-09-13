@@ -37,6 +37,30 @@ class AudioDownloadManagerCancellationLeaseContractTest {
     }
 
     @Test
+    fun `durable clear fence owns cancelled artifact convergence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadManager.kt"
+        ).readText()
+        val attemptFailureBody = methodBody(source, "handleDownloadAttemptFailure")
+        val cancellationBody = methodBody(source, "handleDownloadSongCancellation")
+        val ownershipBody = methodBody(source, "isCancellationCleanupOwnedByClearFence")
+
+        listOf(attemptFailureBody, cancellationBody).forEach { body ->
+            assertTrue(body.contains("isCancellationCleanupOwnedByClearFence("))
+            assertTrue(body.contains("!clearFenceOwnsCancellationCleanup"))
+            assertTrue(
+                body.contains(
+                    "if (!preserveCancellationArtifacts && " +
+                        "!clearFenceOwnsCancellationCleanup)"
+                )
+            )
+        }
+        assertTrue(ownershipBody.contains("!preserveCancellationArtifacts"))
+        assertTrue(ownershipBody.contains("isDownloadClearFenceBlockingWork("))
+    }
+
+    @Test
     fun `pending cleanup holds a non cancellable delete lease`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +

@@ -2086,6 +2086,18 @@ object AudioDownloadManager {
         )
     }
 
+    private fun isCancellationCleanupOwnedByClearFence(
+        songKey: String,
+        operationId: String,
+        preserveCancellationArtifacts: Boolean
+    ): Boolean {
+        return !preserveCancellationArtifacts &&
+            isDownloadClearFenceBlockingWork(
+                songKey = songKey,
+                operationId = operationId
+            )
+    }
+
     private suspend fun buildCorePendingMetadata(
         context: Context,
         song: SongItem,
@@ -2372,8 +2384,14 @@ object AudioDownloadManager {
                 songCancelled = GlobalDownloadManager.isSongCancelled(songKey),
                 networkPolicyPaused = preserveArtifacts
             )
+        val clearFenceOwnsCancellationCleanup = isCancellationCleanupOwnedByClearFence(
+            songKey = songKey,
+            operationId = effectiveOperationId,
+            preserveCancellationArtifacts = preserveCancellationArtifacts
+        )
         if (
             !preserveCancellationArtifacts &&
+            !clearFenceOwnsCancellationCleanup &&
             shouldRollbackCancelledAudio(state.coreCommitTracker.phase)
         ) {
             if (!state.cancellationCleanupAttempted) {
@@ -2424,7 +2442,7 @@ object AudioDownloadManager {
             expectedAttemptId = attemptId,
             expectedOperationId = effectiveOperationId
         )
-        if (!preserveCancellationArtifacts) {
+        if (!preserveCancellationArtifacts && !clearFenceOwnsCancellationCleanup) {
             clearSongCancelled(songKey)
         }
         clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
@@ -3074,6 +3092,11 @@ object AudioDownloadManager {
                 songCancelled = GlobalDownloadManager.isSongCancelled(songKey),
                 networkPolicyPaused = preserveArtifacts
             )
+        val clearFenceOwnsCancellationCleanup = isCancellationCleanupOwnedByClearFence(
+            songKey = songKey,
+            operationId = effectiveOperationId,
+            preserveCancellationArtifacts = preserveCancellationArtifacts
+        )
         if (
             error is java.util.concurrent.CancellationException ||
                 _isCancelled.value ||
@@ -3088,6 +3111,7 @@ object AudioDownloadManager {
             NPLogger.d(TAG, "下载已取消: ${song.name}")
             if (
                 !preserveCancellationArtifacts &&
+                    !clearFenceOwnsCancellationCleanup &&
                     shouldRollbackCancelledAudio(state.coreCommitTracker.phase)
             ) {
                 state.cancellationCleanupAttempted = true
@@ -3139,7 +3163,7 @@ object AudioDownloadManager {
                 expectedAttemptId = attemptId,
                 expectedOperationId = effectiveOperationId
             )
-            if (!preserveCancellationArtifacts) {
+            if (!preserveCancellationArtifacts && !clearFenceOwnsCancellationCleanup) {
                 clearSongCancelled(songKey)
             }
             clearCompletedAudioReference(songKey, operationId = effectiveOperationId)

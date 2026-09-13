@@ -380,9 +380,8 @@ class DownloadExecutionHostTest {
                 }
             },
             sdkInt = 28,
-            // transfer lane capacity is the configured parallelism; this fixture needs
-            // three concurrent transfers to exercise sliding-window refill
-            downloadParallelismProvider = { 3 }
+            // 一个真实传输槽位加两个准备名额，第四首必须在首项完成后立即补入
+            downloadParallelismProvider = { 1 }
         )
 
         val pump = async { host.pump(context) }
@@ -403,6 +402,55 @@ class DownloadExecutionHostTest {
         assertEquals(DownloadExecutionPumpResult.Completed, pump.await())
         requests.forEach { request ->
             assertEquals("COMPLETED", store.currentState(context, request.operationId))
+        }
+    }
+
+    @Test
+    fun `pump keeps preparation headroom warm for six and eight transfer limits`() = runTest {
+        listOf(6, 8).forEach { networkParallelism ->
+            val context = mockContext()
+            val journal = InMemoryDownloadExecutionOperationJournal()
+            val store = DownloadExecutionOperationStore { journal }
+            val dispatchWindow = resolveDownloadDispatchWindow(networkParallelism)
+            val requests = (0 until dispatchWindow).map { index ->
+                DownloadExecutionRequest(
+                    operationId = "operation-pump-headroom-$networkParallelism-$index",
+                    song = sampleSong().copy(
+                        id = 50_050L + networkParallelism * 100L + index
+                    )
+                )
+            }
+            requests.forEach { request -> store.save(context, request) }
+            val started = requests.associate { request ->
+                request.operationId to CompletableDeferred<Unit>()
+            }
+            val release = CompletableDeferred<Unit>()
+            val host = DefaultDownloadExecutionHost(
+                operationStore = store,
+                entryPoint = DownloadOperationEntryPoint { _, request ->
+                    started.getValue(request.operationId).complete(Unit)
+                    release.await()
+                    DownloadExecutionResult.Accepted
+                },
+                sdkInt = 28,
+                downloadParallelismProvider = { networkParallelism }
+            )
+
+            val pump = async { host.pump(context) }
+            try {
+                withContext(Dispatchers.Default) {
+                    withTimeout(2_000L) {
+                        started.values.forEach { signal -> signal.await() }
+                    }
+                }
+                assertFalse(pump.isCompleted)
+            } finally {
+                release.complete(Unit)
+            }
+            assertEquals(DownloadExecutionPumpResult.Completed, pump.await())
+            requests.forEach { request ->
+                assertEquals("COMPLETED", store.currentState(context, request.operationId))
+            }
         }
     }
 
@@ -442,12 +490,17 @@ class DownloadExecutionHostTest {
             downloadParallelismProvider = { 1 }
         )
 
-        val peerToken = reserve.invoke(
-            host,
-            "operation-pump-reservation-peer",
-            31L,
-            1
-        ) as Long
+        val dispatchWindow = resolveDownloadDispatchWindow(1)
+        val peerTokens = (0 until dispatchWindow).map { index ->
+            checkNotNull(
+                reserve.invoke(
+                    host,
+                    "operation-pump-reservation-peer-$index",
+                    31L + index,
+                    dispatchWindow
+                ) as? Long
+            )
+        }
 
         assertEquals(
             DownloadExecutionPumpResult.ContinueSoon,
@@ -455,7 +508,9 @@ class DownloadExecutionHostTest {
         )
         assertTrue(executed.isEmpty())
 
-        release.invoke(host, "operation-pump-reservation-peer", peerToken)
+        peerTokens.forEachIndexed { index, peerToken ->
+            release.invoke(host, "operation-pump-reservation-peer-$index", peerToken)
+        }
         assertEquals(DownloadExecutionPumpResult.Completed, host.pump(context))
         assertEquals(listOf(request.operationId), executed)
         assertEquals("COMPLETED", store.currentState(context, request.operationId))
@@ -482,6 +537,11 @@ class DownloadExecutionHostTest {
         host = DefaultDownloadExecutionHost(
             operationStore = store,
             entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+                if (request.operationId == requests[2].operationId) {
+                    // 测试入口不经过真实网络 permit，先等待两个物理槽位完成交接
+                    firstStarted.await()
+                    secondStarted.await()
+                }
                 val token = host.onTransferStarted(
                     context = entryContext,
                     operationId = request.operationId,
@@ -590,6 +650,8 @@ class DownloadExecutionHostTest {
                     firstCommitted.complete(Unit)
                     secondStarted.await()
                 } else {
+                    // 测试入口不经过真实网络 permit，这里模拟单槽位许可的交接顺序
+                    firstCommitted.await()
                     val token = checkNotNull(
                         host.onTransferStarted(
                             context = entryContext,
@@ -969,6 +1031,7 @@ class DownloadExecutionHostTest {
         store.save(context, first)
         store.save(context, second)
         val firstStarted = CompletableDeferred<Unit>()
+        val firstCommitted = CompletableDeferred<Unit>()
         val secondStarted = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         lateinit var host: DefaultDownloadExecutionHost
@@ -993,6 +1056,7 @@ class DownloadExecutionHostTest {
                             transferOwnerToken = ownerToken
                         )
                     )
+                    firstCommitted.complete(Unit)
                     releaseFirst.await()
                 } else {
                     secondStarted.complete(Unit)
@@ -1011,11 +1075,13 @@ class DownloadExecutionHostTest {
             downloadParallelismProvider = { 1 }
         )
 
+        val firstExecution = async { host.execute(context, first.operationId) }
+        firstStarted.await()
+        firstCommitted.await()
         val pump = async { host.pump(context) }
         try {
             withContext(Dispatchers.Default) {
                 withTimeout(2_000L) {
-                    firstStarted.await()
                     secondStarted.await()
                 }
             }
@@ -1023,6 +1089,7 @@ class DownloadExecutionHostTest {
         } finally {
             releaseFirst.complete(Unit)
         }
+        assertEquals(DownloadExecutionResult.Accepted, firstExecution.await())
         assertEquals(DownloadExecutionPumpResult.Completed, pump.await())
         assertEquals("COMPLETED", store.currentState(context, first.operationId))
         assertEquals("COMPLETED", store.currentState(context, second.operationId))
