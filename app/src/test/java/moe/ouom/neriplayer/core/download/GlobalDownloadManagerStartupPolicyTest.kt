@@ -2539,7 +2539,7 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `clear owner capture uses identity projection before storage cleanup`() {
+    fun `clear owner capture includes orphan private staging before storage cleanup`() {
         val managerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -2548,9 +2548,9 @@ class GlobalDownloadManagerStartupPolicyTest {
         ).substringBefore("private suspend fun runFastTaskClearPhase")
         assertTrue(captureBody.contains("listCancellationIdentitiesAnyLibrary"))
         assertFalse(captureBody.contains("listCancellationCandidatesAnyLibrary"))
-        assertFalse(captureBody.contains("listPendingResumableDownloads"))
+        assertTrue(captureBody.contains("listPendingResumableDownloads"))
         assertFalse(captureBody.contains("DOWNLOAD_CLEAR_OWNERSHIP_CAPTURE_TIMEOUT_MS"))
-        assertTrue(captureBody.contains("pendingWorkingDownloads = emptyList()"))
+        assertTrue(captureBody.contains("pendingWorkingDownloads = pendingWorkingDownloads"))
     }
 
     @Test

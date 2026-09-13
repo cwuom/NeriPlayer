@@ -20969,10 +20969,13 @@ object GlobalDownloadManager {
             .filter { identity ->
                 clearStartedAtMs <= 0L || identity.createdAtMs <= clearStartedAtMs
             }
+        // 旧版本可能只留下私有 staging 恢复清单而没有 Room operation
+        // 持久准入栅栏已经生效，此时枚举到的工作文件都属于本次清空前的任务
+        val pendingWorkingDownloads = ManagedDownloadStorage
+            .listPendingResumableDownloads(context)
         return DownloadClearOwnershipCapture(
             operationIdentities = operationIdentities,
-            // pending 目录由后续清理阶段统一扫描，避免 owner 捕获被 SAF I/O 拖住
-            pendingWorkingDownloads = emptyList()
+            pendingWorkingDownloads = pendingWorkingDownloads
         )
     }
 
