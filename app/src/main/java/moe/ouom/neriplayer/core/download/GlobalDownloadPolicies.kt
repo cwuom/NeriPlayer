@@ -28,6 +28,11 @@ internal fun shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount: Int)
     return recoveredArtifactCount > 0
 }
 
+/** 批量任务复用共享快照，避免每首歌在真正传输前串行扫描整个目录 */
+internal fun shouldForceFreshStartStorageScan(isBatchOperation: Boolean): Boolean {
+    return !isBatchOperation
+}
+
 internal fun shouldRetainDownloadClearVisibility(
     retainInMemoryState: Boolean,
     durableFenceActive: Boolean

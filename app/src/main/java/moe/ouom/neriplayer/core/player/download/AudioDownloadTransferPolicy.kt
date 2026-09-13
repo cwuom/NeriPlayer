@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
  */
 internal object AudioDownloadTransferPolicy {
     private const val TAG = "NERI-Downloader"
+    internal const val SOURCE_RESOLVE_MAX_CONFIRMED_MISSES = 2
     private const val YOUTUBE_DOWNLOAD_SHARED_DIRECT_RESOLVE_TIMEOUT_MS = 3_500L
     private const val YOUTUBE_DOWNLOAD_FRESH_DIRECT_RESOLVE_TIMEOUT_MS = 18_000L
     private const val YOUTUBE_DOWNLOAD_SHARED_PLAYABLE_RESOLVE_TIMEOUT_MS = 6_000L
@@ -406,8 +407,19 @@ internal object AudioDownloadTransferPolicy {
         }
     }
 
+    internal fun shouldStopRetryingMissingDownloadSource(
+        confirmedMissCount: Int,
+        hasConfirmedInternetAccess: Boolean
+    ): Boolean {
+        return hasConfirmedInternetAccess &&
+            confirmedMissCount >= SOURCE_RESOLVE_MAX_CONFIRMED_MISSES
+    }
+
     internal fun shouldRetryTransientDownloadFailure(error: Throwable): Boolean {
         if (error is java.util.concurrent.CancellationException) {
+            return false
+        }
+        if (error is DownloadSourceUnavailableException) {
             return false
         }
         if (error is DownloadTransferStalledException) {

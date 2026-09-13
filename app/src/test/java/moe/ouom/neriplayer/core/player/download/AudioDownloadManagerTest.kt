@@ -1431,6 +1431,76 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `confirmed missing source stops after two resolutions but offline remains retryable`() {
+        assertFalse(
+            AudioDownloadManager.shouldStopRetryingMissingDownloadSource(
+                confirmedMissCount = 1,
+                hasConfirmedInternetAccess = true
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldStopRetryingMissingDownloadSource(
+                confirmedMissCount = 2,
+                hasConfirmedInternetAccess = true
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldStopRetryingMissingDownloadSource(
+                confirmedMissCount = 9,
+                hasConfirmedInternetAccess = false
+            )
+        )
+    }
+
+    @Test
+    fun `netease download lookup keeps explicit no permission separate from transient misses`() {
+        val unavailable = AudioDownloadSourceResolver.parseNeteaseDownloadLookup(
+            """
+                {
+                  "code": 200,
+                  "data": [{
+                    "url": null,
+                    "code": 404,
+                    "fee": 1,
+                    "freeTrialPrivilege": { "cannotListenReason": 1 }
+                  }]
+                }
+            """.trimIndent()
+        )
+        val missing = AudioDownloadSourceResolver.parseNeteaseDownloadLookup(
+            """{"code": 503, "data": []}"""
+        )
+
+        assertEquals(AudioDownloadSourceResolver.NeteaseDownloadLookup.ExplicitlyUnavailable, unavailable)
+        assertEquals(AudioDownloadSourceResolver.NeteaseDownloadLookup.Missing, missing)
+        assertFalse(
+            AudioDownloadManager.shouldRetryTransientDownloadFailure(
+                DownloadSourceUnavailableException("no permission")
+            )
+        )
+    }
+
+    @Test
+    fun `netease download lookup preserves resolved size type and secure url`() {
+        val result = AudioDownloadSourceResolver.parseNeteaseDownloadLookup(
+            """
+                {
+                  "code": 200,
+                  "data": [{
+                    "url": "http://m801.music.126.net/demo.flac",
+                    "type": "FLAC",
+                    "size": 3758751
+                  }]
+                }
+            """.trimIndent()
+        ) as AudioDownloadSourceResolver.NeteaseDownloadLookup.Resolved
+
+        assertEquals("https://m801.music.126.net/demo.flac", result.source.url)
+        assertEquals("flac", result.source.fileExtensionHint)
+        assertEquals(3_758_751L, result.source.contentLength)
+    }
+
+    @Test
     fun `transient download failure detection only retries unstable network failures`() {
         assertTrue(
             AudioDownloadManager.shouldRetryTransientDownloadFailure(

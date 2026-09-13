@@ -728,6 +728,55 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `task clear hands host artifact lease cleanup to durable convergence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val handoffBody = source.substringAfter(
+            "private fun handOffDownloadArtifactLeaseToTaskClear("
+        ).substringBefore("private suspend fun releaseDownloadArtifactClaim(")
+        val ownershipLossBody = source.substringAfter(
+            "private suspend fun releaseDownloadArtifactAfterExecutionOwnershipLoss("
+        ).substringBefore("private suspend fun removeManagedDownloadArtifacts(")
+        val startBody = source.substringAfter("private suspend fun startDownloadConfirmed(")
+            .substringBefore("private suspend fun requestStorageExhaustionCancellation(")
+        val cancellationBody = startBody.substringAfter("catch (_: CancellationException)")
+            .substringBefore("catch (error: Exception)")
+        val unfinishedLeaseBody = source.substringAfter(
+            "private suspend fun settleUnfinishedDownloadArtifactLease("
+        ).substringBefore("fun startBatchDownload(context")
+
+        assertTrue(handoffBody.contains("hasPersistedFence(context)"))
+        assertTrue(handoffBody.contains("isTaskProgressActive(context)"))
+        assertTrue(handoffBody.contains("isBlocked("))
+        assertTrue(handoffBody.contains("managedDownloadArtifactLeases.remove("))
+
+        val ownershipHandoffIndex = ownershipLossBody.indexOf(
+            "handOffDownloadArtifactLeaseToTaskClear("
+        )
+        val ownershipStateReadIndex = ownershipLossBody.indexOf("val operationState =")
+        assertTrue(ownershipLossBody.contains("!boundedRoomWait"))
+        assertTrue(ownershipHandoffIndex >= 0)
+        assertTrue(ownershipStateReadIndex > ownershipHandoffIndex)
+
+        val cancellationHandoffIndex = cancellationBody.indexOf(
+            "handOffDownloadArtifactLeaseToTaskClear("
+        )
+        val cancellationReleaseIndex = cancellationBody.indexOf(
+            "releaseDownloadArtifactClaim("
+        )
+        assertTrue(cancellationHandoffIndex >= 0)
+        assertTrue(cancellationReleaseIndex > cancellationHandoffIndex)
+
+        val unfinishedHandoffIndex = unfinishedLeaseBody.indexOf(
+            "handOffDownloadArtifactLeaseToTaskClear("
+        )
+        val unfinishedStateReadIndex = unfinishedLeaseBody.indexOf("val operationState =")
+        assertTrue(unfinishedHandoffIndex >= 0)
+        assertTrue(unfinishedStateReadIndex > unfinishedHandoffIndex)
+    }
+
+    @Test
     fun `empty scan coverage reuses snapshot references instead of probing each song`() {
         val audio = ManagedDownloadStorage.StoredEntry(
             name = "song.mp3",

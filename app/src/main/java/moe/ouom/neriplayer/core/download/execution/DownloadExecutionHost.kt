@@ -1980,7 +1980,9 @@ class DefaultDownloadExecutionHost(
                             returnedResult = DownloadExecutionResult.Retry
                         }
                     }
-                    DownloadExecutionResult.MissingOperation -> Unit
+                    DownloadExecutionResult.MissingOperation -> {
+                        operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                    }
                 }
             }
             if (clearBlockedResult) {

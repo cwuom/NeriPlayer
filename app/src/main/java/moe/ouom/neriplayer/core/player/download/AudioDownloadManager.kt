@@ -1091,6 +1091,7 @@ object AudioDownloadManager {
         val coreCommitTracker: DownloadCoreCommitTracker = DownloadCoreCommitTracker(),
         var cancellationCleanupAttempted: Boolean = false,
         var attemptNumber: Int = 1,
+        var confirmedSourceMissCount: Int = 0,
         var activeTransportKind: DownloadTransportKind? = null,
         var activeWorkingFileName: String? = null,
         var resumeMetadataAvailable: Boolean = true,
@@ -2567,6 +2568,20 @@ object AudioDownloadManager {
             operationId = effectiveOperationId
         )
         if (resolved == null) {
+            val hasConfirmedInternetAccess = context.hasConfirmedInternetAccess()
+            if (hasConfirmedInternetAccess) {
+                state.confirmedSourceMissCount++
+            }
+            if (shouldStopRetryingMissingDownloadSource(
+                    confirmedMissCount = state.confirmedSourceMissCount,
+                    hasConfirmedInternetAccess = hasConfirmedInternetAccess
+                )
+            ) {
+                throw DownloadSourceUnavailableException(
+                    "download source remained unavailable after " +
+                        "${state.confirmedSourceMissCount} confirmed attempts: ${song.name}"
+                )
+            }
             if (state.attemptNumber >= TRANSIENT_DOWNLOAD_MAX_ATTEMPTS) {
                 throw IOException(context.getString(R.string.download_no_url, song.name))
             }
@@ -2586,8 +2601,11 @@ object AudioDownloadManager {
             )
             NPLogger.w(
                 TAG,
-                "下载链接暂时不可用，准备重试(${state.attemptNumber}/$TRANSIENT_DOWNLOAD_MAX_ATTEMPTS): " +
-                    song.name
+                "下载链接暂时不可用，准备重试: song=${song.name}, " +
+                    "confirmedMiss=${state.confirmedSourceMissCount}/" +
+                    "${AudioDownloadTransferPolicy.SOURCE_RESOLVE_MAX_CONFIRMED_MISSES}, " +
+                    "attempt=${state.attemptNumber}/$TRANSIENT_DOWNLOAD_MAX_ATTEMPTS, " +
+                    "confirmedInternet=$hasConfirmedInternetAccess"
             )
             if (isYouTubeMusic) {
                 state.forceRefreshYouTubeSource = true
@@ -2604,6 +2622,7 @@ object AudioDownloadManager {
             state.attemptNumber++
             return false
         }
+        state.confirmedSourceMissCount = 0
         state.forceRefreshYouTubeSource = false
         DownloadOperationTrace.mark(
             traceToken,
@@ -4092,6 +4111,14 @@ object AudioDownloadManager {
 
     internal fun resolveTransientDownloadRetryDelayMs(attemptNumber: Int): Long =
         AudioDownloadTransferPolicy.resolveTransientDownloadRetryDelayMs(attemptNumber)
+
+    internal fun shouldStopRetryingMissingDownloadSource(
+        confirmedMissCount: Int,
+        hasConfirmedInternetAccess: Boolean
+    ): Boolean = AudioDownloadTransferPolicy.shouldStopRetryingMissingDownloadSource(
+        confirmedMissCount = confirmedMissCount,
+        hasConfirmedInternetAccess = hasConfirmedInternetAccess
+    )
 
     internal fun shouldRetryTransientDownloadFailure(error: Throwable): Boolean =
         AudioDownloadTransferPolicy.shouldRetryTransientDownloadFailure(error)

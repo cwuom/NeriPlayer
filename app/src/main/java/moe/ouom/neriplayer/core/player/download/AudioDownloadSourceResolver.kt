@@ -13,8 +13,10 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeWebRemixDirectMissingPoToken
+import java.io.IOException
 import java.net.URLConnection
-import org.json.JSONObject
+
+internal class DownloadSourceUnavailableException(message: String) : IOException(message)
 
 /**
  * 统一处理各平台来源解析
@@ -24,32 +26,42 @@ import org.json.JSONObject
 internal object AudioDownloadSourceResolver {
     private const val TAG = "NERI-Downloader"
 
+    internal sealed interface NeteaseDownloadLookup {
+        data class Resolved(
+            val source: AudioDownloadManager.ResolvedDownloadSource
+        ) : NeteaseDownloadLookup
+
+        data object ExplicitlyUnavailable : NeteaseDownloadLookup
+        data object Missing : NeteaseDownloadLookup
+    }
+
     internal suspend fun resolveNetease(
         songId: Long,
         preferredQuality: String
     ): AudioDownloadManager.ResolvedDownloadSource? {
-        val raw = AppContainer.neteaseClient.getSongDownloadUrl(
-            songId,
-            level = preferredQuality
-        )
-        return try {
-            val root = JSONObject(raw)
-            if (root.optInt("code") != 200) {
-                return tryWeapiFallback(songId, preferredQuality)
-            }
-            val data = NeteasePlaybackResponseParser.parseDownloadInfo(raw)
-                ?: return tryWeapiFallback(songId, preferredQuality)
-            val url = data.url
-            val type = data.type.orEmpty()
-            AudioDownloadManager.ResolvedDownloadSource(
-                url = ensureHttps(url),
-                mimeType = guessMimeFromUrl(url),
-                fileExtensionHint = type.lowercase().ifBlank { extFromUrl(url) },
-                contentLength = data.contentLength
+        val primary = parseNeteaseDownloadLookup(
+            AppContainer.neteaseClient.getSongDownloadUrl(
+                songId,
+                level = preferredQuality
             )
-        } catch (_: Exception) {
-            tryWeapiFallback(songId, preferredQuality)
+        )
+        if (primary is NeteaseDownloadLookup.Resolved) {
+            return primary.source
         }
+
+        val fallback = resolveWeapiFallback(songId, preferredQuality)
+        if (fallback is NeteaseDownloadLookup.Resolved) {
+            return fallback.source
+        }
+        if (
+            primary == NeteaseDownloadLookup.ExplicitlyUnavailable ||
+                fallback == NeteaseDownloadLookup.ExplicitlyUnavailable
+        ) {
+            throw DownloadSourceUnavailableException(
+                "netease download source is explicitly unavailable: songId=$songId"
+            )
+        }
+        return null
     }
 
     private fun bitrateForQuality(level: String): Int = when (level.lowercase()) {
@@ -60,25 +72,50 @@ internal object AudioDownloadSourceResolver {
         else -> 320000
     }
 
-    private fun tryWeapiFallback(
+    private fun resolveWeapiFallback(
         songId: Long,
         level: String
-    ): AudioDownloadManager.ResolvedDownloadSource? {
-        return try {
-            val raw = AppContainer.neteaseClient.getSongUrl(
+    ): NeteaseDownloadLookup {
+        return parseNeteaseDownloadLookup(
+            AppContainer.neteaseClient.getSongUrl(
                 songId,
                 bitrate = bitrateForQuality(level)
             )
-            val data = NeteasePlaybackResponseParser.parseDownloadInfo(raw) ?: return null
-            val finalUrl = ensureHttps(data.url)
-            AudioDownloadManager.ResolvedDownloadSource(
-                url = finalUrl,
-                mimeType = guessMimeFromUrl(finalUrl),
-                fileExtensionHint = extFromUrl(finalUrl),
-                contentLength = data.contentLength
+        )
+    }
+
+    internal fun parseNeteaseDownloadLookup(rawResponse: String): NeteaseDownloadLookup {
+        return when (
+            val parsed = NeteasePlaybackResponseParser.parsePlayback(
+                rawResponse = rawResponse,
+                originalDurationMs = 0L
             )
-        } catch (_: Exception) {
-            null
+        ) {
+            is NeteasePlaybackResponseParser.PlaybackResult.Success -> {
+                val finalUrl = ensureHttps(parsed.url)
+                NeteaseDownloadLookup.Resolved(
+                    AudioDownloadManager.ResolvedDownloadSource(
+                        url = finalUrl,
+                        mimeType = guessMimeFromUrl(finalUrl),
+                        fileExtensionHint = parsed.type
+                            ?.lowercase()
+                            ?.takeIf(String::isNotBlank)
+                            ?: extFromUrl(finalUrl),
+                        contentLength = parsed.contentLength
+                    )
+                )
+            }
+
+            is NeteasePlaybackResponseParser.PlaybackResult.Failure -> {
+                if (parsed.reason == NeteasePlaybackResponseParser.FailureReason.NO_PERMISSION) {
+                    NeteaseDownloadLookup.ExplicitlyUnavailable
+                } else {
+                    NeteaseDownloadLookup.Missing
+                }
+            }
+
+            NeteasePlaybackResponseParser.PlaybackResult.RequiresLogin ->
+                NeteaseDownloadLookup.Missing
         }
     }
 
