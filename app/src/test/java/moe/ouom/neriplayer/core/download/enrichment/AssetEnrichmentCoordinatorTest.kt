@@ -330,4 +330,33 @@ class AssetEnrichmentCoordinatorTest {
         assertTrue(coordinator.activeOperationIds().isEmpty())
         scope.cancel()
     }
+
+    @Test
+    fun `targeted cancel and join preserves enrichment from a newer operation`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 2)
+        val jobs = listOf("old-operation", "new-operation").associateWith { operationId ->
+            coordinator.enqueue(operationId) {
+                awaitCancellation()
+            }
+        }
+
+        withTimeout(2_000L) {
+            while (coordinator.activeOperationIds().size != jobs.size) {
+                delay(10L)
+            }
+        }
+        assertTrue(
+            coordinator.cancelAndJoin(
+                operationIds = setOf("old-operation"),
+                reason = "clear old generation",
+                timeoutMs = 2_000L
+            )
+        )
+        assertTrue(jobs.getValue("old-operation").isCompleted)
+        assertTrue(jobs.getValue("new-operation").isActive)
+
+        coordinator.cancelAllAndJoin(timeoutMs = 2_000L)
+        scope.cancel()
+    }
 }

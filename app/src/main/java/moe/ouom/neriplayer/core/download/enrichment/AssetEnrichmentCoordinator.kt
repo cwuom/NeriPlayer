@@ -147,6 +147,35 @@ internal class AssetEnrichmentCoordinator(
         return jobs.size
     }
 
+    /** 只等待指定清空快照中的收尾任务，不干扰清空后新建的 operation */
+    suspend fun cancelAndJoin(
+        operationIds: Collection<String>,
+        reason: String = "asset enrichment cancelled",
+        timeoutMs: Long = DEFAULT_CANCEL_JOIN_TIMEOUT_MS
+    ): Boolean {
+        val normalizedIds = operationIds.asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        if (normalizedIds.isEmpty()) return true
+        val jobs = synchronized(jobRegistrationLock) {
+            normalizedIds.mapNotNull(jobsByOperationId::get).filter(Job::isActive)
+        }
+        jobs.forEach { job ->
+            job.cancel(CancellationException(reason))
+        }
+        val settled = withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+            jobs.joinAll()
+            true
+        } ?: false
+        synchronized(jobRegistrationLock) {
+            refreshActiveStateLocked()
+        }
+        return settled && normalizedIds.none { operationId ->
+            jobsByOperationId[operationId]?.isActive == true
+        }
+    }
+
     /** 取消所有收尾任务并在文件清理前等待一段有界时间 */
     suspend fun cancelAllAndJoin(
         reason: String = "asset enrichment cancelled",

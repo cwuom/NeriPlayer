@@ -2552,6 +2552,36 @@ internal object DownloadExecutionRoomStore {
         }
     }
 
+    /**
+     * 回收上一个进程遗留的传输态
+     *
+     * RUNNING 不属于共享泵查询状态，不能依赖 ApplicationExitInfo 才恢复
+     * 当前进程已持有宿主令牌的行不会被改动，提交后的状态也不会被降级
+     */
+    suspend fun requeueOrphanedRunningOperations(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Set<String> {
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val orphaned = dao.findOrphanedRunningOperationIdentities(
+                processToken = HOST_ADMISSION_PROCESS_TOKEN
+            )
+            if (orphaned.isEmpty()) {
+                return@withTransaction emptySet()
+            }
+            val requeued = dao.requeueOrphanedRunningOperations(
+                processToken = HOST_ADMISSION_PROCESS_TOKEN,
+                updatedAtMs = System.currentTimeMillis()
+            )
+            if (requeued <= 0) {
+                emptySet()
+            } else {
+                orphaned.mapTo(linkedSetOf()) { identity -> identity.stableKey }
+            }
+        }
+    }
+
     suspend fun clearUserStopForStableKeys(
         context: Context,
         stableKeys: Collection<String>

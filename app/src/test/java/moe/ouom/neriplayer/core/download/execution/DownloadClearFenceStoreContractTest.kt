@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import java.io.File
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -173,20 +174,13 @@ class DownloadClearFenceStoreContractTest {
     }
 
     @Test
-    fun `expired task fence has an explicit non blocking release path`() {
+    fun `expired task fence cannot bypass durable convergence`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
-        val body = methodBody(source, "forceReleaseIfExpired")
-        assertTrue(body.contains("hasDownloadClearExceededDeadline"))
-        assertTrue(
-            body.contains(
-                "activePurposeLocked(context) != DownloadClearPurpose.TASK_PROGRESS"
-            )
-        )
-        assertTrue(body.contains("remove(ACTIVE_KEY)"))
-        assertTrue(body.contains("clearedRequestEpoch.accumulateAndGet"))
+        assertFalse(source.contains("forceReleaseIfExpired"))
+        assertTrue(source.contains("internal fun clearIfCurrent"))
     }
 
     private fun methodBody(

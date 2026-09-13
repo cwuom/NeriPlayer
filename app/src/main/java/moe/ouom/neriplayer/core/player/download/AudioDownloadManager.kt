@@ -856,7 +856,11 @@ object AudioDownloadManager {
         if (!shouldPause) {
             return
         }
-        downloadNetworkPolicyTracker.markWifiLossHandled()
+        // activeNetwork 切换窗口里网络类型可能暂时为空。此时只暂停传输，
+        // 等后续 MOBILE/ROAMING 回调确认后再消费 WIFI 丢失边沿并弹出流量提示
+        if (nextNetworkType != null) {
+            downloadNetworkPolicyTracker.markWifiLossHandled()
+        }
         interruptDownloadsForWifiLoss(
             networkType = nextNetworkType,
             reason = "network_lost",

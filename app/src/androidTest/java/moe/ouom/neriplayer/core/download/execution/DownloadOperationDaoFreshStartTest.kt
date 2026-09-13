@@ -142,6 +142,94 @@ class DownloadOperationDaoFreshStartTest {
         }
     }
 
+    @Test
+    fun processRestartRequeuesOnlyRunningRowsWithoutCurrentHostOwnership() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).build()
+        try {
+            val dao = database.downloadOperationDao()
+            dao.upsert(
+                operation(
+                    operationId = "old-host",
+                    stableKey = "old-song",
+                    state = "RUNNING",
+                    stopRequestedByUser = false,
+                    lastErrorCode = null,
+                    hostProcessToken = "old-process"
+                )
+            )
+            dao.upsert(
+                operation(
+                    operationId = "missing-host",
+                    stableKey = "missing-song",
+                    state = "RUNNING",
+                    stopRequestedByUser = false,
+                    lastErrorCode = null
+                )
+            )
+            dao.upsert(
+                operation(
+                    operationId = "current-host",
+                    stableKey = "current-song",
+                    state = "RUNNING",
+                    stopRequestedByUser = false,
+                    lastErrorCode = null,
+                    hostProcessToken = "current-process"
+                )
+            )
+            dao.upsert(
+                operation(
+                    operationId = "post-core",
+                    stableKey = "post-core-song",
+                    state = "CORE_COMMITTED",
+                    stopRequestedByUser = false,
+                    lastErrorCode = null,
+                    hostProcessToken = "old-process"
+                )
+            )
+            dao.upsert(
+                operation(
+                    operationId = "user-stopped",
+                    stableKey = "stopped-song",
+                    state = "RUNNING",
+                    stopRequestedByUser = true,
+                    lastErrorCode = "USER_CANCELLED",
+                    hostProcessToken = "old-process"
+                )
+            )
+
+            assertEquals(
+                setOf("old-host", "missing-host"),
+                dao.findOrphanedRunningOperationIdentities("current-process")
+                    .mapTo(linkedSetOf()) { identity -> identity.operationId }
+            )
+            assertEquals(
+                2,
+                dao.requeueOrphanedRunningOperations(
+                    processToken = "current-process",
+                    updatedAtMs = 100L
+                )
+            )
+
+            listOf("old-host", "missing-host").forEach { operationId ->
+                val recovered = requireNotNull(dao.find(operationId))
+                assertEquals("RETRYABLE", recovered.state)
+                assertEquals("PROCESS_RESTART_RECOVERY", recovered.lastErrorCode)
+                assertNull(recovered.nextRetryAtMs)
+                assertNull(recovered.hostProcessToken)
+            }
+            assertEquals("RUNNING", dao.find("current-host")?.state)
+            assertEquals("current-process", dao.find("current-host")?.hostProcessToken)
+            assertEquals("CORE_COMMITTED", dao.find("post-core")?.state)
+            assertEquals("RUNNING", dao.find("user-stopped")?.state)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun operation(
         operationId: String,
         stableKey: String,
@@ -150,7 +238,8 @@ class DownloadOperationDaoFreshStartTest {
         lastErrorCode: String?,
         retryCount: Int = 0,
         nextRetryAtMs: Long? = null,
-        updatedAtMs: Long = 1L
+        updatedAtMs: Long = 1L,
+        hostProcessToken: String? = null
     ): DownloadOperationEntity {
         return DownloadOperationEntity(
             operationId = operationId,
@@ -169,8 +258,8 @@ class DownloadOperationDaoFreshStartTest {
             stopRequestedByUser = stopRequestedByUser,
             createdAtMs = 1L,
             updatedAtMs = updatedAtMs,
-            hostProcessToken = null,
-            hostAdmittedAtMs = null
+            hostProcessToken = hostProcessToken,
+            hostAdmittedAtMs = hostProcessToken?.let { 1L }
         )
     }
 }

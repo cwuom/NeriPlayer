@@ -169,6 +169,50 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `clear hard deadline escalates old execution without releasing durable ownership`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val deadlineBody = source.substringAfter(
+            "private fun scheduleTaskClearHardDeadline"
+        ).substringBefore("private fun escalateExpiredTaskClear")
+        val escalationBody = source.substringAfter(
+            "private fun escalateExpiredTaskClear"
+        ).substringBefore("private fun finishReleasedTaskClearState")
+
+        assertTrue(deadlineBody.contains("escalateExpiredTaskClear(appContext)"))
+        assertTrue(escalationBody.contains("stopDownloadExecutionImmediately("))
+        assertTrue(escalationBody.contains("isOwnershipCaptureComplete(appContext)"))
+        assertTrue(escalationBody.contains("ownership?.stableKeys"))
+        assertTrue(escalationBody.contains("ownership?.operationIds"))
+        assertFalse(escalationBody.contains("clearDownloadClearFence("))
+        assertFalse(escalationBody.contains("clearPersistedDownloadClearProgress("))
+        assertFalse(escalationBody.contains("wakeDownloadExecutionPump("))
+    }
+
+    @Test
+    fun `startup requeues orphaned running transfers before waking the shared pump`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+        val processExitIndex = initializeBody.indexOf(
+            "markUserRequestedProcessExitOperations(appContext)"
+        )
+        val orphanRecoveryIndex = initializeBody.indexOf(
+            "requeueOrphanedRunningOperations(appContext)"
+        )
+        val pumpWakeIndex = initializeBody.indexOf(
+            "wakeDownloadExecutionPump(appContext, \"startup_process_exit_recovered\")"
+        )
+
+        assertTrue(processExitIndex >= 0)
+        assertTrue(orphanRecoveryIndex > processExitIndex)
+        assertTrue(pumpWakeIndex > orphanRecoveryIndex)
+    }
+
+    @Test
     fun `clear progress persistence is throttled but flushes boundaries`() {
         assertTrue(
             shouldPersistDownloadClearProgress(

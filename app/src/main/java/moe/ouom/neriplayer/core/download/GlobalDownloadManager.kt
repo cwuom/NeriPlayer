@@ -2075,6 +2075,23 @@ object GlobalDownloadManager {
                             "count=${processStoppedKeys.size}"
                     )
                 }
+                val orphanedRunningKeys = runCatching {
+                    DownloadExecutionRoomStore.requeueOrphanedRunningOperations(appContext)
+                }.getOrElse { error ->
+                    NPLogger.w(
+                        TAG,
+                        "回收旧进程 RUNNING 下载失败，保留状态等待下次启动: " +
+                            error.message,
+                        error
+                    )
+                    emptySet()
+                }
+                if (orphanedRunningKeys.isNotEmpty()) {
+                    NPLogger.i(
+                        TAG,
+                        "旧进程传输已重新排队: count=${orphanedRunningKeys.size}"
+                    )
+                }
                 wakeDownloadExecutionPump(appContext, "startup_process_exit_recovered")
                 // 先恢复 Room 进度再打开交互闸门，避免重启 Worker 以空任务列表运行
                 restorePersistedBatchDownloadPresentations(appContext)
@@ -20484,17 +20501,6 @@ object GlobalDownloadManager {
                         if (!PersistentDownloadClearFenceStore.isTaskClearActive(appContext)) {
                             return@runClear
                         }
-                        if (
-                            purpose == DownloadClearPurpose.TASK_PROGRESS &&
-                            hasDownloadClearExceededDeadline(
-                                requestedAtMs = PersistentDownloadClearFenceStore
-                                    .requestedAtMs(appContext),
-                                nowMs = System.currentTimeMillis()
-                            )
-                        ) {
-                            forceReleaseExpiredTaskClear(appContext)
-                            return@runClear
-                        }
                         try {
                             clearSongKeys += clearOwnerStableKeys
                             val lateVisibleTasks = taskStore.currentTasks().filter { task ->
@@ -20683,6 +20689,12 @@ object GlobalDownloadManager {
                                 executionOperationIds = clearOperationIds,
                                 workingFilesBySongKey = clearWorkingFilesBySongKey,
                                 clearToken = clearToken
+                            )
+                            updateDownloadClearSettlementProgress(
+                                context = appContext,
+                                token = clearToken,
+                                affectedItemCount = clearSongKeys.size,
+                                settlement = settlement
                             )
                             if (!settlement.isSettled) {
                                 if (settlement.providerCleanupInFlight) {
@@ -21014,6 +21026,29 @@ object GlobalDownloadManager {
             reason = "fast clear phase",
             stableKeys = ownedSongKeys
         )
+        val acknowledgedCancellationCount = (persistedCancellationCount ?: 0)
+            .coerceIn(0, songKeys.size)
+        var lastPublishedCancellationCount = -1
+        songKeys.forEachIndexed { index, songKey ->
+            AudioDownloadManager.cancelSongDownload(songKey)
+            val completedCount = minOf(index + 1, acknowledgedCancellationCount)
+            val shouldPublish = completedCount != lastPublishedCancellationCount && (
+                completedCount == acknowledgedCancellationCount ||
+                    completedCount % DOWNLOAD_CLEAR_PROGRESS_UPDATE_BATCH_SIZE == 0
+                )
+            if (shouldPublish) {
+                lastPublishedCancellationCount = completedCount
+                downloadClearVisibility.update(
+                    token = token,
+                    phase = DownloadClearVisibility.ClearPhase.CLEANING,
+                    completedSteps = 2,
+                    affectedItemCount = maxOf(visibleTasks.size, songKeys.size),
+                    completedItemCount = completedCount,
+                    totalItemCount = songKeys.size
+                )
+                yield()
+            }
+        }
         val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
         if (elapsedMs >= DOWNLOAD_CLEAR_INTERACTIVE_BUDGET_MS) {
             NPLogger.w(
@@ -21038,7 +21073,7 @@ object GlobalDownloadManager {
             completedSteps = 2,
             affectedItemCount = maxOf(visibleTasks.size, songKeys.size),
             failedItemCount = 0,
-            completedItemCount = 0,
+            completedItemCount = acknowledgedCancellationCount,
             totalItemCount = songKeys.size
         )
         if (persistProgress) {
@@ -21098,23 +21133,11 @@ object GlobalDownloadManager {
         scope.launch {
             try {
                 delay(100L)
-                if (
-                    purpose == DownloadClearPurpose.TASK_PROGRESS &&
-                    forceReleaseExpiredTaskClear(appContext)
-                ) {
-                    return@launch
-                }
                 if (finishReleasedTaskClearState(appContext)) {
                     return@launch
                 }
                 var attempt = 0
                 while (PersistentDownloadClearFenceStore.isActive(appContext)) {
-                    if (
-                        purpose == DownloadClearPurpose.TASK_PROGRESS &&
-                        forceReleaseExpiredTaskClear(appContext)
-                    ) {
-                        return@launch
-                    }
                     attempt++
                     NPLogger.d(
                         TAG,
@@ -21167,7 +21190,6 @@ object GlobalDownloadManager {
         }
         val appContext = context.applicationContext
         scope.launch {
-            var stopRequested = false
             try {
                 while (true) {
                     if (
@@ -21190,15 +21212,9 @@ object GlobalDownloadManager {
                         delay(remainingMs)
                         continue
                     }
-                    if (
-                        forceReleaseExpiredTaskClear(
-                            context = appContext,
-                            stopExecution = !stopRequested
-                        )
-                    ) {
+                    if (escalateExpiredTaskClear(appContext)) {
                         return@launch
                     }
-                    stopRequested = true
                     delay(100L)
                 }
             } catch (cancellation: CancellationException) {
@@ -21215,10 +21231,7 @@ object GlobalDownloadManager {
         }
     }
 
-    private fun forceReleaseExpiredTaskClear(
-        context: Context,
-        stopExecution: Boolean = true
-    ): Boolean {
+    private fun escalateExpiredTaskClear(context: Context): Boolean {
         val appContext = context.applicationContext
         if (
             !PersistentDownloadClearFenceStore.isTaskClearActive(appContext) ||
@@ -21237,31 +21250,21 @@ object GlobalDownloadManager {
         ) {
             return false
         }
-        if (stopExecution) {
-            stopDownloadExecutionImmediately(
-                context = appContext,
-                reason = "download clear hard deadline"
-            )
-        }
-        if (!PersistentDownloadClearFenceStore.forceReleaseIfExpired(appContext)) {
-            return false
-        }
-        downloadAdmissionGate.forceReleaseClear()
-        taskStore.clearAllTasks()
-        val clearedSongCount = synchronized(cancelledSongKeys) {
-            val count = cancelledSongKeys.size
-            cancelledSongKeys.clear()
-            count
-        }
-        clearPersistedDownloadClearProgress(appContext)
-        finishReleasedTaskClearState(appContext)
-        scheduleStartupArtifactRecovery(appContext)
-        scheduleCatalogReconcile(appContext, forceRefresh = true)
-        wakeDownloadExecutionPump(appContext, "download_clear_hard_deadline")
+        val ownershipCaptureComplete =
+            PersistentDownloadClearFenceStore.isOwnershipCaptureComplete(appContext)
+        val ownership = PersistentDownloadClearFenceStore.ownership(appContext)
+        stopDownloadExecutionImmediately(
+            context = appContext,
+            reason = "download clear hard deadline escalation",
+            stableKeys = if (ownershipCaptureComplete) ownership?.stableKeys else null,
+            operationIds = if (ownershipCaptureComplete) ownership?.operationIds else null
+        )
         NPLogger.w(
             TAG,
-            "下载清空达到 3 秒硬截止，先释放任务栅栏并恢复本地播放: " +
-                "cancelledSongs=$clearedSongCount, " +
+            "下载清空达到 3 秒硬截止，已升级停止旧执行并保留持久栅栏: " +
+                "ownedSongs=${ownership?.stableKeys?.size ?: 0}, " +
+                "ownedOperations=${ownership?.operationIds?.size ?: 0}, " +
+                "captureComplete=$ownershipCaptureComplete, " +
                 "requestedAtMs=${requestedAtMs ?: 0L}"
         )
         return true
@@ -21636,10 +21639,15 @@ object GlobalDownloadManager {
         val ownedKeys = stableKeys?.map(String::trim)?.filter(String::isNotBlank)?.toSet()
         val ownedOperationIds = operationIds?.map(String::trim)?.filter(String::isNotBlank)?.toSet()
         runDownloadClearStopAction("取消下载资产整理") {
-            val cancelledCount = if (ownedKeys == null && ownedOperationIds == null) {
-                assetEnrichmentCoordinator.cancelAll(reason)
-            } else {
-                0
+            val cancelledCount = when {
+                !ownedOperationIds.isNullOrEmpty() -> ownedOperationIds.count { operationId ->
+                    assetEnrichmentCoordinator.cancel(operationId)
+                }
+
+                ownedKeys == null && ownedOperationIds == null ->
+                    assetEnrichmentCoordinator.cancelAll(reason)
+
+                else -> 0
             }
             if (cancelledCount > 0) {
                 NPLogger.d(
@@ -22263,6 +22271,40 @@ object GlobalDownloadManager {
         }
     }
 
+    /** 用仍未收敛的执行和文件数量推进进度，避免清空过程只显示固定阶段跳变 */
+    private fun updateDownloadClearSettlementProgress(
+        context: Context,
+        token: DownloadAdmissionGate.ClearToken,
+        affectedItemCount: Int,
+        settlement: DownloadClearSettlement
+    ) {
+        val previousProgress = downloadClearVisibility.progress.value
+        val totalItems = maxOf(
+            previousProgress?.totalItemCount ?: 0,
+            affectedItemCount,
+            1
+        )
+        val residualSongKeys = buildSet {
+            addAll(settlement.activeSongKeys)
+            addAll(settlement.residualWorkingSongKeys)
+            addAll(settlement.residualPendingArtifactSongKeys)
+        }
+        val remainingItems = maxOf(
+            settlement.residualPendingArtifactCount,
+            residualSongKeys.size + settlement.activeOperationIds.size +
+                if (settlement.batchJobsSettled) 0 else 1
+        ).coerceAtMost(totalItems)
+        downloadClearVisibility.update(
+            token = token,
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            affectedItemCount = affectedItemCount,
+            completedItemCount = (totalItems - remainingItems).coerceAtLeast(0),
+            totalItemCount = totalItems
+        )
+        persistDownloadClearProgress(context, token)
+    }
+
     private fun pendingDownloadClearProviderCleanupSettlement(
         activeKeys: Collection<String>,
         operationRequests: Collection<DownloadExecutionRequest>
@@ -22364,11 +22406,30 @@ object GlobalDownloadManager {
             batchJobs = batchJobs,
             phase = "clear_all_background_cleanup"
         )
-        val enrichmentJobsSettled = assetEnrichmentCoordinator.cancelAllAndJoin(
-            reason = "waiting for download clear convergence",
-            timeoutMs = DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS
-        )
+        val normalizedExecutionOperationIds = executionOperationIds.asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        val enrichmentJobsSettled = if (normalizedExecutionOperationIds.isEmpty()) {
+            assetEnrichmentCoordinator.cancelAllAndJoin(
+                reason = "waiting for download clear convergence",
+                timeoutMs = DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS
+            )
+        } else {
+            assetEnrichmentCoordinator.cancelAndJoin(
+                operationIds = normalizedExecutionOperationIds,
+                reason = "waiting for download clear convergence",
+                timeoutMs = DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS
+            )
+        }
         val activeEnrichmentOperationIds = assetEnrichmentCoordinator.activeOperationIds()
+            .let { activeIds ->
+                if (normalizedExecutionOperationIds.isEmpty()) {
+                    activeIds
+                } else {
+                    activeIds.intersect(normalizedExecutionOperationIds)
+                }
+            }
         if (!enrichmentJobsSettled) {
             NPLogger.w(
                 TAG,
@@ -22376,9 +22437,7 @@ object GlobalDownloadManager {
                     activeEnrichmentOperationIds.size
             )
         }
-        val activeOperationIds = executionOperationIds
-            .map(String::trim)
-            .filter(String::isNotBlank)
+        val activeOperationIds = normalizedExecutionOperationIds
             .filter(DownloadExecutionHosts.default::isExecuting)
             .toMutableSet()
             .apply { addAll(activeEnrichmentOperationIds) }

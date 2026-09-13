@@ -14,6 +14,7 @@ internal class DownloadNetworkPolicyTracker {
     private var currentDefaultNetworkKey: Any? = null
     private var currentTrafficNetworkType: TrafficNetworkType? = null
     private var wifiLossHandled = false
+    private var pendingWifiLoss = false
     private var networkGeneration = 0L
 
     @Synchronized
@@ -25,6 +26,7 @@ internal class DownloadNetworkPolicyTracker {
         currentDefaultNetworkKey = networkKey
         currentTrafficNetworkType = networkType
         wifiLossHandled = false
+        pendingWifiLoss = false
         networkGeneration = initialGeneration.coerceAtLeast(0L)
     }
 
@@ -84,7 +86,9 @@ internal class DownloadNetworkPolicyTracker {
             )
         }
         val previousNetworkType = currentTrafficNetworkType
-        val shouldPause = currentTrafficNetworkType == TrafficNetworkType.WIFI &&
+        val shouldPause = (
+            currentTrafficNetworkType == TrafficNetworkType.WIFI || pendingWifiLoss
+        ) &&
             networkType != TrafficNetworkType.WIFI &&
             !wifiLossHandled
         currentDefaultNetworkKey = networkKey
@@ -92,8 +96,10 @@ internal class DownloadNetworkPolicyTracker {
         networkGeneration += 1L
         if (networkType == TrafficNetworkType.WIFI) {
             wifiLossHandled = false
+            pendingWifiLoss = false
         } else if (shouldPause) {
             wifiLossHandled = true
+            pendingWifiLoss = false
         }
         return NetworkObservationResult(
             changed = true,
@@ -130,6 +136,11 @@ internal class DownloadNetworkPolicyTracker {
         // a new WIFI Network object must be treated as a real recovery even
         // when the old network was also WIFI
         currentTrafficNetworkType = null
+        if (wasWifi && !wifiLossHandled) {
+            // 默认网络切换存在 activeNetwork 和 capabilities 都暂时为空的窗口
+            // 先暂停传输，但保留 WIFI 丢失边沿，等移动网络确认后再触发流量提示
+            pendingWifiLoss = true
+        }
         networkGeneration += 1L
         return wasWifi && !wifiLossHandled
     }
@@ -137,6 +148,7 @@ internal class DownloadNetworkPolicyTracker {
     @Synchronized
     fun markWifiLossHandled() {
         wifiLossHandled = true
+        pendingWifiLoss = false
     }
 
     @Synchronized

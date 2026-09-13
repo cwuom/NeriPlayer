@@ -159,15 +159,6 @@ internal class DownloadAdmissionGate {
     fun releaseFailedClear(token: ClearToken): Boolean =
         detachClearForDurableRecovery(token)
 
-    /** 持久清空到达硬截止后，解除仍在等待物理善后的本进程 gate */
-    fun forceReleaseClear(): Boolean {
-        val completion = synchronized(stateLock) {
-            activeClear?.also { activeClear = null }
-        } ?: return false
-        completion.complete(Unit)
-        return true
-    }
-
     private fun completedDeferred(): CompletableDeferred<Unit> =
         CompletableDeferred<Unit>().also { it.complete(Unit) }
 
@@ -218,13 +209,28 @@ internal class DownloadClearVisibility {
 
         val displayPercentage: Int
             get() {
-                if (phase != ClearPhase.CLEANING || totalItemCount <= 0) {
-                    return percentage
+                return when (phase) {
+                    ClearPhase.PREPARING -> 0
+                    ClearPhase.CANCELLING -> CLEAR_CANCELLING_DISPLAY_PERCENT
+                    ClearPhase.CLEANING -> {
+                        val itemPercent = if (totalItemCount <= 0) {
+                            0
+                        } else {
+                            (itemFraction * CLEAR_CLEANING_DISPLAY_SPAN_PERCENT).toInt()
+                        }
+                        (CLEAR_CLEANING_DISPLAY_BASE_PERCENT + itemPercent)
+                            .coerceAtMost(CLEAR_PURGING_DISPLAY_PERCENT - 1)
+                    }
+                    ClearPhase.PURGING -> {
+                        val allItemsCompleted = totalItemCount <= 0 ||
+                            completedItemCount >= totalItemCount
+                        if (completedSteps >= totalSteps && allItemsCompleted) {
+                            100
+                        } else {
+                            CLEAR_PURGING_DISPLAY_PERCENT
+                        }
+                    }
                 }
-                val units = completedSteps.coerceIn(0, totalSteps) + itemFraction
-                return ((units / totalSteps.coerceAtLeast(1)) * 100f)
-                    .toInt()
-                    .coerceIn(0, 100)
             }
 
         val displayFraction: Float
@@ -433,5 +439,9 @@ internal class DownloadClearVisibility {
 
     private companion object {
         const val CLEAR_PHASE_COUNT = 4
+        const val CLEAR_CANCELLING_DISPLAY_PERCENT = 5
+        const val CLEAR_CLEANING_DISPLAY_BASE_PERCENT = 10
+        const val CLEAR_CLEANING_DISPLAY_SPAN_PERCENT = 80
+        const val CLEAR_PURGING_DISPLAY_PERCENT = 95
     }
 }

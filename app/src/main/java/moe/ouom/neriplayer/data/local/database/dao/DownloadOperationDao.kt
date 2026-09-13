@@ -1084,6 +1084,29 @@ internal interface DownloadOperationDao {
     ): List<String>
 
     @Query(
+        "SELECT operation_id, stable_key FROM download_operation " +
+            "WHERE state = 'RUNNING' AND stop_requested_by_user = 0 " +
+            "AND (host_process_token IS NULL OR host_process_token != :processToken)"
+    )
+    suspend fun findOrphanedRunningOperationIdentities(
+        processToken: String
+    ): List<DownloadOperationIdentityRow>
+
+    /** 新进程只接管没有当前进程宿主的传输态，提交态仍交给专用恢复链路 */
+    @Query(
+        "UPDATE download_operation SET state = 'RETRYABLE', " +
+            "next_retry_at_ms = NULL, last_error_code = 'PROCESS_RESTART_RECOVERY', " +
+            "host_process_token = NULL, host_admitted_at_ms = NULL, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
+            "WHERE state = 'RUNNING' AND stop_requested_by_user = 0 " +
+            "AND (host_process_token IS NULL OR host_process_token != :processToken)"
+    )
+    suspend fun requeueOrphanedRunningOperations(
+        processToken: String,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
         "SELECT COUNT(*) FROM download_operation " +
             "WHERE host_process_token = :processToken"
     )

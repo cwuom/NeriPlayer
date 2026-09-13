@@ -255,7 +255,7 @@ class DownloadAdmissionGateTest {
             totalItemCount = 20
         )
         assertEquals(50, visibility.progress.value?.percentage)
-        assertEquals(60, visibility.progress.value?.displayPercentage)
+        assertEquals(42, visibility.progress.value?.displayPercentage)
         assertEquals(8, visibility.progress.value?.completedItemCount)
         assertEquals(20, visibility.progress.value?.totalItemCount)
         assertEquals(701, visibility.progress.value?.affectedItemCount)
@@ -416,7 +416,7 @@ class DownloadAdmissionGateTest {
             failedItemCount = 25
         )
 
-        assertEquals(75, checkedProgress.displayPercentage)
+        assertEquals(90, checkedProgress.displayPercentage)
 
         assertEquals(
             DownloadClearVisibility.ArtifactProgress(
