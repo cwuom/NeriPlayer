@@ -29,6 +29,25 @@ class DownloadTaskStoreTest {
     }
 
     @Test
+    fun `terminal failure remains retryable without becoming pending work`() {
+        val failedTask = DownloadTask(
+            song = song(404L),
+            progress = null,
+            status = DownloadStatus.FAILED,
+            attemptId = 1L
+        )
+
+        val summary = buildDownloadTaskSummary(listOf(failedTask))
+
+        assertEquals(0, summary.pendingTaskCount)
+        assertEquals(1, summary.failedTaskCount)
+        assertFalse(summary.hasPendingTasks)
+        assertFalse(summary.hasActiveOperations)
+        assertTrue(summary.hasFailedTasks)
+        assertTrue(summary.hasDownloadManagerEntry)
+    }
+
+    @Test
     fun `active transfer flag remains true until every concurrent transfer ends`() {
         val scope = CoroutineScope(SupervisorJob())
         try {

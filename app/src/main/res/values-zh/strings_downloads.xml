@@ -8,6 +8,7 @@
     <string name="download_selected_videos">下载选中视频</string>
     <string name="download_progress">下载进度</string>
     <string name="download_failed">下载失败</string>
+    <string name="download_failed_tasks_summary">这些歌曲已停止自动重试，可点击歌曲旁的按钮再次尝试</string>
     <string name="download_cancelled">下载已取消</string>
     <string name="download_no_tasks">暂无下载任务</string>
     <string name="download_loading_tasks">正在读取下载任务…</string>

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.component.download
 
+import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,5 +27,27 @@ class BatchDownloadManagerSheetTest {
                 hasActiveDownloadOperations = false
             )
         )
+    }
+
+    @Test
+    fun `failed downloads use a separate count and retain manual retry`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/ui/component/download/BatchDownloadManagerSheet.kt"
+        ).readText()
+
+        assertTrue(source.contains("countFailedDownloadTasks(downloadTasks)"))
+        assertTrue(source.contains("R.plurals.download_failed_songs_count"))
+        assertTrue(source.contains("FailedDownloadTaskList("))
+        assertTrue(source.contains("GlobalDownloadManager.resumeDownloadTask(context, songKey)"))
+    }
+
+    private fun locateProjectFile(path: String): File {
+        var current = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
+        repeat(8) {
+            val candidate = File(current, path)
+            if (candidate.isFile) return candidate
+            current = current.parentFile ?: return@repeat
+        }
+        error("project source file not found: $path")
     }
 }

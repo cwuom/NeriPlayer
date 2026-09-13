@@ -43,6 +43,15 @@ internal data class BatchDownloadOverallProgress(
     val hasPendingSongs: Boolean
 )
 
+/** terminal incomplete batches are represented by their failed task rows instead of stale progress */
+internal fun batchDownloadProgressForDisplay(
+    progress: BatchDownloadOverallProgress?
+): BatchDownloadOverallProgress? {
+    return progress?.takeIf { current ->
+        current.hasPendingSongs || current.completedSongs == current.totalSongs
+    }
+}
+
 private const val INCOMPLETE_BATCH_PROGRESS_CEILING = 0.99f
 
 internal fun aggregateBatchDownloadProgress(
@@ -433,6 +442,7 @@ internal fun visibleExplicitResumeCandidates(
 
 data class DownloadTaskSummary(
     val pendingTaskCount: Int = 0,
+    val failedTaskCount: Int = 0,
     val queuedTaskCount: Int = 0,
     val hasActiveTasks: Boolean = false,
     val hasActiveOperations: Boolean = false
@@ -440,9 +450,12 @@ data class DownloadTaskSummary(
     val hasPendingTasks: Boolean
         get() = pendingTaskCount > 0
 
-    /** admission and recovery work must remain reachable before task rows are hydrated */
+    val hasFailedTasks: Boolean
+        get() = failedTaskCount > 0
+
+    /** admission, recovery and failed-task retry must remain reachable from the manager entry */
     val hasDownloadManagerEntry: Boolean
-        get() = hasPendingTasks || hasActiveOperations
+        get() = hasPendingTasks || hasActiveOperations || hasFailedTasks
 }
 
 enum class DownloadStatus {
@@ -597,6 +610,11 @@ internal fun visibleDownloadProgressTasks(tasks: List<DownloadTask>): List<Downl
         .toList()
 }
 
+/** terminal failures stay visible for manual retry without becoming pending work */
+internal fun visibleFailedDownloadTasks(tasks: List<DownloadTask>): List<DownloadTask> {
+    return tasks.filter { task -> task.status == DownloadStatus.FAILED }
+}
+
 /**
  * true after the host has started source, storage, transfer, or post-transfer work
  * so host waits cannot hide an operation that is already being processed
@@ -695,6 +713,7 @@ internal fun shouldHideRemoteDownloadAction(
 
 fun buildDownloadTaskSummary(tasks: List<DownloadTask>): DownloadTaskSummary {
     var pendingTaskCount = 0
+    var failedTaskCount = 0
     var queuedTaskCount = 0
     var hasActiveTasks = false
     var hasActiveOperations = false
@@ -714,7 +733,7 @@ fun buildDownloadTaskSummary(tasks: List<DownloadTask>): DownloadTaskSummary {
             }
 
             DownloadStatus.WAITING_NETWORK -> pendingTaskCount++
-            DownloadStatus.FAILED -> pendingTaskCount++
+            DownloadStatus.FAILED -> failedTaskCount++
             DownloadStatus.COMPLETED,
             DownloadStatus.CANCELLED -> Unit
         }
@@ -722,6 +741,7 @@ fun buildDownloadTaskSummary(tasks: List<DownloadTask>): DownloadTaskSummary {
 
     return DownloadTaskSummary(
         pendingTaskCount = pendingTaskCount,
+        failedTaskCount = failedTaskCount,
         queuedTaskCount = queuedTaskCount,
         hasActiveTasks = hasActiveTasks,
         hasActiveOperations = hasActiveOperations
@@ -754,9 +774,12 @@ fun countPendingDownloadTasks(tasks: List<DownloadTask>): Int {
     return tasks.count { task ->
         task.status == DownloadStatus.QUEUED ||
             task.status == DownloadStatus.DOWNLOADING ||
-            task.status == DownloadStatus.WAITING_NETWORK ||
-            task.status == DownloadStatus.FAILED
+            task.status == DownloadStatus.WAITING_NETWORK
     }
+}
+
+fun countFailedDownloadTasks(tasks: List<DownloadTask>): Int {
+    return tasks.count { task -> task.status == DownloadStatus.FAILED }
 }
 
 internal fun shouldApplyTaskMutation(

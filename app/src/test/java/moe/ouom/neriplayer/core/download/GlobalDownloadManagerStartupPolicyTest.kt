@@ -1493,6 +1493,8 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertFalse(screenSource.contains("val visibleTasks = if (isClearingDownloadTasks)"))
         assertTrue(screenSource.contains("R.string.download_clearing_tasks"))
         assertTrue(screenSource.contains("visibleDownloadProgressTasks(downloadTasks)"))
+        assertTrue(screenSource.contains("visibleFailedDownloadTasks(downloadTasks)"))
+        assertTrue(screenSource.contains("FailedDownloadSummaryCard(count = failedTaskCount)"))
         assertFalse(screenSource.contains("item(key = \"queued-summary\")"))
         assertTrue(screenSource.contains("R.string.download_progress_with_percentage"))
     }
@@ -3620,7 +3622,7 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `pending download task helpers ignore completed items`() {
+    fun `pending download task helpers separate terminal failures`() {
         val downloadingTask = DownloadTask(
             song = SongItem(
                 id = 1L,
@@ -3649,8 +3651,14 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
 
         assertEquals(
-            2,
+            1,
             countPendingDownloadTasks(
+                listOf(downloadingTask, completedTask, failedTask, cancelledTask)
+            )
+        )
+        assertEquals(
+            1,
+            countFailedDownloadTasks(
                 listOf(downloadingTask, completedTask, failedTask, cancelledTask)
             )
         )
@@ -3659,16 +3667,20 @@ class GlobalDownloadManagerStartupPolicyTest {
                 listOf(downloadingTask, completedTask, failedTask, cancelledTask)
             )
         )
+        assertFalse(hasPendingDownloadTasks(listOf(failedTask)))
         assertFalse(hasPendingDownloadTasks(listOf(completedTask)))
         assertFalse(hasPendingDownloadTasks(listOf(cancelledTask)))
 
         val summary = buildDownloadTaskSummary(
             listOf(downloadingTask, completedTask, failedTask, cancelledTask)
         )
-        assertEquals(2, summary.pendingTaskCount)
+        assertEquals(1, summary.pendingTaskCount)
+        assertEquals(1, summary.failedTaskCount)
         assertEquals(0, summary.queuedTaskCount)
         assertTrue(summary.hasActiveTasks)
         assertTrue(summary.hasActiveOperations)
+        assertTrue(summary.hasFailedTasks)
+        assertTrue(summary.hasDownloadManagerEntry)
     }
 
     @Test

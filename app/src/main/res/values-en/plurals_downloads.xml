@@ -21,6 +21,10 @@
         <item quantity="one">%d task</item>
         <item quantity="other">%d tasks</item>
     </plurals>
+    <plurals name="download_failed_songs_count">
+        <item quantity="one">%d download failed</item>
+        <item quantity="other">%d downloads failed</item>
+    </plurals>
     <plurals name="download_explicit_resume_count">
         <item quantity="one">%d download needs your action</item>
         <item quantity="other">%d downloads need your action</item>

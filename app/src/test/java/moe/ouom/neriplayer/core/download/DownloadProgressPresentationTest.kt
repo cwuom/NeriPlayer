@@ -134,6 +134,46 @@ class DownloadProgressPresentationTest {
     }
 
     @Test
+    fun `failed songs remain visible for retry without becoming pending tasks`() {
+        val failed = DownloadTask(
+            song = song(4L),
+            progress = null,
+            status = DownloadStatus.FAILED,
+            attemptId = 4L
+        )
+        val active = DownloadTask(
+            song = song(5L),
+            progress = progress(song(5L).stableKey(), 5L),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 5L
+        )
+
+        assertEquals(listOf(failed), visibleFailedDownloadTasks(listOf(active, failed)))
+        assertEquals(1, countFailedDownloadTasks(listOf(active, failed)))
+        assertEquals(1, countPendingDownloadTasks(listOf(active, failed)))
+    }
+
+    @Test
+    fun `terminal incomplete batch is replaced by failure presentation`() {
+        val failedBatch = BatchDownloadOverallProgress(
+            totalSongs = 10,
+            completedSongs = 1,
+            percentage = 10,
+            fraction = 0.1f,
+            activeSongCount = 0,
+            hasPendingSongs = false
+        )
+        val completedBatch = failedBatch.copy(
+            completedSongs = 10,
+            percentage = 100,
+            fraction = 1f
+        )
+
+        assertNull(batchDownloadProgressForDisplay(failedBatch))
+        assertEquals(completedBatch, batchDownloadProgressForDisplay(completedBatch))
+    }
+
+    @Test
     fun `visible tasks keep real transfer ahead of waits and queue`() {
         val waitingSong = song(2L)
         val queuedBeforeActive = DownloadTask(

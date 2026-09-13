@@ -61,10 +61,12 @@ import moe.ouom.neriplayer.core.download.DownloadClearVisibility
 import moe.ouom.neriplayer.core.download.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.batchDownloadProgressForDisplay
 import moe.ouom.neriplayer.core.download.formatDownloadTransferProgress
 import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.download.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.download.visibleExplicitResumeCandidates
+import moe.ouom.neriplayer.core.download.visibleFailedDownloadTasks
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearProgressStore
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
@@ -414,8 +416,10 @@ fun DownloadProgressScreen(
             (bootstrapState?.durablePendingSongKeys.orEmpty() - explicitResumeSongKeys))
             .size
     }
-    val visibleBatchProgress = batchDownloadProgress
     val visibleTasks = visibleDownloadProgressTasks(downloadTasks)
+    val failedTasks = remember(downloadTasks) { visibleFailedDownloadTasks(downloadTasks) }
+    val failedTaskCount = failedTasks.size
+    val visibleBatchProgress = batchDownloadProgressForDisplay(batchDownloadProgress)
     val displayedPendingTaskCount = pendingTaskCount + explicitResumeCandidates.size
     val observedClearTaskCount = maxOf(
         downloadTasks.size,
@@ -524,14 +528,15 @@ fun DownloadProgressScreen(
     val prioritizeBackgroundCleanup = clearFenceActive &&
         shouldPrioritizeDownloadBackgroundCleanup(
             logicalClearComplete = logicalClearComplete,
-            hasVisibleTasks = visibleTasks.isNotEmpty(),
+            hasVisibleTasks = visibleTasks.isNotEmpty() || failedTasks.isNotEmpty(),
             pendingTaskCount = displayedPendingTaskCount
         )
     val pagePresentation = resolveDownloadProgressPagePresentation(
         initialProbeState = initialProbeState,
         hasVisibleContent = visibleBatchProgress != null ||
             visibleTasks.isNotEmpty() ||
-            explicitResumeCandidates.isNotEmpty(),
+            explicitResumeCandidates.isNotEmpty() ||
+            failedTasks.isNotEmpty(),
         hasKnownPendingTasks = pendingTaskCount > 0,
         isClearing = effectiveIsClearing,
         isClearPresentationCleared = effectivePresentationCleared
@@ -613,6 +618,12 @@ fun DownloadProgressScreen(
                                 R.plurals.download_tasks_count,
                                 displayedPendingTaskCount,
                                 displayedPendingTaskCount
+                            )
+
+                            failedTaskCount > 0 -> pluralStringResource(
+                                R.plurals.download_failed_songs_count,
+                                failedTaskCount,
+                                failedTaskCount
                             )
 
                             else -> stringResource(R.string.download_no_tasks)
@@ -755,6 +766,34 @@ fun DownloadProgressScreen(
                                 placementSpec = tween(durationMillis = 250)
                             )
                         )
+                    }
+                    if (failedTasks.isNotEmpty()) {
+                        item(key = "failed-download-summary") {
+                            FailedDownloadSummaryCard(count = failedTaskCount)
+                        }
+                        items(
+                            items = failedTasks,
+                            key = { task -> "failed:${task.song.stableKey()}" },
+                            contentType = { "failed-download" }
+                        ) { task ->
+                            val songKey = task.song.stableKey()
+                            DownloadTaskItem(
+                                task = task,
+                                onCancel = {},
+                                onResume = {
+                                    if (!effectiveIsClearing) {
+                                        context.performHapticFeedback()
+                                        GlobalDownloadManager.resumeDownloadTask(context, songKey)
+                                    }
+                                },
+                                actionsEnabled = !effectiveIsClearing,
+                                modifier = Modifier.animateItem(
+                                    fadeInSpec = tween(durationMillis = 250),
+                                    fadeOutSpec = tween(durationMillis = 250),
+                                    placementSpec = tween(durationMillis = 250)
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -1078,6 +1117,42 @@ private fun PendingDownloadSummaryCard(count: Int) {
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
+            )
+        }
+    }
+}
+
+@Composable
+private fun FailedDownloadSummaryCard(count: Int) {
+    val shape = RoundedCornerShape(12.dp)
+    val baseColor = MaterialTheme.colorScheme.errorContainer
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        fallbackColor = baseColor.copy(alpha = 0.35f),
+        tintColor = baseColor
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = pluralStringResource(
+                    R.plurals.download_failed_songs_count,
+                    count,
+                    count
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Text(
+                text = stringResource(R.string.download_failed_tasks_summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
             )
         }
     }

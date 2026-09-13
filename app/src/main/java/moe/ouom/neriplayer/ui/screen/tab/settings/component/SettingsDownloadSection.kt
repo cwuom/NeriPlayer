@@ -162,33 +162,65 @@ private fun SettingsDownloadExpandedContent(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        if (visibleProgress != null || taskSummary.hasPendingTasks) {
+        if (
+            visibleProgress != null ||
+            taskSummary.hasPendingTasks ||
+            taskSummary.hasFailedTasks
+        ) {
             ListItem(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.Download,
                         contentDescription = stringResource(R.string.settings_download_progress),
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = if (taskSummary.hasPendingTasks) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        }
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.download_progress)) },
+                headlineContent = {
+                    Text(
+                        stringResource(
+                            if (taskSummary.hasPendingTasks) {
+                                R.string.download_progress
+                            } else {
+                                R.string.download_failed
+                            }
+                        )
+                    )
+                },
                 supportingContent = {
-                    if (visibleProgress != null) {
-                        Text(
-                            stringResource(
-                                R.string.settings_download_songs_count,
-                                visibleProgress.completedSongs,
-                                visibleProgress.totalSongs
+                    when {
+                        visibleProgress != null -> {
+                            Text(
+                                stringResource(
+                                    R.string.settings_download_songs_count,
+                                    visibleProgress.completedSongs,
+                                    visibleProgress.totalSongs
+                                )
                             )
-                        )
-                    } else {
-                        Text(
-                            pluralStringResource(
-                                R.plurals.download_tasks_count,
-                                taskSummary.pendingTaskCount,
-                                taskSummary.pendingTaskCount
+                        }
+
+                        taskSummary.hasPendingTasks -> {
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.download_tasks_count,
+                                    taskSummary.pendingTaskCount,
+                                    taskSummary.pendingTaskCount
+                                )
                             )
-                        )
+                        }
+
+                        else -> {
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.download_failed_songs_count,
+                                    taskSummary.failedTaskCount,
+                                    taskSummary.failedTaskCount
+                                )
+                            )
+                        }
                     }
                 },
                 trailingContent = {
