@@ -16,10 +16,14 @@ internal interface ManagedLibraryItemDao {
 
     @Query(
         "UPDATE managed_library_item SET " +
-            "audio_reference = COALESCE(audio_reference, :audioReference), " +
-            "audio_name = COALESCE(audio_name, :audioName), " +
-            "file_size = COALESCE(file_size, :fileSize), " +
-            "downloaded_at_ms = COALESCE(downloaded_at_ms, :downloadedAtMs), " +
+            "audio_reference = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN COALESCE(:audioReference, audio_reference) ELSE audio_reference END, " +
+            "audio_name = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN COALESCE(:audioName, audio_name) ELSE audio_name END, " +
+            "file_size = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN COALESCE(:fileSize, file_size) ELSE file_size END, " +
+            "downloaded_at_ms = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN COALESCE(:downloadedAtMs, downloaded_at_ms) ELSE downloaded_at_ms END, " +
             "metadata_name = CASE WHEN metadata_revision <= :metadataRevision " +
             "THEN COALESCE(:metadataName, metadata_name) ELSE metadata_name END, " +
             "locator_hint = CASE WHEN metadata_revision <= :metadataRevision " +

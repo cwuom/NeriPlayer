@@ -682,14 +682,22 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
             root,
             "RoundTrip.mp3.npmeta.json",
             "application/json",
-            metadataJson(
-                stableKey = "worker-round-trip",
-                mediaUri = audio.uri.toString(),
-                coverPath = cover.uri.toString(),
-                lyricPath = lyric.uri.toString(),
-                translatedLyricPath = translated.uri.toString(),
-                romanizedLyricPath = romanized.uri.toString()
-            ).encodeToByteArray()
+            JSONObject(
+                metadataJson(
+                    stableKey = "worker-round-trip",
+                    mediaUri = audio.uri.toString(),
+                    coverPath = cover.uri.toString(),
+                    lyricPath = lyric.uri.toString(),
+                    translatedLyricPath = translated.uri.toString(),
+                    romanizedLyricPath = romanized.uri.toString()
+                )
+            ).apply {
+                put("downloadFinalized", true)
+                put(
+                    "metadataEmbeddingState",
+                    DownloadedAudioEmbeddingState.USER_DISABLED.name
+                )
+            }.toString().encodeToByteArray()
         )
     }
 

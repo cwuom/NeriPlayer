@@ -326,7 +326,10 @@ class MainActivity : ComponentActivity() {
         // 设置读取完成前继续使用系统启动页，避免再显示一个会阻塞首帧的中间页面
         val startupContentReady = AtomicBoolean(safeModeActive)
         installSplashScreen().setKeepOnScreenCondition {
-            !startupContentReady.get()
+            shouldKeepSystemSplash(
+                contentReady = startupContentReady.get(),
+                elapsedMillis = SystemClock.elapsedRealtime() - startupLoadingStartedAtMs
+            )
         }
         super.onCreate(savedInstanceState)
         applyPreferredHighRefreshRate(startupSettingsSnapshot.preferHighRefreshRate)

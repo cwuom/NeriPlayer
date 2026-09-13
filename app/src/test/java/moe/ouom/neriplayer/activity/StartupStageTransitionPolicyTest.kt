@@ -99,6 +99,23 @@ class StartupStageTransitionPolicyTest {
         )
     }
 
+    @Test
+    fun systemSplashFailsOpenAtTheLoadingIndicatorDeadline() {
+        assertTrue(
+            shouldKeepSystemSplash(
+                contentReady = false,
+                elapsedMillis = STARTUP_LOADING_INDICATOR_DELAY_MILLIS - 1L
+            )
+        )
+        assertFalse(
+            shouldKeepSystemSplash(
+                contentReady = false,
+                elapsedMillis = STARTUP_LOADING_INDICATOR_DELAY_MILLIS
+            )
+        )
+        assertFalse(shouldKeepSystemSplash(contentReady = true, elapsedMillis = 0L))
+    }
+
     private fun source(path: String): String {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {

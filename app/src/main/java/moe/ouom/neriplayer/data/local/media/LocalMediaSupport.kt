@@ -1013,6 +1013,8 @@ object LocalMediaSupport {
             )
         } catch (error: CancellationException) {
             throw error
+        } catch (error: SecurityException) {
+            throw error
         } catch (error: Throwable) {
             logEditableMetadataFailure(
                 "unhandled",

@@ -43,9 +43,37 @@ internal class DownloadedSongCatalogRoomStore(
             if (isConfirmedEmpty(rootKey)) {
                 return emptyList()
             }
+            val cutoverState = database.syncMetadataDao()
+                .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
+                ?.value
             val roomSongs = ManagedLibraryItemRoomStore.restore(context, database)
             readManagedCatalogBackup(rootKey)?.let { backupSongs ->
-                return mergeCatalogBackupWithPreviews(backupSongs, roomSongs.orEmpty())
+                val mergedSongs = mergeCatalogBackupWithPreviews(
+                    backupSongs,
+                    roomSongs.orEmpty()
+                )
+                if (cutoverState != ROOM_PRIMARY_STATE) {
+                    val roomUpdated = try {
+                        ManagedLibraryItemRoomStore.replacePreviews(
+                            context = context,
+                            songs = mergedSongs,
+                            database = database
+                        )
+                        true
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        NPLogger.w(
+                            loggerTag,
+                            "完整下载目录备份写入 Room 失败，保留备份: ${error.message}"
+                        )
+                        false
+                    }
+                    if (roomUpdated) {
+                        markRoomPrimary(rootKey)
+                    }
+                }
+                return mergedSongs
             }
             // Room 行只保存轻量预览，升级首次恢复时必须先读取旧完整目录
             readLegacyCatalog(rootKey)?.let { legacySongs ->

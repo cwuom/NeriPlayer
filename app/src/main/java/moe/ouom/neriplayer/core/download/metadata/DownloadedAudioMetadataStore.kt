@@ -56,6 +56,14 @@ internal fun shouldReadRestorableSidecarLyric(
     return baselineValue == null && songValue == null
 }
 
+internal fun resolveKnownDownloadedSidecarReference(
+    explicitReference: String?,
+    existingReference: String?
+): String? {
+    return explicitReference?.trim()?.takeIf(String::isNotBlank)
+        ?: existingReference?.trim()?.takeIf(String::isNotBlank)
+}
+
 internal fun resolveCreatedAtConfidence(source: String?): String {
     return when (source?.trim()?.uppercase(Locale.ROOT)) {
         "CORE_COMMIT", "MANAGED_COMMIT", "MIGRATION_LOGICAL", "FILESYSTEM_BIRTH" -> "EXACT"
@@ -483,10 +491,22 @@ internal class DownloadedAudioMetadataStore(
     ): DownloadedMetadataSidecarReferences {
         if (!resolveExistingSidecars) {
             return DownloadedMetadataSidecarReferences(
-                coverReference = sidecarReferences?.coverReference,
-                lyricReference = sidecarReferences?.lyricReference,
-                translatedLyricReference = sidecarReferences?.translatedLyricReference,
-                romanizedLyricReference = sidecarReferences?.romanizedLyricReference,
+                coverReference = resolveKnownDownloadedSidecarReference(
+                    sidecarReferences?.coverReference,
+                    existingMetadata?.coverPath
+                ),
+                lyricReference = resolveKnownDownloadedSidecarReference(
+                    sidecarReferences?.lyricReference,
+                    existingMetadata?.lyricPath
+                ),
+                translatedLyricReference = resolveKnownDownloadedSidecarReference(
+                    sidecarReferences?.translatedLyricReference,
+                    existingMetadata?.translatedLyricPath
+                ),
+                romanizedLyricReference = resolveKnownDownloadedSidecarReference(
+                    sidecarReferences?.romanizedLyricReference,
+                    existingMetadata?.romanizedLyricPath
+                ),
                 lyricContent = sidecarReferences?.lyricContent,
                 translatedLyricContent = sidecarReferences?.translatedLyricContent,
                 romanizedLyricContent = sidecarReferences?.romanizedLyricContent

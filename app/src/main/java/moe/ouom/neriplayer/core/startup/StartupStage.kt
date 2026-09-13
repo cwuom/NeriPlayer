@@ -16,3 +16,10 @@ internal fun shouldShowStartupLoadingIndicator(elapsedMillis: Long): Boolean {
 internal fun shouldKeepSystemSplash(stage: StartupStage): Boolean {
     return stage == StartupStage.Loading
 }
+
+internal fun shouldKeepSystemSplash(
+    contentReady: Boolean,
+    elapsedMillis: Long
+): Boolean {
+    return !contentReady && !shouldShowStartupLoadingIndicator(elapsedMillis)
+}

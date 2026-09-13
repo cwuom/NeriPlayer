@@ -79,6 +79,24 @@ class DownloadedAudioMetadataStoreTest {
     }
 
     @Test
+    fun `known sidecar reference falls back to existing metadata without scanning`() {
+        assertEquals(
+            "content://managed/Lyrics/existing.lrc",
+            resolveKnownDownloadedSidecarReference(
+                explicitReference = " ",
+                existingReference = " content://managed/Lyrics/existing.lrc "
+            )
+        )
+        assertEquals(
+            "content://managed/Lyrics/incoming.lrc",
+            resolveKnownDownloadedSidecarReference(
+                explicitReference = "content://managed/Lyrics/incoming.lrc",
+                existingReference = "content://managed/Lyrics/existing.lrc"
+            )
+        )
+    }
+
+    @Test
     fun `unowned cover still uses materialization before metadata persistence`() = runBlocking {
         val reference = "file:///external/custom-cover.jpg"
         val expected = ManagedDownloadCoverAssetStore.MaterializedCover(

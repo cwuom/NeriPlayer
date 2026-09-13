@@ -143,7 +143,13 @@ class AssetEnrichmentCoordinatorTest {
 
         val blockingJob = coordinator.enqueue("permit-holder") {
             permitHeld.complete(Unit)
-            releasePermit.await()
+            try {
+                awaitCancellation()
+            } finally {
+                withContext(NonCancellable) {
+                    releasePermit.await()
+                }
+            }
         }
         permitHeld.await()
         val queuedJob = coordinator.enqueue(
