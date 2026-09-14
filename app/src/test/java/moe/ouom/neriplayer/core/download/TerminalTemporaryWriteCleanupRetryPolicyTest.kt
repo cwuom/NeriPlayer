@@ -29,9 +29,7 @@ class TerminalTemporaryWriteCleanupRetryPolicyTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val schedulingBody = source.substringAfter(
-            "private fun scheduleFinalizedTemporaryWriteCleanup"
-        ).substringBefore("private fun isDurableCoreOperationState")
+        val schedulingBody = methodBody(source, "schedulePersistedTerminalTemporaryWriteCleanup")
 
         assertTrue(schedulingBody.contains("cleanupPersistedTerminalTemporaryWriteArtifacts"))
         assertTrue(schedulingBody.contains("immediatelyRetryableFailedCount"))
@@ -57,11 +55,8 @@ class TerminalTemporaryWriteCleanupRetryPolicyTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val initializationBody = source.substringAfter("fun initialize(context: Context)")
-            .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
-        val schedulingBody = source.substringAfter(
-            "private fun scheduleFinalizedTemporaryWriteCleanup"
-        ).substringBefore("private fun isDurableCoreOperationState")
+        val initializationBody = methodBody(source, "initialize")
+        val schedulingBody = methodBody(source, "schedulePersistedTerminalTemporaryWriteCleanup")
 
         assertTrue(initializationBody.contains("startupRecovery.failedCount > 0"))
         assertTrue(
@@ -70,7 +65,7 @@ class TerminalTemporaryWriteCleanupRetryPolicyTest {
             )
         )
         assertTrue(
-            schedulingBody.contains(
+            source.contains(
                 "targetNames: Collection<String> = emptyList()"
             )
         )
@@ -83,9 +78,7 @@ class TerminalTemporaryWriteCleanupRetryPolicyTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val observerBody = source.substringAfter(
-            "private fun observeStorageStartupRecovery(context: Context)"
-        ).substringBefore("private suspend fun recoverPendingDownloadsForStartup")
+        val observerBody = methodBody(source, "observeStorageStartupRecovery")
 
         assertTrue(observerBody.contains("if (result.failedCount > 0)"))
         assertTrue(
@@ -100,20 +93,18 @@ class TerminalTemporaryWriteCleanupRetryPolicyTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val singleCleanupBody = source.substringAfter(
-            "private suspend fun cleanupCancelledPendingDownloadArtifacts(\n" +
-                "        context: Context,\n" +
-                "        song: SongItem,"
-        ).substringBefore(
-            "private suspend fun cleanupCancelledPendingDownloadArtifacts(\n" +
-                "        context: Context,\n" +
-                "        operationRequests: Collection<DownloadExecutionRequest>,"
+        val singleCleanupBody = methodBodyFromSignature(
+            source,
+            "internal suspend fun GlobalDownloadManager.cleanupCancelledPendingDownloadArtifacts(\n" +
+                "    context: Context,\n" +
+                "    song: SongItem,"
         )
-        val batchCleanupBody = source.substringAfter(
-            "private suspend fun cleanupCancelledPendingDownloadArtifacts(\n" +
-                "        context: Context,\n" +
-                "        operationRequests: Collection<DownloadExecutionRequest>,"
-        ).substringBefore("fun scanLocalFiles")
+        val batchCleanupBody = methodBodyFromSignature(
+            source,
+            "internal suspend fun GlobalDownloadManager.cleanupCancelledPendingDownloadArtifacts(\n" +
+                "    context: Context,\n" +
+                "    operationRequests: Collection<DownloadExecutionRequest>,"
+        )
 
         assertTrue(singleCleanupBody.contains("if (result.failedCount > 0)"))
         assertTrue(
@@ -133,9 +124,21 @@ class TerminalTemporaryWriteCleanupRetryPolicyTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
+
+    private fun methodBodyFromSignature(source: String, signature: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBodyFromSignature(
+            source = source,
+            signature = signature
+        )
 }

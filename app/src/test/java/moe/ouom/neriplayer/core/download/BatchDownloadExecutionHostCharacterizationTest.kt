@@ -23,18 +23,20 @@ class BatchDownloadExecutionHostCharacterizationTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val batchPath = source.substringAfter("private fun startBatchDownloadConfirmed")
-            .substringBefore("private fun scheduleCatalogReconcile")
+        val preparationBody = methodBody(source, "prepareBatchDownloadTasks")
+        val schedulingBody = methodBody(source, "schedulePendingBatchDownload")
 
         assertTrue(
             "batch path must resolve its host request from the persisted queue operation",
-            batchPath.contains("operationIdsBySongKey") &&
-                batchPath.contains("val operationId = request.operationId")
+            preparationBody.contains("session.operationIdsBySongKey") &&
+                schedulingBody.contains("val operationId = request.operationId") &&
+                schedulingBody.contains("session.operationRequestsBySongKey")
         )
         assertFalse(
             "batch path must not create a second operation after queue persistence",
-            batchPath.contains("ensureQueuedOperationForSong") ||
-                batchPath.contains("val operationId = UUID.randomUUID().toString()")
+            preparationBody.contains("ensureQueuedOperationForSong") ||
+                schedulingBody.contains("ensureQueuedOperationForSong") ||
+                schedulingBody.contains("val operationId = UUID.randomUUID().toString()")
         )
     }
 
@@ -92,16 +94,11 @@ class BatchDownloadExecutionHostCharacterizationTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val taskStatusStart = source.indexOf("    fun updateTaskStatus(")
-        require(taskStatusStart >= 0) { "method not found: updateTaskStatus" }
-        val taskStatusBody = source.substring(
-            taskStatusStart,
-            source.indexOf("    private fun publishDownloadStage(", taskStatusStart)
-        )
+        val taskStatusBody = methodBody(source, "updateTaskStatus")
         val terminalBody = methodBody(source, "persistBatchMemberTerminal")
         val presentationBody = methodBody(source, "markBatchDownloadPresentationTerminal")
 
-        assertTrue(taskStatusBody.contains("operationId: String? = null"))
+        assertTrue(source.contains("operationId: String? = null"))
         assertTrue(taskStatusBody.contains("!updated && operationId.isNullOrBlank()"))
         assertTrue(terminalBody.contains("markBatchMembersForOperation("))
         assertTrue(presentationBody.contains("val effectiveOperationId"))
@@ -133,9 +130,10 @@ class BatchDownloadExecutionHostCharacterizationTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
+        val schedulingBody = methodBody(source, "schedulePendingBatchDownload")
         val rejectionBlocks = Regex(
             "DownloadExecutionSchedule\\.Rejected[\\s\\S]{0,700}"
-        ).findAll(source).map { it.value }.toList()
+        ).findAll(schedulingBody).map { it.value }.toList()
 
         assertTrue("expected OS host rejection handling", rejectionBlocks.isNotEmpty())
         assertTrue(
@@ -160,28 +158,16 @@ class BatchDownloadExecutionHostCharacterizationTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")
     }
 
     private fun methodBody(source: String, methodName: String): String {
-        val signatureStart = source.indexOf("private fun $methodName(").takeIf { it >= 0 }
-            ?: source.indexOf("private suspend fun $methodName(")
-        require(signatureStart >= 0) { "method not found: $methodName" }
-        val bodyStart = source.indexOf('{', signatureStart)
-        require(bodyStart >= 0) { "method body not found: $methodName" }
-        var depth = 0
-        for (index in bodyStart until source.length) {
-            when (source[index]) {
-                '{' -> depth++
-                '}' -> {
-                    depth--
-                    if (depth == 0) return source.substring(bodyStart, index + 1)
-                }
-            }
-        }
-        error("unterminated method body: $methodName")
+        return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source,
+            methodName
+        )
     }
 }

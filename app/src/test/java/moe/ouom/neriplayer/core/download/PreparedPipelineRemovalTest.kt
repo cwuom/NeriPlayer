@@ -121,7 +121,7 @@ class PreparedPipelineRemovalTest {
         var attempts = 0
         while (attempts++ < 5) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             val parent = directory.parentFile ?: break
             directory = parent
         }

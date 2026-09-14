@@ -18,16 +18,10 @@ class DownloadSourceAvailabilityContractTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val startBody = source.substringAfter("private suspend fun startDownloadConfirmed(")
-            .substringBefore("private suspend fun settleUnavailableDownloadSourceFailure(")
-        val settlementBody = source.substringAfter(
-            "private suspend fun settleUnavailableDownloadSourceFailure("
-        ).substringBefore("private suspend fun requestStorageExhaustionCancellation(")
-        val resultBody = source.substringAfter("private suspend fun executionResultForOperation(")
-            .substringBefore("private suspend fun deferDownloadOperationExecutionForNetworkPolicyIfNeeded(")
-        val unfinishedLeaseBody = source.substringAfter(
-            "private suspend fun settleUnfinishedDownloadArtifactLease("
-        ).substringBefore("fun startBatchDownload(context")
+        val startBody = methodBody(source, "startDownloadConfirmed")
+        val settlementBody = methodBody(source, "settleUnavailableDownloadSourceFailure")
+        val resultBody = methodBody(source, "executionResultForOperation")
+        val unfinishedLeaseBody = methodBody(source, "settleUnfinishedDownloadArtifactLease")
 
         val unavailableCatch = startBody.indexOf(
             "catch (error: DownloadSourceUnavailableException)"
@@ -71,8 +65,7 @@ class DownloadSourceAvailabilityContractTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
         ).readText()
-        val attemptBody = source.substringAfter("private suspend fun executeDownloadAttempt(")
-            .substringBefore("private suspend fun prepareDownloadAttempt(")
+        val attemptBody = methodBody(source, "executeDownloadAttempt")
         val unavailableIndex = attemptBody.indexOf("throw DownloadSourceUnavailableException(")
         val resetIndex = attemptBody.indexOf("state.confirmedSourceMissCount = 0")
         val prepareIndex = attemptBody.indexOf("val prepared = try")
@@ -86,9 +79,15 @@ class DownloadSourceAvailabilityContractTest {
         var current = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {
             val candidate = File(current, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             current = current.parentFile ?: return@repeat
         }
         error("project source file not found: $path")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }

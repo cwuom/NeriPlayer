@@ -10,27 +10,22 @@ class AudioDownloadManagerPostCoreEnrichmentContractTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
         ).readText()
-        val mutationPermit = source.substringAfter(
-            "private fun <T> withNetworkPolicyMutationPermit("
-        ).substringBefore("private fun deleteWorkingFileUnlessNetworkPolicyPaused")
+        val mutationPermit = methodBody(source, "withNetworkPolicyMutationPermit")
         val coverCommit = source.substringAfter("commitCover = {")
             .substringBefore("rememberPartial = {")
         val lyricWrite = source.substringAfter("writeSidecar = {")
             .substringBefore("rememberPartial = {")
 
-        assertTrue(mutationPermit.contains("requireActiveAttempt: Boolean = true"))
+        assertTrue(source.contains("requireActiveAttempt: Boolean = true"))
         assertTrue(mutationPermit.contains("requireActiveAttempt = requireActiveAttempt"))
         assertTrue(coverCommit.contains("requireActiveAttempt = active"))
         assertTrue(lyricWrite.contains("requireActiveAttempt = active"))
         assertTrue(source.contains("requireActiveAttempt = active,"))
-        val trackedCall = source.substringAfter(
-            "private inline fun <T> executeTrackedCall("
-        ).substringBefore("internal fun consumeCompletedAudioReference")
-        assertTrue(trackedCall.contains("requireActiveAttempt: Boolean = true"))
+        val trackedCall = methodBody(source, "executeTrackedCall")
+        assertTrue(source.contains("internal inline fun <T> AudioDownloadManager.executeTrackedCall("))
+        assertTrue(source.contains("requireActiveAttempt: Boolean = true"))
         assertTrue(trackedCall.contains("(_isCancelled.value && requireActiveAttempt) ||"))
-        val cancellationGuard = source.substringAfter(
-            "private fun ensureSongDownloadNotCancelled"
-        ).substringBefore("private fun isDownloadClearFenceBlockingWork")
+        val cancellationGuard = methodBody(source, "ensureSongDownloadNotCancelled")
         assertTrue(
             cancellationGuard.contains(
                 "allDownloadsCancelled = _isCancelled.value && requireActiveAttempt"
@@ -43,9 +38,15 @@ class AudioDownloadManagerPostCoreEnrichmentContractTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }

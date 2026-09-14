@@ -10,6 +10,7 @@ import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.Issue339LyricsTestDocumentProvider
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -359,15 +360,13 @@ class LocalAudioImportSafLyricsTest {
             matchedTranslatedLyric = "[00:01.00]saved translation",
             localFileName = Issue339LyricsTestDocumentProvider.AUDIO_NAME
         )
-        assertEquals(
-            "SUCCESS",
-            LocalMediaSupport.writeEditableMetadata(
-                context = targetContext,
-                song = sourceSong,
-                writeCover = false,
-                writeLyrics = true
-            ).name
+        val writeOutcome = LocalMediaSupport.writeEditableMetadata(
+            context = targetContext,
+            song = sourceSong,
+            writeCover = false,
+            writeLyrics = true
         )
+        assertEquals(LocalMediaMetadataWriteOutcome.SIDECAR_ONLY, writeOutcome)
         val sourceMetadataUri = DocumentsContract.buildDocumentUri(
             Issue339LyricsTestDocumentProvider.AUTHORITY,
             Issue339LyricsTestDocumentProvider.METADATA_ID

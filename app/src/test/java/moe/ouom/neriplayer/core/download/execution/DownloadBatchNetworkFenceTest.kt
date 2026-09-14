@@ -32,12 +32,11 @@ class DownloadBatchNetworkFenceTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
                 "DownloadExecutionRoomStore.kt"
         ).readText()
-        val tryStartBody = source.substringAfter("suspend fun tryStart(")
-            .substringBefore("suspend fun requestCancel(")
+        val tryStartBody = methodBody(source, "tryStart")
         val fenceIndex = tryStartBody.indexOf("canStartBatchForCurrentNetwork(")
         val transitionIndex = tryStartBody.indexOf("dao.transitionState(", fenceIndex)
 
-        assertTrue(tryStartBody.contains("currentNetworkGeneration: Long? = null"))
+        assertTrue(source.contains("currentNetworkGeneration: Long? = null"))
         assertTrue(tryStartBody.contains("return database.withTransaction"))
         assertTrue(tryStartBody.contains("findBatch(batchId, batchGeneration)"))
         assertTrue(fenceIndex >= 0)
@@ -110,9 +109,15 @@ class DownloadBatchNetworkFenceTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }

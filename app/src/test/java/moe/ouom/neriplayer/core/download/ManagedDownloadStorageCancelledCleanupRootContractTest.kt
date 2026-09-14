@@ -9,39 +9,21 @@ class ManagedDownloadStorageCancelledCleanupRootContractTest {
     @Test
     fun `cancelled cleanup accepts an explicit source root and keeps the default root`() {
         val source = readSource()
-        val single = source.substringAfter(
-            "internal suspend fun cleanupCancelledPendingDownloadArtifacts(\n" +
-                "        context: Context,\n" +
-                "        stableKey: String,"
-        ).substringBefore(
-            "/** 清空全部任务时基于一次完整根目录快照解析所有 operation 的待处理文件对"
-        )
-        val batch = source.substringAfter(
-            "internal suspend fun cleanupCancelledPendingDownloadArtifacts(\n" +
-                "        context: Context,\n" +
-                "        operations: Collection<CancelledPendingDownloadOperation>,"
-        ).substringBefore(
-            "/**\n     * 清空任务时收敛没有 operation 凭据的临时文件"
-        )
+        val cleanup = methodBody(source, "cleanupCancelledPendingDownloadArtifacts")
 
-        assertTrue(single.contains("directoryUri: String? = null"))
-        assertTrue(single.contains("directoryUri = directoryUri"))
-        assertTrue(batch.contains("directoryUri: String? = null"))
-        assertTrue(batch.contains("normalizedDirectoryUri"))
-        assertTrue(batch.contains("resolveRootForOperation("))
-        assertTrue(batch.contains("useDefaultRootWhenDirectoryUriMissing"))
+        assertTrue(source.contains("stableKey: String,"))
+        assertTrue(source.contains("operations: Collection<CancelledPendingDownloadOperation>,"))
+        assertTrue(source.contains("directoryUri: String? = null"))
+        assertTrue(source.contains("directoryUri = directoryUri"))
+        assertTrue(cleanup.contains("normalizedDirectoryUri"))
+        assertTrue(cleanup.contains("resolveRootForOperation("))
+        assertTrue(cleanup.contains("useDefaultRootWhenDirectoryUriMissing"))
     }
 
     @Test
     fun `source root failures preserve pending evidence`() {
         val source = readSource()
-        val cleanup = source.substringAfter(
-            "internal suspend fun cleanupCancelledPendingDownloadArtifacts(\n" +
-                "        context: Context,\n" +
-                "        operations: Collection<CancelledPendingDownloadOperation>,"
-        ).substringBefore(
-            "/**\n     * 清空任务时收敛没有 operation 凭据的临时文件"
-        )
+        val cleanup = methodBody(source, "cleanupCancelledPendingDownloadArtifacts")
 
         assertTrue(cleanup.contains("catch (error: kotlinx.coroutines.CancellationException)"))
         assertTrue(cleanup.contains("throw error"))
@@ -53,13 +35,7 @@ class ManagedDownloadStorageCancelledCleanupRootContractTest {
     @Test
     fun `pending audio deletion gates pending metadata deletion`() {
         val source = readSource()
-        val cleanup = source.substringAfter(
-            "internal suspend fun cleanupCancelledPendingDownloadArtifacts(\n" +
-                "        context: Context,\n" +
-                "        operations: Collection<CancelledPendingDownloadOperation>,"
-        ).substringBefore(
-            "/**\n     * 清空任务时收敛没有 operation 凭据的临时文件"
-        )
+        val cleanup = methodBody(source, "cleanupCancelledPendingDownloadArtifacts")
         val audioDelete = cleanup.indexOf(
             "val deletedAudioReferences = deleteReferencesInternalConcurrently"
         )
@@ -85,18 +61,8 @@ class ManagedDownloadStorageCancelledCleanupRootContractTest {
     @Test
     fun `clear cleanup parses only metadata paired with pending artifacts`() {
         val source = readSource()
-        val cancelledCleanup = source.substringAfter(
-            "internal suspend fun cleanupCancelledPendingDownloadArtifacts(\n" +
-                "        context: Context,\n" +
-                "        operations: Collection<CancelledPendingDownloadOperation>,"
-        ).substringBefore(
-            "/**\n     * 清空任务时收敛没有 operation 凭据的临时文件"
-        )
-        val orphanCleanup = source.substringAfter(
-            "internal suspend fun cleanupUnownedPendingDownloadArtifactsForClear("
-        ).substringBefore(
-            "/** 按入队时记录的根目录回放所有持久终态清理"
-        )
+        val cancelledCleanup = methodBody(source, "cleanupCancelledPendingDownloadArtifacts")
+        val orphanCleanup = methodBody(source, "cleanupUnownedPendingDownloadArtifactsForClear")
 
         assertTrue(cancelledCleanup.contains("metadataEntriesForPendingArtifacts(rootEntries)"))
         assertTrue(
@@ -104,10 +70,12 @@ class ManagedDownloadStorageCancelledCleanupRootContractTest {
         )
         assertTrue(orphanCleanup.contains("metadataEntriesForPendingArtifacts(allEntries)"))
         assertTrue(
-            source.contains("private fun metadataEntriesForPendingArtifacts(")
+            source.contains("internal fun ManagedDownloadStorage.metadataEntriesForPendingArtifacts(")
         )
         assertTrue(
-            source.contains("private suspend fun parseDownloadedAudioMetadataEntriesBatch(")
+            source.contains(
+                "internal suspend fun ManagedDownloadStorage.parseDownloadedAudioMetadataEntriesBatch("
+            )
         )
         assertTrue(source.contains("METADATA_SCAN_PARALLELISM"))
     }
@@ -115,11 +83,7 @@ class ManagedDownloadStorageCancelledCleanupRootContractTest {
     @Test
     fun `metadata selection keeps formal metadata for a pending audio name`() {
         val source = readSource()
-        val helper = source.substringAfter(
-            "private fun metadataEntriesForPendingArtifacts("
-        ).substringBefore(
-            "/** 并行读取清理所需的 metadata"
-        )
+        val helper = methodBody(source, "metadataEntriesForPendingArtifacts")
 
         assertTrue(helper.contains("entry.isPendingAudioWrite"))
         assertTrue(helper.contains("PENDING_AUDIO_WRITE_MARKER"))
@@ -130,11 +94,20 @@ class ManagedDownloadStorageCancelledCleanupRootContractTest {
     private fun readSource(): String {
         val relativePath =
             "src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
-        return sequenceOf(
+        val candidate = sequenceOf(
             File(relativePath),
             File("../$relativePath"),
             File("../../$relativePath")
-        ).firstOrNull(File::isFile)?.readText()
+        ).firstOrNull(File::isFile)
             ?: error("project source file not found: $relativePath")
+        return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver
+            .resolve(candidate)
+            .readText()
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }

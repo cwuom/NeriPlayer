@@ -24,17 +24,15 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
     @Test
     fun `migration entry reader uses typed backend instead of raw resolver stream`() {
         val source = readSource()
-        val reader = source
-            .substringAfter("internal suspend fun <T> readStoredEntryForMigration")
-            .substringBefore("private fun restoreStoredEntryLastModified")
+        val reader = methodBody(source, "readStoredEntryForMigration")
 
         assertFalse(
             "migration reads must not bypass StorageBackend with ContentResolver",
             reader.contains("contentResolver.openInputStream")
         )
         assertTrue(
-            "migration reads must classify the typed backend result",
-            reader.contains("StorageLookupResult")
+            "migration reads must delegate to the typed backend result path",
+            reader.contains("readPreservingBlockFailure")
         )
         assertFalse(
             "migration reads must not stage the whole file in cache",
@@ -45,48 +43,44 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
     @Test
     fun `SAF promote fallback copies through typed backend`() {
         val source = readSource()
-        val promote = source
-            .substringAfter("private suspend fun promotePendingAudio")
-            .substringBefore("private fun writeSeedMetadataAfterAudioCommit")
+        val promote = methodBody(source, "promotePendingAudio")
+        val safCopy = methodBody(source, "copyPendingTreeAudioWithoutReplacing")
 
         assertFalse(
             "SAF promote fallback must not open pending bytes through raw resolver",
-            promote.contains("contentResolver.openInputStream")
+            safCopy.contains("contentResolver.openInputStream")
         )
         assertTrue(
             "SAF promote fallback must use the backend read operation",
-            promote.contains("backend.read")
+            safCopy.contains("backend.read")
         )
-        val safPromote = promote.substringAfter("is RootHandle.TreeRoot")
+        assertTrue(promote.contains("copyPendingTreeAudioWithoutReplacing"))
         assertFalse(
             "SAF promote existence checks must use typed stat, not DocumentFile.isFile",
-            safPromote.contains("DocumentFile.fromSingleUri") || safPromote.contains("it.isFile")
+            safCopy.contains("DocumentFile.fromSingleUri") || safCopy.contains("it.isFile")
         )
     }
 
     @Test
     fun `SAF promotion keeps suspend calls off runBlocking bridges`() {
         val source = readSource()
-        val promotion = source
-            .substringAfter("private suspend fun promotePendingAudio")
-            .substringBefore("private fun discardNewTreePromotionTarget")
+        val promotion = methodBody(source, "promotePendingAudio")
+        val safCopy = methodBody(source, "copyPendingTreeAudioWithoutReplacing")
 
         assertFalse(
             "suspend SAF promotion must not block an IO worker through runBlocking",
-            promotion.contains("runBlocking")
+            promotion.contains("runBlocking") || safCopy.contains("runBlocking")
         )
         assertTrue(
             "SAF promotion must use the typed suspend read operation",
-            promotion.contains("backend.read(StorageReference.SafRef(pending.uri))")
+            safCopy.contains("backend.read(StorageReference.SafRef(pending.uri))")
         )
     }
 
     @Test
     fun `managed SAF rename is delegated to the typed backend`() {
         val source = readSource()
-        val rename = source
-            .substringAfter("private fun renameTreeDocument")
-            .substringBefore("private fun resolvePendingTreeDocument")
+        val rename = methodBody(source, "renameTreeDocumentWithoutReplacing")
 
         assertFalse(
             "managed storage must not call DocumentsContract.renameDocument directly",
@@ -155,9 +149,7 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
     @Test
     fun `text reader does not promote a missing sidecar to root provider failure`() {
         val source = readSource()
-        val reader = source
-            .substringAfter("private suspend fun readTextInternalSuspending")
-            .substringBefore("private fun inspectStorageReference")
+        val reader = methodBody(source, "readTextInternalSuspending")
 
         assertTrue(
             "missing SAF child must be treated as an absent optional sidecar",
@@ -172,11 +164,20 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
     private fun readSource(): String {
         val relativePath =
             "src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
-        return sequenceOf(
+        val candidate = sequenceOf(
             File(relativePath),
             File("../$relativePath"),
             File("../../$relativePath")
-        ).firstOrNull(File::isFile)?.readText()
+        ).firstOrNull(File::isFile)
             ?: throw IllegalStateException("source file not found: $relativePath")
+        return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver
+            .resolve(candidate)
+            .readText()
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }

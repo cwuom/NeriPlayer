@@ -54,7 +54,7 @@ class ForegroundDownloadWorker(
                 sdkInt = Build.VERSION.SDK_INT
             )
         ) {
-            // API 34+ 已由 UIDT 和共享泵接管，旧版 per-operation Work 只能退出
+            // API 34+ 已由 用户发起的数据传输任务 和共享泵接管，旧版 per-operation Work 只能退出
             return@withContext Result.success()
         }
         val executionId = operationId ?: PUMP_OPERATION_ID
@@ -203,38 +203,6 @@ class ForegroundDownloadWorker(
         }
 
         /** keeps compatibility with per-operation fallback work queued by older versions */
-        fun scheduleFallback(
-            context: Context,
-            operationId: String
-        ): Boolean {
-            val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
-            if (PersistentDownloadClearFenceStore.isActive(context.applicationContext)) {
-                return false
-            }
-            if (shouldRouteFallbackToSharedPump(Build.VERSION.SDK_INT)) {
-                return schedulePump(
-                    context = context,
-                    initialDelayMs = UIDT_START_GRACE_MS
-                )
-            }
-            return runCatching {
-                WorkManager.getInstance(context.applicationContext)
-                    .enqueueUniqueWork(
-                        fallbackWorkName(normalizedId),
-                        fallbackExistingWorkPolicy,
-                        buildFallbackRequest(normalizedId)
-                    )
-                true
-            }.onFailure { error ->
-                NPLogger.w(
-                    "NERI-DownloadWorker",
-                    "UIDT fallback 调度失败，保留 Room operation 等待恢复: " +
-                        "operationId=$normalizedId, error=${error.message}",
-                    error
-                )
-            }.getOrDefault(false)
-        }
-
         /** 所有新下载共用一个持久泵，operation 载荷始终保存在 Room */
         internal fun schedulePump(
             context: Context,
@@ -707,7 +675,7 @@ internal class DownloadPumpScheduleCoordinator {
         }
         claimedGeneration = null
         immediateGeneration = null
-        // 当前 worker 只是遇到 UIDT/并行 host 竞争，不属于真实失败。
+        // 当前 worker 只是遇到 用户发起的数据传输任务/并行 host 竞争，不属于真实失败。
         // 释放本代并把运行期间的新请求折叠进一个短延迟 successor。
         activeGeneration = null
         successorRequested = false
@@ -827,8 +795,6 @@ private fun createForegroundInfo(
 internal object DownloadExecutionNotificationIds {
     /** 保留旧区间常量，供升级残留清理和兼容性检查使用 */
     internal const val FOREGROUND_MIN = LEGACY_FOREGROUND_NOTIFICATION_MIN
-    internal const val FOREGROUND_MAX = LEGACY_FOREGROUND_NOTIFICATION_MAX
-    internal const val UIDT_MIN = LEGACY_UIDT_NOTIFICATION_MIN
     internal const val UIDT_MAX = LEGACY_UIDT_NOTIFICATION_MAX
 
     fun foreground(@Suppress("UNUSED_PARAMETER") operationId: String): Int =

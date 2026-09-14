@@ -10,12 +10,8 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val beginBody = source.substringAfter(
-            "private fun beginDownloadedSongDeleteSession"
-        ).substringBefore("private fun downloadedSongDeletionKeys")
-        val deleteBody = source.substringAfter(
-            "private suspend fun deleteDownloadedSongsOnIo"
-        ).substringBefore("/**\n     * 旧目录路径")
+        val beginBody = methodBody(source, "beginDownloadedSongDeleteSession")
+        val deleteBody = methodBody(source, "deleteDownloadedSongsOnIo")
 
         val intentIndex = beginBody.indexOf("PersistentDownloadedSongDeleteIntentStore.begin(")
         val publishIndex = beginBody.indexOf("publishDownloadedSongs(")
@@ -35,8 +31,7 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val initializeBody = source.substringAfter("fun initialize(context: Context)")
-            .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+        val initializeBody = methodBody(source, "initialize")
         val pendingIntentIndex = initializeBody.indexOf(
             "PersistentDownloadedSongDeleteIntentStore.hasPending(appContext)"
         )
@@ -50,7 +45,11 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         assertTrue(pendingIntentIndex >= 0)
         assertTrue(fenceCheckIndex > pendingIntentIndex)
         assertTrue(replayIndex > fenceCheckIndex)
-        assertTrue(source.contains("private fun scheduleDeferredFullLibraryDeleteRecovery"))
+        assertTrue(
+            source.contains(
+                "internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery"
+            )
+        )
         assertTrue(source.contains("ManagedDownloadStorage.currentSnapshotCacheKey(appContext)"))
     }
 
@@ -59,18 +58,20 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val cancellationBody = source.substringAfter(
-            "private fun requestAllDownloadTaskCancellation"
-        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
-        assertTrue(cancellationBody.contains("hasPersistedFence(appContext)"))
+        val cancellationBody = methodBody(source, "requestAllDownloadTaskCancellation")
+        val replayBody = methodBody(source, "replayFullLibraryDeleteWithoutCatalog")
         assertTrue(
-            source.contains("private suspend fun replayFullLibraryDeleteWithoutCatalog")
+            cancellationBody.contains(
+                "val hadPersistedClearFence = PersistentDownloadClearFenceStore.hasPersistedFence("
+            )
         )
+        assertTrue(cancellationBody.contains("if (hadPersistedClearFence && !forceConvergence)"))
         assertTrue(
-            source.substringAfter("private suspend fun replayFullLibraryDeleteWithoutCatalog")
-                .substringBefore("private suspend fun activateDownloadClearFence")
-                .contains("buildFullLibraryDeletePlan(appContext)")
+            source.contains(
+                "internal suspend fun GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog"
+            )
         )
+        assertTrue(replayBody.contains("buildFullLibraryDeletePlan(appContext)"))
         assertTrue(source.contains("isFullLibraryDeleteCancellationSettled(appContext)"))
     }
 
@@ -79,9 +80,7 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val deleteBody = source.substringAfter(
-            "private suspend fun deleteDownloadedSongsOnIo"
-        ).substringBefore("/**\n     * 旧目录路径")
+        val deleteBody = methodBody(source, "deleteDownloadedSongsOnIo")
 
         assertTrue(deleteBody.contains("buildFullLibraryDeletePlan(appContext)"))
         val remainingIndex = deleteBody.indexOf(
@@ -100,9 +99,7 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val enrichmentBody = source.substringAfter(
-            "private suspend fun enrichCoreCommittedDownload"
-        ).substringBefore("private suspend fun settlePostCoreEnrichmentFailure")
+        val enrichmentBody = methodBody(source, "enrichCoreCommittedDownload")
         assertTrue(enrichmentBody.contains("val clearBlocked = isDownloadClearFenceActive"))
         assertTrue(enrichmentBody.contains("val canRetry = !clearBlocked"))
         assertTrue(!enrichmentBody.contains("AudioDownloadManager.isAllDownloadsCancelled()"))
@@ -114,15 +111,9 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val recoveryBody = source.substringAfter(
-            "private fun scheduleFullLibraryDeleteRecoveryIfNeeded"
-        ).substringBefore("private fun restoreDeferredDownloadedSongDeleteSession")
-        val asyncDeleteBody = source.substringAfter(
-            "fun deleteDownloadedSongs(context: Context, songs: List<DownloadedSong>)"
-        ).substringBefore("suspend fun deleteDownloadedSongsWithResult")
-        val resultDeleteBody = source.substringAfter(
-            "suspend fun deleteDownloadedSongsWithResult("
-        ).substringBefore("private fun scheduleFullLibraryDeleteRecoveryIfNeeded")
+        val recoveryBody = methodBody(source, "scheduleFullLibraryDeleteRecoveryIfNeeded")
+        val asyncDeleteBody = methodBody(source, "deleteDownloadedSongs")
+        val resultDeleteBody = methodBody(source, "deleteDownloadedSongsWithResult")
 
         assertTrue(recoveryBody.contains("session.fullLibraryDelete"))
         assertTrue(recoveryBody.contains("session.deleteIntentDurable"))
@@ -136,9 +127,15 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }

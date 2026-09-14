@@ -21,9 +21,8 @@ class ManagedDownloadMigrationRecoveryTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
         ).readText()
-        val recovery = source
-            .substringAfter("private suspend fun buildMigrationTargetIndexFromReceipts(")
-            .substringBefore("private suspend fun statMigrationReceiptTarget(")
+        val recovery = moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver
+            .functionBody(source, "buildMigrationTargetIndexFromReceipts")
         val directProbe = recovery.substringBefore("val snapshot =")
         val snapshotValidation = recovery.substringAfter("val snapshot =")
 
@@ -1144,7 +1143,7 @@ class ManagedDownloadMigrationRecoveryTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")

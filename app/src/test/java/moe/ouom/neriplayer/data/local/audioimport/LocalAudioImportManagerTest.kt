@@ -633,14 +633,7 @@ class LocalAudioImportManagerTest {
             .`when`(resolver)
             .openInputStream(uri)
 
-        val method = LocalAudioImportManager::class.java.getDeclaredMethod(
-            "copyExternalAudioToTarget",
-            Context::class.java,
-            Uri::class.java,
-            File::class.java,
-            Long::class.javaObjectType
-        ).apply { isAccessible = true }
-        method.invoke(LocalAudioImportManager, context, uri, target, 5L)
+        LocalAudioImportManager.copyExternalAudioToTarget(context, uri, target, 5L)
 
         assertEquals("fresh", target.readText())
         assertEquals("recoverable", backup.readText())

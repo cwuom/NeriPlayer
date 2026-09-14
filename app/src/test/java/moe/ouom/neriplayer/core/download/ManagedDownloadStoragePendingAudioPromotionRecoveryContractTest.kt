@@ -8,9 +8,7 @@ import org.junit.Test
 class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
     @Test
     fun `metadata staging verifies the resolved audio name without consuming pending metadata`() {
-        val helper = readStorageSource()
-            .substringAfter("private fun promotePendingCoreMetadata")
-            .substringBefore("private fun cleanupPendingCoreMetadataAfterAudioPromotion")
+        val helper = methodBody(readStorageSource(), "promotePendingCoreMetadata")
         val rewriteIndex = helper.indexOf("rewritePendingMetadataAudioFileName")
         val finalMetadataNameIndex = helper.indexOf("val finalMetadataName")
         val writeIndex = helper.indexOf("writeRootText(")
@@ -42,12 +40,8 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
     @Test
     fun `core promotion stages recoverable metadata before mutating pending audio`() {
         val source = readStorageSource()
-        val promotion = source
-            .substringAfter("internal suspend fun promoteCoreCommittedPendingAudio")
-            .substringBefore("private fun promotePendingCoreMetadata")
-        val plan = source
-            .substringAfter("private suspend fun resolvePendingCorePromotionFinalName")
-            .substringBefore("private suspend fun pendingAudioPromotionExpectedSizeForPlanning")
+        val promotion = methodBody(source, "promoteCoreCommittedPendingAudio")
+        val plan = methodBody(source, "resolvePendingCorePromotionFinalName")
         val stagedPlanIndex = plan.indexOf("resolveStagedPendingPromotionFinalName")
         val allocationIndex = plan.indexOf("resolvePendingAudioPromotionFinalName")
         val metadataStagingIndex = promotion.indexOf("promotePendingCoreMetadata")
@@ -75,12 +69,8 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
     @Test
     fun `core promotion resolves staged names only through the pending artifact identity`() {
         val source = readStorageSource()
-        val resolver = source
-            .substringAfter("internal fun resolveStagedPendingPromotionFinalName")
-            .substringBefore("internal fun resolvePendingAudioPromotionFinalName")
-        val identity = source
-            .substringAfter("private fun matchesPendingPromotionIdentity")
-            .substringBefore("private fun isPendingAudioPromotionFinalNameCandidate")
+        val resolver = methodBody(source, "resolveStagedPendingPromotionFinalName")
+        val identity = methodBody(source, "matchesPendingPromotionIdentity")
 
         assertTrue(resolver.contains("matchesPendingPromotionIdentity"))
         assertTrue(resolver.contains("stagedMetadata.audioFileName"))
@@ -93,22 +83,23 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
     @Test
     fun `pending metadata cleanup waits until its paired audio is no longer pending`() {
         val source = readStorageSource()
-        val cleanup = source
-            .substringAfter("private suspend fun cleanupPendingCoreMetadataAfterAudioPromotion")
-            .substringBefore("private suspend fun isPendingAudioPromotionSourceReleased")
-        val releaseCheckIndex = cleanup.indexOf("isPendingAudioPromotionSourceReleased")
-        val deleteIndex = cleanup.indexOf("deleteReferencesInternal(")
+        val releaseCheck = methodBody(source, "cleanupPendingCoreMetadataAfterAudioPromotion")
+        val cleanup = source.substringAfter(
+            "internal fun ManagedDownloadStorage.cleanupPendingCoreMetadataAfterAudioPromotion("
+        ).substringBefore(
+            "internal suspend fun ManagedDownloadStorage.isPendingAudioPromotionSourceReleased("
+        )
 
-        assertTrue(releaseCheckIndex >= 0)
-        assertTrue(deleteIndex > releaseCheckIndex)
+        assertTrue(releaseCheck.contains("isPendingAudioPromotionSourceReleased"))
+        assertTrue(releaseCheck.contains("sourceReleased = sourceReleased"))
+        assertTrue(cleanup.contains("if (!sourceReleased)"))
+        assertTrue(cleanup.contains("deleteReferencesInternal("))
     }
 
     @Test
     fun `promotion reuses an exact target before resolving a pending source`() {
         val source = readStorageSource()
-        val promotion = source
-            .substringAfter("private suspend fun promotePendingAudio")
-            .substringBefore("internal fun resolvePendingTreeAudioPromotionExpectedSize")
+        val promotion = methodBody(source, "promotePendingAudio")
         val targetIndex = promotion.indexOf("val exactTargetCandidates")
         val pendingIndex = promotion.indexOf("val pending = when", targetIndex)
 
@@ -126,9 +117,10 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
 
     @Test
     fun `existing target recovery remains conservative and cleans pending after verification`() {
-        val helper = readStorageSource()
-            .substringAfter("private fun reconcileExistingTreePromotionTargetLocked")
-            .substringBefore("private suspend fun copyPendingTreeAudioWithoutReplacing")
+        val helper = methodBody(
+            readStorageSource(),
+            "reconcileExistingTreePromotionTargetLocked"
+        )
         val verificationIndex = helper.indexOf("verifiedTreeStoredEntry(")
         val deleteIndex = helper.indexOf("deleteTrustedReference(")
 
@@ -143,9 +135,7 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
 
     @Test
     fun `copy path rechecks an existing target while holding the tree mutation lock`() {
-        val helper = readStorageSource()
-            .substringAfter("private suspend fun copyPendingTreeAudioWithoutReplacing")
-            .substringBefore("private fun discardNewTreePromotionTarget")
+        val helper = methodBody(readStorageSource(), "copyPendingTreeAudioWithoutReplacing")
         val recoveryIndex = helper.indexOf("val recovered = beforeCreate.children")
         val createIndex = helper.indexOf("val createdUri =", recoveryIndex)
 
@@ -160,12 +150,8 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
     @Test
     fun `copy path reuses verified size and checks copied bytes`() {
         val source = readStorageSource()
-        val promotion = source
-            .substringAfter("private suspend fun promotePendingAudio")
-            .substringBefore("internal fun resolvePendingTreeAudioPromotionExpectedSize")
-        val copy = source
-            .substringAfter("private suspend fun copyPendingTreeAudioWithoutReplacing")
-            .substringBefore("private fun discardNewTreePromotionTarget")
+        val promotion = methodBody(source, "promotePendingAudio")
+        val copy = methodBody(source, "copyPendingTreeAudioWithoutReplacing")
 
         assertTrue(promotion.contains("audio.sizeKnown && it > 0L"))
         assertTrue(copy.contains("val copiedBytes = source.copyTo"))
@@ -179,9 +165,15 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
                 directory,
                 "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
             )
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate).readText()
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: ManagedDownloadStorage.kt")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source,
+            methodName
+        )
 }

@@ -71,7 +71,7 @@ class ManagedDownloadMigrationCommitCallbackContractTest {
                 directory,
                 "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
             )
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate).readText()
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: ManagedDownloadStorage.kt")

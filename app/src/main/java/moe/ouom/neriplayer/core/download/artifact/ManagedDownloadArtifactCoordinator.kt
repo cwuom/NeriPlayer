@@ -27,7 +27,7 @@ internal data class ManagedDownloadArtifactBatchDeleteResult(
 
 internal class ManagedDownloadArtifactCoordinator {
     /** 只为不存在的条目批量预创建租约，已有条目仍走完整 claim 校验 */
-    suspend fun precreateMissingArtifacts(
+    suspend fun prepareMissingArtifacts(
         context: Context,
         songs: Collection<SongItem>,
         leaseOwnerIds: Map<String, String> = emptyMap()
@@ -438,19 +438,6 @@ internal class ManagedDownloadArtifactCoordinator {
             ?: ManagedDownloadStorage.currentSnapshotRootKey(context.applicationContext)
         return database(context.applicationContext).managedDownloadArtifactDao()
             .find(rootKey, stableKey)
-            ?.leaseId
-    }
-
-    suspend fun currentLeaseIdAnyRoot(
-        context: Context,
-        song: SongItem
-    ): String? {
-        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return null
-        return database(context.applicationContext).managedDownloadArtifactDao()
-            .findAllByStableKey(stableKey)
-            .asSequence()
-            .filter { artifact -> artifact.leaseId != null }
-            .maxWithOrNull(compareBy<ManagedDownloadArtifactEntity> { it.updatedAtMs })
             ?.leaseId
     }
 
@@ -877,28 +864,6 @@ internal class ManagedDownloadArtifactCoordinator {
     }
 
     /** 全库物理删除已经确认后，原子清掉当前根目录的无租约凭据 */
-    suspend fun deleteAllLeaseFree(
-        context: Context
-    ): ManagedDownloadArtifactBatchDeleteResult {
-        val appContext = context.applicationContext
-        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
-        val database = database(appContext)
-        return database.withTransaction {
-            val dao = database.managedDownloadArtifactDao()
-            val requestedCount = dao.countByRootKey(rootKey)
-            val activeBefore = dao.countLeasedByRootKey(rootKey)
-            val removedCount = dao.deleteLeaseFreeByRootKey(rootKey)
-            val activeAfter = dao.countLeasedByRootKey(rootKey)
-            ManagedDownloadArtifactBatchDeleteResult(
-                requestedCount = requestedCount,
-                removedCount = removedCount,
-                missingCount = (requestedCount - removedCount - activeBefore)
-                    .coerceAtLeast(0),
-                racedCount = maxOf(activeBefore, activeAfter)
-            )
-        }
-    }
-
     /** 取消和 Provider 清理已确认后，收敛旧租约并删除当前根目录凭据 */
     suspend fun deleteAllAfterCancellationSettled(
         context: Context

@@ -12,9 +12,7 @@ class DownloadExecutionCoreCommitRecoveryContractTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
                 "DownloadExecutionRoomStore.kt"
         )
-        val body = source.substringAfter(
-            "suspend fun reconcileCoreCommitJournal("
-        ).substringBefore("suspend fun markCommitting(")
+        val body = methodBody(source, "reconcileCoreCommitJournal")
 
         assertTrue(source.contains("CORE_COMMIT_RECOVERY_SOURCE_STATES"))
         assertTrue(source.contains("WAITING_STORAGE_MUTATION_OPERATION_STATE"))
@@ -30,9 +28,7 @@ class DownloadExecutionCoreCommitRecoveryContractTest {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         )
-        val body = source.substringAfter(
-            "private suspend fun completeCoreDownloadAndEnqueueEnrichment("
-        ).substringBefore("private suspend fun enrichCoreCommittedDownload(")
+        val body = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
 
         assertTrue(body.contains("stableKey = songKey"))
         assertTrue(body.contains("expectedAttemptId = expectedAttemptId"))
@@ -46,9 +42,15 @@ class DownloadExecutionCoreCommitRecoveryContractTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, relativePath)
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate).readText()
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $relativePath")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }

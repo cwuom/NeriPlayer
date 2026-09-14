@@ -66,11 +66,7 @@ class DownloadBatchClearingContractTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
                 "DownloadExecutionRoomStore.kt"
         )
-        val start = source.indexOf("suspend fun markAlreadyDownloadedCompleted(")
-        val end = source.indexOf("\n    /**", startIndex = start + 1)
-        assertTrue(start >= 0)
-        assertTrue(end > start)
-        val body = source.substring(start, end)
+        val body = methodBody(source, "markAlreadyDownloadedCompleted")
         assertTrue(body.contains("dao.deleteHostAdmission(normalizedOperationId)"))
     }
 
@@ -102,9 +98,15 @@ class DownloadBatchClearingContractTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(8) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate).readText()
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }

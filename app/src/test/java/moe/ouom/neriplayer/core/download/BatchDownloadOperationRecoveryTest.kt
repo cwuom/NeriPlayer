@@ -104,7 +104,7 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
-    fun `recoverable operation rehandoff excludes live and user stopped hosts`() {
+    fun `recoverable operation rescheduling excludes live and user stopped hosts`() {
         assertTrue(
             shouldRehandoffRecoveredDownloadOperation(
                 operationState = "RUNNING",
@@ -403,17 +403,21 @@ class BatchDownloadOperationRecoveryTest {
         ).readText()
         val preparationBody = methodBody(source, "prepareAndScheduleBatchDownloadSession")
 
+        val noClaimableSongsIndex = preparationBody.indexOf("if (claimableSongs.isEmpty())")
+        val preparationFailedIndex = preparationBody.indexOf(
+            "if (!prepareBatchDownloadTasks(session, claimableWindow))"
+        )
+        val clearPresentationCall = "clearBatchDownloadPresentation(session.batchPresentationId)"
+
         assertTrue(
-            preparationBody.contains(
-                "if (claimableSongs.isEmpty()) {\n" +
-                    "            clearBatchDownloadPresentation(session.batchPresentationId)"
-            )
+            noClaimableSongsIndex >= 0 &&
+                preparationBody.indexOf(clearPresentationCall, noClaimableSongsIndex) >
+                noClaimableSongsIndex
         )
         assertTrue(
-            preparationBody.contains(
-                "if (!prepareBatchDownloadTasks(session, claimableWindow)) {\n" +
-                    "            clearBatchDownloadPresentation(session.batchPresentationId)"
-            )
+            preparationFailedIndex >= 0 &&
+                preparationBody.indexOf(clearPresentationCall, preparationFailedIndex) >
+                preparationFailedIndex
         )
         assertTrue(
             preparationBody.contains(
@@ -629,9 +633,7 @@ class BatchDownloadOperationRecoveryTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomStore.kt"
         ).readText()
         val batchBody = methodBody(managerSource, "startBatchDownload")
-        val singleBody = managerSource
-            .substringAfter("private fun scheduleUserDownload(")
-            .substringBefore("internal suspend fun executeDownloadOperation(")
+        val singleBody = methodBody(managerSource, "scheduleUserDownload")
 
         assertTrue(batchBody.contains("promoteUserInitiatedInFlightRequests"))
         assertTrue(batchBody.contains("userInitiated = userInitiated"))
@@ -919,16 +921,10 @@ class BatchDownloadOperationRecoveryTest {
         )
         assertTrue(
             source.contains(
-                "private suspend fun recoverPendingDownloadsForStartup(\n" +
-                    "        context: Context,\n" +
-                    "        admissionTicket: Long?\n"
+                "internal suspend fun GlobalDownloadManager.recoverPendingDownloadsForStartup("
             )
         )
-        assertTrue(
-            source.contains(
-                "recoverPendingDownloadsForStartup(\n                    context = appContext,\n                    admissionTicket = startupAdmissionTicket"
-            )
-        )
+        assertTrue(source.contains("admissionTicket = startupAdmissionTicket"))
     }
 
     @Test
@@ -938,14 +934,17 @@ class BatchDownloadOperationRecoveryTest {
         ).readText()
         val schedulingBody = methodBody(source, "schedulePendingBatchDownload")
 
-        val admissionIndex = schedulingBody.indexOf(
-            "admitDownloadMutation(\n                context = session.context,\n                admissionTicket = session.admissionTicket"
-        )
+        val admissionIndex = schedulingBody.indexOf("admitDownloadMutation(")
         val hostScheduleIndex = schedulingBody.indexOf(
             "DownloadExecutionHosts.default.schedule("
         )
 
         assertTrue(admissionIndex >= 0)
+        assertTrue(schedulingBody.indexOf("context = session.context", admissionIndex) > admissionIndex)
+        assertTrue(
+            schedulingBody.indexOf("admissionTicket = session.admissionTicket", admissionIndex) >
+                admissionIndex
+        )
         assertTrue(hostScheduleIndex > admissionIndex)
         assertTrue(schedulingBody.contains("if (!admitted)"))
         assertTrue(schedulingBody.contains("session.artifactClaims.remove(songKey)"))
@@ -960,7 +959,7 @@ class BatchDownloadOperationRecoveryTest {
         val callIndex = batchBody.indexOf("val admitted = schedulePendingBatchDownload(")
         val breakIndex = batchBody.indexOf("break", callIndex)
         val signatureIndex = source.indexOf(
-            "private suspend fun schedulePendingBatchDownload("
+            "internal suspend fun GlobalDownloadManager.schedulePendingBatchDownload("
         )
         val returnTypeIndex = source.indexOf("): Boolean {", signatureIndex)
 
@@ -1000,45 +999,17 @@ class BatchDownloadOperationRecoveryTest {
         assertTrue(waitingBody.contains("mustCreateReplacement"))
     }
 
-    private fun methodBody(source: String, methodName: String): String {
-        val signatureStart = listOf(
-            "private fun $methodName(",
-            "private suspend fun $methodName(",
-            "internal fun $methodName(",
-            "internal suspend fun $methodName(",
-            "suspend fun $methodName("
-        ).asSequence()
-            .map(source::indexOf)
-            .firstOrNull { index -> index >= 0 }
-            ?: -1
-        require(signatureStart >= 0) { "method not found: $methodName" }
-        var parenthesesDepth = 0
-        val bodyStart = (signatureStart until source.length).firstOrNull { index ->
-            when (source[index]) {
-                '(' -> parenthesesDepth++
-                ')' -> parenthesesDepth--
-            }
-            source[index] == '{' && parenthesesDepth == 0
-        } ?: -1
-        require(bodyStart >= 0) { "method body not found: $methodName" }
-        var depth = 0
-        for (index in bodyStart until source.length) {
-            when (source[index]) {
-                '{' -> depth++
-                '}' -> {
-                    depth--
-                    if (depth == 0) return source.substring(bodyStart, index + 1)
-                }
-            }
-        }
-        error("unterminated method body: $methodName")
-    }
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 
     private fun locateProjectFile(path: String): File {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")

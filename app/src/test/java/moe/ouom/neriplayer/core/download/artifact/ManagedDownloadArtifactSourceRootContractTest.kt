@@ -26,9 +26,7 @@ class ManagedDownloadArtifactSourceRootContractTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/" +
                 "GlobalDownloadManager.kt"
         )
-        val body = source.substringAfter(
-            "private suspend fun recoverPendingAudioWritesFromRoot("
-        ).substringBefore("private suspend fun recoverUnfinalizedPublishedAudioFromRoot(")
+        val body = methodBody(source, "recoverPendingAudioWritesFromRoot")
         val commitIndex = body.indexOf(
             "managedDownloadArtifactCoordinator.markCoreCommitted("
         )
@@ -53,9 +51,7 @@ class ManagedDownloadArtifactSourceRootContractTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/" +
                 "ManagedDownloadStorage.kt"
         )
-        val body = source.substringAfter(
-            "internal suspend fun snapshotRootKeyForOperation("
-        ).substringBefore("suspend fun readText(")
+        val body = methodBody(source, "snapshotRootKeyForOperation")
 
         assertTrue(body.contains("directoryUri = directoryUri"))
         assertTrue(body.contains("useDefaultRootWhenDirectoryUriMissing"))
@@ -66,9 +62,15 @@ class ManagedDownloadArtifactSourceRootContractTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, relativePath)
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate).readText()
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $relativePath")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }

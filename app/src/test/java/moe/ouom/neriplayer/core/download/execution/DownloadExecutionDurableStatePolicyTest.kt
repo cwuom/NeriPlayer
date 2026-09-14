@@ -67,8 +67,10 @@ class DownloadExecutionDurableStatePolicyTest {
                 "DownloadExecutionRoomStore.kt"
         )
         val text = source.readText()
-        val method = text.substringAfter("suspend fun reopenCorePublicationRecovery(")
-            .substringBefore("suspend fun markScheduleRejectedRetryable(")
+        val method = moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = text,
+            methodName = "reopenCorePublicationRecovery"
+        )
         assertTrue(method.contains("header.state !in setOf(\"COMPLETED\", \"FINALIZED\")"))
         assertTrue(method.contains("header.stopRequestedByUser"))
         assertTrue(method.contains("state = \"DEGRADED_COMPLETE\""))
@@ -78,7 +80,7 @@ class DownloadExecutionDurableStatePolicyTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")

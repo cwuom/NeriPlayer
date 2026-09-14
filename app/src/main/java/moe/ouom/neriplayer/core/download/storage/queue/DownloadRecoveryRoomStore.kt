@@ -195,7 +195,7 @@ internal class DownloadRecoveryRoomStore(
         }
         val requestedExcludedIds = excludedOperationIds.normalizedOperationIds()
         val forceNewKeys = forceNewOperationForStableKeys.normalizedStableKeys()
-        // 清空只删除 durable 行，旧的 UIDT/Worker 协程仍可能在返回路径中访问
+        // 清空只删除 durable 行，旧的 用户发起的数据传输任务/Worker 协程仍可能在返回路径中访问
         // operationId。把清空代次纳入新等待 operation 的身份，避免旧回调误写新任务
         val clearEpoch = PersistentDownloadClearFenceStore.currentEpoch(appContext)
         return database.withTransaction {

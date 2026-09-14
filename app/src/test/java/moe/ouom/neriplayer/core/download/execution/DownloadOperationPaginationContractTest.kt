@@ -116,8 +116,10 @@ class DownloadOperationPaginationContractTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
                 "DownloadExecutionRoomStore.kt"
         )
-        val body = source.substringAfter("suspend fun markCoreCommitted(")
-            .substringBefore("/** Creates one durable user-selection snapshot")
+        val body = moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = "markCoreCommitted"
+        )
 
         assertTrue(body.contains("dao.findHeader(normalizedOperationId)"))
         assertTrue(body.contains("readRequestFromHeader(dao, header)"))
@@ -195,7 +197,7 @@ class DownloadOperationPaginationContractTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, relativePath)
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate).readText()
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $relativePath")

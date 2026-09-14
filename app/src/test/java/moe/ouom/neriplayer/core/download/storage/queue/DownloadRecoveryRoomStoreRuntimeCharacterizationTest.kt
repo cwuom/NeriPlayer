@@ -160,7 +160,7 @@ class DownloadRecoveryRoomStoreRuntimeCharacterizationTest {
         var attempts = 0
         while (attempts++ < 5) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: break
         }
         error("source file not found: $path")

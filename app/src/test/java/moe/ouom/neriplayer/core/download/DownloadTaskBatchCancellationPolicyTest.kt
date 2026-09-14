@@ -57,25 +57,11 @@ class DownloadTaskBatchCancellationPolicyTest {
         assertTrue(durableBatchBody.contains("val logSettlement = entries.size == 1"))
     }
 
-    private fun methodBody(source: String, methodName: String): String {
-        val signatureIndex = source.indexOf("fun $methodName(")
-        check(signatureIndex >= 0) { "missing method $methodName" }
-        val bodyStart = source.indexOf('{', signatureIndex)
-        check(bodyStart >= 0) { "missing body for $methodName" }
-        var depth = 0
-        for (index in bodyStart until source.length) {
-            when (source[index]) {
-                '{' -> depth++
-                '}' -> {
-                    depth--
-                    if (depth == 0) {
-                        return source.substring(bodyStart + 1, index)
-                    }
-                }
-            }
-        }
-        error("unterminated body for $methodName")
-    }
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 
     private fun locateProjectFile(relativePath: String): java.io.File {
         val userDirectory = System.getProperty("user.dir")
@@ -83,7 +69,9 @@ class DownloadTaskBatchCancellationPolicyTest {
         var current = java.io.File(userDirectory).absoluteFile
         repeat(8) {
             val candidate = java.io.File(current, relativePath)
-            if (candidate.exists()) return candidate
+            if (candidate.isFile) {
+                return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
+            }
             current = current.parentFile ?: return@repeat
         }
         error("Unable to locate $relativePath")

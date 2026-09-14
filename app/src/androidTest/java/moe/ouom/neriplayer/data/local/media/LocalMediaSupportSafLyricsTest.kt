@@ -329,7 +329,7 @@ class LocalMediaSupportSafLyricsTest {
                 writeLyrics = true
             )
 
-            assertEquals("SUCCESS", outcome.name)
+            assertEquals(LocalMediaMetadataWriteOutcome.SIDECAR_ONLY, outcome)
             assertTrue(metadata.isFile)
             val parsed = LocalMediaSupport.parseLocalMetadataSidecar(
                 metadata.absolutePath,
@@ -368,7 +368,7 @@ class LocalMediaSupportSafLyricsTest {
             writeCover = false,
             writeLyrics = true
         )
-        assertEquals("SUCCESS", outcome.name)
+        assertEquals(LocalMediaMetadataWriteOutcome.SIDECAR_ONLY, outcome)
 
         val metadataUri = findMetadataUri()
         try {
@@ -417,15 +417,13 @@ class LocalMediaSupportSafLyricsTest {
         )
 
         try {
-            assertEquals(
-                "SUCCESS",
-                LocalMediaSupport.writeEditableMetadata(
-                    context = targetContext,
-                    song = song,
-                    writeCover = false,
-                    writeLyrics = true
-                ).name
+            val outcome = LocalMediaSupport.writeEditableMetadata(
+                context = targetContext,
+                song = song,
+                writeCover = false,
+                writeLyrics = true
             )
+            assertEquals(LocalMediaMetadataWriteOutcome.SIDECAR_ONLY, outcome)
             val details = LocalMediaSupport.inspect(targetContext, audioUri)
             assertEquals("[00:01.00]saf original recreated", details.lyricContent)
             assertEquals("[00:01.00]saf translation recreated", details.translatedLyricContent)
@@ -473,7 +471,7 @@ class LocalMediaSupportSafLyricsTest {
         }
         val metadataUri = findMetadataUri()
         try {
-            assertTrue(outcomes.all { it.name == "SUCCESS" })
+            assertTrue(outcomes.all { it == LocalMediaMetadataWriteOutcome.SIDECAR_ONLY })
             assertEquals(1, metadataCreateCount())
             assertNotNull(metadataUri)
         } finally {
@@ -629,7 +627,7 @@ class LocalMediaSupportSafLyricsTest {
                 writeLyrics = true
             )
 
-            assertEquals("SUCCESS", outcome.name)
+            assertEquals(LocalMediaMetadataWriteOutcome.SIDECAR_ONLY, outcome)
             assertEquals(0, metadataCreateCount())
             assertEquals(0, lyricsDirectoryCreateCount())
             val raw = LocalMediaSupport.readTextContent(targetContext, metadataUri.toString())

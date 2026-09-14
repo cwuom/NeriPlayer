@@ -182,7 +182,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         val publishedBody = methodBody(source, "recoverUnfinalizedPublishedAudioFromRoot")
         val coreBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
         val coreDeclarationStart = source.indexOf(
-            "private suspend fun completeCoreDownloadAndEnqueueEnrichment("
+            "internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichment("
         )
         val coreDeclarationEnd = source.indexOf('{', startIndex = coreDeclarationStart)
         assertTrue(coreDeclarationStart >= 0)
@@ -313,7 +313,11 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         assertTrue(failureBodyStart > failureIndex)
         val failureBody = coreBody.substring(
             failureIndex,
-            findBodyEnd(coreBody, failureBodyStart, "artifactCommitted branch")
+            moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.bodyEnd(
+                coreBody,
+                failureBodyStart,
+                "artifactCommitted branch"
+            )
         )
         val settleIndex = failureBody.indexOf("settlePostCoreEnrichmentFailure(")
         val leaseReleaseIndex = failureBody.indexOf(
@@ -400,7 +404,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         ).readText()
         val body = methodBody(source, "cleanupMigrationReplacementBackups")
         val declarationStart = Regex(
-            "private\\s+(?:suspend\\s+)?fun\\s+cleanupMigrationReplacementBackups\\("
+            "internal\\s+suspend\\s+fun\\s+ManagedDownloadStorage\\.cleanupMigrationReplacementBackups\\("
         ).find(source)?.range?.first ?: -1
         val declarationEnd = source.indexOf('{', declarationStart)
         assertTrue(declarationStart >= 0 && declarationEnd > declarationStart)
@@ -508,86 +512,17 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     }
 
     private fun methodBody(source: String, methodName: String): String {
-        val signatureStart = Regex(
-            "(?:private|internal|public)?\\s*(?:suspend\\s+)?fun\\s+$methodName\\b"
-        ).find(source)?.range?.first
-            ?: error("method not found: $methodName")
-        val bodyStart = source.indexOf('{', signatureStart)
-        require(bodyStart >= 0) { "method body not found: $methodName" }
-        return source.substring(bodyStart, findBodyEnd(source, bodyStart, methodName))
-    }
-
-    private fun findBodyEnd(source: String, bodyStart: Int, methodName: String): Int {
-        var depth = 0
-        var index = bodyStart
-        var state = SourceLexState.NORMAL
-        while (index < source.length) {
-            val current = source[index]
-            val next = source.getOrNull(index + 1)
-            when (state) {
-                SourceLexState.NORMAL -> when {
-                    current == '/' && next == '/' -> {
-                        state = SourceLexState.LINE_COMMENT
-                        index++
-                    }
-                    current == '/' && next == '*' -> {
-                        state = SourceLexState.BLOCK_COMMENT
-                        index++
-                    }
-                    current == '"' && source.startsWith("\"\"\"", index) -> {
-                        state = SourceLexState.TRIPLE_QUOTE
-                        index += 2
-                    }
-                    current == '"' -> state = SourceLexState.DOUBLE_QUOTE
-                    current == '\'' -> state = SourceLexState.CHAR_QUOTE
-                    current == '{' -> depth++
-                    current == '}' -> {
-                        depth--
-                        if (depth == 0) return index + 1
-                    }
-                }
-                SourceLexState.LINE_COMMENT -> if (current == '\n') {
-                    state = SourceLexState.NORMAL
-                }
-                SourceLexState.BLOCK_COMMENT -> if (current == '*' && next == '/') {
-                    state = SourceLexState.NORMAL
-                    index++
-                }
-                SourceLexState.DOUBLE_QUOTE,
-                SourceLexState.CHAR_QUOTE -> if (current == '\\') {
-                    index++
-                } else if (
-                    (state == SourceLexState.DOUBLE_QUOTE && current == '"') ||
-                        (state == SourceLexState.CHAR_QUOTE && current == '\'')
-                ) {
-                    state = SourceLexState.NORMAL
-                }
-                SourceLexState.TRIPLE_QUOTE -> if (
-                    current == '"' && source.startsWith("\"\"\"", index)
-                ) {
-                    state = SourceLexState.NORMAL
-                    index += 2
-                }
-            }
-            index++
-        }
-        error("unterminated method body: $methodName")
-    }
-
-    private enum class SourceLexState {
-        NORMAL,
-        LINE_COMMENT,
-        BLOCK_COMMENT,
-        DOUBLE_QUOTE,
-        CHAR_QUOTE,
-        TRIPLE_QUOTE
+        return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source,
+            methodName
+        )
     }
 
     private fun locateProjectFile(path: String): File {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")

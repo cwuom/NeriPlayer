@@ -140,31 +140,17 @@ class GlobalDownloadManagerCatalogRaceTest {
         assertTrue(body.contains("Dispatchers.Main.immediate"))
     }
 
-    private fun methodBody(source: String, methodName: String): String {
-        val signatureStart = Regex(
-            "(?:private|internal|public)?\\s*(?:suspend\\s+)?fun\\s+$methodName\\b"
-        ).find(source)?.range?.first
-            ?: error("method not found: $methodName")
-        val bodyStart = source.indexOf('{', signatureStart)
-        require(bodyStart >= 0) { "method body not found: $methodName" }
-        var depth = 0
-        for (index in bodyStart until source.length) {
-            when (source[index]) {
-                '{' -> depth++
-                '}' -> {
-                    depth--
-                    if (depth == 0) return source.substring(bodyStart, index + 1)
-                }
-            }
-        }
-        error("unterminated method body: $methodName")
-    }
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 
     private fun locateProjectFile(path: String): File {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")

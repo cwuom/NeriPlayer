@@ -528,7 +528,7 @@ class UidtDownloadJobService : JobService() {
             )
         }
 
-        /** 启动时压缩遗留 UIDT 任务，保留 Room operation 交给全局泵恢复 */
+        /** 启动时压缩遗留 用户发起的数据传输任务 任务，保留 Room operation 交给全局泵恢复 */
         @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
         internal fun trimPendingJobs(context: Context): Int {
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return 0
@@ -749,13 +749,6 @@ class UidtDownloadJobService : JobService() {
             }.getOrDefault(false)
         }
 
-        fun shouldYieldToPendingJob(
-            context: Context,
-            operationId: String
-        ): Boolean {
-            return pendingJobGraceRemainingMs(context, operationId) > 0L
-        }
-
         fun pendingJobGraceRemainingMs(
             context: Context,
             operationId: String
@@ -836,7 +829,7 @@ internal fun scheduleUidtWithSharedPump(
             "NERI-DownloadUidt",
             "UIDT 已调度，但共享下载泵接管未提交，保留 UIDT 等待系统启动"
         )
-        // 让上层走 deferred/fallback 重试，避免只剩一个可能长期 pending 的 UIDT
+        // 让上层走 deferred/fallback 重试，避免只剩一个可能长期 pending 的 用户发起的数据传输任务
         return false
     }
     return true
@@ -879,7 +872,7 @@ internal fun shouldRescheduleUidtExecution(result: DownloadExecutionResult): Boo
     }
 }
 
-/** 保留回退宿主的所有权，UIDT 进入终态后结束过期任务 */
+/** 保留回退宿主的所有权，用户发起的数据传输任务 进入终态后结束过期任务 */
 internal fun shouldCancelUidtFallback(
     result: DownloadExecutionResult,
     fallbackExecuting: Boolean

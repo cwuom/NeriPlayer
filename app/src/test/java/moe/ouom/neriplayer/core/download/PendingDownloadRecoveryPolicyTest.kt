@@ -95,9 +95,7 @@ class PendingDownloadRecoveryPolicyTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val body = source.substringAfter(
-            "internal suspend fun reconcilePendingDownloadsBeforeMigrationDetailed("
-        ).substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+        val body = methodBody(source, "reconcilePendingDownloadsBeforeMigrationDetailed")
 
         assertTrue(body.contains("WaitingForRetry"))
         assertFalse(body.contains("ManagedLibraryProcessingCoordinator.complete("))
@@ -108,9 +106,7 @@ class PendingDownloadRecoveryPolicyTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val body = source.substringAfter(
-            "internal suspend fun reconcilePendingDownloadsBeforeMigrationDetailed("
-        ).substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+        val body = methodBody(source, "reconcilePendingDownloadsBeforeMigrationDetailed")
 
         assertTrue(body.contains("pendingScan.migrationBlockingArtifactCount"))
         assertTrue(body.contains("pendingScan.migrationMetadataOnlyArtifactCount"))
@@ -121,9 +117,7 @@ class PendingDownloadRecoveryPolicyTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val body = source.substringAfter(
-            "private suspend fun recoverPendingAudioWritesFromRoot("
-        ).substringBefore("private suspend fun recoverUnfinalizedPublishedAudioFromRoot")
+        val body = methodBody(source, "recoverPendingAudioWritesFromRoot")
 
         assertTrue(body.contains("listByStatesAnyLibrary("))
         assertTrue(body.contains("CANCEL_REQUESTED"))
@@ -141,9 +135,7 @@ class PendingDownloadRecoveryPolicyTest {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val body = source.substringAfter(
-            "private suspend fun recoverPendingAudioWritesFromRoot("
-        ).substringBefore("private suspend fun recoverUnfinalizedPublishedAudioFromRoot")
+        val body = methodBody(source, "recoverPendingAudioWritesFromRoot")
 
         assertTrue(body.contains("val sourceRootRecovery = directoryMutationLeaseOwned"))
         assertTrue(body.contains("useDefaultRootWhenDirectoryUriMissing = sourceRootRecovery"))
@@ -154,9 +146,15 @@ class PendingDownloadRecoveryPolicyTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, relativePath)
-            if (candidate.isFile) return candidate
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $relativePath")
     }
+
+    private fun methodBody(source: String, methodName: String): String =
+        moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
+            source = source,
+            methodName = methodName
+        )
 }
