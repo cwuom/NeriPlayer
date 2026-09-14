@@ -388,7 +388,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
                     "operation-pump-reservation-peer-$index",
                     index.toLong(),
                     3
-                ) as? Long
+                )
             )
         }
 
