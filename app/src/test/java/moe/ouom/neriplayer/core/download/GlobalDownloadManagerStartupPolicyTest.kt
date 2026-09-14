@@ -191,7 +191,7 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `startup requeues orphaned running transfers before waking the shared pump`() {
+    fun `startup restores durable cards before waking recovered transfers`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -203,13 +203,24 @@ class GlobalDownloadManagerStartupPolicyTest {
         val orphanRecoveryIndex = initializeBody.indexOf(
             "requeueOrphanedRunningOperations(appContext)"
         )
+        val batchRestoreIndex = initializeBody.indexOf(
+            "restorePersistedBatchDownloadPresentations(appContext)"
+        )
+        val progressRestoreIndex = initializeBody.indexOf("restorePersistedDownloadProgress(")
+        val postCoreResumeIndex = initializeBody.indexOf(
+            "resumePostCoreDownloadsAfterProgressRestore("
+        )
         val pumpWakeIndex = initializeBody.indexOf(
-            "wakeDownloadExecutionPump(appContext, \"startup_process_exit_recovered\")"
+            "wakeStartupDownloadExecutionAfterProgressRestore("
         )
 
         assertTrue(processExitIndex >= 0)
         assertTrue(orphanRecoveryIndex > processExitIndex)
-        assertTrue(pumpWakeIndex > orphanRecoveryIndex)
+        assertTrue(batchRestoreIndex > orphanRecoveryIndex)
+        assertTrue(progressRestoreIndex > batchRestoreIndex)
+        assertTrue(postCoreResumeIndex > progressRestoreIndex)
+        assertTrue(pumpWakeIndex > postCoreResumeIndex)
+        assertFalse(initializeBody.contains("startup_process_exit_recovered"))
     }
 
     @Test
@@ -1248,21 +1259,20 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `missing optional network cover can finalize as degraded`() {
-        assertTrue(
+    fun `missing network cover cannot finalize as a degraded complete item`() {
+        assertFalse(
             shouldFinalizeDownloadedSidecars(
                 hasNetworkCoverCandidate = true,
                 coverReference = null,
-                coverAccessible = false,
-                allowMissingOptionalCover = true
+                coverAccessible = false
             )
         )
     }
 
     @Test
-    fun `post core enrichment failure remains completed when audio is committed`() {
+    fun `post core enrichment failure remains active when audio is committed`() {
         assertEquals(
-            DownloadStatus.COMPLETED,
+            DownloadStatus.DOWNLOADING,
             resolvePostCoreEnrichmentTaskStatus(coreAudioCommitted = true)
         )
         assertEquals(
@@ -3043,21 +3053,51 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `startup reconciles a persisted Wi-Fi fence before its first pump`() {
+    fun `startup reconciles a persisted Wi-Fi fence only after progress restoration`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-        val initializeBody = source.substringAfter("fun initialize(context: Context)")
-            .substringBefore("internal suspend fun reconcileMaterializedLegacyDownloads")
-        val restoreIndex = initializeBody.indexOf(
-            "onWifiBoundDownloadNetworkRestored(appContext, \"startup_immediate\")"
+        val handoffBody = source.substringAfter(
+            "private fun wakeStartupDownloadExecutionAfterProgressRestore"
+        ).substringBefore("fun initialize(context: Context)")
+        val restoreIndex = handoffBody.indexOf(
+            "onWifiBoundDownloadNetworkRestored(appContext, \"startup_progress_restored\")"
         )
-        val fallbackWakeIndex = initializeBody.indexOf(
-            "wakeDownloadExecutionPump(appContext, \"startup_immediate\")"
+        val fallbackWakeIndex = handoffBody.indexOf(
+            "wakeDownloadExecutionPump(appContext, \"startup_progress_restored\")"
         )
 
         assertTrue(restoreIndex >= 0)
         assertTrue(fallbackWakeIndex > restoreIndex)
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("internal suspend fun reconcileMaterializedLegacyDownloads")
+        val progressRestoreIndex = initializeBody.indexOf("restorePersistedDownloadProgress(")
+        val handoffIndex = initializeBody.indexOf(
+            "wakeStartupDownloadExecutionAfterProgressRestore("
+        )
+        assertTrue(handoffIndex > progressRestoreIndex)
+        assertFalse(initializeBody.contains("startup_immediate"))
+    }
+
+    @Test
+    fun `startup hands post core recovery to a host without scanning SAF`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val handoffBody = source.substringAfter(
+            "private fun resumePostCoreDownloadsAfterProgressRestore"
+        ).substringBefore("fun initialize(context: Context)")
+
+        val durableReadIndex = handoffBody.indexOf("listByStatesAnyLibrary(")
+        val scheduleIndex = handoffBody.indexOf("schedulePostCoreEnrichmentRetry(")
+
+        assertTrue(durableReadIndex >= 0)
+        assertTrue(scheduleIndex > durableReadIndex)
+        assertTrue(handoffBody.contains("\"CORE_COMMITTED\""))
+        assertTrue(handoffBody.contains("\"ASSETS_ENRICHING\""))
+        assertTrue(handoffBody.contains("\"DEGRADED_COMPLETE\""))
+        assertTrue(handoffBody.contains("allowInFlightState = true"))
+        assertFalse(handoffBody.contains("buildDownloadLibrarySnapshot("))
     }
 
     @Test

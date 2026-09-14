@@ -110,21 +110,22 @@ internal fun requiresDownloadFinalizationRecovery(state: String?): Boolean {
     )
 }
 
-/** 只有持久化状态越过 core 收尾边界后，恢复流程才能停止重试 */
+/** artifact 记录存在时必须由其终态确认完成，不能被旧 operation 完成位覆盖 */
 internal fun isDownloadFinalizationDurablySettled(
     operationState: String?,
     artifactState: String?
 ): Boolean {
+    val artifactFinalized = artifactState in setOf(
+        "FINALIZED",
+        "COMPLETE"
+    )
+    if (artifactState != null) {
+        return artifactFinalized
+    }
     return operationState in setOf(
         "COMPLETED",
         "FINALIZED",
-        "ASSETS_ENRICHING",
-        "DEGRADED_COMPLETE",
         "COMPLETE"
-    ) || artifactState in setOf(
-        "FINALIZED",
-        "ASSETS_ENRICHING",
-        "DEGRADED_COMPLETE"
     )
 }
 

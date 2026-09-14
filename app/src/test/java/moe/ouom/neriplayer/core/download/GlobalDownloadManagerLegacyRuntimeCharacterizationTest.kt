@@ -10,7 +10,7 @@ import org.junit.Test
  */
 class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     @Test
-    fun `artifact commit result gates every core publication side effect`() {
+    fun `artifact commit keeps core work active until final publication`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -31,12 +31,12 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
             "AudioDownloadManager.rememberCompletedAudioReference(",
             rejectionIndex
         )
-        val catalogIndex = body.indexOf(
-            "publishOptimisticDownloadedSongs(",
+        val activeTaskIndex = body.indexOf(
+            "status = DownloadStatus.DOWNLOADING",
             rejectionIndex
         )
-        val completionIndex = body.indexOf(
-            "status = DownloadStatus.COMPLETED",
+        val enrichmentStageIndex = body.indexOf(
+            "stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING",
             rejectionIndex
         )
         val enrichmentIndex = body.indexOf("assetEnrichmentCoordinator.enqueue(", rejectionIndex)
@@ -51,9 +51,11 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
             body.substring(artifactCommittedIndex, rejectionIndex).contains("isApplied")
         )
         assertTrue(bridgeIndex > rejectionIndex)
-        assertTrue(catalogIndex > rejectionIndex)
-        assertTrue(completionIndex > rejectionIndex)
+        assertTrue(activeTaskIndex > bridgeIndex)
+        assertTrue(enrichmentStageIndex > activeTaskIndex)
         assertTrue(enrichmentIndex > rejectionIndex)
+        assertFalse(body.contains("publishOptimisticDownloadedSongs("))
+        assertFalse(body.contains("status = DownloadStatus.COMPLETED"))
         val rejectionBody = body.substring(rejectionIndex, bridgeIndex)
         assertTrue(rejectionBody.contains("ensureCoreRecoveryOperation"))
         assertTrue(rejectionBody.contains("return"))
@@ -142,21 +144,26 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     }
 
     @Test
-    fun `core commit publishes a playable catalog entry before slow asset enrichment`() {
+    fun `core commit defers catalog publication until slow asset enrichment is complete`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val body = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
         val coreCommittedIndex = body.indexOf("markCoreCommitted")
-        val optimisticPublishIndex = body.indexOf("publishOptimisticDownloadedSongs")
+        val activeTaskIndex = body.indexOf("status = DownloadStatus.DOWNLOADING")
+        val enrichmentStageIndex = body.indexOf(
+            "stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING"
+        )
         val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.enqueue(")
 
         assertTrue(
-            "a core-committed audio must be visible before lyrics/cover processing",
+            "a core-committed audio must remain an active enrichment task",
             coreCommittedIndex >= 0 &&
-                optimisticPublishIndex > coreCommittedIndex &&
-                enrichmentDispatchIndex > optimisticPublishIndex
+                activeTaskIndex > coreCommittedIndex &&
+                enrichmentStageIndex > activeTaskIndex &&
+                enrichmentDispatchIndex > enrichmentStageIndex
         )
+        assertFalse(body.contains("publishOptimisticDownloadedSongs"))
     }
 
     @Test
@@ -172,21 +179,25 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     }
 
     @Test
-    fun `core recovery registers the playback bridge before durable preview publication`() {
+    fun `core recovery registers the playback bridge before active enrichment presentation`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val body = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
         val bridgeIndex = body.indexOf("AudioDownloadManager.rememberCompletedAudioReference(")
-        val roomPreviewIndex = body.indexOf("ManagedLibraryItemRoomStore.upsert(")
-        val catalogIndex = body.indexOf("publishOptimisticDownloadedSongs(")
+        val activeTaskIndex = body.indexOf("status = DownloadStatus.DOWNLOADING")
+        val stageIndex = body.indexOf(
+            "stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING"
+        )
 
         assertTrue(
-            "a recovered core audio must be reachable before Room or catalog publication",
+            "a recovered core audio must be reachable before the active enrichment task",
             bridgeIndex >= 0 &&
-                roomPreviewIndex > bridgeIndex &&
-                catalogIndex > bridgeIndex
+                activeTaskIndex > bridgeIndex &&
+                stageIndex > activeTaskIndex
         )
+        assertFalse(body.contains("ManagedLibraryItemRoomStore.upsert("))
+        assertFalse(body.contains("publishOptimisticDownloadedSongs("))
     }
 
     @Test
@@ -196,6 +207,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         ).readText()
         val body = methodBody(source, "publishFinalizedDownload")
         val promotionIndex = body.indexOf("promoteFinalizedPendingAudio(")
+        val integrityIndex = body.indexOf("verifyFinalizedDownloadedArtifactForPublication(")
         val bridgeIndex = body.indexOf("rememberCompletedAudioReference(")
         val markFinalizedIndex = body.indexOf("managedDownloadArtifactCoordinator.markFinalized(")
         val publishIndex = body.indexOf("publishCompletedDownloadOptimistically(")
@@ -206,7 +218,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
 
         assertTrue(
             "the final URI must replace the invalidated pending bridge immediately",
-            promotionIndex >= 0 && bridgeIndex > promotionIndex
+            promotionIndex >= 0 && integrityIndex > promotionIndex && bridgeIndex > integrityIndex
         )
         assertTrue(
             "artifact and catalog publication must happen before bridge cleanup",
@@ -289,7 +301,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     }
 
     @Test
-    fun `post core enrichment failures expose completed task and keep retry handoff`() {
+    fun `post core enrichment failures keep an active task and retry handoff`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -302,6 +314,10 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         assertTrue(enrichmentBody.contains("settlePostCoreEnrichmentFailure"))
         assertTrue(unsupportedBody.contains("settlePostCoreEnrichmentFailure"))
         assertTrue(settleBody.contains("resolvePostCoreEnrichmentTaskStatus"))
+        assertTrue(settleBody.contains("DownloadStatus.DOWNLOADING"))
+        assertTrue(
+            settleBody.contains("stage = AudioDownloadManager.DownloadStage.WAITING_RETRY")
+        )
         assertTrue(settleBody.contains("schedulePostCoreEnrichmentRetry"))
         assertFalse(enrichmentBody.contains("DownloadStatus.FAILED"))
         assertFalse(unsupportedBody.contains("DownloadStatus.FAILED"))

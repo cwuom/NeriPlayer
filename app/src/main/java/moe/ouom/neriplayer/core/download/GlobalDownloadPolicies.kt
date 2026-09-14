@@ -270,22 +270,20 @@ internal fun shouldTrustDirectPresentDownloadedSongReference(
 internal fun shouldFinalizeDownloadedSidecars(
     hasNetworkCoverCandidate: Boolean,
     coverReference: String?,
-    coverAccessible: Boolean,
-    allowMissingOptionalCover: Boolean = false
+    coverAccessible: Boolean
 ): Boolean {
     if (!hasNetworkCoverCandidate) {
         return true
     }
-    return allowMissingOptionalCover ||
-        (!coverReference.isNullOrBlank() && coverAccessible)
+    return !coverReference.isNullOrBlank() && coverAccessible
 }
 
-/** core 音频已经提交后，收尾失败仍应以可播放结果呈现 */
+/** core 音频已经提交但收尾失败时，任务必须保留在可恢复的活动态 */
 internal fun resolvePostCoreEnrichmentTaskStatus(
     coreAudioCommitted: Boolean
 ): DownloadStatus {
     return if (coreAudioCommitted) {
-        DownloadStatus.COMPLETED
+        DownloadStatus.DOWNLOADING
     } else {
         DownloadStatus.FAILED
     }
@@ -486,6 +484,22 @@ internal fun recoveredDownloadTaskPresentation(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
                 stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
+            )
+        operationState == "CORE_COMMITTED" || operationState == "ASSETS_ENRICHING" ->
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.DOWNLOADING,
+                stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING
+            )
+        operationState == "DEGRADED_COMPLETE" ->
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.DOWNLOADING,
+                // 重启会立即把 post-core operation 重新交给独立宿主。没有持久退避
+                // 时应明确显示正在收尾，不能把所有历史收尾任务伪装成等待重试
+                stage = if (nextRetryAtMs?.let { it > nowMs } == true) {
+                    AudioDownloadManager.DownloadStage.WAITING_RETRY
+                } else {
+                    AudioDownloadManager.DownloadStage.ASSETS_ENRICHING
+                }
             )
         operationState == "RETRYABLE" || nextRetryAtMs?.let { it > nowMs } == true ->
             RecoveredDownloadTaskPresentation(

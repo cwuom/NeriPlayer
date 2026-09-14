@@ -251,7 +251,7 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
     }
 
     @Test
-    fun `core publication promotes pending audio before exposing completed catalog`() {
+    fun `core publication promotes pending audio before entering asset enrichment`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         )
@@ -262,13 +262,14 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
             "val publishedAudio = corePublicationCoordinator.promoteBeforePublication("
         )
         val artifactIndex = completionBody.indexOf("val artifactCommitted")
-        val completedStatusIndex = completionBody.indexOf(
-            "status = DownloadStatus.COMPLETED"
+        val activeStatusIndex = completionBody.indexOf(
+            "status = DownloadStatus.DOWNLOADING"
         )
 
         assertTrue(promotionIndex >= 0)
         assertTrue(artifactIndex > promotionIndex)
-        assertTrue(completedStatusIndex > promotionIndex)
+        assertTrue(activeStatusIndex > promotionIndex)
+        assertFalse(completionBody.contains("publishOptimisticDownloadedSongs("))
     }
 
     @Test

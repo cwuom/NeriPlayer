@@ -310,10 +310,6 @@ internal fun shouldRestoreManagedLibraryItem(state: String): Boolean {
     return state in setOf(
         "FINALIZED",
         "COMPLETE",
-        "COMPLETED",
-        // core 音频已完成并校验，资产收尾可在下次启动继续
-        "CORE_COMMITTED",
-        "ASSETS_ENRICHING",
-        "DEGRADED_COMPLETE"
+        "COMPLETED"
     )
 }

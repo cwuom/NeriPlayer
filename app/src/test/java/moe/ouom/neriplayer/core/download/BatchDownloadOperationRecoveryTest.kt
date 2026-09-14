@@ -465,7 +465,7 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
-    fun `post core recovery retries when durable completion cannot be confirmed`() {
+    fun `post core recovery keeps durable enrichment state when finalization is not yet confirmed`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -473,15 +473,21 @@ class BatchDownloadOperationRecoveryTest {
         val recoveryBody = methodBody(source, "recoverPostCoreDownloadOperation")
         val artifactBody = methodBody(source, "claimAndPrepareBatchArtifact")
 
-        assertTrue(executeBody.contains("return DownloadExecutionResult.Retry"))
+        val postCoreBranch = executeBody
+            .substringAfter("val restartMissingPostCoreArtifact")
+            .substringBefore("downloadAdmissionGate.awaitOpen()")
+        assertTrue(postCoreBranch.contains("return DownloadExecutionResult.AlreadyHandled"))
+        assertFalse(postCoreBranch.contains("return DownloadExecutionResult.Retry"))
         assertTrue(recoveryBody.contains("currentStateAnyRoot("))
         assertTrue(recoveryBody.contains("isDownloadFinalizationDurablySettled("))
-       assertTrue(recoveryBody.contains("matchingCompletedTask"))
-       assertTrue(recoveryBody.contains("settleAndRemoveRecoveredTask"))
+        assertTrue(recoveryBody.contains("matchingCompletedTask"))
+        assertTrue(recoveryBody.contains("settleAndRemoveRecoveredTask"))
+        assertFalse(recoveryBody.contains("finalized = matchingCompletedTask != null"))
         assertTrue(source.contains("removeDownloadTask"))
         assertTrue(recoveryBody.contains("promoteStatus = durablePostCore"))
-       assertTrue(source.contains("audioEntriesWithoutMetadata"))
-       assertTrue(artifactBody.contains("attemptId == null && !canFinalizePreparedArtifact"))
+        assertTrue(source.contains("audioEntriesWithoutMetadata"))
+        assertTrue(artifactBody.contains("attemptId == null && !canFinalizePreparedArtifact"))
+        assertTrue(source.contains("if (!artifactFinalized)"))
     }
 
     @Test

@@ -82,6 +82,67 @@ class ManagedLibraryRebuilderTest {
     }
 
     @Test
+    fun `finalized metadata with a known missing required cover stays out of the plan`() {
+        val audio = audio(lastModifiedMs = 77L)
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            coverUrl = "https://example.com/cover.jpg",
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+        )
+
+        assertEquals(
+            emptyList<ManagedLibraryRebuildItem>(),
+            ManagedLibraryRebuilder.plan(snapshot(audio, metadata))
+        )
+    }
+
+    @Test
+    fun `finalized metadata with a known accessible required cover remains in the plan`() {
+        val audio = audio(lastModifiedMs = 77L)
+        val cover = ManagedDownloadStorage.StoredEntry(
+            name = "song.cover.jpg",
+            reference = "/library/covers/song.cover.jpg",
+            mediaUri = "/library/covers/song.cover.jpg",
+            localFilePath = "/library/covers/song.cover.jpg",
+            sizeBytes = 10L,
+            lastModifiedMs = 77L
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            coverUrl = "https://example.com/cover.jpg",
+            coverPath = cover.reference,
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+        )
+        val snapshot = snapshot(audio, metadata).copy(
+            coverEntriesByName = mapOf(cover.name to cover),
+            knownReferences = setOf(audio.reference, cover.reference)
+        )
+
+        assertEquals(
+            listOf(audio),
+            ManagedLibraryRebuilder.plan(snapshot).map { item -> item.audio }
+        )
+    }
+
+    @Test
+    fun `finalized metadata with a known missing required lyric stays out of the plan`() {
+        val audio = audio(lastModifiedMs = 77L)
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            matchedLyric = "[00:01.00]lyric",
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+        )
+
+        assertEquals(
+            emptyList<ManagedLibraryRebuildItem>(),
+            ManagedLibraryRebuilder.plan(snapshot(audio, metadata))
+        )
+    }
+
+    @Test
     fun `fast index preview accepts finalized entries without claiming a complete root`() {
         val audio = audio(lastModifiedMs = 77L)
         val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(

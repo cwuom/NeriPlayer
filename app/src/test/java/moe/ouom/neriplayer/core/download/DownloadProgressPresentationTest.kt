@@ -752,6 +752,41 @@ class DownloadProgressPresentationTest {
         )
         assertEquals(
             RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.DOWNLOADING,
+                stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "ASSETS_ENRICHING",
+                stopRequestedByUser = false,
+                batchStateBits = null
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.DOWNLOADING,
+                stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "DEGRADED_COMPLETE",
+                stopRequestedByUser = false,
+                batchStateBits = null
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.DOWNLOADING,
+                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "DEGRADED_COMPLETE",
+                stopRequestedByUser = false,
+                batchStateBits = null,
+                nextRetryAtMs = 2_000L,
+                nowMs = 1_000L
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
                 stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
             ),

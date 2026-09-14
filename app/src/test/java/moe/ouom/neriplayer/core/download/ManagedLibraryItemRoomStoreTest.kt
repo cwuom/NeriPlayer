@@ -7,9 +7,9 @@ import org.junit.Test
 
 class ManagedLibraryItemRoomStoreTest {
     @Test
-    fun `core and finalized managed library states restore previews`() {
+    fun `only finalized managed library states restore previews`() {
         listOf("CORE_COMMITTED", "ASSETS_ENRICHING", "DEGRADED_COMPLETE").forEach { state ->
-            assertTrue(state, shouldRestoreManagedLibraryItem(state))
+            assertFalse(state, shouldRestoreManagedLibraryItem(state))
         }
         listOf("FINALIZED", "COMPLETE", "COMPLETED").forEach { state ->
             assertTrue(state, shouldRestoreManagedLibraryItem(state))

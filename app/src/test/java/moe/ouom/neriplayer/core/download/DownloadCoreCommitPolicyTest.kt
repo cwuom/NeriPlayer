@@ -216,23 +216,35 @@ class DownloadCoreCommitPolicyTest {
     }
 
     @Test
-    fun `recovery stops only after operation or artifact is durably settled`() {
+    fun `recovery requires an existing artifact to be durably settled`() {
         assertTrue(
             isDownloadFinalizationDurablySettled(
                 operationState = "CORE_COMMITTED",
                 artifactState = "FINALIZED"
             )
         )
-        assertTrue(
+        assertFalse(
             isDownloadFinalizationDurablySettled(
                 operationState = "ASSETS_ENRICHING",
                 artifactState = "CORE_COMMITTED"
             )
         )
-        assertTrue(
+        assertFalse(
             isDownloadFinalizationDurablySettled(
                 operationState = "DEGRADED_COMPLETE",
                 artifactState = "DEGRADED_COMPLETE"
+            )
+        )
+        assertFalse(
+            isDownloadFinalizationDurablySettled(
+                operationState = "COMPLETED",
+                artifactState = "DEGRADED_COMPLETE"
+            )
+        )
+        assertTrue(
+            isDownloadFinalizationDurablySettled(
+                operationState = "COMPLETED",
+                artifactState = null
             )
         )
         assertFalse(

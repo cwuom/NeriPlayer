@@ -1,11 +1,14 @@
 package moe.ouom.neriplayer.core.download
 
+import kotlin.math.abs
+import kotlin.math.max
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 
 internal data class DownloadedArtifactReferenceState(
     val audioReadable: Boolean,
+    val audioDurationMs: Long? = null,
     val coverReadable: Boolean,
     val originalLyricReadable: Boolean,
     val translatedLyricReadable: Boolean,
@@ -14,6 +17,8 @@ internal data class DownloadedArtifactReferenceState(
 
 internal enum class DownloadedArtifactIntegrityIssue {
     AUDIO_UNREADABLE,
+    AUDIO_DURATION_UNAVAILABLE,
+    AUDIO_DURATION_MISMATCH,
     METADATA_MISSING,
     METADATA_NOT_FINALIZED,
     STABLE_KEY_MISMATCH,
@@ -64,6 +69,11 @@ internal fun verifyDownloadedArtifactIntegrity(
     if (!references.audioReadable) {
         issues += DownloadedArtifactIntegrityIssue.AUDIO_UNREADABLE
     }
+    verifyAudioDuration(
+        expectedDurationMs = song.durationMs,
+        actualDurationMs = references.audioDurationMs,
+        issues = issues
+    )
 
     if (metadata == null) {
         issues += DownloadedArtifactIntegrityIssue.METADATA_MISSING
@@ -204,6 +214,24 @@ private fun addTextFieldIssues(
         issues += missingIssue
     } else if (!expected.isNullOrBlank() && actual != expected) {
         issues += mismatchIssue
+    }
+}
+
+/** 下载目录只接受与来源时长相符的成品，编码 padding 保留很小的容差 */
+private fun verifyAudioDuration(
+    expectedDurationMs: Long,
+    actualDurationMs: Long?,
+    issues: MutableSet<DownloadedArtifactIntegrityIssue>
+) {
+    if (expectedDurationMs <= 0L) return
+    val actual = actualDurationMs?.takeIf { it > 0L }
+    if (actual == null) {
+        issues += DownloadedArtifactIntegrityIssue.AUDIO_DURATION_UNAVAILABLE
+        return
+    }
+    val toleranceMs = max(1_000L, expectedDurationMs / 200L).coerceAtMost(2_000L)
+    if (abs(actual - expectedDurationMs) > toleranceMs) {
+        issues += DownloadedArtifactIntegrityIssue.AUDIO_DURATION_MISMATCH
     }
 }
 

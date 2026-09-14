@@ -205,14 +205,14 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val coreBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
-        val catalogPublishIndex = coreBody.indexOf("publishOptimisticDownloadedSongs(")
+        val activeTaskIndex = coreBody.indexOf("status = DownloadStatus.DOWNLOADING")
         val finalAdmissionCheckIndex = coreBody.indexOf(
             "core 发布后清空代次已失效，跳过资产增强 operation 登记",
-            startIndex = catalogPublishIndex
+            startIndex = activeTaskIndex
         )
         val ensureOperationIndex = coreBody.indexOf(
             "val enrichmentOperationId = ensureCoreRecoveryOperation(",
-            startIndex = catalogPublishIndex
+            startIndex = activeTaskIndex
         )
         val statePersistIndex = coreBody.indexOf(
             "val enrichmentStatePersisted =",
@@ -227,8 +227,8 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
             startIndex = memoryOwnerIndex
         )
 
-        assertTrue(catalogPublishIndex >= 0)
-        assertTrue(finalAdmissionCheckIndex > catalogPublishIndex)
+        assertTrue(activeTaskIndex >= 0)
+        assertTrue(finalAdmissionCheckIndex > activeTaskIndex)
         assertTrue(ensureOperationIndex > finalAdmissionCheckIndex)
         assertTrue(statePersistIndex > ensureOperationIndex)
         assertTrue(memoryOwnerIndex > statePersistIndex)
@@ -248,6 +248,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         val postOwnerBody = coreBody.substring(memoryOwnerIndex, enqueueIndex)
         assertTrue(postOwnerBody.contains("releaseEnrichmentMemoryOwnership()"))
         assertTrue(postOwnerBody.contains("memory_owner_registered"))
+        assertFalse(coreBody.contains("publishOptimisticDownloadedSongs("))
     }
 
     @Test
@@ -267,7 +268,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         assertTrue(upsertIndex > existingReturnIndex)
         assertTrue(
             recoveryBody.substring(existingReturnIndex, upsertIndex)
-                .contains("val recoveryOperationId = preferredOperationId ?:")
+                .contains("val recoveryOperationId = preferredOperationId")
         )
         assertTrue(recoveryBody.contains("state = \"CORE_COMMITTED\""))
     }

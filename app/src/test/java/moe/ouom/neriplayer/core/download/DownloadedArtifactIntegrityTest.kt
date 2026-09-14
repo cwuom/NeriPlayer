@@ -90,6 +90,46 @@ class DownloadedArtifactIntegrityTest {
     }
 
     @Test
+    fun `unavailable final audio duration is rejected when the source duration is known`() {
+        val song = remoteSong()
+
+        val result = verifyDownloadedArtifactIntegrity(
+            song = song,
+            metadata = completeMetadata(song),
+            references = readableReferences().copy(audioDurationMs = null),
+            expectCover = true,
+            expectOriginalLyric = true,
+            expectTranslatedLyric = true,
+            expectRomanizedLyric = true
+        )
+
+        assertEquals(
+            setOf(DownloadedArtifactIntegrityIssue.AUDIO_DURATION_UNAVAILABLE),
+            result.issues
+        )
+    }
+
+    @Test
+    fun `truncated final audio duration is rejected`() {
+        val song = remoteSong()
+
+        val result = verifyDownloadedArtifactIntegrity(
+            song = song,
+            metadata = completeMetadata(song),
+            references = readableReferences().copy(audioDurationMs = song.durationMs - 5_000L),
+            expectCover = true,
+            expectOriginalLyric = true,
+            expectTranslatedLyric = true,
+            expectRomanizedLyric = true
+        )
+
+        assertEquals(
+            setOf(DownloadedArtifactIntegrityIssue.AUDIO_DURATION_MISMATCH),
+            result.issues
+        )
+    }
+
+    @Test
     fun `remote identity fields are part of the integrity contract`() {
         val song = remoteSong()
         val result = verifyDownloadedArtifactIntegrity(
@@ -189,6 +229,7 @@ class DownloadedArtifactIntegrityTest {
     private fun readableReferences(): DownloadedArtifactReferenceState {
         return DownloadedArtifactReferenceState(
             audioReadable = true,
+            audioDurationMs = 180_000L,
             coverReadable = true,
             originalLyricReadable = true,
             translatedLyricReadable = true,
