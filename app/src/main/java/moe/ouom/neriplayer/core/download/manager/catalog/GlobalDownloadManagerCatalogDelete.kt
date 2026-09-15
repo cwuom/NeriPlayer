@@ -82,7 +82,7 @@ internal fun GlobalDownloadManager.beginDownloadedSongDeleteSession(
     var deleteIntentDurable = true
     return try {
         synchronized(downloadedSongCatalogMutationLock) {
-            val previousSongs = _downloadedSongs.value
+            val previousSongs = downloadedSongsMutable.value
             val currentVisibilityToken = downloadedSongDeleteVisibility.begin(targetSongs)
             visibilityToken = currentVisibilityToken
             val currentRootKey = ManagedDownloadStorage.currentSnapshotCacheKey(context)
@@ -149,7 +149,7 @@ internal fun GlobalDownloadManager.beginDownloadedSongDeleteSession(
                 fullLibraryDelete = deletesEntireCatalog,
                 deleteIntentDurable = deleteIntentDurable
             ).also { session ->
-                _downloadedSongDeleteProgress.value = DownloadedSongDeleteProgress(
+                downloadedSongDeleteProgressMutable.value = DownloadedSongDeleteProgress(
                     deleteId = session.deleteId,
                     phase = DownloadedSongDeletePhase.PREPARING,
                     requestedSongCount = targetSongs.size,
@@ -515,7 +515,7 @@ internal fun GlobalDownloadManager.settleDownloadedSongDeleteSession(
                     song
                 )
         }
-        val currentSongs = _downloadedSongs.value
+        val currentSongs = downloadedSongsMutable.value
         val restorationSourceSongs = (
             session.previousSongs +
                 session.visibilityToken.baselineSongsByIdentity.values
@@ -671,7 +671,7 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
         NPLogger.d(
             TAG,
             "批量删除下载开始: songs=${targetSongs.size}, references=${requestedReferences.size}, " +
-                "visible=${_downloadedSongs.value.size}"
+                "visible=${downloadedSongsMutable.value.size}"
         )
         updateDownloadedSongDeleteProgress(
             session = session,
@@ -1056,7 +1056,7 @@ internal fun GlobalDownloadManager.updateDownloadedSongDeleteProgress(
     completedReferenceCount: Int? = null,
     failedReferenceCount: Int? = null
 ) {
-    _downloadedSongDeleteProgress.update { current ->
+    downloadedSongDeleteProgressMutable.update { current ->
         if (current?.deleteId != session.deleteId) {
             current
         } else {
@@ -1301,7 +1301,7 @@ internal fun GlobalDownloadManager.removeMissingDownloadedSongEntry(
     context: Context,
     song: DownloadedSong
 ) {
-    val previousSongs = _downloadedSongs.value
+    val previousSongs = downloadedSongsMutable.value
     val updatedSongs = previousSongs.filterNot { candidate ->
         matchesDownloadedSongCatalogEntry(candidate, song)
     }

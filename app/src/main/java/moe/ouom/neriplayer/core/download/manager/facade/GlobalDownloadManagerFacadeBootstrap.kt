@@ -997,7 +997,7 @@ internal fun GlobalDownloadManager.requestPendingDownloadRecoveryDecisionIfNeede
                     "waiting=$waitingTaskCount, active=$activeTaskCount, " +
                     "batchJobs=${activeBatchDownloadJobs.size}, " +
                     "single=${taskStore.isSingleDownloading}, " +
-                    "pendingDialog=${_mobileDataDownloadInterruptionRequest.value != null}"
+                    "pendingDialog=${mobileDataDownloadInterruptionRequestMutable.value != null}"
             )
             if (networkType == null) {
                 pauseActiveDownloadsForUnknownNetwork(

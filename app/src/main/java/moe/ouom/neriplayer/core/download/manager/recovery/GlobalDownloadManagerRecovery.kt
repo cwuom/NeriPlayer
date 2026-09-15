@@ -32,6 +32,7 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
+private const val PENDING_AUDIO_RECOVERY_PARALLELISM = 8
 
 internal suspend fun GlobalDownloadManager.recoverPendingAudioWritesFromRoot(
     context: Context,
@@ -984,7 +985,7 @@ internal suspend fun GlobalDownloadManager.restorePersistedBatchDownloadPresenta
         )
     }
     if (recovered.isNotEmpty()) {
-        _batchDownloadPresentations.update { presentations ->
+        batchDownloadPresentationsMutable.update { presentations ->
             presentations + recovered
         }
         NPLogger.d(
@@ -1164,7 +1165,7 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
                     progress.songKey to downloadProgressFraction(progress)
                 }
                 .filterValues { fraction -> fraction > 0f }
-            _batchDownloadPresentations.update { presentations ->
+            batchDownloadPresentationsMutable.update { presentations ->
                 if (recoveredMemberAttemptIds.isEmpty()) {
                     presentations - RECOVERED_BATCH_DOWNLOAD_PRESENTATION_ID
                 } else {

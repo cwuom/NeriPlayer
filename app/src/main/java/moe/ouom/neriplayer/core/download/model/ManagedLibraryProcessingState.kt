@@ -356,7 +356,6 @@ object ManagedLibraryProcessingCoordinator {
         ManagedLibraryProcessingState.Idle
     )
 
-    private var persistenceContext: Context? = null
     private var lastProgressPersistedAtMs = 0L
     private var lastProgressPersisted: ManagedLibraryProcessingState? = null
     private val processToken = UUID.randomUUID().toString()
@@ -367,7 +366,6 @@ object ManagedLibraryProcessingCoordinator {
     fun restoreImmediately(context: Context): ManagedLibraryProcessingState {
         if (!mutex.tryLock()) return mutableState.value
         return try {
-            persistenceContext = context.applicationContext
             if (mutableState.value != ManagedLibraryProcessingState.Idle) {
                 return mutableState.value
             }
@@ -381,7 +379,6 @@ object ManagedLibraryProcessingCoordinator {
     }
 
     suspend fun restore(context: Context): ManagedLibraryProcessingState = mutex.withLock {
-        persistenceContext = context.applicationContext
         if (mutableState.value != ManagedLibraryProcessingState.Idle) {
             return@withLock mutableState.value
         }
@@ -398,7 +395,6 @@ object ManagedLibraryProcessingCoordinator {
         reason: ManagedLibraryProcessingReason,
         phase: ManagedLibraryProcessingPhase
     ): String = mutex.withLock {
-        persistenceContext = context.applicationContext
         val next = ManagedLibraryProcessingStateMachine.begin(
             operationId = UUID.randomUUID().toString(),
             reason = reason,
@@ -415,7 +411,6 @@ object ManagedLibraryProcessingCoordinator {
         reason: ManagedLibraryProcessingReason,
         phase: ManagedLibraryProcessingPhase
     ): String? = mutex.withLock {
-        persistenceContext = context.applicationContext
         val current = mutableState.value
         if (current != ManagedLibraryProcessingState.Idle) {
             return@withLock current.operationId.takeIf { current.reason == reason }
@@ -437,7 +432,6 @@ object ManagedLibraryProcessingCoordinator {
         phase: ManagedLibraryProcessingPhase,
         resumeWaitingOperation: Boolean = false
     ): String? = mutex.withLock {
-        persistenceContext = context.applicationContext
         val next = ManagedLibraryProcessingStateMachine.tryBeginExclusive(
             current = mutableState.value,
             operationId = UUID.randomUUID().toString(),
@@ -452,15 +446,12 @@ object ManagedLibraryProcessingCoordinator {
     }
 
     suspend fun updateProgress(
+        context: Context,
         operationId: String,
         processed: Int?,
         total: Int?,
-        currentItem: String? = null,
-        context: Context? = null
+        currentItem: String? = null
     ) = mutex.withLock {
-        context?.applicationContext?.let { appContext ->
-            persistenceContext = appContext
-        }
         val current = mutableState.value
         val next = ManagedLibraryProcessingStateMachine.updateProgress(
             current = current,
@@ -471,11 +462,9 @@ object ManagedLibraryProcessingCoordinator {
         )
         if (next == current) return@withLock
         if (shouldPersistProgress(next)) {
-            persistenceContext?.let { appContext ->
-                persist(appContext, next)
-                lastProgressPersistedAtMs = System.currentTimeMillis()
-                lastProgressPersisted = next
-            }
+            persist(context.applicationContext, next)
+            lastProgressPersistedAtMs = System.currentTimeMillis()
+            lastProgressPersisted = next
         }
         mutableState.value = next
     }
@@ -518,7 +507,6 @@ object ManagedLibraryProcessingCoordinator {
         reason: ManagedLibraryProcessingReason,
         phase: ManagedLibraryProcessingPhase = ManagedLibraryProcessingPhase.WAITING_FOR_RETRY
     ): String? = mutex.withLock {
-        persistenceContext = context.applicationContext
         val current = mutableState.value
         if (current != ManagedLibraryProcessingState.Idle) {
             return@withLock current.operationId
@@ -555,7 +543,6 @@ object ManagedLibraryProcessingCoordinator {
         requestAutoResume: Boolean,
         activeMigrationWorkPresent: Boolean?
     ): Boolean = mutex.withLock {
-        persistenceContext = context.applicationContext
         val current = mutableState.value
         if (!shouldCompleteOrphanedTerminalDirectoryChange(
                 current = current,

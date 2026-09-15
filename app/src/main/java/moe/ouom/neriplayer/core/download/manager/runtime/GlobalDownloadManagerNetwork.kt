@@ -15,7 +15,6 @@ import moe.ouom.neriplayer.core.download.execution.WifiBoundDownloadWakeWorker
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
@@ -657,7 +656,7 @@ internal suspend fun GlobalDownloadManager.publishMobileDataDownloadInterruption
         if (isDownloadClearFenceActive(context.applicationContext)) {
             return@withLock
         }
-        val existingRequest = _mobileDataDownloadInterruptionRequest.value
+        val existingRequest = mobileDataDownloadInterruptionRequestMutable.value
         val requestScopeChanged = existingRequest != null &&
             (existingRequest.networkGeneration != networkGeneration ||
                 existingRequest.batchIdentities != capturedBatchIdentities)
@@ -728,7 +727,7 @@ internal suspend fun GlobalDownloadManager.publishMobileDataDownloadInterruption
                 val updatedRequest = existingRequest.copy(
                     taskCount = normalizedTaskCount
                 )
-                _mobileDataDownloadInterruptionRequest.value = updatedRequest
+                mobileDataDownloadInterruptionRequestMutable.value = updatedRequest
                 if (
                     !isMobileDataDownloadInterruptionSnapshotCurrent(
                         snapshotEpoch = publicationEpoch,
@@ -736,8 +735,8 @@ internal suspend fun GlobalDownloadManager.publishMobileDataDownloadInterruption
                     ) ||
                         isDownloadClearFenceActive(context.applicationContext)
                 ) {
-                    if (_mobileDataDownloadInterruptionRequest.value?.id == updatedRequest.id) {
-                        _mobileDataDownloadInterruptionRequest.value = null
+                    if (mobileDataDownloadInterruptionRequestMutable.value?.id == updatedRequest.id) {
+                        mobileDataDownloadInterruptionRequestMutable.value = null
                     }
                     return@withLock
                 }
@@ -756,7 +755,7 @@ internal suspend fun GlobalDownloadManager.publishMobileDataDownloadInterruption
             batchIdentities = capturedBatchIdentities,
             networkGeneration = networkGeneration
         )
-        _mobileDataDownloadInterruptionRequest.value = request
+        mobileDataDownloadInterruptionRequestMutable.value = request
         if (
             !isMobileDataDownloadInterruptionSnapshotCurrent(
                 snapshotEpoch = publicationEpoch,
@@ -764,8 +763,8 @@ internal suspend fun GlobalDownloadManager.publishMobileDataDownloadInterruption
             ) ||
             isDownloadClearFenceActive(context.applicationContext)
         ) {
-            if (_mobileDataDownloadInterruptionRequest.value?.id == request.id) {
-                _mobileDataDownloadInterruptionRequest.value = null
+            if (mobileDataDownloadInterruptionRequestMutable.value?.id == request.id) {
+                mobileDataDownloadInterruptionRequestMutable.value = null
             }
             return@withLock
         }

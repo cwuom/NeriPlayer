@@ -261,7 +261,8 @@ class SettingsDownloadDirectoryFlowContractTest {
     @Test
     fun `migration preflight enumerates each root once without reading every sidecar`() {
         val storageSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorageFacadeSetup.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/facade/" +
+                "ManagedDownloadStorageFacadeSetup.kt"
         ).readText()
         val presenceProbe = storageSource
             .substringAfter("internal suspend fun ManagedDownloadStorage.hasMigratableDownloadsImpl(")

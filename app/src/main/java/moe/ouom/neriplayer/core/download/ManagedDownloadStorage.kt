@@ -15,13 +15,27 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndex
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationCoordinator
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationLocks
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationResult
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutator
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryIndexEntry
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
+import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadStorageCommitWriter
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadTreeFileCommitter
 import moe.ouom.neriplayer.core.download.storage.commit.sameManagedMigrationStoredEntryIdentity
@@ -30,16 +44,16 @@ import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirect
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLookup
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
-import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationCopyWorker
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationProgressSession
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationFinalizer
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationNamePlanner
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntryReader
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationProgressSession
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationCopyReceipt
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntryReader
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationReplacementJournal
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupFinalizationPreparation
@@ -49,35 +63,21 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProbeRe
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
-import moe.ouom.neriplayer.core.download.storage.backend.StorageBackend
-import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
-import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
-import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
-import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndex
-import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationCoordinator
-import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationResult
-import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationLocks
-import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutator
-import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
-import moe.ouom.neriplayer.core.download.index.ManagedLibraryIndexEntry
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import java.io.File
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
-import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+
 internal object ManagedDownloadStorage {
     internal const val TAG = "ManagedDownloadStorage"
     internal const val LEGACY_DOWNLOAD_ROOT_PATH = "/storage/emulated/0/neriplayer-download"
@@ -442,9 +442,6 @@ internal object ManagedDownloadStorage {
         val isComplete: Boolean,
         val exists: Boolean
     )
-    /** 返回应用自己的临时目录；读取路径不会因不存在目录而创建副作用 */
-
-
 
     data class FinalizedPendingAudioPromotion(
         val audio: StoredEntry,
@@ -792,7 +789,6 @@ internal object ManagedDownloadStorage {
         onCopyReceiptsFlush: suspend () -> Unit = {},
         pendingArtifactsPreflightVerified: Boolean = false
     ): MigrationResult = this.migrateManagedDownloadsImpl(context, fromDirectoryUri, toDirectoryUri, minimumSourceEntryCount, targetPreviouslyCommitted, persistedTargetNames, onSourceAudioCountResolved, onTargetNamePlanResolved, onTargetVerified, persistedReplacementJournal, replacementJournalWorkId, onReplacementJournalUpdated, persistedProgress, progressOwnerWorkId, persistedCopyReceipts, onCopyReceipt, onCopyReceiptInvalidated, onCopyReceiptsFlush, pendingArtifactsPreflightVerified)
-    /** 完整扫描源目录后应用缺失源文件计划，更新日志落盘前保留复制凭据以支持幂等恢复 */
 
     internal data class OrphanMigrationReplacementRecoveryResult(
         val resolvedReferences: Set<String>,
@@ -1514,12 +1510,6 @@ internal object ManagedDownloadStorage {
         return countedSizeBytes?.takeIf { size -> size > 0L }
             ?: reportedSizeBytes?.takeIf { size -> size > 0L }
     }
-    /** 通过受管目录缓存解析 pending 文档 */
-
-
-
-
-
 
     internal fun canCreateTreePromotionTargetWithoutReplacing(
         enumerationComplete: Boolean,
@@ -1528,7 +1518,6 @@ internal object ManagedDownloadStorage {
     ): Boolean {
         return this.canCreateTreePromotionTargetWithoutReplacingImpl(enumerationComplete, existingNames, targetName)
     }
-    /** 冲突编号后的音频必须先拥有同名 pending 凭据, 进程中断时才能恢复 */
 
     fun commitCoverBytes(
         context: Context,
@@ -1594,13 +1583,6 @@ internal object ManagedDownloadStorage {
     ): DownloadedLyricsBundle {
         return this.readLyricsBundleFastImpl(context, song, allowColdSafProbe)
     }
-    /**
-     * 冷启动索引尚未恢复时只按歌曲绝对路径读取三个侧载文件
-     */
-    /** catalog 早于 SAF 设置恢复时，从歌曲自身的 tree 或 document URI 找到真实根目录 */
-
-
-
     internal fun managedDownloadTreeUri(rawReference: String?): Uri? {
         return managedDownloadTreeReference(rawReference)
             ?.let { treeReference -> runCatching { treeReference.toUri() }.getOrNull() }
@@ -1730,9 +1712,6 @@ internal object ManagedDownloadStorage {
     ): List<String> {
         return this.buildLyricCandidateNamesImpl(songId, candidateBaseNames, kind)
     }
-    /** 只读取和 pending 同名的 metadata，避免大曲库清空时逐首打开无关文件 */
-
-    /** 并行读取清理所需的 metadata，单个 provider 失败时保留其余结果 */
 
     /**
      * 并行读取互不相关的 metadata，单个 sidecar 暂时不可读时保留其余音频结果

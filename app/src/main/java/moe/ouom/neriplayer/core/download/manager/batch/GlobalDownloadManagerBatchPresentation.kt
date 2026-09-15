@@ -6,7 +6,6 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager.BatchDownloadSess
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -24,7 +23,6 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 
@@ -198,7 +196,7 @@ internal suspend fun GlobalDownloadManager.ensureDurableBatchSnapshot(
         presentationId,
         identity
     ) ?: identity
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         val presentation = presentations[presentationId] ?: return@update presentations
         presentations + (
             presentationId to presentation.copy(
@@ -358,7 +356,7 @@ internal fun GlobalDownloadManager.beginBatchDownloadPresentation(
                 ?.takeIf { attemptId -> attemptId > 0L }
         }
     val durableIdentity = durableBatchIdentityByPresentationId[batchId]
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         presentations + (
             batchId to BatchDownloadPresentationState(
                 id = batchId,
@@ -419,7 +417,7 @@ internal fun GlobalDownloadManager.seedInitialBatchDownloadPresentation(
     if (allCompletedSongKeys.isEmpty()) {
         return
     }
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         val presentation = presentations[batchId] ?: return@update presentations
         val newlyCompletedKeys = allCompletedSongKeys.filter { songKey ->
             songKey in presentation.memberAttemptIds &&
@@ -554,7 +552,7 @@ internal suspend fun GlobalDownloadManager.bindBatchDownloadPresentationAttempts
     if (attemptIdsBySongKey.isEmpty()) {
         return
     }
-    val presentation = _batchDownloadPresentations.value[batchId] ?: return
+    val presentation = batchDownloadPresentationsMutable.value[batchId] ?: return
     val newlyBoundKeys = attemptIdsBySongKey
         .filter { (songKey, attemptId) ->
             attemptId > 0L && presentation.memberAttemptIds[songKey] != attemptId
@@ -633,7 +631,7 @@ internal suspend fun GlobalDownloadManager.bindBatchDownloadPresentationAttempts
             }
         }
     }
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         if (presentations[batchId] != presentation) {
             presentations
         } else {
@@ -647,7 +645,7 @@ internal fun GlobalDownloadManager.updateBatchDownloadPresentationProgress(
 ) {
     val songKey = progress.songKey
     val fraction = downloadProgressFraction(progress)
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         var changed = false
         val updatedPresentations = presentations.mapValues { (_, presentation) ->
             val expectedAttemptId = presentation.memberAttemptIds[songKey]
@@ -698,7 +696,7 @@ internal fun GlobalDownloadManager.markBatchDownloadPresentationTerminal(
         String
     >()
     var observedFractionMilli = 0
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         var changed = false
         val updatedPresentations = presentations.mapValues { (presentationId, presentation) ->
             val memberAttemptId = presentation.memberAttemptIds[songKey]
@@ -782,7 +780,7 @@ internal fun GlobalDownloadManager.resumeBatchDownloadPresentationOnRetry(
     songKey: String,
     attemptId: Long
 ) {
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         var changed = false
         val updatedPresentations = presentations.mapValues { (_, presentation) ->
             val updatedPresentation = resumeBatchDownloadPresentationForRetry(
@@ -804,7 +802,7 @@ internal fun GlobalDownloadManager.clearInitialBatchDownloadPresentationOnTransf
     attemptId: Long,
     operationId: String?
 ) {
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         var changed = false
         val updatedPresentations = presentations.mapValues { (_, presentation) ->
             val expectedAttemptId = presentation.memberAttemptIds[songKey]
@@ -837,7 +835,7 @@ internal fun GlobalDownloadManager.scheduleCompletedBatchDownloadPresentationRem
     scope.launch {
         delay(DOWNLOAD_TASK_COMPLETED_RETENTION_MS)
         var removed = false
-        _batchDownloadPresentations.update { presentations ->
+        batchDownloadPresentationsMutable.update { presentations ->
             val presentation = presentations[batchId] ?: return@update presentations
             if (presentation.terminalStates.size == presentation.memberAttemptIds.size) {
                 removed = true
@@ -878,7 +876,7 @@ internal suspend fun GlobalDownloadManager.cancelBatchDownloadPresentationMember
         stableKeys = keys
     )
     var becameComplete = false
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         val presentation = presentations[batchId] ?: return@update presentations
         val terminalStates = presentation.terminalStates + keys.associateWith {
             BatchDownloadTerminalState.CANCELLED

@@ -737,7 +737,7 @@ internal fun shouldPersistDownloadClearProgress(
         }
     }
     if (lastPersistedItemCount < 0) return true
-    if (normalizedTotal > 0 && normalizedCompleted >= normalizedTotal) return true
+    if (normalizedTotal in 1..normalizedCompleted) return true
     if (normalizedCompleted - lastPersistedItemCount >= batchSize.coerceAtLeast(1)) {
         return true
     }

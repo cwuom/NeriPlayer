@@ -34,7 +34,6 @@ internal class DownloadRequestGenerationTracker {
         songKeys: Collection<String>
     ): DownloadRequestCancellationSnapshot {
         val keys = songKeys
-            .asSequence()
             .filter(String::isNotBlank)
             .distinct()
             .toList()

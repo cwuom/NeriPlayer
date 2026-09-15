@@ -115,7 +115,7 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
         }
         return reloadDownloadedSongs(context, forceRefresh = true)
     }
-    _isRefreshing.value = true
+    isRefreshingMutable.value = true
     try {
         val scanStartedAtNs = System.nanoTime()
         val metadataRevisionAtScanStart = downloadedSongMetadataRevision.get()
@@ -199,7 +199,7 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
                 return@withLock
             }
 
-            val existingSongs = _downloadedSongs.value
+            val existingSongs = downloadedSongsMutable.value
             // 记录本次扫描的存储根标识，用于和已有 catalog 的根目录比对
             val scanRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
             // 同一根目录的扫描突然变空时先保留旧 catalog，因为 DocumentsProvider
@@ -339,7 +339,7 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
                 ?: error::class.java.simpleName
         )
     } finally {
-        _isRefreshing.value = false
+        isRefreshingMutable.value = false
     }
 }
 

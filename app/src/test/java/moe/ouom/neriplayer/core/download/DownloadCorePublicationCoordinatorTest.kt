@@ -8,7 +8,8 @@ class DownloadCorePublicationCoordinatorTest {
     @Test
     fun `core publication retries legacy pending metadata before catalog exposure`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/DownloadCorePublicationCoordinator.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/download/artifact/" +
+                "DownloadCorePublicationCoordinator.kt"
         ).readText()
         val fastPath = source.indexOf("promotePendingMetadata = false")
         val legacyPath = source.indexOf("promotePendingMetadata = true")

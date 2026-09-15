@@ -35,7 +35,8 @@ class DownloadRecoveryRoomStoreRuntimeCharacterizationTest {
     @Test
     fun recovery_facade_does_not_expose_legacy_cancelled_key_api() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadRecoveryFiles.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/recovery/" +
+                "ManagedDownloadRecoveryFiles.kt"
         ).readText()
 
         listOf(
@@ -56,7 +57,8 @@ class DownloadRecoveryRoomStoreRuntimeCharacterizationTest {
     fun production_recovery_has_no_legacy_file_mutation_api() {
         listOf(
             "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/ManagedDownloadQueueStore.kt",
-            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadRecoveryFiles.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/recovery/" +
+                "ManagedDownloadRecoveryFiles.kt",
             "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
         ).forEach { path ->
             val source = locateProjectFile(path).readText()

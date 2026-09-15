@@ -70,7 +70,7 @@ internal fun GlobalDownloadManager.publishDownloadedSongs(
 ) {
     synchronized(downloadedSongCatalogMutationLock) {
         val visibleSongs = downloadedSongDeleteVisibility.filterVisible(songs)
-        val previousSongs = _downloadedSongs.value
+        val previousSongs = downloadedSongsMutable.value
         val changedSongKeys = changedDownloadedSongKeys(
             previousSongs = previousSongs,
             currentSongs = visibleSongs
@@ -99,10 +99,10 @@ internal fun GlobalDownloadManager.publishDownloadedSongs(
             buildDownloadedSongCatalogIndex(visibleSongs)
         }
         downloadedSongCatalogReady = true
-        _downloadedSongs.value = visibleSongs
+        downloadedSongsMutable.value = visibleSongs
         downloadedSongCatalogPersistenceRevision.incrementAndGet()
         LocalAssetInvalidationBus.bumpSongs(changedSongKeys)
-        _downloadPresenceVersion.value += 1
+        downloadPresenceVersionMutable.value += 1
         if (
             persistCatalog && visibleSongs == songs &&
                 (catalogDelta == null || !catalogDelta.isEmpty)
@@ -152,7 +152,7 @@ internal fun GlobalDownloadManager.changedDownloadedSongKeys(
 }
 
 internal fun GlobalDownloadManager.notifyDownloadPresenceChanged() {
-    _downloadPresenceVersion.value += 1
+    downloadPresenceVersionMutable.value += 1
 }
 
 internal fun GlobalDownloadManager.scheduleDownloadedSongsCatalogPersist(
@@ -215,7 +215,7 @@ internal fun GlobalDownloadManager.scheduleDownloadedSongsCatalogPersist(
             } ?: return@launch
             catalogPersistenceMutex.withLock {
                 val songs = synchronized(downloadedSongCatalogMutationLock) {
-                    _downloadedSongs.value.takeIf {
+                    downloadedSongsMutable.value.takeIf {
                         downloadedSongCatalogPersistenceRevision.get() ==
                             request.expectedRevision
                     }

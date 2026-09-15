@@ -1660,19 +1660,21 @@ private fun isFileEntryInParent(entry: File, parent: File): Boolean {
 
 internal fun resolveManagedFileSubdirectory(root: File, desiredName: String): File {
     val exactDirectory = File(root, desiredName)
-    if (exactDirectory.isDirectory) {
-        return exactDirectory
-    }
-    root.listFiles()
-        ?.firstOrNull { child ->
-            child.isDirectory && child.name.equals(desiredName, ignoreCase = true)
+    return FileStorageMutationLocks.withTargetLockBlocking(exactDirectory) {
+        if (exactDirectory.isDirectory) {
+            return@withTargetLockBlocking exactDirectory
         }
-        ?.let { return it }
-    if (exactDirectory.exists()) {
-        throw IOException("下载目录子目录不是目录: ${exactDirectory.path}")
+        root.listFiles()
+            ?.firstOrNull { child ->
+                child.isDirectory && child.name.equals(desiredName, ignoreCase = true)
+            }
+            ?.let { return@withTargetLockBlocking it }
+        if (exactDirectory.exists()) {
+            throw IOException("下载目录子目录不是目录: ${exactDirectory.path}")
+        }
+        if (!exactDirectory.mkdirs() && !exactDirectory.isDirectory) {
+            throw IOException("无法创建下载目录子目录: ${exactDirectory.path}")
+        }
+        exactDirectory
     }
-    if (!exactDirectory.mkdirs() && !exactDirectory.isDirectory) {
-        throw IOException("无法创建下载目录子目录: ${exactDirectory.path}")
-    }
-    return exactDirectory
 }

@@ -571,11 +571,11 @@ class ManagedDownloadMigrationWorker(
                     ) {
                         val sharedProgress = migrationProgressForSharedProcessing(visibleProgress)
                         ManagedLibraryProcessingCoordinator.updateProgress(
+                            context = applicationContext,
                             operationId = operationId,
                             processed = sharedProgress.processed,
                             total = sharedProgress.total,
-                            currentItem = visibleProgress.currentFileName,
-                            context = applicationContext
+                            currentItem = visibleProgress.currentFileName
                         )
                     }
                     if (
@@ -846,11 +846,11 @@ class ManagedDownloadMigrationWorker(
                 setForeground(createForegroundInfo(progress))
                 val sharedProgress = migrationProgressForSharedProcessing(progress)
                 ManagedLibraryProcessingCoordinator.updateProgress(
+                    context = applicationContext,
                     operationId = operationId,
                     processed = sharedProgress.processed,
                     total = sharedProgress.total,
-                    currentItem = progress.currentFileName,
-                    context = applicationContext
+                    currentItem = progress.currentFileName
                 )
             }
             if (!checkpointStore.isRequestCurrent(migrationWorkId)) {

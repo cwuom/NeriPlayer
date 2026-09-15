@@ -72,7 +72,7 @@ class GlobalDownloadManagerCatalogRaceTest {
         ).readText()
         val body = methodBody(source, "publishOptimisticDownloadedSongs")
         val lockIndex = body.indexOf("synchronized(downloadedSongCatalogMutationLock)")
-        val readIndex = body.indexOf("_downloadedSongs.value")
+        val readIndex = body.indexOf("downloadedSongsMutable.value")
         val publishIndex = body.indexOf("publishDownloadedSongs(")
 
         assertTrue(lockIndex >= 0)

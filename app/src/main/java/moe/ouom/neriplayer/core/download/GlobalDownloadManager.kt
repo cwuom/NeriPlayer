@@ -24,26 +24,14 @@ package moe.ouom.neriplayer.core.download
  */
 
 import android.content.Context
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMetadataRetriever
-import android.net.Uri
-import android.os.SystemClock
-import androidx.core.net.toUri
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -51,125 +39,38 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.yield
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactCoordinator
-import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactPublicationLease
-import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
-import moe.ouom.neriplayer.core.download.artifact.finalizedPublicationLeaseOrNull
-import moe.ouom.neriplayer.core.download.artifact.ownedLeaseIdOrNull
-import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuildItem
-import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
-import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
-import moe.ouom.neriplayer.core.download.catalog.applyDownloadedSongCatalogDelta
-import moe.ouom.neriplayer.core.download.catalog.buildDownloadedSongCatalogDelta
-import moe.ouom.neriplayer.core.download.catalog.downloadedSongNewestFirstComparator
-import moe.ouom.neriplayer.core.download.catalog.downloadedSongCatalogEntryKey
-import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
-import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.download.enrichment.AssetEnrichmentCoordinator
-import moe.ouom.neriplayer.core.download.execution.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
-import moe.ouom.neriplayer.core.download.execution.DownloadClearFenceReleaseResult
-import moe.ouom.neriplayer.core.download.execution.DownloadClearOwnership
-import moe.ouom.neriplayer.core.download.execution.DownloadClearPurpose
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionNotificationController
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionOperationStore
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule
-import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
-import moe.ouom.neriplayer.core.download.execution.DownloadTransferAdmissionDeferredException
-import moe.ouom.neriplayer.core.download.execution.DownloadStorageRecoveryWorker
-import moe.ouom.neriplayer.core.download.execution.ForegroundDownloadWorker
-import moe.ouom.neriplayer.core.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
-import moe.ouom.neriplayer.core.download.execution.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
-import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
-import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
-import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearProgressStore
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
-import moe.ouom.neriplayer.core.download.execution.WifiBoundDownloadWakeWorker
-import moe.ouom.neriplayer.core.download.execution.isPostCoreDownloadOperationState
-import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationResult
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
-import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
-import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
-import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
-import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceToken
-import moe.ouom.neriplayer.core.download.observability.DownloadStartupRecoveryJournal
-import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
-import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
-import moe.ouom.neriplayer.core.download.policy.recoveryOperationIdsForKeys
-import moe.ouom.neriplayer.core.download.policy.shouldRecoverDownloadCandidateWithBatch
-import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
-import moe.ouom.neriplayer.core.download.reconcile.EmptyScanDecision
-import moe.ouom.neriplayer.core.download.reconcile.EmptyScanObservation
 import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler
-import moe.ouom.neriplayer.core.download.reconcile.ScanConfidence
-import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
-import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
-import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
-import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
-import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
-import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
-import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
-import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadedSidecarStage
-import moe.ouom.neriplayer.core.player.download.DownloadSourceUnavailableException
 import moe.ouom.neriplayer.core.player.download.DownloadProgressProjectionStore
-import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
-import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
-import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
-import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
-import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
-import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
-import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
-import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
-import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
-import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
-import moe.ouom.neriplayer.data.settings.autoSettingFlow
-import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
-import java.security.MessageDigest
 import java.util.Collections
-import java.util.Locale
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-
 
 /**
  * 全局下载管理器, 统一维护下载任务和本地下载列表
@@ -227,8 +128,6 @@ object GlobalDownloadManager {
     internal const val STARTUP_ARTIFACT_RECOVERY_HANDOFF_DELAY_MS = 250L
     internal const val STARTUP_ARTIFACT_RECOVERY_YIELD_BATCH_SIZE = 16
     internal const val STARTUP_POST_CORE_RESUME_YIELD_BATCH_SIZE = 16
-    /** pending 音频收尾允许有限并发，避免千首歌曲逐项等待 I/O */
-    internal const val PENDING_AUDIO_RECOVERY_PARALLELISM = 8
     /** core 收尾共享一次短时目录快照，避免并发 operation 重复扫描 SAF */
     internal const val FINALIZATION_RECOVERY_SNAPSHOT_TTL_MS = 750L
     internal const val DOWNLOADED_PLAYBACK_RESOLUTION_ATTEMPTS = 6
@@ -433,13 +332,13 @@ object GlobalDownloadManager {
             get() = songs.size
     }
 
-    internal val _trafficRiskDownloadRequests =
+    internal val trafficRiskDownloadRequestsMutable =
         MutableSharedFlow<TrafficRiskDownloadRequest>(
             extraBufferCapacity = 1,
             onBufferOverflow = BufferOverflow.DROP_OLDEST
         )
     val trafficRiskDownloadRequests: SharedFlow<TrafficRiskDownloadRequest> =
-        _trafficRiskDownloadRequests
+        trafficRiskDownloadRequestsMutable
 
     data class MobileDataDownloadBatchIdentity(
         val batchId: String,
@@ -469,11 +368,11 @@ object GlobalDownloadManager {
         val networkGeneration: Long = 0L
     )
 
-    internal val _mobileDataDownloadInterruptionRequest =
+    internal val mobileDataDownloadInterruptionRequestMutable =
         MutableStateFlow<MobileDataDownloadInterruptionRequest?>(null)
     val mobileDataDownloadInterruptionRequest:
         StateFlow<MobileDataDownloadInterruptionRequest?> =
-        _mobileDataDownloadInterruptionRequest.asStateFlow()
+        mobileDataDownloadInterruptionRequestMutable.asStateFlow()
 
     internal val latestProgressProjectionStore =
         DownloadProgressProjectionStore()
@@ -518,7 +417,7 @@ object GlobalDownloadManager {
     /** UI 临时 id 只用于渲染；用户批次身份始终以 Room 的 id 和 generation 为准 */
     internal val durableBatchIdentityByPresentationId =
         ConcurrentHashMap<Long, DownloadExecutionRoomStore.DownloadBatchIdentity>()
-    internal val _batchDownloadPresentations =
+    internal val batchDownloadPresentationsMutable =
         MutableStateFlow<Map<Long, BatchDownloadPresentationState>>(emptyMap())
     val downloadTasks: StateFlow<List<DownloadTask>> = combine(
         taskStore.downloadTasks,
@@ -542,7 +441,7 @@ object GlobalDownloadManager {
         initialValue = false
     )
     internal val batchDownloadProgressFlow: StateFlow<BatchDownloadOverallProgress?> = combine(
-        _batchDownloadPresentations,
+        batchDownloadPresentationsMutable,
         downloadTasks
     ) { presentations: Map<Long, BatchDownloadPresentationState>, tasks: List<DownloadTask> ->
         aggregateBatchDownloadProgress(presentations.values, tasks)
@@ -587,13 +486,13 @@ object GlobalDownloadManager {
     internal val downloadClearProgress: StateFlow<DownloadClearVisibility.ClearProgress?> =
         downloadClearVisibility.progress
 
-    internal val _downloadedSongs = MutableStateFlow<List<DownloadedSong>>(emptyList())
-    val downloadedSongs: StateFlow<List<DownloadedSong>> = _downloadedSongs.asStateFlow()
-    internal val _downloadPresenceVersion = MutableStateFlow(0)
-    val downloadPresenceVersion: StateFlow<Int> = _downloadPresenceVersion.asStateFlow()
+    internal val downloadedSongsMutable = MutableStateFlow<List<DownloadedSong>>(emptyList())
+    val downloadedSongs: StateFlow<List<DownloadedSong>> = downloadedSongsMutable.asStateFlow()
+    internal val downloadPresenceVersionMutable = MutableStateFlow(0)
+    val downloadPresenceVersion: StateFlow<Int> = downloadPresenceVersionMutable.asStateFlow()
 
-    internal val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+    internal val isRefreshingMutable = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = isRefreshingMutable.asStateFlow()
 
     internal val cancelledSongKeys = Collections.synchronizedSet(mutableSetOf<String>())
     /** 取消收敛只允许触碰取消请求创建时已经存在的 operation */
@@ -621,10 +520,10 @@ object GlobalDownloadManager {
     internal val downloadedSongDeletionCounts = ConcurrentHashMap<String, AtomicInteger>()
     internal val downloadedSongDeleteVisibility = DownloadedSongDeleteVisibility()
     internal val downloadedSongDeleteIdGenerator = AtomicLong(0L)
-    internal val _downloadedSongDeleteProgress =
+    internal val downloadedSongDeleteProgressMutable =
         MutableStateFlow<DownloadedSongDeleteProgress?>(null)
     val downloadedSongDeleteProgress: StateFlow<DownloadedSongDeleteProgress?> =
-        _downloadedSongDeleteProgress.asStateFlow()
+        downloadedSongDeleteProgressMutable.asStateFlow()
     internal val downloadedSongCatalogPersistenceRevision = AtomicLong(0L)
     internal val downloadedSongMetadataRevision = AtomicLong(0L)
     internal val emptyScanSequence = AtomicLong(0L)
@@ -701,22 +600,8 @@ object GlobalDownloadManager {
     /** 启动和网络回调可能同时触发恢复，挂起槽位会排队后续请求而不是丢弃 */
     internal val pendingDownloadRecoverySlot = Mutex()
 
-
     @Volatile
     internal var mobileDataDownloadOverrideAllowed = false
-
-
-    /** 取票据前后都确认持久清空未生效，避免快速清空窗口捕获旧代次 */
-
-
-
-
-
-
-    /**
-     * 初始目录扫描发布后再收尾 core 音频, 避免 SAF 元数据 I/O 阻塞首屏
-     */
-
 
     internal fun onWifiBoundDownloadNetworkRestored(
         context: Context,
@@ -726,14 +611,6 @@ object GlobalDownloadManager {
         return this.onWifiBoundDownloadNetworkRestoredImpl(context, reason, networkGeneration)
     }
 
-
-
-
-    /** 只有持久清空完成后才记录新的准入代次 */
-
-    /** 让请求绑定到用户创建它时看到的存储代次 */
-
-
     /** 队列持久化完成前不让新 operation 进入运行态 */
     internal data class StagedPendingDownloadQueue(
         val operationIds: List<String>,
@@ -741,17 +618,6 @@ object GlobalDownloadManager {
         val operationIdsBySongKey: Map<String, String> = emptyMap(),
         val operationRequestsBySongKey: Map<String, DownloadExecutionRequest> = emptyMap()
     )
-
-    /** 已在当前入队事务拿到的请求不再从 Room 解码完整歌词载荷 */
-
-    /**
-     * 按页永久化大批歌曲，保持同一次用户请求的创建时间。每页独立事务，避免 847/10000 首占用单个事务
-     */
-
-
-    /** 新代次落库后再按固定时间边界收敛旧 operation，避免取消查询竞态 */
-
-    /** 新的用户点击复用执行中 operation 时，持久化这次明确的重试意图 */
 
     /** 本批次刚写入的 request 尚未重新从 Room 解码时，仍可安全参与提升 */
     internal fun resolveBatchWaitingOperationStableKey(
@@ -770,7 +636,6 @@ object GlobalDownloadManager {
     ): Boolean {
         return this.isBatchWaitingOperationReadableImpl(directRequest, metadataAvailable, stableKey, identityStableKey)
     }
-
 
     /** 存储空间恢复 worker 使用同一套栅栏提升等待意图，避免绕过迁移和清空保护 */
     internal suspend fun promoteWaitingStorageMutationsForDownloadPump(context: Context): Int {
@@ -791,7 +656,6 @@ object GlobalDownloadManager {
             block()
         }
     }
-
 
     /** legacy 队列导入完成后立即触发泵，避免等下一次网络回调才恢复 */
     internal fun wakeDownloadExecutionPumpAfterLegacyQueueBootstrap(context: Context) {
@@ -821,18 +685,6 @@ object GlobalDownloadManager {
         return this.wakeDownloadExecutionPumpAfterParallelismChangedImpl(context)
     }
 
-    /** 返回最近一次启动恢复的 T0、T1、T2 快照，供诊断和验收读取 */
-    /**
-     * 首次唤醒失败时只做一次有界补偿，避免 WorkManager 入队竞态把首发无限推迟
-     *
-     * 这里不把“已入队”当成 T2。只有传输层获得 permit 后的
-     * DownloadStartupTrace.markTransferStarted 才会结束首发计时
-     */
-
-    /** 启动自动恢复必须先建立任务卡片，再允许持久宿主抢占队列 */
-
-    /** 不扫描 SAF，直接把已提交音频的持久收尾请求交给独立宿主 */
-
     fun initialize(context: Context) {
         return this.initializeImpl(context)
     }
@@ -853,7 +705,6 @@ object GlobalDownloadManager {
         return this.reconcilePendingDownloadsAfterMigrationBlockedImpl(context, sourceDirectoryUri)
     }
 
-    /** 兼容旧调用方，只把完整收敛结果转换为布尔值 */
     /**
      * 在迁移状态占位前收敛 pending 音频，避免恢复路径被自己的状态机挡住
      *
@@ -869,35 +720,6 @@ object GlobalDownloadManager {
 
     internal const val TERMINAL_OPERATION_RETENTION_MS = 7L * 24L * 60L * 60L * 1_000L
     internal const val TERMINAL_OPERATION_PRUNE_LIMIT = 64
-
-
-    /**
-     * 宿主取消可能刚好发生在 core 文件写入完成和内存桥登记之间
-     * 这时不能只依赖 SongItem 的旧引用，要从新快照按持久化凭据找回 pending
-     */
-
-
-
-    /**
-     * 已完成元数据可能晚于 operation lease 释放才被恢复。先按持久 operation owner
-     * 重新 claim；无主的 post-core artifact 可以 lease-free 收口，新 owner 则必须等待
-     */
-
-
-
-
-    /**
-     * 启动时先从 Room 恢复任务卡片，再决定是否交给下载宿主继续执行
-     *
-     * 只对应用私有 staging 做一次工作文件快照，不触发 SAF 根目录扫描
-     * 文件不可见时仍可用 durable checkpoint 显示真实进度
-     */
-
-    /** 进程重启先恢复固定批次成员，再叠加 task 行的暂态字节进度 */
-
-
-
-
 
     internal data class PendingDownloadRecoveryPlan(
         val pendingQueuedDownloads: List<ManagedDownloadStorage.PendingDownloadQueueEntry>,
@@ -926,12 +748,6 @@ object GlobalDownloadManager {
         val failedSongKeys: Set<String>
     )
 
-
-
-
-
-    /** 在触发网络边沿时固定批次身份，后续确认和恢复不得再按 stableKey 扩大范围。 */
-
     internal fun MobileDataDownloadBatchIdentity.toRoomBatchIdentity():
         DownloadExecutionRoomStore.DownloadBatchIdentity {
         return DownloadExecutionRoomStore.DownloadBatchIdentity(
@@ -939,22 +755,6 @@ object GlobalDownloadManager {
             generation = generation
         )
     }
-
-    /**
-     * 网络边沿只读取 operation 表头和 SQLite 投影出的策略位。批次成员键仍会
-     * 全量纳入等待展示，但不会反序列化歌曲、歌词或封面数据
-     */
-
-
-
-
-
-
-
-
-
-
-
 
     fun recoverPendingDownloadsForNetworkRestored(context: Context, reason: String) {
         return this.recoverPendingDownloadsForNetworkRestoredImpl(context, reason)
@@ -979,21 +779,10 @@ object GlobalDownloadManager {
         return this.requestPendingDownloadRecoveryDecisionIfNeededImpl(context, reason)
     }
 
-
-
-
     fun hasActiveDownloadOperations(): Boolean {
         return taskStore.hasActiveDownloadOperations() ||
             assetEnrichmentCoordinator.hasActiveJobs.value
     }
-
-
-    /** 扫描结果只有在扫描期间没有新的目录发布时才能替换 catalog */
-
-
-
-
-    /** 删除事务要同步写空 catalog 时，先收敛可能在等待中的延迟写入 */
 
     internal fun buildDownloadedSongCatalogIndex(
         songs: List<DownloadedSong>
@@ -1001,61 +790,10 @@ object GlobalDownloadManager {
         return moe.ouom.neriplayer.core.download.buildDownloadedSongCatalogIndex(songs)
     }
 
-
-
-
-
-
-
-
-
-    /** 在移除内存绑定前同步最后一个安全前缀，覆盖空间不足和进程取消等快速退出路径 */
-
-
-
-
-
-    /** 提交边界后的宿主取消只结束本次执行，不能释放 core 的恢复凭据 */
-
-    /**
-     * pending 提升失败时只保留可恢复凭据，禁止把临时引用暴露成完成文件
-     *
-     * 这里的状态写回必须和宿主取消解耦。Provider 恢复后由启动扫描或持久宿主
-     * 再次进入 finalize 路径，成功提升前不会写 artifact、catalog 或 sidecar
-     */
-
-    /** 把收尾异常限制在增强资产边界，避免已提交音频显示为失败 */
-
-    /** 重新交给持久化宿主，进程退出后仍可由 Room operation 接管 */
-
-
-
-
     internal data class FinalizedDownloadedAudioProbe(
         val readable: Boolean,
         val durationMs: Long?
     )
-
-
-
-
-
-
-
-
-
-
-    /** 旧版本可能只保存了 core 元数据，没有 Room operation 记录，用稳定 ID 补上恢复入口 */
-
-
-
-
-
-
-
-
-
-
 
     fun scanLocalFiles(context: Context, forceRefresh: Boolean = false) {
         val appContext = context.applicationContext
@@ -1073,7 +811,6 @@ object GlobalDownloadManager {
     ): ManagedLibraryRefreshOutcome {
         return this.scanLocalFilesAwaitImpl(context, forceRefresh)
     }
-
 
     internal fun shouldCompleteProcessingAfterCatalogPublish(
         state: ManagedLibraryProcessingState
@@ -1101,8 +838,6 @@ object GlobalDownloadManager {
         activeRefreshForceRefresh = shouldForceRefresh
         shouldForceRefresh
     }
-
-
 
     /** 当前快照的音频引用优先于旧 metadata，避免迁移后恢复 app-private URI */
     internal fun resolveDurableMetadataPlaybackReference(
@@ -1228,23 +963,12 @@ object GlobalDownloadManager {
         metadataEntry = metadataEntry
     )
 
-
-
-
-
-
-    /** 任务清空已有持久 owner 时，宿主退出把 lease 交给批量收敛，避免逐项阻塞 */
-
-
-
-
     internal fun trustedManagedMetadataReference(
         reference: String?,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): String? {
         return ManagedDownloadArtifactPlanner.trustedMetadataReference(reference, snapshot)
     }
-
 
     internal suspend fun rollbackCancelledDownload(
         context: Context,
@@ -1315,7 +1039,7 @@ object GlobalDownloadManager {
             useCachedSnapshotOnly = false
         )
 
-        val currentSongs = _downloadedSongs.value
+        val currentSongs = downloadedSongsMutable.value
         val updatedSongs = currentSongs.filterNot { downloaded ->
             (audioForRemoval != null && downloaded.filePath == audioForRemoval.reference) ||
                 matchesDownloadedSong(song, downloaded)
@@ -1329,14 +1053,6 @@ object GlobalDownloadManager {
         NPLogger.d(TAG, "回滚已取消下载完成: ${song.name}")
     }
 
-    fun deleteDownloadedSong(context: Context, song: DownloadedSong) {
-        deleteDownloadedSongs(context, listOf(song))
-    }
-
-    fun deleteDownloadedSongs(context: Context, songs: List<DownloadedSong>) {
-        return this.deleteDownloadedSongsImpl(context, songs)
-    }
-
     suspend fun deleteDownloadedSongsWithResult(
         context: Context,
         songs: List<DownloadedSong>,
@@ -1345,40 +1061,9 @@ object GlobalDownloadManager {
         return this.deleteDownloadedSongsWithResultImpl(context, songs, deleteEntireLibrary)
     }
 
-    /** 全库删除失败或延期后继续回放持久意图，避免 fence 永久阻塞新下载 */
-
-
-
-
-
-
-
-
-
-    /**
-     * 删除屏障超时后把请求保留为不可调度的等待意图，交由后续恢复重试
-     */
-
-
-
-
-
-
-    /**
-     * 旧目录路径可能已经失效，不能让它遮蔽迁移后仍可用的 mediaUri
-     * 每个候选都要独立确认，且不确定结果不能触发破坏性清理
-     */
-
-
-
     fun playDownloadedSong(context: Context, song: DownloadedSong) {
         return this.playDownloadedSongImpl(context, song)
     }
-
-
-
-
-
 
     fun hasDownloadedSongCached(song: SongItem): Boolean {
         return findDownloadedSongCached(song) != null
@@ -1396,14 +1081,9 @@ object GlobalDownloadManager {
         return this.findAccessibleDownloadedSongPlaybackUriImpl(context, song)
     }
 
-
     fun findFastCachedDownloadedSongPlaybackUri(context: Context, song: SongItem): String? {
         return this.findFastCachedDownloadedSongPlaybackUriImpl(context, song)
     }
-
-
-
-
 
     fun startDownload(context: Context, song: SongItem) {
         scheduleUserDownload(context, song, skipTrafficRiskPrompt = false)
@@ -1419,7 +1099,6 @@ object GlobalDownloadManager {
         return this.startDownloadImpl(context, song, operationId, preserveStaging, preparedAttemptId)
     }
 
-
     internal suspend fun executeDownloadOperation(
         context: Context,
         song: SongItem,
@@ -1431,21 +1110,12 @@ object GlobalDownloadManager {
         return this.executeDownloadOperationImpl(context, song, operationId, preserveStaging, preparedAttemptId, admissionTicket)
     }
 
-    /**
-     * 无音频引用的 post-core 行不满足 Core Commit 契约，不能永久卡在收尾恢复
-     * 先以当前 operation 的 lease 原子认领 artifact，再把同一 operation 重新打开
-     */
-
     internal fun shouldRestartPostCoreOperationForFreshTransfer(
         operationState: String?,
         artifactClaim: ManagedDownloadArtifactClaim
     ): Boolean {
         return this.shouldRestartPostCoreOperationForFreshTransferImpl(operationState, artifactClaim)
     }
-
-
-
-
 
     internal suspend fun isMetadataEmbeddingActionRequired(
         context: Context,
@@ -1492,10 +1162,6 @@ object GlobalDownloadManager {
         return this.cancelDownloadOperationFromHostImpl(songKey, operationId)
     }
 
-    /** 在真正打开音频传输前再次确认清空代次，避免尾部协程把任务卡片写回来 */
-
-    /** 清空后旧 operation 已消失但 artifact lease 仍在时，允许用户重试接管 */
-
     internal data class PreparedConfirmedDownload(
         val artifactClaim: ManagedDownloadArtifactClaim?,
         val requiresFinalizationRecovery: Boolean,
@@ -1505,20 +1171,9 @@ object GlobalDownloadManager {
         val isBatchOperation: Boolean
     )
 
-    /** 只携带已经通过准入检查的传输上下文，网络阶段不再持有歌曲锁 */
-    /** claim 和任务创建必须与清空快照使用同一张准入锁 */
-
-
-    /** 先收口 artifact 和批次成员，再终止 operation，避免进程中断留下半个终态 */
-
-
-
-    /** 单曲入口的任意提前返回都必须结束 pre-core lease，避免后续任务永久看到占用 */
-
     fun startBatchDownload(context: Context, songs: List<SongItem>) {
         startBatchDownload(context, songs, skipTrafficRiskPrompt = false)
     }
-
 
     internal class BatchDownloadSession(
         val context: Context,
@@ -1579,54 +1234,12 @@ object GlobalDownloadManager {
         val downloadAudioQuality: DownloadAudioQualitySelection?
     )
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     fun confirmTrafficRiskDownload(
         context: Context,
         request: TrafficRiskDownloadRequest
     ) {
         return this.confirmTrafficRiskDownloadImpl(context, request)
     }
-
-
-
-
-
-
-
-    /** 启动恢复尚未完成时，从 Room/旧目录缓存读取一份只读索引供批次预检使用 */
-
-
-
-
-
-
-
-
-
-
-    /** 已确认本地音频后同步收口 durable operation，避免宿主把空 task 重新判为 Retry */
-
-    /** 只在当前批次投影能唯一确定 operation 时才允许终态回调写入 Room */
 
     fun updateTaskStatus(
         songKey: String,
@@ -1638,7 +1251,6 @@ object GlobalDownloadManager {
         return this.updateTaskStatusImpl(songKey, status, expectedAttemptId, settleBatchPresentation, operationId)
     }
 
-
     fun removeDownloadTask(songKey: String, expectedAttemptId: Long? = null) {
         taskStore.removeDownloadTask(
             songKey = songKey,
@@ -1646,35 +1258,9 @@ object GlobalDownloadManager {
         )
     }
 
-
-
-
-
-
-
-    /** 把用户选择的固定成员先落到 Room，任务卡片只是这个快照的暂态投影 */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     internal fun clearBatchDownloadPresentation(batchId: Long? = null) {
         return this.clearBatchDownloadPresentationImpl(batchId)
     }
-
-
-
-    /** 准入被清空栅栏拒绝时保留固定 total，并把被拒成员落为 CANCELLED */
 
     internal fun invalidateDownloadRequestGenerations(songKeys: Collection<String>) =
         requestGenerationTracker.snapshotAndInvalidate(songKeys).also { snapshot ->
@@ -1682,27 +1268,6 @@ object GlobalDownloadManager {
                 NPLogger.d(TAG, "失效下载请求代际: songs=${snapshot.invalidatedCount}")
             }
         }
-
-
-
-
-
-    /** 只有 operation CAS 成功后才删除 direct-cache 恢复证据 */
-
-
-
-
-    /** 在创建替代 operation 前固定旧 operation 集合，避免取消收敛误伤新请求 */
-
-
-
-
-
-
-    /** 新请求只能在旧取消快照完成后创建，避免超时查询把新 operation 当成旧任务 */
-
-
-
 
     fun clearSongCancelled(songKey: String) {
         cancelledSongKeys.remove(songKey)
@@ -1712,15 +1277,6 @@ object GlobalDownloadManager {
         requestDownloadTaskCancellation(setOf(songKey))
     }
 
-
-
-
-    /**
-     * 取消等待超时后继续回放持久凭据。这个 job 不依附于触发取消的协程，
-     * 因而 UI 返回或批量 job 被取消时仍能释放旧宿主和 artifact lease
-     */
-
-
     fun clearAllDownloadTasks() {
         cancelAllDownloadTasks()
     }
@@ -1728,40 +1284,6 @@ object GlobalDownloadManager {
     fun cancelAllDownloadTasks() {
         requestAllDownloadTaskCancellation()
     }
-
-
-    /** 在清空发布前捕获尚未 hydrate 到 TaskStore 的 durable operation 和 staging */
-
-    /** 在交互预算内只完成任务展示阶段，Provider 清理由持久恢复流程接管 */
-
-
-
-
-
-
-
-    /** Provider 不支持协程取消时，完成后重新触发一次全库删除收敛 */
-
-    /** 全库回放只有在 Provider 和执行宿主都释放后才可以触碰物理目录 */
-
-    /** 进程死亡后不依赖内存会话，按持久凭据重新回放全库清空 */
-
-    /**
-     * catalog 丢失时按一次完整托管目录快照回放全库删除
-     *
-     * 只有根目录和侧载列举都完整、所有引用删除得到确认且空 catalog 已落盘，
-     * 才会清理恢复意图和持久清空栅栏
-     */
-
-
-
-
-
-
-
-
-
-
 
     fun interruptDownloadsForWifiDisconnected(
         callbackNetworkType: TrafficNetworkType?,
@@ -1782,13 +1304,12 @@ object GlobalDownloadManager {
     }
 
     fun cancelAllDownloadsForMobileData(request: MobileDataDownloadInterruptionRequest) {
-        if (_mobileDataDownloadInterruptionRequest.value?.id != request.id) {
+        if (mobileDataDownloadInterruptionRequestMutable.value?.id != request.id) {
             return
         }
         dismissMobileDataDownloadInterruptionRequest()
         cancelAllDownloadTasks()
     }
-
 
     internal suspend fun recoverPendingDownloadsFromWifiWake(
         context: Context,
@@ -1796,16 +1317,6 @@ object GlobalDownloadManager {
     ): Boolean {
         return this.recoverPendingDownloadsFromWifiWakeImpl(context, admissionTicket)
     }
-
-
-
-    /** 用仍未收敛的执行和文件数量推进进度，避免清空过程只显示固定阶段跳变 */
-
-
-
-
-
-
 
     fun isSongCancelled(songKey: String): Boolean {
         return cancelledSongKeys.contains(songKey)
@@ -1859,8 +1370,6 @@ object GlobalDownloadManager {
         }
     }
 
-    /** 可在网络和取消等待阶段让出歌曲锁的兼容入口 */
-
     internal fun isDownloadAttemptActive(
         songKey: String,
         expectedAttemptId: Long? = null
@@ -1871,22 +1380,6 @@ object GlobalDownloadManager {
     fun resumeDownloadTask(context: Context, songKey: String) {
         return this.resumeDownloadTaskImpl(context, songKey)
     }
-
-
-
-
-
-    /**
-     * 播放入口允许 core 已提交但仍使用 pending 文件名的音频
-     * 只接受 provider Present 和持久化完成状态，不能仅凭目录中有文件就放行
-     */
-
-
-
-
-
-
-
 
     internal fun buildOptimisticDownloadedSong(
         song: SongItem,

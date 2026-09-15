@@ -10,7 +10,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationResult
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
@@ -389,11 +388,11 @@ internal fun GlobalDownloadManager.publishOptimisticDownloadedSongs(
     }
 
     synchronized(downloadedSongCatalogMutationLock) {
-        var mergedSongs = _downloadedSongs.value
+        var mergedSongs = downloadedSongsMutable.value
         songs.forEach { song ->
             mergedSongs = upsertDownloadedSongCatalog(mergedSongs, song)
         }
-        if (mergedSongs != _downloadedSongs.value) {
+        if (mergedSongs != downloadedSongsMutable.value) {
             publishDownloadedSongs(
                 context = context,
                 songs = mergedSongs,

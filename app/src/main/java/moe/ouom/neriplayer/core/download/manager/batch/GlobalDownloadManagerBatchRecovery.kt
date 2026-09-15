@@ -5,7 +5,6 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager.BatchDownloadSess
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PreparedBatchArtifact
 import android.content.Context
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
@@ -1038,7 +1037,7 @@ internal suspend fun GlobalDownloadManager.maybeRequestTrafficRiskDownloadConfir
         return false
     }
 
-    _trafficRiskDownloadRequests.emit(
+    trafficRiskDownloadRequestsMutable.emit(
         TrafficRiskDownloadRequest(
             id = trafficRiskRequestIdGenerator.incrementAndGet(),
             songs = distinctSongs,

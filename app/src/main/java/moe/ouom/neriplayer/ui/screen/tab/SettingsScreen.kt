@@ -2959,6 +2959,7 @@ private fun rememberDownloadDirectorySettingsController(
             return@LaunchedEffect
         }
         ManagedLibraryProcessingCoordinator.updateProgress(
+            context = context,
             operationId = operationId,
             processed = progress.processedFiles.coerceAtLeast(0),
             total = progress.totalFiles.coerceAtLeast(0)

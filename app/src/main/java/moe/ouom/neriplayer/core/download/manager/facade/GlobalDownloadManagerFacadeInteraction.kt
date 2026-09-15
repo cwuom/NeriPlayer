@@ -11,7 +11,6 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 
@@ -79,7 +78,7 @@ internal fun GlobalDownloadManager.clearBatchDownloadPresentationImpl(batchId: L
     } else {
         durableBatchIdentityByPresentationId.remove(batchId)
     }
-    _batchDownloadPresentations.update { presentations ->
+    batchDownloadPresentationsMutable.update { presentations ->
         if (batchId == null) {
             emptyMap()
         } else {
@@ -161,7 +160,7 @@ internal fun GlobalDownloadManager.continueDownloadsOnMobileDataImpl(
         val appContext = context.applicationContext
         var accepted = false
         mobileDataDownloadInterruptionRequestMutex.withLock {
-            val currentRequest = _mobileDataDownloadInterruptionRequest.value
+            val currentRequest = mobileDataDownloadInterruptionRequestMutable.value
             if (currentRequest?.id != request.id ||
                 currentRequest.networkGeneration != request.networkGeneration ||
                 currentRequest.batchIdentities != request.batchIdentities
@@ -228,7 +227,7 @@ internal fun GlobalDownloadManager.continueDownloadsOnMobileDataImpl(
 }
 
 internal fun GlobalDownloadManager.waitDownloadsForWifiImpl(request: MobileDataDownloadInterruptionRequest) {
-    if (_mobileDataDownloadInterruptionRequest.value?.id != request.id) {
+    if (mobileDataDownloadInterruptionRequestMutable.value?.id != request.id) {
         return
     }
     dismissMobileDataDownloadInterruptionRequest()

@@ -151,7 +151,7 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsWithResultImpl(
             deleteEntireLibrary = deleteEntireLibrary
         )
     } catch (error: Exception) {
-        _downloadedSongDeleteProgress.value = DownloadedSongDeleteProgress(
+        downloadedSongDeleteProgressMutable.value = DownloadedSongDeleteProgress(
             deleteId = downloadedSongDeleteIdGenerator.incrementAndGet(),
             phase = DownloadedSongDeletePhase.FAILED,
             requestedSongCount = targetSongs.size,
@@ -427,7 +427,7 @@ internal suspend fun GlobalDownloadManager.syncDownloadedSongMetadataNowImpl(
 ): DownloadedSongMetadataSyncOutcome = withContext(Dispatchers.IO) {
     downloadedSongMetadataSyncMutex.withLock {
         val context = AppContainer.applicationContext
-        val currentSongs = _downloadedSongs.value
+        val currentSongs = downloadedSongsMutable.value
         val catalogSong = findDownloadedSongCatalogMatch(song, currentSongs)
         val metadataSong = catalogSong
             ?.let { existing -> projectDownloadedSongMetadata(existing, song) }

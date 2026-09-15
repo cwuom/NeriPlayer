@@ -538,7 +538,7 @@ internal fun GlobalDownloadManager.batchOperationIdForAttempt(
     attemptId: Long?
 ): String? {
     if (attemptId == null || attemptId <= 0L) return null
-    val candidates = _batchDownloadPresentations.value.values
+    val candidates = batchDownloadPresentationsMutable.value.values
         .mapNotNull { presentation ->
             if (presentation.memberAttemptIds[songKey] != attemptId) return@mapNotNull null
             presentation.memberOperationIds[songKey]

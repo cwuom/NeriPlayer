@@ -17,22 +17,36 @@ internal object RefactoredSourceFamilyResolver {
         "LocalPlaylistRepository.kt" to "LocalPlaylistRepository"
     )
 
+    private val implementationDirectoriesByRootName = mapOf(
+        "GlobalDownloadManager.kt" to listOf("manager"),
+        "ManagedDownloadStorage.kt" to listOf("storage/facade", "storage/operation")
+    )
+
     fun resolve(candidate: File): File {
         val prefix = familyPrefixByRootName[candidate.name] ?: return candidate
         val parent = candidate.parentFile ?: return candidate
-        val familyFiles = parent.listFiles()
-            ?.asSequence()
-            ?.filter { file ->
+        val familyFileCandidates = sequence {
+            yieldAll(parent.listFiles()?.asSequence().orEmpty())
+            implementationDirectoriesByRootName[candidate.name]
+                .orEmpty()
+                .map { relativePath -> File(parent, relativePath) }
+                .filter(File::isDirectory)
+                .forEach { directory ->
+                    yieldAll(directory.walkTopDown())
+                }
+        }
+        val familyFiles = familyFileCandidates
+            .filter { file ->
                 file.isFile &&
                     file.extension == "kt" &&
                     (file.name == candidate.name || file.name.startsWith(prefix))
             }
-            ?.sortedWith(
+            .distinctBy { file -> file.absolutePath }
+            .sortedWith(
                 compareBy<File> { file -> file.name != candidate.name }
                     .thenBy { file -> file.name }
             )
-            ?.toList()
-            .orEmpty()
+            .toList()
         if (familyFiles.size <= 1) return candidate
 
         return File.createTempFile("refactored-source-family-", ".kt").apply {

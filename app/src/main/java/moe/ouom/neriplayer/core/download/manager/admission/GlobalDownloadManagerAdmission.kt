@@ -17,7 +17,6 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrat
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
@@ -216,7 +215,7 @@ internal fun GlobalDownloadManager.scheduleStartupArtifactRecovery(context: Cont
 
 internal fun GlobalDownloadManager.dismissMobileDataDownloadInterruptionRequest() {
     mobileDataDownloadInterruptionEpoch.incrementAndGet()
-    _mobileDataDownloadInterruptionRequest.value = null
+    mobileDataDownloadInterruptionRequestMutable.value = null
 }
 
 internal fun GlobalDownloadManager.isWifiBoundNetworkPolicyStillRequired(

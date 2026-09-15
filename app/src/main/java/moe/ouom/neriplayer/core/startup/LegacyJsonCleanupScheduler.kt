@@ -190,6 +190,7 @@ internal object LegacyJsonCleanupScheduler {
             try {
                 LegacyDownloadUpgradeCoordinator(appContext).execute { processed, total ->
                     ManagedLibraryProcessingCoordinator.updateProgress(
+                        context = appContext,
                         operationId = operationId,
                         processed = processed,
                         total = total

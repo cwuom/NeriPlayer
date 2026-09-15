@@ -87,7 +87,7 @@ internal fun GlobalDownloadManager.buildOptimisticDownloadedSongImpl(
     val sourceSubAudioId = song.subAudioId
         ?.trim()
         ?.takeIf { rawSourceChannel != null && it.isNotBlank() }
-    val previousSong = _downloadedSongs.value.firstOrNull { downloadedSong ->
+    val previousSong = downloadedSongsMutable.value.firstOrNull { downloadedSong ->
         downloadedSong.filePath == storedAudio.reference || matchesDownloadedSong(song, downloadedSong)
     }
     val resolvedDownloadTime = previousSong?.downloadTime
