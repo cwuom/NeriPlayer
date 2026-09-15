@@ -21,24 +21,38 @@ package moe.ouom.neriplayer.data.local.media
  */
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.io.readBytesLimited
+import okhttp3.Request
 import java.io.File
+import java.net.URI
 import java.security.MessageDigest
 import java.net.URLConnection
 import java.util.Locale
 import java.util.UUID
+import okhttp3.OkHttpClient
 
 object CustomSongCoverStorage {
     private const val DIRECTORY_NAME = "custom_song_covers"
-    private const val ORIGINAL_DIRECTORY_NAME = "original_song_covers"
-    private const val MAX_COVER_BYTES = 8L * 1024L * 1024L
+    private const val BACKUP_DIRECTORY_NAME = "bak"
+    private const val MAX_COVER_BYTES = 20L * 1024L * 1024L
+
+    internal var remoteCoverHttpClientProvider: () -> OkHttpClient = {
+        AppContainer.sharedOkHttpClient
+    }
+    internal var remoteCoverImageValidator: (ByteArray) -> Boolean = { bytes ->
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size) != null
+    }
+    internal var remoteCoverMappingSink: ((String, String) -> Unit)? = null
 
     suspend fun importFromUri(
         context: Context,
@@ -90,8 +104,16 @@ object CustomSongCoverStorage {
 
         val sourceUri = runCatching { normalizedReference.toUri() }.getOrNull()
         val sourceFile = resolveLocalFileReference(normalizedReference, sourceUri)
-        val directory = File(context.filesDir, ORIGINAL_DIRECTORY_NAME)
+        val directory = File(context.filesDir, BACKUP_DIRECTORY_NAME)
         val persistentDirectory = runCatching { directory.canonicalFile }.getOrNull()
+        if (sourceFile?.isDirectory == true) {
+            if (persistentDirectory == null || !isInsideDirectory(sourceFile, persistentDirectory)) {
+                return@withContext null
+            }
+            return@withContext findStoredOriginalCover(directory, song)
+                ?.toURI()
+                ?.toString()
+        }
         if (sourceFile?.isFile == true && persistentDirectory != null &&
             isInsideDirectory(sourceFile, persistentDirectory)
         ) {
@@ -167,6 +189,58 @@ object CustomSongCoverStorage {
         }
     }
 
+    /**
+     * downloads a remote cover only for an explicit user-selected replacement
+     */
+    suspend fun persistManuallySelectedRemoteCover(
+        context: Context,
+        sourceUrl: String?
+    ): String? = withContext(Dispatchers.IO) {
+        val normalizedSourceUrl = sourceUrl
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return@withContext null
+        if (!isRemoteReference(normalizedSourceUrl)) {
+            return@withContext normalizedSourceUrl
+        }
+        persistRemoteCover(
+            context = context,
+            sourceUrl = normalizedSourceUrl
+        )?.also { localReference ->
+            val mappingSink = remoteCoverMappingSink
+            if (mappingSink != null) {
+                mappingSink(localReference, normalizedSourceUrl)
+            } else {
+                CoverUrlMapper.getInstance(context).saveCoverMapping(
+                    localUrl = localReference,
+                    networkUrl = normalizedSourceUrl
+                )
+            }
+        }
+    }
+
+    internal suspend fun resolveLegacyOriginalCoverReference(
+        context: Context,
+        song: SongItem,
+        references: Iterable<String?>
+    ): String? {
+        for (reference in references) {
+            val normalizedReference = reference
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: continue
+            if (!isDirectoryReference(normalizedReference)) continue
+
+            val resolved = persistOriginalCover(
+                context = context,
+                song = song,
+                reference = normalizedReference
+            ) ?: continue
+            if (!isDirectoryReference(resolved)) return resolved
+        }
+        return null
+    }
+
     internal fun originalCoverFileName(song: SongItem, extension: String): String {
         val normalizedExtension = extension
             .trim()
@@ -177,9 +251,25 @@ object CustomSongCoverStorage {
         return "${sha256(song.stableKey())}.$normalizedExtension"
     }
 
+    internal fun remoteCoverFileName(contentHash: String, extension: String): String {
+        val normalizedExtension = extension
+            .trim()
+            .lowercase(Locale.ROOT)
+            .filter { it.isLetterOrDigit() }
+            .take(8)
+            .ifBlank { "jpg" }
+        return "$contentHash.$normalizedExtension"
+    }
+
     internal fun isRemoteReference(reference: String): Boolean {
         return reference.startsWith("http://", ignoreCase = true) ||
             reference.startsWith("https://", ignoreCase = true)
+    }
+
+    internal fun isDirectoryReference(reference: String?): Boolean {
+        val normalized = reference?.trim()?.takeIf { it.isNotBlank() } ?: return false
+        val uri = runCatching { normalized.toUri() }.getOrNull()
+        return resolveLocalFileReference(normalized, uri)?.isDirectory == true
     }
 
     private fun resolveLocalFileReference(reference: String, uri: Uri?): File? {
@@ -187,6 +277,9 @@ object CustomSongCoverStorage {
             reference.startsWith("/", ignoreCase = false) -> File(reference)
             uri != null && uri.scheme.equals("file", ignoreCase = true) -> {
                 uri.path?.let(::File)
+            }
+            reference.startsWith("file:", ignoreCase = true) -> {
+                runCatching { File(URI(reference)) }.getOrNull()
             }
             else -> null
         }
@@ -196,6 +289,105 @@ object CustomSongCoverStorage {
         val filePath = runCatching { file.canonicalPath }.getOrNull() ?: return false
         val directoryPath = runCatching { directory.canonicalPath }.getOrNull() ?: return false
         return filePath == directoryPath || filePath.startsWith("$directoryPath${File.separator}")
+    }
+
+    private fun findStoredOriginalCover(directory: File, song: SongItem): File? {
+        val filePrefix = sha256(song.stableKey())
+        return runCatching {
+            directory.listFiles()
+                ?.asSequence()
+                ?.filter { file ->
+                    file.isFile &&
+                        file.length() > 0L &&
+                        file.name.substringBeforeLast('.', file.name) == filePrefix
+                }
+                ?.maxByOrNull(File::lastModified)
+        }.getOrNull()
+    }
+
+    private suspend fun persistRemoteCover(
+        context: Context,
+        sourceUrl: String
+    ): String? {
+        val request = runCatching {
+            Request.Builder()
+                .url(sourceUrl)
+                .header("Accept", "image/*")
+                .build()
+        }.getOrNull() ?: return null
+        val bytes = runCatching {
+            remoteCoverHttpClientProvider().newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val contentType = response.header("Content-Type")
+                    ?.substringBefore(';')
+                    ?.trim()
+                    ?.lowercase(Locale.ROOT)
+                if (contentType != null && !contentType.startsWith("image/")) {
+                    return@use null
+                }
+                val body = response.body
+                val contentLength = body.contentLength()
+                if (contentLength > MAX_COVER_BYTES) return@use null
+                body.byteStream().use { input ->
+                    input.readBytesLimited(MAX_COVER_BYTES)
+                }
+            }
+        }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
+        if (!remoteCoverImageValidator(bytes)) {
+            return null
+        }
+
+        val contentHash = sha256(bytes)
+        val extension = contentTypeExtension(sourceUrl, request.url.toString())
+        // 网络封面先保存为应用内输入, 最终本体由音频旁的 Covers 侧载承载
+        val directory = File(context.filesDir, DIRECTORY_NAME)
+        if (!directory.exists() && !directory.mkdirs()) return null
+        val target = File(directory, remoteCoverFileName(contentHash, extension))
+        if (target.isFile && target.length() == bytes.size.toLong()) {
+            return target.toURI().toString()
+        }
+        val existing = directory.listFiles()
+            ?.firstOrNull { file ->
+                file.isFile && file.name.substringBeforeLast('.') == contentHash
+            }
+        if (existing != null && existing.length() > 0L) {
+            return existing.toURI().toString()
+        }
+
+        val temporary = File(directory, ".${target.name}.${UUID.randomUUID()}.tmp")
+        return try {
+            temporary.outputStream().use { output ->
+                output.write(bytes)
+                output.fd.sync()
+            }
+            if (!temporary.renameTo(target) && !target.isFile) {
+                null
+            } else {
+                target.takeIf { file -> file.isFile && file.length() > 0L }
+                    ?.toURI()
+                    ?.toString()
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            if (temporary.exists()) temporary.delete()
+        }
+    }
+
+    private fun contentTypeExtension(sourceUrl: String, normalizedUrl: String): String {
+        return normalizedUrl.substringAfterLast('.', "")
+            .substringBefore('?')
+            .lowercase(Locale.ROOT)
+            .filter { it.isLetterOrDigit() }
+            .take(8)
+            .takeIf { it.isNotBlank() }
+            ?: sourceUrl.substringAfterLast('.', "")
+                .substringBefore('?')
+                .lowercase(Locale.ROOT)
+                .filter { it.isLetterOrDigit() }
+                .take(8)
+                .takeIf { it.isNotBlank() }
+                ?: "jpg"
     }
 
     private fun resolveExtension(
@@ -251,8 +443,12 @@ object CustomSongCoverStorage {
     }
 
     private fun sha256(value: String): String {
+        return sha256(value.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun sha256(value: ByteArray): String {
         return MessageDigest.getInstance("SHA-256")
-            .digest(value.toByteArray(Charsets.UTF_8))
+            .digest(value)
             .joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 

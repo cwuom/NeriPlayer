@@ -40,7 +40,8 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
     private val initialCapacity = expectedSongCount.coerceIn(0, MAX_INITIAL_CAPACITY)
     private val distinct = ArrayList<SongItem>(initialCapacity)
     private val seenIdentities = HashSet<SongIdentity>(initialCapacity)
-    private val seenLocalKeys = HashSet<String>()
+    private val indexByIdentity = HashMap<SongIdentity, Int>(initialCapacity)
+    private val indexByLocalKey = HashMap<String, Int>()
 
     fun addAll(songs: Iterable<SongItem>) {
         songs.forEach(::add)
@@ -53,17 +54,64 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
     private fun add(song: SongItem) {
         val identity = song.identity()
         if (identity in seenIdentities) {
+            indexByIdentity[identity]?.let { index ->
+                distinct[index] = mergeDuplicateSong(distinct[index], song)
+                LocalSongSupport.localDuplicateKeys(
+                    song = song,
+                    includeMetadataFallback = true
+                ).forEach { key ->
+                    indexByLocalKey[key] = index
+                }
+            }
             return
         }
         val localKeys = LocalSongSupport.localDuplicateKeys(
             song = song,
             includeMetadataFallback = true
         )
-        if (localKeys.none(seenLocalKeys::contains)) {
-            distinct += song
+        val duplicateIndex = localKeys.firstNotNullOfOrNull(indexByLocalKey::get)
+        if (duplicateIndex != null) {
+            distinct[duplicateIndex] = mergeDuplicateSong(distinct[duplicateIndex], song)
             seenIdentities += identity
-            seenLocalKeys += localKeys
+            indexByIdentity[identity] = duplicateIndex
+            localKeys.forEach { key ->
+                indexByLocalKey[key] = duplicateIndex
+            }
+            return
         }
+        val index = distinct.size
+        distinct += song
+        seenIdentities += identity
+        indexByIdentity[identity] = index
+        localKeys.forEach { key ->
+            indexByLocalKey[key] = index
+        }
+    }
+
+    private fun mergeDuplicateSong(existing: SongItem, candidate: SongItem): SongItem {
+        return existing.copy(
+            name = existing.name.takeIf(String::isNotBlank) ?: candidate.name,
+            artist = existing.artist.takeIf(String::isNotBlank) ?: candidate.artist,
+            album = existing.album.takeIf(String::isNotBlank) ?: candidate.album,
+            durationMs = existing.durationMs.takeIf { it > 0L } ?: candidate.durationMs,
+            coverUrl = existing.coverUrl.takeIf { !it.isNullOrBlank() } ?: candidate.coverUrl,
+            customCoverUrl = existing.customCoverUrl
+                .takeIf { !it.isNullOrBlank() }
+                ?: candidate.customCoverUrl,
+            originalCoverUrl = existing.originalCoverUrl
+                .takeIf { !it.isNullOrBlank() }
+                ?: candidate.originalCoverUrl,
+            matchedLyric = existing.matchedLyric ?: candidate.matchedLyric,
+            matchedTranslatedLyric = existing.matchedTranslatedLyric
+                ?: candidate.matchedTranslatedLyric,
+            matchedRomanizedLyric = existing.matchedRomanizedLyric
+                ?: candidate.matchedRomanizedLyric,
+            originalLyric = existing.originalLyric ?: candidate.originalLyric,
+            originalTranslatedLyric = existing.originalTranslatedLyric
+                ?: candidate.originalTranslatedLyric,
+            originalRomanizedLyric = existing.originalRomanizedLyric
+                ?: candidate.originalRomanizedLyric
+        )
     }
 
     private companion object {

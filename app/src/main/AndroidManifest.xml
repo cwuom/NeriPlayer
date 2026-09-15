@@ -12,6 +12,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
@@ -49,6 +52,11 @@
         <meta-data
             android:name="lyricon_module_tags"
             android:resource="@array/lyricon_module_tags" />
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="remove" />
 
         <activity
             android:name=".activity.MainActivity"
@@ -161,6 +169,16 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+        <service
+            android:name=".core.download.execution.UidtDownloadJobService"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            tools:targetApi="34" />
 
         <receiver
             android:name="androidx.media.session.MediaButtonReceiver"

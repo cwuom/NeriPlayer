@@ -1301,7 +1301,61 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Download
         )
 
-        @AutoSetting(order = 40)
+        @AutoSetting(order = 10)
+        val downloadFollowPlaybackAudioQuality = autoSwitchSetting(
+            key = "download_follow_playback_audio_quality",
+            defaultValue = true,
+            titleRes = R.string.settings_download_follow_playback_audio_quality,
+            descriptionRes = R.string.settings_download_follow_playback_audio_quality_desc,
+            icon = AutoSettingIcon.Audiotrack
+        )
+
+        @AutoSetting(
+            key = "download_netease_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY,
+            order = 20,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadNeteaseAudioQuality = autoStringSetting(
+            key = "download_netease_audio_quality",
+            defaultValue = DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY,
+            titleRes = R.string.settings_download_netease_audio_quality,
+            iconRes = R.drawable.ic_netease_cloud_music
+        )
+
+        @AutoSetting(
+            key = "download_youtube_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY,
+            order = 30,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadYouTubeAudioQuality = autoStringSetting(
+            key = "download_youtube_audio_quality",
+            defaultValue = DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY,
+            titleRes = R.string.settings_download_youtube_audio_quality,
+            iconRes = R.drawable.ic_youtube
+        )
+
+        @AutoSetting(
+            key = "download_bili_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY,
+            order = 40,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadBiliAudioQuality = autoStringSetting(
+            key = "download_bili_audio_quality",
+            defaultValue = DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY,
+            titleRes = R.string.settings_download_bili_audio_quality,
+            iconRes = R.drawable.ic_bilibili
+        )
+
+        @AutoSetting(order = 50)
         val downloadMetadataPostProcessingEnabled = autoSwitchSetting(
             key = "download_metadata_post_processing_enabled",
             defaultValue = true,
@@ -1310,7 +1364,7 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.AutoAwesome
         )
 
-        @AutoSetting(order = 50)
+        @AutoSetting(order = 60)
         val standardizedLyricEmbeddingEnabled = autoSwitchSetting(
             key = "standardized_lyric_embedding_enabled",
             defaultValue = false,
@@ -1320,7 +1374,7 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
-            order = 60,
+            order = 70,
             ui = SettingUiType.Custom
         )
         val downloadParallelism = autoIntSetting(

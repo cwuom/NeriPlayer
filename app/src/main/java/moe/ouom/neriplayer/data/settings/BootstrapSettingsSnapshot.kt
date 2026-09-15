@@ -24,9 +24,11 @@ package moe.ouom.neriplayer.data.settings
  */
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Looper
 import androidx.core.content.edit
 import androidx.datastore.preferences.core.Preferences
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +36,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
+import moe.ouom.neriplayer.core.player.download.DEFAULT_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val BOOTSTRAP_SNAPSHOT_PREFS = "bootstrap_settings_snapshot"
 private const val BOOTSTRAP_SNAPSHOT_READY_KEY = "ready"
@@ -43,7 +48,12 @@ private const val BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY = "prefer_high_refresh_
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY = "download_directory_uri"
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY = "download_directory_label"
 private const val BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY = "download_file_name_template"
+private const val BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY =
+    "download_follow_playback_audio_quality"
+private const val BOOTSTRAP_DOWNLOAD_PARALLELISM_KEY = "download_parallelism"
 private val bootstrapSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private val bootstrapSnapshotWarmupRunning = AtomicBoolean(false)
+private val bootstrapSnapshotPersistenceLock = Any()
 
 data class BootstrapSettingsSnapshot(
     val bypassProxy: Boolean = true,
@@ -51,19 +61,30 @@ data class BootstrapSettingsSnapshot(
     val preferHighRefreshRate: Boolean = false,
     val downloadDirectoryUri: String? = null,
     val downloadDirectoryLabel: String? = null,
-    val downloadFileNameTemplate: String? = null
+    val downloadFileNameTemplate: String? = null,
+    val downloadFollowPlaybackAudioQuality: Boolean = true,
+    val downloadParallelism: Int = DEFAULT_DOWNLOAD_PARALLELISM
 ) {
     fun sanitized(): BootstrapSettingsSnapshot {
         return copy(
             downloadDirectoryUri = downloadDirectoryUri?.takeIf { it.isNotBlank() },
             downloadDirectoryLabel = downloadDirectoryLabel?.takeIf { it.isNotBlank() },
-            downloadFileNameTemplate = normalizeDownloadFileNameTemplate(downloadFileNameTemplate)
+            downloadFileNameTemplate = normalizeDownloadFileNameTemplate(downloadFileNameTemplate),
+            downloadParallelism = normalizeDownloadParallelism(downloadParallelism)
         )
     }
 }
 
 fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapshot {
-    readCachedBootstrapSettingsSnapshot(context)?.let { return it }
+    readCachedBootstrapSettingsSnapshot(context)?.let { snapshot ->
+        if (hasCompleteBootstrapSettingsSnapshot(context)) {
+            return snapshot
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            warmBootstrapSettingsSnapshot(context)
+            return snapshot
+        }
+    }
 
     if (Looper.myLooper() == Looper.getMainLooper()) {
         warmBootstrapSettingsSnapshot(context)
@@ -81,13 +102,33 @@ fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapsh
     }
 }
 
-private fun warmBootstrapSettingsSnapshot(context: Context) {
+internal fun warmBootstrapSettingsSnapshot(context: Context) {
+    if (!bootstrapSnapshotWarmupRunning.compareAndSet(false, true)) return
     val appContext = context.applicationContext
     bootstrapSnapshotWarmupScope.launch {
-        runCatching {
-            appContext.dataStore.data.first().toBootstrapSettingsSnapshot()
-        }.onSuccess { snapshot ->
-            persistBootstrapSettingsSnapshot(appContext, snapshot)
+        try {
+            val snapshot = appContext.dataStore.data.first().toBootstrapSettingsSnapshot()
+            persistWarmedBootstrapSettingsSnapshot(appContext, snapshot)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            // a later caller can retry after a transient DataStore failure
+        } finally {
+            bootstrapSnapshotWarmupRunning.set(false)
+        }
+    }
+}
+
+internal fun persistWarmedBootstrapSettingsSnapshot(
+    context: Context,
+    snapshot: BootstrapSettingsSnapshot
+): Boolean {
+    return synchronized(bootstrapSnapshotPersistenceLock) {
+        if (hasCompleteBootstrapSettingsSnapshot(context)) {
+            false
+        } else {
+            persistBootstrapSettingsSnapshot(context, snapshot)
+            true
         }
     }
 }
@@ -97,6 +138,7 @@ internal suspend fun updateBootstrapSettingsSnapshot(
     transform: (BootstrapSettingsSnapshot) -> BootstrapSettingsSnapshot
 ) {
     val currentSnapshot = readCachedBootstrapSettingsSnapshot(context)
+        ?.takeIf { hasCompleteBootstrapSettingsSnapshot(context) }
         ?: context.dataStore.data.first().toBootstrapSettingsSnapshot()
     persistBootstrapSettingsSnapshot(context, transform(currentSnapshot))
 }
@@ -105,29 +147,58 @@ internal fun persistBootstrapSettingsSnapshot(
     context: Context,
     snapshot: BootstrapSettingsSnapshot
 ) {
-    val normalizedSnapshot = snapshot.sanitized()
-    context.getSharedPreferences(BOOTSTRAP_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
-        .edit {
-            putBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, true)
-                .putBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, normalizedSnapshot.bypassProxy)
-                .putBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, normalizedSnapshot.youtubeEnabled)
-                .putBoolean(
-                    BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY,
-                    normalizedSnapshot.preferHighRefreshRate
-                )
-                .putString(
-                    BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY,
-                    normalizedSnapshot.downloadDirectoryUri
-                )
-                .putString(
-                    BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY,
-                    normalizedSnapshot.downloadDirectoryLabel
-                )
-                .putString(
-                    BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY,
-                    normalizedSnapshot.downloadFileNameTemplate
-                )
-        }
+    synchronized(bootstrapSnapshotPersistenceLock) {
+        val normalizedSnapshot = snapshot.sanitized()
+        context.getSharedPreferences(BOOTSTRAP_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
+            .edit {
+                putBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, true)
+                    .putBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, normalizedSnapshot.bypassProxy)
+                    .putBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, normalizedSnapshot.youtubeEnabled)
+                    .putBoolean(
+                        BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY,
+                        normalizedSnapshot.preferHighRefreshRate
+                    )
+                    .putString(
+                        BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY,
+                        normalizedSnapshot.downloadDirectoryUri
+                    )
+                    .putString(
+                        BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY,
+                        normalizedSnapshot.downloadDirectoryLabel
+                    )
+                    .putString(
+                        BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY,
+                        normalizedSnapshot.downloadFileNameTemplate
+                    )
+                    .putBoolean(
+                        BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY,
+                        normalizedSnapshot.downloadFollowPlaybackAudioQuality
+                    )
+                    .putInt(
+                        BOOTSTRAP_DOWNLOAD_PARALLELISM_KEY,
+                        normalizedSnapshot.downloadParallelism
+                    )
+            }
+    }
+}
+
+internal fun updateBootstrapDownloadFollowPlaybackAudioQuality(
+    context: Context,
+    followsPlaybackQuality: Boolean
+) {
+    val preferences = context.applicationContext.getSharedPreferences(
+        BOOTSTRAP_SNAPSHOT_PREFS,
+        Context.MODE_PRIVATE
+    )
+    if (!preferences.getBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, false)) {
+        return
+    }
+    preferences.edit {
+        putBoolean(
+            BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY,
+            followsPlaybackQuality
+        )
+    }
 }
 
 internal fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapshot {
@@ -137,8 +208,45 @@ internal fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapsho
         preferHighRefreshRate = this[SettingsKeys.PREFER_HIGH_REFRESH_RATE] ?: false,
         downloadDirectoryUri = this[SettingsKeys.DOWNLOAD_DIRECTORY_URI],
         downloadDirectoryLabel = this[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL],
-        downloadFileNameTemplate = this[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE]
+        downloadFileNameTemplate = this[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE],
+        downloadFollowPlaybackAudioQuality = valueOf(
+            AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality
+        ),
+        downloadParallelism = valueOf(AutoSettingsSchema.download.downloadParallelism)
     ).sanitized()
+}
+
+internal fun readBootstrapDownloadParallelism(context: Context): Int? {
+    val preferences = context.applicationContext.getSharedPreferences(
+        BOOTSTRAP_SNAPSHOT_PREFS,
+        Context.MODE_PRIVATE
+    )
+    return readCachedBootstrapDownloadParallelism(preferences)
+}
+
+private fun hasCompleteBootstrapSettingsSnapshot(context: Context): Boolean {
+    val preferences = context.applicationContext.getSharedPreferences(
+        BOOTSTRAP_SNAPSHOT_PREFS,
+        Context.MODE_PRIVATE
+    )
+    return preferences.contains(BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY) &&
+        readCachedBootstrapDownloadParallelism(preferences) != null
+}
+
+private fun readCachedBootstrapDownloadParallelism(preferences: SharedPreferences): Int? {
+    if (!preferences.getBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, false) ||
+        !preferences.contains(BOOTSTRAP_DOWNLOAD_PARALLELISM_KEY)
+    ) {
+        return null
+    }
+    return runCatching {
+        normalizeDownloadParallelism(
+            preferences.getInt(
+                BOOTSTRAP_DOWNLOAD_PARALLELISM_KEY,
+                DEFAULT_DOWNLOAD_PARALLELISM
+            )
+        )
+    }.getOrNull()
 }
 
 private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSettingsSnapshot? {
@@ -146,6 +254,8 @@ private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSett
     if (!prefs.getBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, false)) {
         return null
     }
+    val downloadParallelism = readCachedBootstrapDownloadParallelism(prefs)
+        ?: DEFAULT_DOWNLOAD_PARALLELISM
     return BootstrapSettingsSnapshot(
         bypassProxy = prefs.getBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, true),
         youtubeEnabled = prefs.getBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, true),
@@ -155,6 +265,11 @@ private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSett
         ),
         downloadDirectoryUri = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY, null),
         downloadDirectoryLabel = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY, null),
-        downloadFileNameTemplate = prefs.getString(BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY, null)
+        downloadFileNameTemplate = prefs.getString(BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY, null),
+        downloadFollowPlaybackAudioQuality = prefs.getBoolean(
+            BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY,
+            true
+        ),
+        downloadParallelism = downloadParallelism
     ).sanitized()
 }

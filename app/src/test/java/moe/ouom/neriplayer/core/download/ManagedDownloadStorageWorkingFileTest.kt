@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download
 import java.io.File
 import java.util.concurrent.TimeUnit
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
@@ -14,6 +15,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class ManagedDownloadStorageWorkingFileTest {
 
@@ -39,6 +42,118 @@ class ManagedDownloadStorageWorkingFileTest {
         assertNotEquals(first, differentSong)
         assertTrue(first.startsWith("npdl_"))
         assertTrue(first.endsWith(".flac.download"))
+    }
+
+    @Test
+    fun `working file identity does not rely on colliding string hash codes`() {
+        val first = ManagedDownloadStorage.buildWorkingFileName(
+            songKey = "FB",
+            fileName = "Song.flac"
+        )
+        val second = ManagedDownloadStorage.buildWorkingFileName(
+            songKey = "Ea",
+            fileName = "Song.flac"
+        )
+
+        assertNotEquals(first, second)
+    }
+
+    @Test
+    fun `operation staging isolates files and discovers nested resume metadata`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val context = mock(android.content.Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val firstOperation = "operation-a"
+        val secondOperation = "operation-b"
+        val first = ManagedDownloadStorage.createWorkingFile(
+            context = context,
+            songKey = "same-song",
+            fileName = "Song.m4a",
+            operationId = firstOperation
+        ).apply { writeText("partial-a") }
+        val second = ManagedDownloadStorage.createWorkingFile(
+            context = context,
+            songKey = "same-song",
+            fileName = "Song.m4a",
+            operationId = secondOperation
+        ).apply { writeText("partial-b") }
+        ManagedDownloadStorage.saveWorkingResumeMetadata(
+            first,
+            queuedSong(id = 201L, name = "Song"),
+            operationId = firstOperation
+        )
+        ManagedDownloadStorage.saveWorkingResumeMetadata(
+            second,
+            queuedSong(id = 202L, name = "Song 2"),
+            operationId = secondOperation
+        )
+
+        val pending = ManagedDownloadStorage.listPendingResumableDownloadsInDirectory(stagingDir)
+
+        assertEquals(2, pending.size)
+        assertNotEquals(first.parentFile?.absolutePath, second.parentFile?.absolutePath)
+        assertTrue(pending.all { it.operationId != null })
+    }
+
+    @Test
+    fun `resume discovery keeps concurrent operations for the same stable key`() {
+        val context = mock(android.content.Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val stagingDir = File(tempFolder.root, "download_staging")
+        val song = queuedSong(id = 901L, name = "Same")
+        val first = ManagedDownloadStorage.createWorkingFile(
+            context = context,
+            songKey = song.stableKey(),
+            fileName = "same.flac",
+            operationId = "operation-a"
+        )
+        val second = ManagedDownloadStorage.createWorkingFile(
+            context = context,
+            songKey = song.stableKey(),
+            fileName = "same.flac",
+            operationId = "operation-b"
+        )
+        first.writeBytes(byteArrayOf(1))
+        second.writeBytes(byteArrayOf(2))
+        ManagedDownloadStorage.saveWorkingResumeMetadata(first, song, operationId = "operation-a")
+        ManagedDownloadStorage.saveWorkingResumeMetadata(second, song, operationId = "operation-b")
+
+        val discovered = ManagedDownloadStorage.listPendingResumableDownloadsInDirectory(stagingDir)
+
+        assertEquals(setOf("operation-a", "operation-b"), discovered.mapNotNull { it.operationId }.toSet())
+        assertEquals(2, discovered.size)
+    }
+
+    @Test
+    fun `resume discovery ignores malformed metadata without rescanning valid entries`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val song = queuedSong(id = 903L, name = "Valid")
+        val valid = ManagedDownloadStorage.createWorkingFile(
+            context = mock(android.content.Context::class.java).also { context ->
+                `when`(context.filesDir).thenReturn(tempFolder.root)
+            },
+            songKey = song.stableKey(),
+            fileName = "valid.m4a",
+            operationId = "operation-valid"
+        ).apply { writeText("partial") }
+        ManagedDownloadStorage.saveWorkingResumeMetadata(
+            valid,
+            song,
+            operationId = "operation-valid"
+        )
+        val malformed = ManagedDownloadStorage.buildWorkingResumeMetadataFile(
+            File(stagingDir, "npdl_${"b".repeat(64)}_invalid.m4a.download")
+        ).apply {
+            parentFile?.mkdirs()
+            writeText("not-json")
+        }
+        File(malformed.parentFile, malformed.name.removeSuffix(".resume.json"))
+            .writeText("partial")
+
+        val discovered = ManagedDownloadStorage.listPendingResumableDownloadsInDirectory(stagingDir)
+
+        assertEquals(1, discovered.size)
+        assertEquals("operation-valid", discovered.single().operationId)
     }
 
     @Test
@@ -103,9 +218,124 @@ class ManagedDownloadStorageWorkingFileTest {
         assertTrue(preservedCheckpoint.exists())
         assertFalse(staleResumeFile.exists())
         assertFalse(zeroByteResumeFile.exists())
-        assertFalse(legacyRandomFile.exists())
+        assertTrue(legacyRandomFile.exists())
         assertFalse(orphanCheckpoint.exists())
-        assertEquals(4, result.cleanedCount)
+        assertEquals(3, result.cleanedCount)
+        assertEquals(0, result.failedCount)
+    }
+
+    @Test
+    fun `legacy prepared residue is deleted without protecting arbitrary staging files`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val legacySidecar = File(
+            stagingDir,
+            "npdl_sidecar_${"a".repeat(64)}_123e4567-e89b-12d3-a456-426614174000.cover"
+        ).apply {
+            writeText("legacy-cover")
+        }
+        val legacyManifest = File(stagingDir, "npdl_sidecar_manifest_${"a".repeat(8)}.json").apply {
+            writeText(
+                """{"version":1,"songKey":"legacy-song","cover":{"file":"${legacySidecar.absolutePath}"}}"""
+            )
+        }
+        val operationDirectory = File(
+            stagingDir,
+            "123e4567-e89b-12d3-a456-426614174000"
+        ).apply { mkdirs() }
+        val operationSidecar = File(
+            operationDirectory,
+            "npdl_sidecar_${"b".repeat(64)}_123e4567-e89b-12d3-a456-426614174000.lyric"
+        ).apply {
+            writeText("legacy-lyric")
+        }
+        val operationManifest = File(operationDirectory, "operation.json").apply {
+            writeText("""{"version":2,"songKey":"legacy-song"}""")
+        }
+        val unrelatedFile = File(stagingDir, "notes.txt").apply {
+            writeText("keep user data")
+        }
+        val unrelatedDirectory = File(stagingDir, "notes").apply { mkdirs() }
+        val unrelatedManifest = File(unrelatedDirectory, "operation.json").apply {
+            writeText("{")
+        }
+
+        ManagedDownloadStorage.cleanupStagingFilesInDirectory(
+            stagingDir = stagingDir,
+            nowMs = System.currentTimeMillis()
+        )
+
+        assertFalse(legacyManifest.exists())
+        assertFalse(legacySidecar.exists())
+        assertFalse(operationManifest.exists())
+        assertFalse(operationSidecar.exists())
+        assertTrue(unrelatedFile.exists())
+        assertTrue(unrelatedManifest.exists())
+    }
+
+    @Test
+    fun `operation resume metadata survives legacy manifest cleanup`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val context = mock(android.content.Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val song = queuedSong(id = 902L, name = "Resume")
+        val operationId = "123e4567-e89b-12d3-a456-426614174001"
+        val workingFile = ManagedDownloadStorage.createWorkingFile(
+            context = context,
+            songKey = song.stableKey(),
+            fileName = "resume.m4a",
+            operationId = operationId
+        ).apply {
+            writeText("partial")
+        }
+        ManagedDownloadStorage.saveWorkingResumeMetadata(
+            workingFile,
+            song,
+            operationId = operationId
+        )
+        val operationManifest = File(workingFile.parentFile, "operation.json").apply {
+            writeText("""{"version":2,"songKey":"${song.stableKey()}"}""")
+        }
+        val legacySidecar = File(
+            workingFile.parentFile,
+            "npdl_sidecar_${"c".repeat(64)}_123e4567-e89b-12d3-a456-426614174000.cover"
+        ).apply {
+            writeText("legacy-cover")
+        }
+
+        ManagedDownloadStorage.cleanupStagingFilesInDirectory(
+            stagingDir = stagingDir,
+            nowMs = System.currentTimeMillis()
+        )
+
+        assertTrue(workingFile.exists())
+        assertTrue(ManagedDownloadStorage.buildWorkingResumeMetadataFile(workingFile).exists())
+        assertFalse(operationManifest.exists())
+        assertFalse(legacySidecar.exists())
+        val recovered = ManagedDownloadStorage.listPendingResumableDownloadsInDirectory(stagingDir)
+        assertEquals(1, recovered.size)
+        assertEquals(operationId, recovered.single().operationId)
+    }
+
+    @Test
+    fun `staging cleanup ignores a directory outside the managed staging root`() {
+        val unrelatedDirectory = tempFolder.newFolder("not-download-staging")
+        val partialFile = File(
+            unrelatedDirectory,
+            ManagedDownloadStorage.buildWorkingFileName(
+                songKey = "unrelated-song",
+                fileName = "song.m4a"
+            )
+        ).apply {
+            writeText("partial")
+        }
+
+        val result = ManagedDownloadStorage.cleanupStagingFilesInDirectory(
+            stagingDir = unrelatedDirectory,
+            nowMs = System.currentTimeMillis()
+        )
+
+        assertTrue(partialFile.exists())
+        assertEquals(0, result.cleanedCount)
         assertEquals(0, result.failedCount)
     }
 
@@ -353,7 +583,55 @@ class ManagedDownloadStorageWorkingFileTest {
     }
 
     @Test
-    fun `pending working artifacts are deleted by hash when resume metadata is broken`() {
+    fun `pending cleanup removes owned sidecars in root and operation directories`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val targetSong = queuedSong(id = 73L, name = "Target")
+        val keptSong = queuedSong(id = 74L, name = "Kept")
+        val targetHash = ManagedDownloadRecoveryFiles.buildWorkingSongKeyHash(targetSong.stableKey())
+        val keptHash = ManagedDownloadRecoveryFiles.buildWorkingSongKeyHash(keptSong.stableKey())
+        val targetUuid = "123e4567-e89b-12d3-a456-426614174000"
+        val keptUuid = "123e4567-e89b-12d3-a456-426614174001"
+
+        val targetRootSidecar = File(
+            stagingDir,
+            "npdl_sidecar_${targetHash}_$targetUuid.cover"
+        ).apply { writeText("target-root") }
+        val targetOperationDirectory = File(stagingDir, "operation-target").apply { mkdirs() }
+        val targetOperationSidecar = File(
+            targetOperationDirectory,
+            "npdl_sidecar_${targetHash}_$targetUuid.lyric"
+        ).apply { writeText("target-operation") }
+        val keptSidecar = File(
+            stagingDir,
+            "npdl_sidecar_${keptHash}_$keptUuid.cover"
+        ).apply { writeText("kept") }
+        val shortHashSidecar = File(
+            stagingDir,
+            "npdl_sidecar_${targetHash.take(8)}_$targetUuid.cover"
+        ).apply { writeText("legacy-short-hash") }
+        val malformedUuidSidecar = File(
+            stagingDir,
+            "npdl_sidecar_${targetHash}_not-a-uuid.cover"
+        ).apply { writeText("malformed-uuid") }
+        val ordinaryFile = File(stagingDir, "notes.txt").apply { writeText("keep user data") }
+
+        val deletedKeys = ManagedDownloadStorage.deletePendingWorkingDownloadArtifactsInDirectory(
+            stagingDir = stagingDir,
+            songKeys = setOf(targetSong.stableKey())
+        )
+
+        assertEquals(setOf(targetSong.stableKey()), deletedKeys)
+        assertFalse(targetRootSidecar.exists())
+        assertFalse(targetOperationSidecar.exists())
+        assertFalse(targetOperationDirectory.exists())
+        assertTrue(keptSidecar.exists())
+        assertTrue(shortHashSidecar.exists())
+        assertTrue(malformedUuidSidecar.exists())
+        assertTrue(ordinaryFile.exists())
+    }
+
+    @Test
+    fun `broken resume metadata does not grant ownership for deletion`() {
         val stagingDir = tempFolder.newFolder("download_staging")
         val targetSong = queuedSong(id = 81L, name = "Target")
         val keptSong = queuedSong(id = 82L, name = "Kept")
@@ -386,27 +664,32 @@ class ManagedDownloadStorageWorkingFileTest {
             songKeys = setOf(targetSong.stableKey())
         )
 
-        assertEquals(setOf(targetSong.stableKey()), deletedKeys)
-        assertFalse(targetWorkingFile.exists())
-        assertFalse(targetCheckpoint.exists())
-        assertFalse(ManagedDownloadStorage.buildWorkingResumeMetadataFile(targetWorkingFile).exists())
+        assertTrue(deletedKeys.isEmpty())
+        assertTrue(targetWorkingFile.exists())
+        assertTrue(targetCheckpoint.exists())
+        assertTrue(ManagedDownloadStorage.buildWorkingResumeMetadataFile(targetWorkingFile).exists())
         assertTrue(keptWorkingFile.exists())
         assertTrue(ManagedDownloadStorage.buildWorkingResumeMetadataFile(keptWorkingFile).exists())
     }
 
     @Test
-    fun `pending download queue keeps queued songs across process death`() {
-        val queueFile = tempFolder.newFile("pending_download_queue_v1.json")
+    fun `legacy pending queue codec keeps queued songs for bootstrap`() {
         val firstSong = queuedSong(id = 101L, name = "First")
         val secondSong = queuedSong(id = 102L, name = "Second")
-
-        ManagedDownloadStorage.upsertPendingDownloadQueueInFile(
-            queueFile = queueFile,
-            songs = listOf(firstSong, secondSong, firstSong),
-            nowMs = 10L
+        val entries = listOf(
+            ManagedDownloadStorage.PendingDownloadQueueEntry(
+                stableKey = firstSong.stableKey(), song = firstSong, order = 0, queuedAtMs = 10L
+            ),
+            ManagedDownloadStorage.PendingDownloadQueueEntry(
+                stableKey = secondSong.stableKey(), song = secondSong, order = 1, queuedAtMs = 10L
+            )
         )
 
-        val restored = ManagedDownloadStorage.listPendingQueuedDownloadsFromFile(queueFile)
+        val payload = ManagedDownloadStorageJsonCodec.serializePendingDownloadQueuePayload(
+            entries = entries,
+            updatedAtMs = 10L
+        )
+        val restored = ManagedDownloadStorageJsonCodec.parsePendingDownloadQueuePayload(payload)
 
         assertEquals(listOf(firstSong, secondSong), restored.map { it.song })
         assertEquals(listOf(0, 1), restored.map { it.order })
@@ -414,61 +697,54 @@ class ManagedDownloadStorageWorkingFileTest {
     }
 
     @Test
-    fun `pending download queue removes settled songs without disturbing order`() {
-        val queueFile = tempFolder.newFile("pending_download_queue_v1.json")
+    fun `legacy pending queue codec preserves order after bootstrap filtering`() {
         val firstSong = queuedSong(id = 201L, name = "First")
         val secondSong = queuedSong(id = 202L, name = "Second")
         val thirdSong = queuedSong(id = 203L, name = "Third")
-        ManagedDownloadStorage.upsertPendingDownloadQueueInFile(
-            queueFile = queueFile,
-            songs = listOf(firstSong, secondSong, thirdSong),
-            nowMs = 20L
+        val payload = ManagedDownloadStorageJsonCodec.serializePendingDownloadQueuePayload(
+            entries = listOf(
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = firstSong.stableKey(), song = firstSong, order = 0, queuedAtMs = 20L
+                ),
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = secondSong.stableKey(), song = secondSong, order = 1, queuedAtMs = 20L
+                ),
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = thirdSong.stableKey(), song = thirdSong, order = 2, queuedAtMs = 20L
+                )
+            ),
+            updatedAtMs = 20L
         )
-
-        ManagedDownloadStorage.removePendingDownloadQueueEntriesFromFile(
-            queueFile = queueFile,
-            songKeys = setOf(secondSong.stableKey()),
-            nowMs = 30L
-        )
-
-        val restored = ManagedDownloadStorage.listPendingQueuedDownloadsFromFile(queueFile)
+        val restored = ManagedDownloadStorageJsonCodec.parsePendingDownloadQueuePayload(payload)
+            .filterNot { it.stableKey == secondSong.stableKey() }
+            .mapIndexed { index, entry -> entry.copy(order = index) }
         assertEquals(listOf(firstSong, thirdSong), restored.map { it.song })
         assertEquals(listOf(0, 1), restored.map { it.order })
     }
 
     @Test
-    fun `cancelled download keys survive restart until recovery consumes them`() {
-        val keysFile = tempFolder.newFile("cancelled_download_keys_v1.json")
+    fun `legacy cancellation codec keeps keys until bootstrap consumes them`() {
         val firstKey = queuedSong(id = 301L, name = "First").stableKey()
         val secondKey = queuedSong(id = 302L, name = "Second").stableKey()
 
-        ManagedDownloadStorage.markCancelledDownloadKeysInFile(
-            keysFile = keysFile,
+        val payload = ManagedDownloadStorageJsonCodec.serializeCancelledDownloadKeysPayload(
             songKeys = setOf(firstKey, secondKey),
-            nowMs = 40L
+            updatedAtMs = 40L
         )
-        ManagedDownloadStorage.removeCancelledDownloadKeysFromFile(
-            keysFile = keysFile,
-            songKeys = setOf(firstKey),
-            nowMs = 50L
-        )
-
-        assertEquals(setOf(secondKey), ManagedDownloadStorage.listCancelledDownloadKeysFromFile(keysFile))
-        ManagedDownloadStorage.clearCancelledDownloadKeysFile(keysFile)
-        assertTrue(ManagedDownloadStorage.listCancelledDownloadKeysFromFile(keysFile).isEmpty())
+        val restored = ManagedDownloadStorageJsonCodec.parseCancelledDownloadKeysPayload(payload)
+        assertEquals(setOf(firstKey, secondKey), restored)
     }
 
     @Test
-    fun `broken pending queue files are ignored instead of breaking startup`() {
-        val queueFile = tempFolder.newFile("pending_download_queue_v1.json").apply {
-            writeText("{", Charsets.UTF_8)
-        }
-        val keysFile = tempFolder.newFile("cancelled_download_keys_v1.json").apply {
-            writeText("{", Charsets.UTF_8)
-        }
-
-        assertTrue(ManagedDownloadStorage.listPendingQueuedDownloadsFromFile(queueFile).isEmpty())
-        assertTrue(ManagedDownloadStorage.listCancelledDownloadKeysFromFile(keysFile).isEmpty())
+    fun `broken legacy queue payload is rejected instead of becoming runtime state`() {
+        val queueError = runCatching {
+            ManagedDownloadStorageJsonCodec.parsePendingDownloadQueuePayload("{")
+        }.exceptionOrNull()
+        val cancelledError = runCatching {
+            ManagedDownloadStorageJsonCodec.parseCancelledDownloadKeysPayload("{")
+        }.exceptionOrNull()
+        assertTrue(queueError != null)
+        assertTrue(cancelledError != null)
     }
 
     private fun queuedSong(id: Long, name: String): SongItem {

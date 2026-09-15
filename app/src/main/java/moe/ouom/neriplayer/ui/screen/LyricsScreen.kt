@@ -117,7 +117,6 @@ import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -127,7 +126,6 @@ import moe.ouom.neriplayer.data.settings.LyricFontScales
 import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
@@ -160,6 +158,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -244,10 +243,7 @@ fun LyricsScreen(
     val lowPowerLyricsRendering = remember(context) {
         context.isSystemPowerSaveMode()
     }
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
-    val currentCoverUrl = remember(currentSong, context, downloadPresenceVersion) {
-        currentSong?.displayCoverUrl(context)
-    }
+    val currentCoverUrl = rememberSongDisplayCoverUrl(currentSong)
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 

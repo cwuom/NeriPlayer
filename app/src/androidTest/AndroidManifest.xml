@@ -10,5 +10,10 @@
             android:authorities="moe.ouom.neriplayer.test.issue339lyrics"
             android:exported="true"
             android:grantUriPermissions="true" />
+        <provider
+            android:name="moe.ouom.neriplayer.core.download.ManagedDownloadMigrationTestDocumentProvider"
+            android:authorities="moe.ouom.neriplayer.test.manageddownloadmigration"
+            android:exported="true"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

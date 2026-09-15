@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.tree
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
@@ -25,6 +26,7 @@ internal class ManagedDownloadTreeChildRegistry(
         writeCacheValidateIntervalMs = writeCacheValidateIntervalMs
     )
     private val childNameReservationLocks = ConcurrentHashMap<String, Any>()
+    private val consecutiveEmptyRefreshes = ConcurrentHashMap<String, Int>()
 
     fun queryTreeChildren(context: Context, parent: DocumentFile): List<QueriedTreeChild> {
         return ManagedDownloadTreeChildQuery.queryChildren(context, parent, onTreeQueryFailed)
@@ -60,11 +62,45 @@ internal class ManagedDownloadTreeChildRegistry(
     }
 
     fun refreshTreeChildren(context: Context, parent: DocumentFile): Collection<QueriedTreeChild> {
-        val refreshedAtMs = System.currentTimeMillis()
-        return queryTreeChildren(context, parent).also { children ->
-            rememberTreeChildren(parent, children, refreshedAtMs, isComplete = true)
-        }
+        return refreshTreeChildrenWithStatus(context, parent).children
     }
+
+    fun refreshTreeChildrenWithStatus(
+        context: Context,
+        parent: DocumentFile
+    ): TreeChildrenRefresh {
+        val refreshedAtMs = System.currentTimeMillis()
+        val result = stabilizeEmptyRefresh(
+            parent = parent,
+            queried = ManagedDownloadTreeChildQuery.queryChildrenWithStatus(
+                context = context,
+                parent = parent,
+                onQueryFailure = onTreeQueryFailed
+            )
+        )
+        rememberTreeChildren(
+            parent = parent,
+            children = result.children,
+            refreshedAtMs = refreshedAtMs,
+            isComplete = result.isComplete
+        )
+        return TreeChildrenRefresh(
+            children = result.children,
+            isComplete = result.isComplete
+        )
+    }
+
+    fun treeChildrenForWrite(
+        context: Context,
+        parent: DocumentFile
+    ): TreeChildrenRefresh {
+        return refreshTreeChildrenWithStatus(context, parent)
+    }
+
+    data class TreeChildrenRefresh(
+        val children: List<QueriedTreeChild>,
+        val isComplete: Boolean
+    )
 
     fun cachedTreeChildren(
         context: Context,
@@ -89,6 +125,41 @@ internal class ManagedDownloadTreeChildRegistry(
     ): QueriedTreeChild? {
         return cachedTreeChildren(context, parent, maxCacheAgeMs)
             .firstOrNull { child -> child.name == childName }
+    }
+
+    fun cachedTreeChildForWrite(
+        context: Context,
+        parent: DocumentFile,
+        childName: String
+    ): QueriedTreeChild? {
+        // a failed provider query is incomplete, but its fallback entries are still useful
+        peekTreeChildrenIncludingIncomplete(parent)
+            ?.firstOrNull { child -> child.name == childName }
+            ?.let { return it }
+        return cachedTreeChild(context, parent, childName)
+    }
+
+    fun peekTreeChildren(parent: DocumentFile): Collection<QueriedTreeChild>? {
+        return treeChildCache.peekChildren(parent.uri.toString())
+    }
+
+    fun cachedTreeChildrenIfFresh(
+        parent: DocumentFile,
+        maxCacheAgeMs: Long
+    ): Collection<QueriedTreeChild>? {
+        return treeChildCache.cachedChildren(
+            cacheKey = parent.uri.toString(),
+            nowMs = System.currentTimeMillis(),
+            maxCacheAgeMs = maxCacheAgeMs
+        )
+    }
+
+    fun peekTreeChildrenIncludingIncomplete(parent: DocumentFile): Collection<QueriedTreeChild>? {
+        return treeChildCache.peekAllChildren(parent.uri.toString())
+    }
+
+    fun peekTreeChild(parent: DocumentFile, childName: String): QueriedTreeChild? {
+        return peekTreeChildren(parent)?.firstOrNull { child -> child.name == childName }
     }
 
     fun rememberTreeChildren(
@@ -166,7 +237,10 @@ internal class ManagedDownloadTreeChildRegistry(
         val cacheKey = parent.uri.toString()
         val lock = childNameReservationLocks.computeIfAbsent("tree:$cacheKey") { Any() }
         return synchronized(lock) {
-            ManagedDownloadStorageNaming.createUniqueName(cachedTreeChildrenNamesForWrite(context, parent), desiredName)
+            ManagedDownloadStorageNaming.createUniqueAudioName(
+                existingNames = cachedTreeChildrenNamesForWrite(context, parent),
+                desiredName = desiredName
+            )
                 .also { reservedName -> rememberTreeChildName(parent, reservedName) }
         }
     }
@@ -204,14 +278,80 @@ internal class ManagedDownloadTreeChildRegistry(
         treeChildCache.clear()
         fileChildNameCache.clear()
         childNameReservationLocks.clear()
+        consecutiveEmptyRefreshes.clear()
     }
 
-    fun toDocumentFile(context: Context, child: QueriedTreeChild): DocumentFile? {
-        return runCatching {
-            DocumentFile.fromTreeUri(context, child.documentUri)
-                ?: DocumentFile.fromSingleUri(context, child.documentUri)
-        }.getOrNull()
+    fun toDocumentFile(
+        context: Context,
+        parent: DocumentFile,
+        child: QueriedTreeChild
+    ): DocumentFile? {
+        val singleDocument = DocumentFile.fromSingleUri(context, child.documentUri) ?: return null
+        return try {
+            val treeDocument = toTreeDocumentFile(
+                context = context,
+                parent = parent,
+                child = singleDocument
+            )
+            if (child.isDirectory) {
+                treeDocument
+            } else {
+                treeDocument ?: singleDocument
+            }
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
     }
+
+    fun toTreeDocumentFile(
+        context: Context,
+        parent: DocumentFile,
+        child: DocumentFile
+    ): DocumentFile? {
+        return try {
+            val childDocumentId = try {
+                DocumentsContract.getDocumentId(child.uri)
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            } ?: return null
+            val treeDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
+                parent.uri,
+                childDocumentId
+            )
+            val treeDocument = DocumentFile.fromTreeUri(context, treeDocumentUri)
+                ?.takeIf { wrapper -> documentIdOrNull(wrapper.uri) == childDocumentId }
+            treeDocument ?: DocumentFile.fromSingleUri(context, treeDocumentUri)
+                ?.takeIf { wrapper -> documentIdOrNull(wrapper.uri) == childDocumentId }
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun toTreeDocumentFileOrEnumerated(
+        context: Context,
+        parent: DocumentFile,
+        child: DocumentFile
+    ): DocumentFile? {
+        // the provider-returned URI is the only trustworthy child identity
+        return toTreeDocumentFile(context, parent, child)
+    }
+
+    private fun documentIdOrNull(uri: Uri): String? {
+        return try {
+            DocumentsContract.getDocumentId(uri)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+    }
+
 
     private fun cachedTreeChildrenNames(
         context: Context,
@@ -227,11 +367,47 @@ internal class ManagedDownloadTreeChildRegistry(
             maxCacheAgeMs = maxCacheAgeMs,
             allowReservedNames = allowReservedNames
         )?.let { return it }
-        val refreshedChildren = queryTreeChildren(context, parent)
-        return rememberTreeChildren(parent, refreshedChildren, now, isComplete = true)
+        val refreshed = stabilizeEmptyRefresh(
+            parent = parent,
+            queried = ManagedDownloadTreeChildQuery.queryChildrenWithStatus(
+                context = context,
+                parent = parent,
+                onQueryFailure = onTreeQueryFailed
+            )
+        )
+        return rememberTreeChildren(
+            parent = parent,
+            children = refreshed.children,
+            refreshedAtMs = now,
+            isComplete = refreshed.isComplete
+        )
+    }
+
+    private fun stabilizeEmptyRefresh(
+        parent: DocumentFile,
+        queried: ManagedDownloadTreeChildQuery.QueryResult
+    ): ManagedDownloadTreeChildQuery.QueryResult {
+        val cacheKey = parent.uri.toString()
+        val previous = treeChildCache.peekAllChildren(cacheKey).orEmpty().toList()
+        if (!queried.isComplete || queried.children.isNotEmpty() || previous.isEmpty()) {
+            consecutiveEmptyRefreshes.remove(cacheKey)
+            return queried
+        }
+        val count = consecutiveEmptyRefreshes.merge(cacheKey, 1) { current, _ -> current + 1 }
+            ?: 1
+        if (count < EMPTY_REFRESH_CONFIRMATION_COUNT) {
+            return ManagedDownloadTreeChildQuery.QueryResult(
+                children = previous,
+                state = ManagedDownloadTreeChildQuery.State.LOADING
+            )
+        }
+        consecutiveEmptyRefreshes.remove(cacheKey)
+        return queried
     }
 
     companion object {
+        private const val EMPTY_REFRESH_CONFIRMATION_COUNT = 2
+
         fun mergeTreeChildNamesAfterRefresh(
             refreshedNames: Collection<String>,
             cachedNames: Collection<String>?,
@@ -249,5 +425,19 @@ internal class ManagedDownloadTreeChildRegistry(
                 isComplete = refresh.isComplete
             )
         }
+    }
+}
+
+internal fun resolveTreeChildDocumentFile(
+    child: QueriedTreeChild,
+    treeDocumentFile: () -> DocumentFile?,
+    singleDocumentFile: () -> DocumentFile?
+): DocumentFile? {
+    return if (child.isDirectory) {
+        // directory wrappers need tree permissions because sidecar writes create children
+        treeDocumentFile()
+    } else {
+        // file reads work with single-document wrappers, including opaque document IDs
+        singleDocumentFile() ?: treeDocumentFile()
     }
 }

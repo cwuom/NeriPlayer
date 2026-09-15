@@ -9,7 +9,7 @@ internal object ManagedDownloadCoverLookup {
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         audio: ManagedDownloadStorage.StoredEntry
     ): String? {
-        snapshot.metadataByAudioName[audio.name]?.let { metadata ->
+        ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)?.let { metadata ->
             return resolveMetadataCoverReference(
                 snapshot = snapshot,
                 audioName = audio.name,

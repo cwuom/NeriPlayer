@@ -152,6 +152,9 @@ internal fun AutoSettingInfo.searchTargetId(): String {
         "nowplaying_cover_blur_darken" -> "nowplaying_cover_blur_background_enabled"
         "lyric_blur_amount" -> "lyric_blur_enabled"
         "standardized_lyric_embedding_enabled" -> "download_metadata_post_processing_enabled"
+        "download_netease_audio_quality",
+        "download_youtube_audio_quality",
+        "download_bili_audio_quality" -> "download_follow_playback_audio_quality"
         "lyric_font_scale" -> "nowplaying_cover_lyric_font_scale"
         else -> keyName
     }
@@ -921,6 +924,10 @@ private val SettingSearchAliases = mapOf(
     "download_file_name_template" to listOf("filename", "template", "mingming"),
     "download_metadata_post_processing_enabled" to listOf("taglib", "metadata", "lyrics embed"),
     "standardized_lyric_embedding_enabled" to listOf("lyrics embed", "lrc", "tag"),
+    "download_follow_playback_audio_quality" to listOf("download quality", "audio quality", "yin zhi"),
+    "download_netease_audio_quality" to listOf("netease download quality", "wangyi yin zhi"),
+    "download_youtube_audio_quality" to listOf("youtube download quality", "youtube yin zhi"),
+    "download_bili_audio_quality" to listOf("bili download quality", "bilibili yin zhi"),
     "download_parallelism" to listOf("threads", "parallel", "concurrency", "bingfa"),
     "mobile_data_high_risk_prompt_enabled" to listOf("traffic warning", "roaming", "liuliang tishi"),
     "max_cache_size_bytes" to listOf("cache limit", "space", "huancun daxiao"),

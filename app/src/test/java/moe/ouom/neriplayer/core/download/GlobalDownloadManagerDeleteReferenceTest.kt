@@ -1,7 +1,11 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.cleanup.requiresManagedDownloadDeleteSnapshotRefresh
+import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlobalDownloadManagerDeleteReferenceTest {
@@ -124,6 +128,68 @@ class GlobalDownloadManagerDeleteReferenceTest {
     }
 
     @Test
+    fun `artifact planner deletes stable identity cover sidecar`() {
+        val currentAudio = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - current.mp3",
+            reference = "content://downloads/audio/current.mp3",
+            mediaUri = "content://downloads/audio/current.mp3",
+            localFilePath = null,
+            sizeBytes = 1024L,
+            lastModifiedMs = 1L
+        )
+        val currentMetadataReference = ManagedDownloadStorage.metadataReferenceForAudio(currentAudio)
+            ?: error("missing current metadata reference")
+        val currentMetadata = ManagedDownloadStorage.StoredEntry(
+            name = "${currentAudio.name}.npmeta.json",
+            reference = currentMetadataReference,
+            mediaUri = currentMetadataReference,
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val stableKey = "42|netease|"
+        val stableCoverName = ManagedDownloadStorageNaming
+            .buildStableCoverCandidateNames(currentAudio.nameWithoutExtension, stableKey)
+            .first()
+        val stableCover = ManagedDownloadStorage.StoredEntry(
+            name = stableCoverName,
+            reference = "content://downloads/covers/$stableCoverName",
+            mediaUri = "content://downloads/covers/$stableCoverName",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = listOf(currentAudio),
+            audioEntriesByLookupKey = mapOf(currentAudio.reference to currentAudio),
+            metadataEntriesByAudioName = mapOf(currentAudio.name to currentMetadata),
+            metadataByAudioName = mapOf(
+                currentAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    stableKey = stableKey
+                )
+            ),
+            coverEntriesByName = mapOf(stableCover.name to stableCover),
+            knownReferences = setOf(
+                currentAudio.reference,
+                currentMetadata.reference,
+                stableCover.reference
+            )
+        )
+
+        val references = ManagedDownloadArtifactPlanner.collectArtifactReferences(
+            snapshot = snapshot,
+            storedAudio = currentAudio,
+            songId = 42L,
+            candidateBaseNames = listOf(currentAudio.nameWithoutExtension)
+        )
+
+        assertEquals(
+            setOf(currentAudio.reference, currentMetadata.reference, stableCover.reference),
+            references
+        )
+    }
+
+    @Test
     fun `download deletion result retains songs whose required audio was not deleted`() {
         val deletedSong = downloadedSong(id = 1L, name = "deleted")
         val retainedSong = downloadedSong(id = 2L, name = "retained")
@@ -149,6 +215,78 @@ class GlobalDownloadManagerDeleteReferenceTest {
     }
 
     @Test
+    fun `complete full library snapshot settles stale catalog rows from physical deletion`() {
+        val firstSong = downloadedSong(id = 1L, name = "first")
+        val secondSong = downloadedSong(id = 2L, name = "second")
+        val stalePerSongResult = DownloadedSongDeleteResult(
+            deletedSongs = emptyList(),
+            failedSongs = listOf(firstSong, secondSong)
+        )
+
+        val result = resolveConfirmedFullLibraryDeleteResult(
+            targetSongs = listOf(firstSong, secondSong),
+            snapshotComplete = true,
+            requestedReferences = setOf("current-audio", "current-metadata"),
+            deletedReferences = setOf("current-audio", "current-metadata"),
+            fallback = stalePerSongResult
+        )
+
+        assertEquals(listOf(firstSong, secondSong), result.deletedSongs)
+        assertTrue(result.failedSongs.isEmpty())
+    }
+
+    @Test
+    fun `complete physical rescan settles rows when another idempotent delete consumed references`() {
+        val song = downloadedSong(id = 7L, name = "already gone")
+        val fallback = DownloadedSongDeleteResult(
+            deletedSongs = emptyList(),
+            failedSongs = listOf(song)
+        )
+
+        val result = resolveConfirmedFullLibraryDeleteResult(
+            targetSongs = listOf(song),
+            snapshotComplete = true,
+            requestedReferences = setOf("stale-audio", "stale-meta"),
+            deletedReferences = emptySet(),
+            remainingReferences = emptySet(),
+            fallback = fallback
+        )
+
+        assertEquals(listOf(song), result.deletedSongs)
+        assertTrue(result.failedSongs.isEmpty())
+    }
+
+    @Test
+    fun `full delete ignores stale references already removed in the first pass`() {
+        assertTrue(
+            resolveFullLibraryRemainingReferences(
+                verificationReferences = setOf("stale-audio", "still-present"),
+                deletedReferences = setOf("stale-audio"),
+                residualDeletedReferences = emptySet()
+            ) == setOf("still-present")
+        )
+    }
+
+    @Test
+    fun `incomplete full library snapshot retains stale catalog rows for recovery`() {
+        val song = downloadedSong(id = 1L, name = "retained")
+        val fallback = DownloadedSongDeleteResult(
+            deletedSongs = emptyList(),
+            failedSongs = listOf(song)
+        )
+
+        val result = resolveConfirmedFullLibraryDeleteResult(
+            targetSongs = listOf(song),
+            snapshotComplete = false,
+            requestedReferences = emptySet(),
+            deletedReferences = emptySet(),
+            fallback = fallback
+        )
+
+        assertEquals(fallback, result)
+    }
+
+    @Test
     fun `deletion result merge keeps concurrent downloads and restores failed entries`() {
         val deletedSong = downloadedSong(id = 1L, name = "deleted", downloadTime = 1L)
         val failedSong = downloadedSong(id = 2L, name = "failed", downloadTime = 2L)
@@ -162,6 +300,54 @@ class GlobalDownloadManagerDeleteReferenceTest {
         )
 
         assertEquals(listOf(concurrentSong, failedSong), merged)
+    }
+
+    @Test
+    fun `complete catalog selection is required before active downloads are cancelled`() {
+        val firstSong = downloadedSong(id = 1L, name = "first")
+        val secondSong = downloadedSong(id = 2L, name = "second")
+        val availableSongs = listOf(firstSong, secondSong)
+
+        assertTrue(
+            isCompleteDownloadedSongSelection(
+                selectedSongs = availableSongs,
+                availableSongs = availableSongs
+            )
+        )
+        assertFalse(
+            isCompleteDownloadedSongSelection(
+                selectedSongs = listOf(firstSong),
+                availableSongs = availableSongs
+            )
+        )
+        assertFalse(
+            isCompleteDownloadedSongSelection(
+                selectedSongs = listOf(firstSong, downloadedSong(id = 3L, name = "stale")),
+                availableSongs = availableSongs
+            )
+        )
+    }
+
+    @Test
+    fun `explicit select all keeps full library intent when catalog preview is incomplete`() {
+        assertTrue(
+            shouldDeleteEntireDownloadedLibrary(
+                explicitlyRequested = true,
+                pendingDeleteIntentExists = false
+            )
+        )
+        assertFalse(
+            shouldDeleteEntireDownloadedLibrary(
+                explicitlyRequested = false,
+                pendingDeleteIntentExists = false
+            )
+        )
+        assertTrue(
+            shouldDeleteEntireDownloadedLibrary(
+                explicitlyRequested = false,
+                pendingDeleteIntentExists = true
+            )
+        )
     }
 
     @Test
@@ -180,6 +366,107 @@ class GlobalDownloadManagerDeleteReferenceTest {
         assertEquals(downloaded.stableKey, playbackItem.sourceStableKey)
         assertEquals("managed.mp3", playbackItem.localFileName)
         assertNull(playbackItem.localFilePath)
+    }
+
+    @Test
+    fun `delete planner refreshes a snapshot that misses a selected download`() {
+        val downloaded = downloadedSong(id = 42L, name = "managed")
+        val emptySnapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+        val storedAudio = ManagedDownloadStorage.StoredEntry(
+            name = "managed.mp3",
+            reference = downloaded.filePath,
+            mediaUri = downloaded.filePath,
+            localFilePath = downloaded.filePath,
+            sizeBytes = downloaded.fileSize,
+            lastModifiedMs = downloaded.downloadTime
+        )
+        val matchingSnapshot = emptySnapshot.copy(
+            audioEntriesByLookupKey = mapOf(downloaded.filePath to storedAudio)
+        )
+
+        assertTrue(
+            requiresManagedDownloadDeleteSnapshotRefresh(
+                snapshot = emptySnapshot,
+                songs = listOf(downloaded)
+            )
+        )
+        assertFalse(
+            requiresManagedDownloadDeleteSnapshotRefresh(
+                snapshot = matchingSnapshot,
+                songs = listOf(downloaded)
+            )
+        )
+    }
+
+    @Test
+    fun `full-library artifact fallback includes managed audio absent from catalog`() {
+        val catalogAudio = ManagedDownloadStorage.StoredEntry(
+            name = "catalog.mp3",
+            reference = "content://downloads/audio/catalog.mp3",
+            mediaUri = "content://downloads/audio/catalog.mp3",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val orphanAudio = ManagedDownloadStorage.StoredEntry(
+            name = "orphan.mp3",
+            reference = "content://downloads/audio/orphan.mp3",
+            mediaUri = "content://downloads/audio/orphan.mp3",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val catalogMetadata = ManagedDownloadStorage.StoredEntry(
+            name = "catalog.mp3.npmeta.json",
+            reference = "content://downloads/meta/catalog.mp3.npmeta.json",
+            mediaUri = "content://downloads/meta/catalog.mp3.npmeta.json",
+            localFilePath = null,
+            sizeBytes = 64L,
+            lastModifiedMs = 1L
+        )
+        val orphanMetadata = ManagedDownloadStorage.StoredEntry(
+            name = "orphan.mp3.npmeta.json",
+            reference = "content://downloads/meta/orphan.mp3.npmeta.json",
+            mediaUri = "content://downloads/meta/orphan.mp3.npmeta.json",
+            localFilePath = null,
+            sizeBytes = 64L,
+            lastModifiedMs = 1L
+        )
+        val orphanSidecar = ManagedDownloadStorage.StoredEntry(
+            name = "orphan-cover.jpg",
+            reference = "content://downloads/covers/orphan-cover.jpg",
+            mediaUri = "content://downloads/covers/orphan-cover.jpg",
+            localFilePath = null,
+            sizeBytes = 64L,
+            lastModifiedMs = 1L
+        )
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = listOf(catalogAudio, orphanAudio),
+            audioEntriesByLookupKey = mapOf(
+                catalogAudio.reference to catalogAudio,
+                orphanAudio.reference to orphanAudio
+            ),
+            metadataEntriesByAudioName = mapOf(
+                catalogAudio.name to catalogMetadata,
+                orphanAudio.name to orphanMetadata
+            ),
+            knownReferences = setOf(
+                catalogAudio.reference,
+                orphanAudio.reference,
+                catalogMetadata.reference,
+                orphanMetadata.reference,
+                orphanSidecar.reference
+            )
+        )
+
+        val references = ManagedDownloadArtifactPlanner
+            .collectFullLibraryArtifactReferences(snapshot)
+
+        assertTrue(references.contains(catalogAudio.reference))
+        assertTrue(references.contains(orphanAudio.reference))
+        assertTrue(references.contains(catalogMetadata.reference))
+        assertTrue(references.contains(orphanMetadata.reference))
+        assertTrue(references.contains(orphanSidecar.reference))
     }
 
     private fun downloadedSong(

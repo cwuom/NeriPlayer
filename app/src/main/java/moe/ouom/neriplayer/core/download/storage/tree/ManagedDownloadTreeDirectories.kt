@@ -1,64 +1,149 @@
 package moe.ouom.neriplayer.core.download.storage.tree
 
 import android.content.Context
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.NO_MEDIA_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
-import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadTreeDirectories(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,
-    private val locks: ConcurrentHashMap<String, Any>,
-    private val tag: String
+    private val tag: String,
+    private val deleteTrustedReference: (
+        Context,
+        TrustedManagedRef
+    ) -> StorageMutationResult
 ) {
     private val subdirectoryCache = ConcurrentHashMap<String, DocumentFile>()
     private val ensuredNoMediaMarkers = ConcurrentHashMap<String, Boolean>()
 
     fun findOrCreateDirectory(context: Context, parent: DocumentFile, displayName: String): DocumentFile? {
-        val cacheKey = "${parent.uri}|$displayName"
+        val cacheKey = "${ManagedDownloadTreeMutationLocks.keyFor(parent.uri)}|$displayName"
         subdirectoryCache[cacheKey]
             ?.takeIf { it.isDirectory }
             ?.let { return it }
-        val lock = locks.computeIfAbsent(cacheKey) { Any() }
-        return synchronized(lock) {
+        return ManagedDownloadTreeMutationLocks.withLock(parent.uri) {
             subdirectoryCache[cacheKey]
                 ?.takeIf { it.isDirectory }
-                ?.let { return@synchronized it }
-            findCachedManagedSubdirectory(
-                context = context,
-                parent = parent,
-                displayName = displayName,
-                maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
-            )
+                ?.let { return@withLock it }
+            findKnownManagedSubdirectory(context, parent, displayName)
                 ?.also { subdirectoryCache[cacheKey] = it }
-                ?.let { return@synchronized it }
-            val createdDirectory = parent.createDirectory(displayName)
-                ?: findCachedManagedSubdirectory(
+                ?.let { return@withLock it }
+            val refresh = treeChildRegistry.treeChildrenForWrite(context, parent)
+            val existingChild = findManagedSubdirectoryChild(refresh.children, displayName)
+            if (existingChild != null) {
+                return@withLock treeChildRegistry.toDocumentFile(context, parent, existingChild)
+                    ?.also { directory -> subdirectoryCache[cacheKey] = directory }
+            }
+            if (
+                !refresh.isComplete &&
+                    !ManagedDownloadTreeNaming.canCreateWhenChildrenQueryIsIncomplete(parent.uri)
+            ) {
+                NPLogger.w(
+                    tag,
+                    "SAF 子目录枚举不完整，跳过创建 $displayName: parent=${parent.uri}"
+                )
+                return@withLock null
+            }
+
+            val createdDirectory = try {
+                parent.createDirectory(displayName)
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
+                // DocumentsProvider 可能在目录已存在但枚举尚未刷新时拒绝重复创建
+                NPLogger.w(
+                    tag,
+                    "SAF 创建目录失败，准备重新查找已有目录: name=$displayName, " +
+                        "parent=${parent.uri}, error=${error.message}"
+                )
+                subdirectoryCache.remove(cacheKey)
+                null
+            }
+            val resolvedDirectory = createdDirectory?.let { created ->
+                treeChildRegistry.toTreeDocumentFileOrEnumerated(
                     context = context,
                     parent = parent,
-                    displayName = displayName,
-                    maxCacheAgeMs = 0L
-                )
-            createdDirectory?.also {
-                subdirectoryCache[cacheKey] = it
-                val createdName = ManagedDownloadTreeNaming.resolveTreeStoredName(it.name, displayName)
-                treeChildRegistry.updateRememberedTreeChild(
-                    parent = parent,
-                    childName = createdName,
-                    documentUri = it.uri,
-                    sizeBytes = 0L,
-                    lastModifiedMs = System.currentTimeMillis(),
-                    isDirectory = true
+                    child = created
+                ) ?: created
+            } ?: run {
+                val retry = treeChildRegistry.refreshTreeChildrenWithStatus(context, parent)
+                findManagedSubdirectoryChild(retry.children, displayName)
+                    ?.let { child -> treeChildRegistry.toDocumentFile(context, parent, child) }
+            }
+            if (resolvedDirectory == null) {
+                return@withLock null
+            }
+            if (
+                createdDirectory != null &&
+                    !ManagedDownloadTreeNaming.isExactTreeStoredName(
+                        resolvedDirectory.name,
+                        displayName
+                    )
+            ) {
+                val canonicalChild = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = parent
+                ).children.firstOrNull { child ->
+                    child.isDirectory &&
+                        ManagedDownloadTreeNaming.isExactTreeStoredName(
+                            child.name,
+                            displayName
+                        ) &&
+                        child.documentUri != resolvedDirectory.uri
+                }
+                if (canonicalChild != null) {
+                    deleteContentReference(context, createdDirectory.uri)
+                    treeChildRegistry.toDocumentFile(context, parent, canonicalChild)
+                        ?.also { canonicalDirectory ->
+                            subdirectoryCache[cacheKey] = canonicalDirectory
+                        }
+                        ?.let { return@withLock it }
+                }
+                NPLogger.w(
+                    tag,
+                    "SAF 提供方返回了实际子目录名称: expected=$displayName, " +
+                        "actual=${resolvedDirectory.name}"
                 )
             }
+            subdirectoryCache[cacheKey] = resolvedDirectory
+            val createdName = ManagedDownloadTreeNaming.resolveTreeStoredName(
+                resolvedDirectory.name,
+                displayName
+            )
+            treeChildRegistry.updateRememberedTreeChild(
+                parent = parent,
+                childName = createdName,
+                documentUri = resolvedDirectory.uri,
+                sizeBytes = 0L,
+                lastModifiedMs = System.currentTimeMillis(),
+                isDirectory = true
+            )
+            resolvedDirectory
         }
+    }
+
+    private fun deleteContentReference(context: Context, uri: android.net.Uri): Boolean {
+        return deleteTrustedReference(
+            context,
+            TrustedManagedRef(
+                reference = StorageReference.SafRef(uri),
+                externalReference = uri.toString()
+            )
+        ).isConfirmedDelete()
     }
 
     fun findSubdirectories(
@@ -117,6 +202,407 @@ internal class ManagedDownloadTreeDirectories(
             .filterNot(ManagedDownloadStorage.StoredEntry::isDirectory)
     }
 
+    data class SubdirectoryEntriesRefresh(
+        val entries: List<ManagedDownloadStorage.StoredEntry>,
+        val isComplete: Boolean
+    )
+
+    data class RootEntriesRefresh(
+        val entries: List<ManagedDownloadStorage.StoredEntry>,
+        val isComplete: Boolean
+    )
+
+    /**
+     * 一次刷新返回根目录和两个托管侧载目录，避免调用方分别重新枚举根目录
+     */
+    data class DownloadLibraryEntriesRefresh(
+        val rootEntries: List<ManagedDownloadStorage.StoredEntry>,
+        val coverEntries: List<ManagedDownloadStorage.StoredEntry>,
+        val lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
+        val rootEntriesComplete: Boolean,
+        val sidecarEntriesComplete: Boolean
+    )
+
+    data class ManagedMigrationEntriesRefresh(
+        val rootEntries: List<ManagedDownloadStorage.StoredEntry>,
+        val coverEntries: List<ManagedDownloadStorage.StoredEntry>,
+        val lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
+        val isComplete: Boolean
+    )
+
+    fun refreshDownloadLibraryEntries(
+        context: Context,
+        root: ManagedDownloadRootHandle
+    ): DownloadLibraryEntriesRefresh {
+        return when (root) {
+            is ManagedDownloadRootHandle.FileRoot -> {
+                val rootChildren = root.dir.listFiles()
+                    ?: return DownloadLibraryEntriesRefresh(
+                        rootEntries = emptyList(),
+                        coverEntries = emptyList(),
+                        lyricEntries = emptyList(),
+                        rootEntriesComplete = false,
+                        sidecarEntriesComplete = false
+                    )
+                val rootEntries = rootChildren.map(ManagedDownloadStoredEntryMapper::fromFile)
+                var sidecarEntriesComplete = true
+                fun entriesFor(subdirectory: String): List<ManagedDownloadStorage.StoredEntry> {
+                    val directories = rootChildren
+                        .asSequence()
+                        .filter(File::isDirectory)
+                        .filter { directory ->
+                            ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                                directory.name,
+                                subdirectory
+                            )
+                        }
+                        .sortedWith(
+                            compareBy<File>(
+                                { if (it.name == subdirectory) 0 else 1 },
+                                { ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(it.name, subdirectory) },
+                                { it.name }
+                            )
+                        )
+                    return buildList {
+                        directories.forEach { directory ->
+                            val children = directory.listFiles()
+                            if (children == null) {
+                                sidecarEntriesComplete = false
+                            } else {
+                                children
+                                    .asSequence()
+                                    .filterNot(File::isDirectory)
+                                    .map(ManagedDownloadStoredEntryMapper::fromFile)
+                                    .forEach(::add)
+                            }
+                        }
+                    }
+                }
+                DownloadLibraryEntriesRefresh(
+                    rootEntries = rootEntries,
+                    coverEntries = entriesFor(COVER_SUBDIRECTORY),
+                    lyricEntries = entriesFor(LYRIC_SUBDIRECTORY),
+                    rootEntriesComplete = true,
+                    sidecarEntriesComplete = sidecarEntriesComplete
+                )
+            }
+
+            is ManagedDownloadRootHandle.TreeRoot -> {
+                val rootRefresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = root.tree
+                )
+                val rootEntries = rootRefresh.children
+                    .map(ManagedDownloadStoredEntryMapper::fromTreeChild)
+                var sidecarEntriesComplete = rootRefresh.isComplete
+                fun entriesFor(subdirectory: String): List<ManagedDownloadStorage.StoredEntry> {
+                    val directories = rootRefresh.children
+                        .asSequence()
+                        .filter(QueriedTreeChild::isDirectory)
+                        .filter { child ->
+                            ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                                child.name,
+                                subdirectory
+                            )
+                        }
+                        .sortedWith(
+                            compareBy<QueriedTreeChild>(
+                                { if (it.name == subdirectory) 0 else 1 },
+                                { ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(it.name, subdirectory) },
+                                { it.name }
+                            )
+                        )
+                    return buildList {
+                        directories.forEach { child ->
+                            val directory = treeChildRegistry.toDocumentFile(
+                                context = context,
+                                parent = root.tree,
+                                child = child
+                            )
+                            if (directory == null) {
+                                sidecarEntriesComplete = false
+                                return@forEach
+                            }
+                            val childRefresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                                context = context,
+                                parent = directory
+                            )
+                            sidecarEntriesComplete =
+                                sidecarEntriesComplete && childRefresh.isComplete
+                            childRefresh.children
+                                .asSequence()
+                                .filterNot(QueriedTreeChild::isDirectory)
+                                .map(ManagedDownloadStoredEntryMapper::fromTreeChild)
+                                .forEach(::add)
+                        }
+                    }
+                }
+                DownloadLibraryEntriesRefresh(
+                    rootEntries = rootEntries,
+                    coverEntries = entriesFor(COVER_SUBDIRECTORY),
+                    lyricEntries = entriesFor(LYRIC_SUBDIRECTORY),
+                    rootEntriesComplete = rootRefresh.isComplete,
+                    sidecarEntriesComplete = sidecarEntriesComplete
+                )
+            }
+        }
+    }
+
+    fun refreshRootEntries(
+        context: Context,
+        root: ManagedDownloadRootHandle
+    ): RootEntriesRefresh {
+        return when (root) {
+            is ManagedDownloadRootHandle.FileRoot -> {
+                val children = root.dir.listFiles()
+                    ?: return RootEntriesRefresh(emptyList(), isComplete = false)
+                RootEntriesRefresh(
+                    entries = children.map(ManagedDownloadStoredEntryMapper::fromFile),
+                    isComplete = true
+                )
+            }
+
+            is ManagedDownloadRootHandle.TreeRoot -> {
+                val refresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = root.tree
+                )
+                RootEntriesRefresh(
+                    entries = refresh.children.map(ManagedDownloadStoredEntryMapper::fromTreeChild),
+                    isComplete = refresh.isComplete
+                )
+            }
+        }
+    }
+
+    /**
+     * 返回已确认完整的根目录缓存，清理路径可先复用它来避免重复 Binder 枚举
+     * 缓存过期或不存在时返回 null，由调用方执行一次完整刷新并保守处理失败
+     */
+    fun cachedRootEntries(
+        root: ManagedDownloadRootHandle
+    ): RootEntriesRefresh? {
+        return when (root) {
+            is ManagedDownloadRootHandle.FileRoot -> {
+                val children = root.dir.listFiles() ?: return null
+                RootEntriesRefresh(
+                    entries = children.map(ManagedDownloadStoredEntryMapper::fromFile),
+                    isComplete = true
+                )
+            }
+
+            is ManagedDownloadRootHandle.TreeRoot -> {
+                val children = treeChildRegistry.cachedTreeChildrenIfFresh(
+                    parent = root.tree,
+                    maxCacheAgeMs = TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
+                )
+                    ?: return null
+                RootEntriesRefresh(
+                    entries = children.map(ManagedDownloadStoredEntryMapper::fromTreeChild),
+                    isComplete = true
+                )
+            }
+        }
+    }
+
+    fun refreshManagedMigrationEntries(
+        context: Context,
+        root: ManagedDownloadRootHandle,
+        requiresSidecarEntries: (List<ManagedDownloadStorage.StoredEntry>) -> Boolean = { true }
+    ): ManagedMigrationEntriesRefresh {
+        return when (root) {
+            is ManagedDownloadRootHandle.FileRoot -> {
+                val rootChildren = root.dir.listFiles()
+                    ?: return ManagedMigrationEntriesRefresh(
+                        rootEntries = emptyList(),
+                        coverEntries = emptyList(),
+                        lyricEntries = emptyList(),
+                        isComplete = false
+                    )
+                val rootEntries = rootChildren.map(ManagedDownloadStoredEntryMapper::fromFile)
+                if (!requiresSidecarEntries(rootEntries)) {
+                    return ManagedMigrationEntriesRefresh(
+                        rootEntries = rootEntries,
+                        coverEntries = emptyList(),
+                        lyricEntries = emptyList(),
+                        isComplete = true
+                    )
+                }
+                var isComplete = true
+                fun entriesFor(subdirectory: String): List<ManagedDownloadStorage.StoredEntry> {
+                    return buildList {
+                        rootChildren
+                            .asSequence()
+                            .filter(File::isDirectory)
+                            .filter { directory ->
+                                ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                                    directory.name,
+                                    subdirectory
+                                )
+                            }
+                            .forEach { directory ->
+                                val children = directory.listFiles()
+                                if (children == null) {
+                                    isComplete = false
+                                } else {
+                                    children
+                                        .asSequence()
+                                        .filterNot(File::isDirectory)
+                                        .map(ManagedDownloadStoredEntryMapper::fromFile)
+                                        .forEach(::add)
+                                }
+                            }
+                    }
+                }
+                ManagedMigrationEntriesRefresh(
+                    rootEntries = rootEntries,
+                    coverEntries = entriesFor(COVER_SUBDIRECTORY),
+                    lyricEntries = entriesFor(LYRIC_SUBDIRECTORY),
+                    isComplete = isComplete
+                )
+            }
+
+            is ManagedDownloadRootHandle.TreeRoot -> {
+                val rootRefresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = root.tree
+                )
+                val rootEntries = rootRefresh.children
+                    .map(ManagedDownloadStoredEntryMapper::fromTreeChild)
+                if (!requiresSidecarEntries(rootEntries)) {
+                    return ManagedMigrationEntriesRefresh(
+                        rootEntries = rootEntries,
+                        coverEntries = emptyList(),
+                        lyricEntries = emptyList(),
+                        isComplete = rootRefresh.isComplete
+                    )
+                }
+                var isComplete = rootRefresh.isComplete
+                fun entriesFor(subdirectory: String): List<ManagedDownloadStorage.StoredEntry> {
+                    return buildList {
+                        rootRefresh.children
+                            .asSequence()
+                            .filter(QueriedTreeChild::isDirectory)
+                            .filter { child ->
+                                ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                                    child.name,
+                                    subdirectory
+                                )
+                            }
+                            .forEach { child ->
+                                val directory = treeChildRegistry.toDocumentFile(
+                                    context,
+                                    root.tree,
+                                    child
+                                )
+                                if (directory == null) {
+                                    isComplete = false
+                                } else {
+                                    val childRefresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                                        context = context,
+                                        parent = directory
+                                    )
+                                    isComplete = isComplete && childRefresh.isComplete
+                                    childRefresh.children
+                                        .asSequence()
+                                        .filterNot(QueriedTreeChild::isDirectory)
+                                        .map(ManagedDownloadStoredEntryMapper::fromTreeChild)
+                                        .forEach(::add)
+                                }
+                            }
+                    }
+                }
+                ManagedMigrationEntriesRefresh(
+                    rootEntries = rootEntries,
+                    coverEntries = entriesFor(COVER_SUBDIRECTORY),
+                    lyricEntries = entriesFor(LYRIC_SUBDIRECTORY),
+                    isComplete = isComplete
+                )
+            }
+        }
+    }
+
+    fun refreshSubdirectoryEntries(
+        context: Context,
+        root: ManagedDownloadRootHandle,
+        subdirectory: String
+    ): SubdirectoryEntriesRefresh {
+        return when (root) {
+            is ManagedDownloadRootHandle.FileRoot -> {
+                val directories = root.dir.listFiles()
+                    ?.filter(File::isDirectory)
+                    ?.filter { directory ->
+                        ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                            directory.name,
+                            subdirectory
+                        )
+                    }
+                    ?.sortedWith(compareBy<File>(
+                        { if (it.name == subdirectory) 0 else 1 },
+                        { ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(it.name, subdirectory) },
+                        { it.name }
+                    ))
+                if (directories == null) {
+                    SubdirectoryEntriesRefresh(emptyList(), isComplete = false)
+                } else {
+                    var isComplete = true
+                    val entries = buildList {
+                        directories.forEach { directory ->
+                            val children = directory.listFiles()
+                            if (children == null) {
+                                isComplete = false
+                                return@forEach
+                            }
+                            children
+                                .filterNot(File::isDirectory)
+                                .mapTo(this, ManagedDownloadStoredEntryMapper::fromFile)
+                        }
+                    }
+                    SubdirectoryEntriesRefresh(entries, isComplete)
+                }
+            }
+
+            is ManagedDownloadRootHandle.TreeRoot -> {
+                val rootRefresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = root.tree
+                )
+                val directoryChildren = rootRefresh.children
+                    .filter(QueriedTreeChild::isDirectory)
+                    .filter { child ->
+                        ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                            child.name,
+                            subdirectory
+                        )
+                    }
+                    .sortedWith(compareBy<QueriedTreeChild>(
+                        { if (it.name == subdirectory) 0 else 1 },
+                        { ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(it.name, subdirectory) },
+                        { it.name }
+                    ))
+                var isComplete = rootRefresh.isComplete
+                val entries = buildList {
+                    directoryChildren.forEach { child ->
+                        val directory = treeChildRegistry.toDocumentFile(context, root.tree, child)
+                        if (directory == null) {
+                            isComplete = false
+                            return@forEach
+                        }
+                        val childRefresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                            context = context,
+                            parent = directory
+                        )
+                        isComplete = isComplete && childRefresh.isComplete
+                        childRefresh.children
+                            .filterNot(QueriedTreeChild::isDirectory)
+                            .mapTo(this, ManagedDownloadStoredEntryMapper::fromTreeChild)
+                    }
+                }
+                SubdirectoryEntriesRefresh(entries, isComplete)
+            }
+        }
+    }
+
     fun ensureManagedMediaScanIsolation(subdirectory: String, directory: File) {
         runCatching {
             ManagedDownloadMediaScanIsolation.ensureFileDirectory(
@@ -125,7 +611,12 @@ internal class ManagedDownloadTreeDirectories(
                 ensuredMarkers = ensuredNoMediaMarkers
             )
         }.onFailure {
-            NPLogger.w(tag, "创建封面目录 .nomedia 失败: ${it.message}")
+            NPLogger.w(
+                tag,
+                "创建 $subdirectory 目录 .nomedia 失败，继续写入侧载文件: " +
+                    "${it.javaClass.simpleName}: ${it.message}",
+                it
+            )
         }
     }
 
@@ -134,17 +625,23 @@ internal class ManagedDownloadTreeDirectories(
         subdirectory: String,
         directory: DocumentFile
     ) {
-        runCatching {
+        try {
             ManagedDownloadMediaScanIsolation.ensureTreeDirectory(
                 context = context,
                 subdirectory = subdirectory,
                 directory = directory,
                 ensuredMarkers = ensuredNoMediaMarkers,
                 hasCachedChild = { lookupContext, parent, childName ->
-                    treeChildRegistry.cachedTreeChild(lookupContext, parent, childName) != null
+                    hasExistingNoMediaMarker(lookupContext, parent, childName)
                 },
                 createMarker = { parent ->
-                    parent.createFile("application/octet-stream", NO_MEDIA_FILE_NAME)
+                    createNoMediaMarker(context, parent)
+                },
+                isMarkerAccessible = { lookupContext, marker ->
+                    ManagedDownloadReferenceIo.inspect(
+                        lookupContext,
+                        marker.uri.toString()
+                    )
                 },
                 rememberMarker = { marker, storedName ->
                     treeChildRegistry.updateRememberedTreeChild(
@@ -157,8 +654,15 @@ internal class ManagedDownloadTreeDirectories(
                     )
                 }
             )
-        }.onFailure {
-            NPLogger.w(tag, "创建封面目录 .nomedia 失败: ${it.message}")
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(
+                tag,
+                "创建 $subdirectory 目录 .nomedia 失败，继续写入侧载文件: " +
+                    "${error.javaClass.simpleName}: ${error.message}",
+                error
+            )
         }
     }
 
@@ -179,17 +683,11 @@ internal class ManagedDownloadTreeDirectories(
             .forEach(ensuredNoMediaMarkers::remove)
     }
 
-    private fun findCachedManagedSubdirectory(
-        context: Context,
-        parent: DocumentFile,
-        displayName: String,
-        maxCacheAgeMs: Long
-    ): DocumentFile? {
-        return treeChildRegistry.cachedTreeChildren(
-            context = context,
-            parent = parent,
-            maxCacheAgeMs = maxCacheAgeMs
-        )
+    private fun findManagedSubdirectoryChild(
+        children: Collection<QueriedTreeChild>,
+        displayName: String
+    ): QueriedTreeChild? {
+        return children
             .filter(QueriedTreeChild::isDirectory)
             .filter { child -> ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(child.name, displayName) }
             .sortedWith(
@@ -199,7 +697,137 @@ internal class ManagedDownloadTreeDirectories(
                     QueriedTreeChild::name
                 )
             )
-            .firstNotNullOfOrNull { child -> treeChildRegistry.toDocumentFile(context, child) }
+            .firstOrNull()
+    }
+
+    private fun findKnownManagedSubdirectory(
+        context: Context,
+        parent: DocumentFile,
+        displayName: String
+    ): DocumentFile? {
+        val child = findManagedSubdirectoryChild(
+            children = treeChildRegistry.peekTreeChildren(parent).orEmpty(),
+            displayName = displayName
+        ) ?: return null
+        return treeChildRegistry.toDocumentFile(context, parent, child)
+    }
+
+    private fun hasExistingNoMediaMarker(
+        context: Context,
+        directory: DocumentFile,
+        childName: String
+    ): Boolean {
+        if (childName != NO_MEDIA_FILE_NAME) return false
+        val cached = treeChildRegistry.cachedTreeChild(context, directory, childName)
+        if (cached != null) {
+            treeChildRegistry.toDocumentFile(context, directory, cached)
+                ?.takeIf { isAccessibleMarker(context, it) }
+                ?.let { return true }
+        }
+        val refreshed = treeChildRegistry.refreshTreeChildren(context, directory)
+            .firstOrNull { child ->
+                child.name == childName && !child.isDirectory
+            }
+        val marker = refreshed?.let { child ->
+            treeChildRegistry.toDocumentFile(context, directory, child)
+        }
+        return marker?.let { isAccessibleMarker(context, it) } == true
+    }
+
+    private fun createNoMediaMarker(context: Context, parent: DocumentFile): DocumentFile? {
+        val mimeTypes = listOf("application/octet-stream", "text/plain")
+        mimeTypes.forEach { mimeType ->
+            createNoMediaMarkerWithName(
+                context = context,
+                parent = parent,
+                mimeType = mimeType,
+                requestedName = NO_MEDIA_FILE_NAME
+            )?.let { return it }
+        }
+        val temporaryName = NO_MEDIA_FILE_NAME.removePrefix(".")
+        mimeTypes.forEach { mimeType ->
+            createNoMediaMarkerWithName(
+                context = context,
+                parent = parent,
+                mimeType = mimeType,
+                requestedName = temporaryName
+            )?.let { marker ->
+                val renamedUri = try {
+                    DocumentsContract.renameDocument(
+                        context.contentResolver,
+                        marker.uri,
+                        NO_MEDIA_FILE_NAME
+                    )
+                } catch (error: SecurityException) {
+                    throw error
+                } catch (_: Exception) {
+                    null
+                }
+                if (renamedUri != null) {
+                    val renamedMarker = DocumentFile.fromSingleUri(context, renamedUri)
+                        ?: marker
+                    val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
+                        renamedMarker.name,
+                        NO_MEDIA_FILE_NAME
+                    )
+                    if (storedName == NO_MEDIA_FILE_NAME && isAccessibleMarker(context, renamedMarker)) {
+                        return renamedMarker
+                    }
+                }
+                deleteDocument(context, marker)
+            }
+        }
+        return null
+    }
+
+    private fun createNoMediaMarkerWithName(
+        context: Context,
+        parent: DocumentFile,
+        mimeType: String,
+        requestedName: String
+    ): DocumentFile? {
+        val createdUri = try {
+            DocumentsContract.createDocument(
+                context.contentResolver,
+                parent.uri,
+                mimeType,
+                requestedName
+            )
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val marker = DocumentFile.fromSingleUri(context, createdUri) ?: return null
+        val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
+            marker.name,
+            requestedName
+        )
+        if (storedName != requestedName) {
+            deleteDocument(context, marker)
+            return null
+        }
+        return marker.takeIf { isAccessibleMarker(context, it) }
+            ?: run {
+                deleteDocument(context, marker)
+                null
+            }
+    }
+
+    private fun isAccessibleMarker(context: Context, marker: DocumentFile): Boolean {
+        val accessResult = ManagedDownloadReferenceIo.inspect(context, marker.uri.toString())
+        return when (accessResult) {
+            ManagedDownloadReferenceIo.AccessResult.Accessible -> true
+            ManagedDownloadReferenceIo.AccessResult.PermissionLost -> {
+                throw SecurityException("SAF marker permission lost: ${marker.uri}")
+            }
+            ManagedDownloadReferenceIo.AccessResult.Missing -> false
+            is ManagedDownloadReferenceIo.AccessResult.ProviderFailure -> throw accessResult.error
+        }
+    }
+
+    private fun deleteDocument(context: Context, document: DocumentFile): Boolean {
+        return deleteContentReference(context, document.uri)
     }
 
     private fun listDirectoryChildren(
@@ -225,7 +853,7 @@ internal class ManagedDownloadTreeDirectories(
                 )
                     .filter(QueriedTreeChild::isDirectory)
                     .mapNotNull { child ->
-                        treeChildRegistry.toDocumentFile(context, child)?.let { file ->
+                        treeChildRegistry.toDocumentFile(context, root.tree, child)?.let { file ->
                             NamedDirectoryRoot(
                                 name = child.name,
                                 root = ManagedDownloadRootHandle.TreeRoot(file)
@@ -240,4 +868,8 @@ internal class ManagedDownloadTreeDirectories(
         val name: String,
         val root: ManagedDownloadRootHandle
     )
+}
+
+private fun StorageMutationResult.isConfirmedDelete(): Boolean {
+    return this is StorageMutationResult.Deleted || this is StorageMutationResult.Missing
 }

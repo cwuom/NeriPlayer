@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.isAcceptedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
@@ -13,36 +14,37 @@ import moe.ouom.neriplayer.data.model.SongItem
 /** 标签后处理一次尝试后的收尾动作 */
 internal enum class TagPostProcessingAction {
     FINALIZE_TAGGED,
-    FINALIZE_UNTAGGED,
-    RETRY
+    RETRY,
+    PRESERVE_UNFINALIZED
 }
 
 /**
  * 标签后处理结果 -> 收尾动作
  *
- * 标签为尽力而为的元数据: 只要音频本体完整就必须保留并按完成收尾, 绝不能因写不进标签
- * 而回滚删除完整文件并反复重下耗流量 (P1-1)
+ * 标签写入失败时必须保留音频, 但不能把可写标签的容器伪装成已完成
  * - SUCCESS: 标签已写入, 按带标签完成
- * - UNSUPPORTED_CONTAINER: 容器天生写不了 (如 WebM) , 保留音频按无标签完成, 重试无意义
- * - FAILED / 未知: 可能瞬时失败, 仍有重试次数则重试; 重试耗尽仍失败 (如 SAF 持续
- * 打不开可写 fd) 也保留音频按无标签完成, 而不是删除
+ * - UNSUPPORTED_CONTAINER: 容器天生写不了 (如 WebM) , 保留未最终化音频供诊断
+ * - FAILED / 未知: 可能瞬时失败, 仍有重试次数则重试; 重试耗尽后保留未最终确认文件
+ *   等待后续元数据收尾重试, 不删除音频也不发布完成状态
  */
 internal fun tagPostProcessingAction(
     outcome: DownloadedAudioTagWriteOutcome?,
     hasRemainingAttempts: Boolean
 ): TagPostProcessingAction = when (outcome) {
     DownloadedAudioTagWriteOutcome.SUCCESS -> TagPostProcessingAction.FINALIZE_TAGGED
-    DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> TagPostProcessingAction.FINALIZE_UNTAGGED
+    DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> TagPostProcessingAction.PRESERVE_UNFINALIZED
     DownloadedAudioTagWriteOutcome.FAILED, null ->
         if (hasRemainingAttempts) TagPostProcessingAction.RETRY
-        else TagPostProcessingAction.FINALIZE_UNTAGGED
+        else TagPostProcessingAction.PRESERVE_UNFINALIZED
 }
 
 internal fun shouldRunInitialDownloadScan(
     catalogReady: Boolean,
     hasRecoveredEntries: Boolean = false
 ): Boolean {
-    return hasRecoveredEntries || !catalogReady
+    // catalog 和 Room snapshot 都只是可重建缓存, 启动后仍需让存储目录做一次异步对账
+    // 这样重装应用后重新授权原 SAF 目录时, 文件和 npmeta 可以重新建立内存索引
+    return true
 }
 
 /**
@@ -55,7 +57,7 @@ internal fun shouldRunInitialDownloadScan(
  * 四条件同时成立才视为可疑, 避免误伤正常清空:
  * 1. 本次扫描结果为空
  * 2. 既有目录 (内存/已持久化) 非空, 说明之前确实扫描/恢复到过下载
- * 3. 存储 root 仍可解析 (SAF 树仍在或使用应用私有目录) , 排除"目录被移除->回退空目录"的可解释空
+ * 3. 存储 root 仍可解析 (SAF 树仍在或使用应用私有目录) , 排除"目录不可用->错误目录为空"的假空结果
  * 4. 本次扫描的存储 root 与既有 catalog 所属 root 一致 (scanMatchesCatalogRoot)
  * 切换/重置下载目录后, 扫描的是新 root, 而既有 catalog 属于旧 root, 此时的空是"换目录后的真空"
  * 应放行以正确清空并让 app 内刷新可自愈, 而不是把旧目录条目误判为瞬时失败保留
@@ -80,14 +82,14 @@ internal fun shouldDeferStartupManagedCleanup(
 }
 
 internal fun shouldDeferPendingDownloadRecoveryForNetwork(
-    networkType: TrafficNetworkType,
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean
 ): Boolean {
     return networkType != TrafficNetworkType.WIFI && !mobileDataOverrideAllowed
 }
 
-internal fun shouldDeferPreparedDownloadStartForNetwork(
-    networkType: TrafficNetworkType,
+internal fun shouldDeferQueuedDownloadStartForNetwork(
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean,
     deferForNetworkPolicy: Boolean
 ): Boolean {
@@ -98,6 +100,59 @@ internal fun shouldDeferPreparedDownloadStartForNetwork(
         networkType = networkType,
         mobileDataOverrideAllowed = mobileDataOverrideAllowed
     )
+}
+
+/**
+ * protects an operation that was admitted on a Wi-Fi-class network from a later
+ * host restart on mobile data, unless the user explicitly continued this session
+ */
+internal fun shouldDeferDownloadExecutionForNetwork(
+    requiresWifiNetwork: Boolean,
+    networkType: TrafficNetworkType?,
+    mobileDataOverrideAllowed: Boolean
+): Boolean {
+    return requiresWifiNetwork && shouldDeferPendingDownloadRecoveryForNetwork(
+        networkType = networkType,
+        mobileDataOverrideAllowed = mobileDataOverrideAllowed
+    )
+}
+
+internal fun shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+    callbackNetworkType: TrafficNetworkType,
+    currentNetworkType: TrafficNetworkType
+): Boolean {
+    return callbackNetworkType != TrafficNetworkType.WIFI &&
+        currentNetworkType != TrafficNetworkType.WIFI
+}
+
+internal fun shouldPauseDownloadsForWifiDisconnect(
+    callbackNetworkType: TrafficNetworkType,
+    currentNetworkType: TrafficNetworkType
+): Boolean {
+    return shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+        callbackNetworkType = callbackNetworkType,
+        currentNetworkType = currentNetworkType
+    )
+}
+
+internal fun shouldPauseDownloadForWifiDisconnect(
+    requiresWifiNetwork: Boolean
+): Boolean {
+    return requiresWifiNetwork
+}
+
+/** keeps a Wi-Fi pause marker until the previous transfer has fully stopped */
+internal fun shouldClearNetworkPolicyPauseAfterCancellationSettled(
+    cancellationSettled: Boolean
+): Boolean = cancellationSettled
+
+/** keeps Wi-Fi-bound durable work visible to the network policy before memory state rehydrates */
+internal fun hasWifiBoundNetworkPolicyDownloads(
+    activeTaskCount: Int,
+    persistedQueuedCount: Int
+): Boolean {
+    return activeTaskCount > 0 ||
+        persistedQueuedCount > 0
 }
 
 internal fun shouldKeepCancellationCleanup(
@@ -119,6 +174,7 @@ internal enum class CompletedDownloadFinalizationAction {
 
 internal enum class PreExistingDownloadedAudioAction {
     DIRECT_SETTLE,
+    FINALIZE_EXISTING,
     CONTINUE_DOWNLOAD
 }
 
@@ -134,13 +190,23 @@ internal fun resolveCompletedDownloadFinalizationAction(
 }
 
 internal fun resolvePreExistingDownloadedAudioAction(
-    hasExistingAudio: Boolean
+    hasExistingAudio: Boolean,
+    needsFinalization: Boolean = false
 ): PreExistingDownloadedAudioAction {
-    return if (hasExistingAudio) {
-        PreExistingDownloadedAudioAction.DIRECT_SETTLE
-    } else {
+    return if (!hasExistingAudio) {
         PreExistingDownloadedAudioAction.CONTINUE_DOWNLOAD
+    } else if (needsFinalization) {
+        PreExistingDownloadedAudioAction.FINALIZE_EXISTING
+    } else {
+        PreExistingDownloadedAudioAction.DIRECT_SETTLE
     }
+}
+
+internal fun shouldRepairDownloadedCover(
+    coverReferenceAccessible: Boolean,
+    hasNetworkCoverCandidate: Boolean
+): Boolean {
+    return !coverReferenceAccessible && hasNetworkCoverCandidate
 }
 
 /** 完整音频已经落盘时, 元信息收尾失败也不能删除音频本体 */
@@ -171,7 +237,15 @@ internal fun resolveDownloadedPlaybackHydrationDelayMs(
     originalSong: SongItem,
     hydratedSong: SongItem
 ): Long {
-    return if (shouldUseImmediateDownloadedPlaybackHydration(originalSong, hydratedSong)) {
+    val lyricsChanged = originalSong.matchedLyric != hydratedSong.matchedLyric ||
+        originalSong.matchedTranslatedLyric != hydratedSong.matchedTranslatedLyric ||
+        originalSong.matchedRomanizedLyric != hydratedSong.matchedRomanizedLyric ||
+        originalSong.originalLyric != hydratedSong.originalLyric ||
+        originalSong.originalTranslatedLyric != hydratedSong.originalTranslatedLyric ||
+        originalSong.originalRomanizedLyric != hydratedSong.originalRomanizedLyric
+    return if (lyricsChanged) {
+        0L
+    } else if (shouldUseImmediateDownloadedPlaybackHydration(originalSong, hydratedSong)) {
         GlobalDownloadManager.PLAYBACK_METADATA_HYDRATION_DELAY_MS
     } else {
         GlobalDownloadManager.LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS
@@ -204,7 +278,14 @@ internal fun shouldInspectDownloadedAudioDetails(
 internal fun isUnfinalizedDownloadedMetadata(
     metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
 ): Boolean {
-    return metadata?.downloadFinalized == false
+    return !isFinalizedDownloadedMetadata(metadata)
+}
+
+internal fun isFinalizedDownloadedMetadata(
+    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+): Boolean {
+    return metadata?.downloadFinalized == true &&
+        isAcceptedDownloadedAudioEmbeddingState(metadata.metadataEmbeddingState)
 }
 
 internal fun resolveDownloadedLyricContent(
@@ -228,7 +309,7 @@ internal fun resolveDownloadedLyricOverride(
     localLyricContent: String?,
     indexedLyricContent: String?
 ): String? {
-    if (!fileLyric.isNullOrBlank()) {
+    if (fileLyric != null) {
         return fileLyric
     }
     if (embeddedMatchedLyric != null) {

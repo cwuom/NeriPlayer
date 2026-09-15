@@ -69,6 +69,49 @@ class LocalPlaylistDetailSelectionPolicyTest {
     }
 
     @Test
+    fun `batch action keeps every selected song including local sources`() {
+        val local = song(id = 1, name = "local").copy(
+            mediaUri = "content://media/external/audio/1"
+        )
+        val remote = song(id = 2, name = "remote")
+        val songs = listOf(local, remote, song(id = 3, name = "unselected"))
+
+        val selected = selectedSongsInSourceOrder(
+            songs = songs,
+            selectedKeys = setOf(local.stableKey(), remote.stableKey())
+        )
+
+        assertEquals(listOf(local, remote), selected)
+    }
+
+    @Test
+    fun `filtering the visible list does not remove hidden selections`() {
+        val visible = song(id = 1, name = "visible")
+        val hiddenBySearch = song(id = 2, name = "hidden")
+        val selectedKeys = setOf(visible.stableKey(), hiddenBySearch.stableKey())
+
+        val retained = retainExistingSongSelectionKeys(
+            songs = listOf(visible, hiddenBySearch),
+            selectedKeys = selectedKeys
+        )
+
+        assertEquals(selectedKeys, retained)
+    }
+
+    @Test
+    fun `selection cleanup only drops songs removed from the source`() {
+        val existing = song(id = 1, name = "existing")
+        val removed = song(id = 2, name = "removed")
+
+        val retained = retainExistingSongSelectionKeys(
+            songs = listOf(existing),
+            selectedKeys = setOf(existing.stableKey(), removed.stableKey())
+        )
+
+        assertEquals(setOf(existing.stableKey()), retained)
+    }
+
+    @Test
     fun `snapshot display order list survives source mutations`() {
         val source = mutableStateListOf("first", "second", "third")
 

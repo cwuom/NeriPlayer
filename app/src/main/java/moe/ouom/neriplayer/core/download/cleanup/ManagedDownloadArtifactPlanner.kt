@@ -12,6 +12,17 @@ import moe.ouom.neriplayer.core.download.naming.sanitizeManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 
 internal object ManagedDownloadArtifactPlanner {
+    /**
+     * builds a complete reference set for an explicit full-library delete
+     * using only entries already proven to be managed by the current snapshot
+     */
+    fun collectFullLibraryArtifactReferences(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): Set<String> {
+        // 完整快照已经收集全部托管音频、metadata、封面、歌词和 pending 引用
+        return snapshot.knownReferences
+    }
+
     fun collectArtifactReferences(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         storedAudio: ManagedDownloadStorage.StoredEntry?,
@@ -20,8 +31,11 @@ internal object ManagedDownloadArtifactPlanner {
         explicitReferences: List<String> = emptyList(),
         deletingAudioNames: Set<String> = emptySet()
     ): Set<String> {
-        val metadataReference = storedAudio?.let { snapshot.metadataEntriesByAudioName[it.name]?.reference }
-        val metadata = storedAudio?.let { snapshot.metadataByAudioName[it.name] }
+        val metadataReference = storedAudio?.let {
+            snapshot.metadataEntriesByAudioName[it.logicalName]?.reference
+                ?: snapshot.metadataEntriesByAudioName[it.name]?.reference
+        }
+        val metadata = storedAudio?.let { ManagedDownloadStorage.metadataForAudioEntry(snapshot, it) }
         val resolvedSongId = metadata?.songId ?: songId.takeIf { it > 0L }
         val currentAudioName = storedAudio?.name
         val lyricReferences = buildList {
@@ -59,6 +73,15 @@ internal object ManagedDownloadArtifactPlanner {
                 ?.let { candidateManagedDownloadBaseNames(it.nameWithoutExtension) }
                 ?: candidateBaseNames
             addAll(allIndexedCoverReferences(indexedCoverBaseNames, snapshot))
+            val stableKey = metadata?.stableKey?.takeIf(String::isNotBlank)
+            if (stableKey != null) {
+                indexedCoverBaseNames.forEach { baseName ->
+                    ManagedDownloadStorageNaming
+                        .buildStableCoverCandidateNames(baseName, stableKey)
+                        .mapNotNull { name -> snapshot.coverEntriesByName[name]?.reference }
+                        .forEach(::add)
+                }
+            }
         }
 
         return linkedSetOf<String>().apply {
@@ -132,6 +155,20 @@ internal object ManagedDownloadArtifactPlanner {
             audio = audio,
             songId = songId,
             translated = translated,
+            snapshot = snapshot
+        ) ?: return null
+        return ManagedDownloadStorage.readText(context, reference)
+    }
+
+    suspend fun indexedRomanizedLyricText(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        songId: Long?,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
+        val reference = indexedRomanizedLyricReference(
+            audio = audio,
+            songId = songId,
             snapshot = snapshot
         ) ?: return null
         return ManagedDownloadStorage.readText(context, reference)
@@ -326,15 +363,8 @@ internal object ManagedDownloadArtifactPlanner {
         reference: String,
         deletingAudioNames: Set<String> = emptySet()
     ): Boolean {
-        return snapshot.metadataByAudioName.any { (audioName, metadata) ->
-            audioName != currentAudioName &&
-                audioName !in deletingAudioNames &&
-                listOfNotNull(
-                    metadata.coverPath,
-                    metadata.lyricPath,
-                    metadata.translatedLyricPath,
-                    metadata.romanizedLyricPath
-                ).contains(reference)
+        return snapshot.artifactOwnerAudioNamesByReference[reference].orEmpty().any { audioName ->
+            audioName != currentAudioName && audioName !in deletingAudioNames
         }
     }
 }

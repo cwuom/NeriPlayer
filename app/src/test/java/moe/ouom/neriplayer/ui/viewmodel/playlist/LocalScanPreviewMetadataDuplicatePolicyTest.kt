@@ -51,6 +51,27 @@ class LocalScanPreviewMetadataDuplicatePolicyTest {
         )
     }
 
+    @Test
+    fun `keeps a selected scan song selected when metadata changes its stable key`() {
+        val quickSong = scannedSong(
+            id = 7L,
+            name = "Artist - Song",
+            artist = "Artist",
+            album = "Local Files",
+            durationMs = 0L
+        )
+        val hydratedSong = quickSong.copy(album = "Album")
+
+        assertEquals(
+            setOf(hydratedSong.stableKey()),
+            remapScanPreviewKeySet(
+                keys = setOf(quickSong.stableKey()),
+                previousSong = quickSong,
+                updatedSong = hydratedSong
+            )
+        )
+    }
+
     private fun scannedSong(
         id: Long,
         name: String,

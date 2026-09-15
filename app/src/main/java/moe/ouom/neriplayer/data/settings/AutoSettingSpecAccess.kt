@@ -12,6 +12,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.publishDownloadParallelism
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import moe.ouom.neriplayer.ksp.annotations.SettingValueType
 
@@ -22,6 +24,18 @@ class AutoSettingSpecRepository(private val context: Context) {
 
     suspend fun <T> set(setting: AutoSettingSpec<T>, value: T) {
         context.setAutoSetting(setting, value)
+    }
+
+    suspend fun setDownloadParallelism(value: Int) {
+        val normalizedValue = normalizeDownloadParallelism(value)
+        context.setAutoSetting(
+            AutoSettingsSchema.download.downloadParallelism,
+            normalizedValue
+        )
+        updateBootstrapSettingsSnapshot(context) { snapshot ->
+            snapshot.copy(downloadParallelism = normalizedValue)
+        }
+        publishDownloadParallelism(normalizedValue)
     }
 }
 

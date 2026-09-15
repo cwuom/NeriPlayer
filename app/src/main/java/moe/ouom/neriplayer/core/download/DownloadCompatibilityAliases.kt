@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.core.download.catalog.matchesDownloadedSong as matche
 import moe.ouom.neriplayer.core.download.catalog.matchesDownloadedSongCatalogEntry as matchesDownloadedSongCatalogEntryDelegate
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference as resolveDownloadedSongPlaybackReferenceDelegate
 import moe.ouom.neriplayer.core.download.catalog.deserializeDownloadedSongsCatalog as deserializeDownloadedSongsCatalogDelegate
+import moe.ouom.neriplayer.core.download.catalog.downloadedSongPlaybackReferenceCandidates as downloadedSongPlaybackReferenceCandidatesDelegate
 import moe.ouom.neriplayer.core.download.catalog.serializeDownloadedSongsCatalog as serializeDownloadedSongsCatalogDelegate
 import moe.ouom.neriplayer.core.download.catalog.shouldPublishDownloadedSongCatalogUpdate as shouldPublishDownloadedSongCatalogUpdateDelegate
 import moe.ouom.neriplayer.core.download.catalog.upsertDownloadedSongCatalog as upsertDownloadedSongCatalogDelegate
@@ -19,6 +20,8 @@ import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as DownloadedAudioTagWriterDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames as candidateManagedDownloadBaseNamesDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates as candidateManagedDownloadFileNameTemplatesDelegate
+import moe.ouom.neriplayer.core.download.naming.boundManagedDownloadFileName as boundManagedDownloadFileNameDelegate
+import moe.ouom.neriplayer.core.download.naming.managedDownloadIdentityHash as managedDownloadIdentityHashDelegate
 import moe.ouom.neriplayer.core.download.naming.normalizeDownloadFileNameTemplate as normalizeDownloadFileNameTemplateDelegate
 import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName as parseManagedDownloadBaseNameDelegate
 import moe.ouom.neriplayer.core.download.naming.renderManagedDownloadBaseName as renderManagedDownloadBaseNameDelegate
@@ -26,6 +29,7 @@ import moe.ouom.neriplayer.core.download.naming.sanitizeManagedDownloadFileName 
 import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadArtists as buildExpectedDownloadArtistsDelegate
 import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadTitles as buildExpectedDownloadTitlesDelegate
 import moe.ouom.neriplayer.core.download.policy.isSuspiciousEmptyDownloadScan as isSuspiciousEmptyDownloadScanDelegate
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata as isFinalizedDownloadedMetadataDelegate
 import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata as isUnfinalizedDownloadedMetadataDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveCompletedDownloadFinalizationAction as resolveCompletedDownloadFinalizationActionDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricContent as resolveDownloadedLyricContentDelegate
@@ -35,12 +39,19 @@ import moe.ouom.neriplayer.core.download.policy.resolvePreExistingDownloadedAudi
 import moe.ouom.neriplayer.core.download.policy.runNonCancellableDownloadRollback as runNonCancellableDownloadRollbackDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldRepairMetadataLessManagedDownload as shouldRepairMetadataLessManagedDownloadDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldDeferPendingDownloadRecoveryForNetwork as shouldDeferPendingDownloadRecoveryForNetworkDelegate
-import moe.ouom.neriplayer.core.download.policy.shouldDeferPreparedDownloadStartForNetwork as shouldDeferPreparedDownloadStartForNetworkDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldDeferDownloadExecutionForNetwork as shouldDeferDownloadExecutionForNetworkDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldDeferQueuedDownloadStartForNetwork as shouldDeferQueuedDownloadStartForNetworkDelegate
+import moe.ouom.neriplayer.core.download.policy.hasWifiBoundNetworkPolicyDownloads as hasWifiBoundNetworkPolicyDownloadsDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldPauseDownloadForWifiDisconnect as shouldPauseDownloadForWifiDisconnectDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldPauseDownloadsForWifiDisconnect as shouldPauseDownloadsForWifiDisconnectDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldRevokeMobileDataDownloadOverrideForWifiDisconnect as shouldRevokeMobileDataDownloadOverrideForWifiDisconnectDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldClearNetworkPolicyPauseAfterCancellationSettled as shouldClearNetworkPolicyPauseAfterCancellationSettledDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldDeferStartupManagedCleanup as shouldDeferStartupManagedCleanupDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDetails as shouldInspectDownloadedAudioDetailsDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldKeepCancellationCleanup as shouldKeepCancellationCleanupDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldProbeCompletedAudioAccessDuringPostProcessing as shouldProbeCompletedAudioAccessDuringPostProcessingDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldRunInitialDownloadScan as shouldRunInitialDownloadScanDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldRepairDownloadedCover as shouldRepairDownloadedCoverDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldSkipCancelledArtifactRecovery as shouldSkipCancelledArtifactRecoveryDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldTrustFastDownloadedSongCatalogHit as shouldTrustFastDownloadedSongCatalogHitDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldUseImmediateDownloadedPlaybackHydration as shouldUseImmediateDownloadedPlaybackHydrationDelegate
@@ -76,9 +87,16 @@ internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE =
     moe.ouom.neriplayer.core.download.naming.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
 internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE =
     moe.ouom.neriplayer.core.download.naming.LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE
+internal const val MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES =
+    moe.ouom.neriplayer.core.download.naming.MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES
+internal const val MAX_MANAGED_DOWNLOAD_FILE_NAME_UTF8_BYTES =
+    moe.ouom.neriplayer.core.download.naming.MAX_MANAGED_DOWNLOAD_FILE_NAME_UTF8_BYTES
 
 internal fun sanitizeManagedDownloadFileName(name: String): String =
     sanitizeManagedDownloadFileNameDelegate(name)
+
+internal fun boundManagedDownloadFileName(fileName: String): String =
+    boundManagedDownloadFileNameDelegate(fileName)
 
 internal fun normalizeDownloadFileNameTemplate(template: String?): String? =
     normalizeDownloadFileNameTemplateDelegate(template)
@@ -95,7 +113,16 @@ internal fun renderManagedDownloadBaseName(
     audioId: String = "",
     subAudioId: String = "",
     template: String? = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-): String = renderManagedDownloadBaseNameDelegate(title, artist, album, source, songId, audioId, subAudioId, template)
+): String = renderManagedDownloadBaseNameDelegate(
+    title = title,
+    artist = artist,
+    album = album,
+    source = source,
+    songId = songId,
+    audioId = audioId,
+    subAudioId = subAudioId,
+    template = template
+)
 
 internal fun renderManagedDownloadBaseName(
     song: SongItem,
@@ -114,6 +141,9 @@ internal fun candidateManagedDownloadBaseNames(
 
 internal fun candidateManagedDownloadBaseNames(fileNameWithoutExtension: String): List<String> =
     candidateManagedDownloadBaseNamesDelegate(fileNameWithoutExtension)
+
+internal fun managedDownloadIdentityHash(song: SongItem): String =
+    managedDownloadIdentityHashDelegate(song)
 
 internal fun shouldRunInitialDownloadScan(catalogReady: Boolean, hasRecoveredEntries: Boolean = false): Boolean =
     shouldRunInitialDownloadScanDelegate(catalogReady, hasRecoveredEntries)
@@ -134,19 +164,108 @@ internal fun shouldDeferStartupManagedCleanup(configuredDirectoryUri: String?, t
     shouldDeferStartupManagedCleanupDelegate(configuredDirectoryUri, treeRootAvailable)
 
 internal fun shouldDeferPendingDownloadRecoveryForNetwork(
-    networkType: TrafficNetworkType,
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean
 ): Boolean = shouldDeferPendingDownloadRecoveryForNetworkDelegate(networkType, mobileDataOverrideAllowed)
 
-internal fun shouldDeferPreparedDownloadStartForNetwork(
-    networkType: TrafficNetworkType,
+internal fun shouldDeferQueuedDownloadStartForNetwork(
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean,
     deferForNetworkPolicy: Boolean
-): Boolean = shouldDeferPreparedDownloadStartForNetworkDelegate(
+): Boolean = shouldDeferQueuedDownloadStartForNetworkDelegate(
     networkType,
     mobileDataOverrideAllowed,
     deferForNetworkPolicy
 )
+
+internal fun shouldDeferDownloadExecutionForNetwork(
+    requiresWifiNetwork: Boolean,
+    networkType: TrafficNetworkType?,
+    mobileDataOverrideAllowed: Boolean
+): Boolean = shouldDeferDownloadExecutionForNetworkDelegate(
+    requiresWifiNetwork,
+    networkType,
+    mobileDataOverrideAllowed
+)
+
+internal fun hasWifiBoundNetworkPolicyDownloads(
+    activeTaskCount: Int,
+    persistedQueuedCount: Int
+): Boolean = hasWifiBoundNetworkPolicyDownloadsDelegate(
+    activeTaskCount,
+    persistedQueuedCount
+)
+
+internal fun wifiBoundDownloadTaskCount(
+    activeSongKeys: Collection<String>,
+    persistedSongKeys: Collection<String>
+): Int = (activeSongKeys + persistedSongKeys)
+    .asSequence()
+    .map(String::trim)
+    .filter(String::isNotBlank)
+    .toSet()
+    .size
+
+/** keeps legacy entries only when no known durable operation has superseded them */
+internal fun resolvePersistedWifiBoundRequirement(
+    fallbackRequiresWifi: Boolean,
+    hasKnownOperation: Boolean,
+    durableRequiresWifi: Boolean?
+): Boolean? {
+    return durableRequiresWifi ?: fallbackRequiresWifi.takeIf { !hasKnownOperation }
+}
+
+/** treats a completed recount as authoritative and preserves the fallback only on read failure */
+internal fun resolveMobileDataDownloadInterruptionTaskCount(
+    existingTaskCount: Int?,
+    observedTaskCount: Int?,
+    fallbackTaskCount: Int
+): Int {
+    val normalizedFallback = fallbackTaskCount.coerceAtLeast(1)
+    if (observedTaskCount != null) {
+        return observedTaskCount.coerceAtLeast(0)
+    }
+    return existingTaskCount
+        ?.coerceAtLeast(normalizedFallback)
+        ?: normalizedFallback
+}
+
+internal fun isMobileDataDownloadInterruptionSnapshotCurrent(
+    snapshotEpoch: Long?,
+    currentEpoch: Long
+): Boolean = snapshotEpoch == null || snapshotEpoch == currentEpoch
+
+internal fun isWifiBoundNetworkPolicyObservationCurrent(
+    snapshotEpoch: Long,
+    currentEpoch: Long,
+    currentNetworkType: TrafficNetworkType?
+): Boolean {
+    return snapshotEpoch == currentEpoch && currentNetworkType != TrafficNetworkType.WIFI
+}
+
+internal fun shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+    callbackNetworkType: TrafficNetworkType,
+    currentNetworkType: TrafficNetworkType
+): Boolean = shouldRevokeMobileDataDownloadOverrideForWifiDisconnectDelegate(
+    callbackNetworkType,
+    currentNetworkType
+)
+
+internal fun shouldPauseDownloadsForWifiDisconnect(
+    callbackNetworkType: TrafficNetworkType,
+    currentNetworkType: TrafficNetworkType
+): Boolean = shouldPauseDownloadsForWifiDisconnectDelegate(
+    callbackNetworkType,
+    currentNetworkType
+)
+
+internal fun shouldPauseDownloadForWifiDisconnect(
+    requiresWifiNetwork: Boolean
+): Boolean = shouldPauseDownloadForWifiDisconnectDelegate(requiresWifiNetwork)
+
+internal fun shouldClearNetworkPolicyPauseAfterCancellationSettled(
+    cancellationSettled: Boolean
+): Boolean = shouldClearNetworkPolicyPauseAfterCancellationSettledDelegate(cancellationSettled)
 
 internal fun shouldKeepCancellationCleanup(
     currentGeneration: Long?,
@@ -160,8 +279,21 @@ internal fun resolveCompletedDownloadFinalizationAction(
 ): CompletedDownloadFinalizationAction =
     resolveCompletedDownloadFinalizationActionDelegate(hasStoredAudio, cancelled)
 
-internal fun resolvePreExistingDownloadedAudioAction(hasExistingAudio: Boolean): PreExistingDownloadedAudioAction =
-    resolvePreExistingDownloadedAudioActionDelegate(hasExistingAudio)
+internal fun resolvePreExistingDownloadedAudioAction(
+    hasExistingAudio: Boolean,
+    needsFinalization: Boolean = false
+): PreExistingDownloadedAudioAction = resolvePreExistingDownloadedAudioActionDelegate(
+    hasExistingAudio = hasExistingAudio,
+    needsFinalization = needsFinalization
+)
+
+internal fun shouldRepairDownloadedCover(
+    coverReferenceAccessible: Boolean,
+    hasNetworkCoverCandidate: Boolean
+): Boolean = shouldRepairDownloadedCoverDelegate(
+    coverReferenceAccessible,
+    hasNetworkCoverCandidate
+)
 
 internal fun shouldUseImmediateDownloadedPlaybackHydration(
     originalSong: SongItem,
@@ -190,6 +322,9 @@ internal fun shouldInspectDownloadedAudioDetails(
 
 internal fun isUnfinalizedDownloadedMetadata(metadata: ManagedDownloadStorage.DownloadedAudioMetadata?): Boolean =
     isUnfinalizedDownloadedMetadataDelegate(metadata)
+
+internal fun isFinalizedDownloadedMetadata(metadata: ManagedDownloadStorage.DownloadedAudioMetadata?): Boolean =
+    isFinalizedDownloadedMetadataDelegate(metadata)
 
 internal fun resolveDownloadedLyricOverride(
     fileLyric: String?,
@@ -274,6 +409,14 @@ internal fun findDownloadedSongCatalogMatch(
 internal fun resolveDownloadedSongPlaybackReference(song: DownloadedSong): String? =
     resolveDownloadedSongPlaybackReferenceDelegate(song)
 
+internal fun resolveDownloadedSongPlaybackReference(
+    song: DownloadedSong,
+    isAccessible: (String) -> Boolean
+): String? = resolveDownloadedSongPlaybackReferenceDelegate(song, isAccessible)
+
+internal fun downloadedSongPlaybackReferenceCandidates(song: DownloadedSong): List<String> =
+    downloadedSongPlaybackReferenceCandidatesDelegate(song)
+
 internal fun shouldPublishDownloadedSongCatalogUpdate(
     currentSong: DownloadedSong,
     updatedSong: DownloadedSong
@@ -295,12 +438,14 @@ fun upsertDownloadedSongCatalog(currentSongs: List<DownloadedSong>, updatedSong:
 internal fun mergePendingDownloadRecoveryCandidates(
     queuedDownloads: List<ManagedDownloadStorage.PendingDownloadQueueEntry>,
     resumableDownloads: List<ManagedDownloadStorage.PendingResumableDownload>,
-    cancelledKeys: Set<String> = emptySet()
+    cancelledKeys: Set<String> = emptySet(),
+    cancelledOperationIds: Set<String> = emptySet()
 ): List<PendingDownloadRecoveryCandidate> =
     moe.ouom.neriplayer.core.download.policy.mergePendingDownloadRecoveryCandidates(
         queuedDownloads,
         resumableDownloads,
-        cancelledKeys
+        cancelledKeys,
+        cancelledOperationIds
     )
 
 internal fun mergeManagedRequestedReferences(
@@ -320,6 +465,11 @@ internal suspend fun resolveUndeletedManagedReferences(
 ): Set<String> = resolveUndeletedManagedReferencesDelegate(requestedReferences, deletedReferences, exists)
 
 internal object ManagedDownloadArtifactPlanner {
+    fun collectFullLibraryArtifactReferences(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): Set<String> = ManagedDownloadArtifactPlannerDelegate
+        .collectFullLibraryArtifactReferences(snapshot)
+
     fun collectArtifactReferences(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         storedAudio: ManagedDownloadStorage.StoredEntry?,

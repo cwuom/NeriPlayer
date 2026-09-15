@@ -21,8 +21,24 @@
         <item quantity="one">%d task</item>
         <item quantity="other">%d tasks</item>
     </plurals>
+    <plurals name="download_failed_songs_count">
+        <item quantity="one">%d download failed</item>
+        <item quantity="other">%d downloads failed</item>
+    </plurals>
+    <plurals name="download_explicit_resume_count">
+        <item quantity="one">%d download needs your action</item>
+        <item quantity="other">%d downloads need your action</item>
+    </plurals>
     <plurals name="download_scan_failed">
         <item quantity="one">Scan failed: %d item</item>
         <item quantity="other">Scan failed: %d items</item>
+    </plurals>
+    <plurals name="download_delete_in_progress_message">
+        <item quantity="one">Confirming deletion of %d song…</item>
+        <item quantity="other">Confirming deletion of %d songs…</item>
+    </plurals>
+    <plurals name="download_delete_reference_progress">
+        <item quantity="one">Confirmed %1$d/%2$d file reference</item>
+        <item quantity="other">Confirmed %1$d/%2$d file references</item>
     </plurals>
 </resources>

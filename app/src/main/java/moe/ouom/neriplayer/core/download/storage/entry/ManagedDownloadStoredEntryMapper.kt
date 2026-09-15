@@ -8,10 +8,15 @@ import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 
 internal object ManagedDownloadStoredEntryMapper {
     fun fromFile(file: File): ManagedDownloadStorage.StoredEntry {
+        val mediaUri = runCatching {
+            Uri.fromFile(file).toString()
+        }.getOrElse {
+            file.toURI().toString()
+        }
         return ManagedDownloadStorage.StoredEntry(
             name = file.name,
             reference = file.absolutePath,
-            mediaUri = Uri.fromFile(file).toString(),
+            mediaUri = mediaUri,
             localFilePath = file.absolutePath,
             sizeBytes = file.length(),
             lastModifiedMs = file.lastModified(),
@@ -23,9 +28,10 @@ internal object ManagedDownloadStoredEntryMapper {
         return fromTreeChild(
             name = child.name,
             documentReference = child.documentUri.toString(),
-            sizeBytes = child.sizeBytes,
+            sizeBytes = child.sizeBytes ?: 0L,
             lastModifiedMs = child.lastModifiedMs,
-            isDirectory = child.isDirectory
+            isDirectory = child.isDirectory,
+            sizeKnown = child.sizeBytes != null
         )
     }
 
@@ -34,7 +40,8 @@ internal object ManagedDownloadStoredEntryMapper {
         documentReference: String,
         sizeBytes: Long,
         lastModifiedMs: Long,
-        isDirectory: Boolean
+        isDirectory: Boolean,
+        sizeKnown: Boolean = true
     ): ManagedDownloadStorage.StoredEntry {
         return ManagedDownloadStorage.StoredEntry(
             name = name,
@@ -43,6 +50,7 @@ internal object ManagedDownloadStoredEntryMapper {
             localFilePath = null,
             sizeBytes = sizeBytes,
             lastModifiedMs = lastModifiedMs,
+            sizeKnown = sizeKnown,
             isDirectory = isDirectory
         )
     }
@@ -62,6 +70,7 @@ internal object ManagedDownloadStoredEntryMapper {
             localFilePath = null,
             sizeBytes = knownSizeBytes ?: documentFile.length(),
             lastModifiedMs = knownLastModifiedMs ?: documentFile.lastModified(),
+            sizeKnown = knownSizeBytes != null,
             isDirectory = knownIsDirectory ?: documentFile.isDirectory
         )
     }

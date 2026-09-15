@@ -101,6 +101,8 @@ private val usageEntryComparator = Comparator<UsageEntry> { left, right ->
     }
 }
 
+private const val LOCAL_USAGE_COVER_CANDIDATE_LIMIT = 24
+
 internal fun normalizeUsageEntries(list: List<UsageEntry>): List<UsageEntry> {
     return list
         .filterNotNull()
@@ -302,7 +304,8 @@ class PlaylistUsageRepository internal constructor(
         playlistId: String? = null,
         subtype: String? = null,
         subtitle: String? = null,
-        now: Long = System.currentTimeMillis()
+        now: Long = System.currentTimeMillis(),
+        updateLastOpened: Boolean = true
     ) {
         if (trackCount <= 0) {
             removeEntryIfPresent(id, source, subtype)
@@ -345,7 +348,11 @@ class PlaylistUsageRepository internal constructor(
                     subtitle = subtitle
                 )
             }
-            val counted = updated.recordOpen(deviceId = deviceId, openedAt = now)
+            val counted = updated.recordOpen(
+                deviceId = deviceId,
+                openedAt = now,
+                updateLastOpened = updateLastOpened
+            )
             if (idx >= 0) {
                 data[idx] = counted
             } else {
@@ -462,16 +469,24 @@ class PlaylistUsageRepository internal constructor(
      */
     fun syncLocalEntries(
         playlists: List<LocalPlaylist>,
-        localFilesCoverCandidates: List<SongItem> = emptyList()
+        localFilesCoverCandidates: List<SongItem> = emptyList(),
+        resolveLocalMetadataFallback: Boolean = true
     ) {
         val out = synchronized(mutationLock) {
             val current = _flow.value
-            if (current.none { it.source == SOURCE_LOCAL }) {
+            val localEntryIds = current.asSequence()
+                .filter { entry -> entry.source == SOURCE_LOCAL }
+                .mapTo(LinkedHashSet()) { entry -> entry.id }
+            if (localEntryIds.isEmpty()) {
                 return@synchronized null
             }
 
             val localizedContext = LanguageManager.applyLanguage(app)
-            val localPlaylistLookup = buildLocalPlaylistUsageLookup(playlists, localizedContext)
+            val localPlaylistLookup = buildLocalPlaylistUsageLookup(
+                playlists = playlists,
+                context = localizedContext,
+                requestedPlaylistIds = localEntryIds
+            )
             var changed = false
             val updated = current.mapNotNull { entry ->
                 if (entry.source != SOURCE_LOCAL) return@mapNotNull entry
@@ -486,19 +501,42 @@ class PlaylistUsageRepository internal constructor(
                     playlistName = playlist.name,
                     context = localizedContext
                 )?.currentName ?: playlist.name
-                val refreshedPicUrl = playlist.displayCoverUrl(
-                    context = localizedContext,
-                    resolveLocalMetadataFallback = true,
-                    additionalCoverCandidates = if (LocalFilesPlaylist.isSystemPlaylist(
-                            playlist,
-                            localizedContext
-                        )
-                    ) {
+                val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(
+                    playlist,
+                    localizedContext
+                )
+                val coverCandidateLimit = if (resolveLocalMetadataFallback) {
+                    Int.MAX_VALUE
+                } else {
+                    LOCAL_USAGE_COVER_CANDIDATE_LIMIT
+                }
+                val coverCandidates = if (isLocalFilesPlaylist) {
+                    if (coverCandidateLimit == Int.MAX_VALUE) {
                         localFilesCoverCandidates
                     } else {
-                        emptyList()
+                        localFilesCoverCandidates.take(coverCandidateLimit)
                     }
-                )?.takeIf { it.isNotBlank() } ?: entry.picUrl
+                } else {
+                    emptyList()
+                }
+                val coverPlaylist = playlist.withCoverCandidateLimit(coverCandidateLimit)
+                val refreshedPicUrl = if (isLocalFilesPlaylist && playlist.songs.isEmpty()) {
+                    null
+                } else {
+                    val immediateCover = coverPlaylist.displayCoverUrl(coverCandidates)
+                        ?.takeIf { it.isNotBlank() }
+                    immediateCover
+                        ?: entry.picUrl?.takeIf { it.isNotBlank() }
+                        ?: if (resolveLocalMetadataFallback) {
+                            coverPlaylist.displayCoverUrl(
+                                context = localizedContext,
+                                resolveLocalMetadataFallback = true,
+                                additionalCoverCandidates = coverCandidates
+                            )?.takeIf { it.isNotBlank() }
+                        } else {
+                            null
+                        }
+                }
                 val refreshedTrackCount = playlist.songs.size
                 if (
                     entry.name == refreshedName &&
@@ -524,7 +562,10 @@ class PlaylistUsageRepository internal constructor(
     }
 
     /** 同步本地歌手虚拟歌单卡片信息 */
-    fun syncLocalArtistEntries(playlists: List<LocalPlaylist>) {
+    fun syncLocalArtistEntries(
+        playlists: List<LocalPlaylist>,
+        resolveLocalMetadataFallback: Boolean = true
+    ) {
         val out = synchronized(mutationLock) {
             val current = _flow.value
             if (current.none { it.source == SOURCE_LOCAL_ARTIST }) {
@@ -543,10 +584,24 @@ class PlaylistUsageRepository internal constructor(
                     return@mapNotNull null
                 }
 
-                val refreshedPicUrl = artist.displayCoverUrl(
-                    context = localizedContext,
-                    resolveLocalMetadataFallback = true
-                )?.takeIf { it.isNotBlank() } ?: entry.picUrl
+                val coverArtist = if (resolveLocalMetadataFallback) {
+                    artist
+                } else {
+                    artist.copy(
+                        songs = artist.songs.take(LOCAL_USAGE_COVER_CANDIDATE_LIMIT)
+                    )
+                }
+                val immediateCover = coverArtist.displayCoverUrl()?.takeIf { it.isNotBlank() }
+                val refreshedPicUrl = immediateCover
+                    ?: entry.picUrl?.takeIf { it.isNotBlank() }
+                    ?: if (resolveLocalMetadataFallback) {
+                        coverArtist.displayCoverUrl(
+                            context = localizedContext,
+                            resolveLocalMetadataFallback = true
+                        )?.takeIf { it.isNotBlank() }
+                    } else {
+                        null
+                    }
                 val refreshedTrackCount = artist.songs.size
                 if (
                     entry.name == artist.name &&
@@ -731,7 +786,11 @@ private fun SyncPlaylistUsageStat.toUsageEntry(): UsageEntry {
     )
 }
 
-private fun UsageEntry.recordOpen(deviceId: String, openedAt: Long): UsageEntry {
+private fun UsageEntry.recordOpen(
+    deviceId: String,
+    openedAt: Long,
+    updateLastOpened: Boolean = true
+): UsageEntry {
     val normalizedShards = SyncPlaybackStatMapper.normalizeCounterShards(counterShards)
     val previousShardCount = normalizedShards.fold(0L) { total, shard ->
         total.saturatingAdd(shard.playCount.toLong().coerceAtLeast(0L))
@@ -775,7 +834,7 @@ private fun UsageEntry.recordOpen(deviceId: String, openedAt: Long): UsageEntry 
     }
     return copy(
         firstOpened = minPositiveTimestamp(firstOpened, openedAt),
-        lastOpened = maxOf(lastOpened, openedAt),
+        lastOpened = if (updateLastOpened) maxOf(lastOpened, openedAt) else lastOpened,
         openCount = maxOf(
             openCount.toLong().coerceAtLeast(0L),
             baseOpenCount.saturatingAdd(nextShardCount)
@@ -803,14 +862,38 @@ private fun minPositiveTimestamp(left: Long, right: Long): Long {
     }
 }
 
+private fun LocalPlaylist.withCoverCandidateLimit(limit: Int): LocalPlaylist {
+    val boundedLimit = limit.coerceAtLeast(0)
+    if (songs.size <= boundedLimit) return this
+    return copy(songs = songs.take(boundedLimit).toMutableList())
+}
+
 internal fun buildLocalPlaylistUsageLookup(
     playlists: List<LocalPlaylist>,
-    context: Context
+    context: Context,
+    requestedPlaylistIds: Set<Long>? = null,
+    maxSongsPerPlaylist: Int = Int.MAX_VALUE
 ): Map<Long, LocalPlaylist> {
-    val lookup = playlists.associateBy(LocalPlaylist::id).toMutableMap()
-    val systemGroups = playlists.groupBy { playlist ->
-        SystemLocalPlaylists.resolve(playlist.id, playlist.name, context)?.id
+    val requestedIds = requestedPlaylistIds?.takeIf { it.isNotEmpty() }
+    fun boundedPlaylist(playlist: LocalPlaylist): LocalPlaylist {
+        return playlist.withCoverCandidateLimit(maxSongsPerPlaylist)
     }
+
+    val lookup = playlists.asSequence()
+        .filter { playlist -> requestedIds == null || playlist.id in requestedIds }
+        .associate { playlist -> playlist.id to boundedPlaylist(playlist) }
+        .toMutableMap()
+    val systemGroups = playlists.asSequence()
+        .mapNotNull { playlist ->
+            SystemLocalPlaylists.resolve(playlist.id, playlist.name, context)
+                ?.id
+                ?.let { systemId -> systemId to boundedPlaylist(playlist) }
+        }
+        .filter { (systemId, _) -> requestedIds == null || systemId in requestedIds }
+        .groupBy(
+            keySelector = { (systemId, _) -> systemId },
+            valueTransform = { (_, playlist) -> playlist }
+        )
 
     systemGroups[FavoritesPlaylist.SYSTEM_ID]
         ?.takeIf { it.isNotEmpty() }

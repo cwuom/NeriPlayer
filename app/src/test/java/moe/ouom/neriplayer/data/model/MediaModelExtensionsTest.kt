@@ -3,9 +3,15 @@ package moe.ouom.neriplayer.data.model
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class MediaModelExtensionsTest {
+
+    @get:Rule
+    val tempFolder = TemporaryFolder()
 
     @Test
     fun `resolveDisplayCoverUrl prefers local cover over remote fallback on main thread`() {
@@ -44,6 +50,47 @@ class MediaModelExtensionsTest {
                 onMainThread = true
             )
         )
+    }
+
+    @Test
+    fun `local song with legacy MediaStore cover still resolves local fallback`() {
+        val localSong = song(
+            name = "legacy-media-store",
+            coverUrl = "content://media/external/audio/albumart/42"
+        ).copy(mediaUri = "content://com.android.externalstorage.documents/document/primary%3AMusic%2Fsong.mp3")
+
+        assertTrue(localSong.shouldResolveLocalCoverFallback(localSong.coverUrl))
+    }
+
+    @Test
+    fun `local song with legacy file cover still resolves local fallback`() {
+        val localSong = song(
+            name = "legacy-file",
+            coverUrl = "file:///storage/emulated/0/Music/cover.jpg"
+        ).copy(mediaUri = "content://com.android.externalstorage.documents/document/primary%3AMusic%2Fsong.mp3")
+
+        assertTrue(localSong.shouldResolveLocalCoverFallback(localSong.coverUrl))
+    }
+
+    @Test
+    fun `local song revalidates a SAF cover reference before using it`() {
+        val localSong = song(
+            name = "saf-cover",
+            coverUrl = "content://com.android.externalstorage.documents/document/primary%3AMusic%2Fcover.jpg"
+        ).copy(mediaUri = "content://com.android.externalstorage.documents/document/primary%3AMusic%2Fsong.mp3")
+
+        assertTrue(localSong.shouldResolveLocalCoverFallback(localSong.coverUrl))
+    }
+
+    @Test
+    fun `directory custom cover falls back to the song cover`() {
+        val directory = tempFolder.newFolder("cover-directory")
+        val song = song(
+            name = "directory-cover",
+            coverUrl = "content://covers/song.jpg"
+        ).copy(customCoverUrl = directory.toURI().toString())
+
+        assertEquals("content://covers/song.jpg", song.displayCoverUrl())
     }
 
     @Test

@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.local.playlist.system
 
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.identity
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -30,7 +31,32 @@ class SystemPlaylistSongDeduperTest {
     }
 
     @Test
-    fun `keeps first local song when metadata fallback matches`() {
+    fun `registers local keys from identity duplicates for later chain deduplication`() {
+        val firstIdentity = localSong(
+            id = 10L,
+            mediaUri = "/storage/emulated/0/Music/first.mp3",
+            localFilePath = "/storage/emulated/0/Music/first.mp3"
+        ).copy(audioId = "first")
+        val secondIdentityAlias = localSong(
+            id = 10L,
+            mediaUri = "/storage/emulated/0/Music/first.mp3",
+            localFilePath = "/storage/emulated/0/Music/first.mp3"
+        ).copy(audioId = "second")
+        val laterSong = localSong(
+            id = 11L,
+            mediaUri = "/storage/emulated/0/Music/second.mp3",
+            localFilePath = "/storage/emulated/0/Music/second.mp3"
+        ).copy(audioId = "second")
+        val deduper = SystemPlaylistSongDeduper(expectedSongCount = 3)
+
+        deduper.addAll(listOf(firstIdentity, secondIdentityAlias, laterSong))
+
+        assertEquals(1, deduper.songs().size)
+        assertEquals(firstIdentity.identity(), deduper.songs().single().identity())
+    }
+
+    @Test
+    fun `keeps distinct local sources when metadata fallback matches`() {
         val contentAlias = localSong(
             id = 1L,
             mediaUri = "content://media/external/audio/media/100"
@@ -44,7 +70,7 @@ class SystemPlaylistSongDeduperTest {
 
         val distinct = listOf(contentAlias, pathAlias).distinctSystemSongs()
 
-        assertEquals(listOf(contentAlias), distinct)
+        assertEquals(listOf(contentAlias, pathAlias), distinct)
     }
 
     @Test

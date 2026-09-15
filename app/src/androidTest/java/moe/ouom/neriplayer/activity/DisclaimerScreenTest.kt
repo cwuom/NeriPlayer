@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.activity
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -81,7 +82,7 @@ class DisclaimerScreenTest {
         composeRule.waitUntil(timeoutMillis = 3_000) {
             hasText(showDetails)
         }
-        composeRule.onNodeWithText(firstDetailTitle).assertDoesNotExist()
+        composeRule.onAllNodesWithText(firstDetailTitle).assertCountEquals(0)
 
         composeRule.onNodeWithText(showDetails).performClick()
         composeRule.onNodeWithText(firstDetailTitle).assertExists()

@@ -35,7 +35,8 @@ internal object NeteasePlaybackResponseParser {
 
     internal data class DownloadInfo(
         val url: String,
-        val type: String?
+        val type: String?,
+        val contentLength: Long? = null
     )
 
     fun parsePlayback(rawResponse: String, originalDurationMs: Long): PlaybackResult {
@@ -77,7 +78,8 @@ internal object NeteasePlaybackResponseParser {
         val url = data.optCleanString("url") ?: return null
         return DownloadInfo(
             url = url,
-            type = data.optCleanString("type")
+            type = data.optCleanString("type"),
+            contentLength = data.optLongOrNull("size")?.takeIf { it > 0L }
         )
     }
 
