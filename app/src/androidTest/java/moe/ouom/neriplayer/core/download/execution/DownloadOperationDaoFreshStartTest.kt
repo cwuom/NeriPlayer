@@ -6,6 +6,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -78,6 +81,71 @@ class DownloadOperationDaoFreshStartTest {
             assertNotNull(other)
             assertTrue(other?.stopRequestedByUser == true)
             assertEquals("USER_CANCELLED", other?.lastErrorCode)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun freshStartKeepsPostCoreStopFromCancelledBatch() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).build()
+        try {
+            val batchId = "cancelled-batch"
+            val operationId = "cancelled-post-core"
+            database.downloadBatchDao().insertBatch(
+                DownloadBatchEntity(
+                    batchId = batchId,
+                    generation = 1L,
+                    totalCount = 1,
+                    stateBits = DownloadBatchState.CANCELLED,
+                    clearEpoch = 1L,
+                    networkGeneration = null,
+                    updatedAtMs = 2L,
+                    createdAtMs = 1L
+                )
+            )
+            database.downloadBatchDao().insertMembers(
+                listOf(
+                    DownloadBatchMemberEntity(
+                        batchId = batchId,
+                        ordinal = 0,
+                        stableKey = "song",
+                        operationId = operationId,
+                        attemptId = 1L,
+                        updatedAtMs = 2L
+                    )
+                )
+            )
+            database.downloadOperationDao().upsert(
+                operation(
+                    operationId = operationId,
+                    stableKey = "song",
+                    state = "CORE_COMMITTED",
+                    stopRequestedByUser = true,
+                    lastErrorCode = "USER_CANCELLED",
+                    batchId = batchId,
+                    batchGeneration = 1L
+                )
+            )
+
+            assertEquals(
+                0,
+                database.downloadOperationDao().clearUserStopForFreshStartAnyLibrary(
+                    stableKeys = listOf("song"),
+                    updatedAtMs = 100L
+                )
+            )
+
+            val retained = requireNotNull(
+                database.downloadOperationDao().find(operationId)
+            )
+            assertTrue(retained.stopRequestedByUser)
+            assertEquals("USER_CANCELLED", retained.lastErrorCode)
+            assertEquals("CORE_COMMITTED", retained.state)
         } finally {
             database.close()
         }
@@ -239,7 +307,9 @@ class DownloadOperationDaoFreshStartTest {
         retryCount: Int = 0,
         nextRetryAtMs: Long? = null,
         updatedAtMs: Long = 1L,
-        hostProcessToken: String? = null
+        hostProcessToken: String? = null,
+        batchId: String? = null,
+        batchGeneration: Long? = null
     ): DownloadOperationEntity {
         return DownloadOperationEntity(
             operationId = operationId,
@@ -259,7 +329,9 @@ class DownloadOperationDaoFreshStartTest {
             createdAtMs = 1L,
             updatedAtMs = updatedAtMs,
             hostProcessToken = hostProcessToken,
-            hostAdmittedAtMs = hostProcessToken?.let { 1L }
+            hostAdmittedAtMs = hostProcessToken?.let { 1L },
+            batchId = batchId,
+            batchGeneration = batchGeneration
         )
     }
 }

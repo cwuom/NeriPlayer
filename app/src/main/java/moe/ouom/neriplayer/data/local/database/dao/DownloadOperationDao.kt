@@ -4,12 +4,13 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.local.database.entity.DownloadCancellationIdentityRow
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationIdentityRow
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationNetworkPolicyRow
-import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 
 @Dao
 internal interface DownloadOperationDao {
@@ -1011,14 +1012,20 @@ internal interface DownloadOperationDao {
         updatedAtMs: Long
     ): Int
 
-    /** 用户明确发起新下载时，解除旧取消栅栏并允许核心收尾重新进入共享泵 */
+    /** 用户明确发起新下载时，只解除可安全续跑的旧取消栅栏，已取消批次保留旧身份 */
     @Query(
         "UPDATE download_operation SET stop_requested_by_user = 0, " +
             "last_error_code = CASE WHEN last_error_code = 'USER_CANCELLED' " +
             "THEN NULL ELSE last_error_code END, " +
             "updated_at_ms = :updatedAtMs WHERE stable_key IN (:stableKeys) " +
             "AND state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
-            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 1"
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 1 " +
+            "AND NOT EXISTS (SELECT 1 FROM download_batch_member AS member " +
+            "WHERE member.operation_id = download_operation.operation_id AND (" +
+            "member.terminal_bits = ${DownloadBatchMemberTerminal.CANCELLED} OR EXISTS (" +
+            "SELECT 1 FROM download_batch AS batch WHERE batch.batch_id = member.batch_id " +
+            "AND batch.state_bits & (${DownloadBatchState.CLEARING} | " +
+            "${DownloadBatchState.CANCELLED}) != 0)))"
     )
     suspend fun clearUserStopForFreshStartAnyLibrary(
         stableKeys: List<String>,
