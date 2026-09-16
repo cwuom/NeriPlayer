@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.download.artifact.finalizedPublicationLeaseOrNul
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
+import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.policy.recoveryOperationIdsForKeys
 import moe.ouom.neriplayer.core.download.policy.shouldRecoverDownloadCandidateWithBatch
@@ -893,6 +894,58 @@ internal fun GlobalDownloadManager.loadPendingWorkingProgressSnapshotOnce(
             NPLogger.d(TAG, "工作文件快照未完成，保留未加载状态等待重试")
         }
         loaded
+    }
+}
+
+internal fun normalizedPostCoreRecoveryOperationIds(
+    operationIds: Collection<String>
+): Set<String> {
+    return operationIds
+        .asSequence()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .toCollection(linkedSetOf())
+}
+
+/** 修正旧版本把 core 已落盘误记为批次完成的持久快照 */
+internal suspend fun GlobalDownloadManager.repairPersistedPostCoreBatchCompletions(
+    context: Context,
+    admissionTicket: Long?
+) {
+    val capturedAdmissionTicket = admissionTicket ?: return
+    if (!isDownloadAdmissionTicketCurrent(context, capturedAdmissionTicket)) return
+    val postCoreOperationIds = try {
+        normalizedPostCoreRecoveryOperationIds(
+            DownloadExecutionRoomStore.listByStatesAnyLibrary(
+                context = context,
+                states = POST_CORE_DOWNLOAD_OPERATION_STATES
+            ).map { entry -> entry.request.operationId }
+        )
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Throwable) {
+        NPLogger.w(TAG, "读取历史批次误计数候选失败，保留原快照: ${error.message}", error)
+        return
+    }
+    if (postCoreOperationIds.isEmpty()) return
+    PostCoreDownloadRecoveryWorker.cancelLegacyPerOperationWork(
+        context = context,
+        operationIds = postCoreOperationIds
+    )
+    if (!isDownloadAdmissionTicketCurrent(context, capturedAdmissionTicket)) return
+    val repairedCount = try {
+        DownloadExecutionRoomStore.repairPrematurePostCoreBatchCompletions(
+            context = context,
+            operationIds = postCoreOperationIds
+        )
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Throwable) {
+        NPLogger.w(TAG, "修复历史批次误计数失败，保留原完成数量: ${error.message}", error)
+        return
+    }
+    if (repairedCount > 0) {
+        NPLogger.i(TAG, "已撤销历史批次中过早写入的完成标记: count=$repairedCount")
     }
 }
 

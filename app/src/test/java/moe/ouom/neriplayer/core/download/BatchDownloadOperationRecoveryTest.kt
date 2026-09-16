@@ -460,10 +460,11 @@ class BatchDownloadOperationRecoveryTest {
         assertTrue(recoveryBody.contains("shouldRehandoffRecoveredDownloadOperation("))
         assertTrue(recoveryBody.contains("DownloadExecutionRoomStore.isStopped("))
         assertTrue(recoveryBody.contains("DownloadExecutionHosts.default"))
-        assertTrue(recoveryBody.contains("var recoveredPostCore = false"))
-        assertTrue(recoveryBody.contains("recoverPostCoreDownloadOperation("))
+        assertTrue(recoveryBody.contains("var handedOffPostCore = false"))
+        assertTrue(recoveryBody.contains("PostCoreDownloadRecoveryWorker.schedule("))
+        assertTrue(!recoveryBody.contains("recoverPostCoreDownloadOperation("))
         assertTrue(
-            recoveryBody.indexOf("recoverPostCoreDownloadOperation(") <
+            recoveryBody.indexOf("PostCoreDownloadRecoveryWorker.schedule(") <
                 recoveryBody.indexOf("DownloadExecutionHosts.default.schedule(")
         )
     }

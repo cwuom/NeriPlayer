@@ -25,6 +25,10 @@ internal data class ManagedDownloadArtifactBatchDeleteResult(
         get() = racedCount == 0
 }
 
+internal fun isBatchPresentationCompletedArtifactState(
+    state: ManagedDownloadArtifactState
+): Boolean = state == ManagedDownloadArtifactState.FINALIZED
+
 internal class ManagedDownloadArtifactCoordinator {
     /** 只为不存在的条目批量预创建租约，已有条目仍走完整 claim 校验 */
     suspend fun prepareMissingArtifacts(
@@ -368,10 +372,10 @@ internal class ManagedDownloadArtifactCoordinator {
     }
 
     /**
-     * 用轻量 artifact ledger 预检已经提交的音频，避免目录 catalog 尚未恢复时重复建队
+     * 用轻量 artifact ledger 预检已经最终发布的音频，避免目录 catalog 尚未恢复时重复建队
      *
-     * 这里只返回有正式音频引用且 provider 明确可读的 post-core 条目；未知或异常引用
-     * 交给后续 claim/recovery 路径处理，不能在启动预检阶段乐观跳过
+     * core 已提交但资产未完成的条目仍属于批次待处理项，不能提前增加已完成数量
+     * 未知或异常引用交给后续 claim/recovery 路径处理
      */
     suspend fun findReadableCompletedStableKeys(
         context: Context,
@@ -397,17 +401,10 @@ internal class ManagedDownloadArtifactCoordinator {
                         .thenBy { it.audioReference.orEmpty() }
                 )
             }
-        val completedStates = setOf(
-            ManagedDownloadArtifactState.CORE_COMMITTED,
-            ManagedDownloadArtifactState.ASSETS_ENRICHING,
-            ManagedDownloadArtifactState.FINALIZED,
-            ManagedDownloadArtifactState.DEGRADED_COMPLETE,
-            ManagedDownloadArtifactState.REPAIR_REQUIRED
-        )
         return normalizedKeys.mapNotNull { stableKey ->
             val artifact = artifacts[stableKey] ?: return@mapNotNull null
             val state = ManagedDownloadArtifactState.fromPersisted(artifact.state)
-            if (state !in completedStates) return@mapNotNull null
+            if (!isBatchPresentationCompletedArtifactState(state)) return@mapNotNull null
             val references = listOfNotNull(
                 artifact.audioReference?.trim()?.takeIf(String::isNotBlank),
                 artifact.audioName?.trim()?.takeIf { reference ->
@@ -439,6 +436,19 @@ internal class ManagedDownloadArtifactCoordinator {
         return database(context.applicationContext).managedDownloadArtifactDao()
             .find(rootKey, stableKey)
             ?.leaseId
+    }
+
+    suspend fun currentLeaseIdsAnyRoot(
+        context: Context,
+        song: SongItem
+    ): Set<String> {
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank)
+            ?: return emptySet()
+        return database(context.applicationContext).managedDownloadArtifactDao()
+            .findAllByStableKey(stableKey)
+            .mapNotNullTo(linkedSetOf()) { artifact ->
+                artifact.leaseId?.trim()?.takeIf(String::isNotBlank)
+            }
     }
 
     suspend fun currentState(

@@ -127,7 +127,6 @@ object GlobalDownloadManager {
         DOWNLOAD_LIBRARY_SCAN_TARGET_MS
     internal const val STARTUP_ARTIFACT_RECOVERY_HANDOFF_DELAY_MS = 250L
     internal const val STARTUP_ARTIFACT_RECOVERY_YIELD_BATCH_SIZE = 16
-    internal const val STARTUP_POST_CORE_RESUME_YIELD_BATCH_SIZE = 16
     /** core 收尾共享一次短时目录快照，避免并发 operation 重复扫描 SAF */
     internal const val FINALIZATION_RECOVERY_SNAPSHOT_TTL_MS = 750L
     internal const val DOWNLOADED_PLAYBACK_RESOLUTION_ATTEMPTS = 6
@@ -140,6 +139,14 @@ object GlobalDownloadManager {
     internal const val DOWNLOAD_TASK_PROGRESS_EMIT_INTERVAL_NS = 450_000_000L
     internal const val DOWNLOAD_PROGRESS_CHECKPOINT_COALESCE_MS = 120L
     internal const val METADATA_POST_PROCESSING_PARALLELISM = 2
+    internal const val ASSET_ENRICHMENT_PARALLELISM = 4
+    internal const val ASSET_ENRICHMENT_MAX_ACTIVE_JOBS = 4
+    internal const val POST_CORE_RECOVERY_MAX_WINDOWS = 4
+    internal const val POST_CORE_RECOVERY_MAX_OPERATIONS = 32
+    internal const val POST_CORE_RECOVERY_WINDOW_WAIT_MS = 125_000L
+    internal const val POST_CORE_ENRICHMENT_MAX_AUTO_RETRIES = 6
+    internal const val POST_CORE_ENRICHMENT_RETRY_EXHAUSTED_ERROR =
+        "POST_CORE_ENRICHMENT_RETRY_EXHAUSTED"
     internal const val WIFI_RECOVERY_PROBE_ATTEMPTS = 6
     internal const val WIFI_RECOVERY_PROBE_DELAY_MS = 300L
     /** 清空后残留的传输 lease 只在确认没有 durable owner 后回收 */
@@ -404,7 +411,8 @@ object GlobalDownloadManager {
     internal val managedDownloadArtifactCoordinator = ManagedDownloadArtifactCoordinator()
     internal val assetEnrichmentCoordinator = AssetEnrichmentCoordinator(
         scope = scope,
-        parallelism = METADATA_POST_PROCESSING_PARALLELISM,
+        parallelism = ASSET_ENRICHMENT_PARALLELISM,
+        maxActiveJobs = ASSET_ENRICHMENT_MAX_ACTIVE_JOBS,
         timeoutMs = 120_000L
     )
     internal val managedLibraryReconciler = ManagedLibraryReconciler()
@@ -687,6 +695,12 @@ object GlobalDownloadManager {
 
     fun initialize(context: Context) {
         return this.initializeImpl(context)
+    }
+
+    internal suspend fun recoverPostCoreDownloadsForWorker(
+        context: Context
+    ): PostCoreDownloadRecoveryResult {
+        return this.recoverPostCoreDownloadsForWorkerImpl(context)
     }
 
     internal suspend fun reconcileMaterializedLegacyDownloads(context: Context) {

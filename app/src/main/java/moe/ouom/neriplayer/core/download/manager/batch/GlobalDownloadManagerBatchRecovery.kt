@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.ForegroundDownloadWorker
+import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -812,9 +813,10 @@ internal fun GlobalDownloadManager.recoverInFlightDownloadOperations(
     if (distinctRequests.isEmpty()) return
     val appContext = context.applicationContext
     val recoveryJob = scope.launch {
+        var postCoreWorkerHandoffAttempted = false
         for (candidate in distinctRequests) {
             var schedule: DownloadExecutionSchedule? = null
-            var recoveredPostCore = false
+            var handedOffPostCore = false
             val admitted = try {
                 admitDownloadMutation(
                     context = appContext,
@@ -850,22 +852,18 @@ internal fun GlobalDownloadManager.recoverInFlightDownloadOperations(
                         return@recoveryAdmission
                     }
                     if (requiresDownloadFinalizationRecovery(state)) {
-                        recoveredPostCore = recoverPostCoreDownloadOperation(
-                            context = appContext,
-                            song = latest.song,
-                            operationId = latest.operationId,
-                            expectedAttemptId = latest.attemptId,
-                            admissionTicket = admissionTicket
-                        )
-                        if (recoveredPostCore) {
+                        if (!postCoreWorkerHandoffAttempted) {
+                            postCoreWorkerHandoffAttempted = true
+                            val postCoreWorkerScheduled =
+                                PostCoreDownloadRecoveryWorker.schedule(appContext)
                             NPLogger.d(
                                 TAG,
-                                "遗留 core operation 已直接完成收尾，跳过宿主调度: " +
-                                    "song=${latest.song.name}, " +
-                                    "operationId=${latest.operationId}"
+                                "遗留 core operation 已统一交给共享收尾 Worker: " +
+                                    "scheduled=$postCoreWorkerScheduled"
                             )
-                            return@recoveryAdmission
                         }
+                        handedOffPostCore = true
+                        return@recoveryAdmission
                     }
                     schedule = DownloadExecutionHosts.default.schedule(
                         context = appContext,
@@ -892,7 +890,7 @@ internal fun GlobalDownloadManager.recoverInFlightDownloadOperations(
                 )
                 return@launch
             }
-            if (recoveredPostCore) {
+            if (handedOffPostCore) {
                 continue
             }
             when (val result = schedule) {

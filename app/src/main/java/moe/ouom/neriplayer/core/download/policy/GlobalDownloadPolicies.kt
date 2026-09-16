@@ -283,7 +283,7 @@ internal fun resolvePostCoreEnrichmentTaskStatus(
     coreAudioCommitted: Boolean
 ): DownloadStatus {
     return if (coreAudioCommitted) {
-        DownloadStatus.DOWNLOADING
+        DownloadStatus.QUEUED
     } else {
         DownloadStatus.FAILED
     }
@@ -470,6 +470,13 @@ internal fun recoveredDownloadTaskPresentation(
 ): RecoveredDownloadTaskPresentation? {
     // STOPPED 由显式恢复列表展示并等待用户操作，不能伪装成普通排队卡片
     if (stopRequestedByUser || operationState == "STOPPED") return null
+    if (operationState in POST_CORE_DOWNLOAD_OPERATION_STATES) {
+        // 重启后只让共享 Worker 选中的少量任务进入可见收尾态，其余凭据留在 Room
+        return RecoveredDownloadTaskPresentation(
+            status = DownloadStatus.QUEUED,
+            stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+        )
+    }
     val normalizedErrorCode = lastErrorCode?.trim()?.takeIf(String::isNotBlank)
     val waitsForNetwork =
         (batchStateBits ?: 0) and DownloadBatchState.NETWORK_WAIT != 0 ||
@@ -484,22 +491,6 @@ internal fun recoveredDownloadTaskPresentation(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
                 stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
-            )
-        operationState == "CORE_COMMITTED" || operationState == "ASSETS_ENRICHING" ->
-            RecoveredDownloadTaskPresentation(
-                status = DownloadStatus.DOWNLOADING,
-                stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING
-            )
-        operationState == "DEGRADED_COMPLETE" ->
-            RecoveredDownloadTaskPresentation(
-                status = DownloadStatus.DOWNLOADING,
-                // 重启会立即把 post-core operation 重新交给独立宿主。没有持久退避
-                // 时应明确显示正在收尾，不能把所有历史收尾任务伪装成等待重试
-                stage = if (nextRetryAtMs?.let { it > nowMs } == true) {
-                    AudioDownloadManager.DownloadStage.WAITING_RETRY
-                } else {
-                    AudioDownloadManager.DownloadStage.ASSETS_ENRICHING
-                }
             )
         operationState == "RETRYABLE" || nextRetryAtMs?.let { it > nowMs } == true ->
             RecoveredDownloadTaskPresentation(

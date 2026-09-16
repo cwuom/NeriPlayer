@@ -23,6 +23,9 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.DOWNLOAD_RETRY_BASE_DELAY_MS
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
+import moe.ouom.neriplayer.data.local.database.entity.DOWNLOAD_BATCH_POST_CORE_PENDING_FRACTION_MILLI
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -665,6 +668,413 @@ class DownloadRecoveryRoomStoreGroup3Test : DownloadRecoveryRoomStoreTestSupport
             )
 
             assertTrue(dao.findAll().isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun coreCommitKeepsBatchMemberPendingUntilFinalPublication() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(110L, "core-commit-not-final")
+            val operationId = "core-commit-not-final"
+            val attemptId = 11L
+            val identity = DownloadExecutionRoomStore.createBatchSnapshot(
+                context = context,
+                songs = listOf(song),
+                database = database,
+                nowMs = 1L
+            )
+            val request = DownloadExecutionRequest(
+                operationId = operationId,
+                song = song,
+                attemptId = attemptId,
+                batchId = identity.batchId,
+                batchGeneration = identity.generation
+            )
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = request,
+                state = "COMMITTING",
+                database = database
+            )
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.attachBatchIdentity(
+                    context = context,
+                    identity = identity,
+                    requests = listOf(request),
+                    database = database,
+                    nowMs = 2L
+                )
+            )
+
+            assertTrue(
+                DownloadExecutionRoomStore.markCoreCommitted(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )
+            )
+
+            val batch = database.downloadBatchDao().findBatchById(identity.batchId)
+            val member = database.downloadBatchDao().findMember(
+                identity.batchId,
+                song.stableKey()
+            )
+            assertEquals("CORE_COMMITTED", database.downloadOperationDao().find(operationId)?.state)
+            assertEquals(DownloadBatchMemberTerminal.NONE, member?.terminalBits)
+            assertTrue(batch?.stateBits?.and(DownloadBatchState.OPEN) != 0)
+            assertEquals(0, batch?.stateBits?.and(DownloadBatchState.TERMINAL_MASK))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun finalPublicationAtomicallyCompletesBatchMember() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(115L, "final-publication-batch-terminal")
+            val operationId = "final-publication-batch-terminal"
+            val attemptId = 15L
+            val identity = DownloadExecutionRoomStore.createBatchSnapshot(
+                context = context,
+                songs = listOf(song),
+                database = database,
+                nowMs = 1L
+            )
+            val request = DownloadExecutionRequest(
+                operationId = operationId,
+                song = song,
+                attemptId = attemptId,
+                batchId = identity.batchId,
+                batchGeneration = identity.generation
+            )
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = request,
+                state = "COMMITTING",
+                database = database
+            )
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.attachBatchIdentity(
+                    context = context,
+                    identity = identity,
+                    requests = listOf(request),
+                    database = database,
+                    nowMs = 2L
+                )
+            )
+            assertTrue(
+                DownloadExecutionRoomStore.markCoreCommitted(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )
+            )
+
+            assertTrue(
+                DownloadExecutionRoomStore.updateState(
+                    context = context,
+                    operationId = operationId,
+                    state = "FINALIZED",
+                    database = database,
+                    nowMs = 3L
+                )
+            )
+
+            val batch = database.downloadBatchDao().findBatchById(identity.batchId)
+            val member = database.downloadBatchDao().findMember(
+                identity.batchId,
+                song.stableKey()
+            )
+            assertEquals("FINALIZED", database.downloadOperationDao().find(operationId)?.state)
+            assertEquals(DownloadBatchMemberTerminal.COMPLETED, member?.terminalBits)
+            assertEquals(1_000, member?.maxFractionMilli)
+            assertTrue(batch?.stateBits?.and(DownloadBatchState.COMPLETED) != 0)
+            assertEquals(0, batch?.stateBits?.and(DownloadBatchState.OPEN))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun startupRepairReopensBatchCompletedAtCoreCommit() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(111L, "repair-premature-core-commit")
+            val operationId = "repair-premature-core-commit"
+            val attemptId = 12L
+            val identity = DownloadExecutionRoomStore.createBatchSnapshot(
+                context = context,
+                songs = listOf(song),
+                database = database,
+                nowMs = 1L
+            )
+            val request = DownloadExecutionRequest(
+                operationId = operationId,
+                song = song,
+                attemptId = attemptId,
+                batchId = identity.batchId,
+                batchGeneration = identity.generation
+            )
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = request,
+                state = "COMMITTING",
+                database = database
+            )
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.attachBatchIdentity(
+                    context = context,
+                    identity = identity,
+                    requests = listOf(request),
+                    database = database,
+                    nowMs = 2L
+                )
+            )
+            assertTrue(
+                DownloadExecutionRoomStore.markCoreCommitted(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )
+            )
+            assertEquals(
+                1,
+                database.downloadBatchDao().markMemberCompletedCAS(
+                    batchId = identity.batchId,
+                    stableKey = song.stableKey(),
+                    operationId = operationId,
+                    attemptId = attemptId,
+                    nowMs = 3L
+                )
+            )
+            assertEquals(
+                1,
+                database.downloadBatchDao().markCompletedIfAllMembersTerminal(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    nowMs = 3L
+                )
+            )
+
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.repairPrematurePostCoreBatchCompletions(
+                    context = context,
+                    operationIds = listOf(operationId),
+                    database = database,
+                    nowMs = 4L
+                )
+            )
+
+            val batch = database.downloadBatchDao().findBatchById(identity.batchId)
+            val member = database.downloadBatchDao().findMember(
+                identity.batchId,
+                song.stableKey()
+            )
+            assertEquals(DownloadBatchMemberTerminal.NONE, member?.terminalBits)
+            assertEquals(DOWNLOAD_BATCH_POST_CORE_PENDING_FRACTION_MILLI, member?.maxFractionMilli)
+            assertFalse(member?.initiallyCompleted ?: true)
+            assertTrue(batch?.stateBits?.and(DownloadBatchState.OPEN) != 0)
+            assertEquals(0, batch?.stateBits?.and(DownloadBatchState.TERMINAL_MASK))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun exhaustedPostCoreRetryFailsMemberAndClosesBatch() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(112L, "post-core-retry-exhausted")
+            val operationId = "post-core-retry-exhausted"
+            val attemptId = 13L
+            val identity = DownloadExecutionRoomStore.createBatchSnapshot(
+                context = context,
+                songs = listOf(song),
+                database = database,
+                nowMs = 1L
+            )
+            val request = DownloadExecutionRequest(
+                operationId = operationId,
+                song = song,
+                attemptId = attemptId,
+                batchId = identity.batchId,
+                batchGeneration = identity.generation
+            )
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = request,
+                state = "COMMITTING",
+                database = database
+            )
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.attachBatchIdentity(
+                    context = context,
+                    identity = identity,
+                    requests = listOf(request),
+                    database = database,
+                    nowMs = 2L
+                )
+            )
+            assertTrue(
+                DownloadExecutionRoomStore.markCoreCommitted(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )
+            )
+
+            val retry = DownloadExecutionRoomStore.recordPostCoreRetryFailure(
+                context = context,
+                operationId = operationId,
+                stableKey = song.stableKey(),
+                expectedAttemptId = attemptId,
+                errorCode = "TEST_POST_CORE_FAILURE",
+                database = database,
+                nowMs = 10L
+            )
+            assertEquals(1, retry?.retryCount)
+            assertTrue((retry?.nextRetryAtMs ?: 0L) > 10L)
+            assertTrue(
+                DownloadExecutionRoomStore.markPostCoreRetryExhausted(
+                    context = context,
+                    operationId = operationId,
+                    stableKey = song.stableKey(),
+                    expectedAttemptId = attemptId,
+                    minimumRetryCount = 1,
+                    errorCode = "POST_CORE_RETRY_EXHAUSTED",
+                    database = database,
+                    nowMs = 20L
+                )
+            )
+
+            val batch = database.downloadBatchDao().findBatchById(identity.batchId)
+            val member = database.downloadBatchDao().findMember(
+                identity.batchId,
+                song.stableKey()
+            )
+            val operation = database.downloadOperationDao().find(operationId)
+            assertEquals("INVALID", operation?.state)
+            assertEquals("POST_CORE_RETRY_EXHAUSTED", operation?.lastErrorCode)
+            assertEquals(DownloadBatchMemberTerminal.FAILED, member?.terminalBits)
+            assertTrue(batch?.stateBits?.and(DownloadBatchState.COMPLETED) != 0)
+            assertEquals(0, batch?.stateBits?.and(DownloadBatchState.OPEN))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun postCoreRepairPreservesNetworkFenceOnAnOpenBatch() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val recoveringSong = song(113L, "repair-with-network-fence")
+            val pendingSong = song(114L, "network-fence-sibling")
+            val operationId = "repair-with-network-fence"
+            val attemptId = 14L
+            val identity = DownloadExecutionRoomStore.createBatchSnapshot(
+                context = context,
+                songs = listOf(recoveringSong, pendingSong),
+                database = database,
+                nowMs = 1L
+            )
+            val request = DownloadExecutionRequest(
+                operationId = operationId,
+                song = recoveringSong,
+                attemptId = attemptId,
+                batchId = identity.batchId,
+                batchGeneration = identity.generation
+            )
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = request,
+                state = "COMMITTING",
+                database = database
+            )
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.attachBatchIdentity(
+                    context = context,
+                    identity = identity,
+                    requests = listOf(request),
+                    database = database,
+                    nowMs = 2L
+                )
+            )
+            assertTrue(
+                DownloadExecutionRoomStore.markCoreCommitted(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )
+            )
+            assertEquals(
+                1,
+                database.downloadBatchDao().markMemberCompletedCAS(
+                    batchId = identity.batchId,
+                    stableKey = recoveringSong.stableKey(),
+                    operationId = operationId,
+                    attemptId = attemptId,
+                    nowMs = 3L
+                )
+            )
+            assertEquals(
+                1,
+                database.downloadBatchDao().updateStateBitsCAS(
+                    batchId = identity.batchId,
+                    generation = identity.generation,
+                    stateBits = DownloadBatchState.OPEN or DownloadBatchState.NETWORK_WAIT,
+                    nowMs = 3L
+                )
+            )
+
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.repairPrematurePostCoreBatchCompletions(
+                    context = context,
+                    operationIds = listOf(operationId),
+                    database = database,
+                    nowMs = 4L
+                )
+            )
+
+            val batch = database.downloadBatchDao().findBatchById(identity.batchId)
+            val member = database.downloadBatchDao().findMember(
+                identity.batchId,
+                recoveringSong.stableKey()
+            )
+            assertEquals(DownloadBatchMemberTerminal.NONE, member?.terminalBits)
+            assertTrue(batch?.stateBits?.and(DownloadBatchState.OPEN) != 0)
+            assertTrue(batch?.stateBits?.and(DownloadBatchState.NETWORK_WAIT) != 0)
+            assertEquals(0, batch?.stateBits?.and(DownloadBatchState.TERMINAL_MASK))
         } finally {
             database.close()
         }

@@ -877,7 +877,7 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
     @Test
     fun `post core enrichment failure remains active when audio is committed`() {
         assertEquals(
-            DownloadStatus.DOWNLOADING,
+            DownloadStatus.QUEUED,
             resolvePostCoreEnrichmentTaskStatus(coreAudioCommitted = true)
         )
         assertEquals(

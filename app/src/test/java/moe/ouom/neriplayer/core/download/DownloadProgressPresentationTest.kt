@@ -324,7 +324,7 @@ class DownloadProgressPresentationTest {
 
         assertEquals(4, aggregate.totalSongs)
         assertEquals(1, aggregate.completedSongs)
-        assertEquals(43, aggregate.percentage)
+        assertEquals(41, aggregate.percentage)
         assertEquals(2, aggregate.activeSongCount)
         assertTrue(aggregate.hasPendingSongs)
     }
@@ -438,6 +438,46 @@ class DownloadProgressPresentationTest {
         assertEquals(99, aggregate.percentage)
         assertEquals(1, aggregate.activeSongCount)
         assertTrue(aggregate.hasPendingSongs)
+    }
+
+    @Test
+    fun `batch progress reserves a visible tail for durable finalization`() {
+        val selected = song(1L)
+        val base = progress(
+            songKey = selected.stableKey(),
+            attemptId = 7L,
+            bytesRead = 100L
+        )
+
+        assertEquals(0.90f, downloadProgressFraction(base), 0.0001f)
+        assertEquals(
+            0.92f,
+            downloadProgressFraction(
+                base.copy(stage = AudioDownloadManager.DownloadStage.VERIFYING_AUDIO)
+            ),
+            0.0001f
+        )
+        assertEquals(
+            0.94f,
+            downloadProgressFraction(
+                base.copy(stage = AudioDownloadManager.DownloadStage.COMMITTING_CORE)
+            ),
+            0.0001f
+        )
+        assertEquals(
+            0.97f,
+            downloadProgressFraction(
+                base.copy(stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING)
+            ),
+            0.0001f
+        )
+        assertEquals(
+            0.99f,
+            downloadProgressFraction(
+                base.copy(stage = AudioDownloadManager.DownloadStage.FINALIZING)
+            ),
+            0.0001f
+        )
     }
 
     @Test
@@ -563,7 +603,7 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(4, aggregate.totalSongs)
-        assertEquals(12, aggregate.percentage)
+        assertEquals(11, aggregate.percentage)
         assertEquals(1, aggregate.activeSongCount)
         assertTrue(aggregate.hasPendingSongs)
     }
@@ -752,8 +792,8 @@ class DownloadProgressPresentationTest {
         )
         assertEquals(
             RecoveredDownloadTaskPresentation(
-                status = DownloadStatus.DOWNLOADING,
-                stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "ASSETS_ENRICHING",
@@ -763,8 +803,8 @@ class DownloadProgressPresentationTest {
         )
         assertEquals(
             RecoveredDownloadTaskPresentation(
-                status = DownloadStatus.DOWNLOADING,
-                stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "DEGRADED_COMPLETE",
@@ -774,8 +814,8 @@ class DownloadProgressPresentationTest {
         )
         assertEquals(
             RecoveredDownloadTaskPresentation(
-                status = DownloadStatus.DOWNLOADING,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "DEGRADED_COMPLETE",

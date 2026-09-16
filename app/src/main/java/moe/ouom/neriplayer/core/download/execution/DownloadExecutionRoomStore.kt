@@ -38,7 +38,16 @@ internal object DownloadExecutionRoomStore {
         val queueOrder: Int,
         val createdAtMs: Long,
         val state: String = "",
-        val updatedAtMs: Long = createdAtMs
+        val updatedAtMs: Long = createdAtMs,
+        val retryCount: Int = 0,
+        val nextRetryAtMs: Long? = null,
+        val lastErrorCode: String? = null
+    )
+
+    internal data class PostCoreRetryRecord(
+        val retryCount: Int,
+        val nextRetryAtMs: Long,
+        val updatedAtMs: Long
     )
 
     internal data class OperationSnapshot(
@@ -288,6 +297,59 @@ internal object DownloadExecutionRoomStore {
         nowMs: Long = System.currentTimeMillis()
     ): Boolean {
         return this.updateStateImpl(context, operationId, state, errorCode, database, nowMs)
+    }
+
+    suspend fun recordPostCoreRetryFailure(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        expectedAttemptId: Long?,
+        errorCode: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): PostCoreRetryRecord? {
+        return this.recordPostCoreRetryFailureImpl(
+            operationId,
+            stableKey,
+            expectedAttemptId,
+            errorCode,
+            database,
+            nowMs
+        )
+    }
+
+    suspend fun markPostCoreRetryExhausted(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        expectedAttemptId: Long?,
+        minimumRetryCount: Int,
+        errorCode: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        return this.markPostCoreRetryExhaustedImpl(
+            operationId,
+            stableKey,
+            expectedAttemptId,
+            minimumRetryCount,
+            errorCode,
+            database,
+            nowMs
+        )
+    }
+
+    suspend fun repairPrematurePostCoreBatchCompletions(
+        context: Context,
+        operationIds: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        return this.repairPrematurePostCoreBatchCompletionsImpl(
+            operationIds,
+            database,
+            nowMs
+        )
     }
 
     /**

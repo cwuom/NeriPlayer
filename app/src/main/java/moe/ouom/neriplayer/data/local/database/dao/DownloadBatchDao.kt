@@ -7,6 +7,7 @@ import androidx.room.Query
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
+import moe.ouom.neriplayer.data.local.database.entity.DOWNLOAD_BATCH_POST_CORE_PENDING_FRACTION_MILLI
 
 @Dao
 internal interface DownloadBatchDao {
@@ -243,6 +244,40 @@ internal interface DownloadBatchDao {
     suspend fun clearInitialMemberCompletionCAS(
         batchId: String,
         stableKey: String,
+        nowMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_batch_member SET terminal_bits = 0, " +
+            "max_fraction_milli = MIN(max_fraction_milli, " +
+            "$DOWNLOAD_BATCH_POST_CORE_PENDING_FRACTION_MILLI), " +
+            "initially_completed = 0, updated_at_ms = :nowMs " +
+            "WHERE operation_id IN (:operationIds) " +
+            "AND terminal_bits = ${moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal.COMPLETED} " +
+            "AND EXISTS (SELECT 1 FROM download_batch " +
+            "WHERE download_batch.batch_id = download_batch_member.batch_id " +
+            "AND download_batch.state_bits & ${DownloadBatchState.CLEARING} = 0 " +
+            "AND download_batch.state_bits & ${DownloadBatchState.CANCELLED} = 0)"
+    )
+    suspend fun clearPrematurePostCoreCompletions(
+        operationIds: List<String>,
+        nowMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_batch SET state_bits = " +
+            "(state_bits & ~(${DownloadBatchState.COMPLETED} | " +
+            "${DownloadBatchState.NETWORK_WAIT} | ${DownloadBatchState.USER_MOBILE_ALLOWED})) " +
+            "| ${DownloadBatchState.OPEN}, network_generation = NULL, " +
+            "updated_at_ms = :nowMs " +
+            "WHERE batch_id IN (SELECT DISTINCT batch_id FROM download_batch_member " +
+            "WHERE operation_id IN (:operationIds) AND terminal_bits = 0) " +
+            "AND state_bits & ${DownloadBatchState.COMPLETED} != 0 " +
+            "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
+            "AND state_bits & ${DownloadBatchState.CANCELLED} = 0"
+    )
+    suspend fun reopenBatchesForPostCoreOperations(
+        operationIds: List<String>,
         nowMs: Long
     ): Int
 

@@ -5,6 +5,8 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+internal const val DOWNLOAD_BATCH_POST_CORE_PENDING_FRACTION_MILLI = 970
+
 @Entity(
     tableName = "download_batch",
     indices = [

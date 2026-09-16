@@ -260,26 +260,14 @@ internal suspend fun DownloadExecutionRoomStore.markCoreCommittedImpl(
     val normalizedOperationId = normalizeDownloadOperationId(operationId) ?: return false
     return database.withTransaction {
         val dao = database.downloadOperationDao()
-        val header = dao.findHeader(normalizedOperationId)
-            ?: return@withTransaction false
-        val request = readRequestFromHeader(dao, header).request
-        val attemptId = request?.attemptId
+        dao.findHeader(normalizedOperationId) ?: return@withTransaction false
         val changed = dao.markCoreCommitted(
             operationId = normalizedOperationId,
             expectedStates = CORE_COMMIT_SOURCE_STATES,
             updatedAtMs = System.currentTimeMillis()
         ) > 0
         val currentState = dao.findState(normalizedOperationId)
-        val committed = changed || currentState in CORE_COMMITTED_STATES
-        if (committed) {
-            markMembersCompletedForOperationInTransaction(
-                database = database,
-                operationId = normalizedOperationId,
-                stableKey = header.stableKey,
-                attemptId = attemptId
-            )
-        }
-        committed
+        changed || currentState in CORE_COMMITTED_STATES
     }
 }
 

@@ -371,4 +371,51 @@ class AssetEnrichmentCoordinatorTest {
         coordinator.cancelAllAndJoin(timeoutMs = 2_000L)
         scope.cancel()
     }
+
+    @Test
+    fun `bounded active jobs reject overflow without creating a waiting coroutine`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(
+            scope = scope,
+            parallelism = 1,
+            maxActiveJobs = 1
+        )
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val first = coordinator.tryEnqueue("bounded-first") {
+            started.complete(Unit)
+            release.await()
+        }
+
+        withTimeout(2_000L) { started.await() }
+        assertEquals(0, coordinator.availableCapacity())
+        assertEquals(null, coordinator.tryEnqueue("bounded-overflow") {})
+        assertEquals(setOf("bounded-first"), coordinator.activeOperationIds())
+
+        release.complete(Unit)
+        withTimeout(2_000L) { first?.join() }
+        assertEquals(1, coordinator.availableCapacity())
+        val resumed = coordinator.tryEnqueue("bounded-resumed") {}
+        assertTrue(resumed != null)
+        withTimeout(2_000L) { resumed?.join() }
+        scope.cancel()
+    }
+
+    @Test
+    fun `await completion observes only the requested active jobs`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 2)
+        val requestedRelease = CompletableDeferred<Unit>()
+        val unrelatedRelease = CompletableDeferred<Unit>()
+        coordinator.enqueue("requested") { requestedRelease.await() }
+        coordinator.enqueue("unrelated") { unrelatedRelease.await() }
+
+        requestedRelease.complete(Unit)
+        assertTrue(coordinator.awaitCompletion(setOf("requested"), timeoutMs = 2_000L))
+        assertTrue("unrelated" in coordinator.activeOperationIds())
+
+        unrelatedRelease.complete(Unit)
+        assertTrue(coordinator.awaitCompletion(setOf("unrelated"), timeoutMs = 2_000L))
+        scope.cancel()
+    }
 }

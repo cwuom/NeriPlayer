@@ -111,19 +111,20 @@ class DownloadOperationPaginationContractTest {
     }
 
     @Test
-    fun `core commit reads large operation payloads through bounded chunks`() {
+    fun `core commit does not load payload or settle the batch before finalization`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
-                "DownloadExecutionRoomStore.kt"
+                "DownloadExecutionRoomStoreFacadeRead.kt"
         )
         val body = moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
             source = source,
-            methodName = "markCoreCommitted"
+            methodName = "markCoreCommittedImpl"
         )
 
         assertTrue(body.contains("dao.findHeader(normalizedOperationId)"))
-        assertTrue(body.contains("readRequestFromHeader(dao, header)"))
         assertFalse(body.contains("dao.find(normalizedOperationId)"))
+        assertFalse(body.contains("readRequestFromHeader"))
+        assertFalse(body.contains("markMembersCompletedForOperationInTransaction"))
     }
 
     @Test
@@ -152,7 +153,7 @@ class DownloadOperationPaginationContractTest {
         assertTrue(dao.contains("updated_at_ms = :expectedUpdatedAtMs"))
         assertTrue(
             dao.contains(
-                "next_retry_at_ms = CASE WHEN :state = 'RETRYABLE'"
+                "next_retry_at_ms = CASE WHEN :state IN ('RETRYABLE',"
             )
         )
     }

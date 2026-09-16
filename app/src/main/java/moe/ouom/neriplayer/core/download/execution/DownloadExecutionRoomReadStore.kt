@@ -529,7 +529,10 @@ internal object DownloadExecutionRoomReadStore {
                         queueOrder = header.queueOrder,
                         createdAtMs = header.createdAtMs,
                         state = header.state,
-                        updatedAtMs = header.updatedAtMs
+                        updatedAtMs = header.updatedAtMs,
+                        retryCount = header.retryCount,
+                        nextRetryAtMs = header.nextRetryAtMs,
+                        lastErrorCode = header.lastErrorCode
                     )
                 }
             }
@@ -584,7 +587,10 @@ internal object DownloadExecutionRoomReadStore {
                         queueOrder = header.queueOrder,
                         createdAtMs = header.createdAtMs,
                         state = header.state,
-                        updatedAtMs = header.updatedAtMs
+                        updatedAtMs = header.updatedAtMs,
+                        retryCount = header.retryCount,
+                        nextRetryAtMs = header.nextRetryAtMs,
+                        lastErrorCode = header.lastErrorCode
                     )
                 }
             }

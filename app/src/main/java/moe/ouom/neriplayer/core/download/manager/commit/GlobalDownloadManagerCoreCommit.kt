@@ -6,12 +6,11 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.isPostCoreDownloadOperationState
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
@@ -492,7 +491,7 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
         NPLogger.w(
             TAG,
             "core committed artifact 未确认，保留 core 音频，跳过播放桥和目录发布，" +
-                "按完成态结算并安排恢复: " +
+                "保持待收尾并安排恢复: " +
                 "song=${song.name}, operationId=$recoveryOperationId, " +
                 "result=$artifactCommitResult"
         )
@@ -647,10 +646,11 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
             "core 音频已提交，延后资产增强到迁移栅栏释放后: " +
                 "song=${song.name}, operationId=$enrichmentOperationId"
         )
+        PostCoreDownloadRecoveryWorker.schedule(context)
         return
     }
     try {
-        assetEnrichmentCoordinator.enqueue(
+        val enrichmentJob = assetEnrichmentCoordinator.tryEnqueue(
             operationId = enrichmentOperationId,
             attemptId = expectedAttemptId,
             traceToken = traceToken,
@@ -789,8 +789,38 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
                 artifactLeaseId?.let { leaseId ->
                     managedDownloadArtifactLeases.remove(songKey, leaseId)
                 }
+                PostCoreDownloadRecoveryWorker.schedule(context)
             }
         )
+        if (enrichmentJob == null) {
+            releaseEnrichmentMemoryOwnership()
+            artifactLeaseId?.let { leaseId ->
+                managedDownloadArtifactLeases.remove(songKey, leaseId)
+            }
+            updateTaskStatus(
+                songKey = songKey,
+                status = DownloadStatus.QUEUED,
+                expectedAttemptId = expectedAttemptId,
+                settleBatchPresentation = false,
+                operationId = enrichmentOperationId
+            )
+            publishDownloadStage(
+                song = song,
+                stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+                operationId = enrichmentOperationId,
+                attemptId = expectedAttemptId,
+                bytesRead = publishedAudio.sizeBytes,
+                totalBytes = publishedAudio.sizeBytes
+            )
+            PostCoreDownloadRecoveryWorker.schedule(context)
+            NPLogger.d(
+                TAG,
+                "资产增强活动位已满，保留持久凭据等待共享 Worker: " +
+                    "song=${song.name}, operationId=$enrichmentOperationId"
+            )
+            return
+        }
+        PostCoreDownloadRecoveryWorker.schedule(context)
     } catch (error: Throwable) {
         artifactLeaseId?.let { leaseId ->
             managedDownloadArtifactLeases.remove(songKey, leaseId)
@@ -1299,10 +1329,10 @@ internal suspend fun GlobalDownloadManager.settlePostCoreEnrichmentFailure(
         settleBatchPresentation = false,
         operationId = normalizedOperationId
     )
-    if (taskStatus == DownloadStatus.DOWNLOADING) {
+    if (taskStatus == DownloadStatus.QUEUED) {
         publishDownloadStage(
             song = song,
-            stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+            stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
             operationId = normalizedOperationId,
             attemptId = expectedAttemptId
         )
@@ -1316,7 +1346,7 @@ internal suspend fun GlobalDownloadManager.settlePostCoreEnrichmentFailure(
     }
     NPLogger.w(
         TAG,
-        "core 音频未通过最终收尾，保留活动恢复任务: " +
+        "core 音频未通过最终收尾，保留有界恢复任务: " +
             "song=${song.name}, operationId=$normalizedOperationId, " +
             "status=$taskStatus, errorCode=$errorCode, " +
             "error=${error?.javaClass?.simpleName}: ${error?.message}",
@@ -1439,11 +1469,9 @@ internal suspend fun GlobalDownloadManager.schedulePostCoreEnrichmentRetry(
         )
         return
     }
-    val schedule = PersistentDownloadClearFenceStore.withSchedulingPermit(
+    val scheduled = PersistentDownloadClearFenceStore.withSchedulingPermit(
         context = appContext,
-        onFenceActive = {
-            DownloadExecutionSchedule.Rejected("download clear is in progress")
-        },
+        onFenceActive = { false },
         stableKey = song.stableKey(),
         operationId = operationId
     ) {
@@ -1461,45 +1489,22 @@ internal suspend fun GlobalDownloadManager.schedulePostCoreEnrichmentRetry(
                 "增强重试调度许可内票据已失效，跳过宿主调度: " +
                     "song=${song.name}, operationId=$operationId"
             )
-            DownloadExecutionSchedule.Rejected("download clear is in progress")
+            false
         } else {
-            runCatching {
-                DownloadExecutionHosts.default.schedule(
-                    context = appContext,
-                    request = request
-                )
-            }.getOrElse { error ->
-                NPLogger.w(
-                    TAG,
-                    "收尾重试交给 OS 宿主失败，保留持久状态: " +
-                        "song=${song.name}, operationId=$operationId, " +
-                        "reason=$reason, error=${error.message}",
-                    error
-                )
-                null
-            }
+            PostCoreDownloadRecoveryWorker.schedule(appContext)
         }
     }
-    if (schedule == null) {
-        return
-    }
-    when (schedule) {
-        is DownloadExecutionSchedule.Scheduled -> NPLogger.d(
+    if (scheduled == true) {
+        NPLogger.d(
             TAG,
-            "已安排 core 音频增强资产后台重试: song=${song.name}, " +
-                "operationId=$operationId, backend=${schedule.backend}, reason=$reason"
+            "已交给唯一持久 Worker 分批重试 core 音频增强资产: " +
+                "song=${song.name}, operationId=$operationId, reason=$reason"
         )
-
-        is DownloadExecutionSchedule.Deferred -> NPLogger.d(
+    } else {
+        NPLogger.w(
             TAG,
-            "core 音频增强资产重试等待宿主槽位: song=${song.name}, " +
-                "operationId=$operationId, reason=${schedule.reason}"
-        )
-
-        is DownloadExecutionSchedule.Rejected -> NPLogger.w(
-            TAG,
-            "core 音频增强资产重试被宿主拒绝，保留下次恢复: song=${song.name}, " +
-                "operationId=$operationId, reason=${schedule.reason}"
+            "core 音频增强资产共享 Worker 调度失败，保留下次恢复: " +
+                "song=${song.name}, operationId=$operationId, reason=$reason"
         )
     }
 }

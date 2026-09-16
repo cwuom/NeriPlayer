@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
@@ -222,6 +223,7 @@ internal fun GlobalDownloadManager.continueDownloadsOnMobileDataImpl(
             }
         }
         if (!accepted) return@launch
+        PostCoreDownloadRecoveryWorker.schedule(appContext)
         recoverPendingDownloadsOnCurrentNetwork(appContext)
     }
 }

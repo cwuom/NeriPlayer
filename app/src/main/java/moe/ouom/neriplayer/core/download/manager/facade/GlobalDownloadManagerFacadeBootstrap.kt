@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.WifiBoundDownloadWakeWorker
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupRecoveryJournal
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
@@ -77,6 +78,7 @@ internal fun GlobalDownloadManager.onWifiBoundDownloadNetworkRestoredImpl(
             context = appContext,
             reason = "wifi_network_fence_released_$reason"
         )
+        val postCoreScheduled = PostCoreDownloadRecoveryWorker.schedule(appContext)
         if (clearResult.isFailure || !pumpScheduled) {
             WifiBoundDownloadWakeWorker.scheduleAll(appContext)
         }
@@ -84,7 +86,8 @@ internal fun GlobalDownloadManager.onWifiBoundDownloadNetworkRestoredImpl(
             TAG,
             "WIFI 下载网络围栏已收敛并唤醒共享泵: reason=$reason, " +
                 "generation=$capturedNetworkGeneration, " +
-                "cleared=${clearResult.getOrDefault(0)}, pump=$pumpScheduled"
+                "cleared=${clearResult.getOrDefault(0)}, pump=$pumpScheduled, " +
+                "postCore=$postCoreScheduled"
         )
     }
     NPLogger.d(TAG, "WIFI 下载网络已恢复，正在解除批次网络围栏: reason=$reason")
@@ -428,6 +431,10 @@ internal fun GlobalDownloadManager.initializeImpl(context: Context) {
                 )
             }
             // 先恢复 Room 进度再打开交互闸门，避免重启 Worker 以空任务列表运行
+            repairPersistedPostCoreBatchCompletions(
+                context = appContext,
+                admissionTicket = startupAdmissionTicket
+            )
             restorePersistedBatchDownloadPresentations(appContext)
             restorePersistedDownloadProgress(
                 context = appContext,

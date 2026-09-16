@@ -28,9 +28,12 @@ import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceTok
 internal class AssetEnrichmentCoordinator(
     private val scope: CoroutineScope,
     parallelism: Int = DEFAULT_PARALLELISM,
+    maxActiveJobs: Int = Int.MAX_VALUE,
     private val timeoutMs: Long = DEFAULT_TIMEOUT_MS
 ) {
-    private val semaphore = Semaphore(parallelism.coerceAtLeast(1))
+    private val normalizedParallelism = parallelism.coerceAtLeast(1)
+    private val maxActiveJobs = maxActiveJobs.coerceAtLeast(normalizedParallelism)
+    private val semaphore = Semaphore(normalizedParallelism)
     private val jobsByOperationId = ConcurrentHashMap<String, Job>()
     private val jobRegistrationLock = Any()
     private val _hasActiveJobs = MutableStateFlow(false)
@@ -45,11 +48,51 @@ internal class AssetEnrichmentCoordinator(
         traceToken: DownloadOperationTraceToken? = null,
         block: suspend () -> Unit
     ): Job {
+        return enqueueOrNull(
+            operationId = operationId,
+            attemptId = attemptId,
+            onTimeout = onTimeout,
+            onCompletion = onCompletion,
+            traceToken = traceToken,
+            block = block
+        ) ?: error("asset enrichment active-job limit reached")
+    }
+
+    /** 队列已满时不创建等待协程，由持久恢复 Worker 稍后重新接管 */
+    fun tryEnqueue(
+        operationId: String,
+        attemptId: Long? = null,
+        onTimeout: suspend (Throwable) -> Unit = {},
+        onCompletion: (Throwable?) -> Unit = {},
+        traceToken: DownloadOperationTraceToken? = null,
+        block: suspend () -> Unit
+    ): Job? {
+        return enqueueOrNull(
+            operationId = operationId,
+            attemptId = attemptId,
+            onTimeout = onTimeout,
+            onCompletion = onCompletion,
+            traceToken = traceToken,
+            block = block
+        )
+    }
+
+    private fun enqueueOrNull(
+        operationId: String,
+        attemptId: Long?,
+        onTimeout: suspend (Throwable) -> Unit,
+        onCompletion: (Throwable?) -> Unit,
+        traceToken: DownloadOperationTraceToken?,
+        block: suspend () -> Unit
+    ): Job? {
         val normalizedId = operationId.trim().takeIf(String::isNotBlank)
             ?: error("asset enrichment requires operationId")
         return synchronized(jobRegistrationLock) {
             jobsByOperationId[normalizedId]?.let { existing ->
                 if (existing.isActive) return@synchronized existing
+            }
+            if (jobsByOperationId.values.count(Job::isActive) >= maxActiveJobs) {
+                return@synchronized null
             }
             val timeoutCallbackFailure = AtomicReference<Throwable?>(null)
             val operationTraceToken = traceToken
@@ -125,12 +168,38 @@ internal class AssetEnrichmentCoordinator(
         jobsByOperationId.values.count(Job::isActive)
     }
 
+    fun availableCapacity(): Int = synchronized(jobRegistrationLock) {
+        (maxActiveJobs - jobsByOperationId.values.count(Job::isActive)).coerceAtLeast(0)
+    }
+
     /** 返回仍持有活动协程的收尾 operation ID */
     fun activeOperationIds(): Set<String> = synchronized(jobRegistrationLock) {
         jobsByOperationId
             .asSequence()
             .filter { (_, job) -> job.isActive }
             .mapTo(linkedSetOf()) { (operationId, _) -> operationId }
+    }
+
+    /** 等待指定收尾任务释放活动位，不取消仍在进行的工作 */
+    suspend fun awaitCompletion(
+        operationIds: Collection<String>,
+        timeoutMs: Long
+    ): Boolean {
+        val normalizedIds = operationIds.asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        if (normalizedIds.isEmpty()) return true
+        val jobs = synchronized(jobRegistrationLock) {
+            normalizedIds.mapNotNull(jobsByOperationId::get).filter(Job::isActive)
+        }
+        val settled = withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+            jobs.joinAll()
+            true
+        } ?: false
+        return settled && normalizedIds.none { operationId ->
+            jobsByOperationId[operationId]?.isActive == true
+        }
     }
 
     /** 取消所有收尾任务但保留完成回调 */

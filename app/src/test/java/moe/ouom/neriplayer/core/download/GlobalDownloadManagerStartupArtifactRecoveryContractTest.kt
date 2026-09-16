@@ -174,6 +174,35 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     }
 
     @Test
+    fun `restart hands all post core rows to one bounded persistent worker`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val resumeBody = methodBody(source, "resumePostCoreDownloadsAfterProgressRestore")
+        val coreBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val repairBody = methodBody(source, "repairPersistedPostCoreBatchCompletions")
+        val inFlightRecoveryBody = methodBody(source, "recoverInFlightDownloadOperations")
+        val workerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "PostCoreDownloadRecoveryWorker.kt"
+        ).readText()
+        val cancelLegacyBody = methodBody(workerSource, "cancelLegacyPerOperationWork")
+
+        assertTrue(resumeBody.contains("PostCoreDownloadRecoveryWorker.schedule(appContext)"))
+        assertFalse(resumeBody.contains("listByStatesAnyLibrary("))
+        assertFalse(resumeBody.contains("schedulePostCoreEnrichmentRetry("))
+        assertTrue(repairBody.contains("cancelLegacyPerOperationWork("))
+        assertTrue(cancelLegacyBody.contains("ForegroundDownloadWorker.cancelAll("))
+        assertTrue(cancelLegacyBody.contains("WifiBoundDownloadWakeWorker.cancelAll("))
+        assertTrue(cancelLegacyBody.contains("UidtDownloadJobService.cancelAll("))
+        assertTrue(inFlightRecoveryBody.contains("PostCoreDownloadRecoveryWorker.schedule("))
+        assertFalse(inFlightRecoveryBody.contains("recoverPostCoreDownloadOperation("))
+        assertTrue(coreBody.contains("assetEnrichmentCoordinator.tryEnqueue("))
+        assertTrue(coreBody.contains("if (enrichmentJob == null)"))
+        assertTrue(coreBody.contains("DownloadStage.WAITING_HOST"))
+    }
+
+    @Test
     fun `artifact recovery keeps the captured admission ticket through core commit`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
@@ -223,7 +252,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
             startIndex = statePersistIndex
         )
         val enqueueIndex = coreBody.indexOf(
-            "assetEnrichmentCoordinator.enqueue(",
+            "assetEnrichmentCoordinator.tryEnqueue(",
             startIndex = memoryOwnerIndex
         )
 

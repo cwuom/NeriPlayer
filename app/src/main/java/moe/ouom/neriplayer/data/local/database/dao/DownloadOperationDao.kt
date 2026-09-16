@@ -540,10 +540,11 @@ internal interface DownloadOperationDao {
         "UPDATE download_operation SET state = :state, " +
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
             "last_error_code = :errorCode, " +
-            "next_retry_at_ms = CASE WHEN :state = 'RETRYABLE' " +
+            "next_retry_at_ms = CASE WHEN :state IN ('RETRYABLE', " +
+            "'ASSETS_ENRICHING', 'DEGRADED_COMPLETE') " +
             "THEN next_retry_at_ms ELSE NULL END, " +
-            "retry_count = CASE WHEN :state IN ('COMPLETED', 'FINALIZED', " +
-            "'CANCELLED', 'INVALID') THEN 0 ELSE retry_count END " +
+            "retry_count = CASE WHEN :state IN ('CORE_COMMITTED', 'COMPLETED', 'FINALIZED', " +
+            "'METADATA_ACTION_REQUIRED', 'CANCELLED', 'INVALID') THEN 0 ELSE retry_count END " +
             "WHERE operation_id = :operationId AND state IN (:expectedStates) " +
             "AND stop_requested_by_user = 0"
     )
@@ -577,6 +578,46 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
+        "UPDATE download_operation SET state = 'DEGRADED_COMPLETE', " +
+            "retry_count = :retryCount, next_retry_at_ms = :nextRetryAtMs, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
+            "last_error_code = :errorCode " +
+            "WHERE operation_id = :operationId AND state = :expectedState " +
+            "AND retry_count = :expectedRetryCount " +
+            "AND updated_at_ms = :expectedUpdatedAtMs " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun recordPostCoreRetryFailure(
+        operationId: String,
+        expectedState: String,
+        expectedRetryCount: Int,
+        expectedUpdatedAtMs: Long,
+        retryCount: Int,
+        nextRetryAtMs: Long?,
+        updatedAtMs: Long,
+        errorCode: String
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET state = 'INVALID', retry_count = 0, " +
+            "next_retry_at_ms = NULL, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
+            "last_error_code = :errorCode " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND state = 'DEGRADED_COMPLETE' AND retry_count >= :minimumRetryCount " +
+            "AND updated_at_ms = :expectedUpdatedAtMs " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun transitionPostCoreRetryExhausted(
+        operationId: String,
+        stableKey: String,
+        minimumRetryCount: Int,
+        expectedUpdatedAtMs: Long,
+        updatedAtMs: Long,
+        errorCode: String
+    ): Int
+
+    @Query(
         "UPDATE download_operation SET state = 'INVALID', " +
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
             "last_error_code = 'INVALID_OPERATION_PAYLOAD' WHERE operation_id = :operationId " +
@@ -605,10 +646,11 @@ internal interface DownloadOperationDao {
         "UPDATE download_operation SET state = :state, " +
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
             "last_error_code = :errorCode, " +
-            "next_retry_at_ms = CASE WHEN :state = 'RETRYABLE' " +
+            "next_retry_at_ms = CASE WHEN :state IN ('RETRYABLE', " +
+            "'ASSETS_ENRICHING', 'DEGRADED_COMPLETE') " +
             "THEN next_retry_at_ms ELSE NULL END, " +
-            "retry_count = CASE WHEN :state IN ('COMPLETED', 'FINALIZED', " +
-            "'CANCELLED', 'INVALID') THEN 0 ELSE retry_count END " +
+            "retry_count = CASE WHEN :state IN ('CORE_COMMITTED', 'COMPLETED', 'FINALIZED', " +
+            "'METADATA_ACTION_REQUIRED', 'CANCELLED', 'INVALID') THEN 0 ELSE retry_count END " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +
             "AND state IN (:expectedStates) AND stop_requested_by_user = 0 " +
             "AND NOT EXISTS (SELECT 1 FROM download_batch batch " +
@@ -1051,6 +1093,7 @@ internal interface DownloadOperationDao {
     @Query(
         "UPDATE download_operation SET state = 'CORE_COMMITTED', " +
             "updated_at_ms = :updatedAtMs, " +
+            "retry_count = 0, next_retry_at_ms = NULL, " +
             "last_error_code = CASE WHEN stop_requested_by_user = 1 " +
             "AND last_error_code = 'USER_CANCELLED' THEN last_error_code ELSE NULL END " +
             "WHERE operation_id = :operationId " +

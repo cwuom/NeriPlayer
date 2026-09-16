@@ -8,14 +8,13 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.ForegroundDownloadWorker
+import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.model.stableKey
 
 
 internal fun GlobalDownloadManager.wakeDownloadExecutionPump(
@@ -214,60 +213,14 @@ internal fun GlobalDownloadManager.resumePostCoreDownloadsAfterProgressRestore(
 ) {
     val appContext = context.applicationContext
     val capturedAdmissionTicket = admissionTicket ?: return
-    scope.launch {
-        val entries = try {
-            DownloadExecutionRoomStore.listByStatesAnyLibrary(
-                context = appContext,
-                states = listOf(
-                    "CORE_COMMITTED",
-                    "ASSETS_ENRICHING",
-                    "DEGRADED_COMPLETE"
-                ),
-                excludeUserStoppedOperations = true
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            NPLogger.w(
-                TAG,
-                "读取启动收尾恢复任务失败，保留下一次恢复: ${error.message}",
-                error
-            )
-            return@launch
-        }
-        entries.forEachIndexed { index, entry ->
-            if (
-                !isDownloadAdmissionTicketCurrent(
-                    context = appContext,
-                    admissionTicket = capturedAdmissionTicket,
-                    stableKey = entry.request.song.stableKey(),
-                    operationId = entry.request.operationId
-                )
-            ) {
-                return@launch
-            }
-            schedulePostCoreEnrichmentRetry(
-                context = appContext,
-                song = entry.request.song,
-                operationId = entry.request.operationId,
-                expectedAttemptId = entry.request.attemptId,
-                reason = "startup_progress_restored",
-                admissionTicket = capturedAdmissionTicket,
-                allowInFlightState = true
-            )
-            if (
-                index > 0 &&
-                    index % STARTUP_POST_CORE_RESUME_YIELD_BATCH_SIZE == 0
-            ) {
-                yield()
-            }
-        }
-        if (entries.isNotEmpty()) {
-            NPLogger.d(
-                TAG,
-                "启动已直接交接 core 收尾任务: count=${entries.size}"
-            )
-        }
+    if (!isDownloadAdmissionTicketCurrent(appContext, capturedAdmissionTicket)) {
+        return
+    }
+    val scheduled = PostCoreDownloadRecoveryWorker.schedule(appContext)
+    if (scheduled) {
+        NPLogger.d(TAG, "启动已交给唯一持久 Worker 分批恢复 core 收尾任务")
+    } else {
+        NPLogger.w(TAG, "启动调度 core 收尾 Worker 失败，保留下次恢复入口")
     }
 }
 

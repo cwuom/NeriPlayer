@@ -456,12 +456,6 @@ internal suspend fun DownloadExecutionRoomStore.reconcileCoreCommitJournalImpl(
                         updatedAtMs = System.currentTimeMillis()
                     ) > 0
                 ) {
-                    markMembersCompletedForOperationInTransaction(
-                        database = database,
-                        operationId = normalizedOperationId,
-                        stableKey = requestStableKey,
-                        attemptId = request.attemptId
-                    )
                     return@withTransaction CoreCommitJournalRecovery(
                         outcome = CoreCommitJournalRecovery.Outcome.COMMITTED,
                         state = "CORE_COMMITTED",
@@ -492,12 +486,6 @@ internal suspend fun DownloadExecutionRoomStore.reconcileCoreCommitJournalImpl(
                             updatedAtMs = System.currentTimeMillis()
                         ) > 0
                     ) {
-                        markMembersCompletedForOperationInTransaction(
-                            database = database,
-                            operationId = normalizedOperationId,
-                            stableKey = requestStableKey,
-                            attemptId = request.attemptId
-                        )
                         return@withTransaction CoreCommitJournalRecovery(
                             outcome = CoreCommitJournalRecovery.Outcome.COMMITTED,
                             state = "CORE_COMMITTED",

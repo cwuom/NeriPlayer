@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.core.download.artifact
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ManagedDownloadArtifactCoordinatorPendingTest {
@@ -91,6 +93,23 @@ class ManagedDownloadArtifactCoordinatorPendingTest {
                 hasAudioReference = true
             )
         )
+    }
+
+    @Test
+    fun `batch completion counts only finalized artifacts`() {
+        assertTrue(
+            isBatchPresentationCompletedArtifactState(
+                ManagedDownloadArtifactState.FINALIZED
+            )
+        )
+        listOf(
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+            ManagedDownloadArtifactState.REPAIR_REQUIRED
+        ).forEach { state ->
+            assertFalse(state.name, isBatchPresentationCompletedArtifactState(state))
+        }
     }
 
     private fun entry(

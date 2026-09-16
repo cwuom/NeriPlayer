@@ -39,7 +39,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
             "stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING",
             rejectionIndex
         )
-        val enrichmentIndex = body.indexOf("assetEnrichmentCoordinator.enqueue(", rejectionIndex)
+        val enrichmentIndex = body.indexOf("assetEnrichmentCoordinator.tryEnqueue(", rejectionIndex)
 
         assertTrue(artifactResultIndex >= 0)
         assertTrue(artifactCommittedIndex > artifactCallIndex)
@@ -108,7 +108,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         val committingIndex = indexOfOperationCall(body, "markCommitting")
         val metadataWriteIndex = body.indexOf("persistDownloadedMetadata")
         val coreCommittedIndex = indexOfOperationCall(body, "markCoreCommitted")
-        val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.enqueue(")
+        val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.tryEnqueue(")
         val enrichmentBody = methodBody(source, "enrichCoreCommittedDownload")
         val finalizedBody = methodBody(source, "publishFinalizedDownload")
         val completedIndex = finalizedBody.indexOf("DownloadStatus.COMPLETED")
@@ -154,7 +154,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         val enrichmentStageIndex = body.indexOf(
             "stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING"
         )
-        val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.enqueue(")
+        val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.tryEnqueue(")
 
         assertTrue(
             "a core-committed audio must remain an active enrichment task",
@@ -301,7 +301,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     }
 
     @Test
-    fun `post core enrichment failures keep an active task and retry handoff`() {
+    fun `post core enrichment failures keep a durable bounded retry handoff`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -314,9 +314,9 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         assertTrue(enrichmentBody.contains("settlePostCoreEnrichmentFailure"))
         assertTrue(unsupportedBody.contains("settlePostCoreEnrichmentFailure"))
         assertTrue(settleBody.contains("resolvePostCoreEnrichmentTaskStatus"))
-        assertTrue(settleBody.contains("DownloadStatus.DOWNLOADING"))
+        assertTrue(settleBody.contains("DownloadStatus.QUEUED"))
         assertTrue(
-            settleBody.contains("stage = AudioDownloadManager.DownloadStage.WAITING_RETRY")
+            settleBody.contains("stage = AudioDownloadManager.DownloadStage.WAITING_HOST")
         )
         assertTrue(settleBody.contains("schedulePostCoreEnrichmentRetry"))
         assertFalse(enrichmentBody.contains("DownloadStatus.FAILED"))

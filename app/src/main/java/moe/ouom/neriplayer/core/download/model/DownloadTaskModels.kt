@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download
 import kotlin.math.floor
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.database.entity.DOWNLOAD_BATCH_POST_CORE_PENDING_FRACTION_MILLI
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.util.format.formatFileSize
@@ -53,6 +54,12 @@ internal fun batchDownloadProgressForDisplay(
 }
 
 private const val INCOMPLETE_BATCH_PROGRESS_CEILING = 0.99f
+private const val DOWNLOAD_TRANSFER_PROGRESS_SHARE = 0.90f
+private const val DOWNLOAD_VERIFYING_PROGRESS_FRACTION = 0.92f
+private const val DOWNLOAD_CORE_COMMIT_PROGRESS_FRACTION = 0.94f
+private const val DOWNLOAD_POST_CORE_PROGRESS_FRACTION =
+    DOWNLOAD_BATCH_POST_CORE_PENDING_FRACTION_MILLI / 1_000f
+private const val DOWNLOAD_FINALIZING_PROGRESS_FRACTION = 0.99f
 
 internal fun aggregateBatchDownloadProgress(
     presentation: BatchDownloadPresentationState,
@@ -287,14 +294,32 @@ private fun mergedBatchPresentationMaximumObservedFraction(
 }
 
 internal fun downloadProgressFraction(progress: AudioDownloadManager.DownloadProgress): Float {
-    if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
-        return 1f
+    val transferFraction = if (progress.totalBytes > 0L) {
+        (progress.bytesRead.toFloat() / progress.totalBytes.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
     }
-    if (progress.totalBytes <= 0L) {
-        return 0f
+    val weightedTransferFraction = transferFraction * DOWNLOAD_TRANSFER_PROGRESS_SHARE
+    return when (progress.stage) {
+        AudioDownloadManager.DownloadStage.VERIFYING_AUDIO ->
+            maxOf(weightedTransferFraction, DOWNLOAD_VERIFYING_PROGRESS_FRACTION)
+        AudioDownloadManager.DownloadStage.COMMITTING_CORE ->
+            DOWNLOAD_CORE_COMMIT_PROGRESS_FRACTION
+        AudioDownloadManager.DownloadStage.ASSETS_ENRICHING ->
+            DOWNLOAD_POST_CORE_PROGRESS_FRACTION
+        AudioDownloadManager.DownloadStage.FINALIZING ->
+            DOWNLOAD_FINALIZING_PROGRESS_FRACTION
+        AudioDownloadManager.DownloadStage.WAITING_HOST,
+        AudioDownloadManager.DownloadStage.WAITING_RETRY -> if (transferFraction >= 1f) {
+            DOWNLOAD_POST_CORE_PROGRESS_FRACTION
+        } else {
+            weightedTransferFraction
+        }
+        AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
+        AudioDownloadManager.DownloadStage.RESOLVING_SOURCE,
+        AudioDownloadManager.DownloadStage.PREPARING_STORAGE,
+        AudioDownloadManager.DownloadStage.TRANSFERRING -> weightedTransferFraction
     }
-    return (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
-        .coerceIn(0f, 1f)
 }
 
 /** renders only values that are known so an unknown content length stays honest */

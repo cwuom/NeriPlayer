@@ -387,24 +387,12 @@ internal fun GlobalDownloadManager.seedInitialBatchDownloadPresentation(
                 task.status == DownloadStatus.WAITING_NETWORK
         }
         .mapTo(linkedSetOf()) { task -> task.song.stableKey() }
-    val completedSongKeys = if (currentSnapshot == null) {
-        emptySet()
-    } else {
-        songs
-            .asSequence()
-            .map { song -> song to song.stableKey() }
-            .filter { (_, songKey) -> songKey.isNotBlank() }
-            .filter { (_, songKey) -> songKey !in activeTaskSongKeys }
-            .filter { (_, songKey) ->
-                !isDownloadClearFenceActive(context, stableKey = songKey)
-            }
-            .filter { (song, _) ->
-                val snapshotEntryUsable = ManagedDownloadStorage
-                    .findDownloadedAudioIncludingMetadataLess(currentSnapshot, song)
-                    ?.let(::isUsableInitialDownloadedAudio) == true
-                snapshotEntryUsable
-            }
-            .mapTo(linkedSetOf()) { (_, songKey) -> songKey }
+    val completedSongKeys = findStrictlyCompletedBatchSongKeys(
+        songs = songs,
+        snapshot = currentSnapshot
+    ).filterTo(linkedSetOf()) { songKey ->
+        songKey !in activeTaskSongKeys &&
+            !isDownloadClearFenceActive(context, stableKey = songKey)
     }
     val explicitlyKnownCompletedKeys = knownCompletedSongKeys
         .map(String::trim)

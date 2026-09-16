@@ -155,7 +155,19 @@ internal suspend fun DownloadExecutionRoomStore.updateStateImpl(
         val current = dao.findHeader(operationId) ?: return@withTransaction false
         val nextState = resolveDownloadOperationState(current.state, state)
             ?: return@withTransaction false
-        if (nextState == current.state) return@withTransaction !current.stopRequestedByUser
+        val settlesBatchCompletion = nextState == DownloadOperationState.COMPLETED.wireName ||
+            nextState == DownloadOperationState.FINALIZED.wireName
+        if (nextState == current.state) {
+            if (!current.stopRequestedByUser && settlesBatchCompletion) {
+                markMembersCompletedForOperationInTransaction(
+                    database = database,
+                    operationId = operationId,
+                    stableKey = current.stableKey,
+                    attemptId = null
+                )
+            }
+            return@withTransaction !current.stopRequestedByUser
+        }
         if (nextState == DownloadOperationState.RETRYABLE.wireName) {
             val retryPlan = planDownloadRetry(
                 currentRetryCount = current.retryCount,
@@ -173,13 +185,24 @@ internal suspend fun DownloadExecutionRoomStore.updateStateImpl(
                 errorCode = errorCode
             ) > 0
         }
-        dao.transitionState(
+        val changed = dao.transitionState(
             operationId = operationId,
             expectedStates = listOf(current.state),
             state = nextState,
             updatedAtMs = nowMs,
             errorCode = errorCode
         ) > 0
+        if (changed && settlesBatchCompletion) {
+            // 最终 operation 和批次成员必须原子落库，避免进程恰好在
+            // UI 异步终态回写前退出后留下永久待处理成员
+            markMembersCompletedForOperationInTransaction(
+                database = database,
+                operationId = operationId,
+                stableKey = current.stableKey,
+                attemptId = null
+            )
+        }
+        changed
     }
 }
 

@@ -134,7 +134,7 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
         val finalizationBody = methodBody(source, "finalizeCompletedDownload")
         val enrichmentBody = methodBody(source, "enrichCoreCommittedDownload")
         val enqueueBody = source.substringAfter(
-            "val enrichmentJob = assetEnrichmentCoordinator.enqueue("
+            "val enrichmentJob = assetEnrichmentCoordinator.tryEnqueue("
         ).substringBefore("private suspend fun settlePostCoreEnrichmentFailure(")
 
         assertTrue(finalizationBody.contains("if (directoryMutationLeaseOwned)"))
@@ -325,7 +325,7 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
             "status = DownloadStatus.COMPLETED"
         )
         val enrichmentIndex = completionBody.indexOf(
-            "assetEnrichmentCoordinator.enqueue("
+            "assetEnrichmentCoordinator.tryEnqueue("
         )
 
         assertTrue(pendingGuard >= 0)
