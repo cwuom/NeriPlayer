@@ -807,11 +807,25 @@ internal class ManagedDownloadTreeDirectories(
             deleteDocument(context, marker)
             return null
         }
+        if (!materializeNoMediaMarker(context, marker)) {
+            deleteDocument(context, marker)
+            return null
+        }
         return marker.takeIf { isAccessibleMarker(context, it) }
             ?: run {
                 deleteDocument(context, marker)
                 null
             }
+    }
+
+    private fun materializeNoMediaMarker(context: Context, marker: DocumentFile): Boolean {
+        return try {
+            context.contentResolver.openOutputStream(marker.uri, "w")?.use { } != null
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun isAccessibleMarker(context: Context, marker: DocumentFile): Boolean {

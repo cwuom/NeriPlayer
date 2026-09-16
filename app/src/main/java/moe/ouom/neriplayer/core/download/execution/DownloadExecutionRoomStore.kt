@@ -536,7 +536,23 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Int {
         val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
-        return deleteOperationsWithAdmissions(database, ids)
+        return ids.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
+            database.withTransaction {
+                val dao = database.downloadOperationDao()
+                // core 文件保留时停止凭据也必须保留，否则目录恢复会重新创建旧任务
+                dao.retainClearedArtifactRecoveryStops(
+                    chunk, CLEARED_ARTIFACT_RECOVERY_STOP_STATES, System.currentTimeMillis()
+                )
+                val removableIds = dao.findAllHeadersByOperationIds(chunk)
+                    .filterNot { header ->
+                        header.stopRequestedByUser &&
+                            header.state in CLEARED_ARTIFACT_RECOVERY_STOP_STATES
+                    }
+                    .map { it.operationId }
+                dao.deleteHostAdmissions(chunk)
+                if (removableIds.isEmpty()) 0 else dao.deleteOperations(removableIds)
+            }
+        }
     }
 
     /**

@@ -238,6 +238,26 @@ internal object ManagedDownloadStorage {
                 managedFileRoots = managedFileRoots,
                 managedTreeRoots = managedTreeRoots
             )
+        },
+        contentReferenceBatchDeleteOperation = { context, references ->
+            val batchResult = ManagedDownloadReferenceIo.deleteContentReferencesBatch(
+                context = context,
+                uris = references.map { reference ->
+                    (reference.reference as StorageReference.SafRef).uri
+                }
+            )
+            batchResult.results.takeIf { batchResult.supported }?.map { result ->
+                when (result) {
+                    ManagedDownloadReferenceIo.DeleteResult.Deleted ->
+                        StorageMutationResult.Deleted
+                    ManagedDownloadReferenceIo.DeleteResult.Missing ->
+                        StorageMutationResult.Missing
+                    ManagedDownloadReferenceIo.DeleteResult.PermissionLost ->
+                        StorageMutationResult.PermissionLost
+                    is ManagedDownloadReferenceIo.DeleteResult.ProviderFailure ->
+                        StorageMutationResult.ProviderFailure(result.error)
+                }
+            }
         }
     )
     internal val migrationFinalizer = ManagedDownloadMigrationFinalizer(
@@ -1477,6 +1497,15 @@ internal object ManagedDownloadStorage {
         references: Collection<String?>,
         onDeleteAttemptFinished: (String, Boolean) -> Unit = { _, _ -> }
     ): Set<String> = this.deleteReferencesImpl(context, references, onDeleteAttemptFinished)
+    internal suspend fun deleteFullLibraryReferences(
+        context: Context,
+        references: Collection<String?>,
+        onDeleteAttemptFinished: (String, Boolean) -> Unit = { _, _ -> }
+    ): Set<String> = this.deleteFullLibraryReferencesImpl(
+        context,
+        references,
+        onDeleteAttemptFinished
+    )
     suspend fun saveAudioFromTemp(
         context: Context,
         tempFile: File,

@@ -123,6 +123,69 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         assertTrue(resultDeleteBody.contains("deleteLease.close()"))
     }
 
+    @Test
+    fun `full delete cancellation skips duplicate provider cleanup before snapshot delete`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val cancellationBody = methodBody(source, "requestAllDownloadTaskCancellation")
+        val cleanupBody = methodBody(source, "cancelDownloadTasksInBackground")
+
+        assertTrue(
+            cancellationBody.contains(
+                "skipProviderArtifactCleanup =\n" +
+                    "                                purpose == DownloadClearPurpose.FULL_LIBRARY_DELETE"
+            )
+        )
+        assertTrue(
+            cleanupBody.contains(
+                "if (awaitProviderCleanup && !skipProviderArtifactCleanup)"
+            )
+        )
+        assertTrue(cleanupBody.contains("if (skipProviderArtifactCleanup)"))
+        assertTrue(
+            cleanupBody.indexOf("if (skipProviderArtifactCleanup)") <
+                cleanupBody.lastIndexOf("if (awaitProviderCleanup)")
+        )
+    }
+
+    @Test
+    fun `full delete uses trusted compacted directory deletion`() {
+        val storageSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
+        ).readText()
+        val deleteSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/cleanup/ManagedDownloadDeletePlanner.kt"
+        ).readText()
+        val catalogSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+
+        assertTrue(deleteSource.contains("DOWNLOAD_TEMPORARY_DIR_NAME"))
+        assertTrue(deleteSource.contains("COVER_SUBDIRECTORY"))
+        assertTrue(deleteSource.contains("LYRIC_SUBDIRECTORY"))
+        assertTrue(storageSource.contains("deleteFullLibraryReferences("))
+        assertTrue(catalogSource.contains("deleteFullLibraryReferences("))
+    }
+
+    @Test
+    fun `durable full delete returns after background cleanup is accepted`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val deleteBody = methodBody(source, "deleteDownloadedSongsWithResultImpl")
+        val launchIndex = deleteBody.indexOf("launchDurableFullLibraryDeleteSession(")
+        val pendingResultIndex = deleteBody.indexOf("physicalCleanupPending = true")
+
+        assertTrue(deleteBody.contains("session.fullLibraryDelete && session.deleteIntentDurable"))
+        assertTrue(launchIndex >= 0)
+        assertTrue(pendingResultIndex > launchIndex)
+        assertTrue(source.contains("FULL_LIBRARY_DELETE_ACK_TARGET_MS = 5_000L"))
+        assertTrue(source.contains("overBudget="))
+        assertTrue(source.contains("deleteDownloadedSongsOnIo(context, session)"))
+        assertTrue(source.contains("scheduleFullLibraryDeleteRecoveryIfNeeded("))
+    }
+
     private fun locateProjectFile(path: String): File {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {

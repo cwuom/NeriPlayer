@@ -269,6 +269,22 @@ private suspend fun GlobalDownloadManager.settlePostCoreRecoveryAttempts(
         if (!isDownloadAdmissionTicketCurrent(context, admissionTicket)) return
         val operationId = attemptedEntry.request.operationId
         val currentEntry = currentEntries[operationId] ?: return@forEach
+        if (!isPostCoreRecoveryNetworkEligible(
+                requiresWifiNetwork = currentEntry.request.requiresWifiNetwork,
+                currentNetworkType = context.currentDownloadNetworkTypeOrNull(),
+                mobileDataOverrideAllowed = mobileDataDownloadOverrideAllowed
+            )
+        ) {
+            // 断网和 Wi-Fi 策略等待不消耗资产失败次数
+            updateTaskStatus(
+                songKey = currentEntry.request.song.stableKey(),
+                status = DownloadStatus.WAITING_NETWORK,
+                expectedAttemptId = currentEntry.request.attemptId,
+                settleBatchPresentation = false,
+                operationId = operationId
+            )
+            return@forEach
+        }
         if (
             currentEntry.lastErrorCode == METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR &&
                 isMetadataEmbeddingActionRequired(
@@ -310,7 +326,7 @@ private suspend fun GlobalDownloadManager.settlePostCoreRecoveryAttempts(
             )
             publishDownloadStage(
                 song = currentEntry.request.song,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
                 operationId = operationId,
                 attemptId = currentEntry.request.attemptId
             )

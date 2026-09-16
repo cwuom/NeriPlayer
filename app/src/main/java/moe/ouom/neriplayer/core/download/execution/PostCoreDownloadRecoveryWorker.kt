@@ -11,9 +11,13 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -28,23 +32,31 @@ class PostCoreDownloadRecoveryWorker(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val appContext = applicationContext
-        if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
-            return@withContext Result.retry()
-        }
-        GlobalDownloadManager.initialize(appContext)
-        val startupReady = withTimeoutOrNull(STARTUP_RESTORE_WAIT_MS) {
-            GlobalDownloadManager.startupProgressRestoreReady.await()
-            true
-        } == true
-        if (!startupReady || ForegroundDownloadWorker.isPumpBlocked(appContext)) {
-            return@withContext Result.retry()
-        }
-
+        val generation = inputData.getLong(GENERATION_KEY, 0L)
+        if (!scheduleCoordinator.claimWorker(generation)) return@withContext Result.success()
+        var workWillRetry = true
+        var continueSoon = false
         try {
+            if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
+                return@withContext Result.retry()
+            }
+            GlobalDownloadManager.initialize(appContext)
+            val startupReady = withTimeoutOrNull(STARTUP_RESTORE_WAIT_MS) {
+                GlobalDownloadManager.startupProgressRestoreReady.await()
+                true
+            } == true
+            if (!startupReady || ForegroundDownloadWorker.isPumpBlocked(appContext)) {
+                return@withContext Result.retry()
+            }
             when (GlobalDownloadManager.recoverPostCoreDownloadsForWorker(appContext)) {
-                PostCoreDownloadRecoveryResult.SETTLED -> Result.success()
+                PostCoreDownloadRecoveryResult.SETTLED -> {
+                    workWillRetry = false
+                    Result.success()
+                }
                 PostCoreDownloadRecoveryResult.CONTINUE_SOON -> {
-                    if (scheduleSuccessor(appContext)) Result.success() else Result.retry()
+                    continueSoon = true
+                    workWillRetry = false
+                    Result.success()
                 }
                 PostCoreDownloadRecoveryResult.RETRY,
                 PostCoreDownloadRecoveryResult.BLOCKED -> Result.retry()
@@ -54,11 +66,14 @@ class PostCoreDownloadRecoveryWorker(
                         Result.retry()
                     } else {
                         WifiBoundDownloadWakeWorker.scheduleAll(appContext)
+                        workWillRetry = false
                         Result.success()
                     }
                 }
             }
         } catch (cancellation: CancellationException) {
+            // 系统停止会重新调度持久 Worker，释放内存 owner 允许显式新请求接管
+            scheduleCoordinator.complete(generation, workWillRetry = false)
             throw cancellation
         } catch (error: Throwable) {
             NPLogger.w(
@@ -67,6 +82,15 @@ class PostCoreDownloadRecoveryWorker(
                 error
             )
             Result.retry()
+        } finally {
+            val completion = if (continueSoon) {
+                scheduleCoordinator.completeWithSuccessor(generation)
+            } else {
+                scheduleCoordinator.complete(generation, workWillRetry)
+            }
+            if (completion == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR) {
+                schedule(appContext, initialDelayMs = SUCCESSOR_DELAY_MS)
+            }
         }
     }
 
@@ -77,25 +101,55 @@ class PostCoreDownloadRecoveryWorker(
         private const val RETRY_BACKOFF_MS = 30_000L
         private const val SUCCESSOR_DELAY_MS = 500L
         private const val STARTUP_RESTORE_WAIT_MS = 20_000L
+        private const val GENERATION_KEY = "post_core_generation"
+        internal val scheduleCoordinator = DownloadPumpScheduleCoordinator()
+        private val enqueueCallbackExecutor = Executor { it.run() }
 
         /** 同一时间只保留一个系统任务，避免歌曲数直接放大 WorkManager 队列 */
-        fun schedule(context: Context): Boolean {
+        fun schedule(context: Context, initialDelayMs: Long = 0L): Boolean =
+            enqueue(context, initialDelayMs, retryEnqueue = true)
+
+        private fun enqueue(context: Context, initialDelayMs: Long, retryEnqueue: Boolean): Boolean {
             val appContext = context.applicationContext
             if (PersistentDownloadClearFenceStore.isActive(appContext)) return false
+            val generation = scheduleCoordinator.request() ?: return true
+            if (!scheduleCoordinator.markWorkEnqueueStarted(generation)) return true
             return runCatching {
-                WorkManager.getInstance(appContext).enqueueUniqueWork(
+                val operation = WorkManager.getInstance(appContext).enqueueUniqueWork(
                     WORK_NAME,
-                    ExistingWorkPolicy.KEEP,
-                    buildRequest()
+                    ExistingWorkPolicy.APPEND_OR_REPLACE,
+                    buildRequest(initialDelayMs = initialDelayMs, generation = generation)
+                )
+                operation.result.addListener(
+                    Runnable {
+                        runCatching { operation.result.get() }.onFailure { error ->
+                            handleEnqueueFailure(appContext, generation, retryEnqueue, error)
+                        }
+                    },
+                    enqueueCallbackExecutor
                 )
                 true
             }.onFailure { error ->
-                NPLogger.w(
-                    "NERI-PostCoreRecovery",
-                    "下载收尾 Worker 调度失败，启动恢复会再次接管: ${error.message}",
-                    error
-                )
+                handleEnqueueFailure(appContext, generation, retryEnqueue, error)
             }.getOrDefault(false)
+        }
+
+        private fun handleEnqueueFailure(
+            context: Context,
+            generation: Long,
+            retryEnqueue: Boolean,
+            error: Throwable
+        ) {
+            if (!scheduleCoordinator.failEnqueue(generation)) return
+            NPLogger.w("NERI-PostCoreRecovery", "持久收尾入队未确认，保留 Room 凭据", error)
+            if (retryEnqueue) {
+                GlobalDownloadManager.scope.launch {
+                    delay(1_000L)
+                    if (scheduleCoordinator.canRetry(generation)) {
+                        enqueue(context, initialDelayMs = 0L, retryEnqueue = false)
+                    }
+                }
+            }
         }
 
         /** 升级后撤销旧版本按歌曲创建的宿主任务，Room operation 继续由共享任务接管 */
@@ -113,20 +167,9 @@ class PostCoreDownloadRecoveryWorker(
             }
         }
 
-        /** 本轮已有完成进展时追加短延迟后继，避免正常大队列进入指数退避 */
-        private fun scheduleSuccessor(context: Context): Boolean {
-            return runCatching {
-                WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-                    WORK_NAME,
-                    ExistingWorkPolicy.APPEND_OR_REPLACE,
-                    buildRequest(initialDelayMs = SUCCESSOR_DELAY_MS)
-                )
-                true
-            }.getOrDefault(false)
-        }
-
-        internal fun buildRequest(initialDelayMs: Long = 0L): OneTimeWorkRequest {
+        internal fun buildRequest(initialDelayMs: Long = 0L, generation: Long = 0L): OneTimeWorkRequest {
             val builder = OneTimeWorkRequestBuilder<PostCoreDownloadRecoveryWorker>()
+                .setInputData(workDataOf(GENERATION_KEY to generation))
                 .setBackoffCriteria(
                     BackoffPolicy.EXPONENTIAL,
                     RETRY_BACKOFF_MS,

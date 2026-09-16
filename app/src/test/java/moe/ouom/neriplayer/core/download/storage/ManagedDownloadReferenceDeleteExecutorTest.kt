@@ -679,6 +679,94 @@ class ManagedDownloadReferenceDeleteExecutorTest {
         assertEquals(references.size, inspectedReferenceCount.get())
     }
 
+    @Test
+    fun `large saf delete uses bounded provider batches without per reference fallback`() = runBlocking {
+        val references = (0 until 3_864).map { index ->
+            "content://documents.test/document/library-$index"
+        }
+        val batchCalls = AtomicInteger(0)
+        val individualDeleteCalls = AtomicInteger(0)
+        val activeBatches = AtomicInteger(0)
+        val maximumActiveBatches = AtomicInteger(0)
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceDeleteOperation = { _, _, _, _ ->
+                individualDeleteCalls.incrementAndGet()
+                StorageMutationResult.Deleted
+            },
+            contentReferenceBatchDeleteOperation = { _, batch ->
+                assertTrue(batch.size <= SAF_REFERENCE_DELETE_BATCH_SIZE)
+                batchCalls.incrementAndGet()
+                val activeCount = activeBatches.incrementAndGet()
+                maximumActiveBatches.accumulateAndGet(activeCount) { current, candidate ->
+                    maxOf(current, candidate)
+                }
+                try {
+                    Thread.sleep(2L)
+                    List(batch.size) { StorageMutationResult.Deleted }
+                } finally {
+                    activeBatches.decrementAndGet()
+                }
+            }
+        )
+
+        val result = executor.deleteReferencesConcurrently(
+            context = mock(Context::class.java),
+            references = trustedReferences(references),
+            deletePolicy = deletePolicyFor(references)
+        )
+
+        assertEquals(references.toSet(), result.deletedReferences)
+        assertFalse(result.hasUnconfirmedDeletes)
+        assertEquals(0, individualDeleteCalls.get())
+        assertEquals(
+            (references.size + SAF_REFERENCE_DELETE_BATCH_SIZE - 1) /
+                SAF_REFERENCE_DELETE_BATCH_SIZE,
+            batchCalls.get()
+        )
+        assertTrue(maximumActiveBatches.get() <= SAF_REFERENCE_DELETE_BATCH_PARALLELISM)
+    }
+
+    @Test
+    fun `failed batch entries alone use compatible per reference fallback`() = runBlocking {
+        val references = (0 until 12).map { index ->
+            "content://documents.test/document/fallback-$index"
+        }
+        val fallbackReferences = ConcurrentHashMap.newKeySet<String>()
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceDeleteOperation = { _, reference, _, _ ->
+                fallbackReferences += reference.externalReference
+                StorageMutationResult.Deleted
+            },
+            contentReferenceBatchDeleteOperation = { _, batch ->
+                batch.mapIndexed { index, _ ->
+                    if (index % 3 == 0) {
+                        StorageMutationResult.ProviderFailure(
+                            IllegalStateException("batch rejected")
+                        )
+                    } else {
+                        StorageMutationResult.Deleted
+                    }
+                }
+            }
+        )
+
+        val result = executor.deleteReferencesConcurrently(
+            context = mock(Context::class.java),
+            references = trustedReferences(references),
+            deletePolicy = deletePolicyFor(references)
+        )
+
+        assertEquals(references.toSet(), result.deletedReferences)
+        assertEquals(
+            references.filterIndexed { index, _ -> index % 3 == 0 }.toSet(),
+            fallbackReferences
+        )
+    }
+
     private suspend fun <T> withTreeAliases(
         sourceUri: Uri,
         singleDocumentUri: Uri,

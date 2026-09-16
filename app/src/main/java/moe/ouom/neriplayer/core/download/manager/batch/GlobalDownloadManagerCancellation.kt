@@ -1245,7 +1245,9 @@ internal fun GlobalDownloadManager.requestAllDownloadTaskCancellation(
                             operationRequests = clearOperationRequests.values,
                             executionOperationIds = clearOperationIds,
                             workingFilesBySongKey = clearWorkingFilesBySongKey,
-                            clearToken = clearToken
+                            clearToken = clearToken,
+                            skipProviderArtifactCleanup =
+                                purpose == DownloadClearPurpose.FULL_LIBRARY_DELETE
                         )
                         updateDownloadClearSettlementProgress(
                             context = appContext,
@@ -1479,10 +1481,6 @@ internal fun GlobalDownloadManager.requestAllDownloadTaskCancellation(
             )
             // 4/4 只保留在内存里用于本帧收尾，不能再持久化；finally 会立即结束横幅
             clearPersistedDownloadClearProgress(appContext)
-            if (purpose == DownloadClearPurpose.TASK_PROGRESS) {
-                // 清空期间被取消的 core 收尾必须在栅栏释放后重新接管
-                scheduleStartupArtifactRecovery(appContext)
-            }
             // 栅栏释放后只登记一次后台对账，清空交互路径不等待目录扫描
             scheduleCatalogReconcile(appContext, forceRefresh = true)
         } finally {

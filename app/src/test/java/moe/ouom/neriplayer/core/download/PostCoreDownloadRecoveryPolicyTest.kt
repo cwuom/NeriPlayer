@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download
 import androidx.work.BackoffPolicy
 import androidx.work.NetworkType
 import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
+import moe.ouom.neriplayer.core.download.execution.DownloadPumpCompletion
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +11,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PostCoreDownloadRecoveryPolicyTest {
+    @Test
+    fun `late core commits coalesce into one successor instead of being lost at worker completion`() {
+        val coordinator = PostCoreDownloadRecoveryWorker.scheduleCoordinator
+        coordinator.invalidate()
+        try {
+            val generation = requireNotNull(coordinator.request())
+            assertTrue(coordinator.markWorkEnqueueStarted(generation))
+            assertTrue(coordinator.claimWorker(generation))
+            repeat(1_000) { assertEquals(null, coordinator.request()) }
+            assertEquals(
+                DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR,
+                coordinator.complete(generation, workWillRetry = false)
+            )
+            val successor = requireNotNull(coordinator.request())
+            assertTrue(successor > generation)
+            assertTrue(coordinator.markWorkEnqueueStarted(successor))
+            assertTrue(coordinator.claimWorker(successor))
+            assertEquals(DownloadPumpCompletion.COMPLETED, coordinator.complete(successor, false))
+        } finally {
+            coordinator.invalidate()
+        }
+    }
+
     @Test
     fun `shared worker requires connectivity and uses durable exponential retry`() {
         val request = PostCoreDownloadRecoveryWorker.buildRequest()

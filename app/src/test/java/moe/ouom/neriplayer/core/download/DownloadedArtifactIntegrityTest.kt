@@ -9,6 +9,36 @@ import moe.ouom.neriplayer.data.model.stableKey
 
 class DownloadedArtifactIntegrityTest {
     @Test
+    fun `source without artist does not require an invented artist`() {
+        val song = remoteSong().copy(artist = "")
+        val result = verifyDownloadedArtifactIntegrity(
+            song = song,
+            metadata = completeMetadata(song).copy(artist = ""),
+            references = readableReferences(),
+            expectCover = true,
+            expectOriginalLyric = true,
+            expectTranslatedLyric = true,
+            expectRomanizedLyric = true
+        )
+        assertTrue(result.issues.toString(), result.isValid)
+    }
+
+    @Test
+    fun `known source artist remains required`() {
+        val song = remoteSong()
+        val result = verifyDownloadedArtifactIntegrity(
+            song = song,
+            metadata = completeMetadata(song).copy(artist = ""),
+            references = readableReferences(),
+            expectCover = true,
+            expectOriginalLyric = true,
+            expectTranslatedLyric = true,
+            expectRomanizedLyric = true
+        )
+        assertEquals(setOf(DownloadedArtifactIntegrityIssue.ARTIST_MISSING), result.issues)
+    }
+
+    @Test
     fun `complete downloaded artifacts pass integrity verification`() {
         val song = remoteSong()
         val metadata = completeMetadata(song)

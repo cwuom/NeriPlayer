@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -79,6 +81,10 @@ internal suspend fun GlobalDownloadManager.finalizeCompletedDownload(
         return
     }
     val songKey = song.stableKey()
+    if (!DownloadExecutionRoomStore.isArtifactRecoveryAllowed(appContext, operationId)) {
+        NPLogger.d(TAG, "持久下载状态禁止自动收尾: operationId=$operationId")
+        return
+    }
     val sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
     val currentTask = taskStore.findTask(songKey)
     if (

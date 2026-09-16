@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.DownloadedSongMetadataSyncOutcome
 import android.content.Context
+import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+
+private const val FULL_LIBRARY_DELETE_ACK_TARGET_MS = 5_000L
 
 internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
     context: Context,
@@ -143,6 +146,7 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsWithResultImpl(
     if (targetSongs.isEmpty()) {
         return DownloadedSongDeleteResult.empty()
     }
+    val requestStartedAtMs = SystemClock.elapsedRealtime()
 
     val session = try {
         beginDownloadedSongDeleteSession(
@@ -163,6 +167,25 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsWithResultImpl(
         return DownloadedSongDeleteResult(
             deletedSongs = emptyList(),
             failedSongs = targetSongs
+        )
+    }
+    if (session.fullLibraryDelete && session.deleteIntentDurable) {
+        launchDurableFullLibraryDeleteSession(
+            context = appContext,
+            session = session
+        )
+        val acknowledgementElapsedMs = SystemClock.elapsedRealtime() - requestStartedAtMs
+        NPLogger.i(
+            TAG,
+            "全选删除已持久接受并转入后台物理清理: songs=${targetSongs.size}, " +
+                "elapsedMs=$acknowledgementElapsedMs, " +
+                "targetMs=$FULL_LIBRARY_DELETE_ACK_TARGET_MS, " +
+                "overBudget=${acknowledgementElapsedMs > FULL_LIBRARY_DELETE_ACK_TARGET_MS}"
+        )
+        return DownloadedSongDeleteResult(
+            deletedSongs = targetSongs,
+            failedSongs = emptyList(),
+            physicalCleanupPending = true
         )
     }
     return try {
@@ -192,6 +215,52 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsWithResultImpl(
             session = session
         )
         endDownloadedSongDeletion(session.deletionKeys)
+    }
+}
+
+private fun GlobalDownloadManager.launchDurableFullLibraryDeleteSession(
+    context: Context,
+    session: GlobalDownloadManager.DownloadedSongDeleteSession
+) {
+    scope.launch {
+        var deleteLease: AutoCloseable? = null
+        try {
+            deleteLease = ManagedDownloadDirectoryMutationFence.acquireDeleteLeaseOrNull(
+                context
+            )
+            if (deleteLease == null) {
+                updateDownloadedSongDeleteProgress(
+                    session = session,
+                    phase = DownloadedSongDeletePhase.WAITING_FOR_DIRECTORY
+                )
+                NPLogger.w(
+                    TAG,
+                    "目录迁移进行中，全选删除已接受并交给持久恢复: " +
+                        "songs=${session.targetSongs.size}"
+                )
+                return@launch
+            }
+            withContext(Dispatchers.IO) {
+                downloadedSongDeleteMutex.withLock {
+                    deleteDownloadedSongsOnIo(context, session)
+                }
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            NPLogger.w(
+                TAG,
+                "后台全选删除失败，保留持久意图继续恢复: ${error.message}",
+                error
+            )
+        } finally {
+            deleteLease?.close()
+            scheduleFullLibraryDeleteRecoveryIfNeeded(
+                context = context,
+                session = session
+            )
+            endDownloadedSongDeletion(session.deletionKeys)
+        }
     }
 }
 

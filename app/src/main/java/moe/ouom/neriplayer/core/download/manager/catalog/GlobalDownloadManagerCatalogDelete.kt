@@ -695,11 +695,19 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
             )
         }
         var deletedReferences = if (requestedReferences.isNotEmpty()) {
-            ManagedDownloadStorage.deleteReferences(
-                context = appContext,
-                references = requestedReferences,
-                onDeleteAttemptFinished = onDeleteAttemptFinished
-            )
+            if (deletesEntireCatalog) {
+                ManagedDownloadStorage.deleteFullLibraryReferences(
+                    context = appContext,
+                    references = requestedReferences,
+                    onDeleteAttemptFinished = onDeleteAttemptFinished
+                )
+            } else {
+                ManagedDownloadStorage.deleteReferences(
+                    context = appContext,
+                    references = requestedReferences,
+                    onDeleteAttemptFinished = onDeleteAttemptFinished
+                )
+            }
         } else {
             emptySet()
         }
@@ -739,7 +747,7 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
                 var residualDeletedReferences = emptySet<String>()
                 if (residualReferences.isNotEmpty()) {
                     val residualDeleted = try {
-                        ManagedDownloadStorage.deleteReferences(
+                        ManagedDownloadStorage.deleteFullLibraryReferences(
                             context = appContext,
                             references = residualReferences,
                             onDeleteAttemptFinished = onDeleteAttemptFinished

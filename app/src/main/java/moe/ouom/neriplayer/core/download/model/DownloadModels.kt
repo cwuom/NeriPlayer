@@ -257,7 +257,8 @@ internal fun DownloadedSong.toPlaybackSongItem(
 
 data class DownloadedSongDeleteResult(
     val deletedSongs: List<DownloadedSong>,
-    val failedSongs: List<DownloadedSong>
+    val failedSongs: List<DownloadedSong>,
+    val physicalCleanupPending: Boolean = false
 ) {
     companion object {
         fun empty(): DownloadedSongDeleteResult {

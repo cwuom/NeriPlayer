@@ -60,6 +60,7 @@ import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.core.download.DownloadedSongDeleteResult
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
@@ -111,10 +112,17 @@ fun DownloadManagerScreen(
     var fullLibrarySelectionRequested by remember { mutableStateOf(false) }
     var deleteEntireLibraryPending by remember { mutableStateOf(false) }
     var deletingSongCount by remember { mutableIntStateOf(0) }
-    var deleteResult by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var deleteResult by remember { mutableStateOf<DownloadedSongDeleteResult?>(null) }
 
-    val deleteResultMessage = deleteResult?.let { (deletedCount, failedCount) ->
+    val deleteResultMessage = deleteResult?.let { result ->
+        val deletedCount = result.deletedSongs.size
+        val failedCount = result.failedSongs.size
         when {
+            result.physicalCleanupPending -> pluralStringResource(
+                R.plurals.local_files_delete_downloaded_cleanup_pending,
+                deletedCount,
+                deletedCount
+            )
             deletedCount > 0 && failedCount == 0 -> pluralStringResource(
                 R.plurals.local_files_delete_downloaded_success,
                 deletedCount,
@@ -134,9 +142,9 @@ fun DownloadManagerScreen(
         deleteResult = null
     }
 
-    fun reportDeleteResult(deletedCount: Int, failedCount: Int) {
+    fun reportDeleteResult(result: DownloadedSongDeleteResult) {
         deletingSongCount = 0
-        deleteResult = deletedCount to failedCount
+        deleteResult = result
     }
 
     Column(
@@ -409,10 +417,7 @@ fun DownloadManagerScreen(
                         songToDelete?.let { song ->
                             deletingSongCount = 1
                             viewModel.deleteDownloadedSong(song) { result ->
-                                reportDeleteResult(
-                                    deletedCount = result.deletedSongs.size,
-                                    failedCount = result.failedSongs.size
-                                )
+                                reportDeleteResult(result)
                             }
                         }
                         showSingleDeleteDialog = false
@@ -462,10 +467,7 @@ fun DownloadManagerScreen(
                             songs = songsToDelete,
                             deleteEntireLibrary = deleteEntireLibraryPending
                         ) { result ->
-                            reportDeleteResult(
-                                deletedCount = result.deletedSongs.size,
-                                failedCount = result.failedSongs.size
-                            )
+                            reportDeleteResult(result)
                         }
                         songsPendingDelete = emptyList()
                         deleteEntireLibraryPending = false

@@ -24,6 +24,10 @@ import org.json.JSONObject
  * 读取大载荷时仍由 facade 的分段解码器处理，避免查询层重新引入 CursorWindow 风险
  */
 internal object DownloadExecutionRoomReadStore {
+    private val failedProgressStates = setOf("INVALID", METADATA_ACTION_REQUIRED_OPERATION_STATE)
+    private val progressRestoreStates = DownloadExecutionRoomStore.Access.PROGRESS_CHECKPOINT_OPERATION_STATES +
+        listOf("COMMITTING", "CORE_COMMITTED", "ASSETS_ENRICHING", "DEGRADED_COMPLETE") +
+        failedProgressStates
     suspend fun read(
         context: Context,
         operationId: String,
@@ -649,7 +653,7 @@ internal object DownloadExecutionRoomReadStore {
         while (true) {
             val page = dao.findByStatesInLibraryAfterOperationIdHeaders(
                 libraryId = libraryId,
-                states = DownloadExecutionRoomStore.Access.PROGRESS_CHECKPOINT_OPERATION_STATES,
+                states = progressRestoreStates,
                 afterOperationId = afterOperationId,
                 limit = DownloadExecutionRoomStore.Access.OPERATION_QUERY_PAGE_SIZE,
             )
@@ -663,7 +667,8 @@ internal object DownloadExecutionRoomReadStore {
                     val batchStateBits = progressBatchStateBits(
                         database = database,
                         request = request,
-                        cache = batchCache
+                        cache = batchCache,
+                        allowCompleted = header.state in failedProgressStates
                     ) ?: if (request.batchId != null) return@forEach else null
                     entries += ProgressEntry(
                         request = request,
@@ -707,7 +712,7 @@ internal object DownloadExecutionRoomReadStore {
         var afterOperationId = ""
         while (true) {
             val page = dao.findByStatesAfterOperationIdHeaders(
-                states = DownloadExecutionRoomStore.Access.PROGRESS_CHECKPOINT_OPERATION_STATES,
+                states = progressRestoreStates,
                 afterOperationId = afterOperationId,
                 limit = DownloadExecutionRoomStore.Access.OPERATION_QUERY_PAGE_SIZE,
             )
@@ -721,7 +726,8 @@ internal object DownloadExecutionRoomReadStore {
                     val batchStateBits = progressBatchStateBits(
                         database = database,
                         request = request,
-                        cache = batchCache
+                        cache = batchCache,
+                        allowCompleted = header.state in failedProgressStates
                     ) ?: if (request.batchId != null) return@forEach else null
                     entries += ProgressEntry(
                         request = request,
@@ -756,7 +762,8 @@ internal object DownloadExecutionRoomReadStore {
     private suspend fun progressBatchStateBits(
         database: NeriUserDataDatabase,
         request: DownloadExecutionRequest,
-        cache: MutableMap<Pair<String, Long>, DownloadBatchEntity?>
+        cache: MutableMap<Pair<String, Long>, DownloadBatchEntity?>,
+        allowCompleted: Boolean = false
     ): Int? {
         val batchId = request.batchId ?: return null
         val generation = request.batchGeneration ?: return null
@@ -768,8 +775,10 @@ internal object DownloadExecutionRoomReadStore {
                 .findBatch(batchId, generation)
                 .also { cache[identity] = it }
         } ?: return null
-        val isRecoverable = batch.stateBits and DownloadBatchState.OPEN != 0 &&
-            batch.stateBits and DownloadBatchState.TERMINAL_MASK == 0 &&
+        val isRecoverable = (batch.stateBits and DownloadBatchState.OPEN != 0 &&
+            batch.stateBits and DownloadBatchState.TERMINAL_MASK == 0 ||
+            allowCompleted && batch.stateBits and DownloadBatchState.COMPLETED != 0) &&
+            batch.stateBits and DownloadBatchState.CANCELLED == 0 &&
             batch.stateBits and DownloadBatchState.CLEARING == 0
         return batch.stateBits.takeIf { isRecoverable }
     }

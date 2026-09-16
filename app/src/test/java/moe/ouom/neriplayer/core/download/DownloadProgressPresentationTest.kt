@@ -14,6 +14,27 @@ import org.junit.Test
 class DownloadProgressPresentationTest {
 
     @Test
+    fun `post core restart preserves retry wait and failed terminal presentation`() {
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                DownloadStatus.QUEUED, AudioDownloadManager.DownloadStage.WAITING_RETRY
+            ),
+            recoveredDownloadTaskPresentation(
+                "DEGRADED_COMPLETE", false, null, nextRetryAtMs = 200L, nowMs = 100L
+            )
+        )
+        for (state in listOf("INVALID", "METADATA_ACTION_REQUIRED")) {
+            assertEquals(DownloadStatus.FAILED, recoveredDownloadTaskPresentation(
+                state, false, DownloadBatchState.COMPLETED
+            )?.status)
+            assertNull(recoveredDownloadTaskPresentation(state, true, null))
+        }
+        assertEquals(DownloadStatus.WAITING_NETWORK, recoveredDownloadTaskPresentation(
+            "DEGRADED_COMPLETE", false, DownloadBatchState.OPEN or DownloadBatchState.NETWORK_WAIT
+        )?.status)
+    }
+
+    @Test
     fun `p0 batch keeps fixed total and completed watermark after task rows disappear`() {
         val songs = (1L..800L).map(::song)
         val completedKeys = songs.take(300).mapTo(linkedSetOf(), SongItem::stableKey)
@@ -815,7 +836,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "DEGRADED_COMPLETE",

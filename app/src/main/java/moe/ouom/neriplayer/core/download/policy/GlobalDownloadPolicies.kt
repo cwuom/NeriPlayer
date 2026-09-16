@@ -470,22 +470,35 @@ internal fun recoveredDownloadTaskPresentation(
 ): RecoveredDownloadTaskPresentation? {
     // STOPPED 由显式恢复列表展示并等待用户操作，不能伪装成普通排队卡片
     if (stopRequestedByUser || operationState == "STOPPED") return null
-    if (operationState in POST_CORE_DOWNLOAD_OPERATION_STATES) {
-        // 重启后只让共享 Worker 选中的少量任务进入可见收尾态，其余凭据留在 Room
+    if (operationState == "CANCELLED" || operationState == "CANCEL_REQUESTED") return null
+    if (operationState == "INVALID" || operationState == "METADATA_ACTION_REQUIRED") {
         return RecoveredDownloadTaskPresentation(
-            status = DownloadStatus.QUEUED,
-            stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+            status = DownloadStatus.FAILED,
+            stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
         )
     }
     val normalizedErrorCode = lastErrorCode?.trim()?.takeIf(String::isNotBlank)
     val waitsForNetwork =
         (batchStateBits ?: 0) and DownloadBatchState.NETWORK_WAIT != 0 ||
             normalizedErrorCode == "NETWORK_POLICY_WAITING"
-    return when {
-        waitsForNetwork -> RecoveredDownloadTaskPresentation(
+    if (waitsForNetwork) {
+        return RecoveredDownloadTaskPresentation(
             status = DownloadStatus.WAITING_NETWORK,
             stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
         )
+    }
+    if (operationState in POST_CORE_DOWNLOAD_OPERATION_STATES) {
+        // 重启后只让共享 Worker 选中的少量任务进入可见收尾态，其余凭据留在 Room
+        return RecoveredDownloadTaskPresentation(
+            status = DownloadStatus.QUEUED,
+            stage = if (nextRetryAtMs?.let { it > nowMs } == true) {
+                AudioDownloadManager.DownloadStage.WAITING_RETRY
+            } else {
+                AudioDownloadManager.DownloadStage.WAITING_HOST
+            }
+        )
+    }
+    return when {
         operationState == "WAITING_STORAGE_MUTATION" ||
             normalizedErrorCode == DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR ->
             RecoveredDownloadTaskPresentation(

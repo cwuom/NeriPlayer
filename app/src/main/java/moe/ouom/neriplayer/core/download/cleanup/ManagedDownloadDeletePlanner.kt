@@ -4,6 +4,12 @@ import android.content.Context
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
+import moe.ouom.neriplayer.core.download.readTemporaryDirectoryEntries
+import moe.ouom.neriplayer.core.download.resolveRootBlocking
+import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_TEMPORARY_DIR_NAME
+import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 
 internal data class ManagedDownloadFullDeletePlan(
     val requestedReferences: Set<String>,
@@ -19,11 +25,62 @@ internal class ManagedDownloadDeletePlanner {
             context = context,
             forceRefresh = true
         )
+        val root = ManagedDownloadStorage.resolveRootBlocking(context)
+        val temporaryEntries = ManagedDownloadStorage.readTemporaryDirectoryEntries(
+            context = context,
+            root = root,
+            forceRefresh = false,
+            rootAlreadyRefreshed = true
+        )
+        val canCompactManagedDirectories =
+            snapshot.rootEntriesComplete &&
+                snapshot.sidecarEntriesComplete &&
+                temporaryEntries.isComplete
+        fun managedDirectoryRoots(subdirectory: String): List<ManagedDownloadRootHandle> {
+            return if (canCompactManagedDirectories) {
+                ManagedDownloadStorage.treeDirectories.findSubdirectories(
+                    context = context,
+                    root = root,
+                    desiredName = subdirectory
+                )
+            } else {
+                emptyList()
+            }
+        }
+        val coverDirectoryRoots = managedDirectoryRoots(COVER_SUBDIRECTORY)
+        val lyricDirectoryRoots = managedDirectoryRoots(LYRIC_SUBDIRECTORY)
+        val temporaryDirectoryRoots = managedDirectoryRoots(DOWNLOAD_TEMPORARY_DIR_NAME)
+        val compactedDirectoryRoots =
+            coverDirectoryRoots + lyricDirectoryRoots + temporaryDirectoryRoots
+        val compactedDirectoryReferences = compactedDirectoryRoots
+            .mapTo(linkedSetOf(), ::rootReference)
+        val compactedChildReferences = buildSet {
+            if (coverDirectoryRoots.isNotEmpty()) {
+                snapshot.coverEntriesByName.values.forEach { entry -> add(entry.reference) }
+            }
+            if (lyricDirectoryRoots.isNotEmpty()) {
+                snapshot.lyricEntriesByName.values.forEach { entry -> add(entry.reference) }
+            }
+            if (temporaryDirectoryRoots.isNotEmpty()) {
+                temporaryEntries.entries.forEach { entry -> add(entry.reference) }
+            }
+        }
+        val requestedReferences = if (compactedDirectoryReferences.isEmpty()) {
+            ManagedDownloadArtifactPlanner.collectFullLibraryArtifactReferences(snapshot)
+        } else {
+            buildSet {
+                addAll(
+                    ManagedDownloadArtifactPlanner.collectFullLibraryArtifactReferences(snapshot) -
+                        compactedChildReferences
+                )
+                addAll(compactedDirectoryReferences)
+            }
+        }
         return ManagedDownloadFullDeletePlan(
-            requestedReferences = ManagedDownloadArtifactPlanner
-                .collectFullLibraryArtifactReferences(snapshot),
+            requestedReferences = requestedReferences,
             snapshotComplete = snapshot.rootEntriesComplete &&
-                snapshot.sidecarEntriesComplete
+                snapshot.sidecarEntriesComplete &&
+                temporaryEntries.isComplete
         )
     }
 
@@ -124,6 +181,13 @@ internal class ManagedDownloadDeletePlanner {
             requestedReferences = referencesToDelete,
             deletedReferences = deletedReferences
         )
+    }
+}
+
+private fun rootReference(root: ManagedDownloadRootHandle): String {
+    return when (root) {
+        is ManagedDownloadRootHandle.FileRoot -> root.dir.absolutePath
+        is ManagedDownloadRootHandle.TreeRoot -> root.tree.uri.toString()
     }
 }
 

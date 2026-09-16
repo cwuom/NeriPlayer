@@ -15,6 +15,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.download.storage.SAF_DELETE_MAX_ATTEMPTS
 import moe.ouom.neriplayer.core.download.storage.SAF_DELETE_RETRY_DELAY_MS
+import moe.ouom.neriplayer.core.download.storage.SAF_REFERENCE_DELETE_BATCH_PARALLELISM
+import moe.ouom.neriplayer.core.download.storage.SAF_REFERENCE_DELETE_BATCH_SIZE
 import moe.ouom.neriplayer.core.download.storage.SAF_REFERENCE_DELETE_PARALLELISM
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
@@ -50,6 +52,8 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                 (reference.reference as StorageReference.SafRef).uri.toString()
             )
         },
+    private val contentReferenceBatchDeleteOperation:
+        ((Context, List<TrustedManagedRef>) -> List<StorageMutationResult>?)? = null,
     private val workerDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     init {
@@ -115,6 +119,23 @@ internal class ManagedDownloadReferenceDeleteExecutor(
             }
         }
         try {
+            val batchDeletedReferences = deleteSafReferencesInBatches(
+                context = context,
+                references = unresolvedReferences.filter { reference ->
+                    reference.reference is StorageReference.SafRef
+                },
+                beforeOperation = { reference ->
+                    if (startedReferences.add(reference)) {
+                        onDeleteStarted(reference)
+                    }
+                },
+                afterOperationSucceeded = { reference ->
+                    finishReference(reference, deleted = true)
+                }
+            )
+            deletedReferences += batchDeletedReferences
+                .map(TrustedManagedRef::externalReference)
+            unresolvedReferences.removeAll(batchDeletedReferences)
             repeat(SAF_DELETE_MAX_ATTEMPTS) { attempt ->
                 if (unresolvedReferences.isEmpty()) {
                     return@repeat
@@ -421,6 +442,54 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         cancellation.get()?.let { error -> throw error }
         if (operationFailures.get() > 0) {
             NPLogger.w(tag, "批量删除引用执行异常: count=${operationFailures.get()}")
+        }
+        return successfulReferences
+    }
+
+    private suspend fun deleteSafReferencesInBatches(
+        context: Context,
+        references: List<TrustedManagedRef>,
+        beforeOperation: (TrustedManagedRef) -> Unit,
+        afterOperationSucceeded: (TrustedManagedRef) -> Unit
+    ): Set<TrustedManagedRef> {
+        val batchDelete = contentReferenceBatchDeleteOperation ?: return emptySet()
+        if (references.isEmpty()) return emptySet()
+        val batches = references.chunked(SAF_REFERENCE_DELETE_BATCH_SIZE)
+        val successfulReferences = ConcurrentHashMap.newKeySet<TrustedManagedRef>()
+        val nextBatchIndex = AtomicInteger(0)
+        val workerCount = minOf(
+            SAF_REFERENCE_DELETE_BATCH_PARALLELISM,
+            batches.size
+        )
+        coroutineScope {
+            repeat(workerCount) {
+                launch(workerDispatcher) {
+                    while (isActive) {
+                        val batchIndex = nextBatchIndex.getAndIncrement()
+                        if (batchIndex >= batches.size) return@launch
+                        val batch = batches[batchIndex]
+                        batch.forEach(beforeOperation)
+                        val results = try {
+                            batchDelete(context, batch)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: SecurityException) {
+                            throw error
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        if (results == null || results.size != batch.size) {
+                            continue
+                        }
+                        batch.zip(results).forEach { (reference, result) ->
+                            if (result.isConfirmedMutation()) {
+                                successfulReferences += reference
+                                afterOperationSucceeded(reference)
+                            }
+                        }
+                    }
+                }
+            }
         }
         return successfulReferences
     }

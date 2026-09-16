@@ -119,6 +119,31 @@ internal suspend fun ManagedDownloadStorage.deleteReferencesImpl(
         }
     }
 
+internal suspend fun ManagedDownloadStorage.deleteFullLibraryReferencesImpl(
+    context: Context,
+    references: Collection<String?>,
+    onDeleteAttemptFinished: (String, Boolean) -> Unit = { _, _ -> }
+): Set<String> = withContext(Dispatchers.IO) {
+    batchReferenceDeleteMutex.withLock {
+        val normalizedReferences = references
+            .mapNotNull { reference -> reference?.trim()?.takeIf(String::isNotBlank) }
+            .toSet()
+        val deletePolicy = buildManagedDeletePolicy(
+            context = context,
+            trustedReferences = normalizedReferences
+        )
+        deleteReferencesInternalConcurrently(
+            context = context,
+            references = resolveTrustedManagedReferences(normalizedReferences, deletePolicy),
+            deletePolicy = deletePolicy,
+            invalidateSnapshot = true,
+            onDeleteAttemptFinished = { reference, deleted ->
+                onDeleteAttemptFinished(reference.externalReference, deleted)
+            }
+        )
+    }
+}
+
 internal suspend fun ManagedDownloadStorage.saveAudioFromTempImpl(
     context: Context,
     tempFile: File,

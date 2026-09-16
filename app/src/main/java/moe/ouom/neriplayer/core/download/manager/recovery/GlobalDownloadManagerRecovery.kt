@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactPublica
 import moe.ouom.neriplayer.core.download.artifact.finalizedPublicationLeaseOrNull
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
@@ -228,6 +229,10 @@ internal suspend fun GlobalDownloadManager.recoverPendingAudioWritesFromRoot(
                             admissionTicket = admissionTicket
                         ) {
                             withSongExecutionLock(song.stableKey()) {
+                                if (!DownloadExecutionRoomStore.isArtifactRecoveryAllowed(
+                                        context, metadata.operationId
+                                    )
+                                ) return@withSongExecutionLock
                                 if (sourceRootRecovery) {
                                     val normalizedOperationId = metadata.operationId
                                         ?.trim()
@@ -510,6 +515,10 @@ internal suspend fun GlobalDownloadManager.recoverUnfinalizedPublishedAudioFromR
                 withSongExecutionLock(song.stableKey()) {
                 val currentMetadata = readDownloadedMetadata(context, audio)
                     ?: return@withSongExecutionLock
+                if (!DownloadExecutionRoomStore.isArtifactRecoveryAllowed(
+                        context, currentMetadata.operationId
+                    )
+                ) return@withSongExecutionLock
                 if (
                     metadataPostProcessingEnabled &&
                         currentMetadata.metadataEmbeddingState ==
@@ -1117,6 +1126,9 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
         val enrichingEntries = restorableEntries.filter { entry ->
             presentationsByEntry.getValue(entry).status == DownloadStatus.DOWNLOADING
         }
+        val failedEntries = restorableEntries.filter { entry ->
+            presentationsByEntry.getValue(entry).status == DownloadStatus.FAILED
+        }
         val networkWaitingDurableAttemptIds = networkWaitingEntries.mapNotNull { entry ->
             entry.request.attemptId?.takeIf { it > 0L }?.let { attemptId ->
                 entry.request.song.stableKey() to attemptId
@@ -1155,7 +1167,16 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
                 durableAttemptIds = enrichingDurableAttemptIds
             )
             val effectiveAttemptIds =
-                networkWaitingAttemptIds + queuedAttemptIds + enrichingAttemptIds
+                networkWaitingAttemptIds + queuedAttemptIds + enrichingAttemptIds +
+                    taskStore.ensureDownloadTasks(
+                        songs = failedEntries.map { it.request.song },
+                        status = DownloadStatus.FAILED,
+                        durableAttemptIds = failedEntries.mapNotNull { entry ->
+                            entry.request.attemptId?.takeIf { it > 0L }?.let {
+                                entry.request.song.stableKey() to it
+                            }
+                        }.toMap()
+                    )
             restorableEntries.forEach { entry ->
                 if (entry.request.attemptId == null) {
                     val attemptId = effectiveAttemptIds[entry.request.song.stableKey()]
@@ -1206,7 +1227,7 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
                 )
             }
             restoredCount = taskStore.restoreProgressBatch(restoredProgresses)
-            val recoveredMemberAttemptIds = restorableEntries.associate { entry ->
+            val recoveredMemberAttemptIds = restorableEntries.filterNot { it in failedEntries }.associate { entry ->
                 val songKey = entry.request.song.stableKey()
                 songKey to (
                     entry.request.attemptId?.takeIf { attemptId -> attemptId > 0L }

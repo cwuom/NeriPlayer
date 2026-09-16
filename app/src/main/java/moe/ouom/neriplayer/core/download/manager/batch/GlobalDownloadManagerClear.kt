@@ -557,7 +557,7 @@ internal suspend fun GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog
         if (requestedReferences.isEmpty()) {
             emptySet()
         } else {
-            ManagedDownloadStorage.deleteReferences(
+            ManagedDownloadStorage.deleteFullLibraryReferences(
                 context = appContext,
                 references = requestedReferences
             )
@@ -1135,7 +1135,8 @@ internal suspend fun GlobalDownloadManager.cancelDownloadTasksInBackground(
     ),
     workingFilesBySongKey: Map<String, Collection<File>> = emptyMap(),
     clearToken: DownloadAdmissionGate.ClearToken? = null,
-    awaitProviderCleanup: Boolean = true
+    awaitProviderCleanup: Boolean = true,
+    skipProviderArtifactCleanup: Boolean = false
 ): DownloadClearSettlement {
     val appContext = context.applicationContext
     if (!PersistentDownloadClearFenceStore.isTaskClearActive(appContext)) {
@@ -1156,7 +1157,7 @@ internal suspend fun GlobalDownloadManager.cancelDownloadTasksInBackground(
     // 内存 admission generation；继续使用它会把同一轮清理误判成不同工作，
     // 既不能等待原有 lease，也可能让恢复轮次长期停在 pending 状态
     val providerCleanupKey = PersistentDownloadClearFenceStore.currentEpoch(appContext)
-    if (awaitProviderCleanup) {
+    if (awaitProviderCleanup && !skipProviderArtifactCleanup) {
         val activeCleanup = downloadClearProviderCleanupCoordinator.activeOrNull()
         if (activeCleanup != null) {
             if (activeCleanup.key != providerCleanupKey) {
@@ -1251,6 +1252,15 @@ internal suspend fun GlobalDownloadManager.cancelDownloadTasksInBackground(
             activeSongKeys = activeSongKeys,
             activeOperationIds = activeOperationIds,
             batchJobsSettled = batchJobsSettled && enrichmentJobsSettled
+        )
+    }
+    if (skipProviderArtifactCleanup) {
+        // 全库删除会在同一恢复意图下按完整快照删除根文件和受管目录。
+        // 这里重复逐 operation 清理 Provider 产物既抢占目录 lease，也会让交互入口误报超时
+        return DownloadClearSettlement(
+            activeSongKeys = emptySet(),
+            activeOperationIds = emptySet(),
+            batchJobsSettled = true
         )
     }
     if (awaitProviderCleanup) {

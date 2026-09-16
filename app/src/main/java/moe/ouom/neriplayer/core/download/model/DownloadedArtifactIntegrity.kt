@@ -106,7 +106,8 @@ internal fun verifyDownloadedArtifactIntegrity(
         actual = metadata.artist,
         missingIssue = DownloadedArtifactIntegrityIssue.ARTIST_MISSING,
         mismatchIssue = DownloadedArtifactIntegrityIssue.ARTIST_MISMATCH,
-        issues = issues
+        issues = issues,
+        required = song.artist.isNotBlank()
     )
     addOptionalExactIssue(
         expected = song.album,
@@ -208,10 +209,11 @@ private fun addTextFieldIssues(
     actual: String?,
     missingIssue: DownloadedArtifactIntegrityIssue,
     mismatchIssue: DownloadedArtifactIntegrityIssue,
-    issues: MutableSet<DownloadedArtifactIntegrityIssue>
+    issues: MutableSet<DownloadedArtifactIntegrityIssue>,
+    required: Boolean = true
 ) {
     if (actual.isNullOrBlank()) {
-        issues += missingIssue
+        if (required) issues += missingIssue
     } else if (!expected.isNullOrBlank() && actual != expected) {
         issues += mismatchIssue
     }

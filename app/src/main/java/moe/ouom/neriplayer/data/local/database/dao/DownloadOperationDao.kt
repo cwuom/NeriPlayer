@@ -1116,6 +1116,19 @@ internal interface DownloadOperationDao {
     suspend fun deleteOperations(operationIds: List<String>): Int
 
     @Query(
+        "UPDATE download_operation SET stop_requested_by_user = 1, " +
+            "last_error_code = 'USER_CANCELLED', next_retry_at_ms = NULL, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :nowMs), " +
+            "host_process_token = NULL, host_admitted_at_ms = NULL " +
+            "WHERE operation_id IN (:operationIds) AND state IN (:states)"
+    )
+    suspend fun retainClearedArtifactRecoveryStops(
+        operationIds: List<String>,
+        states: List<String>,
+        nowMs: Long
+    ): Int
+
+    @Query(
         "SELECT operation_id FROM download_operation WHERE operation_id IN (:operationIds) " +
             "AND updated_at_ms <= :cancelledAtMs AND state IN (" +
             "'PENDING_QUEUE', 'QUEUED', 'WAITING_STORAGE_MUTATION', 'RETRYABLE', 'STOPPED', " +

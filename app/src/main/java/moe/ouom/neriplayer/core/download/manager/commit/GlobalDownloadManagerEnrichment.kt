@@ -9,6 +9,7 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.core.net.toUri
+import com.kyant.taglib.TagLib
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -21,6 +22,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
@@ -55,6 +57,7 @@ internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
     directoryMutationLeaseOwned: Boolean,
     admissionTicket: Long?
 ) {
+    if (!DownloadExecutionRoomStore.isArtifactRecoveryAllowed(context, operationId)) return
     if (
         admissionTicket != null &&
             !isDownloadAdmissionTicketCurrent(
@@ -342,7 +345,7 @@ internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
             }
 
             FinalizedDownloadPublicationResult.RECOVERY_REQUIRED -> {
-                error("pending audio promotion failed")
+                error("final publication requires recovery; see integrity and artifact diagnostics")
             }
         }
         NPLogger.d(
@@ -742,6 +745,12 @@ internal suspend fun GlobalDownloadManager.verifyFinalizedDownloadedArtifactForP
             !song.originalRomanizedLyric.isNullOrBlank()
     )
     val audioProbe = inspectFinalizedDownloadedAudio(context, audio)
+    NPLogger.d(
+        TAG,
+        "最终音频时长校验: operationId=${metadata?.operationId}, " +
+            "expectedMs=${song.durationMs}, actualMs=${audioProbe.durationMs}, " +
+            "readable=${audioProbe.readable}"
+    )
     val references = DownloadedArtifactReferenceState(
         audioReadable = audioProbe.readable,
         audioDurationMs = audioProbe.durationMs,
@@ -809,7 +818,14 @@ internal suspend fun GlobalDownloadManager.inspectFinalizedDownloadedAudio(
                 .maxOrNull()
                 ?.takeIf { it > 0L }
                 ?.div(1_000L)
-            val durationMs = extractorDurationMs ?: readFinalizedAudioDuration(
+            // MP3 extractor 可能用文件大小和首帧码率估算，优先使用容器解析结果
+            val containerDurationMs = runCatching {
+                context.contentResolver.openFileDescriptor(playbackUri, "r")?.use { descriptor ->
+                    TagLib.getAudioProperties(descriptor.dup().detachFd())
+                        ?.length?.toLong()?.takeIf { it > 0L }
+                }
+            }.getOrNull()
+            val durationMs = containerDurationMs ?: extractorDurationMs ?: readFinalizedAudioDuration(
                 context = context,
                 playbackUri = playbackUri
             )
@@ -912,6 +928,10 @@ internal suspend fun GlobalDownloadManager.publishFinalizedDownload(
     allowMissingTask: Boolean,
     admissionTicket: Long? = null
 ): FinalizedDownloadPublicationResult {
+    if (!DownloadExecutionRoomStore.isArtifactRecoveryAllowed(
+            context, operationId, respectRetryDeadline = false
+        )
+    ) return FinalizedDownloadPublicationResult.STALE
     if (
         admissionTicket != null &&
             !isDownloadAdmissionTicketCurrent(
@@ -979,6 +999,12 @@ internal suspend fun GlobalDownloadManager.publishFinalizedDownload(
         )
         return FinalizedDownloadPublicationResult.RECOVERY_REQUIRED
     }
+    if (!DownloadExecutionRoomStore.isArtifactRecoveryAllowed(
+            context, operationId, respectRetryDeadline = false
+        ) || admissionTicket != null && !isDownloadAdmissionTicketCurrent(
+            context, admissionTicket, stableKey = songKey, operationId = operationId
+        )
+    ) return FinalizedDownloadPublicationResult.STALE
     // promotion 会让旧 pending 引用立即失效。先把内存桥接切到正式引用，
     // 再发布 artifact 和 catalog，避免首播线程在这个窗口内拿到失效 URI
     AudioDownloadManager.rememberCompletedAudioReference(
@@ -1375,6 +1401,9 @@ internal suspend fun GlobalDownloadManager.runDownloadedAudioMetadataPostProcess
                         standardizedLyricEmbeddingEnabled = standardizedLyricEmbeddingEnabled
                     )
                 }
+            }
+            writeResult.exceptionOrNull()?.let { error ->
+                if (error is CancellationException) throw error
             }
             val hasRemainingAttempts =
                 attempt < METADATA_POST_PROCESSING_MAX_ATTEMPTS - 1 && !isSongCancelled(songKey)

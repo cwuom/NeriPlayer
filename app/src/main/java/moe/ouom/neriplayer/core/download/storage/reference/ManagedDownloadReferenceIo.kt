@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.core.download.storage.reference
 
+import android.content.ContentProviderOperation
 import android.content.Context
 import android.database.Cursor
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
@@ -14,6 +16,8 @@ import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLock
 
 internal object ManagedDownloadReferenceIo {
     private const val DOCUMENT_QUERY_ATTEMPTS = 2
+    private const val DOCUMENT_DELETE_METHOD = "android:deleteDocument"
+    private const val DOCUMENT_URI_EXTRA = "uri"
     private const val NULL_DOCUMENT_CURSOR_MESSAGE =
         "provider returned null document cursor"
 
@@ -30,6 +34,11 @@ internal object ManagedDownloadReferenceIo {
         data object PermissionLost : AccessResult
         data class ProviderFailure(val error: Throwable) : AccessResult
     }
+
+    data class BatchDeleteResult(
+        val results: List<DeleteResult>,
+        val supported: Boolean
+    )
 
     fun readText(context: Context, reference: String): String? {
         return when {
@@ -127,6 +136,57 @@ internal object ManagedDownloadReferenceIo {
         return DeleteResult.ProviderFailure(
             IllegalStateException("content reference delete attempts exhausted")
         )
+    }
+
+    fun deleteContentReferencesBatch(
+        context: Context,
+        uris: List<Uri>
+    ): BatchDeleteResult {
+        if (uris.isEmpty()) {
+            return BatchDeleteResult(emptyList(), supported = true)
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return BatchDeleteResult(emptyList(), supported = false)
+        }
+        val authority = uris.first().authority?.takeIf(String::isNotBlank)
+            ?: return BatchDeleteResult(emptyList(), supported = false)
+        if (uris.any { uri -> uri.authority != authority }) {
+            return BatchDeleteResult(emptyList(), supported = false)
+        }
+        return try {
+            val operations = ArrayList<ContentProviderOperation>(uris.size)
+            uris.forEach { uri ->
+                operations += ContentProviderOperation.newCall(
+                    uri,
+                    DOCUMENT_DELETE_METHOD,
+                    null
+                )
+                    .withExtra(DOCUMENT_URI_EXTRA, uri)
+                    .withExceptionAllowed(true)
+                    .build()
+            }
+            val providerResults = context.contentResolver.applyBatch(authority, operations)
+            if (providerResults.size != uris.size) {
+                BatchDeleteResult(emptyList(), supported = false)
+            } else {
+                BatchDeleteResult(
+                    results = providerResults.map { result ->
+                        result.exception?.let(::classifyDeleteFailure) ?: DeleteResult.Deleted
+                    },
+                    supported = true
+                )
+            }
+        } catch (_: SecurityException) {
+            BatchDeleteResult(
+                results = List(uris.size) { DeleteResult.PermissionLost },
+                supported = true
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            // Provider 可能覆写 applyBatch 且不接受 call operation，交给逐项路径兼容
+            BatchDeleteResult(emptyList(), supported = false)
+        }
     }
 
     fun deleteFileReference(file: File): DeleteResult {
@@ -416,6 +476,14 @@ internal object ManagedDownloadReferenceIo {
             isMissingDocumentFailure(error) -> DeleteResult.Missing
             isPermissionDocumentFailure(error) -> DeleteResult.PermissionLost
             else -> null
+        }
+    }
+
+    private fun classifyDeleteFailure(error: Throwable): DeleteResult {
+        return when {
+            isMissingDocumentFailure(error) -> DeleteResult.Missing
+            isPermissionDocumentFailure(error) -> DeleteResult.PermissionLost
+            else -> DeleteResult.ProviderFailure(error)
         }
     }
 
