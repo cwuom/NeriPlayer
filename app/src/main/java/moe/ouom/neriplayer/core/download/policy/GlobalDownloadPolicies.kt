@@ -505,7 +505,7 @@ internal fun recoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
                 stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
             )
-        operationState == "RETRYABLE" || nextRetryAtMs?.let { it > nowMs } == true ->
+        nextRetryAtMs?.let { it > nowMs } == true ->
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
                 stage = AudioDownloadManager.DownloadStage.WAITING_RETRY

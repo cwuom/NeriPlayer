@@ -203,6 +203,29 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     }
 
     @Test
+    fun `restart rearms retryable transfers before restoring task cards and waking the pump`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val initializeBody = methodBody(source, "initialize")
+        val batchRestoreIndex = initializeBody.indexOf(
+            "restorePersistedBatchDownloadPresentations(appContext)"
+        )
+        val retryRearmIndex = initializeBody.indexOf(
+            "rearmRetryableOperationsAfterProcessRestart("
+        )
+        val progressRestoreIndex = initializeBody.indexOf("restorePersistedDownloadProgress(")
+        val pumpWakeIndex = initializeBody.indexOf(
+            "wakeStartupDownloadExecutionAfterProgressRestore("
+        )
+
+        assertTrue(batchRestoreIndex >= 0)
+        assertTrue(retryRearmIndex > batchRestoreIndex)
+        assertTrue(progressRestoreIndex > retryRearmIndex)
+        assertTrue(pumpWakeIndex > progressRestoreIndex)
+    }
+
+    @Test
     fun `artifact recovery keeps the captured admission ticket through core commit`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

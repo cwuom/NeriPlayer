@@ -1170,6 +1170,42 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
+        "SELECT operation_id, stable_key FROM download_operation " +
+            "WHERE state = 'RETRYABLE' AND stop_requested_by_user = 0 " +
+            "AND (host_process_token IS NULL OR host_process_token != :processToken) " +
+            "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
+            "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
+            "AND batch.generation = download_operation.batch_generation " +
+            "AND (batch.state_bits & ${DownloadBatchState.OPEN}) != 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.NETWORK_WAIT}) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.TERMINAL_MASK}) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) = 0))"
+    )
+    suspend fun findRestartRearmableRetryOperationIdentities(
+        processToken: String
+    ): List<DownloadOperationIdentityRow>
+
+    /** 新进程立即接管普通重试队列，但保留累计重试次数和最后失败原因 */
+    @Query(
+        "UPDATE download_operation SET state = 'QUEUED', next_retry_at_ms = NULL, " +
+            "host_process_token = NULL, host_admitted_at_ms = NULL, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
+            "WHERE state = 'RETRYABLE' AND stop_requested_by_user = 0 " +
+            "AND (host_process_token IS NULL OR host_process_token != :processToken) " +
+            "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
+            "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
+            "AND batch.generation = download_operation.batch_generation " +
+            "AND (batch.state_bits & ${DownloadBatchState.OPEN}) != 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.NETWORK_WAIT}) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.TERMINAL_MASK}) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) = 0))"
+    )
+    suspend fun rearmRetryableOperationsAfterProcessRestart(
+        processToken: String,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
         "SELECT COUNT(*) FROM download_operation " +
             "WHERE host_process_token = :processToken"
     )

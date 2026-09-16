@@ -2,22 +2,21 @@ package moe.ouom.neriplayer.core.download.execution
 
 import android.content.Context
 import androidx.room.withTransaction
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.dao.DownloadOperationDao
-import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
-import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import org.json.JSONObject
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 internal const val WAITING_STORAGE_MUTATION_OPERATION_STATE = "WAITING_STORAGE_MUTATION"
 
@@ -925,6 +924,14 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Set<String> {
         return this.requeueOrphanedRunningOperationsImpl(context, database)
+    }
+
+    /** 冷启动时把上个进程的普通退避任务重新放回可立即消费的队列 */
+    suspend fun rearmRetryableOperationsAfterProcessRestart(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Set<String> {
+        return this.rearmRetryableOperationsAfterProcessRestartImpl(context, database)
     }
 
     suspend fun clearUserStopForStableKeys(

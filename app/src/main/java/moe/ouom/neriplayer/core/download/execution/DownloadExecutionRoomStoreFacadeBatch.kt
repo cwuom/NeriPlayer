@@ -590,6 +590,30 @@ internal suspend fun DownloadExecutionRoomStore.requeueOrphanedRunningOperations
     }
 }
 
+internal suspend fun DownloadExecutionRoomStore.rearmRetryableOperationsAfterProcessRestartImpl(
+    context: Context,
+    database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+): Set<String> {
+    return database.withTransaction {
+        val dao = database.downloadOperationDao()
+        val retryable = dao.findRestartRearmableRetryOperationIdentities(
+            processToken = HOST_ADMISSION_PROCESS_TOKEN
+        )
+        if (retryable.isEmpty()) {
+            return@withTransaction emptySet()
+        }
+        val rearmed = dao.rearmRetryableOperationsAfterProcessRestart(
+            processToken = HOST_ADMISSION_PROCESS_TOKEN,
+            updatedAtMs = System.currentTimeMillis()
+        )
+        if (rearmed <= 0) {
+            emptySet()
+        } else {
+            retryable.mapTo(linkedSetOf()) { identity -> identity.stableKey }
+        }
+    }
+}
+
 internal suspend fun DownloadExecutionRoomStore.clearUserStopForStableKeysImpl(
     context: Context,
     stableKeys: Collection<String>

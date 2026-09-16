@@ -862,7 +862,20 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+            ),
+            recoveredDownloadTaskPresentation(
+                operationState = "RETRYABLE",
+                stopRequestedByUser = false,
+                batchStateBits = null,
+                nextRetryAtMs = null,
+                nowMs = 1_000L
+            )
+        )
+        assertEquals(
+            RecoveredDownloadTaskPresentation(
+                status = DownloadStatus.QUEUED,
+                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "RETRYABLE",

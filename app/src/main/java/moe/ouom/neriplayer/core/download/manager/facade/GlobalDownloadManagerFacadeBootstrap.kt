@@ -436,6 +436,26 @@ internal fun GlobalDownloadManager.initializeImpl(context: Context) {
                 admissionTicket = startupAdmissionTicket
             )
             restorePersistedBatchDownloadPresentations(appContext)
+            val rearmedRetryableKeys = try {
+                DownloadExecutionRoomStore.rearmRetryableOperationsAfterProcessRestart(
+                    appContext
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                NPLogger.w(
+                    TAG,
+                    "重启下载退避队列失败，保留原截止时间等待持久唤醒: ${error.message}",
+                    error
+                )
+                emptySet()
+            }
+            if (rearmedRetryableKeys.isNotEmpty()) {
+                NPLogger.i(
+                    TAG,
+                    "重启待重试下载已立即重新排队: count=${rearmedRetryableKeys.size}"
+                )
+            }
             restorePersistedDownloadProgress(
                 context = appContext,
                 admissionTicket = startupAdmissionTicket

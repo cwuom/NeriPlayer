@@ -298,6 +298,145 @@ class DownloadOperationDaoFreshStartTest {
         }
     }
 
+    @Test
+    fun processRestartRearmsRetryableRowsOnlyWhenTheirBatchCanRun() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).build()
+        try {
+            val dao = database.downloadOperationDao()
+            val openBatch = batch(
+                "open-batch",
+                generation = 1L,
+                stateBits = DownloadBatchState.OPEN
+            )
+            val networkBatch = batch(
+                "network-batch",
+                generation = 2L,
+                stateBits = DownloadBatchState.OPEN or DownloadBatchState.NETWORK_WAIT
+            )
+            val clearingBatch = batch(
+                "clearing-batch",
+                generation = 3L,
+                stateBits = DownloadBatchState.OPEN or DownloadBatchState.CLEARING
+            )
+            database.downloadBatchDao().insertBatch(openBatch)
+            database.downloadBatchDao().insertBatch(networkBatch)
+            database.downloadBatchDao().insertBatch(clearingBatch)
+            listOf(
+                operation(
+                    operationId = "standalone-retry",
+                    stableKey = "standalone-song",
+                    state = "RETRYABLE",
+                    stopRequestedByUser = false,
+                    lastErrorCode = "IO_FAILURE",
+                    retryCount = 5,
+                    nextRetryAtMs = 50_000L,
+                    hostProcessToken = "old-process"
+                ),
+                operation(
+                    operationId = "open-retry",
+                    stableKey = "open-song",
+                    state = "RETRYABLE",
+                    stopRequestedByUser = false,
+                    lastErrorCode = "HOST_STOPPED",
+                    retryCount = 3,
+                    nextRetryAtMs = 40_000L,
+                    batchId = openBatch.batchId,
+                    batchGeneration = openBatch.generation
+                ),
+                operation(
+                    operationId = "network-retry",
+                    stableKey = "network-song",
+                    state = "RETRYABLE",
+                    stopRequestedByUser = false,
+                    lastErrorCode = "NETWORK_POLICY_WAITING",
+                    nextRetryAtMs = 30_000L,
+                    batchId = networkBatch.batchId,
+                    batchGeneration = networkBatch.generation
+                ),
+                operation(
+                    operationId = "clearing-retry",
+                    stableKey = "clearing-song",
+                    state = "RETRYABLE",
+                    stopRequestedByUser = false,
+                    lastErrorCode = "IO_FAILURE",
+                    nextRetryAtMs = 20_000L,
+                    batchId = clearingBatch.batchId,
+                    batchGeneration = clearingBatch.generation
+                ),
+                operation(
+                    operationId = "stopped-retry",
+                    stableKey = "stopped-song",
+                    state = "RETRYABLE",
+                    stopRequestedByUser = true,
+                    lastErrorCode = "USER_CANCELLED",
+                    nextRetryAtMs = 10_000L
+                ),
+                operation(
+                    operationId = "current-host-retry",
+                    stableKey = "current-host-song",
+                    state = "RETRYABLE",
+                    stopRequestedByUser = false,
+                    lastErrorCode = "IO_FAILURE",
+                    nextRetryAtMs = 10_000L,
+                    hostProcessToken = "current-process"
+                )
+            ).forEach { operation -> dao.upsert(operation) }
+
+            assertEquals(
+                setOf("standalone-retry", "open-retry"),
+                dao.findRestartRearmableRetryOperationIdentities("current-process")
+                    .mapTo(linkedSetOf()) { identity -> identity.operationId }
+            )
+            assertEquals(
+                2,
+                dao.rearmRetryableOperationsAfterProcessRestart(
+                    processToken = "current-process",
+                    updatedAtMs = 100L
+                )
+            )
+
+            listOf("standalone-retry", "open-retry").forEach { operationId ->
+                val rearmed = requireNotNull(dao.find(operationId))
+                assertEquals("QUEUED", rearmed.state)
+                assertNull(rearmed.nextRetryAtMs)
+                assertNull(rearmed.hostProcessToken)
+            }
+            assertEquals(5, dao.find("standalone-retry")?.retryCount)
+            assertEquals("IO_FAILURE", dao.find("standalone-retry")?.lastErrorCode)
+            listOf(
+                "network-retry",
+                "clearing-retry",
+                "stopped-retry",
+                "current-host-retry"
+            ).forEach { operationId ->
+                assertEquals("RETRYABLE", dao.find(operationId)?.state)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun batch(
+        batchId: String,
+        generation: Long,
+        stateBits: Int
+    ): DownloadBatchEntity {
+        return DownloadBatchEntity(
+            batchId = batchId,
+            generation = generation,
+            totalCount = 1,
+            stateBits = stateBits,
+            clearEpoch = 1L,
+            networkGeneration = null,
+            updatedAtMs = 2L,
+            createdAtMs = 1L
+        )
+    }
+
     private fun operation(
         operationId: String,
         stableKey: String,
