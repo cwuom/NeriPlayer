@@ -46,6 +46,46 @@ class PostCoreDownloadRecoveryPolicyTest {
     }
 
     @Test
+    fun `completed operations continue soon even when new arrivals keep the queue size unchanged`() {
+        assertEquals(
+            PostCoreDownloadRecoveryResult.CONTINUE_SOON,
+            resolvePostCoreRecoveryResult(
+                classified = PostCoreDownloadRecoveryResult.RETRY,
+                initialOperationIds = setOf("old-a", "old-b"),
+                remainingOperationIds = setOf("new-a", "new-b")
+            )
+        )
+        assertEquals(
+            PostCoreDownloadRecoveryResult.CONTINUE_SOON,
+            resolvePostCoreRecoveryResult(
+                classified = PostCoreDownloadRecoveryResult.RETRY,
+                initialOperationIds = setOf("old-a", "old-b"),
+                remainingOperationIds = setOf("old-b", "new-a", "new-b")
+            )
+        )
+    }
+
+    @Test
+    fun `unchanged operations preserve retry and network classifications`() {
+        assertEquals(
+            PostCoreDownloadRecoveryResult.RETRY,
+            resolvePostCoreRecoveryResult(
+                classified = PostCoreDownloadRecoveryResult.RETRY,
+                initialOperationIds = setOf("old-a", "old-b"),
+                remainingOperationIds = setOf("old-a", "old-b", "new-a")
+            )
+        )
+        assertEquals(
+            PostCoreDownloadRecoveryResult.WAITING_NETWORK,
+            resolvePostCoreRecoveryResult(
+                classified = PostCoreDownloadRecoveryResult.WAITING_NETWORK,
+                initialOperationIds = setOf("old-a"),
+                remainingOperationIds = emptySet()
+            )
+        )
+    }
+
+    @Test
     fun `old retries lead each window while one slot remains for fresh finalization`() {
         val candidates = listOf(
             candidate("retry-new", "DEGRADED_COMPLETE", queueOrder = 9, updatedAtMs = 900),

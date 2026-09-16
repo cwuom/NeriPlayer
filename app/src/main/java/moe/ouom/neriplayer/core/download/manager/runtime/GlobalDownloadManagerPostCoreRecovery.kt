@@ -101,6 +101,22 @@ internal fun isPostCoreRecoveryNetworkEligible(
         mobileDataOverrideAllowed
 }
 
+internal fun resolvePostCoreRecoveryResult(
+    classified: PostCoreDownloadRecoveryResult,
+    initialOperationIds: Set<String>,
+    remainingOperationIds: Set<String>
+): PostCoreDownloadRecoveryResult {
+    // Worker 运行期间会持续有新歌曲进入收尾，队列数量不下降不等于本窗口没有进展
+    val completedInitialOperation = initialOperationIds.any { operationId ->
+        operationId !in remainingOperationIds
+    }
+    return if (classified == PostCoreDownloadRecoveryResult.RETRY && completedInitialOperation) {
+        PostCoreDownloadRecoveryResult.CONTINUE_SOON
+    } else {
+        classified
+    }
+}
+
 internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl(
     context: Context
 ): PostCoreDownloadRecoveryResult {
@@ -109,7 +125,7 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl
         ?: return PostCoreDownloadRecoveryResult.BLOCKED
     val attemptedOperationIds = linkedSetOf<String>()
     var completedWindows = 0
-    var initialRemainingCount: Int? = null
+    var initialOperationIds: Set<String>? = null
 
     while (
         completedWindows < POST_CORE_RECOVERY_MAX_WINDOWS &&
@@ -121,10 +137,10 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl
         val entries = loadPostCoreDownloadRecoveryEntries(appContext)
             ?: return PostCoreDownloadRecoveryResult.BLOCKED
         if (entries.isEmpty()) return PostCoreDownloadRecoveryResult.SETTLED
-        if (initialRemainingCount == null) initialRemainingCount = entries.size
 
         val durableOperationIds = entries
             .mapTo(linkedSetOf()) { entry -> entry.request.operationId }
+        if (initialOperationIds == null) initialOperationIds = durableOperationIds.toSet()
         val activeEnrichmentIds = assetEnrichmentCoordinator.activeOperationIds()
             .intersect(durableOperationIds)
         if (activeEnrichmentIds.isNotEmpty()) {
@@ -187,10 +203,14 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl
             mobileDataOverrideAllowed = mobileDataDownloadOverrideAllowed
         )
         if (selectedCandidates.isEmpty()) {
-            return classifyPostCoreDownloadRecovery(
-                entries = entries,
-                currentNetworkType = currentNetworkType,
-                mobileDataOverrideAllowed = mobileDataDownloadOverrideAllowed
+            return resolvePostCoreRecoveryResult(
+                classified = classifyPostCoreDownloadRecovery(
+                    entries = entries,
+                    currentNetworkType = currentNetworkType,
+                    mobileDataOverrideAllowed = mobileDataDownloadOverrideAllowed
+                ),
+                initialOperationIds = initialOperationIds.orEmpty(),
+                remainingOperationIds = durableOperationIds
             )
         }
 
@@ -247,14 +267,12 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl
         currentNetworkType = appContext.currentDownloadNetworkTypeOrNull(),
         mobileDataOverrideAllowed = mobileDataDownloadOverrideAllowed
     )
-    return if (
-        classified == PostCoreDownloadRecoveryResult.RETRY &&
-            remainingEntries.size < (initialRemainingCount ?: Int.MAX_VALUE)
-    ) {
-        PostCoreDownloadRecoveryResult.CONTINUE_SOON
-    } else {
-        classified
-    }
+    return resolvePostCoreRecoveryResult(
+        classified = classified,
+        initialOperationIds = initialOperationIds.orEmpty(),
+        remainingOperationIds = remainingEntries
+            .mapTo(linkedSetOf()) { entry -> entry.request.operationId }
+    )
 }
 
 private suspend fun GlobalDownloadManager.settlePostCoreRecoveryAttempts(
