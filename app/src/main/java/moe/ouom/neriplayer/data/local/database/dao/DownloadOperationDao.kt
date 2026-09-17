@@ -1206,6 +1206,36 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
+        "SELECT operation_id, stable_key FROM download_operation " +
+            "WHERE state = 'RETRYABLE' AND stop_requested_by_user = 0 " +
+            "AND next_retry_at_ms IS NOT NULL " +
+            "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
+            "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
+            "AND batch.generation = download_operation.batch_generation " +
+            "AND (batch.state_bits & ${DownloadBatchState.OPEN}) != 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.NETWORK_WAIT}) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.TERMINAL_MASK}) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) = 0))"
+    )
+    suspend fun findImmediateRecoveryRetryOperationIdentities(): List<DownloadOperationIdentityRow>
+
+    /** 网络重新可用时只解除退避，不抢占仍在当前执行器收尾的宿主租约 */
+    @Query(
+        "UPDATE download_operation SET next_retry_at_ms = NULL, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
+            "WHERE state = 'RETRYABLE' AND stop_requested_by_user = 0 " +
+            "AND next_retry_at_ms IS NOT NULL " +
+            "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
+            "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
+            "AND batch.generation = download_operation.batch_generation " +
+            "AND (batch.state_bits & ${DownloadBatchState.OPEN}) != 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.NETWORK_WAIT}) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.TERMINAL_MASK}) = 0 " +
+            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) = 0))"
+    )
+    suspend fun clearRetryDeadlinesForImmediateRecovery(updatedAtMs: Long): Int
+
+    @Query(
         "SELECT COUNT(*) FROM download_operation " +
             "WHERE host_process_token = :processToken"
     )

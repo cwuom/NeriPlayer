@@ -415,6 +415,20 @@ class DownloadOperationDaoFreshStartTest {
             ).forEach { operationId ->
                 assertEquals("RETRYABLE", dao.find(operationId)?.state)
             }
+
+            assertEquals(
+                setOf("current-host-retry"),
+                dao.findImmediateRecoveryRetryOperationIdentities()
+                    .mapTo(linkedSetOf()) { identity -> identity.operationId }
+            )
+            assertEquals(
+                1,
+                dao.clearRetryDeadlinesForImmediateRecovery(updatedAtMs = 200L)
+            )
+            val currentHostRetry = requireNotNull(dao.find("current-host-retry"))
+            assertEquals("RETRYABLE", currentHostRetry.state)
+            assertNull(currentHostRetry.nextRetryAtMs)
+            assertEquals("current-process", currentHostRetry.hostProcessToken)
         } finally {
             database.close()
         }

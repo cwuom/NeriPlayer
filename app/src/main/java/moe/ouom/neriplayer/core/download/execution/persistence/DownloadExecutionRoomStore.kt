@@ -937,6 +937,14 @@ internal object DownloadExecutionRoomStore {
         return this.rearmRetryableOperationsAfterProcessRestartImpl(context, database)
     }
 
+    /** 已确认新的执行机会时清除旧退避截止时间，让共享泵立即接管 */
+    suspend fun clearRetryDeadlinesForImmediateRecovery(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Set<String> {
+        return this.clearRetryDeadlinesForImmediateRecoveryImpl(database)
+    }
+
     suspend fun clearUserStopForStableKeys(
         context: Context,
         stableKeys: Collection<String>

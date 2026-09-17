@@ -484,7 +484,8 @@ internal fun recoveredDownloadTaskPresentation(
     val normalizedErrorCode = lastErrorCode?.trim()?.takeIf(String::isNotBlank)
     val waitsForNetwork =
         (batchStateBits ?: 0) and DownloadBatchState.NETWORK_WAIT != 0 ||
-            normalizedErrorCode == "NETWORK_POLICY_WAITING"
+            normalizedErrorCode == "NETWORK_POLICY_WAITING" ||
+            normalizedErrorCode == GlobalDownloadManager.DOWNLOAD_NETWORK_UNAVAILABLE_ERROR_CODE
     if (waitsForNetwork) {
         return RecoveredDownloadTaskPresentation(
             status = DownloadStatus.WAITING_NETWORK,

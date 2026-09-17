@@ -18,6 +18,13 @@ import java.net.URLConnection
 
 internal class DownloadSourceUnavailableException(message: String) : IOException(message)
 
+/** 临时解析或传输失败已经耗尽进程内短重试，交给持久下载队列继续恢复 */
+internal class RetryableDownloadFailureException(
+    message: String,
+    val networkUnavailable: Boolean,
+    cause: Throwable? = null
+) : IOException(message, cause)
+
 /**
  * 统一处理各平台来源解析
  *

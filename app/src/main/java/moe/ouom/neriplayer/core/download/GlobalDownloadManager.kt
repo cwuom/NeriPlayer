@@ -87,6 +87,8 @@ import java.util.concurrent.atomic.AtomicLong
 object GlobalDownloadManager {
     internal const val TAG = "GlobalDownloadManager"
     internal const val DOWNLOAD_SOURCE_UNAVAILABLE_ERROR_CODE = "DOWNLOAD_SOURCE_UNAVAILABLE"
+    internal const val DOWNLOAD_NETWORK_UNAVAILABLE_ERROR_CODE = "NETWORK_UNAVAILABLE"
+    internal const val DOWNLOAD_TRANSIENT_FAILURE_ERROR_CODE = "DOWNLOAD_TRANSIENT_FAILURE"
     internal const val DOWNLOAD_CATALOG_CACHE_FILE_NAME = "downloaded_song_catalog_v4.json"
     internal const val DOWNLOAD_CATALOG_PERSIST_DEBOUNCE_MS = 1_200L
     internal const val DOWNLOAD_CATALOG_DELTA_MAX_ENTRIES = 2_048

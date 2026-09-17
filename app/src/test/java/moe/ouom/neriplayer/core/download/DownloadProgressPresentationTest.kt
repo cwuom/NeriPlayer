@@ -57,6 +57,14 @@ class DownloadProgressPresentationTest {
         assertEquals(DownloadStatus.WAITING_NETWORK, recoveredDownloadTaskPresentation(
             "DEGRADED_COMPLETE", false, DownloadBatchState.OPEN or DownloadBatchState.NETWORK_WAIT
         )?.status)
+        assertEquals(DownloadStatus.WAITING_NETWORK, recoveredDownloadTaskPresentation(
+            operationState = "RETRYABLE",
+            stopRequestedByUser = false,
+            batchStateBits = DownloadBatchState.OPEN,
+            nextRetryAtMs = 60_000L,
+            lastErrorCode = GlobalDownloadManager.DOWNLOAD_NETWORK_UNAVAILABLE_ERROR_CODE,
+            nowMs = 1L
+        )?.status)
     }
 
     @Test

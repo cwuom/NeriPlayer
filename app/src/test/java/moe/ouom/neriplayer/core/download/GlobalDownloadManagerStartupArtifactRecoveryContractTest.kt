@@ -242,6 +242,9 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         val batchRestoreIndex = initializeBody.indexOf(
             "restorePersistedBatchDownloadPresentations(appContext)"
         )
+        val networkFenceReleaseIndex = initializeBody.indexOf(
+            "clearAllOpenBatchNetworkPolicyFences("
+        )
         val retryRearmIndex = initializeBody.indexOf(
             "rearmRetryableOperationsAfterProcessRestart("
         )
@@ -251,9 +254,32 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         )
 
         assertTrue(batchRestoreIndex >= 0)
-        assertTrue(retryRearmIndex > batchRestoreIndex)
+        assertTrue(networkFenceReleaseIndex > batchRestoreIndex)
+        assertTrue(retryRearmIndex > networkFenceReleaseIndex)
         assertTrue(progressRestoreIndex > retryRearmIndex)
         assertTrue(pumpWakeIndex > progressRestoreIndex)
+    }
+
+    @Test
+    fun `confirmed network recovery clears retry deadlines before waking the pump`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val wifiBody = methodBody(source, "onWifiBoundDownloadNetworkRestored")
+        val recoveryBody = methodBody(source, "recoverPendingDownloadsForNetworkRestored")
+
+        val clearIndex = wifiBody.indexOf("clearAllOpenBatchNetworkPolicyFences(")
+        val rearmIndex = wifiBody.indexOf(
+            "clearRetryDeadlinesForImmediateRecovery("
+        )
+        val wakeIndex = wifiBody.indexOf("wakeDownloadExecutionPump(")
+
+        assertTrue(clearIndex >= 0)
+        assertTrue(rearmIndex > clearIndex)
+        assertTrue(wakeIndex > rearmIndex)
+        assertTrue(recoveryBody.contains("restoredNetworkType != TrafficNetworkType.WIFI"))
+        assertTrue(recoveryBody.contains("clearRetryDeadlinesForImmediateRecovery("))
+        assertTrue(recoveryBody.contains("reason = \"confirmed_network_recovered_"))
     }
 
     @Test

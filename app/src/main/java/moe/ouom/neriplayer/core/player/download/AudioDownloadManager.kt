@@ -1677,14 +1677,6 @@ object AudioDownloadManager {
     internal fun resolveTransientDownloadRetryDelayMs(attemptNumber: Int): Long =
         AudioDownloadTransferPolicy.resolveTransientDownloadRetryDelayMs(attemptNumber)
 
-    internal fun shouldStopRetryingMissingDownloadSource(
-        confirmedMissCount: Int,
-        hasConfirmedInternetAccess: Boolean
-    ): Boolean = AudioDownloadTransferPolicy.shouldStopRetryingMissingDownloadSource(
-        confirmedMissCount = confirmedMissCount,
-        hasConfirmedInternetAccess = hasConfirmedInternetAccess
-    )
-
     internal fun shouldRetryTransientDownloadFailure(error: Throwable): Boolean =
         AudioDownloadTransferPolicy.shouldRetryTransientDownloadFailure(error)
 

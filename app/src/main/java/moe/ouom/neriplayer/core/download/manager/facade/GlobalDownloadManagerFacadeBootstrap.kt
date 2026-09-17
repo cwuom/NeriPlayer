@@ -108,6 +108,15 @@ internal fun GlobalDownloadManager.onWifiBoundDownloadNetworkRestoredImpl(
                 error
             )
         }
+        val rearmedRetryableKeys = runCatching {
+            DownloadExecutionRoomStore.clearRetryDeadlinesForImmediateRecovery(appContext)
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "网络恢复后重排下载退避队列失败，保留持久截止时间: ${error.message}",
+                error
+            )
+        }.getOrDefault(emptySet())
         val networkStillCurrent =
             appContext.currentDownloadNetworkTypeOrNull() == TrafficNetworkType.WIFI &&
                 AudioDownloadManager.currentDownloadNetworkGeneration() ==
@@ -132,7 +141,8 @@ internal fun GlobalDownloadManager.onWifiBoundDownloadNetworkRestoredImpl(
             TAG,
             "WIFI 下载网络围栏已收敛并唤醒共享泵: reason=$reason, " +
                 "generation=$capturedNetworkGeneration, " +
-                "cleared=${clearResult.getOrDefault(0)}, pump=$pumpScheduled, " +
+                "cleared=${clearResult.getOrDefault(0)}, " +
+                "rearmed=${rearmedRetryableKeys.size}, pump=$pumpScheduled, " +
                 "postCore=$postCoreScheduled"
         )
     }
@@ -482,6 +492,23 @@ internal fun GlobalDownloadManager.initializeImpl(context: Context) {
                 admissionTicket = startupAdmissionTicket
             )
             restorePersistedBatchDownloadPresentations(appContext)
+            if (appContext.currentDownloadNetworkTypeOrNull() == TrafficNetworkType.WIFI) {
+                val startupNetworkGeneration =
+                    AudioDownloadManager.currentDownloadNetworkGeneration()
+                runCatching {
+                    DownloadExecutionRoomStore.clearAllOpenBatchNetworkPolicyFences(
+                        context = appContext,
+                        networkGeneration = startupNetworkGeneration
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "在线冷启动解除旧网络等待围栏失败，保留网络唤醒兜底: " +
+                            error.message,
+                        error
+                    )
+                }
+            }
             val rearmedRetryableKeys = try {
                 DownloadExecutionRoomStore.rearmRetryableOperationsAfterProcessRestart(
                     appContext
@@ -875,7 +902,30 @@ internal fun GlobalDownloadManager.recoverPendingDownloadsForNetworkRestoredImpl
             if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
                 return@withPendingDownloadRecoverySlot
             }
-            if (appContext.currentDownloadNetworkTypeOrNull() != TrafficNetworkType.WIFI) {
+            val restoredNetworkType = appContext.currentDownloadNetworkTypeOrNull()
+                ?: return@withPendingDownloadRecoverySlot
+            if (restoredNetworkType != TrafficNetworkType.WIFI) {
+                val rearmedRetryableKeys = runCatching {
+                    DownloadExecutionRoomStore.clearRetryDeadlinesForImmediateRecovery(
+                        appContext
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "移动网络恢复后重排下载退避队列失败，保留持久唤醒: " +
+                            error.message,
+                        error
+                    )
+                }.getOrDefault(emptySet())
+                val pumpScheduled = wakeDownloadExecutionPump(
+                    context = appContext,
+                    reason = "confirmed_network_recovered_$reason"
+                )
+                NPLogger.d(
+                    TAG,
+                    "已在确认可用的移动网络上立即恢复可运行下载: " +
+                        "count=${rearmedRetryableKeys.size}, pump=$pumpScheduled"
+                )
                 return@withPendingDownloadRecoverySlot
             }
             if (!onWifiBoundDownloadNetworkRestored(appContext, "recovery_$reason")) {

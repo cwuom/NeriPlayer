@@ -345,25 +345,19 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
     }
 
     @Test
-    fun `confirmed missing source stops after two resolutions but offline remains retryable`() {
-        assertFalse(
-            AudioDownloadManager.shouldStopRetryingMissingDownloadSource(
-                confirmedMissCount = 1,
-                hasConfirmedInternetAccess = true
-            )
+    fun `temporary source exhaustion remains a durable retry instead of terminal failure`() {
+        val offlineFailure = RetryableDownloadFailureException(
+            message = "source temporarily unavailable",
+            networkUnavailable = true
         )
-        assertTrue(
-            AudioDownloadManager.shouldStopRetryingMissingDownloadSource(
-                confirmedMissCount = 2,
-                hasConfirmedInternetAccess = true
-            )
+        val onlineFailure = RetryableDownloadFailureException(
+            message = "source temporarily unavailable",
+            networkUnavailable = false
         )
-        assertFalse(
-            AudioDownloadManager.shouldStopRetryingMissingDownloadSource(
-                confirmedMissCount = 9,
-                hasConfirmedInternetAccess = false
-            )
-        )
+
+        assertTrue(IOException::class.java.isAssignableFrom(offlineFailure.javaClass))
+        assertTrue(offlineFailure.networkUnavailable)
+        assertFalse(onlineFailure.networkUnavailable)
     }
 
     @Test

@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredEx
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.DownloadSourceUnavailableException
+import moe.ouom.neriplayer.core.player.download.RetryableDownloadFailureException
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -1062,6 +1063,29 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
                 requestGeneration
             )
         }
+    } catch (error: RetryableDownloadFailureException) {
+        if (!isDownloadRequestGenerationCurrent(songKey, requestGeneration)) {
+            markDownloadArtifactRetryable(
+                context = appContext,
+                song = song,
+                leaseId = acquiredLeaseId,
+                errorCode = "STALE_DOWNLOAD_FAILED"
+            )
+            acquiredLeaseId?.let { leaseId ->
+                managedDownloadArtifactLeases.remove(songKey, leaseId)
+            }
+            return
+        }
+        withContext(NonCancellable) {
+            deferRetryableDownloadFailure(
+                context = appContext,
+                song = song,
+                operationId = operationId,
+                expectedAttemptId = attemptId,
+                expectedLeaseId = acquiredLeaseId,
+                error = error
+            )
+        }
     } catch (error: DownloadSourceUnavailableException) {
         if (!isDownloadRequestGenerationCurrent(songKey, requestGeneration)) {
             markDownloadArtifactRetryable(
@@ -1146,6 +1170,90 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
             operationId?.let(AudioDownloadManager::clearOperationPauseForExecutionHost)
         }
     }
+}
+
+internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
+    context: Context,
+    song: SongItem,
+    operationId: String?,
+    expectedAttemptId: Long?,
+    expectedLeaseId: String?,
+    error: RetryableDownloadFailureException
+) {
+    val appContext = context.applicationContext
+    val songKey = song.stableKey()
+    val previousProgress = taskStore.findTask(songKey)?.progress
+    val errorCode = if (error.networkUnavailable) {
+        DOWNLOAD_NETWORK_UNAVAILABLE_ERROR_CODE
+    } else {
+        DOWNLOAD_TRANSIENT_FAILURE_ERROR_CODE
+    }
+    val operationRetryPersisted = operationId?.let { id ->
+        runCatching {
+            DownloadExecutionRoomStore.updateState(
+                context = appContext,
+                operationId = id,
+                state = "RETRYABLE",
+                errorCode = errorCode
+            )
+        }.onFailure { persistError ->
+            NPLogger.w(
+                TAG,
+                "持久化可重试下载失败状态失败，保留宿主兜底: " +
+                    "song=${song.name}, operationId=$id, error=${persistError.message}",
+                persistError
+            )
+        }.getOrDefault(false)
+    } ?: true
+    val retryStatus = if (error.networkUnavailable) {
+        DownloadStatus.WAITING_NETWORK
+    } else {
+        DownloadStatus.QUEUED
+    }
+    updateTaskStatus(
+        songKey = songKey,
+        status = retryStatus,
+        expectedAttemptId = expectedAttemptId
+    )
+    val retryProgress = AudioDownloadManager.DownloadProgress(
+        songKey = songKey,
+        songId = song.id,
+        fileName = previousProgress?.fileName
+            ?: ManagedDownloadStorage.buildDisplayBaseName(song),
+        bytesRead = previousProgress?.bytesRead ?: 0L,
+        totalBytes = previousProgress?.totalBytes ?: 0L,
+        speedBytesPerSec = 0L,
+        stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+        attemptId = expectedAttemptId,
+        operationId = operationId,
+        durableBytesRead = previousProgress?.durableBytesRead
+    )
+    taskStore.restoreProgress(retryProgress)
+    AudioDownloadManager.publishStageProgress(
+        songId = retryProgress.songId,
+        songKey = retryProgress.songKey,
+        fileName = retryProgress.fileName,
+        stage = retryProgress.stage,
+        attemptId = retryProgress.attemptId,
+        operationId = retryProgress.operationId,
+        bytesRead = retryProgress.bytesRead,
+        totalBytes = retryProgress.totalBytes
+    )
+    markDownloadArtifactRetryable(
+        context = appContext,
+        song = song,
+        leaseId = expectedLeaseId,
+        errorCode = errorCode
+    )
+    expectedLeaseId?.let { leaseId ->
+        managedDownloadArtifactLeases.remove(songKey, leaseId)
+    }
+    NPLogger.w(
+        TAG,
+        "下载网络波动已转入持久恢复队列: song=${song.name}, " +
+            "operationId=$operationId, offline=${error.networkUnavailable}, " +
+            "persisted=$operationRetryPersisted"
+    )
 }
 
 internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailure(

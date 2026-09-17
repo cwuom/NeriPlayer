@@ -69,6 +69,22 @@ internal suspend fun AudioDownloadManager.handleDownloadSongFailure(
         clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
         throw error
     }
+    if (error is RetryableDownloadFailureException) {
+        NPLogger.w(
+            TAG,
+            "下载短重试已耗尽，保留工作文件交给持久队列恢复: " +
+                "song=${song.name}, offline=${error.networkUnavailable}, " +
+                "error=${error.cause?.javaClass?.simpleName ?: error.javaClass.simpleName}"
+        )
+        clearVisibleProgressForSong(
+            songKey = songKey,
+            expectedAttemptId = attemptId,
+            expectedOperationId = effectiveOperationId
+        )
+        clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
+        clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
+        throw error
+    }
     if (
         error is java.util.concurrent.CancellationException ||
             _isCancelled.value ||
@@ -311,18 +327,11 @@ internal suspend fun AudioDownloadManager.executeDownloadAttempt(
         if (hasConfirmedInternetAccess) {
             state.confirmedSourceMissCount++
         }
-        if (shouldStopRetryingMissingDownloadSource(
-                confirmedMissCount = state.confirmedSourceMissCount,
-                hasConfirmedInternetAccess = hasConfirmedInternetAccess
-            )
-        ) {
-            throw DownloadSourceUnavailableException(
-                "download source remained unavailable after " +
-                    "${state.confirmedSourceMissCount} confirmed attempts: ${song.name}"
-            )
-        }
         if (state.attemptNumber >= TRANSIENT_DOWNLOAD_MAX_ATTEMPTS) {
-            throw IOException(context.getString(R.string.download_no_url, song.name))
+            throw RetryableDownloadFailureException(
+                message = context.getString(R.string.download_no_url, song.name),
+                networkUnavailable = !hasConfirmedInternetAccess
+            )
         }
         val retryDelayMs = resolveTransientDownloadRetryDelayMs(state.attemptNumber)
         publishRetryWaitingProgress(
@@ -341,8 +350,7 @@ internal suspend fun AudioDownloadManager.executeDownloadAttempt(
         NPLogger.w(
             TAG,
             "下载链接暂时不可用，准备重试: song=${song.name}, " +
-                "confirmedMiss=${state.confirmedSourceMissCount}/" +
-                "${AudioDownloadTransferPolicy.SOURCE_RESOLVE_MAX_CONFIRMED_MISSES}, " +
+                "confirmedMiss=${state.confirmedSourceMissCount}, " +
                 "attempt=${state.attemptNumber}/$TRANSIENT_DOWNLOAD_MAX_ATTEMPTS, " +
                 "confirmedInternet=$hasConfirmedInternetAccess"
         )
@@ -797,6 +805,16 @@ internal suspend fun AudioDownloadManager.handleDownloadAttemptFailure(
         clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
         throw error
     }
+    if (error is RetryableDownloadFailureException) {
+        clearVisibleProgressForSong(
+            songKey = songKey,
+            expectedAttemptId = attemptId,
+            expectedOperationId = effectiveOperationId
+        )
+        clearCompletedAudioReference(songKey, operationId = effectiveOperationId)
+        clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
+        throw error
+    }
     val storageFailureKind = classifyDownloadStorageSpaceFailure(error)
     if (storageFailureKind != null) {
         publishRetryWaitingProgress(
@@ -935,11 +953,9 @@ internal suspend fun AudioDownloadManager.handleDownloadAttemptFailure(
         )
     }
     clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
-    if (
-        state.storedAudio == null &&
-            state.attemptNumber < TRANSIENT_DOWNLOAD_MAX_ATTEMPTS &&
-            shouldRetryDownloadFailureForSource(error, isYouTubeMusic)
-    ) {
+    val retryableFailure = state.storedAudio == null &&
+        shouldRetryDownloadFailureForSource(error, isYouTubeMusic)
+    if (retryableFailure && state.attemptNumber < TRANSIENT_DOWNLOAD_MAX_ATTEMPTS) {
         val partialBytes = resolveWorkingFileBytes(state.tempFile)
         val preservePartial = shouldPreservePartialDownloadForRetry(
             transportKind = state.activeTransportKind,
@@ -989,6 +1005,25 @@ internal suspend fun AudioDownloadManager.handleDownloadAttemptFailure(
         )
         state.attemptNumber++
         return DownloadAttemptFailureAction.RETRY
+    }
+    if (retryableFailure) {
+        val partialBytes = resolveWorkingFileBytes(state.tempFile)
+        val preservePartial = shouldPreservePartialDownloadForRetry(
+            transportKind = state.activeTransportKind,
+            existingBytes = partialBytes,
+            hasHlsResumeState = hasHlsResumeState(state.tempFile)
+        ) && state.resumeMetadataAvailable
+        if (
+            !preservePartial &&
+                deleteWorkingFileUnlessNetworkPolicyPaused(songKey, state.tempFile)
+        ) {
+            state.tempFile = null
+        }
+        throw RetryableDownloadFailureException(
+            message = "download retry budget exhausted: ${song.name}",
+            networkUnavailable = !context.hasConfirmedInternetAccess(),
+            cause = error
+        )
     }
     if (deleteWorkingFileUnlessNetworkPolicyPaused(songKey, state.tempFile)) {
         state.tempFile = null

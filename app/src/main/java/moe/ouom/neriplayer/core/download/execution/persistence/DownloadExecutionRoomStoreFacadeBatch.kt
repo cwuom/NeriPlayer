@@ -615,6 +615,26 @@ internal suspend fun DownloadExecutionRoomStore.rearmRetryableOperationsAfterPro
     }
 }
 
+internal suspend fun DownloadExecutionRoomStore.clearRetryDeadlinesForImmediateRecoveryImpl(
+    database: NeriUserDataDatabase
+): Set<String> {
+    return database.withTransaction {
+        val dao = database.downloadOperationDao()
+        val retryable = dao.findImmediateRecoveryRetryOperationIdentities()
+        if (retryable.isEmpty()) {
+            return@withTransaction emptySet()
+        }
+        val rearmed = dao.clearRetryDeadlinesForImmediateRecovery(
+            updatedAtMs = System.currentTimeMillis()
+        )
+        if (rearmed <= 0) {
+            emptySet()
+        } else {
+            retryable.mapTo(linkedSetOf()) { identity -> identity.stableKey }
+        }
+    }
+}
+
 internal suspend fun DownloadExecutionRoomStore.clearUserStopForStableKeysImpl(
     context: Context,
     stableKeys: Collection<String>

@@ -29,6 +29,9 @@ class DownloadSourceAvailabilityContractTest {
         val resultBody = methodBody(source, "executionResultForOperation")
         val unfinishedLeaseBody = methodBody(source, "settleUnfinishedDownloadArtifactLease")
 
+        val retryableCatch = startBody.indexOf(
+            "catch (error: RetryableDownloadFailureException)"
+        )
         val unavailableCatch = startBody.indexOf(
             "catch (error: DownloadSourceUnavailableException)"
         )
@@ -40,8 +43,13 @@ class DownloadSourceAvailabilityContractTest {
         )
         val invalidIndex = settlementBody.indexOf("state = \"INVALID\"")
 
-        assertTrue(unavailableCatch >= 0)
+        assertTrue(retryableCatch >= 0)
+        assertTrue(unavailableCatch > retryableCatch)
         assertTrue(genericCatch > unavailableCatch)
+        val retryableBody = startBody.substring(retryableCatch, unavailableCatch)
+        assertTrue(retryableBody.contains("deferRetryableDownloadFailure("))
+        assertFalse(retryableBody.contains("settleUnavailableDownloadSourceFailure("))
+        assertFalse(retryableBody.contains("forgetPendingDownloadQueueEntriesIfCurrent("))
         assertTrue(artifactIndex >= 0)
         assertTrue(batchIndex > artifactIndex)
         assertTrue(pendingQueueIndex > batchIndex)
@@ -67,17 +75,19 @@ class DownloadSourceAvailabilityContractTest {
     }
 
     @Test
-    fun `resolved source clears the confirmed missing streak before transfer`() {
+    fun `transient missing source never becomes terminal before a resolved transfer`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
         ).readText()
         val attemptBody = methodBody(source, "executeDownloadAttempt")
+        val retryableIndex = attemptBody.indexOf("throw RetryableDownloadFailureException(")
         val unavailableIndex = attemptBody.indexOf("throw DownloadSourceUnavailableException(")
         val resetIndex = attemptBody.indexOf("state.confirmedSourceMissCount = 0")
         val prepareIndex = attemptBody.indexOf("val prepared = try")
 
-        assertTrue(unavailableIndex >= 0)
-        assertTrue(resetIndex > unavailableIndex)
+        assertTrue(retryableIndex >= 0)
+        assertTrue(unavailableIndex < 0)
+        assertTrue(resetIndex > retryableIndex)
         assertTrue(prepareIndex > resetIndex)
     }
 
