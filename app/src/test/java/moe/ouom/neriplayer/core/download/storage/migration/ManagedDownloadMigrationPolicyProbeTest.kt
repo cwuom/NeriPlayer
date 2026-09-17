@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadDirectoryChangeDecision
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationPolicy
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

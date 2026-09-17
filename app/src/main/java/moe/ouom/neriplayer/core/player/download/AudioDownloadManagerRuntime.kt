@@ -15,7 +15,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.resource.DownloadTransferPermitRegistry
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
-import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager

@@ -11,8 +11,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
-import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.resolvePersistedDownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.resolvePersistedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore

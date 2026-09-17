@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isDurableCoreArtifactState
+import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import java.util.Locale
 

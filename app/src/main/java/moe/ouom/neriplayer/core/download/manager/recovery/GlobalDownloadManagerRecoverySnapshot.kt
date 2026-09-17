@@ -1,5 +1,14 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.manager.recovery
 
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.manager.batch.isUsableFinalizationAudioEntry
+import moe.ouom.neriplayer.core.download.manager.batch.matchesFinalizationCandidateName
+import moe.ouom.neriplayer.core.download.manager.batch.matchesFinalizationStoredName
+import moe.ouom.neriplayer.core.download.manager.runtime.isMetadataOwnedBySong
+import moe.ouom.neriplayer.core.download.manager.runtime.loadFinalizationRecoverySnapshot
+import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
+import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.CoreRecoveryAudioCandidate
 import android.content.Context
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager

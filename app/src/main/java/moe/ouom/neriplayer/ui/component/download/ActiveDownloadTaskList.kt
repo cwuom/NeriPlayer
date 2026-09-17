@@ -20,10 +20,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.DownloadStatus
-import moe.ouom.neriplayer.core.download.DownloadTask
-import moe.ouom.neriplayer.core.download.formatDownloadTransferProgress
-import moe.ouom.neriplayer.core.download.visibleDownloadProgressTasks
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.model.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey

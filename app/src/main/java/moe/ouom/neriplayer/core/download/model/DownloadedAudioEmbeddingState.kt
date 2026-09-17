@@ -1,5 +1,7 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.model
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
 import java.util.Locale
 
 /** 已下载音频元信息嵌入的可审计完成状态 */

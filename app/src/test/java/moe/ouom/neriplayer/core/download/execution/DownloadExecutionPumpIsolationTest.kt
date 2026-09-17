@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.core.download.execution.host.executePumpCandidateIsolated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope

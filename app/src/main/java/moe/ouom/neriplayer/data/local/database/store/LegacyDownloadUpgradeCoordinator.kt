@@ -18,8 +18,8 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore

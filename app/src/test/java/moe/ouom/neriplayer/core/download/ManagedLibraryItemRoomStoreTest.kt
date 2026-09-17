@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.catalog.preferredManagedLibraryRestoreReference
+import moe.ouom.neriplayer.core.download.catalog.shouldRestoreManagedLibraryItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

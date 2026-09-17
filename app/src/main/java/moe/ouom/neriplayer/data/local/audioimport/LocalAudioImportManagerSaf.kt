@@ -13,7 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.ManagedDownloadSizePolicy
+import moe.ouom.neriplayer.core.download.policy.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport

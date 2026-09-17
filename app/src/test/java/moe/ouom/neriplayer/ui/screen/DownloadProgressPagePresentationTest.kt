@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.ui.screen
 
 import java.io.File
-import moe.ouom.neriplayer.core.download.DownloadClearVisibility
-import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.policy.DownloadClearVisibility
+import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

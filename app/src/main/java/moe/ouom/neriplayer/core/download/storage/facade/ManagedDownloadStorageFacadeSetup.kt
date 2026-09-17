@@ -1,5 +1,18 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.storage.facade
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.operation.content.clearTreeDirectoryCache
+import moe.ouom.neriplayer.core.download.storage.operation.content.createDefaultRoot
+import moe.ouom.neriplayer.core.download.storage.operation.content.invalidateSnapshotCache
+import moe.ouom.neriplayer.core.download.storage.operation.content.resolveRoot
+import moe.ouom.neriplayer.core.download.storage.operation.content.scheduleSnapshotWarmup
+import moe.ouom.neriplayer.core.download.storage.operation.content.treeDocumentIdOrNull
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.hasPendingStartupMigrationRecovery
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.resolveStartupMetadataRecovery
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.resolveStartupPendingAudioRecovery
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.restorePersistedMigrationProgress
+import moe.ouom.neriplayer.core.download.storage.operation.requireCompleteMigrationDirectoryScan
+import moe.ouom.neriplayer.core.download.storage.operation.shouldIndexMetadataLessAudio
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StartupRecoveryResult
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
@@ -11,7 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationEntryCollector
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationEntryCollector
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
 import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
 import moe.ouom.neriplayer.core.logging.NPLogger

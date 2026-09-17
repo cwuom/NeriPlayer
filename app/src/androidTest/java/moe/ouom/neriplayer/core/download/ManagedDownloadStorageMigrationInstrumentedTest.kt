@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
@@ -23,7 +24,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import org.json.JSONObject

@@ -1,11 +1,67 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
+import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutationForStableKeys
+import moe.ouom.neriplayer.core.download.manager.admission.awaitDownloadAdmissionTicket
+import moe.ouom.neriplayer.core.download.manager.admission.awaitDownloadAdmissionTicketForStableKeys
+import moe.ouom.neriplayer.core.download.manager.admission.promoteUserInitiatedInFlightRequests
+import moe.ouom.neriplayer.core.download.manager.admission.resolveOperationRequestsForBatchBinding
+import moe.ouom.neriplayer.core.download.manager.admission.stageAndPromotePendingDownloadQueue
+import moe.ouom.neriplayer.core.download.manager.admission.stageAndPromotePendingDownloadQueuePage
+import moe.ouom.neriplayer.core.download.manager.batch.beginBatchDownloadPresentation
+import moe.ouom.neriplayer.core.download.manager.batch.cancelBatchDownloadPresentationMembers
+import moe.ouom.neriplayer.core.download.manager.batch.claimAndPrepareBatchArtifact
+import moe.ouom.neriplayer.core.download.manager.batch.clearBatchDownloadPresentationWithoutOutstandingWork
+import moe.ouom.neriplayer.core.download.manager.batch.clearSongCancellationForFreshStart
+import moe.ouom.neriplayer.core.download.manager.batch.ensureDurableBatchSnapshot
+import moe.ouom.neriplayer.core.download.manager.batch.findClaimableBatchDownloadSongs
+import moe.ouom.neriplayer.core.download.manager.batch.findPendingAudioForFinalization
+import moe.ouom.neriplayer.core.download.manager.batch.findStrictlyCompletedBatchSongKeys
+import moe.ouom.neriplayer.core.download.manager.batch.markBatchDownloadPresentationTerminal
+import moe.ouom.neriplayer.core.download.manager.batch.prepareAndScheduleBatchDownloadSession
+import moe.ouom.neriplayer.core.download.manager.batch.prepareBatchDownloadTasks
+import moe.ouom.neriplayer.core.download.manager.batch.recoverInFlightDownloadOperations
+import moe.ouom.neriplayer.core.download.manager.batch.rememberPendingDownloadQueue
+import moe.ouom.neriplayer.core.download.manager.batch.requestAllDownloadTaskCancellation
+import moe.ouom.neriplayer.core.download.manager.batch.runBatchDownloadSession
+import moe.ouom.neriplayer.core.download.manager.batch.schedulePendingBatchDownload
+import moe.ouom.neriplayer.core.download.manager.batch.schedulePendingBatchDownloads
+import moe.ouom.neriplayer.core.download.manager.batch.seedInitialBatchDownloadPresentation
+import moe.ouom.neriplayer.core.download.manager.batch.startBatchDownload
+import moe.ouom.neriplayer.core.download.manager.batch.startBatchDownloadConfirmed
+import moe.ouom.neriplayer.core.download.manager.batch.tryFinalizePreparedBatchArtifact
+import moe.ouom.neriplayer.core.download.manager.catalog.awaitDownloadedSongDeletion
+import moe.ouom.neriplayer.core.download.manager.catalog.releaseDownloadArtifactAfterExecutionOwnershipLoss
+import moe.ouom.neriplayer.core.download.manager.commit.cleanupDownloadArtifactsBeforeFreshStart
+import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingDownloadsForStartup
+import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingResumableDownloadsLocked
+import moe.ouom.neriplayer.core.download.manager.recovery.resolveCoreRecoveryAudioCandidate
+import moe.ouom.neriplayer.core.download.manager.recovery.resolvePendingDownloadRecoveryPlan
+import moe.ouom.neriplayer.core.download.manager.runtime.deferPendingDownloadRecoveryForNetworkPolicyIfNeeded
+import moe.ouom.neriplayer.core.download.manager.runtime.isMetadataOwnedBySong
+import moe.ouom.neriplayer.core.download.manager.runtime.loadFinalizationRecoverySnapshot
+import moe.ouom.neriplayer.core.download.manager.runtime.prepareConfirmedDownload
+import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadOperation
+import moe.ouom.neriplayer.core.download.manager.runtime.reopenMissingPostCoreArtifactForFreshTransfer
+import moe.ouom.neriplayer.core.download.manager.runtime.requestStorageExhaustionCancellation
+import moe.ouom.neriplayer.core.download.manager.runtime.scheduleUserDownload
+import moe.ouom.neriplayer.core.download.manager.runtime.settleAndRemoveRecoveredTask
+import moe.ouom.neriplayer.core.download.manager.runtime.startDownloadConfirmed
+import moe.ouom.neriplayer.core.download.model.BatchOperationScheduleAction
+import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.model.resolveBatchOperationScheduleAction
+import moe.ouom.neriplayer.core.download.model.resolveDownloadPreserveStaging
+import moe.ouom.neriplayer.core.download.model.selectBatchArtifactLeaseForCancellation
+import moe.ouom.neriplayer.core.download.model.selectBatchDownloadCandidates
+import moe.ouom.neriplayer.core.download.model.shouldPreserveBatchPreparationForHandedOffOperation
+import moe.ouom.neriplayer.core.download.model.shouldRehandoffRecoveredDownloadOperation
+import moe.ouom.neriplayer.core.download.policy.isDownloadFinalizationDurablySettled
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 
@@ -501,7 +557,7 @@ class BatchDownloadOperationRecoveryTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val roomSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomStore.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/DownloadExecutionRoomStore.kt"
         ).readText()
         val executeBody = methodBody(managerSource, "executeDownloadOperation")
 
@@ -631,7 +687,7 @@ class BatchDownloadOperationRecoveryTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val roomSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomStore.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/DownloadExecutionRoomStore.kt"
         ).readText()
         val batchBody = methodBody(managerSource, "startBatchDownload")
         val singleBody = methodBody(managerSource, "scheduleUserDownload")
@@ -666,7 +722,7 @@ class BatchDownloadOperationRecoveryTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val roomReadStoreSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomReadStore.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/DownloadExecutionRoomReadStore.kt"
         ).readText()
         val recoveryStoreSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/DownloadRecoveryRoomStore.kt"

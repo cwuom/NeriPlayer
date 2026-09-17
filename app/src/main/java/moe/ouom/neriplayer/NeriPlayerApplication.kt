@@ -33,7 +33,7 @@ import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.execution.UidtDownloadJobService
+import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
 import moe.ouom.neriplayer.core.download.storage.backend.PersistentManagedTemporaryWriteJournal
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.logging.NPLogger

@@ -1,5 +1,6 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.artifact
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable

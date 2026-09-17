@@ -1,5 +1,15 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHost
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
+import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
+import moe.ouom.neriplayer.core.download.execution.uidt.UidtJobCompletionGate
+import moe.ouom.neriplayer.core.download.execution.uidt.UidtStopAction
+import moe.ouom.neriplayer.core.download.execution.uidt.UidtStopCoordinator
+import moe.ouom.neriplayer.core.download.execution.uidt.UidtStopCoordinators
+import moe.ouom.neriplayer.core.download.execution.uidt.UidtStopRequest
+import moe.ouom.neriplayer.core.download.execution.uidt.sealUidtCompletionGates
+import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import android.content.Context
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -20,7 +30,7 @@ class UidtStopCoordinatorTest {
     @Test
     fun `onStopJob delegates persistence without blocking the callback thread`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/uidt/" +
                 "UidtDownloadJobService.kt"
         ).readText()
         val onStopJob = methodBody(source, "override fun onStopJob(")
@@ -37,7 +47,7 @@ class UidtStopCoordinatorTest {
         assertTrue(enqueueIndex > cancelIndex)
 
         val hostSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/host/" +
                 "DownloadExecutionHost.kt"
         ).readText()
         val prepareStop = methodBody(
@@ -54,7 +64,7 @@ class UidtStopCoordinatorTest {
         assertTrue(prepareStop.contains("clearOperationPauseForExecutionHost"))
 
         val workerSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/worker/" +
                 "ForegroundDownloadWorker.kt"
         ).readText()
         assertTrue(
@@ -68,7 +78,7 @@ class UidtStopCoordinatorTest {
     @Test
     fun `UIDT start only retires a fallback after execution completes`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/uidt/" +
                 "UidtDownloadJobService.kt"
         ).readText()
         val onStartJob = methodBody(source, "override fun onStartJob(")
@@ -84,7 +94,7 @@ class UidtStopCoordinatorTest {
     @Test
     fun `UIDT explicitly receives scheduler network changes`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/uidt/" +
                 "UidtDownloadJobService.kt"
         ).readText()
         val onNetworkChanged = methodBody(source, "override fun onNetworkChanged(")
@@ -96,7 +106,7 @@ class UidtStopCoordinatorTest {
     @Test
     fun `cancelling a legacy fallback removes both historical per operation works`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/worker/" +
                 "ForegroundDownloadWorker.kt"
         ).readText()
         val cancelBody = methodBody(source, "internal fun cancelFallback(")
@@ -110,7 +120,7 @@ class UidtStopCoordinatorTest {
     @Test
     fun `startup trims excess UIDT jobs and rearms the durable pump`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/uidt/" +
                 "UidtDownloadJobService.kt"
         ).readText()
         val trim = methodBody(source, "internal fun trimPendingJobs(")
@@ -131,7 +141,7 @@ class UidtStopCoordinatorTest {
         assertFalse(secondGate.shouldReportCompletion())
 
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/uidt/" +
                 "UidtDownloadJobService.kt"
         ).readText()
         val onDestroy = methodBody(source, "override fun onDestroy(")

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.catalog.shouldRestoreManagedLibraryItem
 import org.junit.Assert.assertFalse
 import org.junit.Test
 

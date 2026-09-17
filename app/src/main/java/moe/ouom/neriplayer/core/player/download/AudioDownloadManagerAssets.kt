@@ -19,8 +19,8 @@ import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceToken
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.DownloadTransferAdmissionDeferredException
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
+import moe.ouom.neriplayer.core.download.execution.host.DownloadTransferAdmissionDeferredException
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem

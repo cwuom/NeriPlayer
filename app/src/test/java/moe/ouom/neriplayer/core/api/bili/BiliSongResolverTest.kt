@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.api.bili
 
-import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.toPlaybackSongItem
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem

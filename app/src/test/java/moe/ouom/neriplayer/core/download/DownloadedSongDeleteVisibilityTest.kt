@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteVisibility
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

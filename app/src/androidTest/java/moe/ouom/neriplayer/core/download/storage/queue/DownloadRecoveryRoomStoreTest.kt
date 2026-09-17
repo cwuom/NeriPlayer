@@ -18,10 +18,10 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.DOWNLOAD_RETRY_BASE_DELAY_MS
-import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.state.DOWNLOAD_RETRY_BASE_DELAY_MS
+import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.model.SongItem

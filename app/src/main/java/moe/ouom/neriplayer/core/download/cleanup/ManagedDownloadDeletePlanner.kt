@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
 import android.content.Context
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
-import moe.ouom.neriplayer.core.download.readTemporaryDirectoryEntries
-import moe.ouom.neriplayer.core.download.resolveRootBlocking
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.readTemporaryDirectoryEntries
+import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_TEMPORARY_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY

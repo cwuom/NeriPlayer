@@ -1,5 +1,21 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHost
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.core.download.execution.host.canScheduleDownloadOperation
+import moe.ouom.neriplayer.core.download.execution.host.releaseTransferReservation
+import moe.ouom.neriplayer.core.download.execution.host.requiresTransferHostAdmission
+import moe.ouom.neriplayer.core.download.execution.host.reserveTransferSlot
+import moe.ouom.neriplayer.core.download.execution.host.resolveConcurrentExecutionResult
+import moe.ouom.neriplayer.core.download.execution.host.shouldBlockHostReschedule
+import moe.ouom.neriplayer.core.download.execution.host.shouldHandleHostStop
+import moe.ouom.neriplayer.core.download.execution.host.stopInternal
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
+import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
@@ -133,7 +149,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
     @Test
     fun `host stop holds the scheduling permit through retry queue persistence`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/host/" +
                 "DownloadExecutionHostExecution.kt"
         ).readText()
         val stopBody = methodBody(source, "stopInternal")
@@ -156,7 +172,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
     @Test
     fun `execution host keeps pump and worker database access suspending`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/host/" +
                 "DownloadExecutionHost.kt"
         ).readText()
 

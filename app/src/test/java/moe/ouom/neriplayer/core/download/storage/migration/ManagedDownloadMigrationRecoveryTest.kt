@@ -1,5 +1,33 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.plan.CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationCleanupReceipt
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationCopyReceipt
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationEntryRef
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationNamePlan
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournal
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournalPhase
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementPlan
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationSourceEntry
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.ManagedDownloadMigrationFinalizer
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.hasCompleteMigrationCleanupReceipts
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.isMigrationDocumentIdWithinTree
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.legacyUnknownCount
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.mergePersistedMigrationCleanupReceipts
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.mergePersistedMigrationCopyReceipts
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.mergePersistedMigrationReplacementPlan
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.mergePersistedMigrationTargetNames
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.migrationSourceEntryCount
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.persistedMigrationJournalTargetNames
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.planDeletedSourceCopyReceiptRecovery
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.reconcileMigrationSourceManifest
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.removeDeletedMigrationSources
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.selectOrphanedMigrationReplacementPlans
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.shouldRetryActiveMigrationJournal
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.shouldUseDirectMigrationReceiptValidation
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.upgradeLegacyMigrationReplacementJournal
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertEquals
@@ -45,7 +73,7 @@ class ManagedDownloadMigrationRecoveryTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
         ).readText()
         val finalizer = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/recovery/" +
                 "ManagedDownloadMigrationFinalizer.kt"
         ).readText()
 

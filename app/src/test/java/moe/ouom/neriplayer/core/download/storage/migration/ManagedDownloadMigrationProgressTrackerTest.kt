@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.progress.ManagedDownloadMigrationProgressTracker
+import moe.ouom.neriplayer.core.download.storage.migration.progress.ManagedMigrationProgressEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertEquals
 import org.junit.Test

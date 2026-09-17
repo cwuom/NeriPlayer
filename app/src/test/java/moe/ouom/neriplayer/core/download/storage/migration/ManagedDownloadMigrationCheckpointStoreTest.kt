@@ -1,5 +1,15 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.plan.CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationCleanupReceipt
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationCopyReceipt
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournal
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournalPhase
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementPlan
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationRequest
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationSourceEntry
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.ManagedDownloadMigrationCheckpointStore
 import android.content.SharedPreferences
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

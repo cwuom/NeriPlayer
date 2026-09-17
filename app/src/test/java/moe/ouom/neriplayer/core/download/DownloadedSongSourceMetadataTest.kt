@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
+import moe.ouom.neriplayer.core.download.model.withCachedDownloadedLyrics
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity

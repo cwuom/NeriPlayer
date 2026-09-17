@@ -1,10 +1,10 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.policy
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import moe.ouom.neriplayer.core.download.execution.DownloadClearPurpose
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 
 internal class DownloadAdmissionGate {
     internal data class ClearToken(

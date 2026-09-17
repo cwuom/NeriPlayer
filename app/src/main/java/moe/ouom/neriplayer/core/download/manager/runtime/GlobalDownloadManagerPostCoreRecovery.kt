@@ -1,13 +1,18 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.manager.runtime
 
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
+import moe.ouom.neriplayer.core.download.manager.admission.openDownloadAdmissionTicketOrNull
+import moe.ouom.neriplayer.core.download.manager.batch.forgetPendingDownloadQueueEntriesForOperation
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
-import moe.ouom.neriplayer.core.download.execution.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
-import moe.ouom.neriplayer.core.download.execution.isRetryDeadlineReady
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
+import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey

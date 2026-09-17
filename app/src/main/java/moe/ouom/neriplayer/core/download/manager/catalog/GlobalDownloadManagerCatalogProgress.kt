@@ -1,5 +1,15 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.manager.catalog
 
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.buildDownloadedSongCatalogIndex
+import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
+import moe.ouom.neriplayer.core.download.manager.batch.persistBatchMemberProgress
+import moe.ouom.neriplayer.core.download.manager.batch.updateBatchDownloadPresentationProgress
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.hasRecoveryBlockingDownloadOperations
+import moe.ouom.neriplayer.core.download.policy.resolveRecoveredDownloadProgress
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.ActiveProgressCheckpointBinding
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PendingProgressCheckpoint
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.CatalogPublishMode
@@ -14,7 +24,7 @@ import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.applyDownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.buildDownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.downloadedSongCatalogEntryKey
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus

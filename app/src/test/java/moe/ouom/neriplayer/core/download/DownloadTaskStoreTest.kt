@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.manager.batch.removeDownloadTasks
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.core.download.model.DownloadTaskSummary
+import moe.ouom.neriplayer.core.download.model.buildDownloadTaskSummary
+import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellationCandidate
+import moe.ouom.neriplayer.core.download.model.stabilizeDownloadTaskSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel

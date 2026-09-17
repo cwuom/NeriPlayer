@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.index
 
 import java.io.File
 import java.security.MessageDigest
-import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import org.json.JSONArray
 import org.json.JSONObject

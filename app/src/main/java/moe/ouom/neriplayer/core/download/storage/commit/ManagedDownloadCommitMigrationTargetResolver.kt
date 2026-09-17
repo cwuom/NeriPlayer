@@ -6,8 +6,8 @@ import java.io.File
 import java.util.LinkedHashMap
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationTargetResolver
-import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationTargetResolver
+import moe.ouom.neriplayer.core.download.storage.migration.plan.StoredWriteResult
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming

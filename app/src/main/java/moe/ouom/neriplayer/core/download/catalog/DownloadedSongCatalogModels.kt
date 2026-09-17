@@ -2,10 +2,10 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import android.net.Uri
 import androidx.core.net.toUri
-import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.remoteSourceIdentityOrNull as downloadedRemoteSourceIdentityOrNull
-import moe.ouom.neriplayer.core.download.remoteSourceStableKeyOrNull
-import moe.ouom.neriplayer.core.download.withRecoveredRemoteSourceStableKey
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.remoteSourceIdentityOrNull as downloadedRemoteSourceIdentityOrNull
+import moe.ouom.neriplayer.core.download.model.remoteSourceStableKeyOrNull
+import moe.ouom.neriplayer.core.download.model.withRecoveredRemoteSourceStableKey
 import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey

@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import java.io.File
 import java.nio.file.Files
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.model
 
 import java.util.concurrent.atomic.AtomicLong
 

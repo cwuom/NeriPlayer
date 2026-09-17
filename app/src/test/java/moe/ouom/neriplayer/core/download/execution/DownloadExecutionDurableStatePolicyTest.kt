@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.host.canScheduleDownloadOperation
+import moe.ouom.neriplayer.core.download.execution.host.shouldHandleHostStop
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.INTERRUPTED_DOWNLOAD_OPERATION_STATES
+import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.persistence.resolveDownloadOperationState
+import moe.ouom.neriplayer.core.download.execution.state.isPostCoreDownloadOperationState
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -63,7 +70,7 @@ class DownloadExecutionDurableStatePolicyTest {
     @Test
     fun `legacy completed pending recovery has a dedicated reopen path`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/" +
                 "DownloadExecutionRoomStore.kt"
         )
         val text = source.readText()

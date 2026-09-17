@@ -175,7 +175,7 @@
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
         <service
-            android:name=".core.download.execution.UidtDownloadJobService"
+            android:name=".core.download.execution.uidt.UidtDownloadJobService"
             android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE"
             tools:targetApi="34" />

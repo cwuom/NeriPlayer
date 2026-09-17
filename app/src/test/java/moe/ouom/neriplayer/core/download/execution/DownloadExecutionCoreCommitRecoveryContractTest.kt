@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -9,7 +11,7 @@ class DownloadExecutionCoreCommitRecoveryContractTest {
     @Test
     fun `recovery promotes only waiting or retryable operations`() {
         val source = readSource(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/" +
                 "DownloadExecutionRoomStore.kt"
         )
         val body = methodBody(source, "reconcileCoreCommitJournal")

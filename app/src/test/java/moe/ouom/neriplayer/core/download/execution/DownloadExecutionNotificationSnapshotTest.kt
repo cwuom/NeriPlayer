@@ -1,8 +1,9 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.BatchDownloadOverallProgress
-import moe.ouom.neriplayer.core.download.DownloadStatus
-import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.execution.notification.deriveDownloadExecutionNotificationSnapshot
+import moe.ouom.neriplayer.core.download.model.BatchDownloadOverallProgress
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadTask
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals

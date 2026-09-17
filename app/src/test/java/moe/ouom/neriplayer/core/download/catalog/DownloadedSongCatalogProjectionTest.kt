@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.catalog
 
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey

@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import android.content.Context
 import java.io.File
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import org.json.JSONArray

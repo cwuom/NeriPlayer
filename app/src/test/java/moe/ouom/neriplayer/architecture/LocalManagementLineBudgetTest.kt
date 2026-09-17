@@ -69,8 +69,8 @@ internal object LocalManagementLineBudget {
         requiredFiles = listOf(
             "$MAIN_PACKAGE_ROOT/core/download/GlobalDownloadManager.kt",
             "$MAIN_PACKAGE_ROOT/core/download/ManagedDownloadStorage.kt",
-            "$MAIN_PACKAGE_ROOT/core/download/execution/DownloadExecutionRoomStore.kt",
-            "$MAIN_PACKAGE_ROOT/core/download/execution/DownloadExecutionHost.kt",
+            "$MAIN_PACKAGE_ROOT/core/download/execution/persistence/DownloadExecutionRoomStore.kt",
+            "$MAIN_PACKAGE_ROOT/core/download/execution/host/DownloadExecutionHost.kt",
             "$MAIN_PACKAGE_ROOT/core/player/download/AudioDownloadManager.kt",
             "$MAIN_PACKAGE_ROOT/data/local/media/LocalMediaSupport.kt",
             "$MAIN_PACKAGE_ROOT/data/local/audioimport/LocalAudioImportManager.kt",

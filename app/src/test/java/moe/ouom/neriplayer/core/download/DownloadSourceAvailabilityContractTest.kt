@@ -1,5 +1,11 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.manager.batch.forgetPendingDownloadQueueEntriesForOperation
+import moe.ouom.neriplayer.core.download.manager.runtime.executionResultForOperation
+import moe.ouom.neriplayer.core.download.manager.runtime.settleUnavailableDownloadSourceFailure
+import moe.ouom.neriplayer.core.download.manager.runtime.settleUnfinishedDownloadArtifactLease
+import moe.ouom.neriplayer.core.download.manager.runtime.startDownloadConfirmed
+import moe.ouom.neriplayer.core.download.policy.shouldForceFreshStartStorageScan
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -50,7 +56,7 @@ class DownloadSourceAvailabilityContractTest {
     @Test
     fun `missing operation result releases the host song mapping`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionHost.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/host/DownloadExecutionHost.kt"
         ).readText()
         val resultBody = source.substringAfter("when (result) {")
             .substringBefore("if (clearBlockedResult)")

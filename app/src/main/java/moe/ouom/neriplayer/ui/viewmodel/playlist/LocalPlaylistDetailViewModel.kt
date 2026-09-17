@@ -43,7 +43,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult

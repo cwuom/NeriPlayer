@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import java.io.File
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
@@ -63,7 +64,7 @@ class DownloadBatchClearingContractTest {
     @Test
     fun `direct cached settlement releases a stale host admission`() {
         val source = readSource(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/" +
                 "DownloadExecutionRoomStore.kt"
         )
         val body = methodBody(source, "markAlreadyDownloadedCompleted")

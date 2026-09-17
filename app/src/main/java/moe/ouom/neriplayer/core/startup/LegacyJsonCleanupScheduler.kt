@@ -12,10 +12,10 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingBusyException
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingBusyException
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeCoordinator

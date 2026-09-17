@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import java.io.File
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

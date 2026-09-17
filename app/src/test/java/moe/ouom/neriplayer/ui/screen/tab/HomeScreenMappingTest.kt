@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals

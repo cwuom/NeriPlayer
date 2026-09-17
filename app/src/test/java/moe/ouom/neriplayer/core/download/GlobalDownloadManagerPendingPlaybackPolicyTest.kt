@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.policy.shouldAllowPendingCatalogPlayback
+import moe.ouom.neriplayer.core.download.policy.shouldEvictMissingDownloadedSongCatalogEntry
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

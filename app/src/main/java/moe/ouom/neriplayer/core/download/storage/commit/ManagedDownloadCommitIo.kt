@@ -15,7 +15,7 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteArtifacts
 import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
 
 internal object ManagedDownloadCommitIo {
     data class ReplacementFileWrite(

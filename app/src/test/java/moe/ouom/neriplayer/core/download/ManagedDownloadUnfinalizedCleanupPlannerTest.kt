@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadParsedMetadataEntry
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadUnfinalizedCleanupPlanner
 import org.junit.Assert.assertFalse

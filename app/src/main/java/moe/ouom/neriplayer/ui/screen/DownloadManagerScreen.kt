@@ -58,9 +58,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.DownloadedSongDeletePhase
-import moe.ouom.neriplayer.core.download.DownloadedSongDeleteResult
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteResult
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface

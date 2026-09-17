@@ -54,26 +54,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.BatchDownloadOverallProgress
-import moe.ouom.neriplayer.core.download.DownloadStatus
-import moe.ouom.neriplayer.core.download.DownloadTask
-import moe.ouom.neriplayer.core.download.DownloadClearVisibility
-import moe.ouom.neriplayer.core.download.ExplicitDownloadResumeCandidate
+import moe.ouom.neriplayer.core.download.model.BatchDownloadOverallProgress
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.core.download.policy.DownloadClearVisibility
+import moe.ouom.neriplayer.core.download.model.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.batchDownloadProgressForDisplay
-import moe.ouom.neriplayer.core.download.formatDownloadTransferProgress
-import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
-import moe.ouom.neriplayer.core.download.visibleDownloadProgressTasks
-import moe.ouom.neriplayer.core.download.visibleExplicitResumeCandidates
-import moe.ouom.neriplayer.core.download.visibleFailedDownloadTasks
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearProgressStore
-import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
-import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.model.batchDownloadProgressForDisplay
+import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.model.visibleDownloadProgressTasks
+import moe.ouom.neriplayer.core.download.model.visibleExplicitResumeCandidates
+import moe.ouom.neriplayer.core.download.model.visibleFailedDownloadTasks
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearProgressStore
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.download.execution.loadExplicitDownloadResumeCandidates
-import moe.ouom.neriplayer.core.download.execution.resumeExplicitDownload
+import moe.ouom.neriplayer.core.download.execution.recovery.loadExplicitDownloadResumeCandidates
+import moe.ouom.neriplayer.core.download.execution.recovery.resumeExplicitDownload
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
@@ -729,7 +729,7 @@ fun DownloadProgressScreen(
                                             val schedule = runCatching {
                                                 resumeExplicitDownload(context, candidate)
                                             }.getOrNull()
-                                            if (schedule is moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule.Scheduled) {
+                                            if (schedule is moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule.Scheduled) {
                                                 explicitResumeCandidates = explicitResumeCandidates
                                                     .filterNot { item ->
                                                         item.operationId == candidate.operationId

@@ -1,5 +1,21 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.manager.catalog
 
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadArtifactRemovalResult
+import moe.ouom.neriplayer.core.download.ManagedDownloadSongDeletePlan
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.buildDownloadedSongCatalogIndex
+import moe.ouom.neriplayer.core.download.upsertDownloadedSongCatalog
+import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
+import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshPreserveReason
+import moe.ouom.neriplayer.core.download.model.remoteSourceStableKeyOrNull
+import moe.ouom.neriplayer.core.download.policy.observeDownloadedSongReferencesFromSnapshot
+import moe.ouom.neriplayer.core.download.policy.partitionForBoundedParallelism
+import moe.ouom.neriplayer.core.download.policy.withDownloadClearRoomTimeout
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.FastIndexPersistenceRequest
 import android.content.Context
 import kotlinx.coroutines.CancellationException
@@ -16,8 +32,8 @@ import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuildItem
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.catalog.downloadedSongNewestFirstComparator
 import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
 import moe.ouom.neriplayer.core.download.reconcile.EmptyScanDecision
 import moe.ouom.neriplayer.core.download.reconcile.EmptyScanObservation

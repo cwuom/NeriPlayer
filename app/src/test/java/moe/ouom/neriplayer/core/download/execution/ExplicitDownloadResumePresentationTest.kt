@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.recovery.buildExplicitResumeRequest
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.core.download.ExplicitDownloadResumeCandidate
-import moe.ouom.neriplayer.core.download.visibleExplicitResumeCandidates
+import moe.ouom.neriplayer.core.download.model.ExplicitDownloadResumeCandidate
+import moe.ouom.neriplayer.core.download.model.visibleExplicitResumeCandidates
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.storage.operation.content.resolveRoot
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException

@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.model
 
 import android.annotation.SuppressLint
 import android.content.Context

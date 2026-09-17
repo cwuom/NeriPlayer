@@ -171,9 +171,9 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager

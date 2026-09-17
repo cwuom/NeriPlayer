@@ -1,5 +1,9 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.manager.runtime
 
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
+import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.FinalizationRecoverySnapshotCache
 import android.content.Context
 import android.os.SystemClock
@@ -8,11 +12,11 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionPumpResult
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.ForegroundDownloadWorker
-import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
+import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.logging.NPLogger
 

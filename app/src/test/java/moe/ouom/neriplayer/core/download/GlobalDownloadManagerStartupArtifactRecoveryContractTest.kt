@@ -1,5 +1,36 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
+import moe.ouom.neriplayer.core.download.manager.admission.scheduleStartupArtifactRecovery
+import moe.ouom.neriplayer.core.download.manager.batch.recoverInFlightDownloadOperations
+import moe.ouom.neriplayer.core.download.manager.commit.completeCoreDownloadAndEnqueueEnrichment
+import moe.ouom.neriplayer.core.download.manager.commit.ensureCoreRecoveryOperation
+import moe.ouom.neriplayer.core.download.manager.commit.publishFinalizedDownload
+import moe.ouom.neriplayer.core.download.manager.commit.schedulePostCoreEnrichmentRetry
+import moe.ouom.neriplayer.core.download.manager.commit.settlePostCoreEnrichmentFailure
+import moe.ouom.neriplayer.core.download.manager.recovery.prepareFinalizedPublicationArtifactLease
+import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingAudioWritesFromRoot
+import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingDownloadsForStartup
+import moe.ouom.neriplayer.core.download.manager.recovery.recoverUnfinalizedPublishedAudioFromRoot
+import moe.ouom.neriplayer.core.download.manager.recovery.repairFinalizedDownloadedCoversFromRoot
+import moe.ouom.neriplayer.core.download.manager.recovery.repairPersistedPostCoreBatchCompletions
+import moe.ouom.neriplayer.core.download.manager.recovery.restorePersistedBatchDownloadPresentations
+import moe.ouom.neriplayer.core.download.manager.recovery.restorePersistedDownloadProgress
+import moe.ouom.neriplayer.core.download.manager.runtime.publishOptimisticDownloadedSongs
+import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadOperation
+import moe.ouom.neriplayer.core.download.manager.runtime.resumePostCoreDownloadsAfterProgressRestore
+import moe.ouom.neriplayer.core.download.manager.runtime.wakeStartupDownloadExecutionAfterProgressRestore
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.core.download.policy.finalizedPublicationRecoveryLeaseOwnerId
+import moe.ouom.neriplayer.core.download.storage.operation.content.createDefaultRoot
+import moe.ouom.neriplayer.core.download.storage.operation.content.saveAudioFromTempBlocking
+import moe.ouom.neriplayer.core.download.storage.operation.content.scheduleSnapshotWarmup
+import moe.ouom.neriplayer.core.download.storage.operation.content.writeCollisionPendingMetadata
+import moe.ouom.neriplayer.core.download.storage.operation.content.writeSafFileThroughBackend
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.cleanupMigrationReplacementBackups
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.hasPendingStartupMigrationRecovery
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.resolveTemporaryRoot
 import java.io.File
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import org.junit.Assert.assertEquals
@@ -183,7 +214,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         val repairBody = methodBody(source, "repairPersistedPostCoreBatchCompletions")
         val inFlightRecoveryBody = methodBody(source, "recoverInFlightDownloadOperations")
         val workerSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/worker/" +
                 "PostCoreDownloadRecoveryWorker.kt"
         ).readText()
         val cancelLegacyBody = methodBody(workerSource, "cancelLegacyPerOperationWork")

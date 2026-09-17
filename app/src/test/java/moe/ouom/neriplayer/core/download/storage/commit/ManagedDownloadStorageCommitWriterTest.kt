@@ -6,7 +6,7 @@ import androidx.documentfile.provider.DocumentFile
 import java.io.ByteArrayInputStream
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationReplacementPlan
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementPlan
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories

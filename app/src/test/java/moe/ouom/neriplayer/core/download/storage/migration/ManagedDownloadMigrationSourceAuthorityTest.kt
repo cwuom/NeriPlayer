@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationNamePlanner
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationEntryRef
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationNamePlan
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationTargetIndex
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException

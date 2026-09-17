@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomReadStore
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.markCoreCommittedImpl
+import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
+import moe.ouom.neriplayer.core.download.execution.state.planDownloadRetry
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,7 +28,7 @@ class DownloadOperationPaginationContractTest {
     @Test
     fun `recovery readers advance a monotonic cursor and restore queue ordering`() {
         val source = readSource(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/" +
                 "DownloadExecutionRoomReadStore.kt"
         )
         val stateReader = source.substringAfter("suspend fun listByStates(")
@@ -77,7 +82,7 @@ class DownloadOperationPaginationContractTest {
         assertFalse(query.contains("OFFSET"))
 
         val roomStoreSource = readSource(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/" +
                 "DownloadExecutionRoomReadStore.kt"
         )
         val pumpReader = roomStoreSource.substringAfter(
@@ -113,7 +118,7 @@ class DownloadOperationPaginationContractTest {
     @Test
     fun `core commit does not load payload or settle the batch before finalization`() {
         val source = readSource(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/" +
                 "DownloadExecutionRoomStoreFacadeRead.kt"
         )
         val body = moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.functionBody(
@@ -137,7 +142,7 @@ class DownloadOperationPaginationContractTest {
     @Test
     fun `retry transitions persist a fenced backoff and clear it on claim`() {
         val roomStore = readSource(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/" +
                 "DownloadExecutionRoomStore.kt"
         )
         val dao = readSource(

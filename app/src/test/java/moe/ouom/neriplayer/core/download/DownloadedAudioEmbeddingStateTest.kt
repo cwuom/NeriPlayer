@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.isAcceptedDownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.model.resolvePersistedDownloadedAudioEmbeddingState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

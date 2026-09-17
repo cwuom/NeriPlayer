@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.DownloadCoreCommitPhase
+import moe.ouom.neriplayer.core.download.policy.DownloadCoreCommitPhase
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -28,11 +28,11 @@ import moe.ouom.neriplayer.core.download.resource.classifyDownloadStorageSpaceFa
 import moe.ouom.neriplayer.core.download.resource.isDefinitive
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
-import moe.ouom.neriplayer.core.download.execution.DownloadTransferAdmissionDeferredException
-import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
-import moe.ouom.neriplayer.core.download.shouldRollbackCancelledAudio
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
+import moe.ouom.neriplayer.core.download.execution.host.DownloadTransferAdmissionDeferredException
+import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
+import moe.ouom.neriplayer.core.download.policy.shouldRollbackCancelledAudio
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
 import org.junit.Assert.assertTrue
 import org.junit.Test
 

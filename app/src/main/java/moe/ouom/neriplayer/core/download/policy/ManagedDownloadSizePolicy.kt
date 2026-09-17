@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.policy
 
 internal object ManagedDownloadSizePolicy {
     const val MAX_TRANSFER_SIZE_TOLERANCE_BYTES = 64L * 1024L

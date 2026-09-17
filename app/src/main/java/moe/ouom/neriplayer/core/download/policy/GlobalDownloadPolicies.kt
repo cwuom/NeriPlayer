@@ -1,5 +1,9 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.policy
 
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.manager.runtime.POST_CORE_DOWNLOAD_OPERATION_STATES
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -18,7 +22,7 @@ import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAs
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.execution.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
+import moe.ouom.neriplayer.core.download.execution.clear.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.isFormalManagedAudioReference
 import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed

@@ -1,5 +1,15 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.host.tryAcquireHostAdmission
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationJournal
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionPumpCursor
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionPumpPage
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomCancellationStore
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.resolveDownloadOperationState
+import moe.ouom.neriplayer.core.download.execution.persistence.shouldRestartOperation
 import android.content.Context
 import java.nio.file.Files
 import moe.ouom.neriplayer.data.model.SongItem
@@ -286,7 +296,7 @@ class DownloadExecutionOperationJournalCharacterizationTest {
             .map {
                 java.io.File(
                     it,
-                    "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomCancellationStore.kt"
+                    "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/DownloadExecutionRoomCancellationStore.kt"
                 )
             }
             .firstOrNull(java.io.File::isFile)

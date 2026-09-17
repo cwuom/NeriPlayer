@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import java.io.File
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
@@ -29,7 +30,7 @@ class DownloadBatchNetworkFenceTest {
     @Test
     fun `room start keeps the network generation fence inside its transaction`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/persistence/" +
                 "DownloadExecutionRoomStore.kt"
         ).readText()
         val tryStartBody = methodBody(source, "tryStart")

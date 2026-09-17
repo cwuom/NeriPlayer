@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.policy.DownloadAdmissionGate
+import moe.ouom.neriplayer.core.download.policy.DownloadClearVisibility
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -7,7 +9,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.task.DownloadTaskStore
-import moe.ouom.neriplayer.core.download.execution.DownloadClearPurpose
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

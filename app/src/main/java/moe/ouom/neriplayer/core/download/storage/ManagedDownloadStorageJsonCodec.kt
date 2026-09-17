@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage
 
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.data.model.stableKey

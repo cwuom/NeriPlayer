@@ -6,8 +6,8 @@ import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.ManagedLibraryItemRoomStore
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.catalog.ManagedLibraryItemRoomStore
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase

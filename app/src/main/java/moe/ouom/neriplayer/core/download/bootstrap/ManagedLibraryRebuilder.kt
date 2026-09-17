@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.bootstrap
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
 
 internal data class ManagedLibraryRebuildItem(
     val audio: ManagedDownloadStorage.StoredEntry,

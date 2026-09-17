@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearFenceReleaseResult
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearOwnership
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,7 +14,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `begin clear reuses a pending in process epoch`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         val body = methodBody(source, "beginClear")
@@ -23,7 +27,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `unpersisted epoch is abandoned only after conservative checks`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         val body = methodBody(source, "abandonUnpersistedRequestIfCurrent")
@@ -40,7 +44,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `persisted fence probe is separate from delete intent`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         val body = methodBody(source, "hasPersistedFence")
@@ -53,7 +57,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `download progress probe is limited to task purpose`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         val body = methodBody(source, "isTaskProgressActive")
@@ -68,7 +72,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `capture blocks known owners but permits unrelated keys`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         val blockedBody = methodBody(source, "isBlocked")
@@ -95,7 +99,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `schedule tickets use a monotonic clear epoch`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         assertTrue(source.contains("internal fun currentEpoch("))
@@ -105,7 +109,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `failed owner persistence cannot change capture state`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         val body = methodBody(source, "setOwnership")
@@ -137,7 +141,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `active fence retry preserves persisted timestamp and owners`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         val body = methodBody(source, "activate", occurrence = 2)
@@ -155,7 +159,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `task fence cannot be released before owner capture completes`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         val body = methodBody(source, "clearIfCurrent")
@@ -176,7 +180,7 @@ class DownloadClearFenceStoreContractTest {
     @Test
     fun `expired task fence cannot bypass durable convergence`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/clear/" +
                 "DownloadClearFenceStore.kt"
         ).readText()
         assertFalse(source.contains("forceReleaseIfExpired"))

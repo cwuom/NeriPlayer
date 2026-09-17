@@ -1,5 +1,18 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.buildDownloadTaskSummary
+import moe.ouom.neriplayer.core.download.model.countFailedDownloadTasks
+import moe.ouom.neriplayer.core.download.model.countPendingDownloadTasks
+import moe.ouom.neriplayer.core.download.model.hasActiveDownloadOperations
+import moe.ouom.neriplayer.core.download.model.hasActiveDownloadTasks
+import moe.ouom.neriplayer.core.download.model.hasPendingDownloadTasks
+import moe.ouom.neriplayer.core.download.model.hasRecoveryBlockingDownloadOperations
+import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.model.isDownloadTaskFinalizing
+import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope

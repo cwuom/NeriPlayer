@@ -23,6 +23,15 @@ package moe.ouom.neriplayer.core.download
  * Updated: 2026/3/24
  */
 
+import moe.ouom.neriplayer.core.download.artifact.*
+import moe.ouom.neriplayer.core.download.manager.admission.*
+import moe.ouom.neriplayer.core.download.manager.batch.*
+import moe.ouom.neriplayer.core.download.manager.catalog.*
+import moe.ouom.neriplayer.core.download.manager.facade.*
+import moe.ouom.neriplayer.core.download.manager.runtime.*
+import moe.ouom.neriplayer.core.download.model.*
+import moe.ouom.neriplayer.core.download.policy.*
+import moe.ouom.neriplayer.core.download.storage.facade.*
 import android.content.Context
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -49,10 +58,10 @@ import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactCoordin
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.enrichment.AssetEnrichmentCoordinator
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionResult
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler

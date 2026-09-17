@@ -4,7 +4,7 @@ import android.content.Context
 import android.os.Looper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import java.io.File

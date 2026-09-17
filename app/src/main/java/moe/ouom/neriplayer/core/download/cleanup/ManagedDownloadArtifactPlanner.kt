@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.net.toUri
 import java.io.File
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames

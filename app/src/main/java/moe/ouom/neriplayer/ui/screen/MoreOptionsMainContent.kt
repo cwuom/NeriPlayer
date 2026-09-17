@@ -58,11 +58,11 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.DownloadStatus
-import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.formatDownloadTransferProgress
-import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager

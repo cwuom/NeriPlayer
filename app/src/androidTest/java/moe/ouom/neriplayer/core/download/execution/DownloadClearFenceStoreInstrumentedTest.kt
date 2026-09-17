@@ -1,10 +1,16 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearFenceReleaseResult
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearOwnership
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
+import moe.ouom.neriplayer.core.download.execution.recovery.loadExplicitDownloadResumeCandidates
+import moe.ouom.neriplayer.core.download.execution.recovery.resumeExplicitDownload
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.ExplicitDownloadResumeCandidate
+import moe.ouom.neriplayer.core.download.model.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.data.model.SongItem
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit

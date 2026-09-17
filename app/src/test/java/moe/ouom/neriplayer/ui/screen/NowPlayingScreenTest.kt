@@ -9,8 +9,8 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.download.DownloadStatus
-import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadTask
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem

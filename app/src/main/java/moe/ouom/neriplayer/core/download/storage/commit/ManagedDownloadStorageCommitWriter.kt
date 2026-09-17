@@ -14,7 +14,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
-import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
+import moe.ouom.neriplayer.core.download.storage.migration.plan.StoredWriteResult
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
@@ -32,9 +32,9 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageTargetChangedExc
 import moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
-import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationReplacementPlan
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
+import moe.ouom.neriplayer.core.download.storage.migration.plan.CopiedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementPlan
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadStorageCommitWriter(

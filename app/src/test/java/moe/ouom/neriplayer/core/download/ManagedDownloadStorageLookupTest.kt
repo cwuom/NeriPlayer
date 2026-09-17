@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.storage.operation.findAudioEntry
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex

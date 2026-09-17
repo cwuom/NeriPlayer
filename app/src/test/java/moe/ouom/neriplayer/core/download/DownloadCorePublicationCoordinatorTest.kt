@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.artifact.DownloadCorePublicationCoordinator
 import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Test

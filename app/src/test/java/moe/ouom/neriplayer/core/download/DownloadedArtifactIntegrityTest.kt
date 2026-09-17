@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.model.DownloadedArtifactIntegrityIssue
+import moe.ouom.neriplayer.core.download.model.DownloadedArtifactReferenceState
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.verifyDownloadedArtifactIntegrity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

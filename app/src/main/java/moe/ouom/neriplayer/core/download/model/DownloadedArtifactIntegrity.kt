@@ -1,5 +1,7 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.model
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
 import kotlin.math.abs
 import kotlin.math.max
 import moe.ouom.neriplayer.data.model.SongItem

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.download
 
-import moe.ouom.neriplayer.core.download.mergeDownloadProgress
+import moe.ouom.neriplayer.core.download.model.mergeDownloadProgress
 
 /**
  * 下载进度合并和节流策略

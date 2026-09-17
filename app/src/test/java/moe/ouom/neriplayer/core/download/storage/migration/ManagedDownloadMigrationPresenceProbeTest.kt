@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationEntryCollector
 import kotlin.system.measureTimeMillis
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertFalse

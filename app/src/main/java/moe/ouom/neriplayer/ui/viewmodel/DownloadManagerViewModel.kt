@@ -30,8 +30,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.DownloadedSongDeleteResult
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteResult
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 
 class DownloadManagerViewModel(application: Application) : AndroidViewModel(application) {

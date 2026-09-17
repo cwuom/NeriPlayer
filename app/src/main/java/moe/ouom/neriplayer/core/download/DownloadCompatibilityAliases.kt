@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import android.content.Context
 import com.kyant.taglib.PropertyMap
 import moe.ouom.neriplayer.core.download.catalog.buildDownloadedSongCatalogIndex as buildDownloadedSongCatalogIndexDelegate

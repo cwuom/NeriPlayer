@@ -6,10 +6,10 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import kotlin.LazyThreadSafetyMode
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
-import moe.ouom.neriplayer.core.download.withRecoveredRemoteSourceStableKey
+import moe.ouom.neriplayer.core.download.model.withRecoveredRemoteSourceStableKey
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates
 import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.copy.migrationContentMatches
 import java.io.ByteArrayInputStream
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

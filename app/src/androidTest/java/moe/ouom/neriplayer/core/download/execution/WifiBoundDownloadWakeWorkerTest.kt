@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.worker.WifiBoundDownloadWakeWorker
 import android.net.NetworkCapabilities
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.NetworkType

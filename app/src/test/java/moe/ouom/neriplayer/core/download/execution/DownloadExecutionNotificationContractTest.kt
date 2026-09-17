@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.notification.DOWNLOAD_EXECUTION_NOTIFICATION_ID
+import moe.ouom.neriplayer.core.download.execution.notification.DownloadExecutionNotificationController
+import moe.ouom.neriplayer.core.download.execution.notification.buildDownloadExecutionNotification
+import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
+import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,7 +31,7 @@ class DownloadExecutionNotificationContractTest {
     @Test
     fun `both execution hosts use one shared progress notification`() {
         val notificationSource = source(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/notification/" +
                 "DownloadExecutionNotification.kt"
         )
         assertTrue(notificationSource.contains("CATEGORY_PROGRESS"))
@@ -37,11 +42,11 @@ class DownloadExecutionNotificationContractTest {
         assertTrue(notificationSource.contains("cancelLegacyNotificationsIfDue"))
 
         val workerSource = source(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/worker/" +
                 "ForegroundDownloadWorker.kt"
         )
         val uidtSource = source(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/uidt/" +
                 "UidtDownloadJobService.kt"
         )
         assertTrue(workerSource.contains("buildDownloadExecutionNotification(context)"))

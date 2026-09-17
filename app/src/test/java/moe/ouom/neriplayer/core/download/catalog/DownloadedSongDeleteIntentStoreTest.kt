@@ -10,9 +10,9 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
-import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.execution.DownloadClearPurpose
-import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 
 class DownloadedSongDeleteIntentStoreTest {
     @get:Rule

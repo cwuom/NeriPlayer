@@ -1,9 +1,15 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.manager.recovery.normalizedPostCoreRecoveryOperationIds
+import moe.ouom.neriplayer.core.download.manager.runtime.PostCoreDownloadRecoveryCandidate
+import moe.ouom.neriplayer.core.download.manager.runtime.PostCoreDownloadRecoveryResult
+import moe.ouom.neriplayer.core.download.manager.runtime.isPostCoreRecoveryNetworkEligible
+import moe.ouom.neriplayer.core.download.manager.runtime.resolvePostCoreRecoveryResult
+import moe.ouom.neriplayer.core.download.manager.runtime.selectPostCoreDownloadRecoveryCandidates
 import androidx.work.BackoffPolicy
 import androidx.work.NetworkType
-import moe.ouom.neriplayer.core.download.execution.PostCoreDownloadRecoveryWorker
-import moe.ouom.neriplayer.core.download.execution.DownloadPumpCompletion
+import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecoveryWorker
+import moe.ouom.neriplayer.core.download.execution.worker.DownloadPumpCompletion
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

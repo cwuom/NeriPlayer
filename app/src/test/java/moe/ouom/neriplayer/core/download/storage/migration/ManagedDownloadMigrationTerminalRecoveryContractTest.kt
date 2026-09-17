@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournal
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournalPhase
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationRequest
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationSourceEntry
+import moe.ouom.neriplayer.core.download.storage.migration.progress.shouldPreserveMigrationUiAfterWorkInfo
+import moe.ouom.neriplayer.core.download.storage.migration.progress.shouldResumePersistedMigrationAfterWorkInfo
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.ManagedDownloadMigrationCheckpointStore
 import android.content.SharedPreferences
 import androidx.work.WorkInfo
 import org.json.JSONObject
@@ -159,7 +166,7 @@ class ManagedDownloadMigrationTerminalRecoveryContractTest {
     @Test
     fun `retryable recovery cannot reopen terminal requests`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/recovery/" +
                 "ManagedDownloadMigrationCheckpointStore.kt"
         ).readText()
         val body = source.substringAfter("fun markRequestRetryable")

@@ -5,9 +5,9 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity

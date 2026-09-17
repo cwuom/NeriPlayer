@@ -7,7 +7,7 @@ import android.content.Context
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.execution.isPostCoreDownloadOperationState
+import moe.ouom.neriplayer.core.download.execution.state.isPostCoreDownloadOperationState
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection

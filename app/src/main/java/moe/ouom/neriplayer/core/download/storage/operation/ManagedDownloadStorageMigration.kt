@@ -1,5 +1,13 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.storage.operation
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.operation.content.backendReference
+import moe.ouom.neriplayer.core.download.storage.operation.content.createDefaultRoot
+import moe.ouom.neriplayer.core.download.storage.operation.content.deleteTrustedReference
+import moe.ouom.neriplayer.core.download.storage.operation.content.forgetDeletedReferencesFromCaches
+import moe.ouom.neriplayer.core.download.storage.operation.content.normalizeDirectoryUri
+import moe.ouom.neriplayer.core.download.storage.operation.content.parseDownloadedAudioMetadataBatch
+import moe.ouom.neriplayer.core.download.storage.operation.content.resolveRoot
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
@@ -12,12 +20,12 @@ import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.commit.sameManagedMigrationStoredEntryIdentity
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationEntryCollector
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationCopyReceipt
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationSourceEntry
-import moe.ouom.neriplayer.core.download.storage.migration.isMigrationDocumentIdWithinTree
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationEntryCollector
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationCopyReceipt
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationSourceEntry
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.isMigrationDocumentIdWithinTree
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference

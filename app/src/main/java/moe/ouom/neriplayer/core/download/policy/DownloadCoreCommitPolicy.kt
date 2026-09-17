@@ -1,5 +1,6 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.policy
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import java.util.Locale
 import java.util.UUID
 

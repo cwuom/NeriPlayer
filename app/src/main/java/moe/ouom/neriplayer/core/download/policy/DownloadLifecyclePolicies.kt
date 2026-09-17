@@ -3,10 +3,10 @@ package moe.ouom.neriplayer.core.download.policy
 import kotlin.math.abs
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isAcceptedDownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.isAcceptedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem

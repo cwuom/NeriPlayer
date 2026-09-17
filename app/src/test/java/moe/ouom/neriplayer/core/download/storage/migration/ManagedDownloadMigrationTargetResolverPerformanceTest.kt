@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationTargetResolver
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger

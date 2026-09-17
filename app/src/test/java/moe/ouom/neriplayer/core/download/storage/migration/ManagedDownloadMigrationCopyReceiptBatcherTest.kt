@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.copy.ManagedDownloadMigrationCopyReceiptBatcher
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationCopyReceipt
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertEquals

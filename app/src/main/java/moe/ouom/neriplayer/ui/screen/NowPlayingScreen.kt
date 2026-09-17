@@ -234,7 +234,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
-import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
+import moe.ouom.neriplayer.core.download.model.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.resolveLyricTextForPlayback
@@ -1143,7 +1143,7 @@ internal fun resolveNowPlayingMainControlsLayout(
 
 internal fun shouldHideDownloadActionForSong(
     hasLocalDownload: Boolean,
-    currentTask: moe.ouom.neriplayer.core.download.DownloadTask?
+    currentTask: moe.ouom.neriplayer.core.download.model.DownloadTask?
 ): Boolean = shouldHideRemoteDownloadAction(hasLocalDownload, currentTask)
 
 internal data class NowPlayingQueueEntry(

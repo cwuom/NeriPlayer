@@ -8,7 +8,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.downloadedSongPlaybackReferenceCandidates
-import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
+import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger

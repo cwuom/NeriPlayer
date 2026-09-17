@@ -1,7 +1,7 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.model
 
 import kotlin.math.floor
-import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.database.entity.DOWNLOAD_BATCH_POST_CORE_PENDING_FRACTION_MILLI
 import moe.ouom.neriplayer.data.model.stableKey

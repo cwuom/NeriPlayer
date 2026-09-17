@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.policy
 
 import kotlinx.coroutines.withTimeoutOrNull
 

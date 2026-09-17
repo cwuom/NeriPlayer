@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationNamePlanner
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationTargetIndexBuilder
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationEntryRef
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import org.junit.Assert.assertEquals

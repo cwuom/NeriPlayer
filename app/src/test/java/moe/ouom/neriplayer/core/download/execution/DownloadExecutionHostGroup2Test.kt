@@ -1,5 +1,40 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearFenceReleaseResult
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearOwnership
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHost
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
+import moe.ouom.neriplayer.core.download.execution.host.enqueueDeferredSchedule
+import moe.ouom.neriplayer.core.download.execution.host.resolveClaimFailureResult
+import moe.ouom.neriplayer.core.download.execution.host.resolveExecutionCancellationResult
+import moe.ouom.neriplayer.core.download.execution.host.triggerDeferredSchedules
+import moe.ouom.neriplayer.core.download.execution.host.tryAcquireHostAdmission
+import moe.ouom.neriplayer.core.download.execution.host.withDeferredSchedulingLock
+import moe.ouom.neriplayer.core.download.execution.notification.DOWNLOAD_EXECUTION_NOTIFICATION_ID
+import moe.ouom.neriplayer.core.download.execution.notification.isLegacyDownloadExecutionNotificationId
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
+import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.scheduling.DownloadRetryDeadlineWakeCoordinator
+import moe.ouom.neriplayer.core.download.execution.uidt.UIDT_SHARED_PUMP_GRACE_MS
+import moe.ouom.neriplayer.core.download.execution.uidt.scheduleUidtWithSharedPump
+import moe.ouom.neriplayer.core.download.execution.uidt.shouldRescheduleUidtExecution
+import moe.ouom.neriplayer.core.download.execution.worker.DownloadExecutionNotificationIds
+import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
+import moe.ouom.neriplayer.core.download.execution.worker.shouldHandoffWifiBoundDownloadWake
+import moe.ouom.neriplayer.core.download.execution.worker.shouldRetireLegacyPerOperationWork
+import moe.ouom.neriplayer.core.download.execution.worker.shouldRouteFallbackToSharedPump
+import moe.ouom.neriplayer.core.download.execution.worker.shouldScheduleWifiBoundDownloadWakeup
+import moe.ouom.neriplayer.core.download.execution.worker.toWorkerResult
+import moe.ouom.neriplayer.core.download.execution.worker.wifiBoundDownloadWakeExistingWorkPolicy
+import moe.ouom.neriplayer.core.download.execution.worker.wifiBoundDownloadWakeHandoffRearmPolicy
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
@@ -942,11 +977,11 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
     @Test
     fun `deferred scheduler cannot lose an enqueue while its worker exits`() {
         val hostSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/host/" +
                 "DownloadExecutionHost.kt"
         ).readText()
         val pumpSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/host/" +
                 "DownloadExecutionHostPump.kt"
         ).readText()
         val enqueueBody = methodBody(pumpSource, "enqueueDeferredSchedule")

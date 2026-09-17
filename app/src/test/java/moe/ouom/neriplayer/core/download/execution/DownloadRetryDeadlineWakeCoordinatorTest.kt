@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.execution.scheduling.DownloadRetryDeadlineWakeCoordinator
 import android.content.Context
 import org.junit.Assert.assertEquals
 import org.junit.Test

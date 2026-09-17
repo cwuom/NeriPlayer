@@ -1,5 +1,7 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.catalog
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import android.content.Context
 import androidx.room.withTransaction
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
