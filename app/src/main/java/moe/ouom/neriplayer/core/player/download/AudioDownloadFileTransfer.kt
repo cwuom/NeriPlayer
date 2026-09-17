@@ -219,7 +219,16 @@ internal class AudioDownloadFileTransfer(
                     expectedBytes = expectedBytes
                 )
             }
-            throw IllegalStateException("HTTP ${response.code}")
+            hooks.withWorkingFileMutation(
+                songKey,
+                "direct_range_not_satisfiable",
+                batchSessionId,
+                attemptId,
+                operationId
+            ) {
+                hooks.deleteWorkingFile(destFile)
+            }
+            throw DownloadRangeRestartRequiredException()
         }
         if (!response.isSuccessful) {
             throw IllegalStateException("HTTP ${response.code}")
@@ -491,6 +500,7 @@ internal class AudioDownloadFileTransfer(
             ),
             expectedAdditionalBytes = null
         )
+        var rangeRestartError: ChunkRequestIOException? = null
         guardedOutput.use { guarded ->
             guarded.sink().buffer().use { sink ->
                 while (true) {
@@ -588,6 +598,10 @@ internal class AudioDownloadFileTransfer(
                         if (error.responseCode == 403 && alreadyComplete) {
                             break
                         }
+                        if (error.responseCode == 416) {
+                            rangeRestartError = error
+                            break
+                        }
                         throw error
                     }
                 }
@@ -595,6 +609,18 @@ internal class AudioDownloadFileTransfer(
                 sink.flush()
                 output.fd.sync()
             }
+        }
+        rangeRestartError?.let { error ->
+            hooks.withWorkingFileMutation(
+                songKey,
+                "chunked_range_not_satisfiable",
+                batchSessionId,
+                attemptId,
+                operationId
+            ) {
+                hooks.deleteWorkingFile(destFile)
+            }
+            throw DownloadRangeRestartRequiredException(error)
         }
         val expectedBytes = totalBytes.takeIf { it > 0L }
         if (strictTotalBytes && expectedBytes != null && downloadedBytes != expectedBytes) {

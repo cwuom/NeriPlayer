@@ -7,15 +7,16 @@ import moe.ouom.neriplayer.core.download.resolveCompletedDownloadFinalizationAct
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.admission.openDownloadAdmissionTicketOrNull
-import moe.ouom.neriplayer.core.download.manager.batch.forgetPendingDownloadQueueEntriesForOperation
+import moe.ouom.neriplayer.core.download.manager.admission.scheduleStartupArtifactRecovery
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
-import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactMissingConfirmed
 import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRetryable
 import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
+import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
 import moe.ouom.neriplayer.core.download.policy.shouldDemotePublishedAudioForFinalization
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.recovery.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
@@ -163,43 +164,50 @@ internal suspend fun GlobalDownloadManager.finalizeCompletedDownload(
             return
         }
         CompletedDownloadFinalizationAction.COMPLETE_WITHOUT_STORED_AUDIO -> {
-            NPLogger.w(TAG, "下载完成但未找到已下载文件，按失败处理: ${song.name}")
-            cleanupOrphanedCompletedSidecars(
-                context = context,
-                song = song,
-                sidecarReferences = sidecarReferences
-            )
-            completedAudio?.let { staleAudio ->
-                AudioDownloadManager.releaseCompletedAudioReference(
-                    songKey = songKey,
-                    expectedAudio = staleAudio
-                )
-            }
+            NPLogger.w(TAG, "下载完成但暂未找到音频引用，保留任务等待自动恢复: ${song.name}")
             updateTaskStatus(
                 songKey,
-                DownloadStatus.FAILED,
+                DownloadStatus.QUEUED,
                 expectedAttemptId = expectedAttemptId
             )
-            if (expectedArtifactLeaseId == null) {
-                markDownloadArtifactMissingConfirmed(
-                    context = context,
-                    song = song,
-                    errorCode = "AUDIO_REFERENCE_MISSING"
-                )
-            } else {
-                markDownloadArtifactRetryable(
-                    context = context,
-                    song = song,
-                    leaseId = expectedArtifactLeaseId,
-                    errorCode = "AUDIO_REFERENCE_MISSING"
-                )
-            }
-            forgetPendingDownloadQueueEntriesForOperation(
+            val operationRetryPersisted = operationId?.let { id ->
+                try {
+                    DownloadExecutionRoomStore.updateState(
+                        context = appContext,
+                        operationId = id,
+                        state = "RETRYABLE",
+                        errorCode = "AUDIO_REFERENCE_MISSING"
+                    )
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Throwable) {
+                    NPLogger.w(
+                        TAG,
+                        "持久化缺失音频引用重试状态失败，保留 artifact 恢复: " +
+                            "song=${song.name}, operationId=$id, error=${error.message}",
+                        error
+                    )
+                    false
+                }
+            } ?: false
+            markDownloadArtifactRetryable(
                 context = context,
-                songKey = songKey,
-                operationId = operationId
+                song = song,
+                leaseId = expectedArtifactLeaseId,
+                errorCode = "AUDIO_REFERENCE_MISSING"
             )
             scheduleCatalogReconcile(context, forceRefresh = true)
+            scheduleStartupArtifactRecovery(appContext)
+            val pumpScheduled = wakeDownloadExecutionPump(
+                context = appContext,
+                reason = "completed_audio_reference_missing"
+            )
+            NPLogger.d(
+                TAG,
+                "缺失音频引用已转入自动恢复: song=${song.name}, " +
+                    "operationId=$operationId, persisted=$operationRetryPersisted, " +
+                    "pump=$pumpScheduled"
+            )
             return
         }
         CompletedDownloadFinalizationAction.COMPLETE -> Unit

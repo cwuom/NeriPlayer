@@ -192,7 +192,9 @@ class DownloadedAudioTagWriterTest {
         val externalLyrics = "[00:01.00]hello\n[00:01.00]你好"
         assertArrayEquals(arrayOf(externalLyrics), propertyMap["LYRICS"])
         assertArrayEquals(arrayOf(externalLyrics), propertyMap["DESCRIPTION"])
-        assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["LYRICS:TRANSLATION"])
+        assertNull(propertyMap["LYRICS:TRANSLATION"])
+        assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["LYRICS_TRANSLATED"])
+        assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["NERI_LYRICS_TRANSLATED"])
     }
 
     @Test
@@ -341,6 +343,53 @@ class DownloadedAudioTagWriterTest {
                 actual = actual,
                 expected = expected,
                 audioExtension = "flac"
+            )
+        )
+    }
+
+    @Test
+    fun `m4a verification accepts the TagLib omitted colon translation alias`() {
+        val expected: PropertyMap = hashMapOf(
+            "LYRICS:TRANSLATION" to arrayOf("[00:01.00]translated"),
+            "LYRICS_TRANSLATED" to arrayOf("[00:01.00]translated"),
+            "NERI_LYRICS_TRANSLATED" to arrayOf("[00:01.00]translated")
+        )
+        val actual: PropertyMap = hashMapOf(
+            "LYRICS_TRANSLATED" to arrayOf("[00:01.00]translated"),
+            "NERI_LYRICS_TRANSLATED" to arrayOf("[00:01.00]translated")
+        )
+
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+                actual = actual,
+                expected = expected,
+                audioExtension = "m4a"
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+                actual = actual,
+                expected = expected,
+                audioExtension = "flac"
+            )
+        )
+    }
+
+    @Test
+    fun `m4a verification still requires its round trippable translation fields`() {
+        val expected: PropertyMap = hashMapOf(
+            "LYRICS_TRANSLATED" to arrayOf("[00:01.00]translated"),
+            "NERI_LYRICS_TRANSLATED" to arrayOf("[00:01.00]translated")
+        )
+        val actual: PropertyMap = hashMapOf(
+            "LYRICS_TRANSLATED" to arrayOf("[00:01.00]translated")
+        )
+
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+                actual = actual,
+                expected = expected,
+                audioExtension = "m4a"
             )
         )
     }

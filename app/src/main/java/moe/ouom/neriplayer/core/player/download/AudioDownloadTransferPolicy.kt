@@ -21,6 +21,10 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import okhttp3.Request
 import moe.ouom.neriplayer.core.logging.NPLogger
 
+internal class DownloadRangeRestartRequiredException(
+    cause: Throwable? = null
+) : IOException("HTTP 416 requires a clean transfer restart", cause)
+
 /**
  * 音频下载的传输选择、续传校验和失败分类
  *
@@ -414,6 +418,9 @@ internal object AudioDownloadTransferPolicy {
             return false
         }
         if (error is DownloadTransferStalledException) {
+            return true
+        }
+        if (error is DownloadRangeRestartRequiredException) {
             return true
         }
         if (error is ChunkRequestIOException) {

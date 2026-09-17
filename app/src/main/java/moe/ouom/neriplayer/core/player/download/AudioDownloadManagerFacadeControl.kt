@@ -190,8 +190,8 @@ internal suspend fun AudioDownloadManager.downloadSongImpl(
     operationId: String? = null,
     downloadAudioQuality: DownloadAudioQualitySelection? = null,
     forceFreshTransfer: Boolean = false
-) {
-    downloadSongOnIo(
+): ManagedDownloadStorage.StoredEntry? {
+    return downloadSongOnIo(
         context = context,
         song = song,
         batchSessionId = batchSessionId,

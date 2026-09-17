@@ -822,7 +822,7 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
                         binding = binding
                     )
                 }
-                try {
+                val transferredAudio = try {
                     val transferStartStillCurrent =
                         !isDownloadClearFenceActive(
                             appContext,
@@ -872,7 +872,7 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
                         return@withSongExecutionLock
                     }
                     withoutSongExecutionLock {
-                        AudioDownloadManager.downloadSong(
+                        AudioDownloadManager.downloadSongWithResult(
                             context = appContext,
                             song = song,
                             attemptId = attemptId,
@@ -902,6 +902,7 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
                         expectedAttemptId = attemptId,
                         operationId = operationId,
                         expectedArtifactLeaseId = acquiredLeaseId,
+                        storedAudioHint = transferredAudio,
                         admissionTicket = admissionTicket
                     )
                     return@withSongExecutionLock
@@ -912,6 +913,7 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
                     expectedAttemptId = attemptId,
                     operationId = operationId,
                     expectedArtifactLeaseId = acquiredLeaseId,
+                    storedAudioHint = transferredAudio,
                     admissionTicket = admissionTicket
                 )
             } finally {

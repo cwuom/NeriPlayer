@@ -17,6 +17,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assume.assumeTrue
 import org.junit.Assert.assertArrayEquals
@@ -147,6 +151,76 @@ class TagLibM4aWriteProbeTest {
             )
             Log.e(TAG, "LocalMediaSupport.writeEditableMetadata outcome=$outcome")
             assertTrue("application metadata write failed: $outcome", outcome.name == "SUCCESS")
+        } finally {
+            work.delete()
+        }
+    }
+
+    @Test
+    fun downloadedM4aMetadataWriteHandlesPlatformIdAndTranslationAliases() = runBlocking {
+        val source = requiredProbeSource()
+        val coverPath = InstrumentationRegistry.getArguments().getString("coverPath")
+        assumeTrue("coverPath is required", !coverPath.isNullOrBlank())
+        val cover = File(requireNotNull(coverPath))
+        assumeTrue("cover file is missing", cover.isFile)
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val work = File(context.cacheDir, "downloaded-audio-tag-writer-probe.m4a")
+        source.copyTo(work, overwrite = true)
+        val seededProperties = hashMapOf<String, Array<String>>().apply {
+            openMetadata(work)?.first?.forEach { (key, values) ->
+                put(key, values.copyOf())
+            }
+            put("TRACKNUMBER", arrayOf("7"))
+        }
+        ParcelFileDescriptor.open(work, ParcelFileDescriptor.MODE_READ_WRITE).use { descriptor ->
+            assertTrue(TagLib.savePropertyMap(descriptor.dup().detachFd(), seededProperties))
+        }
+        val originalTrackNumber = openMetadata(work)?.first?.get("TRACKNUMBER")?.toList()
+        val originalLyrics = "[00:01.00]original"
+        val translatedLyrics = "[00:01.00]translation"
+        try {
+            val outcome = DownloadedAudioTagWriter.write(
+                context = context,
+                audio = ManagedDownloadStorage.StoredEntry(
+                    name = work.name,
+                    reference = work.toURI().toString(),
+                    mediaUri = work.toURI().toString(),
+                    localFilePath = work.absolutePath,
+                    sizeBytes = work.length(),
+                    lastModifiedMs = work.lastModified()
+                ),
+                song = SongItem(
+                    id = 117111510797424L,
+                    name = "Downloaded title",
+                    artist = "Downloaded artist",
+                    album = "Bilibili",
+                    albumId = 0L,
+                    durationMs = 180_000L,
+                    coverUrl = null,
+                    mediaUri = "https://example.test/audio",
+                    matchedLyric = originalLyrics,
+                    matchedTranslatedLyric = translatedLyrics,
+                    localFileName = work.name,
+                    localFilePath = work.absolutePath
+                ),
+                sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences(
+                    coverReference = cover.toURI().toString(),
+                    expectedCover = true,
+                    expectedLyric = true,
+                    expectedTranslatedLyric = true,
+                    lyricContent = originalLyrics,
+                    translatedLyricContent = translatedLyrics
+                ),
+                standardizedLyricEmbeddingEnabled = true
+            )
+
+            assertEquals(DownloadedAudioTagWriteOutcome.SUCCESS, outcome)
+            val properties = requireNotNull(openMetadata(work)?.first)
+            assertEquals(originalTrackNumber, properties["TRACKNUMBER"]?.toList())
+            assertArrayEquals(arrayOf(translatedLyrics), properties["LYRICS_TRANSLATED"])
+            assertArrayEquals(arrayOf(translatedLyrics), properties["NERI_LYRICS_TRANSLATED"])
+            assertTrue(properties["LYRICS:TRANSLATION"].isNullOrEmpty())
         } finally {
             work.delete()
         }

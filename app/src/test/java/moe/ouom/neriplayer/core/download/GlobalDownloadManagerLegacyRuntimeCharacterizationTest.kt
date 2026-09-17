@@ -42,6 +42,44 @@ import org.junit.Test
  */
 class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     @Test
+    fun `completed transfer passes its exact audio reference into finalization`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "startDownloadConfirmed")
+        val transferIndex = body.indexOf("val transferredAudio = try")
+        val downloadIndex = body.indexOf(
+            "AudioDownloadManager.downloadSongWithResult(",
+            transferIndex
+        )
+        val hintIndex = body.indexOf("storedAudioHint = transferredAudio", downloadIndex)
+
+        assertTrue(transferIndex >= 0)
+        assertTrue(downloadIndex > transferIndex)
+        assertTrue(hintIndex > downloadIndex)
+    }
+
+    @Test
+    fun `temporarily missing completed audio remains retryable and keeps its queue entry`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "finalizeCompletedDownload")
+        val missingBranch = body
+            .substringAfter("CompletedDownloadFinalizationAction.COMPLETE_WITHOUT_STORED_AUDIO ->")
+            .substringBefore("CompletedDownloadFinalizationAction.COMPLETE ->")
+
+        assertTrue(missingBranch.contains("DownloadStatus.QUEUED"))
+        assertTrue(missingBranch.contains("state = \"RETRYABLE\""))
+        assertTrue(missingBranch.contains("markDownloadArtifactRetryable("))
+        assertTrue(missingBranch.contains("scheduleStartupArtifactRecovery("))
+        assertTrue(missingBranch.contains("wakeDownloadExecutionPump("))
+        assertFalse(missingBranch.contains("DownloadStatus.FAILED"))
+        assertFalse(missingBranch.contains("markDownloadArtifactMissingConfirmed("))
+        assertFalse(missingBranch.contains("forgetPendingDownloadQueueEntries"))
+    }
+
+    @Test
     fun `artifact commit keeps core work active until final publication`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

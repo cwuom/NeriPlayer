@@ -1372,6 +1372,26 @@ object AudioDownloadManager {
         downloadAudioQuality: DownloadAudioQualitySelection? = null,
         forceFreshTransfer: Boolean = false
     ) {
+        this.downloadSongImpl(
+            context = context,
+            song = song,
+            batchSessionId = batchSessionId,
+            attemptId = attemptId,
+            operationId = operationId,
+            downloadAudioQuality = downloadAudioQuality,
+            forceFreshTransfer = forceFreshTransfer
+        )
+    }
+
+    internal suspend fun downloadSongWithResult(
+        context: Context,
+        song: SongItem,
+        batchSessionId: Long? = null,
+        attemptId: Long? = null,
+        operationId: String? = null,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null,
+        forceFreshTransfer: Boolean = false
+    ): ManagedDownloadStorage.StoredEntry? {
         return this.downloadSongImpl(
             context = context,
             song = song,

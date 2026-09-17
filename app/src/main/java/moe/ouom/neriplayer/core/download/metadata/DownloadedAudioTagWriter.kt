@@ -26,6 +26,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import moe.ouom.neriplayer.util.media.NERI_ORIGINAL_LYRICS_METADATA_KEY
 import moe.ouom.neriplayer.util.media.NERI_ROMANIZED_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.util.media.STANDARD_TRANSLATED_LYRICS_METADATA_KEY
 import moe.ouom.neriplayer.util.media.mergeLyricsForExternalPlayers
 import moe.ouom.neriplayer.util.media.standardLyricsMetadataKeys
 import moe.ouom.neriplayer.util.media.translatedLyricsMetadataKeys
@@ -331,7 +332,7 @@ internal object DownloadedAudioTagWriter {
         putSingleValue(propertyMap, "ARTIST", song.displayArtist())
         putSingleValue(propertyMap, "ALBUM", normalizeEmbeddedAlbumName(song.album))
         putSingleValue(propertyMap, "ALBUMARTIST", song.displayArtist())
-        putSingleValue(propertyMap, "TRACKNUMBER", song.id.takeIf { it > 0L }?.toString())
+        // 来源平台的 SongItem.id 不是唱片音轨序号，保留容器已有 TRACKNUMBER
         applyEmbeddedLyricValues(
             propertyMap = propertyMap,
             audioExtension = audioExtension,
@@ -550,8 +551,13 @@ internal object DownloadedAudioTagWriter {
             putSingleValue(propertyMap, key, externalLyrics)
         }
         putSingleValue(propertyMap, NERI_ORIGINAL_LYRICS_METADATA_KEY, lyrics)
+        val roundTrippableTranslationKeys = roundTrippableTranslationKeys(audioExtension)
         translatedLyricsMetadataKeys.forEach { key ->
-            putSingleValue(propertyMap, key, translatedLyrics)
+            putSingleValue(
+                propertyMap,
+                key,
+                translatedLyrics.takeIf { key in roundTrippableTranslationKeys }
+            )
         }
         putSingleValue(propertyMap, NERI_ROMANIZED_LYRICS_METADATA_KEY, romanizedLyrics)
     }
@@ -684,7 +690,17 @@ internal object DownloadedAudioTagWriter {
             )
         )
         addAll(standardLyricsMetadataKeys(audioExtension))
-        addAll(translatedLyricsMetadataKeys)
+        addAll(roundTrippableTranslationKeys(audioExtension))
+    }
+
+    /** MP4 自由格式字段无法稳定往返带冒号的 key，保留两个可读回的翻译字段 */
+    private fun roundTrippableTranslationKeys(audioExtension: String): Set<String> {
+        val dropsColonKey = usesRolelessCoverPictures(audioExtension)
+        return translatedLyricsMetadataKeys
+            .filterNot { key ->
+                dropsColonKey && key == STANDARD_TRANSLATED_LYRICS_METADATA_KEY
+            }
+            .toSet()
     }
 
     private fun hasExtendedEmbeddedMetadataRequirements(

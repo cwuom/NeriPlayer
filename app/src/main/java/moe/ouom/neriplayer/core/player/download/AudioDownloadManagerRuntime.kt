@@ -501,8 +501,8 @@ internal suspend fun AudioDownloadManager.downloadSongOnIo(
     operationId: String?,
     downloadAudioQuality: DownloadAudioQualitySelection?,
     forceFreshTransfer: Boolean
-) {
-    withContext(Dispatchers.IO) {
+): ManagedDownloadStorage.StoredEntry? {
+    return withContext(Dispatchers.IO) {
         executeDownloadSong(
             context = context,
             song = song,
@@ -523,7 +523,7 @@ internal suspend fun AudioDownloadManager.executeDownloadSong(
     operationId: String?,
     downloadAudioQuality: DownloadAudioQualitySelection?,
     forceFreshTransfer: Boolean
-) {
+): ManagedDownloadStorage.StoredEntry? {
     val songKey = song.stableKey()
     val effectiveOperationId = operationId?.trim()
         ?.takeIf(String::isNotBlank)
@@ -557,7 +557,7 @@ internal suspend fun AudioDownloadManager.executeDownloadSong(
                 expectedAttemptId = attemptId,
                 expectedOperationId = effectiveOperationId
             )
-            return
+            return null
         }
 
         if (!forceFreshTransfer && hasFastCachedManagedDownloadForStart(context, song)) {
@@ -570,7 +570,7 @@ internal suspend fun AudioDownloadManager.executeDownloadSong(
                 expectedAttemptId = attemptId,
                 expectedOperationId = effectiveOperationId
             )
-            return
+            return null
         }
 
         val resolvedDownloadAudioQuality = downloadAudioQuality
@@ -622,4 +622,5 @@ internal suspend fun AudioDownloadManager.executeDownloadSong(
         )
         endSongDownloadOperation(songKey, effectiveOperationId)
     }
+    return state.storedAudio
 }

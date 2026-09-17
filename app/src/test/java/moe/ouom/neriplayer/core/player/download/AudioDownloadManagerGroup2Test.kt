@@ -425,6 +425,11 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
                 IllegalStateException("HTTP 503")
             )
         )
+        assertTrue(
+            AudioDownloadManager.shouldRetryTransientDownloadFailure(
+                DownloadRangeRestartRequiredException()
+            )
+        )
         assertFalse(
             AudioDownloadManager.shouldRetryTransientDownloadFailure(
                 IllegalStateException("HTTP 403")
@@ -435,6 +440,22 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
                 IOException("磁盘写入失败")
             )
         )
+    }
+
+    @Test
+    fun `range 416 clears stale resume state before retrying from zero`() {
+        val transferSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadFileTransfer.kt"
+        ).readText()
+        val directBody = methodBody(transferSource, "downloadResponse")
+        val chunkedBody = methodBody(transferSource, "downloadChunked")
+
+        assertTrue(directBody.contains("direct_range_not_satisfiable"))
+        assertTrue(directBody.contains("hooks.deleteWorkingFile(destFile)"))
+        assertTrue(directBody.contains("throw DownloadRangeRestartRequiredException()"))
+        assertTrue(chunkedBody.contains("chunked_range_not_satisfiable"))
+        assertTrue(chunkedBody.contains("hooks.deleteWorkingFile(destFile)"))
+        assertTrue(chunkedBody.contains("throw DownloadRangeRestartRequiredException(error)"))
     }
 
     @Test
