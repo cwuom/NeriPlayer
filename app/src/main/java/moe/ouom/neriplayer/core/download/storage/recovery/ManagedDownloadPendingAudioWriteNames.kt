@@ -16,7 +16,7 @@ internal class ManagedDownloadPendingAudioWriteNames {
     }
 
     fun logicalAudioName(name: String): String {
-        val markerIndex = name.indexOf(PENDING_AUDIO_WRITE_MARKER)
+        val markerIndex = name.lastIndexOf(PENDING_AUDIO_WRITE_MARKER)
         return name.takeIf { markerIndex <= 0 || !isArtifactName(name) }
             ?: name.substring(0, markerIndex)
     }
@@ -24,7 +24,7 @@ internal class ManagedDownloadPendingAudioWriteNames {
     companion object {
         /** 仅识别完整哨兵后缀，避免歌曲名偶然包含 marker 被误当临时文件 */
         fun isArtifactName(name: String): Boolean {
-            val markerIndex = name.indexOf(PENDING_AUDIO_WRITE_MARKER)
+            val markerIndex = name.lastIndexOf(PENDING_AUDIO_WRITE_MARKER)
             if (markerIndex <= 0) return false
             val suffix = name.substring(markerIndex + PENDING_AUDIO_WRITE_MARKER.length)
             if (suffix.isEmpty()) return true

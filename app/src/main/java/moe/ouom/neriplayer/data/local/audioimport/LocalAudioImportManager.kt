@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.NearbyLyricReferences
 import moe.ouom.neriplayer.data.local.media.CoverReferenceValidation
 import moe.ouom.neriplayer.data.local.media.localMediaUri
+import moe.ouom.neriplayer.data.local.media.isNeteaseManagedSourceStableKey
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.local.media.isMediaStoreSidecarReference
@@ -150,6 +151,7 @@ object LocalAudioImportManager {
         )
 
         val distinctUris = uris.distinctBy { it.toString() }
+        failedCount += clippedExternalImportCount(distinctUris.size)
         if (distinctUris.size > MAX_EXTERNAL_IMPORT_COUNT) {
             NPLogger.w(
                 TAG,
@@ -757,7 +759,8 @@ object LocalAudioImportManager {
         ) ?: normalizeQuickImportedMetadata(seed.album)
         val resolvedAlbum = normalizeLocalAlbumIdentity(
             album = resolvedAlbumSeed,
-            usesFallbackAlbum = resolvedAlbumSeed.isNullOrBlank()
+            usesFallbackAlbum = resolvedAlbumSeed.isNullOrBlank(),
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(seed.sourceStableKey)
         )
         val stableId = computeStableSongId(seed.stableIdentitySource ?: resolvedSource)
         val filesystemCreation = seed.localFile?.let(::resolveFilesystemCreationObservation)
@@ -836,7 +839,10 @@ object LocalAudioImportManager {
             ?: quickSong.artist
         val resolvedAlbum = normalizeLocalAlbumIdentity(
             album = normalizeQuickImportedMetadata(detailedSong.album) ?: quickSong.album,
-            usesFallbackAlbum = false
+            usesFallbackAlbum = false,
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(
+                detailedSong.sourceStableKey ?: quickSong.sourceStableKey
+            )
         )
         val resolvedCoverUrl = selectMergedImportedCoverReference(
             quickCover = quickSong.coverUrl,
@@ -1318,3 +1324,8 @@ object LocalAudioImportManager {
         return extension in audioExtensions
     }
 }
+
+internal fun clippedExternalImportCount(
+    distinctUriCount: Int,
+    limit: Int = LocalAudioImportManager.MAX_EXTERNAL_IMPORT_COUNT
+): Int = (distinctUriCount - limit.coerceAtLeast(0)).coerceAtLeast(0)

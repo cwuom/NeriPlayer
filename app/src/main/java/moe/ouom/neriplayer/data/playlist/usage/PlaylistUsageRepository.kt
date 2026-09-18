@@ -525,17 +525,21 @@ class PlaylistUsageRepository internal constructor(
                 } else {
                     val immediateCover = coverPlaylist.displayCoverUrl(coverCandidates)
                         ?.takeIf { it.isNotBlank() }
-                    immediateCover
-                        ?: entry.picUrl?.takeIf { it.isNotBlank() }
-                        ?: if (resolveLocalMetadataFallback) {
+                    val resolvedFallback = if (resolveLocalMetadataFallback) {
                             coverPlaylist.displayCoverUrl(
                                 context = localizedContext,
                                 resolveLocalMetadataFallback = true,
                                 additionalCoverCandidates = coverCandidates
                             )?.takeIf { it.isNotBlank() }
-                        } else {
-                            null
-                        }
+                    } else {
+                        null
+                    }
+                    resolveRefreshedLocalUsageCover(
+                        immediateCover = immediateCover,
+                        resolvedFallback = resolvedFallback,
+                        cachedCover = entry.picUrl,
+                        resolveLocalMetadataFallback = resolveLocalMetadataFallback
+                    )
                 }
                 val refreshedTrackCount = playlist.songs.size
                 if (
@@ -728,6 +732,18 @@ class PlaylistUsageRepository internal constructor(
             )
         }
     }
+}
+
+internal fun resolveRefreshedLocalUsageCover(
+    immediateCover: String?,
+    resolvedFallback: String?,
+    cachedCover: String?,
+    resolveLocalMetadataFallback: Boolean
+): String? {
+    return immediateCover?.takeIf(String::isNotBlank)
+        ?: resolvedFallback
+            ?.takeIf { resolveLocalMetadataFallback && it.isNotBlank() }
+        ?: cachedCover?.takeIf(String::isNotBlank)
 }
 
 private fun UsageEntry.toSyncPlaylistUsageStat(): SyncPlaylistUsageStat {

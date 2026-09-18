@@ -542,6 +542,7 @@ class DownloadedAudioTagWriterTest {
             "youtubeMusic - Artist - Song.WEBM",
             "local - Artist - Song.mkv",
             "local - Artist - Song.mka",
+            "youtubeMusic - Artist - Song.aac",
             "stream - Artist - Song.ts",
             "stream - Artist - Song.m3u8"
         ).forEach { fileName ->

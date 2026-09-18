@@ -325,6 +325,21 @@ internal fun DefaultDownloadExecutionHost.captureScheduleTicket(
     return ticket.takeIf { isScheduleTicketCurrent(context, it) }
 }
 
+internal fun DefaultDownloadExecutionHost.newestScheduleAttempt(
+    context: Context,
+    request: DownloadExecutionRequest
+): DownloadExecutionRequest {
+    val persisted = operationStore.read(context, request.operationId)
+        ?.takeIf { current ->
+            current.operationId == request.operationId &&
+                current.song.stableKey() == request.song.stableKey()
+        }
+        ?: return request
+    val requestedAttempt = request.attemptId?.takeIf { it > 0L } ?: 0L
+    val persistedAttempt = persisted.attemptId?.takeIf { it > 0L } ?: 0L
+    return if (persistedAttempt > requestedAttempt) persisted else request
+}
+
 internal fun DefaultDownloadExecutionHost.bindPersistedScheduleTicket(
     context: Context,
     ticket: ScheduleTicket,

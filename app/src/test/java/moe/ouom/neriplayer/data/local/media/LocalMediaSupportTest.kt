@@ -37,6 +37,12 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `mutation query can scan beyond the document cache limit`() {
+        assertTrue(hasReachedDocumentChildrenQueryLimit(8_192, 8_192))
+        assertFalse(hasReachedDocumentChildrenQueryLimit(8_193, null))
+    }
+
+    @Test
     fun `document sidecar mutation requires the exact source document id`() {
         val children = listOf("primary:Music/other.mp3")
         assertFalse(

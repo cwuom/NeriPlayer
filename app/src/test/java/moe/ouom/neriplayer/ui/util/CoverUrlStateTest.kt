@@ -305,13 +305,13 @@ class CoverUrlStateTest {
     }
 
     @Test
-    fun `playlist cover signature uses a bounded candidate prefix`() {
+    fun `playlist cover signature includes songs beyond the old candidate window`() {
         val original = List(33) { index -> song(coverUrl = null).copy(id = index.toLong()) }
         val updated = original.toMutableList().apply {
             this[lastIndex] = last().copy(coverUrl = "file:///music/later-cover.jpg")
         }
 
-        assertEquals(
+        assertNotEquals(
             playlistCoverResolutionSignature(original),
             playlistCoverResolutionSignature(updated)
         )

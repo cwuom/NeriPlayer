@@ -45,9 +45,7 @@ private val embeddedCoverResolutionDispatcher = Dispatchers.IO.limitedParallelis
 private const val UI_COVER_MEMORY_CACHE_LIMIT = 2048
 private const val STABLE_COVER_MEMORY_CACHE_LIMIT = 2048
 private const val PLAYLIST_COVER_FALLBACK_IDLE_DELAY_MS = 96L
-private const val PLAYLIST_COVER_SIGNATURE_CANDIDATE_LIMIT = 32
 private const val PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT = 24
-private const val PLAYLIST_COVER_FALLBACK_CANDIDATE_LIMIT = 12
 private const val COVER_PERF_LOG_LIMIT = 48
 private const val COVER_SLOW_LOG_THRESHOLD_MS = 120L
 private const val FAST_COVER_PROBE_CACHE_LIMIT = 2048
@@ -251,9 +249,12 @@ fun rememberSongDisplayCoverUrl(
     resolveLocalFallback: Boolean = true
 ): String? {
     val songRevisionKey = song?.stableKey().orEmpty()
-    val songRevision by LocalAssetInvalidationBus
-        .revisionFlow(songRevisionKey)
-        .collectAsStateWithLifecycle()
+    val songRevisionFlow = remember(songRevisionKey) {
+        LocalAssetInvalidationBus.revisionFlow(songRevisionKey)
+    }
+    val songRevision by songRevisionFlow.collectAsStateWithLifecycle(
+        initialValue = LocalAssetInvalidationBus.currentSongRevision(songRevisionKey)
+    )
     val rootGeneration by LocalAssetInvalidationBus.rootGenerationFlow
         .collectAsStateWithLifecycle()
     return rememberSongDisplayCoverUrl(
@@ -788,7 +789,7 @@ private suspend fun resolvePlaylistCoverFallbackGradually(
     probeGeneration: Int
 ): String? {
     suspend fun resolveCandidates(candidates: Iterable<SongItem>): String? {
-        for (song in candidates.asSequence().take(PLAYLIST_COVER_FALLBACK_CANDIDATE_LIMIT)) {
+        for (song in candidates) {
             currentCoroutineContext().ensureActive()
             if (!song.isLocalSong()) continue
 
@@ -1068,9 +1069,7 @@ private fun LocalArtistSummary.coverResolutionKey(): String {
 
 internal fun playlistCoverResolutionSignature(songs: List<SongItem>): Long {
     var signature = 1_125_899_906_842_597L
-    songs.asSequence()
-        .take(PLAYLIST_COVER_SIGNATURE_CANDIDATE_LIMIT)
-        .forEach { song ->
+    songs.forEach { song ->
             signature = 31L * signature + song.id
             signature = 31L * signature + song.album.hashCode()
             signature = 31L * signature + song.albumId

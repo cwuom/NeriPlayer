@@ -24,8 +24,11 @@ internal object AudioHlsSegmentSupport {
         require(lines.any { it == "#EXTM3U" }) {
             "HLS playlist is missing EXTM3U header"
         }
+        require(lines.any { it.equals("#EXT-X-ENDLIST", ignoreCase = true) }) {
+            "HLS playlist is not final"
+        }
         val unsupportedTag = lines.firstOrNull { line ->
-            line.startsWith("#EXT-X-KEY", ignoreCase = true) ||
+            isUnsupportedKeyDeclaration(line) ||
                 line.startsWith("#EXT-X-MAP", ignoreCase = true) ||
                 line.startsWith("#EXT-X-BYTERANGE", ignoreCase = true) ||
                 line.startsWith("#EXT-X-I-FRAMES-ONLY", ignoreCase = true)
@@ -42,6 +45,19 @@ internal object AudioHlsSegmentSupport {
                 runCatching { URI(playlistUrl).resolve(segment).toString() }
                     .getOrElse { segment }
             }
+    }
+
+    private fun isUnsupportedKeyDeclaration(line: String): Boolean {
+        if (!line.startsWith("#EXT-X-KEY", ignoreCase = true)) return false
+        val method = line.substringAfter(':', "")
+            .split(',')
+            .firstOrNull { attribute ->
+                attribute.trim().startsWith("METHOD=", ignoreCase = true)
+            }
+            ?.substringAfter('=', "")
+            ?.trim()
+            ?.trim('"')
+        return !method.equals("NONE", ignoreCase = true)
     }
 
     internal fun parseMediaSequence(playlistText: String): Long? {
@@ -96,7 +112,14 @@ internal object AudioHlsSegmentSupport {
                     ((header[7].toInt() and 0x7f) shl 14) or
                     ((header[8].toInt() and 0x7f) shl 7) or
                     (header[9].toInt() and 0x7f)
-            val remainingTagBytes = tagSize.toLong()
+            val footerBytes = if (
+                header[3].toInt() == 4 && (header[5].toInt() and 0x10) != 0
+            ) {
+                10L
+            } else {
+                0L
+            }
+            val remainingTagBytes = tagSize.toLong() + footerBytes
             require(10L + remainingTagBytes <= maxSegmentBytes) {
                 "HLS ID3 tag exceeds limit: ${10L + remainingTagBytes} > $maxSegmentBytes"
             }

@@ -79,7 +79,8 @@ internal data class RestorableMetadataClearPolicy(
     val title: Boolean = false,
     val artist: Boolean = false,
     val cover: Boolean = false,
-    val lyrics: Boolean = false
+    val lyrics: Boolean = false,
+    val userLyricOffset: Boolean = false
 )
 
 internal data class RestorableCoverAssetRefs(
@@ -239,7 +240,12 @@ internal class DownloadedAudioMetadataStore(
         val persistedSidecars = sidecars.copy(
             coverReference = materializedCover?.reference ?: sidecars.coverReference
         )
-        val metadataSong = preserveMissingDownloadedMetadataLyrics(song, existingMetadata)
+        val metadataSong = preserveMissingDownloadedMetadataLyrics(
+            song = song,
+            metadata = existingMetadata,
+            explicitLyrics = clearRestorableOverrides.lyrics,
+            explicitUserLyricOffset = clearRestorableOverrides.userLyricOffset
+        )
         val existingBaseline = existingMetadata?.restorableMetadata?.baseline
         val sidecarLyrics = if (downloadFinalized) {
             retryMetadataPreparation(phase = "READ_LYRICS") {
@@ -799,7 +805,9 @@ internal fun mergeRestorableOverrides(
         } else {
             effectiveCoverReference ?: previous.coverReference
         },
-        userLyricOffsetMs = if (song.userLyricOffsetMs != 0L) {
+        userLyricOffsetMs = if (
+            clearRestorableOverrides.userLyricOffset || song.userLyricOffsetMs != 0L
+        ) {
             song.userLyricOffsetMs
         } else {
             previous.userLyricOffsetMs
@@ -877,36 +885,53 @@ internal fun resolveDownloadedMetadataCreatedAt(
 
 internal fun preserveMissingDownloadedMetadataLyrics(
     song: SongItem,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    explicitLyrics: Boolean = false,
+    explicitUserLyricOffset: Boolean = false
 ): SongItem {
     if (metadata == null) return song
     return song.copy(
-        matchedLyric = song.matchedLyric ?: metadata.matchedLyric,
-        matchedTranslatedLyric = song.matchedTranslatedLyric
-            ?: metadata.matchedTranslatedLyric,
-        matchedRomanizedLyric = song.matchedRomanizedLyric
-            ?: metadata.matchedRomanizedLyric,
-        matchedLyricSource = song.matchedLyricSource
-            ?: metadata.matchedLyricSource?.let { value ->
-                runCatching { MusicPlatform.valueOf(value) }.getOrNull()
-            },
-        matchedSongId = song.matchedSongId ?: metadata.matchedSongId,
+        matchedLyric = if (explicitLyrics) song.matchedLyric else {
+            song.matchedLyric ?: metadata.matchedLyric
+        },
+        matchedTranslatedLyric = if (explicitLyrics) song.matchedTranslatedLyric else {
+            song.matchedTranslatedLyric ?: metadata.matchedTranslatedLyric
+        },
+        matchedRomanizedLyric = if (explicitLyrics) song.matchedRomanizedLyric else {
+            song.matchedRomanizedLyric ?: metadata.matchedRomanizedLyric
+        },
+        matchedLyricSource = if (explicitLyrics) song.matchedLyricSource else {
+            song.matchedLyricSource
+                ?: metadata.matchedLyricSource?.let { value ->
+                    runCatching { MusicPlatform.valueOf(value) }.getOrNull()
+                }
+        },
+        matchedSongId = if (explicitLyrics) song.matchedSongId else {
+            song.matchedSongId ?: metadata.matchedSongId
+        },
         userLyricOffsetMs = resolveDownloadedUserLyricOffset(
             existingOffsetMs = metadata.userLyricOffsetMs,
-            incomingOffsetMs = song.userLyricOffsetMs
+            incomingOffsetMs = song.userLyricOffsetMs,
+            incomingIsExplicit = explicitUserLyricOffset
         ),
-        originalLyric = song.originalLyric ?: metadata.originalLyric,
-        originalTranslatedLyric = song.originalTranslatedLyric
-            ?: metadata.originalTranslatedLyric,
-        originalRomanizedLyric = song.originalRomanizedLyric
-            ?: metadata.originalRomanizedLyric
+        originalLyric = if (explicitLyrics) song.originalLyric else {
+            song.originalLyric ?: metadata.originalLyric
+        },
+        originalTranslatedLyric = if (explicitLyrics) song.originalTranslatedLyric else {
+            song.originalTranslatedLyric ?: metadata.originalTranslatedLyric
+        },
+        originalRomanizedLyric = if (explicitLyrics) song.originalRomanizedLyric else {
+            song.originalRomanizedLyric ?: metadata.originalRomanizedLyric
+        }
     )
 }
 
 internal fun resolveDownloadedUserLyricOffset(
     existingOffsetMs: Long?,
-    incomingOffsetMs: Long?
+    incomingOffsetMs: Long?,
+    incomingIsExplicit: Boolean = false
 ): Long {
+    if (incomingIsExplicit) return incomingOffsetMs ?: 0L
     return incomingOffsetMs?.takeIf { it != 0L }
         ?: existingOffsetMs
         ?: 0L

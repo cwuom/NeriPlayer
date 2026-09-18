@@ -64,7 +64,8 @@ internal fun LocalMediaSupport.queryDocumentChildrenForMutation(
         val result = queryDocumentChildrenUncached(
             context = context,
             baseUri = baseUri,
-            parentDocumentId = resolvedParentId
+            parentDocumentId = resolvedParentId,
+            maxChildren = null
         ) ?: return@repeat
         val stabilized = stabilizeDocumentChildrenRefresh(
             baseUri = baseUri,
@@ -410,12 +411,14 @@ internal fun LocalMediaSupport.classifySafReadFailure(
 internal fun LocalMediaSupport.queryDocumentChildrenUncached(
     context: Context,
     baseUri: Uri,
-    parentDocumentId: String?
+    parentDocumentId: String?,
+    maxChildren: Int? = DOCUMENT_CHILDREN_CACHE_MAX_CHILDREN
 ): DocumentChildrenQueryResult? {
     val queriedChildren = queryDocumentChildrenDirect(
         context = context,
         baseUri = baseUri,
-        parentDocumentId = parentDocumentId
+        parentDocumentId = parentDocumentId,
+        maxChildren = maxChildren
     )
     if (queriedChildren != null) return queriedChildren
     val resolvedParentId = parentDocumentId?.takeIf(String::isNotBlank) ?: return null
@@ -423,7 +426,8 @@ internal fun LocalMediaSupport.queryDocumentChildrenUncached(
         children = listDocumentChildrenWithDocumentFile(
             context = context,
             baseUri = baseUri,
-            parentDocumentId = resolvedParentId
+            parentDocumentId = resolvedParentId,
+            maxChildren = maxChildren
         ),
         isComplete = false
     )
@@ -432,7 +436,8 @@ internal fun LocalMediaSupport.queryDocumentChildrenUncached(
 internal fun LocalMediaSupport.queryDocumentChildrenDirect(
     context: Context,
     baseUri: Uri,
-    parentDocumentId: String?
+    parentDocumentId: String?,
+    maxChildren: Int? = DOCUMENT_CHILDREN_CACHE_MAX_CHILDREN
 ): DocumentChildrenQueryResult? {
     val resolvedParentId = parentDocumentId?.takeIf(String::isNotBlank) ?: return null
     val childrenUri = try {
@@ -471,7 +476,7 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
             var truncated = false
             val children = buildList {
                 while (cursor.moveToNext()) {
-                    if (size >= DOCUMENT_CHILDREN_CACHE_MAX_CHILDREN) {
+                    if (hasReachedDocumentChildrenQueryLimit(size, maxChildren)) {
                         // 巨型目录只保留有界预览，后续按需路径仍可继续查询
                         truncated = true
                         break
@@ -597,7 +602,8 @@ internal fun LocalMediaSupport.cacheDocumentChildren(
 internal fun LocalMediaSupport.listDocumentChildrenWithDocumentFile(
     context: Context,
     baseUri: Uri,
-    parentDocumentId: String
+    parentDocumentId: String,
+    maxChildren: Int? = DOCUMENT_CHILDREN_CACHE_MAX_CHILDREN
 ): List<DocumentChild> {
     val parentUri = try {
         buildDocumentReferenceUri(baseUri, parentDocumentId)
@@ -620,7 +626,10 @@ internal fun LocalMediaSupport.listDocumentChildrenWithDocumentFile(
         null
     } ?: return emptyList()
     return try {
-        parent.listFiles().asSequence().take(DOCUMENT_CHILDREN_CACHE_MAX_CHILDREN).mapNotNull { child ->
+        val children = parent.listFiles().asSequence().let { sequence ->
+            maxChildren?.let(sequence::take) ?: sequence
+        }
+        children.mapNotNull { child ->
             val name = child.name?.takeIf(String::isNotBlank) ?: return@mapNotNull null
             val documentId = try {
                 DocumentsContract.getDocumentId(child.uri)
@@ -642,6 +651,11 @@ internal fun LocalMediaSupport.listDocumentChildrenWithDocumentFile(
         emptyList()
     }
 }
+
+internal fun hasReachedDocumentChildrenQueryLimit(
+    currentSize: Int,
+    maxChildren: Int?
+): Boolean = maxChildren != null && currentSize >= maxChildren
 
 internal fun LocalMediaSupport.buildDocumentReferenceUri(baseUri: Uri, documentId: String): Uri {
     return if (DocumentsContract.isTreeUri(baseUri)) {

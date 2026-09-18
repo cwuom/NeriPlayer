@@ -30,14 +30,16 @@ import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun normalizeLocalAlbumIdentity(
     album: String?,
-    usesFallbackAlbum: Boolean
+    usesFallbackAlbum: Boolean,
+    stripManagedSourcePrefix: Boolean = false
 ): String {
     val normalized = album?.trim().orEmpty()
     if (normalized.isBlank()) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
     if (usesFallbackAlbum) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
 
-    // 下载器把来源直接拼在专辑名前, 这里只清理本地导入产生的来源标记
+    // 只有带受管下载来源身份的歌曲才清理历史来源前缀
     val withoutSourcePrefix = if (
+        stripManagedSourcePrefix &&
         normalized.length >= LOCAL_SOURCE_ALBUM_PREFIX.length &&
             normalized.regionMatches(
                 0,
@@ -61,11 +63,28 @@ internal fun normalizeLocalAlbumIdentity(
         ?: LocalSongSupport.LOCAL_ALBUM_IDENTITY
 }
 
+internal fun isNeteaseManagedSourceStableKey(sourceStableKey: String?): Boolean {
+    val normalized = sourceStableKey?.trim()?.takeIf(String::isNotBlank) ?: return false
+    val firstSeparator = normalized.indexOf('|')
+    if (firstSeparator <= 0 || normalized.substring(0, firstSeparator).toLongOrNull() == null) {
+        return false
+    }
+    val secondSeparator = normalized.indexOf('|', firstSeparator + 1)
+    if (secondSeparator <= firstSeparator + 1) return false
+    val sourceAlbum = normalized.substring(firstSeparator + 1, secondSeparator)
+    val sourceUri = normalized.substring(secondSeparator + 1)
+    return sourceAlbum.equals("netease", ignoreCase = true) && sourceUri.isBlank()
+}
+
 fun SongItem.displayAlbum(context: Context): String {
     val normalized = album.trim()
     if (normalized.isBlank()) return normalized
     val displayValue = if (LocalSongSupport.isLocalSong(this, context)) {
-        normalizeLocalAlbumIdentity(normalized, usesFallbackAlbum = false)
+        normalizeLocalAlbumIdentity(
+            album = normalized,
+            usesFallbackAlbum = false,
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(sourceStableKey)
+        )
     } else {
         normalized
     }

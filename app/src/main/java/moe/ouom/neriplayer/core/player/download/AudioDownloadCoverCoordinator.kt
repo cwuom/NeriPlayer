@@ -21,6 +21,12 @@ internal data class AudioCachedCoverReference(
     val created: Boolean
 )
 
+internal data class CoverDownloadFlightKey(
+    val songKey: String,
+    val fileName: String,
+    val candidates: List<String>
+)
+
 /**
  * 封面下载和 single flight 协调器
  *
@@ -65,11 +71,6 @@ internal class AudioDownloadCoverCoordinator(
 ) {
     private val tag = "NERI-Downloader"
 
-    private data class CoverDownloadFlightKey(
-        val songKey: String,
-        val fileName: String
-    )
-
     private val singleFlight =
         CoverDownloadSingleFlight<CoverDownloadFlightKey, AudioCachedCoverReference?>()
 
@@ -86,8 +87,13 @@ internal class AudioDownloadCoverCoordinator(
         operationId: String? = null
     ): AudioCachedCoverReference? {
         val coverFileName = buildCoverSidecarFileName(baseName, songKey)
+        val candidates = AudioDownloadTransferPolicy.buildCoverDownloadCandidateUrls(song).toList()
         val cachedCover = singleFlight.run(
-            CoverDownloadFlightKey(songKey = songKey, fileName = coverFileName)
+            CoverDownloadFlightKey(
+                songKey = songKey,
+                fileName = coverFileName,
+                candidates = candidates
+            )
         ) {
             cacheCoverInFlight(
                 context = context,
@@ -95,6 +101,7 @@ internal class AudioDownloadCoverCoordinator(
                 songKey = songKey,
                 storedAudio = storedAudio,
                 coverFileName = coverFileName,
+                candidates = candidates,
                 batchSessionId = batchSessionId,
                 attemptId = attemptId,
                 requireActiveAttempt = requireActiveAttempt,
@@ -129,6 +136,7 @@ internal class AudioDownloadCoverCoordinator(
         songKey: String,
         storedAudio: ManagedDownloadStorage.StoredEntry,
         coverFileName: String,
+        candidates: List<String>,
         batchSessionId: Long?,
         attemptId: Long?,
         requireActiveAttempt: Boolean,
@@ -164,7 +172,6 @@ internal class AudioDownloadCoverCoordinator(
         }
 
         return try {
-            val candidates = AudioDownloadTransferPolicy.buildCoverDownloadCandidateUrls(song)
             candidates.forEachIndexed { index, coverUrl ->
                 repeat(maxAttempts) { retryIndex ->
                     ensureNotCancelled(

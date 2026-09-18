@@ -2057,9 +2057,12 @@ private fun NeriAppContent(
     val currentSongKey = remember(currentSong) { currentSong?.stableKey() }
     val coverAssetRootGeneration by LocalAssetInvalidationBus.rootGenerationFlow
         .collectAsStateWithLifecycle()
-    val coverAssetSongRevision by LocalAssetInvalidationBus
-        .revisionFlow(currentSongKey.orEmpty())
-        .collectAsStateWithLifecycle()
+    val coverAssetSongRevisionFlow = remember(currentSongKey) {
+        LocalAssetInvalidationBus.revisionFlow(currentSongKey.orEmpty())
+    }
+    val coverAssetSongRevision by coverAssetSongRevisionFlow.collectAsStateWithLifecycle(
+        initialValue = LocalAssetInvalidationBus.currentSongRevision(currentSongKey.orEmpty())
+    )
     val currentSongVisualKey = remember(currentSong) { currentSong?.playbackVisualKey() }
     val currentSongVisualKeyAliases = remember(currentSong) {
         currentSong?.playbackVisualKeyAliases().orEmpty()

@@ -28,6 +28,11 @@ internal class AudioDownloadHlsTransfer(
     private val maxSegmentBytes: Long,
     private val readBufferBytes: Int
 ) {
+    private data class LoadedPlaylist(
+        val text: String,
+        val finalUrl: String
+    )
+
     internal interface Hooks {
         fun markTransferNetworkActivity(
             operationId: String?,
@@ -144,7 +149,7 @@ internal class AudioDownloadHlsTransfer(
             songKey = songKey,
             transferGeneration = transferGeneration
         )
-        val playlistText = hooks.executeTrackedCall(
+        val loadedPlaylist = hooks.executeTrackedCall(
             client = client,
             request = playlistRequest,
             songKey = songKey,
@@ -153,10 +158,14 @@ internal class AudioDownloadHlsTransfer(
             if (!response.isSuccessful) {
                 throw IllegalStateException("HTTP ${response.code}")
             }
-            response.body.byteStream().use { input ->
-                input.readBytesLimited(maxPlaylistBytes).toString(Charsets.UTF_8)
-            }
+            LoadedPlaylist(
+                text = response.body.byteStream().use { input ->
+                    input.readBytesLimited(maxPlaylistBytes).toString(Charsets.UTF_8)
+                },
+                finalUrl = response.request.url.toString()
+            )
         }
+        val playlistText = loadedPlaylist.text
         ensureDownloadNotCancelled(
             songId = songId,
             songKey = songKey,
@@ -166,7 +175,7 @@ internal class AudioDownloadHlsTransfer(
             operationId = operationId
         )
         val segmentUrls = AudioHlsSegmentSupport.parseSegmentUrls(
-            playlistRequest.url.toString(),
+            loadedPlaylist.finalUrl,
             playlistText
         )
         if (segmentUrls.isEmpty()) {

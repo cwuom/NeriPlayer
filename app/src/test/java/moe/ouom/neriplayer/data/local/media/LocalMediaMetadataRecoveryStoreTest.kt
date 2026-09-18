@@ -167,6 +167,44 @@ class LocalMediaMetadataRecoveryStoreTest {
         assertTrue(verified.journalFile.exists())
     }
 
+    @Test
+    fun `partial rollback cleanup never reapplies the updated copy`() = runBlocking {
+        val context = recoveryContext()
+        val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
+        val target = temporaryFolder.newFile("rollback.mp3").apply { writeText("original") }
+        val backup = File(directory, "metadata-source-rollback.mp3").apply {
+            writeText("original")
+        }
+        val updated = File(directory, "metadata-updated-rollback.mp3").apply {
+            writeText("updated")
+        }
+        val prepared = LocalMediaMetadataRecoveryStore.begin(
+            context = context,
+            targetReference = target.absolutePath,
+            backupFile = backup,
+            updatedFile = updated,
+            originalLastModifiedMs = target.lastModified()
+        )
+        val replacing = LocalMediaMetadataRecoveryStore.markReplacing(prepared)
+        target.writeText("truncated")
+        assertTrue(updated.delete())
+        assertTrue(updated.mkdir())
+        File(updated, "keep").writeText("block cleanup")
+
+        assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, replacing))
+        assertEquals("original", target.readText())
+        assertTrue(replacing.journalFile.readText().contains("ROLLED_BACK"))
+
+        assertTrue(File(updated, "keep").delete())
+        assertTrue(updated.delete())
+        updated.writeText("updated")
+        LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+
+        assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+        assertEquals("original", target.readText())
+        assertFalse(replacing.journalFile.exists())
+    }
+
     private fun recoveryContext(): Context = mock(Context::class.java).also { context ->
         `when`(context.noBackupFilesDir).thenReturn(temporaryFolder.newFolder("no-backup"))
     }

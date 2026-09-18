@@ -1227,16 +1227,11 @@ internal class SafStorageBackend(
             is SafQueryResult.ProviderFailure -> StorageRenameResult.ProviderFailure(result.error)
             is SafQueryResult.Found -> {
                 if (result.document.displayName != displayName) {
-                    val cleanupError = deleteSafDocumentAndConfirm(renamedUri)
-                    if (cleanupError is SecurityException) {
-                        StorageRenameResult.PermissionLost
-                    } else if (cleanupError != null) {
-                        StorageRenameResult.ProviderFailure(cleanupError)
-                    } else {
-                        StorageRenameResult.ProviderFailure(
-                            IllegalStateException("provider changed renamed display name")
-                        )
-                    }
+                    // Provider 已经移动了原文档，名称不符时仍要保留这份唯一数据
+                    invalidateParentDocument(renamedUri)
+                    StorageRenameResult.ProviderFailure(
+                        IllegalStateException("provider changed renamed display name")
+                    )
                 } else {
                     invalidateParentDocument(renamedUri)
                     StorageRenameResult.Renamed(result.document.toStat(renamedUri))

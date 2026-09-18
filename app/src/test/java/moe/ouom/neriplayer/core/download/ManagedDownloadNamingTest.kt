@@ -389,6 +389,26 @@ class ManagedDownloadNamingTest {
     }
 
     @Test
+    fun `candidate names include the base produced by the final filename limit`() {
+        val song = SongItem(
+            id = 42L,
+            name = "很长的歌曲名".repeat(40),
+            artist = "歌手",
+            album = "专辑",
+            albumId = 7L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val renderedBase = renderManagedDownloadBaseName(song)
+        val finalBase = boundManagedDownloadFileName("$renderedBase.mp3")
+            .substringBeforeLast('.')
+
+        assertTrue(candidateManagedDownloadBaseNames(song).contains(finalBase))
+    }
+
+    @Test
     fun `hash placeholder renders the stable identity hash`() {
         val song = SongItem(
             id = 42L,

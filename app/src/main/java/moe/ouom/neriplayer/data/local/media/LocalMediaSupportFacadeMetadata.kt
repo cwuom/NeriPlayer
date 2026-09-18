@@ -28,7 +28,11 @@ internal fun LocalMediaSupport.toSongItemImpl(details: LocalMediaDetails): SongI
         id = stableId,
         name = details.title,
         artist = details.artist,
-        album = normalizeLocalAlbumIdentity(details.album, details.usesFallbackAlbum),
+        album = normalizeLocalAlbumIdentity(
+            album = details.album,
+            usesFallbackAlbum = details.usesFallbackAlbum,
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(details.sourceStableKey)
+        ),
         albumId = 0L,
         durationMs = details.durationMs,
         coverUrl = details.coverUri,

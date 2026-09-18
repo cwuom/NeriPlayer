@@ -27,6 +27,8 @@ import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
+import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWithin
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.SongItem
@@ -44,13 +46,13 @@ import okhttp3.OkHttpClient
 object CustomSongCoverStorage {
     private const val DIRECTORY_NAME = "custom_song_covers"
     private const val BACKUP_DIRECTORY_NAME = "bak"
-    private const val MAX_COVER_BYTES = 20L * 1024L * 1024L
+    private const val MAX_COVER_BYTES = MAX_SOURCE_COVER_BYTES
 
     internal var remoteCoverHttpClientProvider: () -> OkHttpClient = {
         AppContainer.sharedOkHttpClient
     }
     internal var remoteCoverImageValidator: (ByteArray) -> Boolean = { bytes ->
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size) != null
+        isSafeCoverImage(bytes)
     }
     internal var remoteCoverMappingSink: ((String, String) -> Unit)? = null
 
@@ -69,6 +71,7 @@ object CustomSongCoverStorage {
                 input.readBytesLimited(MAX_COVER_BYTES)
             }
         }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return@withContext null
+        if (!remoteCoverImageValidator(bytes)) return@withContext null
 
         val directory = File(context.filesDir, DIRECTORY_NAME)
         if (!directory.exists() && !directory.mkdirs()) {
@@ -261,10 +264,36 @@ object CustomSongCoverStorage {
         return "$contentHash.$normalizedExtension"
     }
 
+    internal fun isSafeCoverImage(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty() || bytes.size.toLong() > MAX_COVER_BYTES) return false
+        val bounds = runCatching {
+            BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { options ->
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            }
+        }.getOrNull() ?: return false
+        if (!isCoverPixelBudgetWithin(bounds.outWidth, bounds.outHeight)) return false
+        return runCatching {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = LocalMediaSupport.embeddedCoverCacheSampleSize(
+                    width = bounds.outWidth,
+                    height = bounds.outHeight,
+                    targetDimension = COVER_VALIDATION_TARGET_DIMENSION_PX
+                )
+                inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.let { bitmap ->
+                bitmap.recycle()
+                true
+            } == true
+        }.getOrDefault(false)
+    }
+
     internal fun isRemoteReference(reference: String): Boolean {
         return reference.startsWith("http://", ignoreCase = true) ||
             reference.startsWith("https://", ignoreCase = true)
     }
+
+    private const val COVER_VALIDATION_TARGET_DIMENSION_PX = 1_024
 
     internal fun isDirectoryReference(reference: String?): Boolean {
         val normalized = reference?.trim()?.takeIf { it.isNotBlank() } ?: return false

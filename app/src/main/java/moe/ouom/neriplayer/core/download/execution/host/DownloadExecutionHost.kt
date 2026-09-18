@@ -152,15 +152,16 @@ class DefaultDownloadExecutionHost(
         request: DownloadExecutionRequest
     ): DownloadExecutionSchedule {
         val appContext = context.applicationContext
+        val effectiveRequest = newestScheduleAttempt(appContext, request)
         val traceToken = DownloadOperationTrace.begin(
-            operationId = request.operationId,
-            attemptId = request.attemptId
+            operationId = effectiveRequest.operationId,
+            attemptId = effectiveRequest.attemptId
         )
         DownloadOperationTrace.mark(
             traceToken,
             DownloadOperationTracePhase.ENQUEUED
         )
-        val ticket = captureScheduleTicket(appContext, request)
+        val ticket = captureScheduleTicket(appContext, effectiveRequest)
             ?: return DownloadExecutionSchedule.Rejected(
                 "download clear is in progress"
             )
@@ -169,12 +170,12 @@ class DefaultDownloadExecutionHost(
             onFenceActive = {
                 DownloadExecutionSchedule.Rejected("download clear is in progress")
             },
-            stableKey = request.song.stableKey(),
-            operationId = request.operationId
+            stableKey = effectiveRequest.song.stableKey(),
+            operationId = effectiveRequest.operationId
         ) {
             scheduleWithTicket(
                 context = appContext,
-                request = request,
+                request = effectiveRequest,
                 ticket = ticket
             )
         }
@@ -1018,6 +1019,7 @@ class DefaultDownloadExecutionHost(
                 context = context.applicationContext,
                 request = request
             )
+            if (requiresPumpRetry(result)) onRecoveryRequired()
             var returnedResult = result
             var clearBlockedResult = false
             PersistentDownloadClearFenceStore.withSchedulingPermitSuspending(

@@ -176,6 +176,14 @@ class DownloadedAudioMetadataStoreTest {
             -120L,
             resolveDownloadedUserLyricOffset(existingOffsetMs = null, incomingOffsetMs = -120L)
         )
+        assertEquals(
+            0L,
+            resolveDownloadedUserLyricOffset(
+                existingOffsetMs = -321L,
+                incomingOffsetMs = 0L,
+                incomingIsExplicit = true
+            )
+        )
     }
 
     @Test
@@ -359,6 +367,33 @@ class DownloadedAudioMetadataStoreTest {
     }
 
     @Test
+    fun `explicit lyric clearing does not resurrect content or match provenance`() {
+        val cleared = preserveMissingDownloadedMetadataLyrics(
+            song = testSong(),
+            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                matchedLyric = "stored lyric",
+                matchedTranslatedLyric = "stored translation",
+                matchedRomanizedLyric = "stored romanization",
+                matchedLyricSource = "CLOUD_MUSIC",
+                matchedSongId = "stored-id",
+                originalLyric = "stored original",
+                originalTranslatedLyric = "stored original translation",
+                originalRomanizedLyric = "stored original romanization"
+            ),
+            explicitLyrics = true
+        )
+
+        assertNull(cleared.matchedLyric)
+        assertNull(cleared.matchedTranslatedLyric)
+        assertNull(cleared.matchedRomanizedLyric)
+        assertNull(cleared.matchedLyricSource)
+        assertNull(cleared.matchedSongId)
+        assertNull(cleared.originalLyric)
+        assertNull(cleared.originalTranslatedLyric)
+        assertNull(cleared.originalRomanizedLyric)
+    }
+
+    @Test
     fun `metadata persistence keeps existing edits when incoming song omits them`() {
         val previous = ManagedDownloadRestorableMetadata.Overrides(
             title = "Edited title",
@@ -376,6 +411,21 @@ class DownloadedAudioMetadataStoreTest {
         )
 
         assertEquals(previous, merged)
+    }
+
+    @Test
+    fun `explicit zero lyric offset replaces the previous restorable override`() {
+        val merged = mergeRestorableOverrides(
+            previous = ManagedDownloadRestorableMetadata.Overrides(
+                userLyricOffsetMs = -321L
+            ),
+            song = testSong().copy(userLyricOffsetMs = 0L),
+            clearRestorableOverrides = RestorableMetadataClearPolicy(
+                userLyricOffset = true
+            )
+        )
+
+        assertEquals(0L, merged.userLyricOffsetMs)
     }
 
     @Test

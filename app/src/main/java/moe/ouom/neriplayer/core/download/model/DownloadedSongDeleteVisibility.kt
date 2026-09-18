@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicLong
 internal class DownloadedSongDeleteVisibility {
     private val stateLock = Any()
     private val nextTokenId = AtomicLong(0L)
-    private val activeTokenIdsByIdentity = mutableMapOf<String, Long>()
+    private val activeTokenIdsByIdentity = mutableMapOf<String, LinkedHashSet<Long>>()
     private val baselineSongsByIdentity = mutableMapOf<String, DownloadedSong>()
     private val physicallyDeletedIdentities = mutableSetOf<String>()
 
@@ -33,7 +33,7 @@ internal class DownloadedSongDeleteVisibility {
                 }
             }
             identities.forEach { identity ->
-                activeTokenIdsByIdentity[identity] = tokenId
+                activeTokenIdsByIdentity.getOrPut(identity) { linkedSetOf() } += tokenId
             }
             return Token(
                 id = tokenId,
@@ -75,14 +75,17 @@ internal class DownloadedSongDeleteVisibility {
     fun owns(token: Token, song: DownloadedSong): Boolean {
         val identity = song.deletionIdentity().trim()
         return synchronized(stateLock) {
-            identity in token.identities && activeTokenIdsByIdentity[identity] == token.id
+            identity in token.identities &&
+                activeTokenIdsByIdentity[identity]?.lastOrNull() == token.id
         }
     }
 
     fun finish(token: Token) {
         synchronized(stateLock) {
             token.identities.forEach { identity ->
-                if (activeTokenIdsByIdentity[identity] == token.id) {
+                val activeTokenIds = activeTokenIdsByIdentity[identity] ?: return@forEach
+                activeTokenIds.remove(token.id)
+                if (activeTokenIds.isEmpty()) {
                     activeTokenIdsByIdentity.remove(identity)
                     baselineSongsByIdentity.remove(identity)
                     physicallyDeletedIdentities.remove(identity)

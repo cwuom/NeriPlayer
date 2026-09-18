@@ -25,6 +25,28 @@ import java.util.Locale
 
 class PlaylistUsageRepositoryTest {
 
+    @Test
+    fun `full local cover refresh replaces a stale cached cover`() {
+        assertEquals(
+            "file:///covers/refreshed.jpg",
+            resolveRefreshedLocalUsageCover(
+                immediateCover = null,
+                resolvedFallback = "file:///covers/refreshed.jpg",
+                cachedCover = "file:///covers/stale.jpg",
+                resolveLocalMetadataFallback = true
+            )
+        )
+        assertEquals(
+            "file:///covers/stale.jpg",
+            resolveRefreshedLocalUsageCover(
+                immediateCover = null,
+                resolvedFallback = "file:///covers/refreshed.jpg",
+                cachedCover = "file:///covers/stale.jpg",
+                resolveLocalMetadataFallback = false
+            )
+        )
+    }
+
     @get:Rule
     val tempFolder = TemporaryFolder()
 

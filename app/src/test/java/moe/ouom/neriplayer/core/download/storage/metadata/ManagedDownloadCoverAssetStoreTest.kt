@@ -101,6 +101,38 @@ class ManagedDownloadCoverAssetStoreTest {
     }
 
     @Test
+    fun `materialized cover preserves the source encoding instead of the jpg default`() {
+        assertEquals(
+            ManagedDownloadCoverAssetStore.CoverEncoding("png", "image/png"),
+            ManagedDownloadCoverAssetStore.resolveCoverEncoding(
+                sourceDisplayName = "cover.png",
+                detectedMimeType = "image/png",
+                fallbackExtension = "jpg",
+                fallbackMimeType = "image/jpeg"
+            )
+        )
+        assertEquals(
+            "Artist-Song.webp",
+            ManagedDownloadCoverAssetStore.replaceCoverFileExtension(
+                fileName = "Artist-Song.jpg",
+                extension = "webp"
+            )
+        )
+    }
+
+    @Test
+    fun `legacy readable cover filename stays within the managed filename limit`() {
+        val name = ManagedDownloadCoverAssetStore.buildLegacyReadableFileName(
+            sourceDisplayName = "封面".repeat(100) + ".png",
+            assetHash = "a".repeat(64),
+            extension = "png"
+        )
+
+        assertTrue(name.endsWith(".png"))
+        assertTrue(name.toByteArray(Charsets.UTF_8).size <= 128)
+    }
+
+    @Test
     fun `inspection fingerprints a local cover without changing its reference`() = runBlocking {
         val file = Files.createTempFile("neriplayer-cover-inspect", ".jpg").toFile()
         try {

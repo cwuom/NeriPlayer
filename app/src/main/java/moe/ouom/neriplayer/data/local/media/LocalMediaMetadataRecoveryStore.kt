@@ -31,6 +31,7 @@ internal enum class LocalMetadataRecoveryStage {
     PREPARED,
     REPLACING,
     TARGET_VERIFIED,
+    ROLLED_BACK,
     ROLLBACK_FAILED
 }
 
@@ -111,7 +112,12 @@ internal object LocalMediaMetadataRecoveryStore {
             lastModifiedMs = record.originalLastModifiedMs
         ) && targetMatches(context, record.targetReference, record.originalSha256)
         if (restored) {
-            return cleanup(record)
+            val rolledBack = runCatching {
+                updateStage(record, LocalMetadataRecoveryStage.ROLLED_BACK)
+            }.onFailure { error ->
+                NPLogger.e(TAG, "记录元信息已回滚状态失败，保留恢复文件", error)
+            }.getOrNull() ?: return false
+            return cleanup(rolledBack)
         } else {
             runCatching {
                 updateStage(record, LocalMetadataRecoveryStage.ROLLBACK_FAILED)
@@ -214,6 +220,10 @@ internal object LocalMediaMetadataRecoveryStore {
             LocalMetadataRecoveryStage.TARGET_VERIFIED -> {
                 // 已验证后又发生变化说明 URI 可能被外部改写，保留凭据等待人工处理
                 return targetMatchesUpdated && cleanup(record)
+            }
+            LocalMetadataRecoveryStage.ROLLED_BACK -> {
+                // 回滚已经落盘，重启后只能清理凭据，不能再次应用待写入内容
+                return targetMatchesOriginal && cleanup(record)
             }
             LocalMetadataRecoveryStage.ROLLBACK_FAILED -> return rollback(context, record)
             LocalMetadataRecoveryStage.REPLACING -> Unit

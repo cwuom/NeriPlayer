@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.core.download.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.isNeteaseManagedSourceStableKey
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.model.SongItem
 import java.io.File
@@ -83,7 +84,11 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         metadata.originalArtist
     )
     val resolvedAlbum = firstMeaningfulMetadataValue(metadata.album)?.let {
-        normalizeLocalAlbumIdentity(it, usesFallbackAlbum = false)
+        normalizeLocalAlbumIdentity(
+            album = it,
+            usesFallbackAlbum = false,
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(metadata.stableKey)
+        )
     }
     val sidecarCover = firstMeaningfulMetadataValue(metadata.coverPath)
     val reboundCover = if (sidecarCover != null &&
@@ -136,7 +141,10 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         artist = resolvedArtist ?: song.artist,
         album = resolvedAlbum ?: normalizeLocalAlbumIdentity(
             album = song.album,
-            usesFallbackAlbum = song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
+            usesFallbackAlbum = song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(
+                metadata.stableKey ?: song.sourceStableKey
+            )
         ),
         durationMs = metadata.durationMs.takeIf { it > 0L } ?: song.durationMs,
         coverUrl = resolvedCover ?: metadataCoverForIdentity ?: song.coverUrl,
@@ -220,7 +228,8 @@ internal fun LocalAudioImportManager.repairQuickIdentityFromFileName(song: SongI
         artist = if (unknownArtist) parsedArtist ?: song.artist else song.artist,
         album = normalizeLocalAlbumIdentity(
             album = if (unknownAlbum) parsedAlbum ?: song.album else song.album,
-            usesFallbackAlbum = unknownAlbum && parsedAlbum == null
+            usesFallbackAlbum = unknownAlbum && parsedAlbum == null,
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(song.sourceStableKey)
         ),
         originalArtist = if (unknownArtist) parsedArtist ?: song.originalArtist else song.originalArtist
     )

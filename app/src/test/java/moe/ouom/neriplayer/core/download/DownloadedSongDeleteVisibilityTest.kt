@@ -64,6 +64,21 @@ class DownloadedSongDeleteVisibilityTest {
     }
 
     @Test
+    fun `finishing newer overlap restores ownership to the older deletion`() {
+        val song = downloadedSong(id = 1L, name = "same")
+        val visibility = DownloadedSongDeleteVisibility()
+        val older = visibility.begin(listOf(song))
+        val newer = visibility.begin(listOf(song))
+
+        visibility.finish(newer)
+
+        assertTrue(visibility.owns(older, song))
+        assertTrue(visibility.filterVisible(listOf(song)).isEmpty())
+        visibility.finish(older)
+        assertEquals(listOf(song), visibility.filterVisible(listOf(song)))
+    }
+
+    @Test
     fun `physical deletion from older overlap prevents newer failure from restoring it`() {
         val song = downloadedSong(id = 1L, name = "same")
         val visibility = DownloadedSongDeleteVisibility()

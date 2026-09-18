@@ -545,81 +545,85 @@ class ManagedDownloadMigrationWorker(
                 errorMessage = "迁移进度会话持续被占用，等待用户明确重试"
             )
         }
-        coroutineScope {
-            setForeground(createForegroundInfo(persistedProgress))
-            persistedProgress?.let { progress ->
-                setProgress(migrationProgressToWorkData(progress))
-            }
-            val progressJob = launch {
-                var workProgressState = MigrationProgressThrottleState()
-                var notificationProgressState = MigrationProgressThrottleState()
-                var durableProgress = persistedProgress
-                ManagedDownloadStorage.migrationProgressFlow.collect { progress ->
-                    progress ?: return@collect
-                    if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
-                        return@collect
-                    }
-                    val visibleProgress = mergeMigrationProgressFloor(
-                        floor = durableProgress,
-                        current = progress
-                    )
-                    val nowMs = System.currentTimeMillis()
-                    if (
-                        shouldPublishMigrationProgress(
-                            progress = visibleProgress,
-                            nowMs = nowMs,
-                            state = workProgressState,
-                            minIntervalMs = WORK_PROGRESS_MIN_INTERVAL_MS,
-                            percentDelta = WORK_PROGRESS_PERCENT_DELTA
+        try {
+            coroutineScope {
+                setForeground(createForegroundInfo(persistedProgress))
+                persistedProgress?.let { progress ->
+                    setProgress(migrationProgressToWorkData(progress))
+                }
+                val progressJob = launch {
+                    var workProgressState = MigrationProgressThrottleState()
+                    var notificationProgressState = MigrationProgressThrottleState()
+                    var durableProgress = persistedProgress
+                    ManagedDownloadStorage.migrationProgressFlow.collect { progress ->
+                        progress ?: return@collect
+                        if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
+                            return@collect
+                        }
+                        val visibleProgress = mergeMigrationProgressFloor(
+                            floor = durableProgress,
+                            current = progress
                         )
-                    ) {
-                        durableProgress = checkpointStore.recordProgressIfCurrent(
-                            ownerWorkId = migrationWorkId,
-                            workId = migrationWorkId,
-                            progress = visibleProgress
-                        ) ?: return@collect
-                        setProgress(migrationProgressToWorkData(durableProgress))
-                        workProgressState = updateMigrationProgressThrottleState(
-                            durableProgress,
-                            nowMs
-                        )
-                    }
-                    val processingState = ManagedLibraryProcessingCoordinator.state.value
-                    val operationId = processingState.operationId
-                    if (
-                        operationId != null &&
-                        processingState.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE
-                    ) {
-                        val sharedProgress = migrationProgressForSharedProcessing(visibleProgress)
-                        ManagedLibraryProcessingCoordinator.updateProgress(
-                            context = applicationContext,
-                            operationId = operationId,
-                            processed = sharedProgress.processed,
-                            total = sharedProgress.total,
-                            currentItem = visibleProgress.currentFileName
-                        )
-                    }
-                    if (
-                        shouldPublishMigrationProgress(
-                            progress = visibleProgress,
-                            nowMs = nowMs,
-                            state = notificationProgressState,
-                            minIntervalMs = NOTIFICATION_MIN_INTERVAL_MS,
-                            percentDelta = NOTIFICATION_PERCENT_DELTA
-                        )
-                    ) {
-                        setForeground(createForegroundInfo(visibleProgress))
-                        notificationProgressState =
-                            updateMigrationProgressThrottleState(visibleProgress, nowMs)
+                        val nowMs = System.currentTimeMillis()
+                        if (
+                            shouldPublishMigrationProgress(
+                                progress = visibleProgress,
+                                nowMs = nowMs,
+                                state = workProgressState,
+                                minIntervalMs = WORK_PROGRESS_MIN_INTERVAL_MS,
+                                percentDelta = WORK_PROGRESS_PERCENT_DELTA
+                            )
+                        ) {
+                            durableProgress = checkpointStore.recordProgressIfCurrent(
+                                ownerWorkId = migrationWorkId,
+                                workId = migrationWorkId,
+                                progress = visibleProgress
+                            ) ?: return@collect
+                            setProgress(migrationProgressToWorkData(durableProgress))
+                            workProgressState = updateMigrationProgressThrottleState(
+                                durableProgress,
+                                nowMs
+                            )
+                        }
+                        val processingState = ManagedLibraryProcessingCoordinator.state.value
+                        val operationId = processingState.operationId
+                        if (
+                            operationId != null &&
+                            processingState.reason ==
+                            ManagedLibraryProcessingReason.DIRECTORY_CHANGE
+                        ) {
+                            val sharedProgress = migrationProgressForSharedProcessing(visibleProgress)
+                            ManagedLibraryProcessingCoordinator.updateProgress(
+                                context = applicationContext,
+                                operationId = operationId,
+                                processed = sharedProgress.processed,
+                                total = sharedProgress.total,
+                                currentItem = visibleProgress.currentFileName
+                            )
+                        }
+                        if (
+                            shouldPublishMigrationProgress(
+                                progress = visibleProgress,
+                                nowMs = nowMs,
+                                state = notificationProgressState,
+                                minIntervalMs = NOTIFICATION_MIN_INTERVAL_MS,
+                                percentDelta = NOTIFICATION_PERCENT_DELTA
+                            )
+                        ) {
+                            setForeground(createForegroundInfo(visibleProgress))
+                            notificationProgressState =
+                                updateMigrationProgressThrottleState(visibleProgress, nowMs)
+                        }
                     }
                 }
+                try {
+                    runMigration()
+                } finally {
+                    progressJob.cancelAndJoin()
+                }
             }
-            try {
-                runMigration()
-            } finally {
-                progressJob.cancelAndJoin()
-                ManagedDownloadStorage.endMigrationProgressSession(migrationWorkId)
-            }
+        } finally {
+            ManagedDownloadStorage.endMigrationProgressSession(migrationWorkId)
         }
     }
 

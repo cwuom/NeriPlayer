@@ -54,6 +54,10 @@ internal class AudioDownloadProgressStore(
     private var nextBatchSessionId = 0L
     private var visibleBatchSessionId = 0L
     private val activeBatchSessionIds = linkedSetOf<Long>()
+    private val batchProgressBySession = mutableMapOf<
+        Long,
+        AudioDownloadManager.BatchDownloadProgress?
+    >()
     private val batchSessionLock = Any()
 
     fun publish(
@@ -205,21 +209,27 @@ internal class AudioDownloadProgressStore(
     }
 
     fun clearBatchProgress() {
-        _batchProgressFlow.value = null
+        synchronized(batchSessionLock) {
+            _batchProgressFlow.value = null
+        }
     }
 
     fun startBatchSession(): Long = synchronized(batchSessionLock) {
         val sessionId = ++nextBatchSessionId
         activeBatchSessionIds += sessionId
+        batchProgressBySession[sessionId] = null
         visibleBatchSessionId = sessionId
+        _batchProgressFlow.value = null
         sessionId
     }
 
     fun invalidateBatchSession() {
         synchronized(batchSessionLock) {
             activeBatchSessionIds.clear()
+            batchProgressBySession.clear()
             visibleBatchSessionId = 0L
             nextBatchSessionId++
+            _batchProgressFlow.value = null
         }
     }
 
@@ -230,16 +240,14 @@ internal class AudioDownloadProgressStore(
     }
 
     fun finishBatchSession(batchSessionId: Long) {
-        val shouldClearProgress = synchronized(batchSessionLock) {
+        synchronized(batchSessionLock) {
             val wasVisible = visibleBatchSessionId == batchSessionId
             activeBatchSessionIds.remove(batchSessionId)
+            batchProgressBySession.remove(batchSessionId)
             if (wasVisible) {
                 visibleBatchSessionId = activeBatchSessionIds.maxOrNull() ?: 0L
+                _batchProgressFlow.value = batchProgressBySession[visibleBatchSessionId]
             }
-            wasVisible
-        }
-        if (shouldClearProgress) {
-            _batchProgressFlow.value = null
         }
     }
 
@@ -247,11 +255,12 @@ internal class AudioDownloadProgressStore(
         batchSessionId: Long,
         progress: AudioDownloadManager.BatchDownloadProgress?
     ) {
-        val shouldPublish = synchronized(batchSessionLock) {
-            batchSessionId in activeBatchSessionIds && visibleBatchSessionId == batchSessionId
-        }
-        if (shouldPublish) {
-            _batchProgressFlow.value = progress
+        synchronized(batchSessionLock) {
+            if (batchSessionId !in activeBatchSessionIds) return
+            batchProgressBySession[batchSessionId] = progress
+            if (visibleBatchSessionId == batchSessionId) {
+                _batchProgressFlow.value = progress
+            }
         }
     }
 

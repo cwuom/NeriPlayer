@@ -2679,9 +2679,14 @@ fun NowPlayingScreen(
     val coverAssetSongRevisionKey = remember(currentSong) {
         currentSong?.stableKey().orEmpty()
     }
-    val coverAssetSongRevision by LocalAssetInvalidationBus
-        .revisionFlow(coverAssetSongRevisionKey)
-        .collectAsStateWithLifecycle()
+    val coverAssetSongRevisionFlow = remember(coverAssetSongRevisionKey) {
+        LocalAssetInvalidationBus.revisionFlow(coverAssetSongRevisionKey)
+    }
+    val coverAssetSongRevision by coverAssetSongRevisionFlow.collectAsStateWithLifecycle(
+        initialValue = LocalAssetInvalidationBus.currentSongRevision(
+            coverAssetSongRevisionKey
+        )
+    )
     val downloadedLyricsRefreshVersion by
         ManagedDownloadStorage.lyricsRefreshVersion.collectAsStateWithLifecycle()
     val currentSongVisualKey = currentSong?.playbackVisualKey()

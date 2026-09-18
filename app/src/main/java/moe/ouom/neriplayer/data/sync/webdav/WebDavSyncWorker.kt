@@ -36,6 +36,7 @@ class WebDavSyncWorker(
         private const val NOTIFICATION_CHANNEL_ID = "webdav_sync_channel"
         private const val NOTIFICATION_ID = 1002
         private const val DEFAULT_DELAY_MS = 5_000L
+        private const val PLAYBACK_DEFERRAL_DELAY_MS = 60_000L
 
         fun scheduleDelayedSync(
             context: Context,
@@ -131,7 +132,12 @@ class WebDavSyncWorker(
                 )
             ) {
                 NPLogger.d(TAG, "Automatic sync deferred while playback has priority")
-                return@withContext Result.retry()
+                scheduleDelayedSync(
+                    context = applicationContext,
+                    initialDelayMs = PLAYBACK_DEFERRAL_DELAY_MS,
+                    appendToCurrentWork = true
+                )
+                return@withContext Result.success()
             }
             if (!hasValidatedNetwork()) {
                 NPLogger.d(TAG, "No validated network available, retry later")

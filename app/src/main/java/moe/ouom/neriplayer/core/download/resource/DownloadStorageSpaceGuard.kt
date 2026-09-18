@@ -51,10 +51,15 @@ internal class DownloadStorageSpaceGuard(
         private val closed = AtomicBoolean(false)
         private var reservedBytes = initialReservedBytes
 
-        /** 确保从当前文件开始累计写入的字节数已经被预留 */
-        fun ensureAdditionalBytes(totalAdditionalBytes: Long) {
-            if (totalAdditionalBytes < 0L) return
-            guard.ensureCapacity(this, totalAdditionalBytes)
+        /** 确保租约至少保留下一次写入所需的字节数 */
+        fun ensureAdditionalBytes(requiredBytes: Long) {
+            if (requiredBytes < 0L) return
+            guard.ensureCapacity(this, requiredBytes)
+        }
+
+        internal fun consumeReservedBytes(writtenBytes: Long) {
+            if (writtenBytes <= 0L) return
+            guard.consume(this, writtenBytes)
         }
 
         internal fun reservedBytes(): Long = synchronized(this) { reservedBytes }
@@ -200,6 +205,18 @@ internal class DownloadStorageSpaceGuard(
         }
     }
 
+    private fun consume(lease: Lease, writtenBytes: Long) {
+        synchronized(stateLock) {
+            val state = statesByRoot[lease.rootPath] ?: return
+            if (state.owners[lease.ownerKey] !== lease) return
+            val currentReservedBytes = lease.reservedBytes()
+            val consumedBytes = writtenBytes.coerceAtMost(currentReservedBytes)
+            if (consumedBytes <= 0L) return
+            state.reservedBytes = (state.reservedBytes - consumedBytes).coerceAtLeast(0L)
+            lease.setReservedBytes(currentReservedBytes - consumedBytes)
+        }
+    }
+
     private fun ensureAvailableLocked(
         state: RootState,
         additionalBytes: Long,
@@ -286,12 +303,11 @@ internal class DownloadSpaceGuardedOutputStream(
     private val lease: DownloadStorageSpaceGuard.Lease
 ) : OutputStream() {
     private val delegate = output
-    private var writtenBytes = 0L
 
     override fun write(oneByte: Int) {
-        lease.ensureAdditionalBytes(safeAdd(writtenBytes, 1L))
+        lease.ensureAdditionalBytes(1L)
         delegate.write(oneByte)
-        writtenBytes = safeAdd(writtenBytes, 1L)
+        lease.consumeReservedBytes(1L)
     }
 
     override fun write(bytes: ByteArray, offset: Int, length: Int) {
@@ -299,9 +315,9 @@ internal class DownloadSpaceGuardedOutputStream(
             "invalid byte range: offset=$offset, length=$length, size=${bytes.size}"
         }
         if (length == 0) return
-        lease.ensureAdditionalBytes(safeAdd(writtenBytes, length.toLong()))
+        lease.ensureAdditionalBytes(length.toLong())
         delegate.write(bytes, offset, length)
-        writtenBytes = safeAdd(writtenBytes, length.toLong())
+        lease.consumeReservedBytes(length.toLong())
     }
 
     override fun flush() {

@@ -78,6 +78,31 @@ class AudioDownloadProgressStoreTest {
         assertEquals(replacement, store.currentProgress())
     }
 
+    @Test
+    fun `finishing the visible batch restores progress from an older active batch`() {
+        val store = AudioDownloadProgressStore(bufferCapacity = 2)
+        val olderSession = store.startBatchSession()
+        val olderProgress = batchProgress("older")
+        store.updateBatchProgressForSession(olderSession, olderProgress)
+        val newerSession = store.startBatchSession()
+        val newerProgress = batchProgress("newer")
+        store.updateBatchProgressForSession(newerSession, newerProgress)
+
+        assertEquals(newerProgress, store.batchProgressFlow.value)
+
+        store.finishBatchSession(newerSession)
+
+        assertEquals(olderProgress, store.batchProgressFlow.value)
+    }
+
+    private fun batchProgress(currentSong: String) =
+        AudioDownloadManager.BatchDownloadProgress(
+            totalSongs = 2,
+            completedSongs = 0,
+            currentSong = currentSong,
+            currentProgress = null
+        )
+
     private fun progress(
         operationId: String = "operation",
         attemptId: Long = 1L,

@@ -1196,8 +1196,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
 
         private fun copyV15DownloadPayload(db: SupportSQLiteDatabase) {
             val catalogLookup = buildLegacyCatalogLookup(db)
-            // 迁移在同一事务内执行，内存缓存可避免每行再次查询载荷表
-            val payloadCache = loadLegacyPayloadCache(db)
+            val payloadCache = LegacyPayloadCache(db)
             copyLegacyTableRows(
                 db = db,
                 tableName = "download_pending_queue",
@@ -1236,27 +1235,6 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             )
         }
 
-        private fun loadLegacyPayloadCache(
-            db: SupportSQLiteDatabase
-        ): MutableMap<String, JSONObject> {
-            if (!hasTable(db, "legacy_download_upgrade_payload")) {
-                return linkedMapOf()
-            }
-            val cache = linkedMapOf<String, JSONObject>()
-            forEachLegacyBatch(
-                db = db,
-                tableName = "legacy_download_upgrade_payload",
-                projection = "`stable_key`, `payload_json`"
-            ) { cursor, _ ->
-                val stableKey = cursorString(cursor, "stable_key") ?: return@forEachLegacyBatch
-                val payload = runCatching {
-                    JSONObject(cursorString(cursor, "payload_json") ?: return@runCatching null)
-                }.getOrNull() ?: return@forEachLegacyBatch
-                cache[stableKey] = payload
-            }
-            return cache
-        }
-
         private fun dropLegacyDownloadProjectionTables(db: SupportSQLiteDatabase) {
             LEGACY_DOWNLOAD_PROJECTION_TABLES.forEach { tableName ->
                 db.execSQL("DROP TABLE IF EXISTS `$tableName`")
@@ -1267,7 +1245,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             db: SupportSQLiteDatabase,
             tableName: String,
             catalogLookup: LegacyCatalogLookup,
-            payloadCache: MutableMap<String, JSONObject>
+            payloadCache: LegacyPayloadCache
         ) {
             if (!hasTable(db, tableName)) return
             val pendingWrites = LinkedHashMap<String, String>()
@@ -1278,7 +1256,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     cursor = cursor,
                     catalogLookup = catalogLookup
                 ) ?: fallbackLegacyStableKey(tableName, cursor)
-                val existing = payloadCache[stableKey] ?: JSONObject()
+                val existing = payloadCache.getOrLoad(stableKey, pendingWrites)
                 val hadStableKey = existing.has("stableKey") &&
                     !existing.isNull("stableKey") &&
                     existing.optString("stableKey") == stableKey
@@ -1292,13 +1270,50 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     existing.put("stableKey", stableKey)
                     val payloadJson = existing.toString()
                     pendingWrites[stableKey] = payloadJson
-                    payloadCache[stableKey] = existing
+                    payloadCache.put(stableKey, existing)
                     if (pendingWrites.size >= LEGACY_PAYLOAD_UPSERT_BATCH_SIZE) {
                         flushPayloadWrites(db, pendingWrites)
                     }
                 }
             }
             flushPayloadWrites(db, pendingWrites)
+        }
+
+        private class LegacyPayloadCache(
+            private val db: SupportSQLiteDatabase
+        ) {
+            private val entries = object : LinkedHashMap<String, JSONObject>(
+                LEGACY_PAYLOAD_CACHE_MAX_ENTRIES,
+                0.75f,
+                true
+            ) {
+                override fun removeEldestEntry(
+                    eldest: MutableMap.MutableEntry<String, JSONObject>?
+                ): Boolean = size > LEGACY_PAYLOAD_CACHE_MAX_ENTRIES
+            }
+
+            fun getOrLoad(
+                stableKey: String,
+                pendingWrites: Map<String, String>
+            ): JSONObject {
+                entries[stableKey]?.let { return it }
+                val rawPayload = pendingWrites[stableKey] ?: db.query(
+                    "SELECT `payload_json` FROM `legacy_download_upgrade_payload` " +
+                        "WHERE `stable_key` = ? LIMIT 1",
+                    arrayOf(stableKey)
+                ).use { cursor ->
+                    cursor.takeIf { it.moveToFirst() }?.getString(0)
+                }
+                val payload = rawPayload
+                    ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
+                    ?: JSONObject()
+                entries[stableKey] = payload
+                return payload
+            }
+
+            fun put(stableKey: String, payload: JSONObject) {
+                entries[stableKey] = payload
+            }
         }
 
         private fun flushPayloadWrites(
@@ -1792,6 +1807,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
 
         private const val LEGACY_MIGRATION_BATCH_SIZE = 64
         private const val LEGACY_PAYLOAD_UPSERT_BATCH_SIZE = 48
+        private const val LEGACY_PAYLOAD_CACHE_MAX_ENTRIES = 96
         private const val LEGACY_ROW_ID_ALIAS = "__neriplayer_migration_rowid"
 
         private val LEGACY_CATALOG_LOOKUP_COLUMNS = listOf(

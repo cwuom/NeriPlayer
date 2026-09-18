@@ -218,6 +218,57 @@ class AudioDownloadManagerGroup3Test : AudioDownloadManagerTestSupport() {
     }
 
     @Test
+    fun `hls segment copy skips an id3v24 footer`() {
+        val id3Header = byteArrayOf(
+            'I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte(),
+            4, 0, 0x10, 0, 0, 0, 0
+        )
+        val footer = ByteArray(10) { 0x7f }
+        val payload = byteArrayOf(1, 2, 3, 4)
+        val source = Buffer().write(id3Header).write(footer).write(payload)
+        val sink = Buffer()
+
+        val copied = AudioDownloadManager.copyHlsSegment(
+            source = source,
+            sink = sink,
+            trafficAccumulator = TrafficByteAccumulator(Long.MAX_VALUE) {}
+        )
+
+        assertEquals(payload.size.toLong(), copied)
+        assertTrue(sink.readByteArray().contentEquals(payload))
+    }
+
+    @Test
+    fun `hls parser accepts method none and requires a completed playlist`() {
+        val completed = """
+            #EXTM3U
+            #EXT-X-KEY:METHOD=NONE
+            segment.aac
+            #EXT-X-ENDLIST
+        """.trimIndent()
+
+        assertEquals(
+            listOf("https://cdn.example/music/segment.aac"),
+            AudioHlsSegmentSupport.parseSegmentUrls(
+                playlistUrl = "https://cdn.example/music/final.m3u8",
+                playlistText = completed
+            )
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            AudioHlsSegmentSupport.parseSegmentUrls(
+                playlistUrl = "https://cdn.example/music/live.m3u8",
+                playlistText = "#EXTM3U\nsegment.aac"
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            AudioHlsSegmentSupport.parseSegmentUrls(
+                playlistUrl = "https://cdn.example/music/encrypted.m3u8",
+                playlistText = completed.replace("METHOD=NONE", "METHOD=AES-128")
+            )
+        }
+    }
+
+    @Test
     fun `hls segment copy rejects a truncated response when length is known`() {
         val source = Buffer().write(byteArrayOf(1, 2, 3))
         val sink = Buffer()

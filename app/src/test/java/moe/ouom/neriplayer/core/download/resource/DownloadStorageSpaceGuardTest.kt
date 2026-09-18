@@ -51,10 +51,40 @@ class DownloadStorageSpaceGuardTest {
                 ownerKey = "stream"
             )
             guarded.write(ByteArray(30))
-            assertTrue(guard.snapshot(root).reservedBytes >= 30L)
+            assertEquals(0L, guard.snapshot(root).reservedBytes)
             guarded.close()
             assertEquals(0, guard.snapshot(root).reservedBytes)
             assertEquals(30, output.size())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `written bytes are not counted again as reserved capacity`() {
+        val root = temporaryRoot()
+        try {
+            var usableBytes = 100L
+            val output = object : ByteArrayOutputStream() {
+                override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                    super.write(bytes, offset, length)
+                    usableBytes -= length
+                }
+            }
+            val guard = DownloadStorageSpaceGuard(
+                minimumFreeBytes = 10L,
+                unknownReservationBytes = 5L,
+                usableSpaceOf = { usableBytes }
+            )
+            val guarded = guard.guardOutput(output, root, "stream")
+
+            guarded.write(ByteArray(40))
+            guarded.write(ByteArray(40))
+
+            assertEquals(80, output.size())
+            assertEquals(20L, usableBytes)
+            assertEquals(0L, guard.snapshot(root).reservedBytes)
+            guarded.close()
         } finally {
             root.deleteRecursively()
         }

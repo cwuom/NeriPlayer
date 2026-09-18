@@ -11,6 +11,7 @@ import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
@@ -172,7 +173,7 @@ class SafStorageBackendWriteCapabilityTest {
     }
 
     @Test
-    fun `provider auto numbered rename cleans up the renamed orphan`() = runBlocking {
+    fun `provider auto numbered rename preserves the renamed document`() = runBlocking {
         val sourceUri = mock(Uri::class.java)
         val numberedUri = mock(Uri::class.java)
         val resolver = mock(ContentResolver::class.java)
@@ -221,7 +222,7 @@ class SafStorageBackendWriteCapabilityTest {
             )
 
             assertTrue(result is StorageRenameResult.ProviderFailure)
-            assertTrue(numberedDeleted)
+            assertFalse(numberedDeleted)
         }
     }
 

@@ -161,7 +161,11 @@ internal fun LocalMediaSupport.inspectMetadataOnlyImpl(
         ?: queried.album.takeMeaningfulLocalMetadata()
         ?: localMetadata?.album.takeMeaningfulLocalMetadata()
     val usesFallbackAlbum = rawAlbum == null
-    val resolvedAlbum = normalizeLocalAlbumIdentity(rawAlbum, usesFallbackAlbum)
+    val resolvedAlbum = normalizeLocalAlbumIdentity(
+        album = rawAlbum,
+        usesFallbackAlbum = usesFallbackAlbum,
+        stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(tagLibMetadata?.sourceStableKey)
+    )
     val nearbyLyricFiles = findNearbyLyricFiles(file)
     val nearbyLyricReferences = findNearbyLyricReferences(
         context = context,
@@ -562,7 +566,11 @@ internal fun LocalMediaSupport.inspectImpl(context: Context, uri: Uri): LocalMed
             ?: queried.album.takeMeaningfulLocalMetadata()
             ?: localMetadata?.album.takeMeaningfulLocalMetadata()
         val usesFallbackAlbum = rawAlbum == null
-        val resolvedAlbum = normalizeLocalAlbumIdentity(rawAlbum, usesFallbackAlbum)
+        val resolvedAlbum = normalizeLocalAlbumIdentity(
+            album = rawAlbum,
+            usesFallbackAlbum = usesFallbackAlbum,
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(tagLibMetadata?.sourceStableKey)
+        )
         val albumArtist = tagLibMetadata?.albumArtist
             ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
             ?.takeIf { it.isNotBlank() }
@@ -712,7 +720,11 @@ internal fun LocalMediaSupport.inspectImpl(context: Context, uri: Uri): LocalMed
             ?: queried.album.takeMeaningfulLocalMetadata()
             ?: localMetadata?.album.takeMeaningfulLocalMetadata()
         val usesFallbackAlbum = rawAlbum == null
-        val resolvedAlbum = normalizeLocalAlbumIdentity(rawAlbum, usesFallbackAlbum)
+        val resolvedAlbum = normalizeLocalAlbumIdentity(
+            album = rawAlbum,
+            usesFallbackAlbum = usesFallbackAlbum,
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(tagLibMetadata?.sourceStableKey)
+        )
         val tagLibCoverUri = tagLibMetadata?.coverBytes
             ?.takeIf { it.isNotEmpty() }
             ?.let { saveEmbeddedCover(context, "${resolvedPath ?: uri}#taglib", it) }

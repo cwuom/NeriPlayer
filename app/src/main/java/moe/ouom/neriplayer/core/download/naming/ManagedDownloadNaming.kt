@@ -5,6 +5,7 @@ import java.security.MessageDigest
 import java.text.Normalizer
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
@@ -362,9 +363,17 @@ internal fun candidateManagedDownloadBaseNames(
     }
 
     // Keep matching historical downloads created before custom templates were introduced.
-    baseNames += sanitizeManagedDownloadFileName("${song.customArtist ?: song.artist} - ${song.customName ?: song.name}")
-    baseNames += sanitizeManagedDownloadFileName("${song.artist} - ${song.name}")
-    baseNames += sanitizeManagedDownloadFileName("$originalArtist - $originalName")
+    baseNames.addHistoricalManagedDownloadBaseName(
+        sanitizeManagedDownloadFileName(
+            "${song.customArtist ?: song.artist} - ${song.customName ?: song.name}"
+        )
+    )
+    baseNames.addHistoricalManagedDownloadBaseName(
+        sanitizeManagedDownloadFileName("${song.artist} - ${song.name}")
+    )
+    baseNames.addHistoricalManagedDownloadBaseName(
+        sanitizeManagedDownloadFileName("$originalArtist - $originalName")
+    )
     appendLocalFileDerivedBaseNames(baseNames, song)
 
     return baseNames.toList()
@@ -394,9 +403,11 @@ private fun MutableSet<String>.addRenderedManagedDownloadBaseNames(
         identityHash = identityHash,
         template = effectiveTemplate
     )
-    add(truncateManagedDownloadBaseName(renderedExact))
+    val truncatedRendered = truncateManagedDownloadBaseName(renderedExact)
+    add(truncatedRendered)
+    addFinalFileBoundedBaseNames(truncatedRendered)
     if (effectiveTemplate == DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE) {
-        add(
+        addHistoricalManagedDownloadBaseName(
             truncateManagedDownloadBaseName(
                 renderLegacyFilteredDefaultManagedDownloadBaseName(
                     title = title,
@@ -412,6 +423,21 @@ private fun MutableSet<String>.addRenderedManagedDownloadBaseNames(
         normalizedTemplate != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
     ) {
         add(renderedExact)
+        addFinalFileBoundedBaseNames(renderedExact)
+    }
+}
+
+private fun MutableSet<String>.addHistoricalManagedDownloadBaseName(baseName: String) {
+    add(baseName)
+    addFinalFileBoundedBaseNames(baseName)
+}
+
+private fun MutableSet<String>.addFinalFileBoundedBaseNames(baseName: String) {
+    audioExtensions.forEach { extension ->
+        add(
+            boundManagedDownloadFileName("$baseName.$extension")
+                .substringBeforeLast('.', missingDelimiterValue = baseName)
+        )
     }
 }
 

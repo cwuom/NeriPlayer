@@ -184,10 +184,6 @@ internal fun <T> Result<T>.getOrRethrowCancellation(
     )
 }
 
-internal fun shouldUseMediaStoreScanResult(result: LocalAudioImportResult?): Boolean {
-    return result?.songs?.isNotEmpty() == true
-}
-
 internal fun shouldKeepMediaStoreAudioRow(
     hasResolvedFile: Boolean,
     hasProviderAudioReference: Boolean,

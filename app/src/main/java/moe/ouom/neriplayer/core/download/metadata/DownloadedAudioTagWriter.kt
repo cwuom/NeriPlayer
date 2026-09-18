@@ -61,7 +61,7 @@ internal object DownloadedAudioTagWriter {
      * 属于 Matroska 家族, TagLib 既解析不了也写不进去
      */
     private val TAG_UNSUPPORTED_EXTENSIONS = setOf(
-        "webm", "mkv", "mka", "ts", "flv", "m3u8", "m3u"
+        "aac", "webm", "mkv", "mka", "ts", "flv", "m3u8", "m3u"
     )
     private val NETEASE_WORD_LINE_REGEX = Regex("""^\[(\d+),\s*\d+]\s*(.*)$""")
     private val NETEASE_WORD_TOKEN_REGEX = Regex("""[\(<]\d+,\s*\d+,\s*-?\d+[\)>]""")

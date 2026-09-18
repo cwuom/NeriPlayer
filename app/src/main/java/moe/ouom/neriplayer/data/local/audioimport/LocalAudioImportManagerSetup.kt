@@ -83,12 +83,13 @@ internal suspend fun LocalAudioImportManager.scanFolderSongsInternal(
         treeDocumentId = treeDocumentId,
         displayName = root.name
     )
-    // 用户复制的音频可能尚未进入 MediaStore，下载目录以实际子项为准
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !scansManagedDirectory) {
-        val mediaStoreResult = mediaStoreScan(progress)
-        if (shouldUseMediaStoreScanResult(mediaStoreResult)) {
-            return requireNotNull(mediaStoreResult)
-        }
+    // MediaStore 只提供已建立索引的子集，仍需遍历用户选择的目录补齐新复制文件
+    val mediaStoreResult = if (
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !scansManagedDirectory
+    ) {
+        mediaStoreScan(progress)
+    } else {
+        null
     }
     val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
         snapshot = loadManagedDownloadSnapshotForScan(
@@ -184,25 +185,92 @@ internal suspend fun LocalAudioImportManager.scanFolderSongsInternal(
         "scanFolderSongs finished: mode=${traversalResult.mode}, songs=${songs.size}, failed=$failed, metadataDeferred=${completion.metadataDeferred}, totalElapsed=${totalElapsedMs}ms"
     )
 
+    val mergedResult = mergeFolderScanResults(
+        mediaStoreResult = mediaStoreResult,
+        safResult = LocalAudioImportResult(
+            songs = if (completion.metadataDeferred) {
+                distinctSongsPreservingOrder(songs)
+            } else {
+                orderScannedSongs(songs)
+            },
+            failedCount = failed,
+            completed = true,
+            metadataDeferred = completion.metadataDeferred
+        )
+    )
     progress.emit(
         phase = LocalAudioScanPhase.COMPLETED,
         processed = candidateCount,
         total = candidateCount,
-        discoveredSongs = songs.size,
+        discoveredSongs = mergedResult.songs.size,
         visitedDirectories = traversalResult.visitedDirectoryCount,
         force = true
     )
+    return mergedResult
+}
 
-    return LocalAudioImportResult(
-        songs = if (completion.metadataDeferred) {
-            distinctSongsPreservingOrder(songs)
+internal fun LocalAudioImportManager.mergeFolderScanResults(
+    mediaStoreResult: LocalAudioImportResult?,
+    safResult: LocalAudioImportResult
+): LocalAudioImportResult {
+    if (mediaStoreResult == null) return safResult
+    val mergedSongs = mediaStoreResult.songs.toMutableList()
+    val mediaIndicesByKey = linkedMapOf<String, MutableSet<Int>>()
+    mediaStoreResult.songs.forEachIndexed { index, song ->
+        LocalSongSupport.localDuplicateKeys(song).forEach { key ->
+            mediaIndicesByKey.getOrPut(key) { linkedSetOf() }.add(index)
+        }
+    }
+    val mediaFallbackCounts = mediaStoreResult.songs
+        .mapNotNull(::folderScanFallbackKey)
+        .groupingBy { it }
+        .eachCount()
+    val safFallbackCounts = safResult.songs
+        .mapNotNull(::folderScanFallbackKey)
+        .groupingBy { it }
+        .eachCount()
+
+    safResult.songs.forEach { safSong ->
+        val exactMatches = LocalSongSupport.localDuplicateKeys(safSong)
+            .flatMap { key -> mediaIndicesByKey[key].orEmpty() }
+            .distinct()
+        val fallbackKey = folderScanFallbackKey(safSong)
+        val matchedIndex = exactMatches.singleOrNull() ?: fallbackKey
+            ?.takeIf { key ->
+                mediaFallbackCounts[key] == 1 && safFallbackCounts[key] == 1
+            }
+            ?.let { key ->
+                mediaStoreResult.songs.indexOfFirst { song ->
+                    folderScanFallbackKey(song) == key
+                }.takeIf { it >= 0 }
+            }
+        if (matchedIndex == null) {
+            mergedSongs += safSong
         } else {
-            orderScannedSongs(songs)
-        },
-        failedCount = failed,
-        completed = true,
-        metadataDeferred = completion.metadataDeferred
+            mergedSongs[matchedIndex] = mergeImportedSongMetadata(
+                quickSong = mergedSongs[matchedIndex],
+                detailedSong = safSong
+            )
+        }
+    }
+    val metadataDeferred = mediaStoreResult.metadataDeferred || safResult.metadataDeferred
+    val distinctSongs = distinctSongsPreservingOrder(mergedSongs)
+    return LocalAudioImportResult(
+        songs = if (metadataDeferred) distinctSongs else orderScannedSongs(distinctSongs),
+        failedCount = mediaStoreResult.failedCount + safResult.failedCount,
+        completed = mediaStoreResult.completed && safResult.completed,
+        metadataDeferred = metadataDeferred
     )
+}
+
+private fun folderScanFallbackKey(song: SongItem): String? {
+    val fileName = song.localFileName
+        ?.trim()
+        ?.lowercase(Locale.ROOT)
+        ?.takeIf(String::isNotBlank)
+        ?: return null
+    val durationMs = song.durationMs.takeIf { it > 0L } ?: return null
+    return "$fileName|$durationMs"
 }
 
 internal fun LocalAudioImportManager.buildKnownManagedSidecarReferences(

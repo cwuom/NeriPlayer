@@ -13,7 +13,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.policy.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -979,7 +978,6 @@ internal fun LocalAudioImportManager.stabilizeExternalUri(
                             "error=${error.message}"
                     )
                 }
-                .getOrThrow()
         }
 
     resolvedSourceFile?.let { sourceFile ->
@@ -1157,12 +1155,13 @@ internal fun LocalAudioImportManager.shouldCopyExternalAudio(targetFile: File, e
     if (!targetFile.exists()) return true
     if (!targetFile.isFile) return true
     if (targetFile.length() <= 0L) return true
-    return expectedBytes != null &&
-        !ManagedDownloadSizePolicy.isTransferSizeComplete(
-            expectedSizeBytes = expectedBytes,
-            actualSizeBytes = targetFile.length()
-        )
+    return expectedBytes != null && targetFile.length() != expectedBytes
 }
+
+internal fun LocalAudioImportManager.isExternalAudioCopySizeComplete(
+    expectedBytes: Long?,
+    copiedBytes: Long
+): Boolean = copiedBytes > 0L && (expectedBytes == null || copiedBytes == expectedBytes)
 
 internal fun LocalAudioImportManager.copyExternalAudioToTarget(
     context: Context,
@@ -1204,7 +1203,7 @@ internal fun LocalAudioImportManager.copyExternalAudioToTarget(
                 output.fd.sync()
             }
         } ?: error("Unable to open external audio stream")
-        if (!ManagedDownloadSizePolicy.isTransferSizeComplete(expectedBytes, copiedBytes)) {
+        if (!isExternalAudioCopySizeComplete(expectedBytes, copiedBytes)) {
             error("External audio copy size mismatch: expected=$expectedBytes actual=$copiedBytes")
         }
         val hadExistingTarget = targetFile.exists()

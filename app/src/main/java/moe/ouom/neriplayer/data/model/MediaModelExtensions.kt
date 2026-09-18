@@ -54,12 +54,6 @@ fun SongItem.displayCoverUrl(
                 ?.takeUnless(::isMediaStoreCoverReference)
                 ?: if (!onMainThread) {
                     LocalMediaSupport.resolveCoverUri(context, this)
-                } else if (
-                    localFilePath?.startsWith("/") == true &&
-                        mediaUri?.startsWith("content://", ignoreCase = true) != true
-                ) {
-                    // direct file sidecars are bounded existence checks and are safe for the first frame
-                    LocalMediaSupport.resolveNearbyCoverUri(context, this)
                 } else {
                     null
                 }

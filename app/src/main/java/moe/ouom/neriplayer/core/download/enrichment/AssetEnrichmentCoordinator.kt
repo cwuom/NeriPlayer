@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.enrichment
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -94,7 +95,9 @@ internal class AssetEnrichmentCoordinator(
             if (jobsByOperationId.values.count(Job::isActive) >= maxActiveJobs) {
                 return@synchronized null
             }
-            val timeoutCallbackFailure = AtomicReference<Throwable?>(null)
+            val terminalError = AtomicReference<Throwable?>(null)
+            val completionDelivered = AtomicBoolean(false)
+            val jobReference = AtomicReference<Job?>(null)
             val operationTraceToken = traceToken
                 ?.takeIf { token ->
                     token.operationId == normalizedId && token.attemptId == attemptId
@@ -107,6 +110,20 @@ internal class AssetEnrichmentCoordinator(
                 operationTraceToken,
                 DownloadOperationTracePhase.ENRICHMENT_ENQUEUED
             )
+            fun deliverCompletion(error: Throwable?) {
+                if (!completionDelivered.compareAndSet(false, true)) return
+                synchronized(jobRegistrationLock) {
+                    jobReference.get()?.let { registeredJob ->
+                        jobsByOperationId.remove(normalizedId, registeredJob)
+                    }
+                    refreshActiveStateLocked()
+                }
+                runCatching { onCompletion(error ?: terminalError.get()) }
+                DownloadOperationTrace.mark(
+                    operationTraceToken,
+                    DownloadOperationTracePhase.TERMINAL
+                )
+            }
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     semaphore.withPermit {
@@ -120,28 +137,34 @@ internal class AssetEnrichmentCoordinator(
                     }
                 } catch (error: TimeoutCancellationException) {
                     runCatching { onTimeout(error) }
-                        .onFailure(timeoutCallbackFailure::set)
+                        .onFailure { callbackError ->
+                            terminalError.compareAndSet(null, callbackError)
+                        }
                 } catch (error: CancellationException) {
+                    terminalError.compareAndSet(null, error)
+                    throw error
+                } catch (error: Throwable) {
+                    terminalError.compareAndSet(null, error)
                     throw error
                 } finally {
-                    DownloadOperationTrace.mark(
-                        operationTraceToken,
-                        DownloadOperationTracePhase.ENRICHMENT_FINISHED
-                    )
+                    try {
+                        DownloadOperationTrace.mark(
+                            operationTraceToken,
+                            DownloadOperationTracePhase.ENRICHMENT_FINISHED
+                        )
+                    } catch (error: Throwable) {
+                        terminalError.compareAndSet(null, error)
+                        throw error
+                    } finally {
+                        // join 返回前必须释放 operation 所有权，完成处理器只负责兜底
+                        deliverCompletion(terminalError.get())
+                    }
                 }
             }
+            jobReference.set(job)
             jobsByOperationId[normalizedId] = job
             job.invokeOnCompletion { error ->
-                synchronized(jobRegistrationLock) {
-                    jobsByOperationId.remove(normalizedId, job)
-                    refreshActiveStateLocked()
-                }
-                val completionError = error ?: timeoutCallbackFailure.get()
-                runCatching { onCompletion(completionError) }
-                DownloadOperationTrace.mark(
-                    operationTraceToken,
-                    DownloadOperationTracePhase.TERMINAL
-                )
+                deliverCompletion(error)
             }
             job.start()
             refreshActiveStateLocked()

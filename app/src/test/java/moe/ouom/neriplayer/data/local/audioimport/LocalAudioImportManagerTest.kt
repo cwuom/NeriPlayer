@@ -34,6 +34,13 @@ class LocalAudioImportManagerTest {
     val tempFolder = TemporaryFolder()
 
     @Test
+    fun `external import reports every item clipped by the safety limit`() {
+        assertEquals(0, clippedExternalImportCount(distinctUriCount = 500))
+        assertEquals(1, clippedExternalImportCount(distinctUriCount = 501))
+        assertEquals(37, clippedExternalImportCount(distinctUriCount = 537))
+    }
+
+    @Test
     fun `large media store directory keeps audio priority within cache bound`() {
         val children = buildList {
             repeat(20) { index ->
@@ -218,35 +225,33 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
-    fun `empty media store result falls back to SAF traversal`() {
-        val indexedSong = SongItem(
+    fun `media store scan keeps SAF only files`() {
+        val indexed = songForFolderMerge(
             id = 1L,
-            name = "song",
-            artist = "artist",
-            album = "Local Files",
-            albumId = 0L,
-            durationMs = 1_000L,
-            coverUrl = null
+            name = "indexed",
+            reference = "content://media/audio/1",
+            fileName = "indexed.mp3"
+        )
+        val indexedFromSaf = indexed.copy(
+            id = 2L,
+            mediaUri = "content://documents/indexed",
+            audioId = "2"
+        )
+        val safOnly = songForFolderMerge(
+            id = 3L,
+            name = "new-copy",
+            reference = "content://documents/new-copy",
+            fileName = "new-copy.mp3"
         )
 
-        assertFalse(
-            shouldUseMediaStoreScanResult(
-                LocalAudioImportResult(
-                    songs = emptyList(),
-                    failedCount = 0,
-                    completed = true
-                )
-            )
+        val merged = LocalAudioImportManager.mergeFolderScanResults(
+            mediaStoreResult = LocalAudioImportResult(listOf(indexed), 0),
+            safResult = LocalAudioImportResult(listOf(indexedFromSaf, safOnly), 0)
         )
-        assertTrue(
-            shouldUseMediaStoreScanResult(
-                LocalAudioImportResult(
-                    songs = listOf(indexedSong),
-                    failedCount = 0,
-                    completed = true
-                )
-            )
-        )
+
+        assertEquals(2, merged.songs.size)
+        assertTrue(merged.songs.any { it.name == "indexed" })
+        assertTrue(merged.songs.any { it.name == "new-copy" })
     }
 
     @Test
@@ -755,6 +760,27 @@ class LocalAudioImportManagerTest {
 
         assertEquals("fresh", target.readText())
         assertEquals("recoverable", backup.readText())
+    }
+
+    @Test
+    fun `external audio cache requires the exact provider size`() {
+        val target = tempFolder.newFile("sized-import.mp3").apply {
+            writeBytes(ByteArray(100))
+        }
+
+        assertFalse(LocalAudioImportManager.shouldCopyExternalAudio(target, 100L))
+        assertTrue(LocalAudioImportManager.shouldCopyExternalAudio(target, 99L))
+        assertTrue(LocalAudioImportManager.shouldCopyExternalAudio(target, 101L))
+        assertFalse(LocalAudioImportManager.shouldCopyExternalAudio(target, null))
+    }
+
+    @Test
+    fun `external audio copy rejects tolerated short or empty streams`() {
+        assertTrue(LocalAudioImportManager.isExternalAudioCopySizeComplete(100L, 100L))
+        assertFalse(LocalAudioImportManager.isExternalAudioCopySizeComplete(100L, 99L))
+        assertFalse(LocalAudioImportManager.isExternalAudioCopySizeComplete(100L, 0L))
+        assertTrue(LocalAudioImportManager.isExternalAudioCopySizeComplete(null, 100L))
+        assertFalse(LocalAudioImportManager.isExternalAudioCopySizeComplete(null, 0L))
     }
 
     @Test
@@ -1736,4 +1762,23 @@ class LocalAudioImportManagerTest {
             lastModifiedMs = 1L
         )
     }
+
+    private fun songForFolderMerge(
+        id: Long,
+        name: String,
+        reference: String,
+        fileName: String
+    ): SongItem = SongItem(
+        id = id,
+        name = name,
+        artist = "artist",
+        album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+        albumId = 0L,
+        durationMs = 1_000L,
+        coverUrl = null,
+        mediaUri = reference,
+        localFileName = fileName,
+        channelId = "local",
+        audioId = id.toString()
+    )
 }

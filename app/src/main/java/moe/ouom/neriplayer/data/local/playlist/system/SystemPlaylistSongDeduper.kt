@@ -24,9 +24,9 @@ package moe.ouom.neriplayer.data.local.playlist.system
  */
 
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun List<SongItem>.distinctSystemSongs(): List<SongItem> {
     if (size < 2) return this
@@ -39,7 +39,6 @@ internal fun List<SongItem>.distinctSystemSongs(): List<SongItem> {
 internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
     private val initialCapacity = expectedSongCount.coerceIn(0, MAX_INITIAL_CAPACITY)
     private val distinct = ArrayList<SongItem>(initialCapacity)
-    private val seenIdentities = HashSet<SongIdentity>(initialCapacity)
     private val indexByIdentity = HashMap<SongIdentity, Int>(initialCapacity)
     private val indexByLocalKey = HashMap<String, Int>()
 
@@ -53,26 +52,24 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
 
     private fun add(song: SongItem) {
         val identity = song.identity()
-        if (identity in seenIdentities) {
-            indexByIdentity[identity]?.let { index ->
-                distinct[index] = mergeDuplicateSong(distinct[index], song)
-                LocalSongSupport.localDuplicateKeys(
-                    song = song,
-                    includeMetadataFallback = true
-                ).forEach { key ->
-                    indexByLocalKey[key] = index
-                }
-            }
-            return
-        }
         val localKeys = LocalSongSupport.localDuplicateKeys(
             song = song,
             includeMetadataFallback = true
         )
-        val duplicateIndex = localKeys.firstNotNullOfOrNull(indexByLocalKey::get)
-        if (duplicateIndex != null) {
-            distinct[duplicateIndex] = mergeDuplicateSong(distinct[duplicateIndex], song)
-            seenIdentities += identity
+        val matchingIndices = buildSet {
+            indexByIdentity[identity]?.let(::add)
+            localKeys.mapNotNullTo(this, indexByLocalKey::get)
+        }
+        if (matchingIndices.isNotEmpty()) {
+            val duplicateIndex = matchingIndices.min()
+            var merged = distinct[duplicateIndex]
+            matchingIndices.sorted().forEach { index ->
+                if (index != duplicateIndex) {
+                    merged = mergeDuplicateSong(merged, distinct[index])
+                }
+            }
+            distinct[duplicateIndex] = mergeDuplicateSong(merged, song)
+            collapseDuplicateIndices(duplicateIndex, matchingIndices - duplicateIndex)
             indexByIdentity[identity] = duplicateIndex
             localKeys.forEach { key ->
                 indexByLocalKey[key] = duplicateIndex
@@ -81,11 +78,25 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
         }
         val index = distinct.size
         distinct += song
-        seenIdentities += identity
         indexByIdentity[identity] = index
         localKeys.forEach { key ->
             indexByLocalKey[key] = index
         }
+    }
+
+    private fun collapseDuplicateIndices(targetIndex: Int, removedIndices: Set<Int>) {
+        if (removedIndices.isEmpty()) return
+        val sortedRemovedIndices = removedIndices.sorted()
+        sortedRemovedIndices.asReversed().forEach(distinct::removeAt)
+
+        fun remap(index: Int): Int {
+            val searchResult = sortedRemovedIndices.binarySearch(index)
+            if (searchResult >= 0) return targetIndex
+            val removedBeforeIndex = -searchResult - 1
+            return index - removedBeforeIndex
+        }
+        indexByIdentity.replaceAll { _, index -> remap(index) }
+        indexByLocalKey.replaceAll { _, index -> remap(index) }
     }
 
     private fun mergeDuplicateSong(existing: SongItem, candidate: SongItem): SongItem {

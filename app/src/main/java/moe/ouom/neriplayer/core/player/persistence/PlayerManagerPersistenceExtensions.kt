@@ -2174,7 +2174,6 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     isLocalSong = isLocalSong
                 ),
                 fastLocalUsageSync = true,
-                deferPersistence = !writeLocalMetadata,
                 clearRestorableOverrides = RestorableMetadataClearPolicy(
                     title = restoreBaseName,
                     artist = restoreBaseArtist,
@@ -2239,7 +2238,12 @@ internal suspend fun PlayerManager.updateUserLyricOffsetImpl(
                 )
             }
         }
-        GlobalDownloadManager.syncDownloadedSongMetadataNow(latestSong)
+        GlobalDownloadManager.syncDownloadedSongMetadataNow(
+            song = latestSong,
+            clearRestorableOverrides = RestorableMetadataClearPolicy(
+                userLyricOffset = true
+            )
+        )
     }
 
     persistState()

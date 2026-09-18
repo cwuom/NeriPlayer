@@ -10,6 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.naming.boundManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReadLimitExceededException
@@ -18,6 +19,11 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.readBounded
 
 internal object ManagedDownloadCoverAssetStore {
+    internal data class CoverEncoding(
+        val extension: String,
+        val mimeType: String?
+    )
+
     data class MaterializedCover(
         val reference: String,
         val assetHash: String,
@@ -59,20 +65,27 @@ internal object ManagedDownloadCoverAssetStore {
                     fileName = source.displayName
                 )
             }
-            val fileName = selectTargetFileName(
+            val encoding = resolveCoverEncoding(
+                sourceDisplayName = source.displayName,
+                detectedMimeType = source.detectedMimeType,
+                fallbackExtension = extension,
+                fallbackMimeType = mimeType
+            )
+            val requestedFileName = selectTargetFileName(
                 sourceDisplayName = source.displayName,
                 preferredFileName = preferredFileName
             ) ?: buildLegacyReadableFileName(
                 sourceDisplayName = source.displayName,
                 assetHash = hash,
-                extension = extension
+                extension = encoding.extension
             )
+            val fileName = replaceCoverFileExtension(requestedFileName, encoding.extension)
             val stored = source.file.inputStream().use { input ->
                 ManagedDownloadStorage.persistRemoteCoverStream(
                     context = context,
                     input = input,
                     fileName = fileName,
-                    mimeType = mimeType,
+                    mimeType = encoding.mimeType,
                     expectedSizeBytes = source.sizeBytes
                 )
             } ?: return@withContext null
@@ -104,24 +117,31 @@ internal object ManagedDownloadCoverAssetStore {
                     fileName = source.displayName
                 )
             }
-            val fileName = selectTargetFileName(
+            val encoding = resolveCoverEncoding(
+                sourceDisplayName = source.displayName,
+                detectedMimeType = source.detectedMimeType,
+                fallbackExtension = extension,
+                fallbackMimeType = mimeType
+            )
+            val requestedFileName = selectTargetFileName(
                 sourceDisplayName = source.displayName,
                 preferredFileName = buildLegacyReadableFileName(
                     sourceDisplayName = source.displayName,
                     assetHash = hash,
-                    extension = extension
+                    extension = encoding.extension
                 )
             ) ?: buildLegacyReadableFileName(
                 sourceDisplayName = source.displayName,
                 assetHash = hash,
-                extension = extension
+                extension = encoding.extension
             )
+            val fileName = replaceCoverFileExtension(requestedFileName, encoding.extension)
             val stored = source.file.inputStream().use { input ->
                 ManagedDownloadStorage.persistRemoteCoverStream(
                     context = context,
                     input = input,
                     fileName = fileName,
-                    mimeType = mimeType,
+                    mimeType = encoding.mimeType,
                     expectedSizeBytes = source.sizeBytes
                 )
             } ?: return@withContext null
@@ -156,7 +176,12 @@ internal object ManagedDownloadCoverAssetStore {
         assetHash: String,
         extension: String
     ): String {
-        val normalizedExtension = extension.trim().removePrefix(".").ifBlank { "bin" }
+        val normalizedExtension = extension.trim()
+            .removePrefix(".")
+            .lowercase()
+            .filter(Char::isLetterOrDigit)
+            .take(8)
+            .ifBlank { "bin" }
         val sourceBaseName = sourceDisplayName.substringBeforeLast('.', sourceDisplayName)
         val readableBaseName = sourceBaseName
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
@@ -171,7 +196,61 @@ internal object ManagedDownloadCoverAssetStore {
         } else {
             "$readableBaseName-$shortHash"
         }
-        return "$targetBaseName.$normalizedExtension"
+        return boundManagedDownloadFileName("$targetBaseName.$normalizedExtension")
+    }
+
+    internal fun resolveCoverEncoding(
+        sourceDisplayName: String,
+        detectedMimeType: String?,
+        fallbackExtension: String,
+        fallbackMimeType: String?
+    ): CoverEncoding {
+        val normalizedMimeType = detectedMimeType
+            ?.substringBefore(';')
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.startsWith("image/") }
+        val detectedExtension = when (normalizedMimeType) {
+            "image/jpeg", "image/jpg" -> "jpg"
+            "image/png" -> "png"
+            "image/webp" -> "webp"
+            "image/gif" -> "gif"
+            "image/heic" -> "heic"
+            "image/heif" -> "heif"
+            "image/avif" -> "avif"
+            "image/bmp", "image/x-ms-bmp" -> "bmp"
+            else -> null
+        }
+        val sourceExtension = sourceDisplayName.substringAfterLast('.', "")
+            .lowercase()
+            .takeIf { it in COVER_EXTENSIONS }
+        val normalizedFallbackExtension = fallbackExtension
+            .trim()
+            .removePrefix(".")
+            .lowercase()
+            .filter(Char::isLetterOrDigit)
+            .take(8)
+            .ifBlank { "bin" }
+        val extension = detectedExtension ?: sourceExtension ?: normalizedFallbackExtension
+        val mimeType = normalizedMimeType ?: when (extension) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            "heic" -> "image/heic"
+            "heif" -> "image/heif"
+            "avif" -> "image/avif"
+            "bmp" -> "image/bmp"
+            else -> fallbackMimeType
+        }
+        return CoverEncoding(extension = extension, mimeType = mimeType)
+    }
+
+    internal fun replaceCoverFileExtension(fileName: String, extension: String): String {
+        val normalizedExtension = extension.trim().removePrefix(".").ifBlank { "bin" }
+        val extensionIndex = fileName.lastIndexOf('.').takeIf { it > 0 }
+        val baseName = extensionIndex?.let { index -> fileName.substring(0, index) } ?: fileName
+        return boundManagedDownloadFileName("$baseName.$normalizedExtension")
     }
 
     private fun normalizePreferredFileName(fileName: String): String {
@@ -247,12 +326,13 @@ internal object ManagedDownloadCoverAssetStore {
                     null
                 } else {
                     try {
-                        validatePixelBudgetOrThrow(spool)
+                        val detectedMimeType = validatePixelBudgetOrThrow(spool)
                         ReadCover(
                             file = spool,
                             sizeBytes = sizeBytes,
                             assetHash = assetHash,
-                            displayName = displayName
+                            displayName = displayName,
+                            detectedMimeType = detectedMimeType
                         )
                     } catch (error: Throwable) {
                         spool.delete()
@@ -291,7 +371,8 @@ internal object ManagedDownloadCoverAssetStore {
         val file: File,
         val sizeBytes: Long,
         val assetHash: String,
-        val displayName: String
+        val displayName: String,
+        val detectedMimeType: String?
     ) {
         fun delete() {
             if (file.exists() && !file.delete()) {
@@ -313,17 +394,18 @@ internal object ManagedDownloadCoverAssetStore {
         return File.createTempFile(".neriplayer-cover-", ".tmp", directory)
     }
 
-    private fun validatePixelBudgetOrThrow(file: File) {
+    private fun validatePixelBudgetOrThrow(file: File): String? {
         val bounds = runCatching {
             BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { options ->
                 BitmapFactory.decodeFile(file.absolutePath, options)
             }
-        }.getOrNull() ?: return
+        }.getOrNull() ?: return null
         // 非图片或 Provider 无法提供 bounds 的旧 sidecar 留给下游格式校验
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         if (!isCoverPixelBudgetWithin(bounds.outWidth, bounds.outHeight)) {
             throw CoverPixelBudgetExceededException(bounds.outWidth, bounds.outHeight)
         }
+        return bounds.outMimeType
     }
 
     private fun resolveReference(context: Context, rawReference: String): ResolvedReference? {
@@ -354,5 +436,9 @@ internal object ManagedDownloadCoverAssetStore {
     private data class ResolvedReference(
         val backend: moe.ouom.neriplayer.core.download.storage.backend.StorageBackend,
         val reference: StorageReference
+    )
+
+    private val COVER_EXTENSIONS = setOf(
+        "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "avif", "bmp"
     )
 }

@@ -17,6 +17,20 @@ import org.junit.Test
 class AudioDownloadManagerSidecarReferenceTest {
 
     @Test
+    fun `cover single flight key separates changed candidate urls`() {
+        val original = CoverDownloadFlightKey(
+            songKey = "song-key",
+            fileName = "Song-12345678.jpg",
+            candidates = listOf("https://example.com/original.jpg")
+        )
+        val updated = original.copy(
+            candidates = listOf("https://example.com/custom.jpg")
+        )
+
+        assertTrue(original != updated)
+    }
+
+    @Test
     fun `cover single flight shares one producer for the same target`() = runBlocking {
         val singleFlight = CoverDownloadSingleFlight<String, String?>()
         val releaseProducer = CompletableDeferred<Unit>()

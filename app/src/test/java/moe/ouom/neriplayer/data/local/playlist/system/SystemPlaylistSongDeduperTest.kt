@@ -74,6 +74,20 @@ class SystemPlaylistSongDeduperTest {
     }
 
     @Test
+    fun `new alias collapses every previously distinct duplicate group`() {
+        val firstPath = "/storage/emulated/0/Music/first.mp3"
+        val secondPath = "/storage/emulated/0/Music/second.mp3"
+        val first = localSong(1L, firstPath, firstPath)
+        val second = localSong(2L, secondPath, secondPath)
+        val bridge = localSong(3L, firstPath, secondPath)
+
+        val distinct = listOf(first, second, bridge).distinctSystemSongs()
+
+        assertEquals(1, distinct.size)
+        assertEquals(first.identity(), distinct.single().identity())
+    }
+
+    @Test
     fun `deduplicates a large downloaded local collection while preserving first entries`() {
         val uniqueSongs = List(8_192) { index ->
             localSong(

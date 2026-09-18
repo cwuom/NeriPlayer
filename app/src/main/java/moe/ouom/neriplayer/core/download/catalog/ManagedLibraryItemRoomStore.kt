@@ -144,9 +144,25 @@ internal object ManagedLibraryItemRoomStore {
         stateForSong: (DownloadedSong) -> String = { "FINALIZED" },
         metadataRevision: Long = System.currentTimeMillis()
     ) {
-        // catalog snapshots are previews and must not delete active artifact leases
         val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(context)
+        val incomingStableKeys = songs.mapNotNullTo(linkedSetOf()) { song ->
+            val stableKey = song.stableKey?.trim().takeIf { !it.isNullOrBlank() }
+                ?: return@mapNotNullTo null
+            val hasReference = !song.mediaUri.isNullOrBlank() || song.filePath.isNotBlank()
+            stableKey.takeIf { hasReference }
+        }
+        val dao = database.managedLibraryItemDao()
         database.withTransaction {
+            dao.findAll(libraryId)
+                .filter { row ->
+                    shouldRemoveMissingCatalogPreview(
+                        state = row.state,
+                        leaseId = row.leaseId,
+                        needsReconcile = row.needsReconcile,
+                        presentInSnapshot = row.stableKey in incomingStableKeys
+                    )
+                }
+                .forEach { row -> dao.delete(libraryId, row.stableKey) }
             songs.forEach { song ->
                 val stableKey = song.stableKey?.trim().takeIf { !it.isNullOrBlank() }
                     ?: return@forEach
@@ -314,4 +330,16 @@ internal fun shouldRestoreManagedLibraryItem(state: String): Boolean {
         "COMPLETE",
         "COMPLETED"
     )
+}
+
+internal fun shouldRemoveMissingCatalogPreview(
+    state: String,
+    leaseId: String?,
+    needsReconcile: Boolean,
+    presentInSnapshot: Boolean
+): Boolean {
+    return !presentInSnapshot &&
+        leaseId.isNullOrBlank() &&
+        !needsReconcile &&
+        shouldRestoreManagedLibraryItem(state)
 }

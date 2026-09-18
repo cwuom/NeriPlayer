@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.download.catalog.preferredManagedLibraryRestoreReference
+import moe.ouom.neriplayer.core.download.catalog.shouldRemoveMissingCatalogPreview
 import moe.ouom.neriplayer.core.download.catalog.shouldRestoreManagedLibraryItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,6 +48,42 @@ class ManagedLibraryItemRoomStoreTest {
             preferredManagedLibraryRestoreReference(
                 audioReference = " ",
                 locatorHint = null
+            )
+        )
+    }
+
+    @Test
+    fun `full snapshots remove only absent finalized previews`() {
+        assertTrue(
+            shouldRemoveMissingCatalogPreview(
+                state = "FINALIZED",
+                leaseId = null,
+                needsReconcile = false,
+                presentInSnapshot = false
+            )
+        )
+        assertFalse(
+            shouldRemoveMissingCatalogPreview(
+                state = "FINALIZED",
+                leaseId = "active-lease",
+                needsReconcile = false,
+                presentInSnapshot = false
+            )
+        )
+        assertFalse(
+            shouldRemoveMissingCatalogPreview(
+                state = "CORE_COMMITTED",
+                leaseId = null,
+                needsReconcile = true,
+                presentInSnapshot = false
+            )
+        )
+        assertFalse(
+            shouldRemoveMissingCatalogPreview(
+                state = "FINALIZED",
+                leaseId = null,
+                needsReconcile = false,
+                presentInSnapshot = true
             )
         )
     }
