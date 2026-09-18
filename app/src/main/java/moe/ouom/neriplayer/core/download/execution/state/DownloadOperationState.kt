@@ -64,6 +64,7 @@ internal const val DOWNLOAD_RETRY_BASE_DELAY_MS = 1_000L
 internal const val DOWNLOAD_RETRY_MAX_DELAY_MS = 5 * 60 * 1_000L
 internal const val DOWNLOAD_RETRY_MAX_COUNT = 31
 internal const val DOWNLOAD_INTEGRITY_MAX_FAILURES = 3
+internal const val ARTIFACT_LEASE_CONTENDED_ERROR_CODE = "ARTIFACT_LEASE_CONTENDED"
 
 internal fun isAutomaticDownloadRetryExhausted(errorCode: String?, failureCount: Int): Boolean {
     val limit = when {
@@ -85,7 +86,8 @@ private val IMMEDIATE_DOWNLOAD_RETRY_ERROR_CODES = setOf(
     "NETWORK_POLICY_WAITING",
     "CANCELLATION_SETTLEMENT_PENDING",
     "HOST_ADMISSION_FULL",
-    "HOST_TRANSFER_ADMISSION_DEFERRED"
+    "HOST_TRANSFER_ADMISSION_DEFERRED",
+    ARTIFACT_LEASE_CONTENDED_ERROR_CODE
 )
 
 internal data class DownloadRetryPlan(

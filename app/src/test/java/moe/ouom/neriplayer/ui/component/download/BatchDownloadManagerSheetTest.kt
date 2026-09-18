@@ -1,11 +1,18 @@
 package moe.ouom.neriplayer.ui.component.download
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BatchDownloadManagerSheetTest {
+
+    @Test
+    fun `visible task cards follow configured parallelism plus manual retry slot`() {
+        assertEquals(2, maxVisibleDownloadTaskCards(1))
+        assertEquals(5, maxVisibleDownloadTaskCards(4))
+    }
 
     @Test
     fun `active batch admission remains cancellable before rows are created`() {
@@ -39,6 +46,8 @@ class BatchDownloadManagerSheetTest {
         assertTrue(source.contains("R.plurals.download_failed_songs_count"))
         assertTrue(source.contains("FailedDownloadTaskList("))
         assertTrue(source.contains("GlobalDownloadManager.resumeDownloadTask(context, songKey)"))
+        assertTrue(source.contains("maxVisibleTasks = maxVisibleTaskCards"))
+        assertFalse(source.contains("maxVisibleTasks = Int.MAX_VALUE"))
     }
 
     private fun locateProjectFile(path: String): File {

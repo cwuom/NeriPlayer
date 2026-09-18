@@ -53,7 +53,8 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
     allowMissingTask: Boolean,
     directoryMutationLeaseOwned: Boolean,
     directoryUri: String?,
-    admissionTicket: Long?
+    admissionTicket: Long?,
+    expeditedAssetEnrichment: Boolean = false
 ) {
     if (
         admissionTicket != null &&
@@ -673,6 +674,7 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
         val enrichmentJob = assetEnrichmentCoordinator.tryEnqueue(
             operationId = enrichmentOperationId,
             attemptId = expectedAttemptId,
+            allowSingleOverflow = expeditedAssetEnrichment,
             traceToken = traceToken,
             block = {
                 val admitted = admissionTicket?.let { ticket ->

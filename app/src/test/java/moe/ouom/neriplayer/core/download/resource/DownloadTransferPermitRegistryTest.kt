@@ -43,6 +43,54 @@ class DownloadTransferPermitRegistryTest {
     }
 
     @Test
+    fun `manual retry adds only one overflow transfer`() = runBlocking {
+        val registry = DownloadTransferPermitRegistry(maxParallelism = 1)
+        val base = registry.acquire("base", configuredParallelism = 1)
+        val firstManual = async(start = CoroutineStart.UNDISPATCHED) {
+            registry.acquire("manual-one", allowSingleOverflow = true)
+        }
+        val firstManualPermit = withTimeout(1_000L) { firstManual.await() }
+        val secondManual = async(start = CoroutineStart.UNDISPATCHED) {
+            registry.acquire("manual-two", allowSingleOverflow = true)
+        }
+        yield()
+
+        assertEquals(2, registry.snapshot().permitCount)
+        assertFalse(secondManual.isCompleted)
+        assertEquals(listOf("manual-two"), registry.snapshot().waitingOwners)
+
+        base.release()
+        val secondManualPermit = withTimeout(1_000L) { secondManual.await() }
+        assertEquals(2, registry.snapshot().permitCount)
+        firstManualPermit.release()
+        secondManualPermit.release()
+        assertEquals(0, registry.snapshot().permitCount)
+    }
+
+    @Test
+    fun `manual retry promotes an existing waiter into the overflow slot`() = runBlocking {
+        val registry = DownloadTransferPermitRegistry(maxParallelism = 1)
+        val base = registry.acquire("base")
+        val normal = async(start = CoroutineStart.UNDISPATCHED) {
+            registry.acquire("normal")
+        }
+        val manual = async(start = CoroutineStart.UNDISPATCHED) {
+            registry.acquire("operation-id#7@song")
+        }
+        yield()
+
+        assertTrue(registry.promoteWaitingOperation("operation-id"))
+        val manualPermit = withTimeout(1_000L) { manual.await() }
+        assertFalse(normal.isCompleted)
+        assertEquals(2, registry.snapshot().permitCount)
+
+        base.release()
+        val normalPermit = withTimeout(1_000L) { normal.await() }
+        manualPermit.release()
+        normalPermit.release()
+    }
+
+    @Test
     fun `cancelled waiter is removed before the next owner is admitted`() = runBlocking {
         val registry = DownloadTransferPermitRegistry(maxParallelism = 1)
         val first = registry.acquire("first", configuredParallelism = 1)

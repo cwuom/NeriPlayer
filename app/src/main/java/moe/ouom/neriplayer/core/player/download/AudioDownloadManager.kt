@@ -181,6 +181,12 @@ object AudioDownloadManager {
         return transferPermitRegistry.snapshot()
     }
 
+    internal fun promoteWaitingTransferForManualRetry(
+        operationId: String
+    ): Boolean {
+        return transferPermitRegistry.promoteWaitingOperation(operationId)
+    }
+
     /** 保留节流或事件缓冲丢弃前的最新值，供恢复绑定时补偿 */
     internal val latestProgressByOperation: StateFlow<Map<String, DownloadProgress>> =
         progressStore.latestProgressByOperation

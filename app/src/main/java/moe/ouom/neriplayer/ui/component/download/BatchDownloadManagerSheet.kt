@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.model.batchDownloadProgressForDisplay
 import moe.ouom.neriplayer.core.download.model.countFailedDownloadTasks
 import moe.ouom.neriplayer.core.download.model.countPendingDownloadTasks
+import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
@@ -64,6 +65,9 @@ fun BatchDownloadManagerSheet(
     }
     val pendingTaskCount = maxOf(taskSummary.pendingTaskCount, taskListPendingCount)
     val failedTaskCount = maxOf(taskSummary.failedTaskCount, taskListFailedCount)
+    val maxVisibleTaskCards = maxVisibleDownloadTaskCards(
+        currentDownloadParallelism(context)
+    )
     val hasPendingBatchSongs = batchDownloadProgress?.hasPendingSongs == true
     val canCancelDownloads = canCancelBatchDownload(
         hasPendingBatchSongs = hasPendingBatchSongs,
@@ -186,7 +190,7 @@ fun BatchDownloadManagerSheet(
 
                         ActiveDownloadTaskList(
                             tasks = downloadTasks,
-                            maxVisibleTasks = Int.MAX_VALUE,
+                            maxVisibleTasks = maxVisibleTaskCards,
                             maxHeight = 320.dp
                         )
 
@@ -227,6 +231,10 @@ fun BatchDownloadManagerSheet(
             }
         }
     }
+}
+
+internal fun maxVisibleDownloadTaskCards(configuredParallelism: Int): Int {
+    return configuredParallelism.coerceAtLeast(1) + 1
 }
 
 internal fun canCancelBatchDownload(

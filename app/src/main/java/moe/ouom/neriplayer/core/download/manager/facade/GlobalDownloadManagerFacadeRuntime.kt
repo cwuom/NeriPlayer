@@ -68,7 +68,8 @@ internal fun GlobalDownloadManager.resumeDownloadTaskImpl(context: Context, song
             skipTrafficRiskPrompt = false,
             preserveStaging = task.status != DownloadStatus.CANCELLED,
             replacingAttemptId = task.attemptId,
-            requestedAdmissionTicket = requestedAdmissionTicket
+            requestedAdmissionTicket = requestedAdmissionTicket,
+            manualRetry = true
         )
     }
 }

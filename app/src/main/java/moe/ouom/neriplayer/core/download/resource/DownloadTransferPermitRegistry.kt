@@ -9,8 +9,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * 统一拥有持久下载引擎使用的传输槽位
  *
- * 使用先进先出的等待队列，不再通过轮询抢槽。取消和立即重排因此具有确定性，
- * 每个 permit 也始终只有一个 owner
+ * 普通请求使用先进先出的等待队列，用户手动重试可以优先使用唯一的临时溢出槽位。
+ * 取消和立即重排因此具有确定性，每个 permit 也始终只有一个 owner
  */
 internal class DownloadTransferPermitRegistry(
     private val maxParallelism: Int,
@@ -81,7 +81,10 @@ internal class DownloadTransferPermitRegistry(
         }
     }
 
-    private class Waiter(val ownerKey: String) {
+    private class Waiter(
+        val ownerKey: String,
+        var allowSingleOverflow: Boolean
+    ) {
         val completion = CompletableDeferred<Permit>()
         var permit: Permit? = null
         var state: WaiterState = WaiterState.WAITING
@@ -97,6 +100,7 @@ internal class DownloadTransferPermitRegistry(
 
     private data class ActivePermit(
         val permit: Permit,
+        val usesOverflow: Boolean = false,
         var networkIoActive: Boolean = false,
         var hasProgress: Boolean = false,
         var lastProgressNs: Long = 0L,
@@ -121,11 +125,12 @@ internal class DownloadTransferPermitRegistry(
         ownerKey: String,
         configuredParallelism: Int? = null,
         reason: String = USER_SETTING_REASON,
-        configurationRevision: Long? = null
+        configurationRevision: Long? = null,
+        allowSingleOverflow: Boolean = false
     ): Permit {
         val normalizedOwnerKey = ownerKey.trim()
         require(normalizedOwnerKey.isNotEmpty()) { "ownerKey must not be blank" }
-        val waiter = Waiter(normalizedOwnerKey)
+        val waiter = Waiter(normalizedOwnerKey, allowSingleOverflow)
         var snapshotToNotify: Snapshot? = null
         synchronized(stateLock) {
             val limitChanged = configuredParallelism?.let { requested ->
@@ -172,6 +177,40 @@ internal class DownloadTransferPermitRegistry(
             }
             cancellationHandle?.dispose()
         }
+    }
+
+    /** 把已经进入等待队列的手动重试提升到唯一的临时溢出槽位 */
+    fun promoteWaitingOwner(ownerKey: String): Boolean {
+        val normalizedOwnerKey = ownerKey.trim().takeIf(String::isNotEmpty) ?: return false
+        return promoteWaitingOwnerMatching { candidate -> candidate == normalizedOwnerKey }
+    }
+
+    /** attempt 可能已在宿主内刷新，按稳定 operation 身份提升当前等待者 */
+    fun promoteWaitingOperation(operationId: String): Boolean {
+        val normalizedOperationId = operationId.trim().takeIf(String::isNotEmpty) ?: return false
+        val ownerPrefix = "$normalizedOperationId#"
+        return promoteWaitingOwnerMatching { candidate -> candidate.startsWith(ownerPrefix) }
+    }
+
+    private fun promoteWaitingOwnerMatching(matches: (String) -> Boolean): Boolean {
+        var snapshotToNotify: Snapshot? = null
+        val found = synchronized(stateLock) {
+            if (activeByOwner.keys.any(matches)) {
+                return@synchronized true
+            }
+            val waiter = waiters.firstOrNull { candidate ->
+                matches(candidate.ownerKey) &&
+                    candidate.state == WaiterState.WAITING &&
+                    candidate.completion.isActive
+            } ?: return@synchronized false
+            waiter.allowSingleOverflow = true
+            if (drainLocked()) {
+                snapshotToNotify = snapshotLocked(nowNs())
+            }
+            true
+        }
+        notifySnapshot(snapshotToNotify)
+        return found
     }
 
     fun updateConfiguredParallelism(
@@ -287,18 +326,42 @@ internal class DownloadTransferPermitRegistry(
 
     private fun drainLocked(): Boolean {
         var granted = false
-        while (activeByOwner.size < effectiveLimit && waiters.isNotEmpty()) {
-            val waiter = waiters.removeFirst()
-            if (waiter.state != WaiterState.WAITING || !waiter.completion.isActive) {
-                continue
+        while (waiters.isNotEmpty()) {
+            val normalActiveCount = activeByOwner.values.count { active ->
+                !active.usesOverflow
             }
+            val hasBaseCapacity = normalActiveCount < effectiveLimit
+            val overflowActive = activeByOwner.values.any(ActivePermit::usesOverflow)
+            val priorityWaiter = waiters.firstOrNull { waiter ->
+                waiter.allowSingleOverflow &&
+                    waiter.state == WaiterState.WAITING &&
+                    waiter.completion.isActive
+            }
+            val waiter = when {
+                hasBaseCapacity -> priorityWaiter ?: waiters.firstOrNull { candidate ->
+                    candidate.state == WaiterState.WAITING && candidate.completion.isActive
+                }
+                !overflowActive -> priorityWaiter
+                else -> null
+            }
+            if (waiter == null) {
+                waiters.removeAll { candidate ->
+                    candidate.state != WaiterState.WAITING || !candidate.completion.isActive
+                }
+                break
+            }
+            waiters.remove(waiter)
+            val usesOverflow = !hasBaseCapacity
             val permit = Permit(
                 registry = this,
                 ownerKey = waiter.ownerKey,
                 generation = ++nextGeneration
             )
             waiter.permit = permit
-            activeByOwner[waiter.ownerKey] = ActivePermit(permit)
+            activeByOwner[waiter.ownerKey] = ActivePermit(
+                permit = permit,
+                usesOverflow = usesOverflow
+            )
             waiter.state = WaiterState.GRANTED
             if (waiter.completion.complete(permit)) {
                 granted = true

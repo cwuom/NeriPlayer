@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.execution
 
 import moe.ouom.neriplayer.core.download.execution.persistence.INTERRUPTED_DOWNLOAD_OPERATION_STATES
 import moe.ouom.neriplayer.core.download.execution.persistence.resolveDownloadOperationState
+import moe.ouom.neriplayer.core.download.execution.state.ARTIFACT_LEASE_CONTENDED_ERROR_CODE
 import moe.ouom.neriplayer.core.download.execution.state.DownloadOperationState
 import moe.ouom.neriplayer.core.download.execution.state.DownloadOperationStateTransitions
 import moe.ouom.neriplayer.core.download.execution.state.planDownloadRetry
@@ -95,7 +96,11 @@ class DownloadOperationStateTest {
 
     @Test
     fun `host capacity handoff retries without exponential backoff`() {
-        listOf("HOST_ADMISSION_FULL", "HOST_TRANSFER_ADMISSION_DEFERRED").forEach { errorCode ->
+        listOf(
+            "HOST_ADMISSION_FULL",
+            "HOST_TRANSFER_ADMISSION_DEFERRED",
+            ARTIFACT_LEASE_CONTENDED_ERROR_CODE
+        ).forEach { errorCode ->
             assertNull(
                 planDownloadRetry(
                     currentRetryCount = 0,

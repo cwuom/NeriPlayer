@@ -37,6 +37,7 @@ internal class AssetEnrichmentCoordinator(
     private val semaphore = Semaphore(normalizedParallelism)
     private val jobsByOperationId = ConcurrentHashMap<String, Job>()
     private val jobRegistrationLock = Any()
+    private var overflowOperationId: String? = null
     private val _hasActiveJobs = MutableStateFlow(false)
 
     val hasActiveJobs: StateFlow<Boolean> = _hasActiveJobs.asStateFlow()
@@ -63,6 +64,7 @@ internal class AssetEnrichmentCoordinator(
     fun tryEnqueue(
         operationId: String,
         attemptId: Long? = null,
+        allowSingleOverflow: Boolean = false,
         onTimeout: suspend (Throwable) -> Unit = {},
         onCompletion: (Throwable?) -> Unit = {},
         traceToken: DownloadOperationTraceToken? = null,
@@ -71,6 +73,7 @@ internal class AssetEnrichmentCoordinator(
         return enqueueOrNull(
             operationId = operationId,
             attemptId = attemptId,
+            allowSingleOverflow = allowSingleOverflow,
             onTimeout = onTimeout,
             onCompletion = onCompletion,
             traceToken = traceToken,
@@ -81,6 +84,7 @@ internal class AssetEnrichmentCoordinator(
     private fun enqueueOrNull(
         operationId: String,
         attemptId: Long?,
+        allowSingleOverflow: Boolean = false,
         onTimeout: suspend (Throwable) -> Unit,
         onCompletion: (Throwable?) -> Unit,
         traceToken: DownloadOperationTraceToken?,
@@ -92,7 +96,11 @@ internal class AssetEnrichmentCoordinator(
             jobsByOperationId[normalizedId]?.let { existing ->
                 if (existing.isActive) return@synchronized existing
             }
-            if (jobsByOperationId.values.count(Job::isActive) >= maxActiveJobs) {
+            val activeOverflowId = activeOverflowOperationIdLocked()
+            val normalActiveCount = jobsByOperationId.values.count(Job::isActive) -
+                if (activeOverflowId != null) 1 else 0
+            val usesOverflow = normalActiveCount >= maxActiveJobs
+            if (usesOverflow && (!allowSingleOverflow || activeOverflowId != null)) {
                 return@synchronized null
             }
             val terminalError = AtomicReference<Throwable?>(null)
@@ -113,8 +121,11 @@ internal class AssetEnrichmentCoordinator(
             fun deliverCompletion(error: Throwable?) {
                 if (!completionDelivered.compareAndSet(false, true)) return
                 synchronized(jobRegistrationLock) {
-                    jobReference.get()?.let { registeredJob ->
+                    val removedCurrentJob = jobReference.get()?.let { registeredJob ->
                         jobsByOperationId.remove(normalizedId, registeredJob)
+                    } == true
+                    if (removedCurrentJob && overflowOperationId == normalizedId) {
+                        overflowOperationId = null
                     }
                     refreshActiveStateLocked()
                 }
@@ -126,7 +137,7 @@ internal class AssetEnrichmentCoordinator(
             }
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
-                    semaphore.withPermit {
+                    suspend fun runEnrichment() {
                         withTimeout(timeoutMs) {
                             DownloadOperationTrace.mark(
                                 operationTraceToken,
@@ -134,6 +145,11 @@ internal class AssetEnrichmentCoordinator(
                             )
                             block()
                         }
+                    }
+                    if (usesOverflow) {
+                        runEnrichment()
+                    } else {
+                        semaphore.withPermit { runEnrichment() }
                     }
                 } catch (error: TimeoutCancellationException) {
                     runCatching { onTimeout(error) }
@@ -163,6 +179,9 @@ internal class AssetEnrichmentCoordinator(
             }
             jobReference.set(job)
             jobsByOperationId[normalizedId] = job
+            if (usesOverflow) {
+                overflowOperationId = normalizedId
+            }
             job.invokeOnCompletion { error ->
                 deliverCompletion(error)
             }
@@ -192,7 +211,17 @@ internal class AssetEnrichmentCoordinator(
     }
 
     fun availableCapacity(): Int = synchronized(jobRegistrationLock) {
-        (maxActiveJobs - jobsByOperationId.values.count(Job::isActive)).coerceAtLeast(0)
+        val activeOverflowId = activeOverflowOperationIdLocked()
+        val normalActiveCount = jobsByOperationId.values.count(Job::isActive) -
+            if (activeOverflowId != null) 1 else 0
+        (maxActiveJobs - normalActiveCount).coerceAtLeast(0)
+    }
+
+    fun isActive(operationId: String): Boolean {
+        val normalizedId = operationId.trim().takeIf(String::isNotBlank) ?: return false
+        return synchronized(jobRegistrationLock) {
+            jobsByOperationId[normalizedId]?.isActive == true
+        }
     }
 
     /** 返回仍持有活动协程的收尾 operation ID */
@@ -291,6 +320,15 @@ internal class AssetEnrichmentCoordinator(
 
     private fun refreshActiveStateLocked() {
         _hasActiveJobs.value = jobsByOperationId.values.any(Job::isActive)
+    }
+
+    private fun activeOverflowOperationIdLocked(): String? {
+        val activeId = overflowOperationId
+            ?.takeIf { operationId -> jobsByOperationId[operationId]?.isActive == true }
+        if (activeId == null) {
+            overflowOperationId = null
+        }
+        return activeId
     }
 
     companion object {

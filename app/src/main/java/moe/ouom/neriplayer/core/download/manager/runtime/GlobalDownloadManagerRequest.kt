@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.resolveBatchOperationScheduleAction
 import moe.ouom.neriplayer.core.download.policy.isDownloadFinalizationDurablySettled
 import moe.ouom.neriplayer.core.download.policy.finalizedPublicationRecoveryLeaseOwnerId
+import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.MobileDataDownloadBatchIdentity
 import android.content.Context
 import kotlinx.coroutines.CancellationException
@@ -49,6 +50,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutation
 import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.state.ARTIFACT_LEASE_CONTENDED_ERROR_CODE
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
@@ -63,7 +65,8 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
     skipTrafficRiskPrompt: Boolean,
     preserveStaging: Boolean = false,
     replacingAttemptId: Long? = null,
-    requestedAdmissionTicket: Long? = null
+    requestedAdmissionTicket: Long? = null,
+    manualRetry: Boolean = false
 ) {
     val appContext = context.applicationContext
     // 请求创建时记录代次，清空开始后旧协程只能退出不能重新登记任务
@@ -102,6 +105,7 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
                 stableKey = songKey
             )
         var inFlightRequestToRecover: DownloadExecutionRequest? = null
+        var inFlightStateToRecover: String? = null
         var operationPersisted = false
         val admitted = admitDownloadMutation(
             context = appContext,
@@ -140,6 +144,10 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
                     requests = listOf(existingInFlightRequest),
                     userInitiated = true
                 ).single()
+                inFlightStateToRecover = DownloadExecutionRoomStore.state(
+                    context = appContext,
+                    operationId = existingInFlightRequest.operationId
+                )
                 operationPersisted = true
                 NPLogger.d(
                     TAG,
@@ -238,6 +246,9 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
                 request = request,
                 state = "QUEUED"
             )
+            if (manualRetry) {
+                requestManualRetryTransferBoost(request)
+            }
             publishDownloadStage(
                 song = song,
                 stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
@@ -296,11 +307,25 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
         }
         if (admitted) {
             inFlightRequestToRecover?.let { request ->
-                recoverInFlightDownloadOperations(
-                    context = appContext,
-                    requests = listOf(request),
-                    admissionTicket = admissionTicket
-                )
+                if (manualRetry && requiresDownloadFinalizationRecovery(inFlightStateToRecover)) {
+                    recoverPostCoreDownloadOperation(
+                        context = appContext,
+                        song = request.song,
+                        operationId = request.operationId,
+                        expectedAttemptId = request.attemptId,
+                        admissionTicket = admissionTicket,
+                        expeditedAssetEnrichment = true
+                    )
+                } else {
+                    if (manualRetry) {
+                        requestManualRetryTransferBoost(request)
+                    }
+                    recoverInFlightDownloadOperations(
+                        context = appContext,
+                        requests = listOf(request),
+                        admissionTicket = admissionTicket
+                    )
+                }
             }
             if (operationPersisted) {
                 // 新 operation 已经落盘后立即唤醒共享泵，避免依赖下一次
@@ -427,10 +452,21 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
     song: SongItem,
     operationId: String,
     expectedAttemptId: Long?,
-    admissionTicket: Long
+    admissionTicket: Long,
+    expeditedAssetEnrichment: Boolean = false
 ): Boolean {
     var finalized = false
     withSongExecutionLock(song.stableKey()) {
+        // Worker 可能在原下载登记增强协程之前选中同一 operation，拿到歌曲锁后
+        // 必须重新检查进程内 owner，避免用恢复 lease 抢走仍在执行的原收尾任务
+        if (assetEnrichmentCoordinator.isActive(operationId)) {
+            NPLogger.d(
+                TAG,
+                "core operation 已由进程内资产增强接管，跳过重复恢复: " +
+                    "song=${song.name}, operationId=$operationId"
+            )
+            return@withSongExecutionLock
+        }
         val request = DownloadExecutionRoomStore.read(context, operationId)
             ?.takeIf { persisted -> persisted.song.stableKey() == song.stableKey() }
         val recoveryLeaseOwnerId = finalizedPublicationRecoveryLeaseOwnerId(
@@ -526,7 +562,8 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
                     expectedArtifactLeaseId = expectedArtifactLeaseId,
                     storedAudioHint = storedAudio,
                     allowMissingTask = true,
-                    admissionTicket = admissionTicket
+                    admissionTicket = admissionTicket,
+                    expeditedAssetEnrichment = expeditedAssetEnrichment
                 )
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -653,7 +690,19 @@ internal suspend fun GlobalDownloadManager.executionResultForOperation(
         METADATA_ACTION_REQUIRED_OPERATION_STATE -> {
             return DownloadExecutionResult.UserActionRequired
         }
-        "RETRYABLE" -> return DownloadExecutionResult.Retry
+        "RETRYABLE" -> {
+            val lastErrorCode = runCatching {
+                DownloadExecutionRoomStore.readOperationHeaders(
+                    context = context,
+                    operationIds = listOf(operationId)
+                )[operationId]?.lastErrorCode
+            }.getOrNull()
+            return if (lastErrorCode == ARTIFACT_LEASE_CONTENDED_ERROR_CODE) {
+                DownloadExecutionResult.AlreadyHandled
+            } else {
+                DownloadExecutionResult.Retry
+            }
+        }
         WAITING_STORAGE_MUTATION_OPERATION_STATE,
         "CORE_COMMITTED",
         "ASSETS_ENRICHING" -> return DownloadExecutionResult.AlreadyHandled
@@ -966,14 +1015,17 @@ internal suspend fun GlobalDownloadManager.reclaimOrphanedTransferLeaseIfSafe(
         val ownsLease = snapshot != null &&
             snapshot.request.song.stableKey() == stableKey &&
             snapshot.request.artifactLeaseId == leaseId &&
-            snapshot.state in liveOwnerStates &&
-            !explicitlyCancelled
+            snapshot.state in liveOwnerStates
         val executing = DownloadExecutionHosts.default.isExecuting(candidateId)
-        val executingOwnsLease = executing && !explicitlyCancelled
-        val unreadableLiveOwner = snapshot == null &&
-            headerState != null && headerState in liveOwnerStates &&
-            !explicitlyCancelled
-        ownsLease || executingOwnsLease || unreadableLiveOwner
+        val enriching = assetEnrichmentCoordinator.isActive(candidateId)
+        isLiveArtifactLeaseOwner(
+            candidateOwnsLease = ownsLease,
+            payloadReadable = snapshot != null,
+            headerInLiveState = headerState != null && headerState in liveOwnerStates,
+            executionActive = executing,
+            enrichmentActive = enriching,
+            explicitlyCancelled = explicitlyCancelled
+        )
     }
     if (hasLiveOwner) return artifactClaim
 
@@ -1019,4 +1071,16 @@ internal suspend fun GlobalDownloadManager.reclaimOrphanedTransferLeaseIfSafe(
         )
         artifactClaim
     }
+}
+
+internal fun isLiveArtifactLeaseOwner(
+    candidateOwnsLease: Boolean,
+    payloadReadable: Boolean,
+    headerInLiveState: Boolean,
+    executionActive: Boolean,
+    enrichmentActive: Boolean,
+    explicitlyCancelled: Boolean
+): Boolean {
+    if (explicitlyCancelled || (!executionActive && !enrichmentActive)) return false
+    return if (payloadReadable) candidateOwnsLease else headerInLiveState
 }

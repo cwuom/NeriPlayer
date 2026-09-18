@@ -38,7 +38,8 @@ internal suspend fun GlobalDownloadManager.finalizeCompletedDownload(
     directoryMutationLeaseOwned: Boolean = false,
     directoryUri: String? = null,
     admissionTicket: Long? = null,
-    admissionAlreadyHeld: Boolean = false
+    admissionAlreadyHeld: Boolean = false,
+    expeditedAssetEnrichment: Boolean = false
 ) {
     val appContext = context.applicationContext
     if (!admissionAlreadyHeld) {
@@ -68,7 +69,8 @@ internal suspend fun GlobalDownloadManager.finalizeCompletedDownload(
                 directoryMutationLeaseOwned = directoryMutationLeaseOwned,
                 directoryUri = directoryUri,
                 admissionTicket = effectiveAdmissionTicket,
-                admissionAlreadyHeld = true
+                admissionAlreadyHeld = true,
+                expeditedAssetEnrichment = expeditedAssetEnrichment
             )
         }
         if (!admitted) {
@@ -291,7 +293,8 @@ internal suspend fun GlobalDownloadManager.finalizeCompletedDownload(
         allowMissingTask = allowMissingTask,
         directoryMutationLeaseOwned = directoryMutationLeaseOwned,
         directoryUri = directoryUri,
-        admissionTicket = admissionTicket
+        admissionTicket = admissionTicket,
+        expeditedAssetEnrichment = expeditedAssetEnrichment
     )
     } finally {
         directoryCommitLease?.close()

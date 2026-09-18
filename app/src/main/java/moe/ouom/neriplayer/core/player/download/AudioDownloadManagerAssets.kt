@@ -53,8 +53,12 @@ internal suspend fun <T> AudioDownloadManager.withTransferCyclePermit(
         reason = "user_setting",
         configurationRevision = configured.revision
     )
+    val allowSingleOverflow = operationId?.let { normalizedOperationId ->
+        GlobalDownloadManager.consumeManualRetryTransferBoost(normalizedOperationId)
+    } == true
     val permit = transferPermitRegistry.acquire(
-        ownerKey = ownerKey
+        ownerKey = ownerKey,
+        allowSingleOverflow = allowSingleOverflow
     )
     var networkFinished = false
     fun markNetworkFinished() {

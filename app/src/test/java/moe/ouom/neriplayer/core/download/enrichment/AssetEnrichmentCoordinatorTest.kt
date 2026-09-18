@@ -402,6 +402,66 @@ class AssetEnrichmentCoordinatorTest {
     }
 
     @Test
+    fun `manual retry owns at most one overflow slot and normal capacity refills`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(
+            scope = scope,
+            parallelism = 1,
+            maxActiveJobs = 1
+        )
+        val regularStarted = CompletableDeferred<Unit>()
+        val regularRelease = CompletableDeferred<Unit>()
+        val overflowStarted = CompletableDeferred<Unit>()
+        val overflowRelease = CompletableDeferred<Unit>()
+        val refillStarted = CompletableDeferred<Unit>()
+        val refillRelease = CompletableDeferred<Unit>()
+
+        val regular = coordinator.tryEnqueue("regular") {
+            regularStarted.complete(Unit)
+            regularRelease.await()
+        }
+        withTimeout(2_000L) { regularStarted.await() }
+
+        val overflow = coordinator.tryEnqueue(
+            operationId = "manual-overflow",
+            allowSingleOverflow = true
+        ) {
+            overflowStarted.complete(Unit)
+            overflowRelease.await()
+        }
+        withTimeout(2_000L) { overflowStarted.await() }
+        assertTrue(coordinator.isActive("regular"))
+        assertTrue(coordinator.isActive("manual-overflow"))
+        assertEquals(2, coordinator.activeCount())
+        assertEquals(
+            null,
+            coordinator.tryEnqueue(
+                operationId = "second-overflow",
+                allowSingleOverflow = true
+            ) {}
+        )
+
+        regularRelease.complete(Unit)
+        withTimeout(2_000L) { regular?.join() }
+        assertEquals(1, coordinator.availableCapacity())
+        val refill = coordinator.tryEnqueue("normal-refill") {
+            refillStarted.complete(Unit)
+            refillRelease.await()
+        }
+        withTimeout(2_000L) { refillStarted.await() }
+        assertEquals(2, coordinator.activeCount())
+
+        refillRelease.complete(Unit)
+        overflowRelease.complete(Unit)
+        withTimeout(2_000L) {
+            listOfNotNull(refill, overflow).forEach { job -> job.join() }
+        }
+        assertFalse(coordinator.isActive("manual-overflow"))
+        assertEquals(1, coordinator.availableCapacity())
+        scope.cancel()
+    }
+
+    @Test
     fun `await completion observes only the requested active jobs`() = runBlocking {
         val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 2)

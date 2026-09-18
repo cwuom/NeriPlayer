@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.DIRECTORY_CHANGE_DOWNLO
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.host.DownloadTransferAdmissionDeferredException
+import moe.ouom.neriplayer.core.download.execution.state.ARTIFACT_LEASE_CONTENDED_ERROR_CODE
 import moe.ouom.neriplayer.core.download.execution.worker.DownloadStorageRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.worker.WifiBoundDownloadWakeWorker
 import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
@@ -74,6 +75,7 @@ internal suspend fun GlobalDownloadManager.prepareConfirmedDownload(
     val songKey = song.stableKey()
     var prepared: PreparedConfirmedDownload? = null
     var unhandedLeaseId: String? = null
+    var artifactLeaseContentionDeferred = false
     try {
         val admitted = admitDownloadMutation(
             context = appContext,
@@ -247,7 +249,39 @@ internal suspend fun GlobalDownloadManager.prepareConfirmedDownload(
                 }
 
                 is ManagedDownloadArtifactClaim.InFlight -> {
-                    NPLogger.d(TAG, "跳过重复下载请求: song=${song.name}, songKey=$songKey")
+                    val task = taskStore.findTask(songKey)
+                    val contentionPersisted = operationId?.let { id ->
+                        DownloadExecutionRoomStore.updateState(
+                            context = appContext,
+                            operationId = id,
+                            state = "RETRYABLE",
+                            errorCode = ARTIFACT_LEASE_CONTENDED_ERROR_CODE
+                        )
+                    } == true
+                    if (contentionPersisted) {
+                        updateTaskStatus(
+                            songKey = songKey,
+                            status = DownloadStatus.QUEUED,
+                            expectedAttemptId = task?.attemptId ?: preparedAttemptId,
+                            settleBatchPresentation = false,
+                            operationId = operationId
+                        )
+                        publishDownloadStage(
+                            song = song,
+                            stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+                            operationId = operationId,
+                            attemptId = task?.attemptId ?: preparedAttemptId,
+                            bytesRead = task?.progress?.bytesRead ?: 0L,
+                            totalBytes = task?.progress?.totalBytes ?: 0L
+                        )
+                        artifactLeaseContentionDeferred = true
+                    }
+                    NPLogger.d(
+                        TAG,
+                        "下载 artifact lease 暂由其它活动 owner 持有，保留立即补位: " +
+                            "song=${song.name}, songKey=$songKey, " +
+                            "operationId=$operationId, persisted=$contentionPersisted"
+                    )
                     return@admission
                 }
 
@@ -302,6 +336,12 @@ internal suspend fun GlobalDownloadManager.prepareConfirmedDownload(
         }
         if (admitted && prepared != null) {
             unhandedLeaseId = null
+        }
+        if (admitted && artifactLeaseContentionDeferred) {
+            wakeDownloadExecutionPump(
+                context = appContext,
+                reason = "artifact_lease_contended"
+            )
         }
         return prepared.takeIf { admitted }
     } finally {

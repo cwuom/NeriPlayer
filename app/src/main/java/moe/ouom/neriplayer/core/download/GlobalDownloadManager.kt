@@ -162,6 +162,7 @@ object GlobalDownloadManager {
     internal const val WIFI_RECOVERY_PROBE_DELAY_MS = 300L
     /** 清空后残留的传输 lease 只在确认没有 durable owner 后回收 */
     internal const val ORPHANED_TRANSFER_LEASE_MIN_AGE_MS = 2_000L
+    internal const val MANUAL_RETRY_TRANSFER_BOOST_TTL_NS = 5L * 60L * 1_000_000_000L
     internal const val SONG_EXECUTION_LOCK_STRIPES = 256
     internal const val TERMINAL_TEMPORARY_WRITE_CLEANUP_COALESCE_MS = 750L
     internal const val PLAYBACK_METADATA_HYDRATION_DELAY_MS = 1_500L
@@ -605,7 +606,24 @@ object GlobalDownloadManager {
     /** 磁盘确实耗尽时只启动一轮全局取消，避免多个并发 operation 重复建清空栅栏 */
     internal val storageExhaustionCancellationScheduled = AtomicBoolean(false)
     internal val managedDownloadArtifactLeases = ConcurrentHashMap<String, String>()
+    internal val manualRetryTransferBoosts = ConcurrentHashMap<String, Long>()
     internal val immediatePumpRunning = AtomicBoolean(false)
+
+    internal fun requestManualRetryTransferBoost(request: DownloadExecutionRequest) {
+        val operationId = request.operationId.trim().takeIf(String::isNotBlank) ?: return
+        val requestedAtNs = System.nanoTime()
+        manualRetryTransferBoosts[operationId] = requestedAtNs
+        if (AudioDownloadManager.promoteWaitingTransferForManualRetry(operationId)) {
+            manualRetryTransferBoosts.remove(operationId, requestedAtNs)
+        }
+    }
+
+    internal fun consumeManualRetryTransferBoost(operationId: String): Boolean {
+        val normalizedOperationId = operationId.trim().takeIf(String::isNotBlank) ?: return false
+        val requestedAtNs = manualRetryTransferBoosts.remove(normalizedOperationId) ?: return false
+        val ageNs = (System.nanoTime() - requestedAtNs).coerceAtLeast(0L)
+        return ageNs <= MANUAL_RETRY_TRANSFER_BOOST_TTL_NS
+    }
     internal data class CancellationConvergenceEntry(
         val generation: Long?,
         val operationIds: Set<String>,
