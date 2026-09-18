@@ -7,15 +7,11 @@ import moe.ouom.neriplayer.core.download.manager.admission.isWifiBoundNetworkPol
 import moe.ouom.neriplayer.core.download.manager.admission.mutateWifiBoundNetworkPolicyIfStillRequired
 import moe.ouom.neriplayer.core.download.manager.admission.promoteWaitingStorageMutationsForRecovery
 import moe.ouom.neriplayer.core.download.manager.catalog.cancelScheduledDownloadedSongsCatalogPersist
-import moe.ouom.neriplayer.core.download.manager.catalog.hasBlockingActiveDownloadOperationsForRecovery
 import moe.ouom.neriplayer.core.download.manager.catalog.persistConfirmedEmptyDownloadedSongsCatalog
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
 import moe.ouom.neriplayer.core.download.manager.catalog.releaseDownloadArtifactAfterExecutionOwnershipLoss
-import moe.ouom.neriplayer.core.download.manager.catalog.waitForActiveDownloadJobsToSettle
-import moe.ouom.neriplayer.core.download.manager.catalog.waitForQueuedTasksToAttachToBatch
 import moe.ouom.neriplayer.core.download.manager.commit.cleanupCancelledDownloadArtifacts
 import moe.ouom.neriplayer.core.download.manager.commit.cleanupCancelledPendingDownloadArtifacts
-import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingResumableDownloads
 import moe.ouom.neriplayer.core.download.manager.runtime.awaitSongCancellationSettled
 import moe.ouom.neriplayer.core.download.manager.runtime.scheduleWifiBoundDownloadWakeTasks
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
@@ -906,41 +902,9 @@ internal suspend fun GlobalDownloadManager.requestAllDownloadOperationCancellati
 
 internal fun GlobalDownloadManager.recoverPendingDownloadsOnCurrentNetwork(context: Context) {
     val appContext = context.applicationContext
-    val admissionTicket = downloadAdmissionGate.openTicketOrNull()
-    if (admissionTicket == null) {
-        NPLogger.d(TAG, "清空期间跳过当前网络下载恢复")
-        return
-    }
-    scope.launch {
-        withPendingDownloadRecoverySlot("current_network") {
-            if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
-                return@withPendingDownloadRecoverySlot
-            }
-            val networkType = appContext.currentDownloadNetworkTypeOrNull()
-                ?: return@withPendingDownloadRecoverySlot
-            if (networkType != TrafficNetworkType.WIFI && !mobileDataDownloadOverrideAllowed) {
-                return@withPendingDownloadRecoverySlot
-            }
-            promoteWaitingStorageMutationsForRecovery(
-                context = appContext,
-                admissionTicket = admissionTicket
-            )
-            waitForActiveDownloadJobsToSettle()
-            waitForQueuedTasksToAttachToBatch()
-            if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
-                return@withPendingDownloadRecoverySlot
-            }
-            if (hasBlockingActiveDownloadOperationsForRecovery()) {
-                return@withPendingDownloadRecoverySlot
-            }
-            recoverPendingResumableDownloads(
-                context = appContext,
-                reason = "mobile_data_user_confirmed",
-                admissionTicket = admissionTicket
-            )
-            delay(1_500L)
-        }
-    }
+    // 批次许可由持久队列逐项检查，不能再用全局许可或旧内存任务拦住唤醒
+    // 当前完全离线也要登记 Worker，让已确认的继续意图在网络恢复后执行
+    wakeDownloadExecutionPump(appContext, reason = "mobile_data_user_confirmed")
 }
 
 internal suspend fun GlobalDownloadManager.cancelDownloadTaskInBackground(

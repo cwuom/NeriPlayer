@@ -627,11 +627,9 @@ internal fun visibleDownloadProgressTasks(tasks: List<DownloadTask>): List<Downl
     return tasks
         .asSequence()
         .filter { task ->
-            (
-                task.status == DownloadStatus.QUEUED ||
-                    task.status == DownloadStatus.DOWNLOADING ||
-                    task.status == DownloadStatus.WAITING_NETWORK
-                ) && hasDownloadTaskStartedWork(task)
+            task.status == DownloadStatus.QUEUED ||
+                task.status == DownloadStatus.DOWNLOADING ||
+                task.status == DownloadStatus.WAITING_NETWORK
         }
         // task store 保留入队次序，网络等待和重试不能让卡片前后跳动
         .toList()

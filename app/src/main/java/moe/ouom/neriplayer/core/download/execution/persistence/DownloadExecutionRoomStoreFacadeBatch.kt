@@ -312,20 +312,12 @@ internal suspend fun DownloadExecutionRoomStore.allowBatchesMobileDataImpl(
     database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
     nowMs: Long = System.currentTimeMillis()
 ): Int {
+    require(expectedNetworkGeneration >= 0L && networkGeneration >= 0L)
     val distinctIdentities = identities.distinct()
     if (distinctIdentities.isEmpty()) return 0
     return database.withTransaction {
         val dao = database.downloadBatchDao()
-        val batches = distinctIdentities.map { identity ->
-            dao.findBatch(identity.batchId, identity.generation) ?: return@withTransaction 0
-        }
-        if (batches.any { batch ->
-                batch.stateBits and DownloadBatchState.OPEN == 0 ||
-                    batch.stateBits and (DownloadBatchState.TERMINAL_MASK or DownloadBatchState.CLEARING) != 0 ||
-                    batch.networkGeneration == null ||
-                    batch.networkGeneration < expectedNetworkGeneration || batch.networkGeneration > networkGeneration
-            }
-        ) return@withTransaction 0
+        // 对捕获的每个身份独立 CAS，弹窗期间已完成的批次不能挡住剩余批次
         distinctIdentities.sumOf { identity ->
             val changed = dao.allowMobileDataCAS(
                 batchId = identity.batchId,

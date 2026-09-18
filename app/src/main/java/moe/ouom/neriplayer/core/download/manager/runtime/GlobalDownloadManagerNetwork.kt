@@ -163,10 +163,12 @@ internal suspend fun GlobalDownloadManager.deferPendingDownloadRecoveryForNetwor
             snapshotEpoch = networkPolicyEpoch
         ) {
             AudioDownloadManager.pauseDownloadsForNetworkPolicy(waitingSongKeys)
-            taskStore.prepareDownloadTasks(
+            taskStore.ensureDownloadTasks(
                 songs = waitingSongs,
-                status = DownloadStatus.WAITING_NETWORK,
-                replaceExistingActiveTasks = true
+                status = DownloadStatus.WAITING_NETWORK
+            )
+            taskStore.applyWaitingNetworkStatus(
+                taskStore.currentTasks().filter { it.song.stableKey() in waitingSongKeys }
             )
             mobileDataDownloadOverrideAllowed = false
         }

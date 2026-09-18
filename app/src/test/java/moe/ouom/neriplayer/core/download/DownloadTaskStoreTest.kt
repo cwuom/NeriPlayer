@@ -22,6 +22,34 @@ import org.junit.Test
 class DownloadTaskStoreTest {
 
     @Test
+    fun `repeated network recovery preserves attempts progress and queue order`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(scope, progressEmitIntervalNs = 0L)
+            val songs = (1L..3L).map(::song)
+            val attempts = store.ensureDownloadTasks(songs)
+            val firstKey = songs.first().stableKey()
+            val partial = progress(songs.first(), attempts.getValue(firstKey), 512L)
+            store.registerActiveDownloadTask(songs.first(), attempts.getValue(firstKey))
+            assertTrue(store.updateProgress(partial))
+
+            repeat(100) {
+                store.ensureDownloadTasks(songs, status = DownloadStatus.WAITING_NETWORK)
+                store.applyWaitingNetworkStatus(store.currentTasks())
+                assertEquals(songs, store.currentTasks().map { it.song })
+                assertEquals(attempts, store.currentTasks().associate { it.song.stableKey() to it.attemptId })
+                assertEquals(partial, store.findTask(firstKey)?.progress)
+                assertTrue(store.currentTasks().all { it.status == DownloadStatus.WAITING_NETWORK })
+                store.ensureDownloadTasks(songs)
+                assertEquals(partial, store.findTask(firstKey)?.progress)
+                assertTrue(store.currentTasks().all { it.status == DownloadStatus.QUEUED })
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `mixed recovery states preserve queue order and reject replayed stage snapshots`() {
         val scope = CoroutineScope(SupervisorJob())
         try {

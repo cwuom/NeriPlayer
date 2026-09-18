@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecution
 import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 
@@ -185,69 +186,94 @@ internal fun GlobalDownloadManager.continueDownloadsOnMobileDataImpl(
     request: MobileDataDownloadInterruptionRequest
 ) {
     scope.launch {
-        val appContext = context.applicationContext
-        var accepted = false
-        mobileDataDownloadInterruptionRequestMutex.withLock {
-            val currentRequest = mobileDataDownloadInterruptionRequestMutable.value
-            if (request.batchIdentities.isEmpty() &&
-                (currentRequest?.id != request.id ||
-                    currentRequest.networkGeneration != request.networkGeneration)
-            ) {
-                return@withLock
-            }
-            val currentNetworkType = appContext.currentDownloadNetworkTypeOrNull()
-            val currentGeneration = AudioDownloadManager.currentDownloadNetworkGeneration()
-            val identities = request.batchIdentities
-                .distinct()
-                .map { identity -> identity.toRoomBatchIdentity() }
-            val allowedCount = if (identities.isEmpty()) {
-                0
-            } else {
-                runCatching {
-                    DownloadExecutionRoomStore.allowBatchesMobileData(
-                        context = appContext,
-                        identities = identities,
-                        expectedNetworkGeneration = request.networkGeneration,
-                        networkGeneration = currentGeneration
-                    )
-                }.getOrElse { error ->
-                    NPLogger.w(
-                        TAG,
-                        "移动网络确认批次 CAS 失败: ${error.message}",
-                        error
-                    )
-                    0
-                }
-            }
-            if (identities.isNotEmpty() && allowedCount != identities.size) {
+        continueDownloadsOnMobileDataAndWake(context, request)
+    }
+}
+
+internal suspend fun GlobalDownloadManager.continueDownloadsOnMobileDataAndWake(
+    context: Context,
+    request: MobileDataDownloadInterruptionRequest,
+    database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+): Boolean {
+    val appContext = context.applicationContext
+    var accepted = false
+    mobileDataDownloadInterruptionRequestMutex.withLock {
+        val currentRequest = mobileDataDownloadInterruptionRequestMutable.value
+        if (request.batchIdentities.isEmpty() &&
+            (currentRequest?.id != request.id ||
+                currentRequest.networkGeneration != request.networkGeneration)
+        ) {
+            return@withLock
+        }
+        val currentNetworkType = appContext.currentDownloadNetworkTypeOrNull()
+        val currentGeneration = AudioDownloadManager.currentDownloadNetworkGeneration()
+        val identities = request.batchIdentities
+            .distinct()
+            .map { identity -> identity.toRoomBatchIdentity() }
+        val allowedCount = if (identities.isEmpty()) {
+            0
+        } else {
+            runCatching {
+                DownloadExecutionRoomStore.allowBatchesMobileData(
+                    context = appContext,
+                    identities = identities,
+                    expectedNetworkGeneration = request.networkGeneration,
+                    networkGeneration = currentGeneration,
+                    database = database
+                )
+            }.getOrElse { error ->
+                if (error is CancellationException) throw error
                 NPLogger.w(
                     TAG,
-                    "移动网络确认批次已过期或不完整，拒绝全局恢复: " +
-                        "requestId=${request.id}, allowed=$allowedCount, expected=${identities.size}"
+                    "移动网络确认批次 CAS 失败: ${error.message}",
+                    error
                 )
-                return@withLock
+                0
             }
-            if (identities.isEmpty()) {
-                synchronized(wifiBoundNetworkPolicyMutationLock) {
-                    if (appContext.currentDownloadNetworkTypeOrNull() == currentNetworkType &&
-                        AudioDownloadManager.currentDownloadNetworkGeneration() == currentGeneration
-                    ) {
-                        mobileDataDownloadOverrideAllowed = true
-                        dismissMobileDataDownloadInterruptionRequest()
-                    }
+        }
+        if (identities.isNotEmpty() && allowedCount == 0) {
+            NPLogger.w(
+                TAG,
+                "移动网络确认已无可恢复批次，保留当前任务状态: " +
+                    "requestId=${request.id}, allowed=$allowedCount, expected=${identities.size}"
+            )
+            return@withLock
+        }
+        if (identities.isEmpty()) {
+            synchronized(wifiBoundNetworkPolicyMutationLock) {
+                if (appContext.currentDownloadNetworkTypeOrNull() == currentNetworkType &&
+                    AudioDownloadManager.currentDownloadNetworkGeneration() == currentGeneration
+                ) {
+                    wifiBoundNetworkPolicyEpoch.incrementAndGet()
+                    mobileDataDownloadOverrideAllowed = true
+                    dismissMobileDataDownloadInterruptionRequest()
+                    accepted = true
                 }
-            } else if (currentRequest?.id == request.id ||
-                currentRequest?.batchIdentities == request.batchIdentities
-            ) {
-                dismissMobileDataDownloadInterruptionRequest()
+            }
+        } else {
+            synchronized(wifiBoundNetworkPolicyMutationLock) {
+                // 使确认之前捕获的断网快照失效，不能在新下载开始后再写回等待状态
+                wifiBoundNetworkPolicyEpoch.incrementAndGet()
+                if (currentRequest?.id == request.id ||
+                    currentRequest?.batchIdentities == request.batchIdentities
+                ) {
+                    dismissMobileDataDownloadInterruptionRequest()
+                }
             }
             // 批次许可已经落盘，之后发生的网络边沿只影响执行时机
             accepted = true
         }
-        if (!accepted) return@launch
-        PostCoreDownloadRecoveryWorker.schedule(appContext)
-        recoverPendingDownloadsOnCurrentNetwork(appContext)
     }
+    if (!accepted) return false
+    runCatching {
+        DownloadExecutionRoomStore.clearRetryDeadlinesForImmediateRecovery(appContext, database)
+    }.onFailure { error ->
+        if (error is CancellationException) throw error
+        NPLogger.w(TAG, "用户继续下载后清除退避失败，保留持久恢复: ${error.message}", error)
+    }
+    PostCoreDownloadRecoveryWorker.schedule(appContext)
+    recoverPendingDownloadsOnCurrentNetwork(appContext)
+    return true
 }
 
 internal fun GlobalDownloadManager.waitDownloadsForWifiImpl(request: MobileDataDownloadInterruptionRequest) {

@@ -488,9 +488,9 @@ internal class DownloadTaskStore(
                     ?.takeIf { attemptId -> attemptId > 0L }
                 if (
                     existingTask?.status == DownloadStatus.WAITING_NETWORK &&
-                        durableAttemptId == existingTask.attemptId
+                        (durableAttemptId == null || durableAttemptId == existingTask.attemptId)
                 ) {
-                    // 同一 durable attempt 从等待网络回到队列时不能清掉已恢复的进度
+                    // 网络状态变化沿用原 attempt，只有明确的持久新代次才替换进度
                     attemptIds[songKey] = existingTask.attemptId
                     updatedTasks[requireNotNull(existingIndex)] = existingTask.copy(
                         song = song,

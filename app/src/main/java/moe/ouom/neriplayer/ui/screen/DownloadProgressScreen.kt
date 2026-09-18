@@ -758,7 +758,7 @@ fun DownloadProgressScreen(
                     items(
                         items = visibleTasks,
                         key = { it.song.stableKey() },
-                        contentType = { task -> task.status }
+                        contentType = { "download-task" }
                     ) { task ->
                         val songKey = task.song.stableKey()
                         DownloadTaskItem(

@@ -1101,11 +1101,18 @@ class DefaultDownloadExecutionHost(
                             state = "RETRYABLE",
                             errorCode = "NETWORK_POLICY_WAITING"
                         )
-                        val wakeRearmed = !request.requiresWifiNetwork ||
+                        // 旧执行收尾期间用户可能已经确认移动网络，必须重新读取持久许可
+                        // 已获许可的任务交回共享泵，不能以 WIFI 专用等待结束最后一个任务
+                        val latestRequest = operationStore.readSuspending(appContext, normalizedId)
+                        val stillRequiresWifi = latestRequest?.requiresWifiNetwork ?: request.requiresWifiNetwork
+                        val wakeRearmed = if (stillRequiresWifi) {
                             WifiBoundDownloadWakeWorker.rearmAfterNetworkPolicyWait(
                                 context = context.applicationContext,
                                 operationId = normalizedId
                             )
+                        } else {
+                            false
+                        }
                         operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
                         if (!wakeRearmed) {
                             returnedResult = DownloadExecutionResult.Retry

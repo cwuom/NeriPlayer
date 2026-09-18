@@ -39,6 +39,31 @@ import org.junit.Test
 class DownloadProgressPresentationTest {
 
     @Test
+    fun `last pending song never disappears during host cleanup and network waits`() {
+        val track = song(1L)
+        val queued = DownloadTask(track, null, DownloadStatus.QUEUED, attemptId = 1L)
+        val stages = listOf(
+            null,
+            AudioDownloadManager.DownloadStage.WAITING_HOST,
+            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
+            AudioDownloadManager.DownloadStage.WAITING_RETRY,
+            AudioDownloadManager.DownloadStage.TRANSFERRING
+        )
+        for (status in listOf(DownloadStatus.QUEUED, DownloadStatus.WAITING_NETWORK, DownloadStatus.DOWNLOADING)) {
+            for (stage in stages) {
+                val task = queued.copy(
+                    status = status,
+                    progress = stage?.let { progress(track.stableKey(), 1L).copy(stage = it) }
+                )
+                assertEquals(listOf(task), visibleDownloadProgressTasks(listOf(task)))
+                assertEquals(1, countPendingDownloadTasks(listOf(task)))
+            }
+        }
+        assertTrue(visibleDownloadProgressTasks(listOf(queued.copy(status = DownloadStatus.COMPLETED))).isEmpty())
+        assertTrue(visibleDownloadProgressTasks(listOf(queued.copy(status = DownloadStatus.CANCELLED))).isEmpty())
+    }
+
+    @Test
     fun `post core restart preserves retry wait and failed terminal presentation`() {
         assertEquals(
             RecoveredDownloadTaskPresentation(
@@ -163,7 +188,7 @@ class DownloadProgressPresentationTest {
     }
 
     @Test
-    fun `progress page hides queued and waiting songs before work starts`() {
+    fun `progress page retains queued and waiting songs before work starts`() {
         val queued = DownloadTask(
             song = song(1L),
             progress = null,
@@ -184,7 +209,7 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(
-            listOf(active),
+            listOf(queued, waiting, active),
             visibleDownloadProgressTasks(listOf(queued, waiting, active))
         )
     }
@@ -272,7 +297,7 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(
-            listOf(waitingWithProgress, active, resolving),
+            listOf(queuedBeforeActive, waitingWithProgress, active, resolving, queuedAfterActive),
             visible
         )
         val retry = waitingWithProgress.copy(
@@ -284,12 +309,14 @@ class DownloadProgressPresentationTest {
         )
         assertEquals(
             visible.map { it.song.id },
-            visibleDownloadProgressTasks(listOf(retry, active, resolving)).map { it.song.id }
+            visibleDownloadProgressTasks(
+                listOf(queuedBeforeActive, retry, active, resolving, queuedAfterActive)
+            ).map { it.song.id }
         )
     }
 
     @Test
-    fun `downloading without a stage does not outrank real transfer`() {
+    fun `downloading without a stage stays visible in original order`() {
         val transfer = DownloadTask(
             song = song(1L),
             progress = progress(song(1L).stableKey(), 1L, bytesRead = 1L),
@@ -304,7 +331,7 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(
-            listOf(transfer),
+            listOf(unhydrated, transfer),
             visibleDownloadProgressTasks(listOf(unhydrated, transfer))
         )
         assertTrue(hasDownloadTaskStartedWork(transfer))
@@ -312,7 +339,7 @@ class DownloadProgressPresentationTest {
     }
 
     @Test
-    fun `every downloading task stays ahead of queued and network waiting tasks`() {
+    fun `waiting and downloading tasks keep their original queue positions`() {
         val unhydrated = DownloadTask(
             song = song(1L),
             progress = null,
@@ -341,7 +368,7 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(
-            listOf(sourceResolving),
+            listOf(networkWaiting, queued, sourceResolving, unhydrated),
             visibleDownloadProgressTasks(
                 listOf(networkWaiting, queued, sourceResolving, unhydrated)
             )

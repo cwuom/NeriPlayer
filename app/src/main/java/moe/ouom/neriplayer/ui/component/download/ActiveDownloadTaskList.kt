@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.DownloadTask
 import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.model.hasDownloadTaskStartedWork
 import moe.ouom.neriplayer.core.download.model.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.displayName
@@ -57,6 +58,7 @@ fun ActiveDownloadTaskList(
 ) {
     val visibleTasks = remember(tasks, maxVisibleTasks) {
         visibleDownloadProgressTasks(tasks)
+            .filter(::hasDownloadTaskStartedWork)
             .take(maxVisibleTasks)
     }
     if (visibleTasks.isEmpty()) {

@@ -855,6 +855,31 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
     }
 
     @Test
+    fun `late network wait returns mobile permitted work to the shared pump`() = runTest {
+        for (initiallyRequiresWifi in listOf(false, true)) {
+            val store = DownloadExecutionOperationStore { testJournal }
+            val context = mockContext()
+            val request = DownloadExecutionRequest(
+                operationId = "late-network-wait-$initiallyRequiresWifi",
+                song = sampleSong(),
+                requiresWifiNetwork = initiallyRequiresWifi
+            )
+            store.save(context, request)
+            val host = DefaultDownloadExecutionHost(
+                operationStore = store,
+                entryPoint = DownloadOperationEntryPoint { _, _ ->
+                    testJournal.forceRequest(request.copy(requiresWifiNetwork = false))
+                    DownloadExecutionResult.NetworkPolicyWaiting
+                },
+                sdkInt = 28
+            )
+            assertEquals(DownloadExecutionResult.Retry, host.execute(context, request.operationId))
+            assertEquals("RETRYABLE", store.currentState(context, request.operationId))
+            assertFalse(store.read(context, request.operationId)!!.requiresWifiNetwork)
+        }
+    }
+
+    @Test
     fun `execution rereads the latest attempt after claiming the operation`() = runTest {
         val store = DownloadExecutionOperationStore { testJournal }
         val context = mockContext()
