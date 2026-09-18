@@ -9,12 +9,12 @@ import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRet
 import moe.ouom.neriplayer.core.download.manager.catalog.releaseDownloadArtifactAfterExecutionOwnershipLoss
 import moe.ouom.neriplayer.core.download.manager.catalog.releaseDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.manager.recovery.resolveCoreRecoveryAudioCandidate
-import moe.ouom.neriplayer.core.download.manager.runtime.isMetadataOwnedBySong
 import moe.ouom.neriplayer.core.download.manager.runtime.loadFinalizationRecoverySnapshot
 import moe.ouom.neriplayer.core.download.manager.runtime.publishDownloadStage
 import moe.ouom.neriplayer.core.download.manager.runtime.reclaimOrphanedTransferLeaseIfSafe
 import moe.ouom.neriplayer.core.download.manager.runtime.repairDownloadedCoverIfMissing
 import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
+import moe.ouom.neriplayer.core.download.manager.runtime.isRecoveryMetadataOwnedBySong
 import moe.ouom.neriplayer.core.download.manager.runtime.settleAlreadyDownloadedOperation
 import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
 import moe.ouom.neriplayer.core.download.model.BatchOperationScheduleAction
@@ -1090,7 +1090,14 @@ internal suspend fun GlobalDownloadManager.findPendingAudioForFinalization(
     normalizedPreferredReference?.let { reference ->
         resolveStoredAudio(context, reference)
             ?.takeIf(::isUsableFinalizationAudioEntry)
-            ?.let { return it }
+            ?.let { audio ->
+                val metadata = readDownloadedMetadata(context, audio)
+                if (metadata != null &&
+                    isRecoveryMetadataOwnedBySong(metadata, song, normalizedOperationId)
+                ) {
+                    return audio
+                }
+            }
     }
     resolveCoreRecoveryAudioCandidate(
         context = context,
@@ -1181,23 +1188,10 @@ internal suspend fun GlobalDownloadManager.findPendingAudioForFinalization(
         }
         if (
             metadata != null &&
-                (
-                    normalizedOperationId != null &&
-                        metadata.operationId?.trim() == normalizedOperationId ||
-                        metadata.stableKey == song.stableKey() ||
-                        isMetadataOwnedBySong(metadata, song)
-                )
+                isRecoveryMetadataOwnedBySong(metadata, song, normalizedOperationId)
         ) {
             return audio
         }
-    }
-
-    preferredEntries.firstOrNull(::isUsableFinalizationAudioEntry)?.let { audio ->
-        NPLogger.d(
-            TAG,
-            "按 artifact 文件名恢复已下载音频: file=${audio.name}"
-        )
-        return audio
     }
 
     (snapshot.pendingAudioEntries + snapshot.audioEntries + snapshot.audioEntriesWithoutMetadata)
@@ -1214,12 +1208,7 @@ internal suspend fun GlobalDownloadManager.findPendingAudioForFinalization(
             }.getOrNull()
             if (
                 metadata != null &&
-                    (
-                        normalizedOperationId != null &&
-                            metadata.operationId?.trim() == normalizedOperationId ||
-                            metadata.stableKey == song.stableKey() ||
-                            isMetadataOwnedBySong(metadata, song)
-                    )
+                    isRecoveryMetadataOwnedBySong(metadata, song, normalizedOperationId)
             ) {
                 return audio
             }

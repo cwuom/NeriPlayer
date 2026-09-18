@@ -453,16 +453,20 @@ internal object DownloadExecutionRoomReadStore {
         nowMs: Long = System.currentTimeMillis()
     ): DownloadExecutionPumpPage {
         val boundedLimit = limit.coerceIn(1, DownloadExecutionRoomStore.Access.PUMP_QUERY_MAX_ITEMS)
+        var blockedByRetry = false
         val (headers, decodedRequests, nextRetryAtMs) = database.withTransaction {
             val dao = database.downloadOperationDao()
-            val headers = dao.findSchedulableForPumpAfterCursorHeaders(
+            val page = dao.findSchedulableForPumpAfterCursorHeaders(
                 states = DownloadExecutionRoomStore.Access.PUMP_OPERATION_STATES,
                 afterQueueOrder = afterCursor?.queueOrder,
-                afterUpdatedAtMs = afterCursor?.updatedAtMs,
+                afterCreatedAtMs = afterCursor?.createdAtMs,
                 afterOperationId = afterCursor?.operationId,
-                limit = boundedLimit,
-                nowMs = nowMs
+                afterRecoveryPriority = afterCursor?.recoveryPriority,
+                limit = boundedLimit
             )
+            // 重试截止时间只决定何时唤醒，不能让后面的新任务越过队首
+            val headers = page.takeWhile { it.nextRetryAtMs == null || it.nextRetryAtMs <= nowMs }
+            blockedByRetry = headers.size < page.size
             Triple(
                 headers,
                 headers.map { header ->
@@ -476,12 +480,17 @@ internal object DownloadExecutionRoomReadStore {
             )
         }
         val nextCursor = headers.lastOrNull()
-            ?.takeIf { headers.size == boundedLimit }
+            ?.takeIf { !blockedByRetry && headers.size == boundedLimit }
             ?.let { header ->
                 DownloadExecutionPumpCursor(
                     queueOrder = header.queueOrder,
-                    updatedAtMs = header.updatedAtMs,
-                    operationId = header.operationId
+                    createdAtMs = header.createdAtMs,
+                    operationId = header.operationId,
+                    recoveryPriority = if (header.bytesWritten > 0 || header.retryCount > 0 ||
+                        (header.lastErrorCode != null && header.lastErrorCode !in setOf(
+                            "HOST_ADMISSION_FULL", "HOST_SCHEDULE_REJECTED"
+                        ))
+                    ) 0 else 1
                 )
             }
         val malformedHeaders = mutableListOf<DownloadOperationHeaderRow>()

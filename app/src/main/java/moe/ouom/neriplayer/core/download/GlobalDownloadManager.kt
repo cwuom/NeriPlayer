@@ -382,7 +382,7 @@ object GlobalDownloadManager {
         val taskCount: Int,
         /** 用户确认只对捕获时仍在等待的批次身份生效 */
         val batchIdentities: List<MobileDataDownloadBatchIdentity> = emptyList(),
-        /** 网络切换后旧确认不得复用到新的移动网络代际 */
+        /** 保存提示出现时的网络代次，确认只作用于该提示捕获的批次 */
         val networkGeneration: Long = 0L
     )
 

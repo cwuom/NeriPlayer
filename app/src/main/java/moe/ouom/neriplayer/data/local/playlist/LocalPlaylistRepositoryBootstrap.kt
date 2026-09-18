@@ -836,7 +836,6 @@ internal fun LocalPlaylistRepository.stampSongsForPlaylistInsert(
     // 同一批本地文件按来源创建时间排列，单首加入仍由 membershipAddedAtMs 决定
     val songsForInsert = if (
         songs.size > 1 && songs.any { LocalSongSupport.isLocalSong(it, context) }
-            && !preserveScannedSourceAddedAt
     ) {
         songs.sortedWith(localSongSourceCreationComparator())
     } else {

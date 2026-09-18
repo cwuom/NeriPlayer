@@ -628,10 +628,7 @@ internal fun visibleDownloadProgressTasks(tasks: List<DownloadTask>): List<Downl
                     task.status == DownloadStatus.WAITING_NETWORK
                 ) && hasDownloadTaskStartedWork(task)
         }
-        .sortedWith(
-            compareBy<DownloadTask> { downloadTaskPresentationPriority(it) }
-                .thenBy(DownloadTask::attemptId)
-        )
+        // task store 保留入队次序，网络等待和重试不能让卡片前后跳动
         .toList()
 }
 
@@ -654,59 +651,6 @@ internal fun hasDownloadTaskStartedWork(task: DownloadTask): Boolean {
         stage == AudioDownloadManager.DownloadStage.ASSETS_ENRICHING ||
         stage == AudioDownloadManager.DownloadStage.WAITING_RETRY ||
         stage == AudioDownloadManager.DownloadStage.FINALIZING
-}
-
-private fun downloadTaskPresentationPriority(task: DownloadTask): Int {
-    val stage = currentTaskProgress(task)?.stage
-    return when (task.status) {
-        DownloadStatus.DOWNLOADING -> when (stage) {
-            AudioDownloadManager.DownloadStage.TRANSFERRING,
-            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
-            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
-            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
-            AudioDownloadManager.DownloadStage.FINALIZING -> 0
-
-            AudioDownloadManager.DownloadStage.RESOLVING_SOURCE,
-            AudioDownloadManager.DownloadStage.PREPARING_STORAGE -> 1
-
-            AudioDownloadManager.DownloadStage.WAITING_RETRY,
-            AudioDownloadManager.DownloadStage.WAITING_HOST,
-            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
-            null -> 2
-        }
-
-        DownloadStatus.WAITING_NETWORK -> when (stage) {
-            AudioDownloadManager.DownloadStage.TRANSFERRING,
-            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
-            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
-            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
-            AudioDownloadManager.DownloadStage.FINALIZING -> 3
-
-            AudioDownloadManager.DownloadStage.WAITING_RETRY -> 4
-            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP -> 5
-            else -> 6
-        }
-
-        DownloadStatus.QUEUED -> when (stage) {
-            AudioDownloadManager.DownloadStage.TRANSFERRING,
-            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
-            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
-            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
-            AudioDownloadManager.DownloadStage.FINALIZING -> 3
-
-            AudioDownloadManager.DownloadStage.RESOLVING_SOURCE,
-            AudioDownloadManager.DownloadStage.PREPARING_STORAGE -> 4
-
-            AudioDownloadManager.DownloadStage.WAITING_RETRY -> 5
-            AudioDownloadManager.DownloadStage.WAITING_HOST,
-            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP -> 6
-            null -> 7
-        }
-
-        DownloadStatus.COMPLETED,
-        DownloadStatus.FAILED,
-        DownloadStatus.CANCELLED -> 8
-    }
 }
 
 private fun currentTaskProgress(

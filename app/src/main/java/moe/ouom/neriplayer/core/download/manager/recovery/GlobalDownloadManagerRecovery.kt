@@ -668,18 +668,19 @@ internal suspend fun GlobalDownloadManager.prepareFinalizedPublicationArtifactLe
             DownloadExecutionRoomStore.read(context, persistedOperationId)
         }
         ?.takeIf { persisted -> persisted.song.stableKey() == song.stableKey() }
-    val recoveryLeaseOwnerId = request?.artifactLeaseId
-        ?: finalizedPublicationRecoveryLeaseOwnerId(
-            stableKey = song.stableKey(),
-            operationId = normalizedOperationId
-        )
+    val recoveryLeaseOwnerId = finalizedPublicationRecoveryLeaseOwnerId(
+        stableKey = song.stableKey(),
+        operationId = normalizedOperationId
+    )
     val claim = runCatching {
         managedDownloadArtifactCoordinator.claim(
             context = context,
             song = song,
             reconcileStorage = false,
             leaseOwnerId = recoveryLeaseOwnerId,
-            allowFreshTransferReclaim = false
+            allowFreshTransferReclaim = false,
+            allowPostCoreRecoveryReclaim = true,
+            postCoreRecoveryPreviousLeaseId = request?.artifactLeaseId
         )
     }.onFailure { error ->
         NPLogger.w(
@@ -690,8 +691,21 @@ internal suspend fun GlobalDownloadManager.prepareFinalizedPublicationArtifactLe
             error
         )
     }.getOrNull() ?: return null
-    return claim.finalizedPublicationLeaseOrNull().also { publicationLease ->
-        if (publicationLease == null) {
+    val publicationLease = claim.finalizedPublicationLeaseOrNull()
+    if (
+        request != null &&
+            publicationLease?.leaseId != null &&
+            publicationLease.leaseId != recoveryLeaseOwnerId
+    ) {
+        NPLogger.d(
+            TAG,
+            "恢复最终发布遇到不同 artifact owner，保留等待接管者收口: " +
+                "song=${song.name}, operationId=$normalizedOperationId"
+        )
+        return null
+    }
+    return publicationLease.also { lease ->
+        if (lease == null) {
             NPLogger.d(
                 TAG,
                 "恢复最终发布遇到新的 artifact owner，保留等待接管者收口: " +
@@ -1698,7 +1712,6 @@ internal suspend fun GlobalDownloadManager.resolvePendingDownloadRecoveryPlan(
         .sortedWith(
             compareBy<DownloadExecutionRoomStore.StateEntry> { it.queueOrder }
                 .thenBy { it.createdAtMs }
-                .thenBy { it.updatedAtMs }
                 .thenBy { it.request.operationId }
         )
         .mapIndexed { index, entry ->

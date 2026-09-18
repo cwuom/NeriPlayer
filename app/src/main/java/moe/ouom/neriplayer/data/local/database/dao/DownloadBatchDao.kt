@@ -305,7 +305,8 @@ internal interface DownloadBatchDao {
             "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
             "AND ((:expectedNetworkGeneration IS NULL AND network_generation IS NULL) " +
             "OR network_generation = :expectedNetworkGeneration) " +
-            "AND (network_generation IS NULL OR network_generation <= :networkGeneration)"
+            "AND (network_generation IS NULL OR network_generation <= :networkGeneration) " +
+            "AND state_bits & ${DownloadBatchState.USER_MOBILE_ALLOWED} = 0"
     )
     suspend fun markNetworkWaitingCAS(
         batchId: String,
@@ -361,16 +362,15 @@ internal interface DownloadBatchDao {
     ): Int
 
     /**
-     * 已确认 WIFI 后一次性解除旧等待和旧移动网络许可，代次条件阻止旧 WIFI
-     * 回调清掉随后由移动网络回调写入的新状态
+     * 已确认 WIFI 后解除旧等待，保留用户对当前批次的继续许可
+     * 代次条件阻止旧 WIFI 回调清掉随后写入的新等待状态
      */
     @Query(
         "UPDATE download_batch SET state_bits = state_bits & " +
-            "~(${DownloadBatchState.NETWORK_WAIT} | ${DownloadBatchState.USER_MOBILE_ALLOWED}), " +
+            "~${DownloadBatchState.NETWORK_WAIT}, " +
             "network_generation = :networkGeneration, updated_at_ms = :nowMs " +
             "WHERE state_bits & ${DownloadBatchState.OPEN} != 0 " +
-            "AND state_bits & (${DownloadBatchState.NETWORK_WAIT} | " +
-            "${DownloadBatchState.USER_MOBILE_ALLOWED}) != 0 " +
+            "AND state_bits & ${DownloadBatchState.NETWORK_WAIT} != 0 " +
             "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
             "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
             "AND (network_generation IS NULL OR network_generation <= :networkGeneration)"
@@ -386,11 +386,10 @@ internal interface DownloadBatchDao {
             "network_generation = :networkGeneration, updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND generation = :generation " +
             "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
-            "AND state_bits & ${DownloadBatchState.NETWORK_WAIT} != 0 " +
             "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
             "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
-            "AND network_generation = :expectedNetworkGeneration " +
-            "AND :networkGeneration = :expectedNetworkGeneration"
+            "AND network_generation >= :expectedNetworkGeneration " +
+            "AND network_generation <= :networkGeneration"
     )
     suspend fun allowMobileDataCAS(
         batchId: String,

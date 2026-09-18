@@ -25,9 +25,8 @@ internal fun DownloadExecutionRoomStore.canStartBatchForCurrentNetworkImpl(
     val hasMobileDataAllowance =
         batch.stateBits and DownloadBatchState.USER_MOBILE_ALLOWED != 0
     if (hasMobileDataAllowance) {
-        val currentGeneration = currentNetworkGeneration?.takeIf { generation -> generation >= 0L }
-            ?: return false
-        if (batch.networkGeneration != currentGeneration) return false
+        // 许可属于这批任务，网络重新连接或进程重启不能撤销用户已确认的继续意图
+        if (currentNetworkGeneration != null && currentNetworkGeneration < 0L) return false
     }
     if (batch.stateBits and DownloadBatchState.NETWORK_WAIT != 0) return false
     return true
@@ -67,8 +66,15 @@ internal suspend fun DownloadExecutionRoomStore.upsertImpl(
             ?: existingHeader?.batchGeneration
         val effectiveUserInitiated = request.userInitiated ||
             existingRequest?.userInitiated == true
+        val batchAllowsMobile = preservedBatchId?.let { batchId ->
+            preservedBatchGeneration?.let { generation ->
+                database.downloadBatchDao().findBatch(batchId, generation)
+                    ?.stateBits?.and(DownloadBatchState.USER_MOBILE_ALLOWED) == DownloadBatchState.USER_MOBILE_ALLOWED
+            }
+        } == true
         val requestWithMonotonicIntent = request.copy(
-            userInitiated = effectiveUserInitiated
+            userInitiated = effectiveUserInitiated,
+            requiresWifiNetwork = request.requiresWifiNetwork && !batchAllowsMobile
         )
         val persistedRequest = when {
             restartForNewAttempt -> requestWithMonotonicIntent.copy(

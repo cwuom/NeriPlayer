@@ -350,6 +350,47 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
     }
 
     @Test
+    fun `transient failure stops replenishing the window until recovery is reconsidered`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val requests = (1..5).map { index ->
+            DownloadExecutionRequest(
+                operationId = "ordered-retry-$index", song = sampleSong().copy(id = index.toLong())
+            ).also { store.save(context, it) }
+        }
+        val firstFailed = CompletableDeferred<Unit>()
+        journal.afterStateUpdate = { operationId, state ->
+            if (operationId == requests.first().operationId && state == "RETRYABLE") {
+                firstFailed.complete(Unit)
+            }
+        }
+        val executed = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, request ->
+                executed.add(request.operationId)
+                if (request.operationId == requests.first().operationId) {
+                    DownloadExecutionResult.Retry
+                } else {
+                    firstFailed.await()
+                    DownloadExecutionResult.Accepted
+                }
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 }
+        )
+
+        assertEquals(DownloadExecutionPumpResult.ContinueAfterRetry, host.pump(context))
+        val window = resolveDownloadDispatchWindow(1)
+        assertEquals(requests.take(window).map { it.operationId }.toSet(), executed.toSet())
+        requests.drop(window).forEach { request ->
+            assertEquals("QUEUED", store.currentState(context, request.operationId))
+        }
+        assertEquals("RETRYABLE", store.currentState(context, requests.first().operationId))
+    }
+
+    @Test
     fun `pump refills a freed window before slower operations finish`() = runTest {
         val context = mockContext()
         val journal = InMemoryDownloadExecutionOperationJournal()

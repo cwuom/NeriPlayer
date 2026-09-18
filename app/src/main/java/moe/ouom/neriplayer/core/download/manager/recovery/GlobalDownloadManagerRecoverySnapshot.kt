@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.manager.batch.isUsableFinalizationAudioEntry
 import moe.ouom.neriplayer.core.download.manager.batch.matchesFinalizationCandidateName
 import moe.ouom.neriplayer.core.download.manager.batch.matchesFinalizationStoredName
-import moe.ouom.neriplayer.core.download.manager.runtime.isMetadataOwnedBySong
+import moe.ouom.neriplayer.core.download.manager.runtime.isRecoveryMetadataOwnedBySong
 import moe.ouom.neriplayer.core.download.manager.runtime.loadFinalizationRecoverySnapshot
 import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
 import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
@@ -13,7 +13,6 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager.CoreRecoveryAudio
 import android.content.Context
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.stableKey
 import java.util.Locale
 
 
@@ -134,15 +133,7 @@ internal suspend fun GlobalDownloadManager.resolveCoreRecoveryAudioCandidate(
                         snapshot = currentSnapshot,
                         audio = audio
                     ) ?: return@filter false
-                    val metadataOperationId = metadata.operationId
-                        ?.trim()
-                        ?.takeIf(String::isNotBlank)
-                    val metadataStableKey = metadata.stableKey
-                        ?.trim()
-                        ?.takeIf(String::isNotBlank)
-                    metadataOperationId == normalizedOperationId ||
-                        metadataStableKey == song.stableKey() ||
-                        isMetadataOwnedBySong(metadata, song)
+                    isRecoveryMetadataOwnedBySong(metadata, song, normalizedOperationId)
                 }
                 .forEach(::addCandidate)
         }
@@ -194,18 +185,13 @@ internal suspend fun GlobalDownloadManager.resolveCoreRecoveryAudioCandidate(
                     ?.takeIf(String::isNotBlank)
                 val operationMatches = normalizedOperationId != null &&
                     metadataOperationId == normalizedOperationId
-                val metadataStableKey = metadata.stableKey
-                    ?.trim()
-                    ?.takeIf(String::isNotBlank)
-                val identityMatches =
-                    metadataStableKey == song.stableKey() ||
-                        metadataStableKey == song.sourceStableKey
-                            ?.trim()
-                            ?.takeIf(String::isNotBlank) ||
-                        isMetadataOwnedBySong(metadata, song)
+                val identityMatches = isRecoveryMetadataOwnedBySong(
+                    metadata, song, normalizedOperationId
+                )
                 if (
-                    (operationMatches || identityMatches) &&
-                        (audio.isPendingAudioWrite || operationMatches || allowFormalAudio)
+                    identityMatches &&
+                        (audio.isPendingAudioWrite || operationMatches || allowFormalAudio) &&
+                        invalidCoreAudioReason(context, song, audio, normalizedOperationId.orEmpty()) == null
                 ) {
                     matches += CoreRecoveryAudioCandidate(
                         audio = audio,
@@ -277,7 +263,12 @@ internal suspend fun GlobalDownloadManager.resolveCoreRecoveryAudioCandidate(
             .toList()
         val metadataLessAudio = metadataLessCandidates
             .singleOrNull()
-        if (metadataLessAudio != null) {
+        if (metadataLessAudio != null &&
+            readDownloadedMetadata(context, metadataLessAudio) == null &&
+            snapshot?.let {
+                ManagedDownloadStorage.metadataForAudioEntry(it, metadataLessAudio)
+            } == null
+        ) {
             return CoreRecoveryAudioCandidate(
                 audio = metadataLessAudio,
                 metadata = null,

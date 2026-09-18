@@ -333,7 +333,15 @@ internal fun songCreationConfidence(song: SongItem): Int {
     }
 }
 
+internal fun isNonCreationTimestampSource(source: String?): Boolean = when (source?.trim()?.uppercase(Locale.ROOT)) {
+    "SAF_LAST_MODIFIED", "MTIME", "MTIME_FALLBACK", "MEDIASTORE_DATE_MODIFIED", "MEDIASTORE_DATE_ADDED" -> true
+    else -> false
+}
+
 internal fun hasStableSongCreationEvidence(song: SongItem): Boolean {
+    if (isNonCreationTimestampSource(song.createdAtSource)) {
+        return false
+    }
     if (song.logicalCreatedAtMs?.let { validSongTimestamp(it) != Long.MIN_VALUE } == true) {
         return true
     }
@@ -344,12 +352,6 @@ internal fun hasStableSongCreationEvidence(song: SongItem): Boolean {
     // 显式 UNKNOWN 或 INFERRED 的记录不能借此伪造创建时间
     return song.createdAtConfidence == null &&
         validSongTimestamp(song.addedAt) != Long.MIN_VALUE
-}
-
-internal fun hasDeterministicSongCreationEvidence(song: SongItem): Boolean {
-    return (song.logicalCreatedAtMs?.let {
-        validSongTimestamp(it) != Long.MIN_VALUE
-    } == true) || songCreationConfidence(song) >= 2
 }
 
 /** 扫描预览按来源时间排序，不使用本次歌单加入时间 */
@@ -372,25 +374,8 @@ internal fun localSongSourceCreationComparator(): Comparator<SongItem> {
             return@Comparator timestampComparison
         }
 
-        val confidenceComparison = songCreationConfidence(right)
-            .compareTo(songCreationConfidence(left))
-        if (confidenceComparison != 0) {
-            return@Comparator confidenceComparison
-        }
-
-        if (!hasDeterministicSongCreationEvidence(left) ||
-            !hasDeterministicSongCreationEvidence(right)
-        ) {
-            return@Comparator 0
-        }
-
-        compareValuesBy(
-            left,
-            right,
-            { it.sourceStableKey.orEmpty() },
-            { it.mediaUri.orEmpty() },
-            { it.localFileName.orEmpty() }
-        )
+        // 同时创建的文件保持原次序，迁移后的 URI 和文件名不能改变先后
+        0
     }
 }
 

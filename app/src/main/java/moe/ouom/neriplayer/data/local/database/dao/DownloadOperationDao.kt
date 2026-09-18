@@ -304,6 +304,33 @@ internal interface DownloadOperationDao {
         states: List<String>
     ): Int?
 
+    @Query("SELECT MAX(queue_order) FROM download_operation WHERE state IN (:states)")
+    suspend fun findMaxActiveQueueOrder(states: List<String>): Int?
+
+    @Query(
+        "SELECT operation_id FROM download_operation WHERE " + DOWNLOAD_QUEUE_ELIGIBLE_SQL +
+            "AND (host_process_token IS NULL OR host_process_token != :processToken) " +
+            "ORDER BY " + DOWNLOAD_QUEUE_ORDER_SQL + " LIMIT 1"
+    )
+    suspend fun findNextUnadmittedForPump(states: List<String>, processToken: String): String?
+
+    @Query(
+        "UPDATE download_operation SET state = 'RETRYABLE', bytes_written = 0, total_bytes = NULL, " +
+            "resume_json = NULL, retry_count = retry_count + 1, next_retry_at_ms = NULL, " +
+            "last_error_code = :errorCode, host_process_token = NULL, host_admitted_at_ms = NULL, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :nowMs) " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND stop_requested_by_user = 0 AND updated_at_ms = :expectedUpdatedAtMs " +
+            "AND state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', 'DEGRADED_COMPLETE')"
+    )
+    suspend fun resetInvalidCoreForTransfer(
+        operationId: String,
+        stableKey: String,
+        expectedUpdatedAtMs: Long,
+        errorCode: String,
+        nowMs: Long
+    ): Int
+
     @Query(
         "SELECT * FROM download_operation " +
             "WHERE library_id = :libraryId AND state IN (:states)"
@@ -353,29 +380,16 @@ internal interface DownloadOperationDao {
     ): List<DownloadOperationEntity>
 
     @Query(
-        "SELECT * FROM download_operation " +
-            "WHERE state IN (:states) AND stop_requested_by_user = 0 " +
-            "AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= :nowMs) " +
-            "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
-            "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
-            "AND batch.generation = download_operation.batch_generation " +
-            "AND (batch.state_bits & 1) != 0 AND (batch.state_bits & 2) = 0 " +
-            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) = 0)) " +
-            "AND (:afterQueueOrder IS NULL " +
-            "OR queue_order > :afterQueueOrder " +
-            "OR (queue_order = :afterQueueOrder AND updated_at_ms > :afterUpdatedAtMs) " +
-            "OR (queue_order = :afterQueueOrder AND updated_at_ms = :afterUpdatedAtMs " +
-            "AND operation_id > :afterOperationId)) " +
-            "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
-            "LIMIT :limit"
+        "SELECT * FROM download_operation WHERE " + DOWNLOAD_QUEUE_ELIGIBLE_SQL +
+            DOWNLOAD_QUEUE_CURSOR_SQL + "ORDER BY " + DOWNLOAD_QUEUE_ORDER_SQL + " LIMIT :limit"
     )
     suspend fun findSchedulableForPumpAfterCursor(
         states: List<String>,
         afterQueueOrder: Int?,
-        afterUpdatedAtMs: Long?,
+        afterCreatedAtMs: Long?,
         afterOperationId: String?,
-        limit: Int,
-        nowMs: Long
+        afterRecoveryPriority: Int?,
+        limit: Int
     ): List<DownloadOperationEntity>
 
     @Query(
@@ -383,28 +397,16 @@ internal interface DownloadOperationDao {
             "staging_dir_name, bytes_written, total_bytes, retry_count, " +
             "next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, " +
             "updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation " +
-            "FROM download_operation WHERE state IN (:states) " +
-            "AND stop_requested_by_user = 0 " +
-            "AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= :nowMs) " +
-            "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
-            "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
-            "AND batch.generation = download_operation.batch_generation " +
-            "AND (batch.state_bits & 1) != 0 AND (batch.state_bits & 2) = 0 " +
-            "AND (batch.state_bits & ${DownloadBatchState.CLEARING}) = 0)) " +
-            "AND (:afterQueueOrder IS NULL OR queue_order > :afterQueueOrder OR " +
-            "(queue_order = :afterQueueOrder AND updated_at_ms > :afterUpdatedAtMs) OR " +
-            "(queue_order = :afterQueueOrder AND updated_at_ms = :afterUpdatedAtMs " +
-            "AND operation_id > :afterOperationId)) " +
-            "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
-            "LIMIT :limit"
+            "FROM download_operation WHERE " + DOWNLOAD_QUEUE_ELIGIBLE_SQL +
+            DOWNLOAD_QUEUE_CURSOR_SQL + "ORDER BY " + DOWNLOAD_QUEUE_ORDER_SQL + " LIMIT :limit"
     )
     suspend fun findSchedulableForPumpAfterCursorHeaders(
         states: List<String>,
         afterQueueOrder: Int?,
-        afterUpdatedAtMs: Long?,
+        afterCreatedAtMs: Long?,
         afterOperationId: String?,
-        limit: Int,
-        nowMs: Long
+        afterRecoveryPriority: Int?,
+        limit: Int
     ): List<DownloadOperationHeaderRow>
 
     /** 只有没有 ready 行时才读取此值，避免把正常 pump 变成第二次全量查询 */
@@ -1033,7 +1035,7 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
-        "UPDATE download_operation SET state = 'RETRYABLE', " +
+        "UPDATE download_operation SET state = 'RETRYABLE', next_retry_at_ms = NULL, " +
             "stop_requested_by_user = 0, updated_at_ms = :updatedAtMs, " +
             "last_error_code = 'EXPLICIT_RESUME_PENDING' WHERE operation_id = :operationId " +
             "AND stable_key = :stableKey AND state IN (:expectedStates) " +

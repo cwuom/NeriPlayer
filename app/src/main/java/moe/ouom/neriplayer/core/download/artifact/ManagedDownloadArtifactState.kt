@@ -154,6 +154,42 @@ internal enum class ManagedDownloadArtifactDecision {
     RepairRequired
 }
 
+/** post-core 恢复使用独立 owner 接管，避免旧下载回调复用 operation lease 清掉新租约 */
+internal fun shouldReclaimPostCoreArtifactLeaseForRecovery(
+    artifactState: ManagedDownloadArtifactState,
+    currentLeaseOwnerId: String?,
+    recoveryEnabled: Boolean,
+    recoveryLeaseOwnerId: String?,
+    previousLeaseOwnerId: String?
+): Boolean {
+    val normalizedRecoveryOwnerId = recoveryLeaseOwnerId
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: return false
+    if (!recoveryEnabled || artifactState !in setOf(
+            ManagedDownloadArtifactState.QUEUED,
+            ManagedDownloadArtifactState.DOWNLOADING,
+            ManagedDownloadArtifactState.WAITING_STORAGE,
+            ManagedDownloadArtifactState.VERIFYING,
+            ManagedDownloadArtifactState.COMMITTING,
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE
+        )
+    ) {
+        return false
+    }
+    val normalizedCurrentOwnerId = currentLeaseOwnerId
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: return true
+    val normalizedPreviousOwnerId = previousLeaseOwnerId
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+    return normalizedCurrentOwnerId == normalizedRecoveryOwnerId ||
+        normalizedCurrentOwnerId == normalizedPreviousOwnerId
+}
+
 internal enum class ManagedDownloadArtifactFinalizationDisposition {
     SETTLED,
     FINALIZATION_REQUIRED,

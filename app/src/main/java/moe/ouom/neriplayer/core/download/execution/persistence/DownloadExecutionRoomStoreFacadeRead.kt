@@ -214,6 +214,15 @@ internal suspend fun DownloadExecutionRoomStore.tryAcquireHostAdmissionImpl(
         if (hasOtherValidWaitingStorageMutation(database, operation)) {
             return@withTransaction false
         }
+        if (operation.state in PUMP_OPERATION_STATES && (
+                (operation.nextRetryAtMs ?: 0L) > nowMs ||
+                    dao.findNextUnadmittedForPump(
+                        PUMP_OPERATION_STATES, HOST_ADMISSION_PROCESS_TOKEN
+                    ) != operationId
+                )
+        ) {
+            return@withTransaction false
+        }
         if (dao.countHostAdmissions(HOST_ADMISSION_PROCESS_TOKEN) >= capacity) {
             return@withTransaction false
         }

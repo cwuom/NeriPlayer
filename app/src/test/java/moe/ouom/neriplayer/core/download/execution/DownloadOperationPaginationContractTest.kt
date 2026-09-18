@@ -72,13 +72,17 @@ class DownloadOperationPaginationContractTest {
             "suspend fun findSchedulableForPumpAfterCursorHeaders"
         )
         val queryIndex = daoSource.lastIndexOf("@Query(", functionIndex)
-        val query = daoSource.substring(queryIndex, functionIndex)
+        val query = daoSource.substring(queryIndex, functionIndex) + readSource(
+            "app/src/main/java/moe/ouom/neriplayer/data/local/database/dao/DownloadQueueSql.kt"
+        )
 
         assertTrue(query.contains("queue_order > :afterQueueOrder"))
-        assertTrue(query.contains("updated_at_ms > :afterUpdatedAtMs"))
+        assertTrue(query.contains("created_at_ms > :afterCreatedAtMs"))
         assertTrue(query.contains("operation_id > :afterOperationId"))
-        assertTrue(query.contains("next_retry_at_ms IS NULL OR next_retry_at_ms <= :nowMs"))
-        assertTrue(query.contains("ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC"))
+        assertTrue(query.contains("afterRecoveryPriority"))
+        assertTrue(query.contains("queue_order ASC, created_at_ms ASC, operation_id ASC"))
+        assertFalse(query.contains("updated_at_ms >"))
+        assertFalse(query.contains("next_retry_at_ms <= :nowMs"))
         assertFalse(query.contains("OFFSET"))
 
         val roomStoreSource = readSource(
@@ -93,9 +97,8 @@ class DownloadOperationPaginationContractTest {
             "findSchedulableForPumpAfterCursorHeaders("
         )
         val payloadReadIndex = pumpReader.indexOf("readRequestFromHeader(dao, header)")
-        val transactionalRead = pumpReader.substringAfter(
-            "val (headers, decodedRequests) = database.withTransaction {"
-        ).substringBefore("\n        }")
+        val transactionalRead = pumpReader.substringAfter("database.withTransaction {")
+            .substringBefore("\n        }")
         val nextCursorIndex = pumpReader.indexOf("val nextCursor = headers.lastOrNull()")
         val requestMappingIndex = pumpReader.indexOf("val requests = decodedRequests.mapNotNull")
 

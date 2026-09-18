@@ -823,6 +823,30 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `modification time is never promoted to creation time during a scan`() {
+        val base = SongItem(1L, "first", "artist", "local", 0L, 1000L, null).copy(
+            addedAt = 900L, logicalCreatedAtMs = 900L,
+            createdAtSource = "SAF_LAST_MODIFIED", createdAtConfidence = "INFERRED"
+        )
+        val other = base.copy(id = 2L, addedAt = 1000L, logicalCreatedAtMs = 1000L)
+        assertFalse(hasStableSongCreationEvidence(base))
+        assertFalse(hasStableSongCreationEvidence(base.copy(createdAtSource = "MTIME")))
+        assertFalse(hasStableSongCreationEvidence(base.copy(
+            createdAtSource = "MEDIASTORE_DATE_ADDED", createdAtConfidence = "PROVIDER_REPORTED"
+        )))
+        assertEquals(listOf(base, other), listOf(base, other).sortedWith(localSongSourceCreationComparator()))
+    }
+
+    @Test
+    fun `equal creation times retain order when migration changes uris`() {
+        val first = SongItem(1L, "first", "artist", "local", 0L, 1000L, null).copy(
+            logicalCreatedAtMs = 500L, createdAtConfidence = "EXACT", mediaUri = "content://new/z"
+        )
+        val second = first.copy(id = 2L, mediaUri = "content://new/a")
+        assertEquals(listOf(first, second), listOf(first, second).sortedWith(localSongSourceCreationComparator()))
+    }
+
+    @Test
     fun `local song ordering uses stable identity after equal timestamps`() {
         val first = SongItem(
             id = 1L,

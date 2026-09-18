@@ -11,14 +11,15 @@ import org.junit.Test
 
 class DownloadBatchNetworkFenceTest {
     @Test
-    fun `mobile override is accepted only for the current network generation`() {
+    fun `accepted batch consent survives network generation changes while waiting stays blocked`() {
         val allowed = batch(
             stateBits = DownloadBatchState.OPEN or DownloadBatchState.USER_MOBILE_ALLOWED,
             networkGeneration = 7L
         )
         assertTrue(DownloadExecutionRoomStore.canStartBatchForCurrentNetwork(allowed, 7L))
-        assertFalse(DownloadExecutionRoomStore.canStartBatchForCurrentNetwork(allowed, 8L))
-        assertFalse(DownloadExecutionRoomStore.canStartBatchForCurrentNetwork(allowed, null))
+        assertTrue(DownloadExecutionRoomStore.canStartBatchForCurrentNetwork(allowed, 8L))
+        assertTrue(DownloadExecutionRoomStore.canStartBatchForCurrentNetwork(allowed, null))
+        assertFalse(DownloadExecutionRoomStore.canStartBatchForCurrentNetwork(allowed, -1L))
 
         val waiting = batch(
             stateBits = DownloadBatchState.OPEN or DownloadBatchState.NETWORK_WAIT,
@@ -45,7 +46,7 @@ class DownloadBatchNetworkFenceTest {
     }
 
     @Test
-    fun `confirmed Wi-Fi bulk release clears wait and mobile allowance together`() {
+    fun `confirmed Wi-Fi bulk release clears wait without revoking batch consent`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/data/local/database/dao/DownloadBatchDao.kt"
         ).readText()
@@ -54,7 +55,7 @@ class DownloadBatchNetworkFenceTest {
         ).substringAfterLast("@Query(")
 
         assertTrue(releaseQuery.contains("DownloadBatchState.NETWORK_WAIT"))
-        assertTrue(releaseQuery.contains("DownloadBatchState.USER_MOBILE_ALLOWED"))
+        assertFalse(releaseQuery.contains("DownloadBatchState.USER_MOBILE_ALLOWED"))
         assertTrue(releaseQuery.contains("network_generation <= :networkGeneration"))
         assertTrue(releaseQuery.contains("DownloadBatchState.CLEARING"))
     }

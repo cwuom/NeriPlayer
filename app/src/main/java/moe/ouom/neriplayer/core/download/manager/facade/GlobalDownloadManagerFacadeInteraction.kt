@@ -189,26 +189,14 @@ internal fun GlobalDownloadManager.continueDownloadsOnMobileDataImpl(
         var accepted = false
         mobileDataDownloadInterruptionRequestMutex.withLock {
             val currentRequest = mobileDataDownloadInterruptionRequestMutable.value
-            if (currentRequest?.id != request.id ||
-                currentRequest.networkGeneration != request.networkGeneration ||
-                currentRequest.batchIdentities != request.batchIdentities
+            if (request.batchIdentities.isEmpty() &&
+                (currentRequest?.id != request.id ||
+                    currentRequest.networkGeneration != request.networkGeneration)
             ) {
                 return@withLock
             }
             val currentNetworkType = appContext.currentDownloadNetworkTypeOrNull()
             val currentGeneration = AudioDownloadManager.currentDownloadNetworkGeneration()
-            if (currentNetworkType == TrafficNetworkType.WIFI ||
-                currentGeneration != request.networkGeneration
-            ) {
-                NPLogger.d(
-                    TAG,
-                    "移动网络确认已过期，拒绝恢复: requestId=${request.id}, " +
-                        "requestGeneration=${request.networkGeneration}, " +
-                        "currentGeneration=$currentGeneration"
-                )
-                dismissMobileDataDownloadInterruptionRequest()
-                return@withLock
-            }
             val identities = request.batchIdentities
                 .distinct()
                 .map { identity -> identity.toRoomBatchIdentity() }
@@ -239,15 +227,22 @@ internal fun GlobalDownloadManager.continueDownloadsOnMobileDataImpl(
                 )
                 return@withLock
             }
-            synchronized(wifiBoundNetworkPolicyMutationLock) {
-                if (appContext.currentDownloadNetworkTypeOrNull() == currentNetworkType &&
-                    AudioDownloadManager.currentDownloadNetworkGeneration() == currentGeneration
-                ) {
-                    mobileDataDownloadOverrideAllowed = true
-                    dismissMobileDataDownloadInterruptionRequest()
-                    accepted = true
+            if (identities.isEmpty()) {
+                synchronized(wifiBoundNetworkPolicyMutationLock) {
+                    if (appContext.currentDownloadNetworkTypeOrNull() == currentNetworkType &&
+                        AudioDownloadManager.currentDownloadNetworkGeneration() == currentGeneration
+                    ) {
+                        mobileDataDownloadOverrideAllowed = true
+                        dismissMobileDataDownloadInterruptionRequest()
+                    }
                 }
+            } else if (currentRequest?.id == request.id ||
+                currentRequest?.batchIdentities == request.batchIdentities
+            ) {
+                dismissMobileDataDownloadInterruptionRequest()
             }
+            // 批次许可已经落盘，之后发生的网络边沿只影响执行时机
+            accepted = true
         }
         if (!accepted) return@launch
         PostCoreDownloadRecoveryWorker.schedule(appContext)

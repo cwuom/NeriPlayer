@@ -92,6 +92,9 @@ internal val DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES =
     DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES + listOf(
         "RUNNING",
         "COMMITTING",
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE",
         WAITING_STORAGE_MUTATION_OPERATION_STATE
     )
 
@@ -237,9 +240,14 @@ internal fun hasUnhydratedDurableDownloadTasks(
     durablePendingSongKeys: Set<String>,
     explicitResumeSongKeys: Set<String>
 ): Boolean {
-    return activeSongKeys.isEmpty() &&
-        (durablePendingSongKeys - explicitResumeSongKeys).isNotEmpty()
+    val unhydratedSongKeys = durablePendingSongKeys - explicitResumeSongKeys - activeSongKeys
+    return unhydratedSongKeys.isNotEmpty()
 }
+
+internal fun shouldShowPendingDownloadSummary(
+    pendingTaskCount: Int,
+    visibleTaskCount: Int
+): Boolean = pendingTaskCount > 0 && visibleTaskCount == 0
 
 private sealed interface DownloadProgressBootstrapProbeResult {
     data class Resolved(val state: DownloadProgressBootstrapState) :
@@ -704,7 +712,11 @@ fun DownloadProgressScreen(
                             BatchDownloadOverallProgressCard(progress = progress)
                         }
                     }
-                    if (visibleBatchProgress == null && pendingTaskCount > 0 && visibleTasks.isEmpty()) {
+                    if (shouldShowPendingDownloadSummary(
+                            pendingTaskCount = pendingTaskCount,
+                            visibleTaskCount = visibleTasks.size
+                        )
+                    ) {
                         item(key = "pending-download-summary") {
                             PendingDownloadSummaryCard(count = pendingTaskCount)
                         }
@@ -729,7 +741,9 @@ fun DownloadProgressScreen(
                                             val schedule = runCatching {
                                                 resumeExplicitDownload(context, candidate)
                                             }.getOrNull()
-                                            if (schedule is moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule.Scheduled) {
+                                            if (schedule is moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule.Scheduled ||
+                                                schedule is moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule.Deferred
+                                            ) {
                                                 explicitResumeCandidates = explicitResumeCandidates
                                                     .filterNot { item ->
                                                         item.operationId == candidate.operationId
@@ -1290,6 +1304,17 @@ private fun DownloadTaskActionButton(
         DownloadStatus.QUEUED,
         DownloadStatus.WAITING_NETWORK,
         DownloadStatus.DOWNLOADING -> {
+            if (task.status == DownloadStatus.WAITING_NETWORK ||
+                task.progress?.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY
+            ) {
+                IconButton(onClick = onResume, enabled = actionsEnabled) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.download_resume),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             val cancellable = isDownloadTaskCancellable(task)
             val actionEnabled = cancellable && actionsEnabled
             IconButton(onClick = onCancel, enabled = actionEnabled) {

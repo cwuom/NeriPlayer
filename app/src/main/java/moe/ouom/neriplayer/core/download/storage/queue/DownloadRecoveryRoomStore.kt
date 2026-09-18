@@ -99,9 +99,8 @@ internal class DownloadRecoveryRoomStore(
             val existingOperationIds = existing.mapValues { (_, candidate) ->
                 candidate.metadata.operationId
             }
-            var nextOrder = database.downloadOperationDao().findMaxQueueOrderByStates(
-                libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(appContext),
-                states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+            var nextOrder = database.downloadOperationDao().findMaxActiveQueueOrder(
+                states = DownloadExecutionRoomStore.ACTIVE_OPERATION_STATES
             )?.let { maxOrder -> maxOrder + 1 } ?: 0
             distinctSongs.map { song ->
                 val key = song.stableKey()
@@ -280,15 +279,9 @@ internal class DownloadRecoveryRoomStore(
                         deterministicOperationsById[header.operationId] = header.state
                     }
                 }
-            val maxWaitingOrder = dao.findMaxQueueOrderByStates(
-                libraryId = libraryId,
-                states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE)
-            ) ?: -1
-            val maxReusableOrder = dao.findMaxQueueOrderByStates(
-                libraryId = libraryId,
-                states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
-            ) ?: -1
-            var nextOrder = maxOf(maxWaitingOrder, maxReusableOrder) + 1
+            var nextOrder = (dao.findMaxActiveQueueOrder(
+                states = DownloadExecutionRoomStore.ACTIVE_OPERATION_STATES
+            ) ?: -1) + 1
             val requestsByOperationId = linkedMapOf<String, DownloadExecutionRequest>()
             val operationIds = distinctSongs.mapNotNull { song ->
                 val key = song.stableKey()

@@ -645,7 +645,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
 
         assertEquals(DownloadExecutionResult.Retry, host.execute(context, request.operationId))
         assertEquals(0, executions)
-        assertEquals("RETRYABLE", store.currentState(context, request.operationId))
+        assertEquals("QUEUED", store.currentState(context, request.operationId))
         assertEquals(1, journal.hostAdmissionAcquireCount)
         assertEquals(0, journal.hostAdmissionReleaseCount)
 

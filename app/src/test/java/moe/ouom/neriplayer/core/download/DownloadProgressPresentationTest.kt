@@ -230,7 +230,7 @@ class DownloadProgressPresentationTest {
     }
 
     @Test
-    fun `visible tasks keep real transfer ahead of waits and queue`() {
+    fun `visible tasks retain queue order across network waits and retries`() {
         val waitingSong = song(2L)
         val queuedBeforeActive = DownloadTask(
             song = song(1L),
@@ -272,8 +272,19 @@ class DownloadProgressPresentationTest {
         )
 
         assertEquals(
-            listOf(active, resolving, waitingWithProgress),
+            listOf(waitingWithProgress, active, resolving),
             visible
+        )
+        val retry = waitingWithProgress.copy(
+            status = DownloadStatus.QUEUED,
+            attemptId = 9L,
+            progress = waitingWithProgress.progress!!.copy(
+                attemptId = 9L, stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            )
+        )
+        assertEquals(
+            visible.map { it.song.id },
+            visibleDownloadProgressTasks(listOf(retry, active, resolving)).map { it.song.id }
         )
     }
 

@@ -24,11 +24,14 @@ import moe.ouom.neriplayer.core.download.manager.catalog.deferDownloadForDeleteC
 import moe.ouom.neriplayer.core.download.manager.catalog.scheduleDeleteCleanupRetry
 import moe.ouom.neriplayer.core.download.manager.commit.finalizeCompletedDownload
 import moe.ouom.neriplayer.core.download.manager.commit.isDownloadMetadataPostProcessingEnabled
+import moe.ouom.neriplayer.core.download.manager.recovery.invalidCoreAudioReason
+import moe.ouom.neriplayer.core.download.manager.recovery.requeueInvalidCoreAudio
 import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
 import moe.ouom.neriplayer.core.download.model.BatchOperationScheduleAction
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.resolveBatchOperationScheduleAction
 import moe.ouom.neriplayer.core.download.policy.isDownloadFinalizationDurablySettled
+import moe.ouom.neriplayer.core.download.policy.finalizedPublicationRecoveryLeaseOwnerId
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.MobileDataDownloadBatchIdentity
 import android.content.Context
 import kotlinx.coroutines.CancellationException
@@ -429,36 +432,62 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
     withSongExecutionLock(song.stableKey()) {
         val request = DownloadExecutionRoomStore.read(context, operationId)
             ?.takeIf { persisted -> persisted.song.stableKey() == song.stableKey() }
-        val claim = request?.let { persisted ->
-            runCatching {
-                managedDownloadArtifactCoordinator.claim(
-                    context = context,
-                    song = song,
-                    reconcileStorage = false,
-                    leaseOwnerId = persisted.artifactLeaseId,
-                    allowFreshTransferReclaim = false
-                )
-            }.onFailure { error ->
-                NPLogger.w(
-                    TAG,
-                    "读取 core artifact 凭据失败，继续按 operation 查找音频: " +
-                        "operationId=$operationId, error=${error.message}"
-                )
-            }.getOrNull()
+        val recoveryLeaseOwnerId = finalizedPublicationRecoveryLeaseOwnerId(
+            stableKey = song.stableKey(),
+            operationId = operationId
+        )
+        val claim = runCatching {
+            managedDownloadArtifactCoordinator.claim(
+                context = context,
+                song = song,
+                reconcileStorage = false,
+                leaseOwnerId = recoveryLeaseOwnerId,
+                allowFreshTransferReclaim = false,
+                allowPostCoreRecoveryReclaim = true,
+                postCoreRecoveryPreviousLeaseId = request?.artifactLeaseId
+            )
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "读取 core artifact 凭据失败，保留 operation 等待重试: " +
+                    "operationId=$operationId, error=${error.message}"
+            )
+        }.getOrNull()
+        if (claim == null || claim is ManagedDownloadArtifactClaim.InFlight) {
+            NPLogger.d(
+                TAG,
+                "core operation 的 artifact 正由其它 owner 收尾，等待下一轮恢复: " +
+                    "song=${song.name}, operationId=$operationId"
+            )
+            scheduleStartupArtifactRecovery(context)
+            return@withSongExecutionLock
         }
         val artifact = when (claim) {
             is ManagedDownloadArtifactClaim.AlreadyDownloaded -> claim.artifact
             is ManagedDownloadArtifactClaim.RepairRequired -> claim.artifact
             is ManagedDownloadArtifactClaim.Acquired -> claim.artifact
-            is ManagedDownloadArtifactClaim.InFlight,
-            null -> null
+            is ManagedDownloadArtifactClaim.InFlight -> null
         }
-        // claim 已经返回 artifact 时，以它当前的 lease 为准。旧 operation
-        // 请求里的 lease 可能属于已完成或已清空的上一轮，不能带入本轮收尾。
-        val expectedArtifactLeaseId = when {
-            artifact != null -> artifact.leaseId
-            claim == null -> request?.artifactLeaseId
-            else -> null
+        if (artifact?.leaseId != null && artifact.leaseId != recoveryLeaseOwnerId) {
+            NPLogger.d(
+                TAG,
+                "core operation 的 artifact 已由不同恢复 owner 接管: " +
+                    "song=${song.name}, operationId=$operationId"
+            )
+            scheduleStartupArtifactRecovery(context)
+            return@withSongExecutionLock
+        }
+        // 恢复使用独立且跨进程稳定的 owner，迟到的原下载回调仍携带 request lease
+        // 因而不能再把当前恢复租约清成 FAILED_RETRYABLE
+        val expectedArtifactLeaseId = artifact?.leaseId
+        val referencedAudio = artifact?.audioReference?.let { resolveStoredAudio(context, it) }
+        val invalidReason = referencedAudio?.let { invalidCoreAudioReason(context, song, it, operationId) }
+        if (referencedAudio != null && invalidReason != null) {
+            requeueInvalidCoreAudio(
+                context, song, operationId, referencedAudio.reference,
+                expectedArtifactLeaseId, invalidReason
+            )
+            return@withSongExecutionLock
         }
         val storedAudio = findPendingAudioForFinalization(
             context = context,

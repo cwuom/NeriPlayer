@@ -403,6 +403,13 @@ class DownloadProgressPagePresentationTest {
                 explicitResumeSongKeys = emptySet()
             )
         )
+        assertTrue(
+            hasUnhydratedDurableDownloadTasks(
+                activeSongKeys = setOf("already-hydrated"),
+                durablePendingSongKeys = setOf("already-hydrated", "still-restoring"),
+                explicitResumeSongKeys = emptySet()
+            )
+        )
         assertFalse(
             hasUnhydratedDurableDownloadTasks(
                 activeSongKeys = emptySet(),
@@ -422,14 +429,30 @@ class DownloadProgressPagePresentationTest {
     }
 
     @Test
-    fun `download page excludes post core operation states from pending count`() {
+    fun `download page keeps post core recovery states in pending count`() {
         listOf(
             "CORE_COMMITTED",
             "ASSETS_ENRICHING",
             "DEGRADED_COMPLETE"
         ).forEach { state ->
-            assertFalse(state in DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES)
+            assertTrue(state in DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES)
         }
+    }
+
+    @Test
+    fun `durable pending summary remains visible beside an incomplete batch`() {
+        assertTrue(
+            shouldShowPendingDownloadSummary(
+                pendingTaskCount = 1,
+                visibleTaskCount = 0
+            )
+        )
+        assertFalse(
+            shouldShowPendingDownloadSummary(
+                pendingTaskCount = 1,
+                visibleTaskCount = 1
+            )
+        )
     }
 
     @Test

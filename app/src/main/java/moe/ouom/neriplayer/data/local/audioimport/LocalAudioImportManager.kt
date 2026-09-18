@@ -214,7 +214,9 @@ object LocalAudioImportManager {
                 } else {
                     imported.copy(
                         addedAt = sourceAddedAt,
-                        logicalCreatedAtMs = sourceAddedAt,
+                        logicalCreatedAtMs = sourceAddedAt.takeUnless {
+                            isNonCreationTimestampSource(stabilizedAudio.sourceAddedAtSource)
+                        },
                         createdAtSource = stabilizedAudio.sourceAddedAtSource,
                         createdAtConfidence = stabilizedAudio.sourceAddedAtConfidence
                     )
@@ -756,22 +758,23 @@ object LocalAudioImportManager {
         )
         val stableId = computeStableSongId(seed.stableIdentitySource ?: resolvedSource)
         val filesystemCreation = seed.localFile?.let(::resolveFilesystemCreationObservation)
-        val filesystemModifiedAt = seed.localFile?.lastModified()
+        val seedIsNonCreationTime = isNonCreationTimestampSource(seed.sourceAddedAtSource)
+        val useFilesystemCreation = filesystemCreation != null &&
+            (seed.sourceAddedAt == null || seedIsNonCreationTime)
         val sourceAddedAt = resolveScannedSourceAddedAt(
-            preferredTimestampMs = seed.sourceAddedAt,
-            fallbackTimestampMs = filesystemCreation?.timestampMs ?: filesystemModifiedAt
+            preferredTimestampMs = if (useFilesystemCreation) filesystemCreation.timestampMs else seed.sourceAddedAt,
+            fallbackTimestampMs = filesystemCreation?.timestampMs
         )
-        val logicalCreatedAt = sourceAddedAt.takeIf { it > 0L }
-        val createdAtSource = seed.sourceAddedAtSource
+        val logicalCreatedAt = sourceAddedAt.takeIf { it > 0L && (!seedIsNonCreationTime || useFilesystemCreation) }
+        val createdAtSource = if (useFilesystemCreation) "FILESYSTEM_BIRTH" else seed.sourceAddedAtSource
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?: when {
                 seed.sourceAddedAt?.let { it > 0L } == true -> "PROVIDER_NATIVE"
                 filesystemCreation != null -> "FILESYSTEM_BIRTH"
-                filesystemModifiedAt?.let { it > 0L } == true -> "MTIME_FALLBACK"
                 else -> "UNKNOWN"
             }
-        val createdAtConfidence = seed.sourceAddedAtConfidence
+        val createdAtConfidence = if (useFilesystemCreation) filesystemCreation.confidence else seed.sourceAddedAtConfidence
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?: when (createdAtSource) {

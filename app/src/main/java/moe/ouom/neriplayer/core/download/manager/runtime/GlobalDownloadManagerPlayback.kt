@@ -463,11 +463,9 @@ internal fun GlobalDownloadManager.isMetadataOwnedBySong(
 ): Boolean {
     val identity = song.identity()
     val stableKey = identity.stableKey()
-    if (metadata.stableKey == stableKey) {
-        return true
-    }
-    if (metadata.songId != null && metadata.songId > 0L && metadata.songId == song.id) {
-        return true
+    // 已持久化的身份优先，不能被碰巧相同的数字 id 或空 URI 覆盖
+    metadata.stableKey?.trim()?.takeIf(String::isNotBlank)?.let { storedKey ->
+        return storedKey == stableKey
     }
     val remoteTrackKey = buildDownloadRemoteTrackKey(
         channelId = metadata.channelId,
@@ -479,10 +477,36 @@ internal fun GlobalDownloadManager.isMetadataOwnedBySong(
         audioId = song.audioId,
         subAudioId = song.subAudioId
     )
-    if (remoteTrackKey != null && remoteTrackKey == songRemoteTrackKey) {
+    if (remoteTrackKey != null && songRemoteTrackKey != null) {
+        return remoteTrackKey == songRemoteTrackKey
+    }
+    metadata.identityAlbum?.trim()?.takeIf(String::isNotBlank)?.let { source ->
+        if ((metadata.songId ?: 0L) > 0L) {
+            return metadata.songId == song.id && source == identity.album
+        }
+    }
+    if (metadata.songId != null && metadata.songId > 0L && metadata.songId == song.id &&
+        !metadata.album.isNullOrBlank() &&
+        (metadata.album == song.album || metadata.album == identity.album)
+    ) {
         return true
     }
-    return metadata.mediaUri?.takeIf(String::isNotBlank) == identity.mediaUri
+    val storedUri = metadata.mediaUri?.trim()?.takeIf(String::isNotBlank) ?: return false
+    return storedUri == identity.mediaUri?.trim()?.takeIf(String::isNotBlank)
+}
+
+internal fun GlobalDownloadManager.isRecoveryMetadataOwnedBySong(
+    metadata: ManagedDownloadStorage.DownloadedAudioMetadata,
+    song: SongItem,
+    operationId: String?
+): Boolean {
+    if (isMetadataOwnedBySong(metadata, song)) return true
+    val hasSongIdentity = !metadata.stableKey.isNullOrBlank() ||
+        (metadata.songId ?: 0L) > 0L || !metadata.audioId.isNullOrBlank() ||
+        !metadata.mediaUri.isNullOrBlank()
+    // 无歌曲身份的旧凭据只能用非空 operation 证明归属
+    return !hasSongIdentity && !operationId.isNullOrBlank() &&
+        metadata.operationId?.trim() == operationId.trim()
 }
 
 internal fun GlobalDownloadManager.buildDownloadRemoteTrackKey(

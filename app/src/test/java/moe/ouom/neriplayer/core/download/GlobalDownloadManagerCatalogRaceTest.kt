@@ -114,6 +114,20 @@ class GlobalDownloadManagerCatalogRaceTest {
     }
 
     @Test
+    fun `finalized publication reconciles a stale pending reference before promotion`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "publishFinalizedDownload")
+        val reconcileIndex = body.indexOf("corePublicationCoordinator.promoteBeforePublication(")
+        val promotionIndex = body.indexOf("ManagedDownloadStorage.promoteFinalizedPendingAudio(")
+
+        assertTrue(reconcileIndex >= 0)
+        assertTrue(promotionIndex > reconcileIndex)
+        assertTrue(body.contains("pendingAudio = storedAudio"))
+    }
+
+    @Test
     fun `scanned catalog replacement rejects concurrent catalog or metadata mutations`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

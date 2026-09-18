@@ -15,8 +15,9 @@ internal const val METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR =
 
 internal data class DownloadExecutionPumpCursor(
     val queueOrder: Int,
-    val updatedAtMs: Long,
-    val operationId: String
+    val createdAtMs: Long,
+    val operationId: String,
+    val recoveryPriority: Int = 1
 )
 
 internal data class DownloadExecutionPumpPage(

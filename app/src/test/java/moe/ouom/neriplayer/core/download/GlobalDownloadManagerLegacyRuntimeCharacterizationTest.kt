@@ -386,7 +386,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         assertTrue(settleBody.contains("resolvePostCoreEnrichmentTaskStatus"))
         assertTrue(settleBody.contains("DownloadStatus.QUEUED"))
         assertTrue(
-            settleBody.contains("stage = AudioDownloadManager.DownloadStage.WAITING_HOST")
+            settleBody.contains("stage = AudioDownloadManager.DownloadStage.WAITING_RETRY")
         )
         assertTrue(settleBody.contains("schedulePostCoreEnrichmentRetry"))
         assertFalse(enrichmentBody.contains("DownloadStatus.FAILED"))

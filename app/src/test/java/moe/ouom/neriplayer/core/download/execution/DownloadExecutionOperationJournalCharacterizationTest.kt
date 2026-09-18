@@ -380,7 +380,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
             ?.let { entry ->
                 DownloadExecutionPumpCursor(
                     queueOrder = entry.queueOrder,
-                    updatedAtMs = entry.updatedAtMs,
+                    createdAtMs = entry.updatedAtMs,
                     operationId = entry.request.operationId
                 )
             }
@@ -503,7 +503,7 @@ private data class DownloadExecutionJournalEntry(
         if (cursor == null) return true
         return when {
             queueOrder != cursor.queueOrder -> queueOrder > cursor.queueOrder
-            updatedAtMs != cursor.updatedAtMs -> updatedAtMs > cursor.updatedAtMs
+            updatedAtMs != cursor.createdAtMs -> updatedAtMs > cursor.createdAtMs
             else -> request.operationId > cursor.operationId
         }
     }

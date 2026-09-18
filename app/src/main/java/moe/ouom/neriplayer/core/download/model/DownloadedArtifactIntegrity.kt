@@ -233,10 +233,15 @@ private fun verifyAudioDuration(
         issues += DownloadedArtifactIntegrityIssue.AUDIO_DURATION_UNAVAILABLE
         return
     }
-    val toleranceMs = max(1_000L, expectedDurationMs / 200L).coerceAtMost(2_000L)
-    if (abs(actual - expectedDurationMs) > toleranceMs) {
+    if (hasDownloadedAudioDurationMismatch(expectedDurationMs, actual)) {
         issues += DownloadedArtifactIntegrityIssue.AUDIO_DURATION_MISMATCH
     }
+}
+
+internal fun hasDownloadedAudioDurationMismatch(expectedMs: Long, actualMs: Long?): Boolean {
+    if (expectedMs <= 0L || actualMs == null || actualMs <= 0L) return false
+    val toleranceMs = max(1_000L, expectedMs / 200L).coerceAtMost(2_000L)
+    return abs(actualMs - expectedMs) > toleranceMs
 }
 
 private fun addOptionalExactIssue(

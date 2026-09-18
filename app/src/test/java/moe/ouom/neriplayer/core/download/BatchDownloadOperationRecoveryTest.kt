@@ -612,16 +612,20 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
-    fun `post core recovery uses the current artifact lease instead of a stale request lease`() {
+    fun `post core recovery fences stale request callbacks with a stable recovery lease`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val recoveryBody = methodBody(source, "recoverPostCoreDownloadOperation")
 
-        assertTrue(recoveryBody.contains("val expectedArtifactLeaseId = when"))
         assertTrue(
-            recoveryBody.contains("artifact != null -> artifact.leaseId")
+            recoveryBody.contains("finalizedPublicationRecoveryLeaseOwnerId(")
         )
+        assertTrue(recoveryBody.contains("allowPostCoreRecoveryReclaim = true"))
+        assertTrue(recoveryBody.contains("postCoreRecoveryPreviousLeaseId = request?.artifactLeaseId"))
+        assertTrue(recoveryBody.contains("claim is ManagedDownloadArtifactClaim.InFlight"))
+        assertTrue(recoveryBody.contains("artifact.leaseId != recoveryLeaseOwnerId"))
+        assertTrue(recoveryBody.contains("val expectedArtifactLeaseId = artifact?.leaseId"))
         assertTrue(recoveryBody.contains("expectedArtifactLeaseId = expectedArtifactLeaseId"))
         assertTrue(recoveryBody.contains("expectedLeaseId = expectedArtifactLeaseId"))
     }

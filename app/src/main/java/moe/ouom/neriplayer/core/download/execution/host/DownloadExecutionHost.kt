@@ -774,6 +774,12 @@ class DefaultDownloadExecutionHost(
     override suspend fun execute(
         context: Context,
         operationId: String
+    ): DownloadExecutionResult = executeWithRecoveryObserver(context, operationId) {}
+
+    private suspend fun executeWithRecoveryObserver(
+        context: Context,
+        operationId: String,
+        onRecoveryRequired: () -> Unit
     ): DownloadExecutionResult = withContext(Dispatchers.IO) {
         val normalizedId = normalizeDownloadOperationId(operationId)
             ?: return@withContext DownloadExecutionResult.MissingOperation
@@ -878,14 +884,7 @@ class DefaultDownloadExecutionHost(
             resolvePreExecutionResult(stateBeforeClaim)?.let { result ->
                 return@withContext result
             }
-            // 宿主窗口暂满时保留 operation，但不要让它停留在 QUEUED 等待
-            // 普通退避；Core Commit 或 owner 释放会立即唤醒共享泵
-            operationStore.updateStateSuspending(
-                context = appContext,
-                operationId = normalizedId,
-                state = "RETRYABLE",
-                errorCode = "HOST_ADMISSION_FULL"
-            )
+            // 排队或名额竞争不能改写成传输失败，否则新任务会错误取得恢复优先级
             return@withContext DownloadExecutionResult.Retry
         }
         var executionClaimed = false
@@ -1019,6 +1018,7 @@ class DefaultDownloadExecutionHost(
                 context = context.applicationContext,
                 request = request
             )
+            if (requiresPumpRetry(result)) onRecoveryRequired()
             var returnedResult = result
             var clearBlockedResult = false
             PersistentDownloadClearFenceStore.withSchedulingPermitSuspending(
@@ -1119,6 +1119,7 @@ class DefaultDownloadExecutionHost(
             if (clearBlockedResult) {
                 DownloadExecutionResult.Cancelled
             } else {
+                if (requiresPumpRetry(returnedResult)) onRecoveryRequired()
                 returnedResult
             }
         } catch (cancellation: CancellationException) {
@@ -1187,6 +1188,7 @@ class DefaultDownloadExecutionHost(
             }
             throw cancellation
         } catch (error: Throwable) {
+            onRecoveryRequired()
             var clearBlockedFailure = false
             PersistentDownloadClearFenceStore.withSchedulingPermitSuspending(
                 context = appContext,
@@ -1267,6 +1269,8 @@ class DefaultDownloadExecutionHost(
                 val maxCompletedOperations = PUMP_MAX_BATCHES_PER_RUN *
                     configuredDispatchWindow(appContext)
                 var sawRetry = false
+                // 失败必须先阻止补位，再释放传输槽位，不能等待 select 消费完成事件
+                val recoveryRequired = AtomicBoolean(false)
                 var waitedForPendingUidtGrace = false
                 var queueExhausted = false
                 var lastSelection: PumpCandidateSelection? = null
@@ -1284,6 +1288,10 @@ class DefaultDownloadExecutionHost(
                 val sideChannelRunning = linkedMapOf<String, Deferred<DownloadExecutionResult>>()
 
                 while (completedOperations < maxCompletedOperations) {
+                    if (recoveryRequired.get()) {
+                        queueExhausted = true
+                        pumpPendingPage = null
+                    }
                     if (
                         ForegroundDownloadWorker.isPumpBlocked(appContext) &&
                             transferRunning.isEmpty() && sideChannelRunning.isEmpty()
@@ -1293,7 +1301,7 @@ class DefaultDownloadExecutionHost(
 
                     // 每次只填满当前剩余容量。collectPumpCandidates 会保留页内
                     // 未选中的请求，因此下一轮不会跳过任何 durable operation
-                    while (!queueExhausted) {
+                    while (!queueExhausted && !recoveryRequired.get()) {
                         // 网络 permit 严格限制真实传输数；这里使用带少量预热名额的
                         // 调度窗口，让源解析和文件准备不会挤占用户配置的传输槽位
                         val configuredCapacity = configuredDispatchWindow(appContext)
@@ -1328,11 +1336,21 @@ class DefaultDownloadExecutionHost(
                         }
                         waitedForPendingUidtGrace = false
                         selection.requests.forEach { request ->
+                            // 按持久顺序领取后再并发执行，避免协程启动次序反过来决定队列次序
+                            if (!tryAcquireHostAdmissionSuspending(
+                                    appContext, request.operationId, configuredCapacity
+                                )
+                            ) {
+                                deferredTransferOperationIds += request.operationId
+                                queueExhausted = true
+                                return@forEach
+                            }
                             val reservationToken = reserveTransferSlot(
                                 operationId = request.operationId,
                                 attemptId = request.attemptId,
                                 capacity = configuredCapacity
                             ) ?: run {
+                                releaseHandoffAdmissionIfIdle(appContext, request.operationId)
                                 // 外部 用户发起的数据传输任务/Worker 可能在候选扫描后先占满槽位。不要
                                 // 把这首标记成已尝试，否则槽位释放后本轮无法补位；
                                 // 同时回退到有界 successor，避免空转 WorkManager
@@ -1352,7 +1370,11 @@ class DefaultDownloadExecutionHost(
                             val execution = async(Dispatchers.IO) {
                                 try {
                                     executePumpCandidateIsolated(request.operationId) {
-                                        execute(appContext, request.operationId)
+                                        executeWithRecoveryObserver(appContext, request.operationId) {
+                                            recoveryRequired.set(true)
+                                        }.also { result ->
+                                            if (requiresPumpRetry(result)) recoveryRequired.set(true)
+                                        }
                                     }
                                 } finally {
                                     releaseTransferReservation(
@@ -1431,13 +1453,20 @@ class DefaultDownloadExecutionHost(
                                 if (removed == null) continue
                                 completedOperations++
                                 sawRetry = sawRetry || requiresPumpRetry(completed.result)
+                                if (requiresPumpRetry(completed.result)) {
+                                    // 失败后结束当前读取轮次，下次从恢复队首重读，不能继续消费旧页面
+                                    queueExhausted = true
+                                    pumpPendingPage = null
+                                }
                             }
                         }
                         if (transferRunning.isNotEmpty() || sideChannelRunning.isNotEmpty()) continue
 
                         val selection = lastSelection
                         val graceDelayMs = selection?.shortestPendingUidtGraceDelayMs
-                        if (queueExhausted && graceDelayMs != null && !waitedForPendingUidtGrace) {
+                        if (queueExhausted && graceDelayMs != null && !waitedForPendingUidtGrace &&
+                            !recoveryRequired.get()
+                        ) {
                             waitedForPendingUidtGrace = true
                             // 用户发起的数据传输任务 延后项可能位于当前游标之前，等待后从队首重读
                             pumpCursor = null

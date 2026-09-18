@@ -229,7 +229,18 @@ class DownloadRecoveryRoomStoreTest : DownloadRecoveryRoomStoreTestSupport() {
                 }.also { start.complete(Unit) }.awaitAll()
             }
 
-            assertEquals(6, results.count { (_, acquired) -> acquired })
+            val acquiredCount = results.count { (_, acquired) -> acquired }
+            assertTrue(acquiredCount in 1..6)
+            assertEquals(
+                requests.take(acquiredCount).map { it.operationId }.toSet(),
+                results.filter { it.second }.map { it.first }.toSet()
+            )
+            // 并发到达可以暂缓后项，按持久顺序补位后仍须用满全部名额
+            requests.take(6).forEach { request ->
+                assertTrue(DownloadExecutionRoomStore.tryAcquireHostAdmission(
+                    context, request.operationId, 6, database = database
+                ))
+            }
             assertEquals(
                 6,
                 DownloadExecutionRoomStore.currentHostAdmissionCount(
@@ -237,8 +248,12 @@ class DownloadRecoveryRoomStoreTest : DownloadRecoveryRoomStoreTestSupport() {
                     database = database
                 )
             )
-            val releasedOperationId = results.first { (_, acquired) -> acquired }.first
-            val deferredOperationId = results.first { (_, acquired) -> !acquired }.first
+            val releasedOperationId = requests.first().operationId
+            val deferredOperationId = requests.last().operationId
+            assertFalse(DownloadExecutionRoomStore.tryAcquireHostAdmission(
+                context, deferredOperationId, 6, database = database
+            ))
+            DownloadExecutionRoomStore.updateState(context, releasedOperationId, "RUNNING", database = database)
             DownloadExecutionRoomStore.releaseHostAdmission(
                 context = context,
                 operationId = releasedOperationId,
@@ -357,7 +372,7 @@ class DownloadRecoveryRoomStoreTest : DownloadRecoveryRoomStoreTestSupport() {
                 database = database
             )
 
-            assertTrue(
+            assertFalse(
                 DownloadExecutionRoomStore.tryAcquireHostAdmission(
                     context = context,
                     operationId = requests.last().operationId,
@@ -366,6 +381,12 @@ class DownloadRecoveryRoomStoreTest : DownloadRecoveryRoomStoreTestSupport() {
                     database = database
                 )
             )
+            assertEquals(1, DownloadExecutionRoomStore.currentHostAdmissionCount(context, database = database))
+            assertTrue(DownloadExecutionRoomStore.tryAcquireHostAdmission(
+                context, requests[1].operationId, 6,
+                nowMs = admittedAtMs + DownloadExecutionRoomStore.HOST_ADMISSION_HANDOFF_LEASE_MS + 1L,
+                database = database
+            ))
             assertEquals(
                 2,
                 DownloadExecutionRoomStore.currentHostAdmissionCount(

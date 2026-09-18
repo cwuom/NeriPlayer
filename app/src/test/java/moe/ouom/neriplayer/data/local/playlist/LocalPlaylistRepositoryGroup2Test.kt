@@ -438,7 +438,7 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
     }
 
     @Test
-    fun `scanned local files preserve the visible discovery order`() = runTest {
+    fun `scanned local files sort by creation time within the new batch`() = runTest {
         val older = localSong(index = 705, name = "older").copy(
             addedAt = 10L,
             logicalCreatedAtMs = 10L,
@@ -468,7 +468,7 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
         repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(older, newer))
 
         assertEquals(
-            listOf(older.id, newer.id),
+            listOf(newer.id, older.id),
             repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
                 .songs
                 .map { it.id }
@@ -515,7 +515,7 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
     }
 
     @Test
-    fun `batch scanned local import preserves discovery order`() = runTest {
+    fun `new scanned batch is sorted independently above existing songs`() = runTest {
         val older = localSong(index = 711, name = "older").copy(
             addedAt = 10L,
             logicalCreatedAtMs = 10L,
@@ -544,8 +544,16 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
 
         repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(older, newer))
 
+        val secondOlder = localSong(index = 713, name = "E").copy(
+            addedAt = 1L, logicalCreatedAtMs = 1L, createdAtConfidence = "EXACT"
+        )
+        val secondNewer = localSong(index = 714, name = "F").copy(
+            addedAt = 2L, logicalCreatedAtMs = 2L, createdAtConfidence = "EXACT"
+        )
+        repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(secondOlder, secondNewer))
+
         assertEquals(
-            listOf(older.id, newer.id),
+            listOf(secondNewer.id, secondOlder.id, newer.id, older.id),
             repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
                 .songs
                 .map { it.id }

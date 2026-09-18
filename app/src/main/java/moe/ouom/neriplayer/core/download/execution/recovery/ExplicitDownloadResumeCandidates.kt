@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -117,14 +118,9 @@ internal suspend fun resumeExplicitDownload(
                 operationId = candidate.operationId
             )
         } else {
-            runCatching {
-                DownloadExecutionRoomStore.restoreExplicitStop(
-                    context = appContext,
-                    operationId = candidate.operationId,
-                    stableKey = stableKey,
-                    errorCode = "EXPLICIT_RESUME_HOST_REJECTED"
-                )
-            }
+            // 宿主暂时拒绝不代表用户撤销继续，保留已落盘意图交给有网络约束的共享泵
+            ForegroundDownloadWorker.schedulePump(appContext)
+            return@withContext DownloadExecutionSchedule.Deferred("explicit resume persisted")
         }
     }
     schedule

@@ -35,7 +35,8 @@ internal fun GlobalDownloadManager.resumeDownloadTaskImpl(context: Context, song
     if (
         task.status != DownloadStatus.CANCELLED &&
         task.status != DownloadStatus.FAILED &&
-        task.status != DownloadStatus.WAITING_NETWORK
+        task.status != DownloadStatus.WAITING_NETWORK &&
+        task.progress?.stage != AudioDownloadManager.DownloadStage.WAITING_RETRY
     ) {
         return
     }
@@ -65,7 +66,7 @@ internal fun GlobalDownloadManager.resumeDownloadTaskImpl(context: Context, song
             context = appContext,
             song = task.song,
             skipTrafficRiskPrompt = false,
-            preserveStaging = task.status == DownloadStatus.WAITING_NETWORK,
+            preserveStaging = task.status != DownloadStatus.CANCELLED,
             replacingAttemptId = task.attemptId,
             requestedAdmissionTicket = requestedAdmissionTicket
         )

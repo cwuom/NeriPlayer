@@ -406,6 +406,11 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         assertTrue(leaseBody.contains("finalizedPublicationRecoveryLeaseOwnerId("))
         assertTrue(leaseBody.contains("leaseOwnerId = recoveryLeaseOwnerId"))
         assertTrue(leaseBody.contains("allowFreshTransferReclaim = false"))
+        assertTrue(leaseBody.contains("allowPostCoreRecoveryReclaim = true"))
+        assertTrue(
+            leaseBody.contains("postCoreRecoveryPreviousLeaseId = request?.artifactLeaseId")
+        )
+        assertTrue(leaseBody.contains("publicationLease.leaseId != recoveryLeaseOwnerId"))
         assertTrue(leaseBody.contains("finalizedPublicationLeaseOrNull()"))
     }
 

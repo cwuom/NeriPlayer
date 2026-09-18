@@ -1352,7 +1352,7 @@ internal suspend fun GlobalDownloadManager.settlePostCoreEnrichmentFailure(
     if (taskStatus == DownloadStatus.QUEUED) {
         publishDownloadStage(
             song = song,
-            stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+            stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
             operationId = normalizedOperationId,
             attemptId = expectedAttemptId
         )

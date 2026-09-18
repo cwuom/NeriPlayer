@@ -14,6 +14,8 @@ import moe.ouom.neriplayer.core.download.manager.batch.scheduleCompletedTaskRemo
 import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRepairRequired
 import moe.ouom.neriplayer.core.download.manager.runtime.cleanupUnfinalizedDownloadForRetry
 import moe.ouom.neriplayer.core.download.manager.runtime.publishCompletedDownloadOptimistically
+import moe.ouom.neriplayer.core.download.manager.recovery.invalidCoreAudioReason
+import moe.ouom.neriplayer.core.download.manager.recovery.requeueInvalidCoreAudio
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.DownloadedArtifactIntegrityResult
 import moe.ouom.neriplayer.core.download.model.DownloadedArtifactReferenceState
@@ -131,6 +133,15 @@ internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
     }
     // 启动恢复可能拿到旧版本留下的 pending 音频，增强前再次尝试正式提升
     val enrichmentAudio = try {
+        val invalidReason = invalidCoreAudioReason(context, song, storedAudio, operationId)
+        if (invalidReason != null) {
+            check(requeueInvalidCoreAudio(
+                context, song, operationId, storedAudio.reference, artifactLeaseId,
+                invalidReason, directoryLeaseOwned = true
+            )) { invalidReason }
+            directoryCommitLease?.close()
+            return
+        }
         corePublicationCoordinator.promoteBeforePublication(
             context = context,
             song = song,
@@ -996,9 +1007,16 @@ internal suspend fun GlobalDownloadManager.publishFinalizedDownload(
             audioName = storedAudio.logicalName,
             pendingAudioName = storedAudio.name
         )
+    // 并发恢复可能仍持有旧 pending 引用，而主流程已经发布并写入了内嵌标签
+    // 先复用正式目录中的同一首音频，避免用写标签前的大小误判发布失败
+    val publicationAudio = corePublicationCoordinator.promoteBeforePublication(
+        context = context,
+        song = song,
+        audio = storedAudio
+    )
     val promotion = ManagedDownloadStorage.promoteFinalizedPendingAudio(
         context = context,
-        audio = storedAudio
+        audio = publicationAudio
     ) ?: run {
         NPLogger.w(
             TAG,

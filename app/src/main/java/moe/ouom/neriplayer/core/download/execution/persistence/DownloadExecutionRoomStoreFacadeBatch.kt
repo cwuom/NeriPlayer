@@ -316,14 +316,42 @@ internal suspend fun DownloadExecutionRoomStore.allowBatchesMobileDataImpl(
     if (distinctIdentities.isEmpty()) return 0
     return database.withTransaction {
         val dao = database.downloadBatchDao()
+        val batches = distinctIdentities.map { identity ->
+            dao.findBatch(identity.batchId, identity.generation) ?: return@withTransaction 0
+        }
+        if (batches.any { batch ->
+                batch.stateBits and DownloadBatchState.OPEN == 0 ||
+                    batch.stateBits and (DownloadBatchState.TERMINAL_MASK or DownloadBatchState.CLEARING) != 0 ||
+                    batch.networkGeneration == null ||
+                    batch.networkGeneration < expectedNetworkGeneration || batch.networkGeneration > networkGeneration
+            }
+        ) return@withTransaction 0
         distinctIdentities.sumOf { identity ->
-            dao.allowMobileDataCAS(
+            val changed = dao.allowMobileDataCAS(
                 batchId = identity.batchId,
                 generation = identity.generation,
                 expectedNetworkGeneration = expectedNetworkGeneration,
                 networkGeneration = networkGeneration,
                 nowMs = nowMs
             )
+            if (changed > 0) {
+                var afterOrdinal: Int? = null
+                while (true) {
+                    val members = dao.pageMembers(identity.batchId, afterOrdinal, 128)
+                    if (members.isEmpty()) break
+                    members.filter { it.terminalBits == DownloadBatchMemberTerminal.NONE }.forEach { member ->
+                        val operationId = member.operationId ?: return@forEach
+                        val header = database.downloadOperationDao().findHeader(operationId) ?: return@forEach
+                        val request = readRequestFromHeader(database.downloadOperationDao(), header).request
+                            ?: return@forEach
+                        if (request.batchId == identity.batchId && request.batchGeneration == identity.generation) {
+                            upsert(context, request.copy(requiresWifiNetwork = false), header.state, database = database)
+                        }
+                    }
+                    afterOrdinal = members.last().ordinal
+                }
+            }
+            changed
         }
     }
 }

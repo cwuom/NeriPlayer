@@ -180,6 +180,79 @@ class ManagedDownloadArtifactPolicyTest {
     }
 
     @Test
+    fun `post core recovery replaces only its previous owner or its own lease`() {
+        listOf(
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE
+        ).forEach { state ->
+            assertTrue(
+                shouldReclaimPostCoreArtifactLeaseForRecovery(
+                    artifactState = state,
+                    currentLeaseOwnerId = "request-owner",
+                    recoveryEnabled = true,
+                    recoveryLeaseOwnerId = "stable-recovery-owner",
+                    previousLeaseOwnerId = "request-owner"
+                )
+            )
+        }
+        assertTrue(
+            shouldReclaimPostCoreArtifactLeaseForRecovery(
+                artifactState = ManagedDownloadArtifactState.DOWNLOADING,
+                currentLeaseOwnerId = "request-owner",
+                recoveryEnabled = true,
+                recoveryLeaseOwnerId = "stable-recovery-owner",
+                previousLeaseOwnerId = "request-owner"
+            )
+        )
+        assertTrue(
+            shouldReclaimPostCoreArtifactLeaseForRecovery(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                currentLeaseOwnerId = null,
+                recoveryEnabled = true,
+                recoveryLeaseOwnerId = "stable-recovery-owner",
+                previousLeaseOwnerId = "request-owner"
+            )
+        )
+        assertFalse(
+            shouldReclaimPostCoreArtifactLeaseForRecovery(
+                artifactState = ManagedDownloadArtifactState.DOWNLOADING,
+                currentLeaseOwnerId = "different-owner",
+                recoveryEnabled = true,
+                recoveryLeaseOwnerId = "stable-recovery-owner",
+                previousLeaseOwnerId = "request-owner"
+            )
+        )
+        assertFalse(
+            shouldReclaimPostCoreArtifactLeaseForRecovery(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                currentLeaseOwnerId = "request-owner",
+                recoveryEnabled = false,
+                recoveryLeaseOwnerId = "stable-recovery-owner",
+                previousLeaseOwnerId = "request-owner"
+            )
+        )
+        assertFalse(
+            shouldReclaimPostCoreArtifactLeaseForRecovery(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                currentLeaseOwnerId = "request-owner",
+                recoveryEnabled = true,
+                recoveryLeaseOwnerId = "stable-recovery-owner",
+                previousLeaseOwnerId = "request-owner"
+            )
+        )
+        assertFalse(
+            shouldReclaimPostCoreArtifactLeaseForRecovery(
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                currentLeaseOwnerId = "different-owner",
+                recoveryEnabled = true,
+                recoveryLeaseOwnerId = "stable-recovery-owner",
+                previousLeaseOwnerId = "request-owner"
+            )
+        )
+    }
+
+    @Test
     fun `active fresh lease still rejects a different operation owner`() {
         assertEquals(
             ManagedDownloadArtifactDecision.InFlight,

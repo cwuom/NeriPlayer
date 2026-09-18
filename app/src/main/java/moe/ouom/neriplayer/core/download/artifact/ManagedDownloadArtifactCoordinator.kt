@@ -92,7 +92,9 @@ internal class ManagedDownloadArtifactCoordinator {
         song: SongItem,
         reconcileStorage: Boolean = false,
         leaseOwnerId: String? = null,
-        allowFreshTransferReclaim: Boolean = false
+        allowFreshTransferReclaim: Boolean = false,
+        allowPostCoreRecoveryReclaim: Boolean = false,
+        postCoreRecoveryPreviousLeaseId: String? = null
     ): ManagedDownloadArtifactClaim {
         val appContext = context.applicationContext
         val normalizedLeaseOwnerId = leaseOwnerId
@@ -133,7 +135,9 @@ internal class ManagedDownloadArtifactCoordinator {
                 rootKey = foreign.rootKey,
                 stableKey = stableKey,
                 leaseOwnerId = normalizedLeaseOwnerId,
-                allowFreshTransferReclaim = allowFreshTransferReclaim
+                allowFreshTransferReclaim = allowFreshTransferReclaim,
+                allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId
             )
         }
         val discovered = if (current == null && reconcileStorage) {
@@ -160,7 +164,9 @@ internal class ManagedDownloadArtifactCoordinator {
                 rootKey = rootKey,
                 stableKey = stableKey,
                 leaseOwnerId = normalizedLeaseOwnerId,
-                allowFreshTransferReclaim = allowFreshTransferReclaim
+                allowFreshTransferReclaim = allowFreshTransferReclaim,
+                allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId
             )
         }
         if (discovered != null) {
@@ -178,7 +184,9 @@ internal class ManagedDownloadArtifactCoordinator {
                         rootKey = rootKey,
                         stableKey = stableKey,
                         leaseOwnerId = normalizedLeaseOwnerId,
-                        allowFreshTransferReclaim = allowFreshTransferReclaim
+                        allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                        postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId
                     )
                 }
                 ?: unavailableClaim(discovered)
@@ -203,10 +211,12 @@ internal class ManagedDownloadArtifactCoordinator {
                     database = database,
                     current = winner,
                     nowMs = nowMs,
-                        rootKey = rootKey,
-                        stableKey = stableKey,
-                        leaseOwnerId = normalizedLeaseOwnerId,
-                        allowFreshTransferReclaim = allowFreshTransferReclaim
+                    rootKey = rootKey,
+                    stableKey = stableKey,
+                    leaseOwnerId = normalizedLeaseOwnerId,
+                    allowFreshTransferReclaim = allowFreshTransferReclaim,
+                    allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                    postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId
                 )
             }
             ?: unavailableClaim(acquired)
@@ -903,9 +913,35 @@ internal class ManagedDownloadArtifactCoordinator {
         stableKey: String,
         leaseOwnerId: String?,
         allowFreshTransferReclaim: Boolean,
+        allowPostCoreRecoveryReclaim: Boolean = false,
+        postCoreRecoveryPreviousLeaseId: String? = null,
         retryCount: Int = 0
     ): ManagedDownloadArtifactClaim {
         val dao = database.managedDownloadArtifactDao()
+        val artifactState = ManagedDownloadArtifactState.fromPersisted(current.state)
+        if (shouldReclaimPostCoreArtifactLeaseForRecovery(
+                artifactState = artifactState,
+                currentLeaseOwnerId = current.leaseId,
+                recoveryEnabled = allowPostCoreRecoveryReclaim,
+                recoveryLeaseOwnerId = leaseOwnerId,
+                previousLeaseOwnerId = postCoreRecoveryPreviousLeaseId
+            )
+        ) {
+            return acquireExistingClaim(
+                context = context,
+                database = database,
+                current = current,
+                nowMs = nowMs,
+                rootKey = rootKey,
+                stableKey = stableKey,
+                leaseOwnerId = leaseOwnerId,
+                allowFreshTransferReclaim = allowFreshTransferReclaim,
+                allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId,
+                retryCount = retryCount,
+                preservesExistingReference = !current.audioReference.isNullOrBlank()
+            )
+        }
         return when (
             ManagedDownloadArtifactPolicy.decide(
                 existing = current,
@@ -949,6 +985,8 @@ internal class ManagedDownloadArtifactCoordinator {
                         stableKey = stableKey,
                         leaseOwnerId = leaseOwnerId,
                         allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                        postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId,
                         retryCount = retryCount,
                         preservesExistingReference = !reference.isNullOrBlank()
                     )
@@ -971,6 +1009,8 @@ internal class ManagedDownloadArtifactCoordinator {
                         stableKey = stableKey,
                         leaseOwnerId = leaseOwnerId,
                         allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                        postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId,
                         retryCount = retryCount,
                         preservesExistingReference = !reference.isNullOrBlank()
                     )
@@ -994,6 +1034,8 @@ internal class ManagedDownloadArtifactCoordinator {
                         stableKey = stableKey,
                         leaseOwnerId = leaseOwnerId,
                         allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                        postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId,
                         retryCount = retryCount,
                         preservesExistingReference = !reference.isNullOrBlank()
                     )
@@ -1029,6 +1071,8 @@ internal class ManagedDownloadArtifactCoordinator {
                                 stableKey = stableKey,
                                 leaseOwnerId = leaseOwnerId,
                                 allowFreshTransferReclaim = allowFreshTransferReclaim,
+                                allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                                postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId,
                                 retryCount = retryCount
                             )
                         }
@@ -1113,7 +1157,9 @@ internal class ManagedDownloadArtifactCoordinator {
                         rootKey = rootKey,
                         stableKey = stableKey,
                         leaseOwnerId = leaseOwnerId,
-                        allowFreshTransferReclaim = allowFreshTransferReclaim
+                        allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                        postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId
                     )
                 } else if (retryCount < 2) {
                     dao.find(rootKey, stableKey)?.let { winner ->
@@ -1126,6 +1172,8 @@ internal class ManagedDownloadArtifactCoordinator {
                             stableKey = stableKey,
                             leaseOwnerId = leaseOwnerId,
                             allowFreshTransferReclaim = allowFreshTransferReclaim,
+                            allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                            postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId,
                             retryCount = retryCount + 1
                         )
                     } ?: ManagedDownloadArtifactClaim.RepairRequired(current)
@@ -1167,6 +1215,8 @@ internal class ManagedDownloadArtifactCoordinator {
                         stableKey = stableKey,
                         leaseOwnerId = leaseOwnerId,
                         allowFreshTransferReclaim = allowFreshTransferReclaim,
+                        allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                        postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId,
                         retryCount = retryCount,
                         preservesExistingReference = !current.audioReference.isNullOrBlank()
                     )
@@ -1184,6 +1234,8 @@ internal class ManagedDownloadArtifactCoordinator {
                 stableKey = stableKey,
                 leaseOwnerId = leaseOwnerId,
                 allowFreshTransferReclaim = allowFreshTransferReclaim,
+                allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId,
                 retryCount = retryCount
             )
         }
@@ -1198,6 +1250,8 @@ internal class ManagedDownloadArtifactCoordinator {
         stableKey: String,
         leaseOwnerId: String?,
         allowFreshTransferReclaim: Boolean,
+        allowPostCoreRecoveryReclaim: Boolean = false,
+        postCoreRecoveryPreviousLeaseId: String? = null,
         retryCount: Int,
         preservesExistingReference: Boolean = false
     ): ManagedDownloadArtifactClaim {
@@ -1241,6 +1295,8 @@ internal class ManagedDownloadArtifactCoordinator {
                     stableKey = stableKey,
                     leaseOwnerId = leaseOwnerId,
                     allowFreshTransferReclaim = allowFreshTransferReclaim,
+                    allowPostCoreRecoveryReclaim = allowPostCoreRecoveryReclaim,
+                    postCoreRecoveryPreviousLeaseId = postCoreRecoveryPreviousLeaseId,
                     retryCount = retryCount + 1
                 )
             }
