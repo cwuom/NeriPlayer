@@ -181,7 +181,7 @@ internal fun AudioDownloadManager.publishProgress(
         )
     }
     progressStore.publish(
-        progress = progress,
+        progress = progress.forPublication(),
         nowNs = System.nanoTime(),
         force = force
     )

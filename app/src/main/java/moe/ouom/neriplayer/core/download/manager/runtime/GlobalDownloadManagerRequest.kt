@@ -26,6 +26,7 @@ import moe.ouom.neriplayer.core.download.manager.commit.finalizeCompletedDownloa
 import moe.ouom.neriplayer.core.download.manager.commit.isDownloadMetadataPostProcessingEnabled
 import moe.ouom.neriplayer.core.download.manager.recovery.invalidCoreAudioReason
 import moe.ouom.neriplayer.core.download.manager.recovery.requeueInvalidCoreAudio
+import moe.ouom.neriplayer.core.download.manager.recovery.requeueConfirmedMissingCoreAudio
 import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
 import moe.ouom.neriplayer.core.download.model.BatchOperationScheduleAction
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
@@ -497,6 +498,17 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
             preferredAudioReference = artifact?.audioReference
         )
         if (storedAudio == null) {
+            if (artifact != null && requeueConfirmedMissingCoreAudio(
+                    context = context,
+                    song = song,
+                    operationId = operationId,
+                    audioReference = artifact.audioReference,
+                    audioName = artifact.audioName,
+                    expectedLeaseId = expectedArtifactLeaseId
+                )
+            ) {
+                return@withSongExecutionLock
+            }
             NPLogger.w(
                 TAG,
                 "core operation 暂未找到可确认音频，保留恢复凭据: " +

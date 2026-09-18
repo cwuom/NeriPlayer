@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.forPublication
 import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
@@ -609,6 +610,6 @@ internal fun GlobalDownloadManager.publishDownloadStage(
             stage = stage,
             attemptId = attemptId,
             operationId = operationId
-        )
+        ).forPublication()
     )
 }

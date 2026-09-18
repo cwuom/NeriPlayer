@@ -39,10 +39,11 @@ internal data class PostCoreDownloadRecoveryCandidate(
     val queueOrder: Int,
     val updatedAtMs: Long,
     val requiresWifiNetwork: Boolean,
-    val nextRetryAtMs: Long? = null
+    val nextRetryAtMs: Long? = null,
+    val createdAtMs: Long = 0L
 )
 
-/** 旧失败优先，同时为首次收尾保留一个位置，避免失败项长期阻塞新任务 */
+/** 先恢复旧失败，按持久队号收尾，更新进度和重试时间不能改变顺序 */
 internal fun selectPostCoreDownloadRecoveryCandidates(
     candidates: Collection<PostCoreDownloadRecoveryCandidate>,
     capacity: Int,
@@ -59,7 +60,6 @@ internal fun selectPostCoreDownloadRecoveryCandidates(
         .filter { candidate ->
             candidate.operationId !in activeOperationIds &&
                 candidate.operationId !in attemptedOperationIds &&
-                isRetryDeadlineReady(candidate.nextRetryAtMs, nowMs) &&
                 isPostCoreRecoveryNetworkEligible(
                     requiresWifiNetwork = candidate.requiresWifiNetwork,
                     currentNetworkType = currentNetworkType,
@@ -67,32 +67,16 @@ internal fun selectPostCoreDownloadRecoveryCandidates(
                 )
         }
         .distinctBy(PostCoreDownloadRecoveryCandidate::operationId)
-        .toList()
-    val retrying = eligible
-        .filter { candidate -> candidate.state == "DEGRADED_COMPLETE" }
         .sortedWith(
-            compareBy<PostCoreDownloadRecoveryCandidate> { it.updatedAtMs }
+            compareBy<PostCoreDownloadRecoveryCandidate> { it.state != "DEGRADED_COMPLETE" }
                 .thenBy { it.queueOrder }
+                .thenBy { it.createdAtMs }
                 .thenBy { it.operationId }
         )
-    val fresh = eligible
-        .filterNot { candidate -> candidate.state == "DEGRADED_COMPLETE" }
-        .sortedWith(
-            compareBy<PostCoreDownloadRecoveryCandidate> { it.queueOrder }
-                .thenBy { it.updatedAtMs }
-                .thenBy { it.operationId }
-        )
-    if (retrying.isEmpty()) return fresh.take(boundedCapacity)
-    if (fresh.isEmpty() || boundedCapacity == 1) return retrying.take(boundedCapacity)
-
-    val selected = ArrayList<PostCoreDownloadRecoveryCandidate>(boundedCapacity)
-    selected += retrying.take(boundedCapacity - 1)
-    selected += fresh.take(boundedCapacity - selected.size)
-    if (selected.size < boundedCapacity) {
-        selected += retrying.drop(selected.count { it.state == "DEGRADED_COMPLETE" })
-            .take(boundedCapacity - selected.size)
-    }
-    return selected
+        .takeWhile { isRetryDeadlineReady(it.nextRetryAtMs, nowMs) }
+        .take(boundedCapacity)
+        .toList()
+    return eligible
 }
 
 internal fun isPostCoreRecoveryNetworkEligible(
@@ -198,7 +182,8 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl
                     queueOrder = entry.queueOrder,
                     updatedAtMs = entry.updatedAtMs,
                     requiresWifiNetwork = entry.request.requiresWifiNetwork,
-                    nextRetryAtMs = entry.nextRetryAtMs
+                    nextRetryAtMs = entry.nextRetryAtMs,
+                    createdAtMs = entry.createdAtMs
                 )
             },
             capacity = availableCapacity,

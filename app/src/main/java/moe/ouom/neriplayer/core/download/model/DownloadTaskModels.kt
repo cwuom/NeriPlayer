@@ -355,6 +355,11 @@ internal fun mergeDownloadProgress(
     if (current == null || current.attemptId != incoming.attemptId) {
         return incoming
     }
+    if (current.operationId == incoming.operationId &&
+        current.publicationSequence > incoming.publicationSequence
+    ) {
+        return current
+    }
     val currentGeneration = current.transferGeneration
     val incomingGeneration = incoming.transferGeneration
     if (

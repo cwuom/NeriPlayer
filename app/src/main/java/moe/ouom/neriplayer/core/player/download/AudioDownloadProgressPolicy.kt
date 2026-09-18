@@ -1,11 +1,17 @@
 package moe.ouom.neriplayer.core.player.download
 
 import moe.ouom.neriplayer.core.download.model.mergeDownloadProgress
+import java.util.concurrent.atomic.AtomicLong
+
+private val downloadProgressSequence = AtomicLong()
+
+internal fun AudioDownloadManager.DownloadProgress.forPublication(): AudioDownloadManager.DownloadProgress =
+    copy(publicationSequence = downloadProgressSequence.incrementAndGet())
 
 /**
  * 下载进度合并和节流策略
  *
- * 策略本身不持有 Flow 或任务状态，迟到回调只按 attempt 和 generation 判定
+ * 策略本身不持有 Flow 或任务状态，迟到快照按发布序号、attempt 和 generation 判定
  */
 internal object AudioDownloadProgressPolicy {
     private const val PROGRESS_EMIT_INTERVAL_NS = 180_000_000L

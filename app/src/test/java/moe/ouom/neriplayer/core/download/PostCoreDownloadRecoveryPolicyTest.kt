@@ -92,7 +92,7 @@ class PostCoreDownloadRecoveryPolicyTest {
     }
 
     @Test
-    fun `old retries lead each window while one slot remains for fresh finalization`() {
+    fun `unfinished retries keep queue order before fresh finalization despite recent updates`() {
         val candidates = listOf(
             candidate("retry-new", "DEGRADED_COMPLETE", queueOrder = 9, updatedAtMs = 900),
             candidate("fresh-one", "CORE_COMMITTED", queueOrder = 1, updatedAtMs = 100),
@@ -103,7 +103,7 @@ class PostCoreDownloadRecoveryPolicyTest {
         )
 
         assertEquals(
-            listOf("retry-old", "retry-middle", "retry-new", "fresh-one"),
+            listOf("retry-latest", "retry-middle", "retry-old", "retry-new"),
             selectPostCoreDownloadRecoveryCandidates(
                 candidates = candidates,
                 capacity = 4,
@@ -111,6 +111,22 @@ class PostCoreDownloadRecoveryPolicyTest {
                 mobileDataOverrideAllowed = false
             ).map(PostCoreDownloadRecoveryCandidate::operationId)
         )
+    }
+
+    @Test
+    fun `fresh finalization cannot overtake an earlier retry deadline`() {
+        val candidates = listOf(
+            candidate("retry", "DEGRADED_COMPLETE", queueOrder = 9, nextRetryAtMs = 2_000L),
+            candidate("fresh", "CORE_COMMITTED", queueOrder = 1)
+        )
+        assertTrue(selectPostCoreDownloadRecoveryCandidates(
+            candidates, 4, currentNetworkType = TrafficNetworkType.WIFI,
+            mobileDataOverrideAllowed = false, nowMs = 1_999L
+        ).isEmpty())
+        assertEquals(listOf("retry", "fresh"), selectPostCoreDownloadRecoveryCandidates(
+            candidates, 4, currentNetworkType = TrafficNetworkType.WIFI,
+            mobileDataOverrideAllowed = false, nowMs = 2_000L
+        ).map { it.operationId })
     }
 
     @Test

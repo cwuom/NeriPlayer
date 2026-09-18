@@ -98,7 +98,8 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 context = appContext,
                 songs = requestedSongs,
                 userInitiated = userInitiated,
-                admissionTicket = capturedAdmissionTicket
+                admissionTicket = capturedAdmissionTicket,
+                batchPresentationId = batchPresentationId
             )
             if (!deferred) {
                 if (batchPresentationId != 0L) {

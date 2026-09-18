@@ -7,6 +7,43 @@ import org.junit.Test
 class DownloadProgressProjectionStoreTest {
 
     @Test
+    fun `late snapshot cannot flash active enrichment back to waiting or transferring`() {
+        val store = DownloadProgressProjectionStore(snapshotIntervalNs = 1_000L)
+        val waiting = progress(bytesRead = 90L)
+            .copy(stage = AudioDownloadManager.DownloadStage.WAITING_RETRY).forPublication()
+        store.record(waiting, nowNs = 0L)
+        val oldSnapshot = store.snapshot.value.getValue("operation")
+        val transferring = progress(bytesRead = 100L).forPublication()
+        store.record(transferring, nowNs = 1L)
+        val enriching = transferring
+            .copy(stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING).forPublication()
+        store.record(enriching, nowNs = 2L)
+
+        repeat(100) {
+            assertEquals(enriching, store.record(oldSnapshot, nowNs = 3L + it))
+            assertEquals(enriching, store.record(transferring, nowNs = 3L + it))
+        }
+        val retry = enriching.copy(stage = AudioDownloadManager.DownloadStage.WAITING_RETRY)
+            .forPublication()
+        assertEquals(retry, store.record(retry, nowNs = 200L))
+        val resumed = retry.copy(stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING)
+            .forPublication()
+        assertEquals(resumed, store.record(resumed, nowNs = 201L))
+    }
+
+    @Test
+    fun `persisted checkpoint cannot overwrite a live stage but a new attempt starts fresh`() {
+        val store = DownloadProgressProjectionStore(snapshotIntervalNs = 0L)
+        val live = progress(bytesRead = 100L)
+            .copy(stage = AudioDownloadManager.DownloadStage.FINALIZING).forPublication()
+        store.record(live, nowNs = 0L)
+        assertEquals(live, store.record(progress(bytesRead = 50L), nowNs = 1L))
+        val next = progress(attemptId = 2L, bytesRead = 0L).forPublication()
+        assertEquals(next, store.record(next, nowNs = 2L))
+        assertEquals(next, store.record(live.forPublication(), nowNs = 3L))
+    }
+
+    @Test
     fun `record keeps the newest owner and refreshes bounded snapshot`() {
         val store = DownloadProgressProjectionStore(snapshotIntervalNs = 100L)
         val first = progress(bytesRead = 10L)

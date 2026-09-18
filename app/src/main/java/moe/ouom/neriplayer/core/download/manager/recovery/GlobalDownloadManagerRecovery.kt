@@ -1167,7 +1167,10 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
                 latestBySongKey[songKey] = entry
             }
         }
-        val latestEntries = latestBySongKey.values.toList()
+        val latestEntries = latestBySongKey.values.sortedWith(
+            compareBy<DownloadExecutionRoomStore.ProgressEntry> { it.queueOrder }
+                .thenBy { it.request.operationId }
+        )
         if (latestEntries.isEmpty()) return
         val pendingWorkingProgressSnapshot =
             loadPendingWorkingProgressSnapshotOnce(context)
@@ -1183,29 +1186,7 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
             )?.let { presentation -> entry to presentation }
         }.toMap()
         val restorableEntries = presentationsByEntry.keys.toList()
-        val networkWaitingEntries = restorableEntries.filter { entry ->
-            presentationsByEntry.getValue(entry).status == DownloadStatus.WAITING_NETWORK
-        }
-        val queuedEntries = restorableEntries.filter { entry ->
-            presentationsByEntry.getValue(entry).status == DownloadStatus.QUEUED
-        }
-        val enrichingEntries = restorableEntries.filter { entry ->
-            presentationsByEntry.getValue(entry).status == DownloadStatus.DOWNLOADING
-        }
-        val failedEntries = restorableEntries.filter { entry ->
-            presentationsByEntry.getValue(entry).status == DownloadStatus.FAILED
-        }
-        val networkWaitingDurableAttemptIds = networkWaitingEntries.mapNotNull { entry ->
-            entry.request.attemptId?.takeIf { it > 0L }?.let { attemptId ->
-                entry.request.song.stableKey() to attemptId
-            }
-        }.toMap()
-        val queuedDurableAttemptIds = queuedEntries.mapNotNull { entry ->
-            entry.request.attemptId?.takeIf { it > 0L }?.let { attemptId ->
-                entry.request.song.stableKey() to attemptId
-            }
-        }.toMap()
-        val enrichingDurableAttemptIds = enrichingEntries.mapNotNull { entry ->
+        val durableAttemptIds = restorableEntries.mapNotNull { entry ->
             entry.request.attemptId?.takeIf { it > 0L }?.let { attemptId ->
                 entry.request.song.stableKey() to attemptId
             }
@@ -1217,32 +1198,14 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
                 blockedByDurableClear = true
                 return@admission
             }
-            val networkWaitingAttemptIds = taskStore.ensureDownloadTasks(
-                songs = networkWaitingEntries.map { entry -> entry.request.song },
-                status = DownloadStatus.WAITING_NETWORK,
-                durableAttemptIds = networkWaitingDurableAttemptIds
+            // 按队号一次恢复混合状态，不能按状态分组重新排列卡片
+            val effectiveAttemptIds = taskStore.ensureDownloadTasks(
+                songs = restorableEntries.map { it.request.song },
+                durableAttemptIds = durableAttemptIds,
+                statusesBySongKey = restorableEntries.associate {
+                    it.request.song.stableKey() to presentationsByEntry.getValue(it).status
+                }
             )
-            val queuedAttemptIds = taskStore.ensureDownloadTasks(
-                songs = queuedEntries.map { entry -> entry.request.song },
-                status = DownloadStatus.QUEUED,
-                durableAttemptIds = queuedDurableAttemptIds
-            )
-            val enrichingAttemptIds = taskStore.ensureDownloadTasks(
-                songs = enrichingEntries.map { entry -> entry.request.song },
-                status = DownloadStatus.DOWNLOADING,
-                durableAttemptIds = enrichingDurableAttemptIds
-            )
-            val effectiveAttemptIds =
-                networkWaitingAttemptIds + queuedAttemptIds + enrichingAttemptIds +
-                    taskStore.ensureDownloadTasks(
-                        songs = failedEntries.map { it.request.song },
-                        status = DownloadStatus.FAILED,
-                        durableAttemptIds = failedEntries.mapNotNull { entry ->
-                            entry.request.attemptId?.takeIf { it > 0L }?.let {
-                                entry.request.song.stableKey() to it
-                            }
-                        }.toMap()
-                    )
             restorableEntries.forEach { entry ->
                 if (entry.request.attemptId == null) {
                     val attemptId = effectiveAttemptIds[entry.request.song.stableKey()]
@@ -1293,7 +1256,9 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
                 )
             }
             restoredCount = taskStore.restoreProgressBatch(restoredProgresses)
-            val recoveredMemberAttemptIds = restorableEntries.filterNot { it in failedEntries }.associate { entry ->
+            val recoveredMemberAttemptIds = restorableEntries.filterNot {
+                presentationsByEntry.getValue(it).status == DownloadStatus.FAILED
+            }.associate { entry ->
                 val songKey = entry.request.song.stableKey()
                 songKey to (
                     entry.request.attemptId?.takeIf { attemptId -> attemptId > 0L }
@@ -1477,6 +1442,7 @@ internal suspend fun GlobalDownloadManager.recoverPendingResumableDownloadsLocke
             NPLogger.d(TAG, "清空使未完成下载恢复重绑定过期: reason=$reason")
             return false
         }
+        promoteWaitingStorageMutationsForRecovery(context, admissionTicket)
         val recoveryPlan = resolvePendingDownloadRecoveryPlan(context)
         if (!isDownloadAdmissionTicketCurrent(context, admissionTicket)) {
             NPLogger.d(TAG, "清空使未完成下载恢复计划过期: reason=$reason")

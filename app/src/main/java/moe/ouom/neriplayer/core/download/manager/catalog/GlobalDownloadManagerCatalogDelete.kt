@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.core.download.matchesDownloadedSongCatalogEntry
 import moe.ouom.neriplayer.core.download.mergeManagedRequestedReferences
 import moe.ouom.neriplayer.core.download.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
+import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutationForStableKeys
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrentForStableKeys
 import moe.ouom.neriplayer.core.download.manager.batch.awaitDownloadCancellationsSettled
 import moe.ouom.neriplayer.core.download.manager.batch.cancelAllDownloadTasksAndWait
@@ -20,7 +21,9 @@ import moe.ouom.neriplayer.core.download.manager.batch.requestAllDownloadTaskCan
 import moe.ouom.neriplayer.core.download.manager.batch.requestDownloadTaskCancellation
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleDeferredFullLibraryDeleteRecovery
-import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingResumableDownloads
+import moe.ouom.neriplayer.core.download.manager.admission.promoteWaitingStorageMutationsForRecovery
+import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
+import moe.ouom.neriplayer.core.download.execution.worker.DownloadStorageRecoveryWorker
 import moe.ouom.neriplayer.core.download.manager.runtime.publishDownloadStage
 import moe.ouom.neriplayer.core.download.manager.runtime.resolvePlayableManagedAudioSnapshot
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
@@ -47,6 +50,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.SystemClock
 import androidx.core.net.toUri
+import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
@@ -64,6 +68,10 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
+import moe.ouom.neriplayer.core.download.manager.batch.beginBatchDownloadPresentation
+import moe.ouom.neriplayer.core.download.manager.batch.bindBatchDownloadPresentationAttempts
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
@@ -218,11 +226,17 @@ internal fun GlobalDownloadManager.beginDownloadedSongDeletion(songKeys: Collect
     }
 }
 
-internal fun GlobalDownloadManager.endDownloadedSongDeletion(songKeys: Collection<String>) {
+internal fun GlobalDownloadManager.endDownloadedSongDeletion(
+    songKeys: Collection<String>,
+    context: Context? = null
+) {
     songKeys.forEach { songKey ->
         downloadedSongDeletionCounts.computeIfPresent(songKey) { _, count ->
             count.takeIf { it.decrementAndGet() > 0 }
         }
+    }
+    if (context != null) {
+        scheduleDeleteCleanupRetry(context, songKeys, downloadAdmissionGate.openTicketOrNull())
     }
 }
 
@@ -279,14 +293,33 @@ internal suspend fun GlobalDownloadManager.deferDownloadForDeleteCleanup(
     context: Context,
     songs: Collection<SongItem>,
     userInitiated: Boolean,
-    admissionTicket: Long?
+    admissionTicket: Long?,
+    batchPresentationId: Long? = null
+): Boolean {
+    val ticket = admissionTicket ?: return false
+    var deferred = false
+    val admitted = admitDownloadMutationForStableKeys(
+        context, ticket, songs.map(SongItem::stableKey)
+    ) {
+        deferred = persistDownloadWaitingForDeleteCleanup(
+            context, songs, userInitiated, ticket, batchPresentationId
+        )
+    }
+    return admitted && deferred
+}
+
+private suspend fun GlobalDownloadManager.persistDownloadWaitingForDeleteCleanup(
+    context: Context,
+    songs: Collection<SongItem>,
+    userInitiated: Boolean,
+    admissionTicket: Long,
+    batchPresentationId: Long?
 ): Boolean {
     val appContext = context.applicationContext
     val distinctSongs = songs.distinctBy(SongItem::stableKey)
     val songKeys = distinctSongs.map(SongItem::stableKey)
     if (
         distinctSongs.isEmpty() ||
-            admissionTicket == null ||
             !isDownloadAdmissionTicketCurrentForStableKeys(
                 context = appContext,
                 admissionTicket = admissionTicket,
@@ -325,6 +358,7 @@ internal suspend fun GlobalDownloadManager.deferDownloadForDeleteCleanup(
             cancellationOperationSnapshotCutoffs[songKey]
         }
     )
+    var batchIdentity: DownloadExecutionRoomStore.DownloadBatchIdentity? = null
     val operationIds = try {
         val excludedOperationIds = distinctSongs
             .flatMap { song -> cancellationOperationIdsForSong(song.stableKey()) }
@@ -333,15 +367,35 @@ internal suspend fun GlobalDownloadManager.deferDownloadForDeleteCleanup(
             .map(SongItem::stableKey)
             .filter(cancellationForceNewSongKeys::contains)
             .toSet()
-        DownloadRecoveryRoomStore(appContext).upsertWaitingStorageMutation(
-            songs = distinctSongs,
-            nowMs = operationCreatedAtMs,
-            userInitiated = userInitiated,
-            requiresWifiNetwork = requiresWifiNetwork,
-            downloadAudioQuality = resolveDownloadAudioQualitySelection(appContext),
-            excludedOperationIds = excludedOperationIds,
-            forceNewOperationForStableKeys = forceNewOperationForStableKeys
-        )
+        val quality = resolveDownloadAudioQualitySelection(appContext)
+        val database = NeriUserDataDatabase.getInstance(appContext)
+        database.withTransaction {
+            val waiting = DownloadRecoveryRoomStore(appContext, database)
+                .upsertWaitingStorageMutationWithRequests(
+                    songs = distinctSongs,
+                    nowMs = operationCreatedAtMs,
+                    userInitiated = userInitiated,
+                    requiresWifiNetwork = requiresWifiNetwork,
+                    downloadAudioQuality = quality,
+                    excludedOperationIds = excludedOperationIds,
+                    forceNewOperationForStableKeys = forceNewOperationForStableKeys
+                )
+            if (batchPresentationId != null && waiting.operationIds.isNotEmpty()) {
+                val requests = waiting.requestsByOperationId.values.toList()
+                val identity = DownloadExecutionRoomStore.createBatchSnapshot(
+                    context = appContext,
+                    songs = requests.map { it.song },
+                    clearEpoch = PersistentDownloadClearFenceStore.currentEpoch(appContext),
+                    networkGeneration = AudioDownloadManager.currentDownloadNetworkGeneration(),
+                    database = database
+                )
+                DownloadExecutionRoomStore.attachBatchIdentity(
+                    appContext, identity, requests, database = database
+                )
+                batchIdentity = identity
+            }
+            waiting.operationIds
+        }
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (error: Throwable) {
@@ -356,6 +410,8 @@ internal suspend fun GlobalDownloadManager.deferDownloadForDeleteCleanup(
     if (operationIds.isEmpty()) {
         return false
     }
+    // 卡片恢复失败也不能丢失已经落盘的唤醒
+    DownloadStorageRecoveryWorker.schedule(appContext)
     if (!isDownloadAdmissionTicketCurrentForStableKeys(
             context = appContext,
             admissionTicket = admissionTicket,
@@ -365,44 +421,67 @@ internal suspend fun GlobalDownloadManager.deferDownloadForDeleteCleanup(
         return false
     }
     try {
-        val snapshots = DownloadExecutionRoomStore.readOperationSnapshots(
-            context = appContext,
-            operationIds = operationIds
-        )
-        val durableAttemptIds = snapshots.values.mapNotNull { snapshot ->
-            snapshot.request.attemptId
-                ?.takeIf { attemptId -> attemptId > 0L }
-                ?.let { attemptId ->
-                    snapshot.request.song.stableKey() to attemptId
-                }
-        }.toMap()
-        val attempts = taskStore.ensureDownloadTasks(
-            songs = distinctSongs,
-            status = DownloadStatus.WAITING_NETWORK,
-            durableAttemptIds = durableAttemptIds
-        )
-        attempts.forEach { (songKey, attemptId) ->
-            taskStore.updateTaskStatus(
-                songKey = songKey,
-                status = DownloadStatus.WAITING_NETWORK,
-                expectedAttemptId = attemptId
-            )
-        }
-        snapshots.values.forEach { snapshot ->
-            val request = snapshot.request
-            val attemptId = attempts[request.song.stableKey()] ?: return@forEach
-            publishDownloadStage(
-                song = request.song,
-                stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
-                operationId = request.operationId,
-                attemptId = attemptId
-            )
-            if (request.attemptId == attemptId) return@forEach
-            DownloadExecutionRoomStore.upsert(
+        val database = NeriUserDataDatabase.getInstance(appContext)
+        database.withTransaction {
+            val snapshots = DownloadExecutionRoomStore.readOperationSnapshots(
                 context = appContext,
-                request = request.copy(attemptId = attemptId),
-                state = WAITING_STORAGE_MUTATION_OPERATION_STATE
+                operationIds = operationIds,
+                database = database
+            ).filterValues { it.state == WAITING_STORAGE_MUTATION_OPERATION_STATE }
+            if (snapshots.isEmpty()) return@withTransaction
+            val durableAttemptIds = snapshots.values.mapNotNull { snapshot ->
+                snapshot.request.attemptId
+                    ?.takeIf { attemptId -> attemptId > 0L }
+                    ?.let { attemptId ->
+                        snapshot.request.song.stableKey() to attemptId
+                    }
+            }.toMap()
+            val attempts = taskStore.ensureDownloadTasks(
+                songs = snapshots.values.map { it.request.song },
+                status = DownloadStatus.WAITING_NETWORK,
+                durableAttemptIds = durableAttemptIds
             )
+            if (batchPresentationId != null) {
+                batchIdentity?.let { identity ->
+                    durableBatchIdentityByPresentationId[batchPresentationId] = identity
+                    beginBatchDownloadPresentation(
+                        songs = snapshots.values.map { it.request.song },
+                        batchId = batchPresentationId
+                    )
+                    bindBatchDownloadPresentationAttempts(
+                        batchId = batchPresentationId,
+                        attemptIdsBySongKey = attempts,
+                        operationIdsBySongKey = snapshots.values.associate {
+                            it.request.song.stableKey() to it.request.operationId
+                        }
+                    )
+                }
+            }
+            attempts.forEach { (songKey, attemptId) ->
+                taskStore.updateTaskStatus(
+                    songKey = songKey,
+                    status = DownloadStatus.WAITING_NETWORK,
+                    expectedAttemptId = attemptId
+                )
+            }
+            snapshots.values.forEach { snapshot ->
+                val request = snapshot.request
+                val attemptId = attempts[request.song.stableKey()] ?: return@forEach
+                publishDownloadStage(
+                    song = request.song,
+                    stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
+                    operationId = request.operationId,
+                    attemptId = attemptId
+                )
+                if (request.attemptId == attemptId) return@forEach
+                DownloadExecutionRoomStore.ensureAttemptId(
+                    context = appContext,
+                    operationId = request.operationId,
+                    stableKey = request.song.stableKey(),
+                    attemptId = attemptId,
+                    database = database
+                )
+            }
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -499,6 +578,7 @@ internal suspend fun GlobalDownloadManager.markDownloadWaitingForDeleteCleanup(
         "旧下载文件清理未收敛，任务进入等待清理重试: " +
             "songKey=$songKey, operationId=$operationId, marked=$markedRetryable"
     )
+    if (markedRetryable) DownloadStorageRecoveryWorker.schedule(context.applicationContext)
 }
 
 internal fun GlobalDownloadManager.scheduleDeleteCleanupRetry(
@@ -509,6 +589,7 @@ internal fun GlobalDownloadManager.scheduleDeleteCleanupRetry(
     val keys = songKeys.filter(String::isNotBlank).toSet()
     if (keys.isEmpty()) return
     val appContext = context.applicationContext
+    DownloadStorageRecoveryWorker.schedule(appContext)
     scope.launch {
         if (!awaitDownloadedSongDeletion(keys)) {
             NPLogger.w(
@@ -524,11 +605,13 @@ internal fun GlobalDownloadManager.scheduleDeleteCleanupRetry(
                 stableKeys = keys
             )
         } ?: return@launch
-        recoverPendingResumableDownloads(
+        val promoted = promoteWaitingStorageMutationsForRecovery(
             context = appContext,
-            reason = "delete_cleanup",
             admissionTicket = ticket
         )
+        if (promoted > 0) {
+            wakeDownloadExecutionPump(appContext, reason = "delete_cleanup_released")
+        }
     }
 }
 

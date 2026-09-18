@@ -172,7 +172,7 @@ internal fun GlobalDownloadManager.deleteDownloadedSongsImpl(context: Context, s
                 context = appContext,
                 session = session
             )
-            endDownloadedSongDeletion(session.deletionKeys)
+            endDownloadedSongDeletion(session.deletionKeys, appContext)
         }
     }
 }
@@ -255,7 +255,7 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsWithResultImpl(
             context = appContext,
             session = session
         )
-        endDownloadedSongDeletion(session.deletionKeys)
+        endDownloadedSongDeletion(session.deletionKeys, appContext)
     }
 }
 
@@ -300,7 +300,7 @@ private fun GlobalDownloadManager.launchDurableFullLibraryDeleteSession(
                 context = context,
                 session = session
             )
-            endDownloadedSongDeletion(session.deletionKeys)
+            endDownloadedSongDeletion(session.deletionKeys, context)
         }
     }
 }

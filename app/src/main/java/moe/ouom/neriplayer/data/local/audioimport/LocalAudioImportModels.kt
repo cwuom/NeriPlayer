@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.core.download.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadFileNameTemplates
 import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.parseManagedDownloadBaseName
+import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataRecoveryStore
@@ -1178,6 +1179,10 @@ internal class ManagedDownloadCandidatePublicationGate(
         }
         ?.toMap()
         .orEmpty()
+    private val pendingAudioNames = snapshot?.let { current ->
+        (current.pendingAudioEntries + current.audioEntries.filter { it.isPendingAudioWrite })
+            .mapTo(hashSetOf()) { ManagedDownloadTreeNaming.canonicalLookupName(it.logicalName) }
+    }.orEmpty()
 
     fun evaluateRelativePath(
         relativePath: String?,
@@ -1199,6 +1204,9 @@ internal class ManagedDownloadCandidatePublicationGate(
         displayName: String,
         candidateReferences: Collection<String> = emptyList()
     ): ManagedDownloadCandidatePublication {
+        if (ManagedDownloadPendingAudioWriteNames.isArtifactName(displayName)) {
+            return ManagedDownloadCandidatePublication.WITHHELD
+        }
         val entryByReference = candidateReferences.asSequence()
             .mapNotNull { reference -> audioByReference[reference] }
             .firstOrNull()
@@ -1214,13 +1222,25 @@ internal class ManagedDownloadCandidatePublicationGate(
         if (!currentSnapshot.rootEntriesComplete) {
             return ManagedDownloadCandidatePublication.WITHHELD
         }
+        val canonicalAudioName = ManagedDownloadTreeNaming.canonicalLookupName(entry?.name ?: displayName)
+        val metadata = entry?.let { ManagedDownloadStorage.metadataForAudioEntry(currentSnapshot, it) }
+            ?: currentSnapshot.metadataByCanonicalAudioName[canonicalAudioName]
+            ?: currentSnapshot.metadataByDeclaredAudioName[canonicalAudioName]
+        val hasDownloadEvidence = metadata != null ||
+            canonicalAudioName in currentSnapshot.metadataEntriesByCanonicalAudioName ||
+            canonicalAudioName in currentSnapshot.pendingMetadataByCanonicalAudioName ||
+            canonicalAudioName in pendingAudioNames
+        // 下载目录也可以放普通音频，不能把没有下载凭据当成下载尚未完成
+        if (!hasDownloadEvidence && entry?.isPendingAudioWrite != true) {
+            return ManagedDownloadCandidatePublication.NON_MANAGED
+        }
         if (entry == null) {
             return ManagedDownloadCandidatePublication.WITHHELD
         }
         return if (isFinalizedDownloadedAudioEntry(
                 rootEntriesComplete = currentSnapshot.rootEntriesComplete,
                 isPendingAudioWrite = entry.isPendingAudioWrite,
-                metadata = currentSnapshot.metadataByAudioName[entry.name]
+                metadata = metadata
             )
         ) {
             ManagedDownloadCandidatePublication.FINALIZED

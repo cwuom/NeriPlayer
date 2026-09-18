@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import moe.ouom.neriplayer.core.download.execution.worker.DownloadStorageRecoveryWorker
+import moe.ouom.neriplayer.core.download.execution.worker.DownloadPumpCompletion
 import androidx.work.BackoffPolicy
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
@@ -8,6 +9,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadStorageRecoveryWorkerTest {
+    @Test
+    fun `new storage wait during worker completion retains one successor`() {
+        val coordinator = DownloadStorageRecoveryWorker.scheduleCoordinator
+        coordinator.invalidate()
+        try {
+            val generation = requireNotNull(coordinator.request())
+            assertTrue(coordinator.markWorkEnqueueStarted(generation))
+            assertTrue(coordinator.claimWorker(generation))
+            repeat(100) { assertEquals(null, coordinator.request()) }
+            assertEquals(DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR,
+                coordinator.complete(generation, workWillRetry = false))
+            val successor = requireNotNull(coordinator.request())
+            assertTrue(successor > generation)
+            assertTrue(coordinator.markWorkEnqueueStarted(successor))
+            assertTrue(coordinator.claimWorker(successor))
+            assertEquals(DownloadPumpCompletion.RETRYING,
+                coordinator.complete(successor, workWillRetry = true))
+        } finally {
+            coordinator.invalidate()
+        }
+    }
+
     @Test
     fun `空间恢复任务使用短首检和指数退避`() {
         val request = DownloadStorageRecoveryWorker.buildRequest(initialDelayMs = 5_000L)

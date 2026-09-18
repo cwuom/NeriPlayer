@@ -472,6 +472,7 @@ class ForegroundDownloadWorker(
         fun cancelAllOwned(context: Context) {
             pumpScheduleCoordinator.invalidate()
             PostCoreDownloadRecoveryWorker.scheduleCoordinator.invalidate()
+            DownloadStorageRecoveryWorker.scheduleCoordinator.invalidate()
             runCatching {
                 WorkManager.getInstance(context.applicationContext)
                     .cancelAllWorkByTag(ALL_DOWNLOAD_WORK_TAG)

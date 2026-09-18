@@ -67,13 +67,6 @@ internal suspend fun LocalAudioImportManager.scanFolderSongsInternal(
         LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context.applicationContext)
     }
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        val mediaStoreResult = mediaStoreScan(progress)
-        if (shouldUseMediaStoreScanResult(mediaStoreResult)) {
-            return requireNotNull(mediaStoreResult)
-        }
-    }
-
     val root = DocumentFile.fromTreeUri(context, folderUri)
     if (root == null) {
         NPLogger.w(TAG, "scanFolderSongs skipped unreadable folder: $folderUri")
@@ -83,9 +76,27 @@ internal suspend fun LocalAudioImportManager.scanFolderSongsInternal(
             completed = false
         )
     }
+    val treeDocumentId = configuredManagedDownloadTreeDocumentId()
+    val scansManagedDirectory = isManagedDownloadDocumentDirectory(
+        context = context,
+        documentUri = folderUri,
+        treeDocumentId = treeDocumentId,
+        displayName = root.name
+    )
+    // 用户复制的音频可能尚未进入 MediaStore，下载目录以实际子项为准
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !scansManagedDirectory) {
+        val mediaStoreResult = mediaStoreScan(progress)
+        if (shouldUseMediaStoreScanResult(mediaStoreResult)) {
+            return requireNotNull(mediaStoreResult)
+        }
+    }
     val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
-        snapshot = loadManagedDownloadSnapshotForScan(context, progress),
-        treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        snapshot = loadManagedDownloadSnapshotForScan(
+            context = context,
+            progress = progress,
+            forceRefresh = scansManagedDirectory
+        ),
+        treeDocumentId = treeDocumentId
     )
 
     val traversalStartedAt = SystemClock.elapsedRealtime()
@@ -256,9 +267,10 @@ internal fun LocalAudioImportManager.configuredManagedDownloadTreeDocumentId(): 
 
 internal suspend fun LocalAudioImportManager.loadManagedDownloadSnapshotForScan(
     context: Context,
-    progress: LocalAudioScanProgressEmitter? = null
+    progress: LocalAudioScanProgressEmitter? = null,
+    forceRefresh: Boolean = false
 ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
-    val cachedSnapshot = runCatching {
+    val cachedSnapshot = if (forceRefresh) null else runCatching {
         if (progress == null) {
             ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
         } else {
@@ -425,13 +437,24 @@ internal suspend fun LocalAudioImportManager.completeScannedSongs(
                         song
                     } else {
                         try {
-                            hydrateLocalSongTextMetadataWithKnownSidecars(
-                                context = context,
-                                song = hydrateLocalSongFromMetadataSidecar(
+                            val identityHydrated = if (
+                                allowExpensiveFallback && knownReferences?.metadata == null
+                            ) {
+                                hydrateLocalSongMetadata(
+                                    context = context,
+                                    song = song,
+                                    includeEmbeddedAssets = false
+                                )
+                            } else {
+                                hydrateLocalSongFromMetadataSidecar(
                                     context = context,
                                     song = song,
                                     metadataReference = knownReferences?.metadata
-                                ),
+                                )
+                            }
+                            hydrateLocalSongTextMetadataWithKnownSidecars(
+                                context = context,
+                                song = identityHydrated,
                                 resolveCoverFallback = allowExpensiveFallback ||
                                     !song.localFilePath.isNullOrBlank(),
                                 includeEmbeddedFallback = allowExpensiveFallback,

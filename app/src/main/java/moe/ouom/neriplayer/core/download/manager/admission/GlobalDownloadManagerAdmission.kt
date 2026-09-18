@@ -20,9 +20,11 @@ import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecution
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
@@ -731,12 +733,14 @@ internal suspend fun GlobalDownloadManager.promoteUserInitiatedInFlightRequests(
 
 internal suspend fun GlobalDownloadManager.promoteWaitingStorageMutationsForRecovery(
     context: Context,
-    admissionTicket: Long? = downloadAdmissionGate.openTicketOrNull()
+    admissionTicket: Long? = downloadAdmissionGate.openTicketOrNull(),
+    database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
 ): Int {
     val appContext = context.applicationContext
     if (
         ManagedDownloadDirectoryMutationFence.isActive(appContext) ||
-        ManagedDownloadMigrationWorker.hasPersistedMigrationRecoveryFast(appContext)
+        ManagedDownloadMigrationWorker.hasPersistedMigrationRecoveryFast(appContext) ||
+        PersistentDownloadedSongDeleteIntentStore.hasPending(appContext)
     ) {
         return 0
     }
@@ -749,7 +753,7 @@ internal suspend fun GlobalDownloadManager.promoteWaitingStorageMutationsForReco
     }
     try {
         val rehomeAdmitted = admitDownloadMutation(appContext, capturedAdmissionTicket) {
-            DownloadExecutionRoomStore.rehomeActiveOperationsToCurrentLibrary(appContext)
+            DownloadExecutionRoomStore.rehomeActiveOperationsToCurrentLibrary(appContext, database)
         }
         if (!rehomeAdmitted) {
             return 0
@@ -764,7 +768,7 @@ internal suspend fun GlobalDownloadManager.promoteWaitingStorageMutationsForReco
             error
         )
     }
-    val recoveryStore = DownloadRecoveryRoomStore(appContext)
+    val recoveryStore = DownloadRecoveryRoomStore(appContext, database)
     val waitingEntries = recoveryStore.listWaitingStorageMutations()
     if (waitingEntries.isEmpty()) {
         return 0
@@ -772,6 +776,9 @@ internal suspend fun GlobalDownloadManager.promoteWaitingStorageMutationsForReco
     var promotedCount = 0
     val admitted = admitDownloadMutation(appContext, capturedAdmissionTicket) {
         waitingEntries.forEach { entry ->
+            if (downloadedSongDeletionCounts.containsKey(entry.request.song.stableKey())) {
+                return@forEach
+            }
             if (
                 recoveryStore.promoteWaitingStorageMutation(
                     operationId = entry.request.operationId,

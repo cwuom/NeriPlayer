@@ -10,9 +10,13 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
@@ -28,27 +32,34 @@ class DownloadStorageRecoveryWorker(
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val appContext = applicationContext
-        if (
-            PersistentDownloadClearFenceStore.isActive(appContext) ||
-            ManagedDownloadDirectoryMutationFence.isActiveFast(appContext) ||
-            ManagedDownloadMigrationWorker.hasPersistedMigrationRecoveryFast(appContext)
-        ) {
-            return@withContext Result.retry()
-        }
+        val generation = inputData.getLong(GENERATION_KEY, 0L)
+        if (!scheduleCoordinator.claimWorker(generation)) return@withContext Result.success()
+        var workWillRetry = true
         try {
+            if (
+                PersistentDownloadClearFenceStore.isActive(appContext) ||
+                ManagedDownloadDirectoryMutationFence.isActiveFast(appContext) ||
+                ManagedDownloadMigrationWorker.hasPersistedMigrationRecoveryFast(appContext)
+            ) {
+                return@withContext Result.retry()
+            }
             val promotedCount =
                 GlobalDownloadManager.promoteWaitingStorageMutationsForDownloadPump(appContext)
             if (promotedCount > 0) {
-                return@withContext if (ForegroundDownloadWorker.schedulePump(appContext)) {
-                    Result.success()
-                } else {
-                    Result.retry()
+                if (!ForegroundDownloadWorker.schedulePump(appContext)) {
+                    return@withContext Result.retry()
                 }
             }
             val hasWaitingOperations =
                 DownloadRecoveryRoomStore(appContext).listWaitingStorageMutations().isNotEmpty()
-            if (hasWaitingOperations) Result.retry() else Result.success()
+            if (hasWaitingOperations) {
+                Result.retry()
+            } else {
+                workWillRetry = false
+                Result.success()
+            }
         } catch (cancellation: CancellationException) {
+            scheduleCoordinator.complete(generation, workWillRetry = false)
             throw cancellation
         } catch (error: Throwable) {
             NPLogger.w(
@@ -57,6 +68,12 @@ class DownloadStorageRecoveryWorker(
                 error
             )
             Result.retry()
+        } finally {
+            if (scheduleCoordinator.complete(generation, workWillRetry) ==
+                DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+            ) {
+                schedule(appContext, initialDelayMs = FIRST_CHECK_DELAY_MS)
+            }
         }
     }
 
@@ -66,30 +83,61 @@ class DownloadStorageRecoveryWorker(
         private const val STORAGE_RECOVERY_TAG = "download_storage_recovery"
         private const val FIRST_CHECK_DELAY_MS = 5_000L
         private const val RETRY_BACKOFF_MS = 30_000L
+        private const val GENERATION_KEY = "storage_recovery_generation"
+        internal val scheduleCoordinator = DownloadPumpScheduleCoordinator()
+        private val enqueueCallbackExecutor = Executor { it.run() }
 
         /** 同一时间只保留一个空间探测任务，避免大量歌曲各自创建 Worker */
         fun schedule(
             context: Context,
             initialDelayMs: Long = FIRST_CHECK_DELAY_MS
-        ): Boolean {
+        ): Boolean = enqueue(context, initialDelayMs, retryEnqueue = true)
+
+        private fun enqueue(context: Context, initialDelayMs: Long, retryEnqueue: Boolean): Boolean {
+            val appContext = context.applicationContext
+            val generation = scheduleCoordinator.request() ?: return true
+            if (!scheduleCoordinator.markWorkEnqueueStarted(generation)) return true
             return runCatching {
-                WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+                val operation = WorkManager.getInstance(appContext).enqueueUniqueWork(
                     WORK_NAME,
-                    ExistingWorkPolicy.KEEP,
-                    buildRequest(initialDelayMs)
+                    ExistingWorkPolicy.APPEND_OR_REPLACE,
+                    buildRequest(initialDelayMs, generation)
+                )
+                operation.result.addListener(
+                    Runnable {
+                        runCatching { operation.result.get() }.onFailure { error ->
+                            handleEnqueueFailure(appContext, generation, retryEnqueue, error)
+                        }
+                    },
+                    enqueueCallbackExecutor
                 )
                 true
             }.onFailure { error ->
-                NPLogger.w(
-                    "NERI-DownloadStorageRecovery",
-                    "空间等待 Worker 调度失败，启动恢复仍会再次接管: ${error.message}",
-                    error
-                )
+                handleEnqueueFailure(appContext, generation, retryEnqueue, error)
             }.getOrDefault(false)
         }
 
-        internal fun buildRequest(initialDelayMs: Long = FIRST_CHECK_DELAY_MS): OneTimeWorkRequest {
+        private fun handleEnqueueFailure(
+            context: Context, generation: Long, retryEnqueue: Boolean, error: Throwable
+        ) {
+            if (!scheduleCoordinator.failEnqueue(generation)) return
+            NPLogger.w("NERI-DownloadStorageRecovery", "存储等待入队未确认，保留 Room 凭据", error)
+            if (retryEnqueue) {
+                GlobalDownloadManager.scope.launch {
+                    delay(1_000L)
+                    if (scheduleCoordinator.canRetry(generation)) {
+                        enqueue(context, initialDelayMs = 0L, retryEnqueue = false)
+                    }
+                }
+            }
+        }
+
+        internal fun buildRequest(
+            initialDelayMs: Long = FIRST_CHECK_DELAY_MS,
+            generation: Long = 0L
+        ): OneTimeWorkRequest {
             val builder = OneTimeWorkRequestBuilder<DownloadStorageRecoveryWorker>()
+                .setInputData(workDataOf(GENERATION_KEY to generation))
                 .setBackoffCriteria(
                     BackoffPolicy.EXPONENTIAL,
                     RETRY_BACKOFF_MS,

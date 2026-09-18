@@ -340,6 +340,9 @@ class LocalAudioImportManagerTest {
         ): ManagedDownloadCandidatePublicationGate {
             val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
                 audioEntries = listOf(audio),
+                metadataEntriesByAudioName = mapOf(
+                    audio.name to managedAudioEntry(name = "${audio.name}.npmeta.json")
+                ),
                 metadataByAudioName = metadata?.let { value -> mapOf(audio.name to value) }.orEmpty(),
                 rootEntriesComplete = rootEntriesComplete
             )
@@ -432,7 +435,7 @@ class LocalAudioImportManagerTest {
             )
         )
         assertEquals(
-            ManagedDownloadCandidatePublication.WITHHELD,
+            ManagedDownloadCandidatePublication.NON_MANAGED,
             gate(metadata = null).evaluateRelativePath(
                 relativePath = "neriplayer-download/",
                 displayName = "ordinary-local-song.mp3"
@@ -445,6 +448,121 @@ class LocalAudioImportManagerTest {
                 displayName = completedAudio.name
             )
         )
+    }
+
+    @Test
+    fun `standalone FLAC files inside download folder do not require download sidecars`() {
+        val audioEntries = listOf(
+            managedAudioEntry("netease - 鹿乃 - 夜明けと蛍 (1).flac"),
+            managedAudioEntry("netease - Yael Naim - New Soul.flac")
+        )
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = audioEntries
+        )
+        val gate = ManagedDownloadCandidatePublicationGate(
+            snapshot = snapshot,
+            treeDocumentId = "primary:neriplayer-download"
+        )
+
+        audioEntries.forEach { audio ->
+            assertEquals(
+                ManagedDownloadCandidatePublication.NON_MANAGED,
+                gate.evaluate(
+                    isInsideManagedRoot = true,
+                    displayName = audio.name,
+                    candidateReferences = listOf(audio.reference)
+                )
+            )
+            assertEquals(
+                ManagedDownloadCandidatePublication.NON_MANAGED,
+                gate.evaluateRelativePath("neriplayer-download/", audio.name)
+            )
+        }
+    }
+
+    @Test
+    fun `standalone audio discovered after a complete snapshot remains scannable`() {
+        val gate = ManagedDownloadCandidatePublicationGate(
+            snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot(),
+            treeDocumentId = "primary:neriplayer-download"
+        )
+
+        assertEquals(
+            ManagedDownloadCandidatePublication.NON_MANAGED,
+            gate.evaluateRelativePath(
+                relativePath = "neriplayer-download/",
+                displayName = "newly copied.flac"
+            )
+        )
+    }
+
+    @Test
+    fun `missing or incomplete snapshot cannot prove managed sidecars are absent`() {
+        listOf(
+            null,
+            ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(rootEntriesComplete = false)
+        ).forEach { snapshot ->
+            val gate = ManagedDownloadCandidatePublicationGate(
+                snapshot = snapshot,
+                treeDocumentId = "primary:neriplayer-download"
+            )
+            assertEquals(
+                ManagedDownloadCandidatePublication.WITHHELD,
+                gate.evaluateRelativePath("neriplayer-download/", "unknown.flac")
+            )
+        }
+    }
+
+    @Test
+    fun `pending audio without sidecars cannot be published as standalone audio`() {
+        val pending = managedAudioEntry("song.flac.npdl_pending.001.pending")
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            pendingAudioEntries = listOf(pending)
+        )
+        val gate = ManagedDownloadCandidatePublicationGate(
+            snapshot = snapshot,
+            treeDocumentId = "primary:neriplayer-download"
+        )
+
+        assertEquals(
+            ManagedDownloadCandidatePublication.WITHHELD,
+            gate.evaluateRelativePath("neriplayer-download/", pending.name)
+        )
+        assertEquals(
+            ManagedDownloadCandidatePublication.WITHHELD,
+            gate.evaluateRelativePath("neriplayer-download/", pending.logicalName)
+        )
+    }
+
+    @Test
+    fun `unreadable or pending metadata cannot be mistaken for an absent sidecar`() {
+        val audio = managedAudioEntry("Song.FLAC")
+        val emptySnapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = listOf(audio)
+        )
+        listOf(
+            emptySnapshot.copy(
+                metadataEntriesByAudioName = mapOf(
+                    "song.flac" to managedAudioEntry("song.flac.npmeta (1).json")
+                )
+            ),
+            emptySnapshot.copy(
+                pendingMetadataByAudioName = mapOf(
+                    "song.flac" to ManagedDownloadStorage.DownloadedAudioMetadata(
+                        downloadFinalized = false
+                    )
+                )
+            )
+        ).forEach { snapshot ->
+            val gate = ManagedDownloadCandidatePublicationGate(
+                snapshot = snapshot,
+                treeDocumentId = "primary:neriplayer-download"
+            )
+            assertEquals(
+                ManagedDownloadCandidatePublication.WITHHELD,
+                gate.evaluateRelativePath("neriplayer-download/", audio.name)
+            )
+        }
     }
 
     @Test

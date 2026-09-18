@@ -22,6 +22,51 @@ import org.junit.Test
 class DownloadTaskStoreTest {
 
     @Test
+    fun `mixed recovery states preserve queue order and reject replayed stage snapshots`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(scope, progressEmitIntervalNs = 0L)
+            val songs = (1L..4L).map(::song)
+            val statuses = listOf(
+                DownloadStatus.DOWNLOADING,
+                DownloadStatus.FAILED,
+                DownloadStatus.WAITING_NETWORK,
+                DownloadStatus.QUEUED
+            )
+            val attempts = songs.associate { it.stableKey() to it.id }
+            store.ensureDownloadTasks(
+                songs,
+                durableAttemptIds = attempts,
+                statusesBySongKey = songs.zip(statuses).associate { (song, status) ->
+                    song.stableKey() to status
+                }
+            )
+            assertEquals(songs, store.currentTasks().map { it.song })
+            assertEquals(statuses, store.currentTasks().map { it.status })
+            val live = progress(songs.first(), 1L, 80L).copy(
+                operationId = "op",
+                stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+                publicationSequence = 2L
+            )
+            assertTrue(store.updateProgress(live))
+            val liveTasks = store.currentTasks()
+            repeat(100) {
+                val stale = live.copy(
+                    stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+                    publicationSequence = 1L
+                )
+                assertFalse(store.updateProgress(stale))
+                assertTrue(store.restoreProgress(stale))
+                assertEquals(liveTasks, store.currentTasks())
+            }
+            assertEquals(live, store.currentTasks().first().progress)
+            assertEquals(songs, store.currentTasks().map { it.song })
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `active batch admission remains visible before task rows are hydrated`() {
         val summary = stabilizeDownloadTaskSummary(
             taskSummary = DownloadTaskSummary(),

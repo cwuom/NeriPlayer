@@ -683,7 +683,9 @@ object AudioDownloadManager {
         /** 当前传输 permit 的代次，拒绝旧 attempt 的迟到进度回调 */
         val transferGeneration: Long? = null,
         /** 已完成 flush 和 fsync 的前缀，只有这部分可以写入恢复检查点 */
-        val durableBytesRead: Long? = null
+        val durableBytesRead: Long? = null,
+        /** 同一进程内的发布顺序，防止补偿快照覆盖较新的增量事件 */
+        val publicationSequence: Long = 0L
     ) {
         val percentage: Int
             get() = when {

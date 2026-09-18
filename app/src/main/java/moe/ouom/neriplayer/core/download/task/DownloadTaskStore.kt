@@ -460,7 +460,8 @@ internal class DownloadTaskStore(
     fun ensureDownloadTasks(
         songs: List<SongItem>,
         status: DownloadStatus = DownloadStatus.QUEUED,
-        durableAttemptIds: Map<String, Long> = emptyMap()
+        durableAttemptIds: Map<String, Long> = emptyMap(),
+        statusesBySongKey: Map<String, DownloadStatus> = emptyMap()
     ): Map<String, Long> {
         if (songs.isEmpty()) {
             return emptyMap()
@@ -471,6 +472,7 @@ internal class DownloadTaskStore(
             val existingIndexesBySongKey = HashMap<String, Int>(songKeyIndex)
             songs.distinctBy { it.stableKey() }.forEach { song ->
                 val songKey = song.stableKey()
+                val initialStatus = statusesBySongKey[songKey] ?: status
                 if (isClearKeyBlockedLocked(songKey)) return@forEach
                 val existingIndex = existingIndexesBySongKey[songKey]
                 val existingTask = existingIndex?.let(updatedTasks::get)
@@ -492,7 +494,7 @@ internal class DownloadTaskStore(
                     attemptIds[songKey] = existingTask.attemptId
                     updatedTasks[requireNotNull(existingIndex)] = existingTask.copy(
                         song = song,
-                        status = status
+                        status = initialStatus
                     )
                     return@forEach
                 }
@@ -502,7 +504,7 @@ internal class DownloadTaskStore(
                 val task = DownloadTask(
                     song = song,
                     progress = null,
-                    status = status,
+                    status = initialStatus,
                     attemptId = attemptId
                 )
                 if (existingIndex == null) {
