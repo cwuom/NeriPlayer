@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.download.storage.operation.content.buildPendingAudioWriteName
+import moe.ouom.neriplayer.core.download.storage.operation.enrichMigrationMetadataTemporalFields
 import android.content.Context
 import java.text.Normalizer
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationEntryCollector
@@ -51,6 +52,19 @@ import kotlin.system.measureTimeMillis
 
 
 class ManagedDownloadStorageMigrationCompatTest : ManagedDownloadStorageMigrationCompatTestSupport() {
+
+    @Test
+    fun `successive migrations preserve source modification time independently of creation`() {
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            createdAtMs = 100L, createdAtSource = "FILESYSTEM_BIRTH_TIME", createdAtConfidence = "EXACT"
+        )
+        val migrated = ManagedDownloadStorage.enrichMigrationMetadataTemporalFields(metadata, 300L)
+        val migratedAgain = ManagedDownloadStorage.enrichMigrationMetadataTemporalFields(migrated, 900L)
+
+        assertEquals(100L, migratedAgain.createdAtMs)
+        assertEquals(300L, migratedAgain.sourceModifiedAtMs)
+        assertEquals("EXACT", migratedAgain.createdAtConfidence)
+    }
 
     @Test
     fun `migration pending artifact detector accepts legacy root and tmp names`() {

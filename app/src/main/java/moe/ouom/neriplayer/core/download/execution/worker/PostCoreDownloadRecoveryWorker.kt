@@ -38,7 +38,7 @@ class PostCoreDownloadRecoveryWorker(
         val generation = inputData.getLong(GENERATION_KEY, 0L)
         if (!scheduleCoordinator.claimWorker(generation)) return@withContext Result.success()
         var workWillRetry = true
-        var continueSoon = false
+        var successorDelayMs: Long? = null
         try {
             if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
                 return@withContext Result.retry()
@@ -57,11 +57,16 @@ class PostCoreDownloadRecoveryWorker(
                     Result.success()
                 }
                 PostCoreDownloadRecoveryResult.CONTINUE_SOON -> {
-                    continueSoon = true
+                    successorDelayMs = SUCCESSOR_DELAY_MS
                     workWillRetry = false
                     Result.success()
                 }
-                PostCoreDownloadRecoveryResult.RETRY,
+                PostCoreDownloadRecoveryResult.RETRY -> {
+                    // operation 自己保留重试上限和期限，避免叠加 Worker 指数退避
+                    successorDelayMs = RETRY_BACKOFF_MS
+                    workWillRetry = false
+                    Result.success()
+                }
                 PostCoreDownloadRecoveryResult.BLOCKED -> Result.retry()
 
                 PostCoreDownloadRecoveryResult.WAITING_NETWORK -> {
@@ -76,7 +81,7 @@ class PostCoreDownloadRecoveryWorker(
             }
         } catch (cancellation: CancellationException) {
             // 系统停止会重新调度持久 Worker，释放内存 owner 允许显式新请求接管
-            scheduleCoordinator.complete(generation, workWillRetry = false)
+            workWillRetry = false
             throw cancellation
         } catch (error: Throwable) {
             NPLogger.w(
@@ -86,13 +91,13 @@ class PostCoreDownloadRecoveryWorker(
             )
             Result.retry()
         } finally {
-            val completion = if (continueSoon) {
-                scheduleCoordinator.completeWithSuccessor(generation)
+            val completion = if (successorDelayMs != null) {
+                scheduleCoordinator.completeWithSuccessor(generation, successorDelayMs)
             } else {
                 scheduleCoordinator.complete(generation, workWillRetry)
             }
             if (completion == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR) {
-                schedule(appContext, initialDelayMs = SUCCESSOR_DELAY_MS)
+                schedule(appContext, initialDelayMs = scheduleCoordinator.takeSuccessorDelayMs(generation))
             }
         }
     }
@@ -115,7 +120,7 @@ class PostCoreDownloadRecoveryWorker(
         private fun enqueue(context: Context, initialDelayMs: Long, retryEnqueue: Boolean): Boolean {
             val appContext = context.applicationContext
             if (PersistentDownloadClearFenceStore.isActive(appContext)) return false
-            val generation = scheduleCoordinator.request() ?: return true
+            val generation = scheduleCoordinator.request(initialDelayMs = initialDelayMs) ?: return true
             if (!scheduleCoordinator.markWorkEnqueueStarted(generation)) return true
             return runCatching {
                 val operation = WorkManager.getInstance(appContext).enqueueUniqueWork(

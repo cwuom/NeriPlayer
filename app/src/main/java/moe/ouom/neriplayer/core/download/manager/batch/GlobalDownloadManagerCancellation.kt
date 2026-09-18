@@ -1067,9 +1067,9 @@ internal fun GlobalDownloadManager.requestAllDownloadTaskCancellation(
                         totalItemCount = totalItems
                     )
                     persistDownloadClearProgress(appContext, clearToken)
-                    NPLogger.e(
+                    NPLogger.d(
                         TAG,
-                        "下载清空暂未收敛，达到本进程最大重试次数，保留持久栅栏等待恢复: " +
+                        "下载清空已交给持久恢复，保留本轮 owner: " +
                             "round=$clearConvergenceRound, failed=$failedItemCount, " +
                             "reason=$reason"
                     )
@@ -1409,9 +1409,9 @@ internal fun GlobalDownloadManager.requestAllDownloadTaskCancellation(
             }
             if (clearDeferredForRetry) {
                 retainClearVisibility = true
-                NPLogger.w(
+                NPLogger.d(
                     TAG,
-                    "下载清空本轮已退出，持久栅栏保持生效，等待下次启动或显式重试"
+                    "下载清空本轮已退出，后台继续等待清理结果"
                 )
                 return@launch
             }

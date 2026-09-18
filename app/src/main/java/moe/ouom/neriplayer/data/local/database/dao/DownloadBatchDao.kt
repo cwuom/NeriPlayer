@@ -383,13 +383,12 @@ internal interface DownloadBatchDao {
     @Query(
         "UPDATE download_batch SET state_bits = " +
             "(state_bits & ~${DownloadBatchState.NETWORK_WAIT}) | ${DownloadBatchState.USER_MOBILE_ALLOWED}, " +
-            "network_generation = :networkGeneration, updated_at_ms = :nowMs " +
+            "network_generation = MAX(network_generation, :networkGeneration), updated_at_ms = :nowMs " +
             "WHERE batch_id = :batchId AND generation = :generation " +
             "AND state_bits & ${DownloadBatchState.OPEN} != 0 " +
             "AND state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
             "AND state_bits & ${DownloadBatchState.CLEARING} = 0 " +
-            "AND network_generation >= :expectedNetworkGeneration " +
-            "AND network_generation <= :networkGeneration"
+            "AND network_generation >= :expectedNetworkGeneration"
     )
     suspend fun allowMobileDataCAS(
         batchId: String,

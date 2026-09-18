@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.core.api.bili
 
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
+import kotlinx.coroutines.CancellationException
 
 private val biliPartPrefixRegex = Regex("^\\d+\\.\\s*")
 private val biliPartSeparatorRegex = Regex("\\s[-\\u2013\\u2014]\\s")
@@ -111,28 +112,28 @@ suspend fun resolveBiliSong(song: SongItem, client: BiliClient): ResolvedBiliSon
     }
 
     if (storedCid != null) {
-        val resolved = resolveByCandidates(
+        // 已指定分 P 时不能退回首页或同名分 P，否则会下载另一段音频
+        return resolveByCandidates(
             song = resolutionSong,
             client = client,
             preferredCid = storedCid
         )
-        if (resolved != null) return resolved
     }
 
     val direct = resolveDirect(resolutionSong, client)
+    if (direct != null && resolutionSong.audioId?.trim()?.toLongOrNull() == resolutionSong.id) return direct
     val legacy = resolveLegacy(resolutionSong, client)
 
     return legacy ?: direct
 }
 
 internal fun SongItem.toBiliResolutionSongOrNull(): SongItem? {
-    if (album.startsWith(PlayerManager.BILI_SOURCE_TAG)) {
-        return this
-    }
-    if (!channelId.equals("bilibili", ignoreCase = true)) {
-        return null
-    }
-    val avid = audioId?.trim()?.toLongOrNull()?.takeIf { it > 0L } ?: return null
+    val biliAlbum = album.startsWith(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true)
+    if (!biliAlbum && !channelId.equals("bilibili", ignoreCase = true)) return null
+    // 本地歌曲的 id 可能是稳定键摘要，明确保存的来源 avid 优先
+    val avid = audioId?.trim()?.toLongOrNull()?.takeIf { it > 0L }
+        ?: id.takeIf { biliAlbum && it > 0L }
+        ?: return null
     val cid = biliCidOrNull()
     val bvid = biliBvidOrNull()
     return copy(
@@ -188,7 +189,7 @@ private suspend fun resolveByBvid(
     bvid: String,
     preferredCid: Long?
 ): ResolvedBiliSong? {
-    val videoInfo = runCatching { client.getVideoBasicInfoByBvid(bvid) }.getOrNull() ?: return null
+    val videoInfo = fetchBiliVideoOrNull { client.getVideoBasicInfoByBvid(bvid) } ?: return null
     val pageInfo = selectBiliPlaybackPage(
         pages = videoInfo.pages,
         songName = song.name,
@@ -208,7 +209,7 @@ private suspend fun resolveByCandidates(
     client: BiliClient,
     preferredCid: Long
 ): ResolvedBiliSong? {
-    val direct = runCatching { client.getVideoBasicInfoByAvid(song.id) }.getOrNull()
+    val direct = fetchBiliVideoOrNull { client.getVideoBasicInfoByAvid(song.id) }
     val directPage = direct?.pages?.firstOrNull { it.cid == preferredCid }
     if (direct != null && directPage != null) {
         return ResolvedBiliSong(
@@ -222,7 +223,7 @@ private suspend fun resolveByCandidates(
     val legacyAvid = song.id / 10_000L
     if (legacyAvid <= 0L) return null
 
-    val legacy = runCatching { client.getVideoBasicInfoByAvid(legacyAvid) }.getOrNull()
+    val legacy = fetchBiliVideoOrNull { client.getVideoBasicInfoByAvid(legacyAvid) }
     val legacyPage = legacy?.pages?.firstOrNull { it.cid == preferredCid }
     if (legacy != null && legacyPage != null) {
         return ResolvedBiliSong(
@@ -237,7 +238,7 @@ private suspend fun resolveByCandidates(
 }
 
 private suspend fun resolveDirect(song: SongItem, client: BiliClient): ResolvedBiliSong? {
-    val videoInfo = runCatching { client.getVideoBasicInfoByAvid(song.id) }.getOrNull() ?: return null
+    val videoInfo = fetchBiliVideoOrNull { client.getVideoBasicInfoByAvid(song.id) } ?: return null
     val pageInfo = selectBiliPlaybackPage(
         pages = videoInfo.pages,
         songName = song.name
@@ -261,7 +262,7 @@ private suspend fun resolveLegacy(song: SongItem, client: BiliClient): ResolvedB
     val legacyPage = (song.id % 10_000L).toInt()
     if (legacyAvid <= 0L || legacyPage <= 0) return null
 
-    val videoInfo = runCatching { client.getVideoBasicInfoByAvid(legacyAvid) }.getOrNull() ?: return null
+    val videoInfo = fetchBiliVideoOrNull { client.getVideoBasicInfoByAvid(legacyAvid) } ?: return null
     val pageInfo = videoInfo.pages.firstOrNull { page ->
         page.page == legacyPage || page.part == song.name
     } ?: return null
@@ -272,4 +273,14 @@ private suspend fun resolveLegacy(song: SongItem, client: BiliClient): ResolvedB
         videoInfo = videoInfo,
         pageInfo = pageInfo
     )
+}
+
+private suspend fun fetchBiliVideoOrNull(
+    fetch: suspend () -> BiliClient.VideoBasicInfo
+): BiliClient.VideoBasicInfo? = try {
+    fetch()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
 }

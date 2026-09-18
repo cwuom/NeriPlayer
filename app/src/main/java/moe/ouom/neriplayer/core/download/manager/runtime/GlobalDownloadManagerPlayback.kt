@@ -13,6 +13,9 @@ import moe.ouom.neriplayer.core.download.shouldTrustFastDownloadedSongCatalogHit
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.scheduleDownloadedSongReferenceReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.updateDownloadProgress
+import moe.ouom.neriplayer.core.download.manager.commit.inspectFinalizedDownloadedAudio
+import moe.ouom.neriplayer.core.download.model.hasDownloadedAudioDurationMismatch
+import moe.ouom.neriplayer.core.download.model.expectedDownloadedAudioDurationMs
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.policy.shouldTrustDirectPresentDownloadedSongReference
@@ -287,6 +290,12 @@ internal suspend fun GlobalDownloadManager.validateExistingDownloadedAudio(
     audio: ManagedDownloadStorage.StoredEntry,
     snapshotMetadata: ManagedDownloadStorage.DownloadedAudioMetadata? = null
 ): ManagedDownloadStorage.StoredEntry? {
+    // 快照中的长度不是当前存在证据，用户可能已从文件管理器删除音频
+    if (ManagedDownloadReferenceLookup.inspect(context, audio.reference) ==
+        ManagedDownloadReferenceLookup.Result.Missing
+    ) {
+        return null
+    }
     val metadata = snapshotMetadata ?: run {
         val metadataEntry = ManagedDownloadStorage.findMetadataForAudio(context, audio)
         metadataEntry?.let {
@@ -297,16 +306,24 @@ internal suspend fun GlobalDownloadManager.validateExistingDownloadedAudio(
             )
         }
     }
+    if (metadata != null && !isMetadataOwnedBySong(metadata, song)) {
+        NPLogger.w(TAG, "候选音频身份不匹配，保留文件并拒绝复用: song=${song.name}, file=${audio.name}")
+        return null
+    }
     if (isUnfinalizedDownloadedMetadata(metadata)) {
         val unfinalizedMetadata = metadata ?: return null
-        if (!isMetadataOwnedBySong(unfinalizedMetadata, song)) {
-            NPLogger.w(TAG, "未最终确认文件不属于当前歌曲，跳过回滚: song=${song.name}, file=${audio.name}")
+        val probe = inspectFinalizedDownloadedAudio(context, audio)
+        if (probe.readable && hasDownloadedAudioDurationMismatch(
+                expectedDownloadedAudioDurationMs(song, metadata), probe.durationMs
+            )
+        ) {
+            NPLogger.w(TAG, "候选音频时长不匹配，保留文件并重新传输: song=${song.name}, file=${audio.name}")
             return null
         }
-        if (ManagedDownloadStorage.hasReadableContent(context, audio)) {
-            NPLogger.w(
+        if (probe.readable) {
+            NPLogger.d(
                 TAG,
-                "发现未最终确认但音频已完整，保留文件并进入收尾重试: " +
+                "未最终确认音频已通过可读性与时长检查，进入收尾: " +
                     "song=${song.name}, file=${audio.name}"
             )
             return audio

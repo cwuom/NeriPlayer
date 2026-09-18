@@ -360,12 +360,20 @@ internal fun GlobalDownloadManager.escalateExpiredTaskClear(context: Context): B
     val ownershipCaptureComplete =
         PersistentDownloadClearFenceStore.isOwnershipCaptureComplete(appContext)
     val ownership = PersistentDownloadClearFenceStore.ownership(appContext)
-    stopDownloadExecutionImmediately(
-        context = appContext,
-        reason = "download clear hard deadline escalation",
-        stableKeys = if (ownershipCaptureComplete) ownership?.stableKeys else null,
-        operationIds = if (ownershipCaptureComplete) ownership?.operationIds else null
-    )
+    val epoch = PersistentDownloadClearFenceStore.currentEpoch(appContext)
+    val previousEpoch = lastEscalatedTaskClearEpoch.getAndSet(epoch)
+    if (previousEpoch == epoch) return true
+    try {
+        stopDownloadExecutionImmediately(
+            context = appContext,
+            reason = "download clear hard deadline escalation",
+            stableKeys = if (ownershipCaptureComplete) ownership?.stableKeys else null,
+            operationIds = if (ownershipCaptureComplete) ownership?.operationIds else null
+        )
+    } catch (error: Throwable) {
+        lastEscalatedTaskClearEpoch.compareAndSet(epoch, previousEpoch)
+        throw error
+    }
     NPLogger.w(
         TAG,
         "下载清空达到 3 秒硬截止，已升级停止旧执行并保留持久栅栏: " +
@@ -1160,7 +1168,11 @@ internal suspend fun GlobalDownloadManager.cancelDownloadTasksInBackground(
     val providerCleanupKey = PersistentDownloadClearFenceStore.currentEpoch(appContext)
     if (awaitProviderCleanup && !skipProviderArtifactCleanup) {
         val activeCleanup = downloadClearProviderCleanupCoordinator.activeOrNull()
-        if (activeCleanup != null) {
+        if (activeCleanup != null && activeCleanup.key != providerCleanupKey &&
+            activeCleanup.operation.isCompleted
+        ) {
+            downloadClearProviderCleanupCoordinator.acknowledge(activeCleanup)
+        } else if (activeCleanup != null) {
             if (activeCleanup.key != providerCleanupKey) {
                 return pendingDownloadClearProviderCleanupSettlement(
                     activeKeys = activeKeys,
@@ -1172,9 +1184,10 @@ internal suspend fun GlobalDownloadManager.cancelDownloadTasksInBackground(
                 timeoutMs = DOWNLOAD_CLEAR_PROVIDER_CLEANUP_WAIT_TIMEOUT_MS
             )
             if (completedCleanup != null) {
+                downloadClearProviderCleanupCoordinator.acknowledge(activeCleanup)
                 return completedCleanup
             }
-            NPLogger.w(
+            NPLogger.d(
                 TAG,
                 "Provider 临时文件清理仍在运行，保留目录 lease 等待下一轮恢复: " +
                     "timeoutMs=$DOWNLOAD_CLEAR_PROVIDER_CLEANUP_WAIT_TIMEOUT_MS"
@@ -1303,9 +1316,10 @@ internal suspend fun GlobalDownloadManager.cancelDownloadTasksInBackground(
             timeoutMs = DOWNLOAD_CLEAR_PROVIDER_CLEANUP_WAIT_TIMEOUT_MS
         )
         if (completedCleanup != null) {
+            downloadClearProviderCleanupCoordinator.acknowledge(cleanup)
             return completedCleanup
         }
-        NPLogger.w(
+        NPLogger.d(
             TAG,
             "Provider 临时文件清理超过等待预算，保留目录 lease 等待下一轮恢复: " +
                 "timeoutMs=$DOWNLOAD_CLEAR_PROVIDER_CLEANUP_WAIT_TIMEOUT_MS"

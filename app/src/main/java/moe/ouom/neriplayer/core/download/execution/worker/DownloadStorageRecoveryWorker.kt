@@ -59,7 +59,7 @@ class DownloadStorageRecoveryWorker(
                 Result.success()
             }
         } catch (cancellation: CancellationException) {
-            scheduleCoordinator.complete(generation, workWillRetry = false)
+            workWillRetry = false
             throw cancellation
         } catch (error: Throwable) {
             NPLogger.w(
@@ -72,7 +72,7 @@ class DownloadStorageRecoveryWorker(
             if (scheduleCoordinator.complete(generation, workWillRetry) ==
                 DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
             ) {
-                schedule(appContext, initialDelayMs = FIRST_CHECK_DELAY_MS)
+                schedule(appContext, initialDelayMs = scheduleCoordinator.takeSuccessorDelayMs(generation))
             }
         }
     }
@@ -95,7 +95,7 @@ class DownloadStorageRecoveryWorker(
 
         private fun enqueue(context: Context, initialDelayMs: Long, retryEnqueue: Boolean): Boolean {
             val appContext = context.applicationContext
-            val generation = scheduleCoordinator.request() ?: return true
+            val generation = scheduleCoordinator.request(initialDelayMs = initialDelayMs) ?: return true
             if (!scheduleCoordinator.markWorkEnqueueStarted(generation)) return true
             return runCatching {
                 val operation = WorkManager.getInstance(appContext).enqueueUniqueWork(

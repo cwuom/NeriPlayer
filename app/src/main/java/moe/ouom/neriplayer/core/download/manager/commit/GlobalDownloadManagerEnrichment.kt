@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.DownloadedArtifactIntegrityResult
 import moe.ouom.neriplayer.core.download.model.DownloadedArtifactReferenceState
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.expectedDownloadedAudioDurationMs
 import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
 import moe.ouom.neriplayer.core.download.model.verifyDownloadedArtifactIntegrity
 import moe.ouom.neriplayer.core.download.policy.FinalizedDownloadPublicationResult
@@ -789,7 +790,8 @@ internal suspend fun GlobalDownloadManager.verifyFinalizedDownloadedArtifactForP
     NPLogger.d(
         TAG,
         "最终音频时长校验: operationId=${metadata?.operationId}, " +
-            "expectedMs=${song.durationMs}, actualMs=${audioProbe.durationMs}, " +
+            "expectedMs=${expectedDownloadedAudioDurationMs(song, metadata)}, " +
+            "catalogMs=${song.durationMs}, actualMs=${audioProbe.durationMs}, " +
             "readable=${audioProbe.readable}"
     )
     val references = DownloadedArtifactReferenceState(
@@ -1649,11 +1651,13 @@ internal suspend fun GlobalDownloadManager.rollbackStaleCompletedDownload(
 internal suspend fun GlobalDownloadManager.cleanupDownloadArtifactsBeforeFreshStart(
     context: Context,
     song: SongItem,
-    forceStorageRefresh: Boolean
+    forceStorageRefresh: Boolean,
+    preserveExistingAudio: Boolean = false
 ) {
     val appContext = context.applicationContext
     val songKey = song.stableKey()
     ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(appContext, setOf(songKey))
+    if (preserveExistingAudio) return
     cleanupUnfinalizedDownloadForRetry(
         context = appContext,
         song = song,

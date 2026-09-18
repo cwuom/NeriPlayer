@@ -207,7 +207,9 @@ object LocalAudioImportManager {
             }
 
             val song = runCatching {
-                val imported = buildQuickImportedSong(context, stabilizedAudio.uri)
+                val imported = buildQuickImportedSong(context, stabilizedAudio.uri).let { song ->
+                    song.copy(sourceModifiedAtMs = stabilizedAudio.sourceModifiedAtMs ?: song.sourceModifiedAtMs)
+                }
                 val sourceAddedAt = stabilizedAudio.sourceAddedAt
                 if (sourceAddedAt == null || sourceAddedAt <= 0L) {
                     imported
@@ -637,6 +639,7 @@ object LocalAudioImportManager {
                             album = idxAlbum.takeIf { it >= 0 }?.let(cursor::getString),
                             durationMs = duration,
                             sourceAddedAt = sourceAddedAt,
+                            sourceModifiedAtMs = dateModifiedSeconds.toEpochMillisOrNull(),
                             sourceAddedAtSource = sourceAddedAtSource,
                             sourceAddedAtConfidence = sourceAddedAtConfidence,
                             localFile = resolvedFile,
@@ -811,6 +814,11 @@ object LocalAudioImportManager {
             audioId = stableId.toString(),
             sourceStableKey = seed.sourceStableKey,
             addedAt = sourceAddedAt,
+            sourceModifiedAtMs = seed.sourceModifiedAtMs.toValidTimestampMsOrNull()
+                ?: seed.localFile?.lastModified().toValidTimestampMsOrNull()
+                ?: seed.sourceAddedAt.takeIf {
+                    isModificationTimestampSource(seed.sourceAddedAtSource)
+                }.toValidTimestampMsOrNull(),
             logicalCreatedAtMs = logicalCreatedAt,
             createdAtSource = createdAtSource,
             createdAtConfidence = createdAtConfidence

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.manager.runtime.validateExistingDownloadedAudio
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.downloadedSongPlaybackReferenceCandidates
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
@@ -20,7 +21,6 @@ import java.io.File
 import java.net.URI
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
@@ -618,7 +618,7 @@ internal class AudioDownloadPlaybackCoordinator(
         )
     }
 
-    internal fun hasFastCachedManagedDownloadForStart(
+    internal suspend fun hasFastCachedManagedDownloadForStart(
         context: Context,
         song: SongItem
     ): Boolean {
@@ -626,18 +626,11 @@ internal class AudioDownloadPlaybackCoordinator(
         val snapshot = cached?.snapshot
         val cachedAudio = cached?.audio
         if (cachedAudio != null) {
-            if (isFinalizedDownloadedMetadata(
-                    ManagedDownloadStorage.metadataForAudioEntry(snapshot, cachedAudio)
-                )
-            ) {
-                return true
-            }
-            NPLogger.d(
-                tag,
-                "下载快照命中未完成音频，交由完成链路收尾而非重复传输: " +
-                    "song=${song.name}, file=${cachedAudio.name}"
-            )
-            return true
+            // 与队列入口共用校验，不能把已拒绝的旧音频再次送回收尾
+            return GlobalDownloadManager.validateExistingDownloadedAudio(
+                context, song, cachedAudio,
+                ManagedDownloadStorage.metadataForAudioEntry(snapshot, cachedAudio)
+            ) != null
         }
         return GlobalDownloadManager.findFastCachedDownloadedSongPlaybackUri(context, song) != null
     }

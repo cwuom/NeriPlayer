@@ -299,6 +299,84 @@ class DownloadOperationDaoFreshStartTest {
     }
 
     @Test
+    fun invalidCoreRetransfersKeepTheirRetryBudgetAcrossEveryCommitPath() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).build()
+        try {
+            val dao = database.downloadOperationDao()
+            dao.upsert(operation("invalid-core", "song", "COMMITTING", false, null))
+            repeat(8) { round ->
+                val beforeCommit = requireNotNull(dao.find("invalid-core"))
+                val now = beforeCommit.updatedAtMs + 1L
+                val committed = when (round % 4) {
+                    0 -> dao.markCoreCommitted("invalid-core", listOf("COMMITTING"), now)
+                    1 -> dao.transitionState("invalid-core", listOf("COMMITTING"), "CORE_COMMITTED", now, null)
+                    2 -> dao.transitionStateForStableKey("invalid-core", "song", listOf("COMMITTING"), "CORE_COMMITTED", now, null)
+                    else -> dao.transitionDirectCachedStateAtVersion(
+                        "invalid-core", "song", listOf("COMMITTING"), beforeCommit.updatedAtMs,
+                        "CORE_COMMITTED", now, null
+                    )
+                }
+                assertEquals(1, committed)
+                val core = requireNotNull(dao.find("invalid-core"))
+                assertEquals(round, core.retryCount)
+                assertEquals(1, dao.resetInvalidCoreForTransfer(
+                    "invalid-core", "song", core.updatedAtMs, "CORE_AUDIO_DURATION_MISMATCH", now + 1L
+                ))
+                assertEquals(round + 1, dao.find("invalid-core")?.retryCount)
+                dao.updateState("invalid-core", "COMMITTING", now + 2L, null)
+            }
+            assertEquals(1, dao.transitionState(
+                "invalid-core", listOf("COMMITTING"), "COMPLETED", 100L, null
+            ))
+            assertEquals(0, dao.find("invalid-core")?.retryCount)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun processRestartRequeuesUnconfirmedCommitsButPreservesCurrentAndStoppedOwners() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).build()
+        try {
+            val dao = database.downloadOperationDao()
+            val recoverableIds = setOf("commit-old-host", "commit-missing-host")
+            val rows = listOf(
+                operation("commit-old-host", "commit-old-song", "COMMITTING", false, null,
+                    hostProcessToken = "old-process"),
+                operation("commit-missing-host", "commit-missing-song", "COMMITTING", false, null),
+                operation("commit-current-host", "commit-current-song", "COMMITTING", false, null,
+                    hostProcessToken = "current-process"),
+                operation("commit-stopped", "commit-stopped-song", "COMMITTING", true, "USER_CANCELLED",
+                    hostProcessToken = "old-process")
+            ) + listOf("CORE_COMMITTED", "ASSETS_ENRICHING", "DEGRADED_COMPLETE", "FINALIZED", "CANCELLED")
+                .map { state -> operation(state, "$state-song", state, false, null, hostProcessToken = "old-process") }
+            rows.forEach { row ->
+                dao.upsert(row.copy(queueOrder = 7, bytesWritten = 3971909L, totalBytes = 3971909L,
+                    resumeJson = "{\"checkpoint\":3971909}"))
+            }
+            val snapshots = rows.associate { it.operationId to requireNotNull(dao.find(it.operationId)) }
+            assertEquals(recoverableIds, dao.findOrphanedRunningOperationIdentities("current-process")
+                .map { it.operationId }.toSet())
+            assertEquals(2, dao.requeueOrphanedRunningOperations("current-process", 100L))
+            snapshots.forEach { (id, before) ->
+                val after = requireNotNull(dao.find(id))
+                if (id in recoverableIds) {
+                    assertEquals(before.copy(state = "RETRYABLE", nextRetryAtMs = null,
+                        lastErrorCode = "PROCESS_RESTART_RECOVERY", hostProcessToken = null,
+                        hostAdmittedAtMs = null, updatedAtMs = 100L), after)
+                } else {
+                    assertEquals(before, after)
+                }
+            }
+            assertEquals(0, dao.requeueOrphanedRunningOperations("current-process", 101L))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun processRestartRearmsRetryableRowsOnlyWhenTheirBatchCanRun() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(

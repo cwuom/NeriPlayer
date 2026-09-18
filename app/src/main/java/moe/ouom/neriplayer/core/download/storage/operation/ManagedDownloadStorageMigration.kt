@@ -268,13 +268,15 @@ internal fun ManagedDownloadStorage.enrichMigrationMetadataTemporalFields(
         metadata.createdAtMs?.let { it > 0L } == true ||
             metadata.sourceCreatedAtMs?.let { it > 0L } == true
     ) {
-        return metadata
+        return metadata.copy(
+            sourceModifiedAtMs = metadata.sourceModifiedAtMs?.takeIf { it > 0L } ?: fallbackTimestamp
+        )
     }
     return metadata.copy(
         createdAtMs = fallbackTimestamp,
         createdAtSource = metadata.createdAtSource ?: "MTIME",
         createdAtConfidence = metadata.createdAtConfidence ?: "INFERRED",
-        sourceModifiedAtMs = metadata.sourceModifiedAtMs ?: fallbackTimestamp
+        sourceModifiedAtMs = metadata.sourceModifiedAtMs?.takeIf { it > 0L } ?: fallbackTimestamp
     )
 }
 

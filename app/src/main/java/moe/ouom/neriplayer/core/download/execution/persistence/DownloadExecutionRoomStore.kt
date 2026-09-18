@@ -296,9 +296,10 @@ internal object DownloadExecutionRoomStore {
         state: String,
         errorCode: String? = null,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
-        nowMs: Long = System.currentTimeMillis()
+        nowMs: Long = System.currentTimeMillis(),
+        expectedAttemptId: Long? = null
     ): Boolean {
-        return this.updateStateImpl(context, operationId, state, errorCode, database, nowMs)
+        return this.updateStateImpl(context, operationId, state, errorCode, database, nowMs, expectedAttemptId)
     }
 
     suspend fun recordPostCoreRetryFailure(
@@ -917,9 +918,9 @@ internal object DownloadExecutionRoomStore {
     }
 
     /**
-     * 回收上一个进程遗留的传输态
+     * 回收上一个进程遗留的传输态和未确认提交态
      *
-     * RUNNING 不属于共享泵查询状态，不能依赖 ApplicationExitInfo 才恢复
+     * RUNNING 和 COMMITTING 不属于共享泵查询状态，不能依赖目录扫描或退出原因才恢复
      * 当前进程已持有宿主令牌的行不会被改动，提交后的状态也不会被降级
      */
     suspend fun requeueOrphanedRunningOperations(
@@ -1026,6 +1027,7 @@ internal object DownloadExecutionRoomStore {
             // 持久化实体真正使用的身份，不能只保存可选的来源元数据
             put("sourceStableKey", request.song.stableKey())
             put("preserveStaging", request.preserveStaging)
+            put("requiresFreshTransfer", request.requiresFreshTransfer)
             put("requiresWifiNetwork", request.requiresWifiNetwork)
             put("userInitiated", request.userInitiated)
             request.attemptId?.let { attemptId -> put("attemptId", attemptId) }
@@ -1088,6 +1090,7 @@ internal object DownloadExecutionRoomStore {
                 operationId = entity.operationId,
                 song = song,
                 preserveStaging = root.optBoolean("preserveStaging", false),
+                requiresFreshTransfer = root.optBoolean("requiresFreshTransfer", false),
                 requiresWifiNetwork = if (root.has("requiresWifiNetwork")) {
                     root.optBoolean("requiresWifiNetwork", true)
                 } else {

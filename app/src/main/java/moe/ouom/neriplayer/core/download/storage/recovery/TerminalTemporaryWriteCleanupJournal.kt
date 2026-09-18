@@ -35,7 +35,8 @@ internal data class TerminalTemporaryWriteCleanupTarget(
 internal data class TerminalTemporaryWriteCleanupJournalEntry(
     val root: TerminalTemporaryWriteCleanupRoot,
     val targets: List<TerminalTemporaryWriteCleanupTarget>,
-    val generationId: String
+    val generationId: String,
+    val targetGenerations: Map<TerminalTemporaryWriteCleanupTarget, String> = emptyMap()
 ) {
     val targetNames: List<String>
         get() = targets.map(TerminalTemporaryWriteCleanupTarget::displayName).distinct()
@@ -216,15 +217,26 @@ internal class TerminalTemporaryWriteCleanupJournal(
         val currentEntry = current.terminalEntries.firstOrNull { candidate ->
             candidate.root == normalizedRoot
         } ?: return@synchronized true
-        if (currentEntry.generationId != entry.generationId) {
-            return@synchronized false
-        }
+        val capturedTargets = entry.targets.mapNotNull { it.normalizedOrNull() }.toSet()
+        val consumable = currentEntry.targets.filter { target ->
+            target in capturedTargets &&
+                (currentEntry.targetGenerations[target] ?: currentEntry.generationId) ==
+                (entry.targetGenerations[target] ?: entry.generationId)
+        }.toSet()
+        val hasRefreshedTargets = currentEntry.targets.any { it in capturedTargets && it !in consumable }
+        if (consumable.isEmpty()) return@synchronized !hasRefreshedTargets
+        val remainingTargets = currentEntry.targets.filterNot(consumable::contains)
         val updated = current.copy(
-            terminalEntries = current.terminalEntries.filterNot { candidate ->
-                candidate.root == normalizedRoot
+            terminalEntries = current.terminalEntries.mapNotNull { candidate ->
+                if (candidate.root != normalizedRoot) candidate else {
+                    candidate.takeIf { remainingTargets.isNotEmpty() }?.copy(
+                        targets = remainingTargets,
+                        targetGenerations = candidate.targetGenerations.filterKeys { it !in consumable }
+                    )
+                }
             }
         )
-        store.write(encodeOrNull(updated))
+        store.write(encodeOrNull(updated)) && !hasRefreshedTargets
     }
 
     /** 并发入队只刷新代次且目标集合未变时返回当前记录
@@ -296,11 +308,19 @@ internal class TerminalTemporaryWriteCleanupJournal(
             .mapNotNull { target -> target.normalizedOrNull() }
             .distinct()
             .sortedWith(terminalTemporaryWriteCleanupTargetComparator)
+        val generationId = UUID.randomUUID().toString()
+        val enqueuedTargets = targets.toSet()
+        val generations = mergedTargets.associateWith { target ->
+            if (target in enqueuedTargets || existing == null) generationId else {
+                existing.targetGenerations[target] ?: existing.generationId
+            }
+        }
         return (entries.filterNot { entry -> entry.root == root } +
             TerminalTemporaryWriteCleanupJournalEntry(
                 root = root,
                 targets = mergedTargets,
-                generationId = UUID.randomUUID().toString()
+                generationId = generationId,
+                targetGenerations = generations
             )).sortedBy { entry ->
             "${entry.root.type.asPersistedValue()}:${entry.root.identity}"
         }
@@ -320,7 +340,7 @@ internal class TerminalTemporaryWriteCleanupJournal(
                     .put(ROOT_TYPE_KEY, entry.root.type.asPersistedValue())
                     .put(ROOT_IDENTITY_KEY, entry.root.identity)
                     .put(TARGET_NAMES_KEY, encodeLegacyTargetNames(entry.targets))
-                    .put(TARGETS_KEY, encodeTargets(entry.targets))
+                    .put(TARGETS_KEY, encodeTargets(entry.targets, entry.targetGenerations))
                     .put(GENERATION_ID_KEY, entry.generationId)
             )
         }
@@ -380,7 +400,8 @@ internal class TerminalTemporaryWriteCleanupJournal(
             entries += TerminalTemporaryWriteCleanupJournalEntry(
                 root = root,
                 targets = targets,
-                generationId = generationId
+                generationId = generationId,
+                targetGenerations = decodeTargetGenerations(record, targets, generationId)
             )
         }
         val preparations = mutableListOf<TerminalTemporaryWriteCleanupFinalizationPreparation>()
@@ -478,7 +499,8 @@ internal class TerminalTemporaryWriteCleanupJournal(
     }
 
     private fun encodeTargets(
-        targets: Collection<TerminalTemporaryWriteCleanupTarget>
+        targets: Collection<TerminalTemporaryWriteCleanupTarget>,
+        generations: Map<TerminalTemporaryWriteCleanupTarget, String> = emptyMap()
     ): JSONArray {
         return JSONArray().apply {
             targets.forEach { target ->
@@ -486,9 +508,29 @@ internal class TerminalTemporaryWriteCleanupJournal(
                     JSONObject()
                         .put(DISPLAY_NAME_KEY, target.displayName)
                         .put(TEMPORARY_WRITE_OWNER_NAME_KEY, target.temporaryWriteOwnerName)
+                        .put(GENERATION_ID_KEY, generations[target])
                 )
             }
         }
+    }
+
+    private fun decodeTargetGenerations(
+        record: JSONObject,
+        targets: List<TerminalTemporaryWriteCleanupTarget>,
+        fallback: String
+    ): Map<TerminalTemporaryWriteCleanupTarget, String> {
+        val generations = targets.associateWith { fallback }.toMutableMap()
+        val encoded = record.optJSONArray(TARGETS_KEY) ?: return generations
+        for (index in 0 until encoded.length()) {
+            val item = encoded.optJSONObject(index) ?: continue
+            val target = TerminalTemporaryWriteCleanupTarget(
+                item.optString(DISPLAY_NAME_KEY),
+                item.optString(TEMPORARY_WRITE_OWNER_NAME_KEY).trim().takeIf(String::isNotBlank)
+            ).normalizedOrNull() ?: continue
+            val generation = item.optString(GENERATION_ID_KEY).trim().takeIf(String::isNotBlank)
+            if (target in generations && generation != null) generations[target] = generation
+        }
+        return generations
     }
 
     private fun decodeTargets(record: JSONObject): List<TerminalTemporaryWriteCleanupTarget>? {

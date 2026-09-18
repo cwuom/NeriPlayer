@@ -11,8 +11,10 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomReadStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.manager.recovery.resetInvalidCoreDownloadForTransfer
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
@@ -39,10 +41,18 @@ class DownloadOrderedRecoveryTest {
                 DownloadExecutionRoomStore.upsert(
                     context, request.copy(requiresWifiNetwork = false), "RUNNING", database = db
                 )
-                seed(db, "new-after-restart", 5)
+                seed(db, "committing", 5, "COMMITTING", bytes = 3971909)
+                val committing = DownloadExecutionRoomStore.read(context, "committing", db)!!
+                DownloadExecutionRoomStore.upsert(
+                    context, committing.copy(requiresWifiNetwork = false, preserveStaging = true),
+                    "COMMITTING", database = db
+                )
+                seed(db, "new-after-restart", 6)
             }
             if (phase == "seed") return@runBlocking
             val before = db.downloadOperationDao().find("in-flight")!!
+            val commitBefore = db.downloadOperationDao().find("committing")!!
+            val commitPayload = DownloadExecutionRoomStore.read(context, "committing", db)!!
             if (phase == "recover") {
                 assertFalse(before.lastErrorCode == "seed-pid:${Process.myPid()}")
             }
@@ -53,7 +63,18 @@ class DownloadOrderedRecoveryTest {
             assertEquals(before.createdAtMs, recovered.createdAtMs)
             assertEquals(555L, recovered.bytesWritten)
             assertFalse(DownloadExecutionRoomStore.read(context, "in-flight", db)!!.requiresWifiNetwork)
-            assertEquals(listOf("in-flight", "new-after-restart"), page(db).requests.map { it.operationId })
+            val commitRecovered = db.downloadOperationDao().find("committing")!!
+            assertEquals("RETRYABLE", commitRecovered.state)
+            assertEquals(commitBefore.queueOrder, commitRecovered.queueOrder)
+            assertEquals(commitBefore.createdAtMs, commitRecovered.createdAtMs)
+            assertEquals(3971909L, commitRecovered.bytesWritten)
+            assertEquals(commitPayload, DownloadExecutionRoomStore.read(context, "committing", db))
+            assertTrue(commitPayload.preserveStaging)
+            assertFalse(commitPayload.requiresWifiNetwork)
+            assertEquals(
+                listOf("in-flight", "committing", "new-after-restart"),
+                page(db).requests.map { it.operationId }
+            )
         } finally {
             db.close()
             if (phase != "seed") context.deleteDatabase(name)
@@ -231,6 +252,49 @@ class DownloadOrderedRecoveryTest {
 
     private suspend fun page(db: NeriUserDataDatabase, limit: Int = 10) =
         DownloadExecutionRoomReadStore.listSchedulableForPumpPage(context, null, limit, db, nowMs = 1000L)
+
+    @Test
+    fun rejectedCoreCannotBecomeReusableAfterRestartOrStaleRequestRefresh() = runBlocking {
+        val name = "invalid-core-recovery-${UUID.randomUUID()}"
+        var db = Room.databaseBuilder(context, NeriUserDataDatabase::class.java, name).build()
+        try {
+            seed(db, "invalid-core", 4, "CORE_COMMITTED", bytes = 3131565L)
+            val oldRequest = requireNotNull(DownloadExecutionRoomStore.read(context, "invalid-core", db))
+            val oldHeader = requireNotNull(db.downloadOperationDao().find("invalid-core"))
+            db.managedDownloadArtifactDao().upsert(ManagedDownloadArtifactEntity(
+                rootKey = oldHeader.libraryId, stableKey = oldHeader.stableKey, artifactId = "artifact",
+                state = "CORE_COMMITTED", leaseId = oldRequest.artifactLeaseId,
+                audioReference = "content://test/known-invalid.mp3", audioName = "known-invalid.mp3"
+            ))
+            assertNull(resetInvalidCoreDownloadForTransfer(context, oldRequest.song, oldRequest.operationId,
+                "content://test/known-invalid.mp3", "stale-lease", "CORE_AUDIO_DURATION_MISMATCH", db))
+            val reset = requireNotNull(resetInvalidCoreDownloadForTransfer(
+                context, oldRequest.song, oldRequest.operationId, "content://test/known-invalid.mp3",
+                oldRequest.artifactLeaseId, "CORE_AUDIO_DURATION_MISMATCH", db
+            ))
+            assertFalse(reset.retryExhausted)
+            assertTrue(reset.request.requiresFreshTransfer)
+            assertFalse(reset.request.preserveStaging)
+            db.close()
+            db = Room.databaseBuilder(context, NeriUserDataDatabase::class.java, name).build()
+            DownloadExecutionRoomStore.upsert(context, oldRequest, "RETRYABLE", database = db)
+            val reloaded = requireNotNull(DownloadExecutionRoomStore.read(context, oldRequest.operationId, db))
+            assertTrue(reloaded.requiresFreshTransfer)
+            assertEquals(oldRequest.artifactLeaseId, reloaded.artifactLeaseId)
+            val after = requireNotNull(db.downloadOperationDao().find(oldRequest.operationId))
+            assertEquals(oldHeader.queueOrder, after.queueOrder)
+            assertEquals(oldHeader.createdAtMs, after.createdAtMs)
+            assertEquals(1, after.retryCount)
+            assertNull(db.managedDownloadArtifactDao().find(oldHeader.libraryId, oldHeader.stableKey)?.audioReference)
+            assertTrue(DownloadExecutionRoomStore.prepareExplicitResume(
+                context, oldRequest.operationId, oldHeader.stableKey, database = db
+            ))
+            assertTrue(DownloadExecutionRoomStore.read(context, oldRequest.operationId, db)!!.requiresFreshTransfer)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
 
     private suspend fun seed(
         db: NeriUserDataDatabase, id: String, order: Int, state: String = "QUEUED",

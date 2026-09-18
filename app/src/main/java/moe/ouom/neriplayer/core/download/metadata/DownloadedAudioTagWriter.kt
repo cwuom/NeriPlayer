@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWith
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
+import moe.ouom.neriplayer.data.local.media.normalizeWritableComments
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
@@ -183,7 +184,7 @@ internal object DownloadedAudioTagWriter {
             sidecarReferences = sidecarReferences,
             standardizedLyricEmbeddingEnabled = standardizedLyricEmbeddingEnabled
         )
-        val requiredPropertyKeys = requiredEmbeddedPropertyKeys(audioExtension)
+        val requiredPropertyKeys = requiredEmbeddedPropertyKeys(audioExtension, expectedPropertyMap)
         val outcome = try {
             LocalMediaSupport.writeEditableMetadata(
                 context = context,
@@ -296,6 +297,7 @@ internal object DownloadedAudioTagWriter {
         standardizedLyricEmbeddingEnabled: Boolean
     ): PropertyMap {
         val propertyMap = copyPropertyMap(existingPropertyMap)
+        normalizeWritableComments(propertyMap)
         val audioExtension = audio.logicalName.substringAfterLast('.', "").lowercase()
         val embeddedLyrics = resolveEmbeddedLyrics(
             context = context,
@@ -669,11 +671,14 @@ internal object DownloadedAudioTagWriter {
         return LocalMediaSupport.hasExpectedPropertyMapValues(
             actual = actual,
             expected = expected,
-            requiredKeys = requiredEmbeddedPropertyKeys(audioExtension)
+            requiredKeys = requiredEmbeddedPropertyKeys(audioExtension, expected)
         )
     }
 
-    private fun requiredEmbeddedPropertyKeys(audioExtension: String): Set<String> = buildSet {
+    private fun requiredEmbeddedPropertyKeys(
+        audioExtension: String,
+        expected: PropertyMap
+    ): Set<String> = buildSet {
         addAll(
             listOf(
                 "TITLE",
@@ -691,6 +696,7 @@ internal object DownloadedAudioTagWriter {
         )
         addAll(standardLyricsMetadataKeys(audioExtension))
         addAll(roundTrippableTranslationKeys(audioExtension))
+        addAll(expected.keys.filter { it.startsWith("COMMENT:", ignoreCase = true) })
     }
 
     /** MP4 自由格式字段无法稳定往返带冒号的 key，保留两个可读回的翻译字段 */

@@ -1018,7 +1018,6 @@ class DefaultDownloadExecutionHost(
                 context = context.applicationContext,
                 request = request
             )
-            if (requiresPumpRetry(result)) onRecoveryRequired()
             var returnedResult = result
             var clearBlockedResult = false
             PersistentDownloadClearFenceStore.withSchedulingPermitSuspending(
@@ -1084,14 +1083,15 @@ class DefaultDownloadExecutionHost(
                             context = context.applicationContext,
                             operationId = normalizedId,
                             state = "RETRYABLE",
-                            errorCode = result.error.javaClass.simpleName
+                            errorCode = "DOWNLOAD_HOST_FAILURE:${result.error.javaClass.simpleName}"
                         )
                     }
                     DownloadExecutionResult.Retry -> {
                         operationStore.updateStateSuspending(
                             context = context.applicationContext,
                             operationId = normalizedId,
-                            state = "RETRYABLE"
+                            state = "RETRYABLE",
+                            errorCode = "DOWNLOAD_NO_PROGRESS"
                         )
                     }
                     DownloadExecutionResult.NetworkPolicyWaiting -> {
@@ -1126,76 +1126,85 @@ class DefaultDownloadExecutionHost(
             if (clearBlockedResult) {
                 DownloadExecutionResult.Cancelled
             } else {
+                if (requiresPumpRetry(returnedResult) &&
+                    operationStore.currentStateSuspending(appContext, normalizedId) == "INVALID"
+                ) {
+                    // 已经持久失败的任务不能再让系统 Worker 无条件重试
+                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                    returnedResult = DownloadExecutionResult.MissingOperation
+                }
                 if (requiresPumpRetry(returnedResult)) onRecoveryRequired()
                 returnedResult
             }
         } catch (cancellation: CancellationException) {
-            if (PersistentDownloadClearFenceStore.isActive(appContext)) {
-                withContext(NonCancellable) {
+            // 系统取消同样需要写回重试状态，否则 Room 查询会随父 Job 取消而留下 RUNNING
+            val cancellationResult = withContext(NonCancellable) cleanup@{
+                if (PersistentDownloadClearFenceStore.isActive(appContext)) {
                     try {
                         operationStore.requestCancelSuspending(appContext, normalizedId)
                     } catch (_: Throwable) {
                         // 清空栅栏已经生效，取消标记失败时由恢复流程补写
                     }
+                    return@cleanup null
                 }
-                throw cancellation
-            }
-            if (systemRetryStopOperationIds.contains(normalizedId)) {
-                throw cancellation
-            }
-            val latestState = operationStore.currentStateSuspending(
-                context.applicationContext,
-                normalizedId
-            )
-            resolveExecutionCancellationResult(latestState)?.let { result ->
-                return@withContext result
-            }
-            if (shouldHandleHostStop(latestState)) {
-                val explicitlyStopped =
-                    explicitSchedulerStopOperationIds.contains(normalizedId) ||
-                        operationStore.isStoppedSuspending(
-                            context.applicationContext,
-                            normalizedId
-                        )
-                val retryPrepared = if (!explicitlyStopped) {
-                    var clearBlockedStop = false
-                    val persisted: Boolean = PersistentDownloadClearFenceStore.withSchedulingPermitSuspending(
-                        context = appContext,
-                        onFenceActive = {
-                            clearBlockedStop = true
-                            try {
-                                operationStore.requestCancelSuspending(appContext, normalizedId)
-                            } catch (_: Throwable) {
-                                // 清空栅栏已经生效，保留取消语义等待恢复路径重试
-                            }
-                            false
-                        },
-                        stableKey = initialRequest.song.stableKey(),
-                        operationId = normalizedId
-                    ) {
-                        operationStore.updateStateSuspending(
-                            context = context.applicationContext,
-                            operationId = normalizedId,
-                            state = "RETRYABLE",
-                            errorCode = "HOST_CANCELLED"
-                        )
-                    }
-                    !clearBlockedStop && persisted == true
-                } else {
-                    false
+                if (systemRetryStopOperationIds.contains(normalizedId)) {
+                    return@cleanup null
                 }
-                GlobalDownloadManager.stopDownloadOperation(
-                    context = context.applicationContext,
-                    songKey = initialRequest.song.stableKey(),
-                    expectedAttemptId = initialRequest.attemptId,
-                    rememberForRetry = retryPrepared,
-                    operationId = normalizedId,
-                    knownOperationState = latestState
+                val latestState = operationStore.currentStateSuspending(
+                    context.applicationContext,
+                    normalizedId
                 )
+                resolveExecutionCancellationResult(latestState)?.let { result ->
+                    return@cleanup result
+                }
+                if (shouldHandleHostStop(latestState)) {
+                    val explicitlyStopped =
+                        explicitSchedulerStopOperationIds.contains(normalizedId) ||
+                            operationStore.isStoppedSuspending(
+                                context.applicationContext,
+                                normalizedId
+                            )
+                    val retryPrepared = if (!explicitlyStopped) {
+                        var clearBlockedStop = false
+                        val persisted: Boolean = PersistentDownloadClearFenceStore.withSchedulingPermitSuspending(
+                            context = appContext,
+                            onFenceActive = {
+                                clearBlockedStop = true
+                                try {
+                                    operationStore.requestCancelSuspending(appContext, normalizedId)
+                                } catch (_: Throwable) {
+                                    // 清空栅栏已经生效，保留取消语义等待恢复路径重试
+                                }
+                                false
+                            },
+                            stableKey = initialRequest.song.stableKey(),
+                            operationId = normalizedId
+                        ) {
+                            operationStore.updateStateSuspending(
+                                context = context.applicationContext,
+                                operationId = normalizedId,
+                                state = "RETRYABLE",
+                                errorCode = "HOST_CANCELLED"
+                            )
+                        }
+                        !clearBlockedStop && persisted == true
+                    } else {
+                        false
+                    }
+                    GlobalDownloadManager.stopDownloadOperation(
+                        context = context.applicationContext,
+                        songKey = initialRequest.song.stableKey(),
+                        expectedAttemptId = initialRequest.attemptId,
+                        rememberForRetry = retryPrepared,
+                        operationId = normalizedId,
+                        knownOperationState = latestState
+                    )
+                }
+                null
             }
+            if (cancellationResult != null) return@withContext cancellationResult
             throw cancellation
         } catch (error: Throwable) {
-            onRecoveryRequired()
             var clearBlockedFailure = false
             PersistentDownloadClearFenceStore.withSchedulingPermitSuspending(
                 context = appContext,
@@ -1214,12 +1223,16 @@ class DefaultDownloadExecutionHost(
                     context = context.applicationContext,
                     operationId = normalizedId,
                     state = "RETRYABLE",
-                    errorCode = error.javaClass.simpleName
+                    errorCode = "DOWNLOAD_HOST_FAILURE:${error.javaClass.simpleName}"
                 )
             }
             if (clearBlockedFailure) {
                 DownloadExecutionResult.Cancelled
+            } else if (operationStore.currentStateSuspending(appContext, normalizedId) == "INVALID") {
+                operationIdsBySongKey.remove(initialRequest.song.stableKey(), normalizedId)
+                DownloadExecutionResult.MissingOperation
             } else {
+                onRecoveryRequired()
                 DownloadExecutionResult.Failed(error)
             }
         } finally {
@@ -1247,11 +1260,13 @@ class DefaultDownloadExecutionHost(
                     systemRetryStopOperationIds.remove(normalizedId)
                     explicitSchedulerStopOperationIds.remove(normalizedId)
                 }
-                releaseHostAdmissionIfIdleSuspending(
-                    context = appContext,
-                    operationId = normalizedId,
-                    ticket = executionTicket
-                )
+                withContext(NonCancellable) {
+                    releaseHostAdmissionIfIdleSuspending(
+                        context = appContext,
+                        operationId = normalizedId,
+                        ticket = finishedTicket
+                    )
+                }
             }
         }
     }

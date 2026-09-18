@@ -5,11 +5,16 @@ import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecution
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationJournal
 import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
@@ -22,6 +27,55 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 
 class DownloadExecutionHostCancellationRaceTest {
+    @Test
+    fun `parent cancellation persists retry and releases admission through cancellable storage`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val cancellableJournal = object : DownloadExecutionOperationJournal by journal {
+            override suspend fun currentStateSuspending(context: Context, operationId: String): String? {
+                currentCoroutineContext().ensureActive()
+                return journal.currentState(context, operationId)
+            }
+
+            override suspend fun updateStateSuspending(
+                context: Context,
+                operationId: String,
+                state: String,
+                errorCode: String?
+            ): Boolean {
+                currentCoroutineContext().ensureActive()
+                return journal.updateState(context, operationId, state, errorCode)
+            }
+
+            override suspend fun releaseHostAdmissionSuspending(context: Context, operationId: String) {
+                currentCoroutineContext().ensureActive()
+                journal.releaseHostAdmission(context, operationId)
+            }
+        }
+        val store = DownloadExecutionOperationStore { cancellableJournal }
+        val request = DownloadExecutionRequest(
+            operationId = "cancelled-parent",
+            song = SongItemFixtures.sampleSong()
+        )
+        store.save(context, request)
+        val started = CompletableDeferred<Unit>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                started.complete(Unit)
+                awaitCancellation()
+            },
+            sdkInt = 28
+        )
+
+        val execution = async { host.execute(context, request.operationId) }
+        started.await()
+        execution.cancelAndJoin()
+
+        assertEquals("RETRYABLE", journal.currentState(context, request.operationId))
+        assertEquals(1, journal.hostAdmissionReleaseCount)
+    }
+
     @Test
     fun `cancel all keeps executing admission until execution finishes`() = runTest {
         runCancellationRace { host, context, operationId ->

@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperati
 import moe.ouom.neriplayer.core.download.execution.state.DownloadOperationState
 import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
 import moe.ouom.neriplayer.core.download.execution.state.planDownloadRetry
+import moe.ouom.neriplayer.core.download.execution.state.isAutomaticDownloadRetryExhausted
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.CachedNetworkPolicy
 import android.content.Context
 import androidx.room.withTransaction
@@ -14,6 +15,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.model.stableKey
 
@@ -73,7 +75,12 @@ internal suspend fun DownloadExecutionRoomStore.upsertImpl(
             }
         } == true
         val requestWithMonotonicIntent = request.copy(
+            // 迟到的排队快照不能撤销执行器已经绑定的代次
+            attemptId = maxOf(request.attemptId ?: 0L, existingRequest?.attemptId ?: 0L)
+                .takeIf { it > 0L },
             userInitiated = effectiveUserInitiated,
+            requiresFreshTransfer = request.requiresFreshTransfer ||
+                existingRequest?.requiresFreshTransfer == true,
             requiresWifiNetwork = request.requiresWifiNetwork && !batchAllowsMobile
         )
         val persistedRequest = when {
@@ -107,8 +114,8 @@ internal suspend fun DownloadExecutionRoomStore.upsertImpl(
                 totalBytes = existingHeader?.totalBytes,
                 resumeJson = readResumeJson(dao, existingHeader),
                 retryCount = existingHeader?.retryCount ?: 0,
-                nextRetryAtMs = existingHeader?.nextRetryAtMs
-                    ?.takeIf { state == DownloadOperationState.RETRYABLE.wireName },
+                // 更新载荷不能清掉持久重试期限，只有明确重开任务才能重置
+                nextRetryAtMs = existingHeader?.nextRetryAtMs?.takeUnless { restartForNewAttempt },
                 lastErrorCode = existingHeader?.lastErrorCode,
                 stopRequestedByUser = if (restartForNewAttempt) {
                     false
@@ -159,11 +166,19 @@ internal suspend fun DownloadExecutionRoomStore.updateStateImpl(
     state: String,
     errorCode: String? = null,
     database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
-    nowMs: Long = System.currentTimeMillis()
+    nowMs: Long = System.currentTimeMillis(),
+    expectedAttemptId: Long? = null
 ): Boolean {
     return database.withTransaction {
         val dao = database.downloadOperationDao()
         val current = dao.findHeader(operationId) ?: return@withTransaction false
+        val request = if (expectedAttemptId != null) {
+            DownloadExecutionRoomStore.Access.readRequestFromHeader(dao, current).request
+                ?: return@withTransaction false
+        } else null
+        if (expectedAttemptId != null && request?.attemptId != expectedAttemptId) {
+            return@withTransaction false
+        }
         val nextState = resolveDownloadOperationState(current.state, state)
             ?: return@withTransaction false
         val settlesBatchCompletion = nextState == DownloadOperationState.COMPLETED.wireName ||
@@ -185,6 +200,21 @@ internal suspend fun DownloadExecutionRoomStore.updateStateImpl(
                 errorCode = errorCode,
                 nowMs = nowMs
             )
+            if (isAutomaticDownloadRetryExhausted(errorCode, retryPlan.retryCount)) {
+                val changed = dao.transitionState(
+                    operationId, listOf(current.state), "INVALID", nowMs,
+                    "${errorCode}_RETRY_EXHAUSTED"
+                ) > 0
+                if (changed) {
+                    // 失败终态和批次计数一起提交，重启后不能再调度这一代任务
+                    markBatchMembersForOperation(
+                        context, operationId, current.stableKey, expectedAttemptId,
+                        DownloadBatchMemberTerminal.FAILED, database = database, nowMs = nowMs
+                    )
+                    dao.deleteHostAdmission(operationId)
+                }
+                return@withTransaction changed
+            }
             return@withTransaction dao.transitionToRetryable(
                 operationId = operationId,
                 expectedStates = listOf(current.state),

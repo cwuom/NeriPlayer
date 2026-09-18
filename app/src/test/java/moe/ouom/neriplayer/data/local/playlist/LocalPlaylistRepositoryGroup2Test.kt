@@ -515,15 +515,17 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
     }
 
     @Test
-    fun `new scanned batch is sorted independently above existing songs`() = runTest {
+    fun `new scanned batch uses modification order independently above existing songs`() = runTest {
         val older = localSong(index = 711, name = "older").copy(
             addedAt = 10L,
-            logicalCreatedAtMs = 10L,
+            logicalCreatedAtMs = 30L,
+            sourceModifiedAtMs = 10L,
             createdAtConfidence = "EXACT"
         )
         val newer = localSong(index = 712, name = "newer").copy(
             addedAt = 20L,
             logicalCreatedAtMs = 20L,
+            sourceModifiedAtMs = 20L,
             createdAtConfidence = "EXACT"
         )
         val repository = LocalPlaylistRepository.createForTest(
@@ -545,10 +547,10 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
         repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(older, newer))
 
         val secondOlder = localSong(index = 713, name = "E").copy(
-            addedAt = 1L, logicalCreatedAtMs = 1L, createdAtConfidence = "EXACT"
+            addedAt = 1L, logicalCreatedAtMs = 3L, sourceModifiedAtMs = 1L, createdAtConfidence = "EXACT"
         )
         val secondNewer = localSong(index = 714, name = "F").copy(
-            addedAt = 2L, logicalCreatedAtMs = 2L, createdAtConfidence = "EXACT"
+            addedAt = 2L, logicalCreatedAtMs = 2L, sourceModifiedAtMs = 2L, createdAtConfidence = "EXACT"
         )
         repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(secondOlder, secondNewer))
 

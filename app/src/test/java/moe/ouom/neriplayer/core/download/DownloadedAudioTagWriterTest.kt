@@ -17,6 +17,32 @@ import moe.ouom.neriplayer.data.model.SongItem
 
 class DownloadedAudioTagWriterTest {
     @Test
+    fun `mp3 mirrored comments remain valid but missing or altered content fails`() {
+        val expected: PropertyMap = hashMapOf("COMMENT" to arrayOf("first", "second"))
+        fun matches(vararg comments: String) = MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+            hashMapOf("COMMENT" to arrayOf(*comments)), expected, "mp3"
+        )
+        assertTrue(matches("first", "second", "first"))
+        assertFalse(matches("first", "first"))
+        assertFalse(matches("first", "second", "unexpected"))
+        assertFalse(matches("first", "changed second"))
+    }
+
+    @Test
+    fun `download publication requires preserving described comments too`() {
+        val expected: PropertyMap = hashMapOf("COMMENT:DESCRIPTION" to arrayOf("original note"))
+        assertTrue(MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+            expected, expected, "mp3"
+        ))
+        assertFalse(MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+            hashMapOf(), expected, "mp3"
+        ))
+        assertFalse(MetadataDownloadedAudioTagWriter.hasExpectedEmbeddedPropertyValues(
+            hashMapOf("COMMENT:DESCRIPTION" to arrayOf("changed note")), expected, "mp3"
+        ))
+    }
+
+    @Test
     fun `download tag write does not repeat companion sidecar persistence`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/metadata/" +

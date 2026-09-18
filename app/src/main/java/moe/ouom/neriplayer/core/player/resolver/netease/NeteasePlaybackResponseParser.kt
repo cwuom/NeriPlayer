@@ -15,7 +15,10 @@ internal object NeteasePlaybackResponseParser {
             val level: String? = null,
             val bitrateKbps: Int? = null,
             val notice: Notice? = null,
-            val contentLength: Long? = null
+            val contentLength: Long? = null,
+            val songId: Long? = null,
+            val durationMs: Long? = null,
+            val contentMd5: String? = null
         ) : PlaybackResult()
 
         object RequiresLogin : PlaybackResult()
@@ -62,7 +65,12 @@ internal object NeteasePlaybackResponseParser {
                     level = data.optCleanString("level"),
                     bitrateKbps = data.optBitrateKbps(),
                     notice = notice,
-                    contentLength = data.optLongOrNull("size")?.takeIf { it > 0L }
+                    contentLength = data.optLongOrNull("size")?.takeIf { it > 0L },
+                    songId = data.optLongOrNull("id")?.takeIf { it > 0L },
+                    durationMs = data.optLongOrNull("time")?.takeIf { it > 0L },
+                    contentMd5 = data.optCleanString("md5")
+                        ?.takeIf { it.matches(Regex("[a-fA-F0-9]{32}")) }
+                        ?.lowercase()
                 )
             }
 

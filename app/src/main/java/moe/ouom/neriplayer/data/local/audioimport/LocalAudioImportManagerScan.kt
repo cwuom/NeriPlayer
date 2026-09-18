@@ -128,8 +128,9 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
             metadata.audioId,
             metadata.stableKey
         ) != null
-    if (!hasIdentity && metadata.durationMs <= 0L && resolvedCover == null) return song
+    if (!hasIdentity && metadata.durationMs <= 0L && resolvedCover == null && metadata.sourceModifiedAtMs == null) return song
     return song.copy(
+        sourceModifiedAtMs = metadata.sourceModifiedAtMs ?: song.sourceModifiedAtMs,
         id = metadata.songId ?: song.id,
         name = resolvedName ?: song.name,
         artist = resolvedArtist ?: song.artist,

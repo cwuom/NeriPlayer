@@ -116,6 +116,7 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
 ): SongItem {
     val mergedSong = newSongInfo.copy(
         addedAt = currentSong.addedAt,
+        sourceModifiedAtMs = currentSong.sourceModifiedAtMs ?: newSongInfo.sourceModifiedAtMs,
         logicalCreatedAtMs = currentSong.logicalCreatedAtMs
             ?: newSongInfo.logicalCreatedAtMs,
         createdAtSource = currentSong.createdAtSource

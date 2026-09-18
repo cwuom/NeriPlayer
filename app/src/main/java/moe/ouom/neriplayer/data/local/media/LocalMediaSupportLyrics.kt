@@ -300,6 +300,7 @@ internal fun LocalMediaSupport.writeEditableMetadataDirectTransaction(
                 writeLyrics = writeLyrics,
                 sourceStableKey = editableMetadataSourceStableKey(song)
             )
+        normalizeWritableComments(updated)
         val picturePlan = buildEditableCoverWritePlan(
             context = context,
             descriptor = target,
@@ -462,14 +463,19 @@ internal fun LocalMediaSupport.verifyEditableMetadataReadback(
     resolved: ResolvedInspectableLocalMedia,
     metadataSnapshot: EditableMetadataSnapshot
 ): Boolean {
-    return retryEditableMetadataReadback(sourceUri.scheme) {
+    var failedPropertyKeys: Set<String> = emptySet()
+    var coverVerified = false
+    val preservedCommentKeys = metadataSnapshot.updatedProperties.keys.filter {
+        it.equals("COMMENT", ignoreCase = true) || it.startsWith("COMMENT:", ignoreCase = true)
+    }.toSet()
+    val verified = retryEditableMetadataReadback(sourceUri.scheme) {
         openTagLibDescriptor(
             context = context,
             uri = sourceUri,
             file = resolved.file
         )?.use { target ->
             val propertyMap = loadTagLibPropertyMap(target) ?: return@use false
-            val propertiesMatch = if (
+            val requestedPropertiesMatch = if (
                 metadataSnapshot.requiredEmbeddedPropertyKeys.isNotEmpty()
             ) {
                 hasExpectedPropertyMapValues(
@@ -504,6 +510,11 @@ internal fun LocalMediaSupport.verifyEditableMetadataReadback(
                     sourceStableKey = metadataSnapshot.sourceStableKey
                 )
             }
+            val propertiesMatch = requestedPropertiesMatch && hasExpectedPropertyMapValues(
+                actual = propertyMap,
+                expected = metadataSnapshot.updatedProperties,
+                requiredKeys = preservedCommentKeys
+            )
             val coverMatch = when (val picturePlan = metadataSnapshot.picturePlan) {
                 EditableCoverWritePlan.Unchanged -> true
                 EditableCoverWritePlan.Unreadable -> false
@@ -521,9 +532,21 @@ internal fun LocalMediaSupport.verifyEditableMetadataReadback(
                     )
                 }
             }
+            failedPropertyKeys = if (!propertiesMatch) {
+                (metadataSnapshot.requiredEmbeddedPropertyKeys + preservedCommentKeys).filterNot { key ->
+                    hasExpectedPropertyMapValues(propertyMap, metadataSnapshot.updatedProperties, setOf(key))
+                }.toSet()
+            } else {
+                emptySet()
+            }
+            coverVerified = coverMatch
             propertiesMatch && coverMatch
         } == true
     }
+    if (!verified) {
+        NPLogger.d(TAG, "metadata readback diagnostics: keys=$failedPropertyKeys, coverVerified=$coverVerified")
+    }
+    return verified
 }
 
 internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(

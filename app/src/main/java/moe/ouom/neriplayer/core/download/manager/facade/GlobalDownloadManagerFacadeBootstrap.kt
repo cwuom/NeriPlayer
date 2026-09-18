@@ -474,7 +474,7 @@ internal fun GlobalDownloadManager.initializeImpl(context: Context) {
             }.getOrElse { error ->
                 NPLogger.w(
                     TAG,
-                    "回收旧进程 RUNNING 下载失败，保留状态等待下次启动: " +
+                    "回收旧进程传输或提交任务失败，保留状态等待下次启动: " +
                         error.message,
                     error
                 )
@@ -483,7 +483,7 @@ internal fun GlobalDownloadManager.initializeImpl(context: Context) {
             if (orphanedRunningKeys.isNotEmpty()) {
                 NPLogger.i(
                     TAG,
-                    "旧进程传输已重新排队: count=${orphanedRunningKeys.size}"
+                    "旧进程传输和未确认提交已重新排队: count=${orphanedRunningKeys.size}"
                 )
             }
             // 先恢复 Room 进度再打开交互闸门，避免重启 Worker 以空任务列表运行
@@ -898,6 +898,8 @@ internal fun GlobalDownloadManager.recoverPendingDownloadsForNetworkRestoredImpl
         return
     }
     scope.launch {
+        // 网络回调会早于启动恢复，先恢复持久任务，避免目录查询抢在 Room 进度前执行
+        startupProgressRestoreReady.await()
         withPendingDownloadRecoverySlot("network:$reason") {
             if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
                 return@withPendingDownloadRecoverySlot

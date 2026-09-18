@@ -45,15 +45,9 @@ internal suspend fun DownloadExecutionRoomStore.recordPostCoreRetryFailureImpl(
         ) {
             return@withTransaction null
         }
-        // 旧版本在 core commit 后可能遗留传输阶段的 retry_count，但没有
-        // post-core deadline。首次记录时从零开始，避免升级后立即误判耗尽
-        val previousPostCoreRetryCount = if (header.nextRetryAtMs != null) {
-            header.retryCount
-        } else {
-            0
-        }
+        // core 提交会清除传输期限，但不代表整条下载已经成功，不能因此重新给予完整重试预算
         val retryPlan = planDownloadRetry(
-            currentRetryCount = previousPostCoreRetryCount,
+            currentRetryCount = header.retryCount,
             errorCode = normalizedErrorCode,
             nowMs = nowMs
         )

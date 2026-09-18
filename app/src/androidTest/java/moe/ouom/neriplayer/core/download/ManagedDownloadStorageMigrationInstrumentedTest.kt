@@ -79,6 +79,8 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     fun privateSafPrivateRoundTripPreservesManagedAudioMetadataAndSidecars() = runBlocking {
         val context = isolatedPrivateContext()
         val fixture = writePrivateFixture(context)
+        val sourceModifiedAt = 1_600_000_000_000L
+        assertTrue(fixture.audio.setLastModified(sourceModifiedAt))
         val treeUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID)
 
         val toSaf = ManagedDownloadStorage.migrateManagedDownloads(
@@ -113,6 +115,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
         val safMetadata = JSONObject(readDocument(targetMetadata).decodeToString())
         assertEquals(123456L, safMetadata.getLong("createdAtMs"))
         assertEquals(123456L, safMetadata.getLong("sourceCreatedAtMs"))
+        assertEquals(sourceModifiedAt, safMetadata.getLong("sourceModifiedAtMs"))
         assertEquals("FILESYSTEM_BIRTH", safMetadata.getString("createdAtSource"))
         assertSameDocument(targetAudio.uri, safMetadata.getString("mediaUri"))
         assertSameDocument(targetCover.uri, safMetadata.getString("coverPath"))
@@ -163,6 +166,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
         val privateMetadata = JSONObject(restoredMetadata.readText())
         assertEquals(123456L, privateMetadata.getLong("createdAtMs"))
         assertEquals(123456L, privateMetadata.getLong("sourceCreatedAtMs"))
+        assertEquals(sourceModifiedAt, privateMetadata.getLong("sourceModifiedAtMs"))
         assertEquals(restoredAudio.toURI().toString(), privateMetadata.getString("mediaUri"))
         assertEquals(restoredCover.toURI().toString(), privateMetadata.getString("coverPath"))
         assertEquals(restoredLyric.toURI().toString(), privateMetadata.getString("lyricPath"))

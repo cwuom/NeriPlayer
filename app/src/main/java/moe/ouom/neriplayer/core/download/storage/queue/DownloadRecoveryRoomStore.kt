@@ -66,6 +66,13 @@ internal class DownloadRecoveryRoomStore(
                 forceNewKeys
             )
             val songKeys = distinctSongs.map(SongItem::stableKey)
+            val failedKeys = if (userInitiated) emptySet() else {
+                songKeys.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).flatMap { keys ->
+                    database.downloadOperationDao().findAllHeadersByStableKeysAnyLibrary(
+                        stableKeys = keys, states = listOf("INVALID")
+                    ).map { it.stableKey }
+                }.toSet()
+            }
             val inFlightOperationIds = DownloadExecutionRoomStore
                 .findReadableOperationsBySongKeys(
                     context = appContext,
@@ -102,12 +109,14 @@ internal class DownloadRecoveryRoomStore(
             var nextOrder = database.downloadOperationDao().findMaxActiveQueueOrder(
                 states = DownloadExecutionRoomStore.ACTIVE_OPERATION_STATES
             )?.let { maxOrder -> maxOrder + 1 } ?: 0
-            distinctSongs.map { song ->
+            distinctSongs.mapNotNull { song ->
                 val key = song.stableKey()
                 inFlightOperationIds[key]?.let { operationId ->
-                    return@map operationId
+                    return@mapNotNull operationId
                 }
                 val old = existing[key]
+                // 迟到的宿主停止回调不能为已耗尽预算的歌曲自动创建一代新任务
+                if (old == null && key in failedKeys && key !in forceNewKeys) return@mapNotNull null
                 val operationId = existingOperationIds[key]
                     ?: UUID.randomUUID().toString()
                 val effectiveRequiresWifiNetwork = if (userInitiated) {

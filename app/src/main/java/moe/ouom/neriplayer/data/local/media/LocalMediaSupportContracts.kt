@@ -314,6 +314,7 @@ internal data class DirectLocalLyricsInspection(
 
 internal data class LocalMetadataSidecar(
     val reference: String,
+    val sourceModifiedAtMs: Long? = null,
     val name: String? = null,
     val artist: String? = null,
     val album: String? = null,

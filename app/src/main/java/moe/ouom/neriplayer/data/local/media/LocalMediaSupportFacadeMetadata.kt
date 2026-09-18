@@ -271,6 +271,7 @@ internal fun LocalMediaSupport.parseLocalMetadataSidecarImpl(
         val root = JSONObject(raw)
         LocalMetadataSidecar(
             reference = reference,
+            sourceModifiedAtMs = root.optLong("sourceModifiedAtMs").takeIf { it > 0L },
             name = root.optPresentLocalMetadataString("name"),
             artist = root.optPresentLocalMetadataString("artist"),
             album = root.optPresentLocalMetadataString("album")
@@ -324,6 +325,9 @@ internal fun LocalMediaSupport.buildLocalLyricsMetadataJsonImpl(
         ?.takeIf(String::isNotBlank)
         ?.let { runCatching { JSONObject(it) }.getOrNull() }
         ?: JSONObject()
+    if (root.optLong("sourceModifiedAtMs", 0L) <= 0L) {
+        song.sourceModifiedAtMs?.takeIf { it > 0L }?.let { root.put("sourceModifiedAtMs", it) }
+    }
     updateLyricMetadataField(
         root = root,
         matchedKey = "matchedLyric",

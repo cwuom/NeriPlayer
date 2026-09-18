@@ -546,7 +546,7 @@ internal interface DownloadOperationDao {
             "next_retry_at_ms = CASE WHEN :state IN ('RETRYABLE', " +
             "'ASSETS_ENRICHING', 'DEGRADED_COMPLETE') " +
             "THEN next_retry_at_ms ELSE NULL END, " +
-            "retry_count = CASE WHEN :state IN ('CORE_COMMITTED', 'COMPLETED', 'FINALIZED', " +
+            "retry_count = CASE WHEN :state IN ('COMPLETED', 'FINALIZED', " +
             "'METADATA_ACTION_REQUIRED', 'CANCELLED', 'INVALID') THEN 0 ELSE retry_count END " +
             "WHERE operation_id = :operationId AND state IN (:expectedStates) " +
             "AND stop_requested_by_user = 0"
@@ -652,7 +652,7 @@ internal interface DownloadOperationDao {
             "next_retry_at_ms = CASE WHEN :state IN ('RETRYABLE', " +
             "'ASSETS_ENRICHING', 'DEGRADED_COMPLETE') " +
             "THEN next_retry_at_ms ELSE NULL END, " +
-            "retry_count = CASE WHEN :state IN ('CORE_COMMITTED', 'COMPLETED', 'FINALIZED', " +
+            "retry_count = CASE WHEN :state IN ('COMPLETED', 'FINALIZED', " +
             "'METADATA_ACTION_REQUIRED', 'CANCELLED', 'INVALID') THEN 0 ELSE retry_count END " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +
             "AND state IN (:expectedStates) AND stop_requested_by_user = 0 " +
@@ -675,7 +675,8 @@ internal interface DownloadOperationDao {
         "UPDATE download_operation SET state = :state, " +
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs), " +
             "last_error_code = :errorCode, " +
-            "next_retry_at_ms = NULL, retry_count = 0 " +
+            "next_retry_at_ms = NULL, " +
+            "retry_count = CASE WHEN :state = 'CORE_COMMITTED' THEN retry_count ELSE 0 END " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +
             "AND updated_at_ms = :expectedUpdatedAtMs " +
             "AND state IN (:expectedStates) AND stop_requested_by_user = 0 " +
@@ -1102,7 +1103,7 @@ internal interface DownloadOperationDao {
     @Query(
         "UPDATE download_operation SET state = 'CORE_COMMITTED', " +
             "updated_at_ms = :updatedAtMs, " +
-            "retry_count = 0, next_retry_at_ms = NULL, " +
+            "next_retry_at_ms = NULL, " +
             "last_error_code = CASE WHEN stop_requested_by_user = 1 " +
             "AND last_error_code = 'USER_CANCELLED' THEN last_error_code ELSE NULL END " +
             "WHERE operation_id = :operationId " +
@@ -1150,20 +1151,21 @@ internal interface DownloadOperationDao {
 
     @Query(
         "SELECT operation_id, stable_key FROM download_operation " +
-            "WHERE state = 'RUNNING' AND stop_requested_by_user = 0 " +
+            "WHERE state IN ('RUNNING', 'COMMITTING') AND stop_requested_by_user = 0 " +
             "AND (host_process_token IS NULL OR host_process_token != :processToken)"
     )
     suspend fun findOrphanedRunningOperationIdentities(
         processToken: String
     ): List<DownloadOperationIdentityRow>
 
-    /** 新进程只接管没有当前进程宿主的传输态，提交态仍交给专用恢复链路 */
+    // 提交未确认时也必须重新入队，否则它既不属于传输队列，也不属于已提交音频的收尾队列
+    // 保留原队号、检查点和 staging，由现有恢复入口核验文件后继续
     @Query(
         "UPDATE download_operation SET state = 'RETRYABLE', " +
             "next_retry_at_ms = NULL, last_error_code = 'PROCESS_RESTART_RECOVERY', " +
             "host_process_token = NULL, host_admitted_at_ms = NULL, " +
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
-            "WHERE state = 'RUNNING' AND stop_requested_by_user = 0 " +
+            "WHERE state IN ('RUNNING', 'COMMITTING') AND stop_requested_by_user = 0 " +
             "AND (host_process_token IS NULL OR host_process_token != :processToken)"
     )
     suspend fun requeueOrphanedRunningOperations(

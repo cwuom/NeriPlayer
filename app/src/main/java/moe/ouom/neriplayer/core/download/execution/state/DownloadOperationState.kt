@@ -63,6 +63,22 @@ internal fun isRetryDeadlineReady(nextRetryAtMs: Long?, nowMs: Long): Boolean {
 internal const val DOWNLOAD_RETRY_BASE_DELAY_MS = 1_000L
 internal const val DOWNLOAD_RETRY_MAX_DELAY_MS = 5 * 60 * 1_000L
 internal const val DOWNLOAD_RETRY_MAX_COUNT = 31
+internal const val DOWNLOAD_INTEGRITY_MAX_FAILURES = 3
+
+internal fun isAutomaticDownloadRetryExhausted(errorCode: String?, failureCount: Int): Boolean {
+    val limit = when {
+        errorCode?.startsWith("DOWNLOAD_INTEGRITY_") == true ||
+            errorCode?.startsWith("CORE_AUDIO_") == true -> DOWNLOAD_INTEGRITY_MAX_FAILURES
+        errorCode == "DOWNLOAD_SOURCE_MISSING" -> 3
+        errorCode == "DOWNLOAD_FAILED" -> 6
+        errorCode == "DOWNLOAD_NO_PROGRESS" -> 6
+        errorCode == "DOWNLOAD_STORAGE_UNAVAILABLE" -> 6
+        errorCode?.startsWith("DOWNLOAD_HOST_FAILURE:") == true -> 6
+        errorCode == "DOWNLOAD_TRANSIENT_FAILURE" -> 8
+        else -> return false
+    }
+    return failureCount >= limit
+}
 
 /** 网络策略和取消收敛由专用唤醒器负责，不能再叠加一个盲目延迟 */
 private val IMMEDIATE_DOWNLOAD_RETRY_ERROR_CODES = setOf(
@@ -86,7 +102,7 @@ internal fun planDownloadRetry(
         .coerceAtMost(DOWNLOAD_RETRY_MAX_COUNT - 1) + 1
     if (errorCode in IMMEDIATE_DOWNLOAD_RETRY_ERROR_CODES) {
         return DownloadRetryPlan(
-            retryCount = retryCount,
+            retryCount = currentRetryCount.coerceIn(0, DOWNLOAD_RETRY_MAX_COUNT),
             nextRetryAtMs = null
         )
     }
@@ -99,7 +115,11 @@ internal fun planDownloadRetry(
         nowMs + delayMs
     }
     return DownloadRetryPlan(
-        retryCount = retryCount,
+        retryCount = if (errorCode == "NETWORK_UNAVAILABLE") {
+            currentRetryCount.coerceIn(0, DOWNLOAD_RETRY_MAX_COUNT)
+        } else {
+            retryCount
+        },
         nextRetryAtMs = deadline
     )
 }

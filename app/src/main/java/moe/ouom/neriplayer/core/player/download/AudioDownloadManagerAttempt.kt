@@ -34,7 +34,6 @@ import moe.ouom.neriplayer.core.download.execution.host.DownloadTransferAdmissio
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.policy.shouldRollbackCancelledAudio
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -72,7 +71,7 @@ internal suspend fun AudioDownloadManager.handleDownloadSongFailure(
     if (error is RetryableDownloadFailureException) {
         NPLogger.w(
             TAG,
-            "下载短重试已耗尽，保留工作文件交给持久队列恢复: " +
+            "下载暂不能完成，保留工作文件交给持久队列恢复: " +
                 "song=${song.name}, offline=${error.networkUnavailable}, " +
                 "error=${error.cause?.javaClass?.simpleName ?: error.javaClass.simpleName}"
         )
@@ -247,21 +246,18 @@ internal suspend fun AudioDownloadManager.runDownloadAttempts(
                 ?: 0L
         )
         try {
-            if (
-                executeDownloadAttempt(
-                    context = context,
-                    song = song,
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId,
-                    effectiveOperationId = effectiveOperationId,
-                    downloadAudioQuality = downloadAudioQuality,
-                    isYouTubeMusic = isYouTubeMusic,
-                    isBili = isBili,
-                    state = state
-                )
-            ) {
-                return
-            }
+            executeDownloadAttempt(
+                context = context,
+                song = song,
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                effectiveOperationId = effectiveOperationId,
+                downloadAudioQuality = downloadAudioQuality,
+                isYouTubeMusic = isYouTubeMusic,
+                isBili = isBili,
+                state = state
+            )
+            return
         } catch (error: Exception) {
             when (
                 handleDownloadAttemptFailure(
@@ -291,7 +287,7 @@ internal suspend fun AudioDownloadManager.executeDownloadAttempt(
     isYouTubeMusic: Boolean,
     isBili: Boolean,
     state: DownloadExecutionAttemptState
-): Boolean {
+) {
     val songKey = song.stableKey()
     val traceToken = DownloadOperationTrace.begin(
         operationId = effectiveOperationId,
@@ -324,52 +320,14 @@ internal suspend fun AudioDownloadManager.executeDownloadAttempt(
     )
     if (resolved == null) {
         val hasConfirmedInternetAccess = context.hasConfirmedInternetAccess()
-        if (hasConfirmedInternetAccess) {
-            state.confirmedSourceMissCount++
-        }
-        if (state.attemptNumber >= TRANSIENT_DOWNLOAD_MAX_ATTEMPTS) {
-            throw RetryableDownloadFailureException(
-                message = context.getString(R.string.download_no_url, song.name),
-                networkUnavailable = !hasConfirmedInternetAccess
-            )
-        }
-        val retryDelayMs = resolveTransientDownloadRetryDelayMs(state.attemptNumber)
-        publishRetryWaitingProgress(
-            songId = song.id,
-            songKey = songKey,
-            fileName = state.activeWorkingFileName
-                ?: ManagedDownloadStorage.buildDisplayBaseName(song),
-            bytesRead = resolveWorkingFileBytes(state.tempFile),
-            totalBytes = progressStore.currentProgress()
-                ?.takeIf { it.songKey == songKey }
-                ?.totalBytes
-                ?: 0L,
-            attemptId = attemptId,
-            operationId = effectiveOperationId
+        // 来源解析已经执行平台自身的刷新与回退，空结果只交给持久队列重试
+        // 避免短重试和跨进程重试相乘，也避免离线时一直占着执行槽位
+        throw RetryableDownloadFailureException(
+            message = context.getString(R.string.download_no_url, song.name),
+            networkUnavailable = !hasConfirmedInternetAccess,
+            errorCode = "DOWNLOAD_SOURCE_MISSING"
         )
-        NPLogger.w(
-            TAG,
-            "下载链接暂时不可用，准备重试: song=${song.name}, " +
-                "confirmedMiss=${state.confirmedSourceMissCount}, " +
-                "attempt=${state.attemptNumber}/$TRANSIENT_DOWNLOAD_MAX_ATTEMPTS, " +
-                "confirmedInternet=$hasConfirmedInternetAccess"
-        )
-        if (isYouTubeMusic) {
-            state.forceRefreshYouTubeSource = true
-        }
-        evictDownloadConnections()
-        waitForRetryOrCancellation(
-            context = context,
-            songKey = songKey,
-            delayMs = retryDelayMs,
-            batchSessionId = batchSessionId,
-            attemptId = attemptId,
-            operationId = effectiveOperationId
-        )
-        state.attemptNumber++
-        return false
     }
-    state.confirmedSourceMissCount = 0
     state.forceRefreshYouTubeSource = false
     DownloadOperationTrace.mark(
         traceToken,
@@ -400,7 +358,6 @@ internal suspend fun AudioDownloadManager.executeDownloadAttempt(
         effectiveOperationId = effectiveOperationId,
         state = state
     )
-    return true
 }
 
 internal suspend fun AudioDownloadManager.resolveDownloadSourceForAttempt(
@@ -469,7 +426,7 @@ internal suspend fun AudioDownloadManager.prepareDownloadAttempt(
         )
     }
     val requestBuilder = Request.Builder().url(url)
-    if (song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)) {
+    if (AudioDownloadSourceResolver.isBiliSource(song)) {
         val cookieMap = AppContainer.biliCookieRepo.getCookiesOnce()
         val cookieHeader = cookieMap.entries.joinToString("; ") { (key, value) ->
             "$key=$value"
@@ -709,7 +666,8 @@ internal suspend fun AudioDownloadManager.transferAndCommitDownloadAttempt(
                         effectiveOperationId = effectiveOperationId,
                         batchSessionId = batchSessionId,
                         attemptId = attemptId,
-                        coreCommitTracker = state.coreCommitTracker
+                        coreCommitTracker = state.coreCommitTracker,
+                        resolvedSource = prepared.resolved
                     )
                 } finally {
                     DownloadOperationTrace.mark(
@@ -844,6 +802,15 @@ internal suspend fun AudioDownloadManager.handleDownloadAttemptFailure(
                 cancelAllDownloads = true
             )
         }
+        if (state.attemptNumber >= TRANSIENT_DOWNLOAD_MAX_ATTEMPTS) {
+            // 探测失败和空间预留竞争也必须让出宿主，不能无限占用同一执行槽位
+            throw RetryableDownloadFailureException(
+                message = "download storage temporarily unavailable: $storageFailureKind",
+                networkUnavailable = false,
+                cause = error,
+                errorCode = "DOWNLOAD_STORAGE_UNAVAILABLE"
+            )
+        }
         NPLogger.w(
             TAG,
             "下载空间检查暂不可用，保留工作文件短暂重试: " +
@@ -858,6 +825,7 @@ internal suspend fun AudioDownloadManager.handleDownloadAttemptFailure(
             attemptId = attemptId,
             operationId = effectiveOperationId
         )
+        state.attemptNumber++
         return DownloadAttemptFailureAction.RETRY
     }
     val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
@@ -1028,11 +996,6 @@ internal suspend fun AudioDownloadManager.handleDownloadAttemptFailure(
     if (deleteWorkingFileUnlessNetworkPolicyPaused(songKey, state.tempFile)) {
         state.tempFile = null
     }
-    NPLogger.e(
-        TAG,
-        "下载失败: ${song.name}, 错误: ${error.javaClass.simpleName} - ${error.message}",
-        error
-    )
     throw error
 }
 
@@ -1090,7 +1053,8 @@ internal suspend fun AudioDownloadManager.finalizeDownloadedAudio(
     effectiveOperationId: String,
     batchSessionId: Long?,
     attemptId: Long?,
-    coreCommitTracker: DownloadCoreCommitTracker
+    coreCommitTracker: DownloadCoreCommitTracker,
+    resolvedSource: ResolvedDownloadSource? = null
 ): CoreCommittedAudio {
     publishStageProgress(
         songId = workingSong.id,
@@ -1109,11 +1073,12 @@ internal suspend fun AudioDownloadManager.finalizeDownloadedAudio(
         attemptId = attemptId,
         operationId = effectiveOperationId
     )
-    verifyDownloadedAudioPayload(
+    val verifiedAudioDurationMs = verifyDownloadedAudioPayload(
         song = workingSong,
         tempFile = workingFile,
         displayFileName = fileName,
-        payloadSummary = payloadSummary
+        payloadSummary = payloadSummary,
+        resolvedSource = resolvedSource
     )
     ensureSongDownloadNotCancelled(
         songKey = songKey,
@@ -1133,7 +1098,8 @@ internal suspend fun AudioDownloadManager.finalizeDownloadedAudio(
         context = context,
         song = workingSong,
         audioTargetName = fileName,
-        operationId = effectiveOperationId
+        operationId = effectiveOperationId,
+        verifiedAudioDurationMs = verifiedAudioDurationMs
     )
     ensureSongDownloadNotCancelled(
         songKey = songKey,

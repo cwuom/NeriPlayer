@@ -35,10 +35,9 @@ class TerminalTemporaryWriteCleanupJournalTest {
         val firstSnapshot = journal.availableEntries().single()
         assertTrue(journal.enqueue(root, listOf("second.mp3")))
 
-        assertFalse(journal.consume(firstSnapshot))
+        assertTrue(journal.consume(firstSnapshot))
         assertEquals(
             listOf(
-                "first.mp3",
                 "second.mp3"
             ),
             journal.availableEntries().single().targetNames
@@ -91,11 +90,26 @@ class TerminalTemporaryWriteCleanupJournalTest {
         assertTrue(journal.enqueue(root, listOf("second.mp3")))
 
         assertEquals(null, journal.currentEntryIfTargetsMatch(staleSnapshot))
-        assertFalse(journal.consume(staleSnapshot))
+        assertTrue(journal.consume(staleSnapshot))
         assertEquals(
-            listOf("first.mp3", "second.mp3"),
+            listOf("second.mp3"),
             journal.availableEntries().single().targetNames
         )
+    }
+
+    @Test
+    fun `restart retains receipts while unrelated songs enqueue and overlapping targets refresh`() {
+        val store = InMemoryJournalStore()
+        val journal = TerminalTemporaryWriteCleanupJournal(store)
+        val root = fileRoot("/downloads")
+        journal.enqueue(root, listOf("first.mp3", "shared.mp3"))
+        val captured = journal.availableEntries().single()
+        journal.enqueue(root, listOf("second.mp3", "shared.mp3"))
+        val restored = TerminalTemporaryWriteCleanupJournal(store)
+        assertFalse(restored.consume(captured))
+        assertEquals(listOf("second.mp3", "shared.mp3"), restored.availableEntries().single().targetNames)
+        assertTrue(restored.consume(restored.availableEntries().single()))
+        assertTrue(restored.availableEntries().isEmpty())
     }
 
     @Test

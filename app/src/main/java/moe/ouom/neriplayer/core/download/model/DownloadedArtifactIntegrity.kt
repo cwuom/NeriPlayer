@@ -72,7 +72,7 @@ internal fun verifyDownloadedArtifactIntegrity(
         issues += DownloadedArtifactIntegrityIssue.AUDIO_UNREADABLE
     }
     verifyAudioDuration(
-        expectedDurationMs = song.durationMs,
+        expectedDurationMs = expectedDownloadedAudioDurationMs(song, metadata),
         actualDurationMs = references.audioDurationMs,
         issues = issues
     )
@@ -242,6 +242,14 @@ internal fun hasDownloadedAudioDurationMismatch(expectedMs: Long, actualMs: Long
     if (expectedMs <= 0L || actualMs == null || actualMs <= 0L) return false
     val toleranceMs = max(1_000L, expectedMs / 200L).coerceAtMost(2_000L)
     return abs(actualMs - expectedMs) > toleranceMs
+}
+
+internal fun expectedDownloadedAudioDurationMs(
+    song: SongItem,
+    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+): Long {
+    return metadata?.takeIf { it.stableKey == song.stableKey() }
+        ?.verifiedAudioDurationMs?.takeIf { it > 0L } ?: song.durationMs
 }
 
 private fun addOptionalExactIssue(

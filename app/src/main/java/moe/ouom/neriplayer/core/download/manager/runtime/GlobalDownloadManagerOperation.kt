@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredEx
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.DownloadSourceUnavailableException
+import moe.ouom.neriplayer.core.player.download.DownloadIntegrityException
 import moe.ouom.neriplayer.core.player.download.RetryableDownloadFailureException
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
 import moe.ouom.neriplayer.data.model.SongItem
@@ -295,7 +296,8 @@ internal suspend fun GlobalDownloadManager.prepareConfirmedDownload(
                 acquiredLeaseId = acquiredLeaseId,
                 attemptId = attemptId,
                 userInitiated = persistedOperationRequest?.userInitiated == true,
-                isBatchOperation = persistedOperationRequest?.batchId != null
+                isBatchOperation = persistedOperationRequest?.batchId != null,
+                requiresFreshTransfer = persistedOperationRequest?.requiresFreshTransfer == true
             )
         }
         if (admitted && prepared != null) {
@@ -493,15 +495,17 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
                 artifactClaim is ManagedDownloadArtifactClaim.RepairRequired ||
                     (artifactClaim as? ManagedDownloadArtifactClaim.Acquired)
                         ?.preservesExistingReference == true
-            val forceFreshTransfer = (artifactClaim as? ManagedDownloadArtifactClaim.Acquired)
-                ?.preservesExistingReference == true
+            val forceFreshTransfer = prepared.requiresFreshTransfer ||
+                (artifactClaim as? ManagedDownloadArtifactClaim.Acquired)
+                    ?.preservesExistingReference == true
             if (cleanupBeforeStart && !preserveArtifactForRepair) {
                 cleanupDownloadArtifactsBeforeFreshStart(
                     context = appContext,
                     song = song,
                     forceStorageRefresh = shouldForceFreshStartStorageScan(
                         isBatchOperation = prepared.isBatchOperation
-                    )
+                    ),
+                    preserveExistingAudio = forceFreshTransfer
                 )
             }
             if (
@@ -1132,26 +1136,21 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
             }
             return
         }
-        NPLogger.e(TAG, "下载失败: ${song.name} - ${error.message}", error)
-        updateTaskStatus(
-            songKey,
-            DownloadStatus.FAILED,
-            expectedAttemptId = attemptId
-        )
-        markDownloadArtifactRetryable(
-            context = appContext,
-            song = song,
-            leaseId = acquiredLeaseId,
-            errorCode = "DOWNLOAD_FAILED"
-        )
-        acquiredLeaseId?.let { leaseId ->
-            managedDownloadArtifactLeases.remove(songKey, leaseId)
+        withContext(NonCancellable) {
+            deferRetryableDownloadFailure(
+                context = appContext,
+                song = song,
+                operationId = operationId,
+                expectedAttemptId = attemptId,
+                expectedLeaseId = acquiredLeaseId,
+                error = RetryableDownloadFailureException(
+                    message = error.message ?: "download failed",
+                    networkUnavailable = false,
+                    cause = error,
+                    errorCode = (error as? DownloadIntegrityException)?.errorCode ?: "DOWNLOAD_FAILED"
+                )
+            )
         }
-        forgetPendingDownloadQueueEntriesIfCurrent(
-            appContext,
-            setOf(songKey),
-            requestGeneration
-        )
     } finally {
         withContext(NonCancellable) {
             runCatching {
@@ -1188,7 +1187,7 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
     val errorCode = if (error.networkUnavailable) {
         DOWNLOAD_NETWORK_UNAVAILABLE_ERROR_CODE
     } else {
-        DOWNLOAD_TRANSIENT_FAILURE_ERROR_CODE
+        error.errorCode ?: DOWNLOAD_TRANSIENT_FAILURE_ERROR_CODE
     }
     val operationRetryPersisted = operationId?.let { id ->
         runCatching {
@@ -1196,7 +1195,8 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
                 context = appContext,
                 operationId = id,
                 state = "RETRYABLE",
-                errorCode = errorCode
+                errorCode = errorCode,
+                expectedAttemptId = expectedAttemptId
             )
         }.onFailure { persistError ->
             NPLogger.w(
@@ -1207,6 +1207,19 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
             )
         }.getOrDefault(false)
     } ?: true
+    if (!operationRetryPersisted) return
+    val retryExhausted = operationId?.let {
+        DownloadExecutionRoomStore.state(appContext, it) == "INVALID"
+    } ?: true
+    if (retryExhausted) {
+        markDownloadArtifactRetryable(context, song, expectedLeaseId, errorCode)
+        expectedLeaseId?.let { managedDownloadArtifactLeases.remove(songKey, it) }
+        updateTaskStatus(songKey, DownloadStatus.FAILED, expectedAttemptId = expectedAttemptId)
+        forgetPendingDownloadQueueEntriesForOperation(appContext, songKey, operationId)
+        NPLogger.w(TAG, "下载自动恢复次数已耗尽，保留任务供手动重试: " +
+            "song=${song.name}, operationId=$operationId, errorCode=$errorCode")
+        return
+    }
     val retryStatus = if (error.networkUnavailable) {
         DownloadStatus.WAITING_NETWORK
     } else {
@@ -1252,7 +1265,7 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
     }
     NPLogger.w(
         TAG,
-        "下载网络波动已转入持久恢复队列: song=${song.name}, " +
+        "下载失败已转入持久恢复队列: song=${song.name}, errorCode=$errorCode, " +
             "operationId=$operationId, offline=${error.networkUnavailable}, " +
             "persisted=$operationRetryPersisted"
     )

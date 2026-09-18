@@ -5,8 +5,10 @@ import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import java.io.IOException
+import java.util.concurrent.TimeoutException
 
 internal object ManagedDownloadTreeChildQuery {
+    private val queryRunner = BoundedStorageQueryRunner<QueryResult>()
     internal enum class State {
         COMPLETE,
         LOADING,
@@ -16,7 +18,8 @@ internal object ManagedDownloadTreeChildQuery {
 
     internal data class QueryResult(
         val children: List<QueriedTreeChild>,
-        val state: State
+        val state: State,
+        val failure: Throwable? = null
     ) {
         val isComplete: Boolean
             get() = state == State.COMPLETE
@@ -37,6 +40,18 @@ internal object ManagedDownloadTreeChildQuery {
         parent: DocumentFile,
         onQueryFailure: (Throwable) -> Unit
     ): QueryResult {
+        val result = queryRunner.query(parent.uri.toString()) {
+            queryChildrenBlocking(context, parent)
+        } ?: QueryResult(
+            children = emptyList(),
+            state = State.FAILED,
+            failure = TimeoutException("DocumentsProvider query unavailable within bounded wait")
+        )
+        result.failure?.let(onQueryFailure)
+        return result
+    }
+
+    private fun queryChildrenBlocking(context: Context, parent: DocumentFile): QueryResult {
         val parentUri = parent.uri
         val documentId = try {
             DocumentsContract.getDocumentId(parentUri)
@@ -72,7 +87,7 @@ internal object ManagedDownloadTreeChildQuery {
                 val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
                 val modifiedIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
                 if (idIndex < 0 || nameIndex < 0 || mimeTypeIndex < 0) {
-                    throw IllegalStateException("DocumentsProvider omitted required child columns")
+                    throw UnsupportedOperationException("DocumentsProvider omitted required child columns")
                 }
                 val children = buildList {
                     while (cursor.moveToNext()) {
@@ -115,10 +130,15 @@ internal object ManagedDownloadTreeChildQuery {
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
-            onQueryFailure(error)
             QueryResult(
-                children = listChildrenWithDocumentFile(parent),
-                state = State.FAILED
+                // 只有查询能力不兼容才回退，失联 Provider 上继续逐文件 Binder 调用会放大故障
+                children = if (error is UnsupportedOperationException || error is IllegalArgumentException) {
+                    listChildrenWithDocumentFile(parent)
+                } else {
+                    emptyList()
+                },
+                state = State.FAILED,
+                failure = error
             )
         }
     }

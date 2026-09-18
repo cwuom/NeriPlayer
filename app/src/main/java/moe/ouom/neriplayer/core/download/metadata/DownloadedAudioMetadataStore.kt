@@ -326,7 +326,9 @@ internal class DownloadedAudioMetadataStore(
                 ?: createdAtMs.takeIf { it > 0L },
             sourceCreatedAtMs = existingMetadata?.sourceCreatedAtMs
                 ?: song.logicalCreatedAtMs?.takeIf { it > 0L },
-            sourceModifiedAtMs = existingMetadata?.sourceModifiedAtMs,
+            sourceModifiedAtMs = existingMetadata?.sourceModifiedAtMs ?: song.sourceModifiedAtMs,
+            verifiedAudioDurationMs = existingMetadata
+                ?.takeIf { it.stableKey == song.stableKey() }?.verifiedAudioDurationMs,
             restorableMetadata = restorableMetadata
         )
 
@@ -647,6 +649,7 @@ internal class DownloadedAudioMetadataStore(
         libraryAddedAtMs: Long?,
         sourceCreatedAtMs: Long?,
         sourceModifiedAtMs: Long?,
+        verifiedAudioDurationMs: Long?,
         restorableMetadata: ManagedDownloadRestorableMetadata
     ): JSONObject {
         val identity = song.identity()
@@ -684,6 +687,7 @@ internal class DownloadedAudioMetadataStore(
             put("translatedLyricPath", translatedLyricReference)
             put("romanizedLyricPath", romanizedLyricReference)
             put("durationMs", song.durationMs)
+            put("verifiedAudioDurationMs", verifiedAudioDurationMs)
             put("downloadTimeMs", downloadTimeMs)
             put("downloadFinalized", downloadFinalized)
             put("metadataEmbeddingState", metadataEmbeddingState?.name)

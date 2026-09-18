@@ -75,20 +75,23 @@ class DownloadSourceAvailabilityContractTest {
     }
 
     @Test
-    fun `transient missing source never becomes terminal before a resolved transfer`() {
+    fun `missing source uses durable retry instead of multiplying resolver retry loops`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
         ).readText()
         val attemptBody = methodBody(source, "executeDownloadAttempt")
         val retryableIndex = attemptBody.indexOf("throw RetryableDownloadFailureException(")
         val unavailableIndex = attemptBody.indexOf("throw DownloadSourceUnavailableException(")
-        val resetIndex = attemptBody.indexOf("state.confirmedSourceMissCount = 0")
         val prepareIndex = attemptBody.indexOf("val prepared = try")
 
         assertTrue(retryableIndex >= 0)
         assertTrue(unavailableIndex < 0)
-        assertTrue(resetIndex > retryableIndex)
-        assertTrue(prepareIndex > resetIndex)
+        assertTrue(prepareIndex > retryableIndex)
+        val missingSourceBody = attemptBody.substring(retryableIndex, prepareIndex)
+        assertTrue(missingSourceBody.contains("errorCode = \"DOWNLOAD_SOURCE_MISSING\""))
+        assertTrue(missingSourceBody.contains("networkUnavailable = !hasConfirmedInternetAccess"))
+        assertFalse(missingSourceBody.contains("waitForRetryOrCancellation("))
+        assertFalse(missingSourceBody.contains("state.attemptNumber++"))
     }
 
     private fun locateProjectFile(path: String): File {

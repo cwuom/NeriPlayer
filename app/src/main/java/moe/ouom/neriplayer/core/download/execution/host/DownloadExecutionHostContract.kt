@@ -109,7 +109,9 @@ data class DownloadExecutionRequest(
     val userInitiated: Boolean = true,
     val downloadAudioQuality: DownloadAudioQualitySelection? = null,
     val batchId: String? = null,
-    val batchGeneration: Long? = null
+    val batchGeneration: Long? = null,
+    // 已知无效的成品不能在重试或重启时再次被目录缓存接纳
+    val requiresFreshTransfer: Boolean = false
 ) {
     init {
         require(normalizeDownloadOperationId(operationId) == operationId) {

@@ -133,7 +133,7 @@ internal object ManagedDownloadStorage {
         onTreeQueryFailed = {
             NPLogger.w(
                 TAG,
-                "查询目录子项失败，回退 DocumentFile 枚举: " +
+                "目录查询未完成，保留现有文件与恢复凭据: " +
                     "${it.javaClass.simpleName}: ${it.message}",
                 it
             )
@@ -716,6 +716,7 @@ internal object ManagedDownloadStorage {
         val translatedLyricPath: String? = null,
         val romanizedLyricPath: String? = null,
         val durationMs: Long = 0L,
+        val verifiedAudioDurationMs: Long? = null,
         val downloadTimeMs: Long? = null,
         val downloadFinalized: Boolean? = null,
         val metadataEmbeddingState: DownloadedAudioEmbeddingState? = null,

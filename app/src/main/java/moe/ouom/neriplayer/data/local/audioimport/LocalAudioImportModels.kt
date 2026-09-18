@@ -355,29 +355,21 @@ internal fun hasStableSongCreationEvidence(song: SongItem): Boolean {
         validSongTimestamp(song.addedAt) != Long.MIN_VALUE
 }
 
-/** 扫描预览按来源时间排序，不使用本次歌单加入时间 */
-internal fun localSongSourceCreationComparator(): Comparator<SongItem> {
-    return Comparator { left, right ->
-        val leftHasStableCreation = hasStableSongCreationEvidence(left)
-        val rightHasStableCreation = hasStableSongCreationEvidence(right)
-        if (leftHasStableCreation != rightHasStableCreation) {
-            return@Comparator if (leftHasStableCreation) -1 else 1
-        }
-        if (!leftHasStableCreation) {
-            // DocumentsProvider 没有可靠创建时间时，利用稳定排序保留 Provider 发现顺序
-            // 不要用 addedAt 或文件名重排这些歌曲
-            return@Comparator 0
-        }
-
-        val timestampComparison = validSongTimestamp(right.logicalCreatedAtMs ?: right.addedAt)
-            .compareTo(validSongTimestamp(left.logicalCreatedAtMs ?: left.addedAt))
-        if (timestampComparison != 0) {
-            return@Comparator timestampComparison
-        }
-
-        // 同时创建的文件保持原次序，迁移后的 URI 和文件名不能改变先后
-        0
+// 旧数据保留已有时间作回退，同时间只用稳定来源身份排序，不能用迁移后改变的 URI
+internal fun localSongSourceModificationComparator(): Comparator<SongItem> =
+    compareByDescending<SongItem> { song ->
+        validSongTimestamp(song.sourceModifiedAtMs).takeUnless { it == Long.MIN_VALUE }
+            ?: song.addedAt.takeIf {
+                isModificationTimestampSource(song.createdAtSource) && it > 0L
+            }
+            ?: songSourceTimestamp(song).takeIf { hasStableSongCreationEvidence(song) }
+            ?: Long.MIN_VALUE
     }
+        .thenBy { it.sourceStableKey.orEmpty() }
+
+internal fun isModificationTimestampSource(source: String?): Boolean = when (source?.trim()?.uppercase(Locale.ROOT)) {
+    "SAF_LAST_MODIFIED", "MTIME", "MTIME_FALLBACK", "MEDIASTORE_DATE_MODIFIED" -> true
+    else -> false
 }
 
 /** 已加入本地歌单的歌曲优先按加入时间，同一批次再看来源创建时间 */
@@ -535,6 +527,7 @@ internal data class QuickImportedSongSeed(
     val sourceAddedAt: Long? = null,
     val sourceAddedAtSource: String? = null,
     val sourceAddedAtConfidence: String? = null,
+    val sourceModifiedAtMs: Long? = null,
     val localFile: File? = null,
     val nearbyCoverUri: String? = null,
     val mediaStoreCoverUri: String? = null,
@@ -557,7 +550,8 @@ internal data class QuickImportedAudioInfo(
     val sourceAddedAt: Long? = null,
     val sourceAddedAtSource: String? = null,
     val sourceAddedAtConfidence: String? = null,
-    val mediaStoreCoverUri: String? = null
+    val mediaStoreCoverUri: String? = null,
+    val sourceModifiedAtMs: Long? = null
 )
 
 internal data class ExternalAudioCopyInfo(
@@ -584,7 +578,8 @@ internal data class StabilizedExternalAudio(
     val uri: Uri,
     val sourceAddedAt: Long? = null,
     val sourceAddedAtSource: String? = null,
-    val sourceAddedAtConfidence: String? = null
+    val sourceAddedAtConfidence: String? = null,
+    val sourceModifiedAtMs: Long? = null
 )
 
 internal data class FolderScanCandidate(

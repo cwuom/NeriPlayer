@@ -49,7 +49,7 @@ import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanProgress
-import moe.ouom.neriplayer.data.local.audioimport.localSongSourceCreationComparator
+import moe.ouom.neriplayer.data.local.audioimport.localSongSourceModificationComparator
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -252,7 +252,7 @@ internal fun applyHydratedSongsToScanPreview(
 }
 
 internal fun sortScannedSongsBySourceTime(songs: List<SongItem>): List<SongItem> {
-    return songs.sortedWith(localSongSourceCreationComparator())
+    return songs.sortedWith(localSongSourceModificationComparator())
 }
 
 private data class LocalScanMetadataFingerprint(

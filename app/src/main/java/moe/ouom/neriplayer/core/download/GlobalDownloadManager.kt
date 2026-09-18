@@ -472,6 +472,7 @@ object GlobalDownloadManager {
     internal val downloadClearVisibility = DownloadClearVisibility()
     internal val deferredTaskClearRecoveryScheduled = AtomicBoolean(false)
     internal val taskClearHardDeadlineScheduled = AtomicBoolean(false)
+    internal val lastEscalatedTaskClearEpoch = AtomicLong(-1L)
     internal val deferredFullDeleteRecoveryScheduled = AtomicBoolean(false)
     internal val deferredFullDeleteProviderCleanupRecoveryLock = Any()
     internal var deferredFullDeleteProviderCleanup: Deferred<DownloadClearSettlement>? = null
@@ -1193,7 +1194,8 @@ object GlobalDownloadManager {
         val acquiredLeaseId: String?,
         val attemptId: Long,
         val userInitiated: Boolean,
-        val isBatchOperation: Boolean
+        val isBatchOperation: Boolean,
+        val requiresFreshTransfer: Boolean
     )
 
     fun startBatchDownload(context: Context, songs: List<SongItem>) {

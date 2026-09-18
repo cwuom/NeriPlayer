@@ -7,6 +7,7 @@ import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.DeadObjectException;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
@@ -20,6 +21,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ManagedDownloadMigrationTestDocumentProvider extends ContentProvider {
     public static final String AUTHORITY =
@@ -28,6 +31,8 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     public static final String SOURCE_ROOT_ID = "migration-source-root";
     public static final String TARGET_ROOT_ID = "migration-target-root";
     public static final String RESET = "test:resetMigration";
+    public static final String QUERY_FAULT = "test:queryFault";
+    public static final String QUERY_COUNT = "test:queryCount";
 
     private static final String EXTRA_URI = "uri";
     private static final String EXTRA_DISPLAY_NAME =
@@ -42,6 +47,9 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     };
     private static final Map<String, Node> NODES = new HashMap<>();
     private static long nextNodeId;
+    private static volatile String queryFault;
+    private static volatile CountDownLatch queryGate = new CountDownLatch(0);
+    private static final AtomicInteger childQueryCount = new AtomicInteger();
 
     @Override
     public boolean onCreate() {
@@ -67,6 +75,29 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         MatrixCursor cursor = new MatrixCursor(columns);
         String documentId = documentId(uri);
         if (isChildDocumentsUri(uri)) {
+            if (ROOT_ID.equals(documentId)) {
+                childQueryCount.incrementAndGet();
+            }
+            String fault = ROOT_ID.equals(documentId) ? queryFault : null;
+            if ("blocked".equals(fault)) {
+                try {
+                    queryGate.await();
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("fixture query interrupted", error);
+                }
+            }
+            if ("null".equals(fault)) {
+                return null;
+            }
+            if ("dead".equals(fault)) {
+                cursor = new MatrixCursor(columns) {
+                    @Override
+                    public Bundle getExtras() {
+                        throw new IllegalStateException("fixture provider disconnected", new DeadObjectException());
+                    }
+                };
+            }
             for (Node child : childrenOf(documentId)) {
                 cursor.addRow(documentRow(columns, child));
             }
@@ -127,6 +158,17 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
+        if (QUERY_FAULT.equals(method)) {
+            queryGate.countDown();
+            queryGate = new CountDownLatch("blocked".equals(arg) ? 1 : 0);
+            queryFault = arg;
+            return new Bundle();
+        }
+        if (QUERY_COUNT.equals(method)) {
+            Bundle result = new Bundle();
+            result.putInt("count", childQueryCount.get());
+            return result;
+        }
         if (RESET.equals(method)) {
             reset();
             return new Bundle();
@@ -316,6 +358,9 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     }
 
     private void reset() {
+        queryGate.countDown();
+        queryFault = null;
+        childQueryCount.set(0);
         synchronized (NODES) {
             NODES.clear();
             nextNodeId = 0L;

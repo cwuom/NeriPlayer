@@ -414,7 +414,7 @@ internal object AudioDownloadTransferPolicy {
         if (error is java.util.concurrent.CancellationException) {
             return false
         }
-        if (error is DownloadSourceUnavailableException) {
+        if (error is DownloadSourceUnavailableException || error is DownloadIntegrityException) {
             return false
         }
         if (error is DownloadTransferStalledException) {

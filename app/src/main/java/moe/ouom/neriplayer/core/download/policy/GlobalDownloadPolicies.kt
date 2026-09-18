@@ -581,26 +581,28 @@ internal class DownloadClearProviderCleanupCoordinator<K, T : Any>(
     private var activeCleanup: Handle<K, T>? = null
 
     fun activeOrNull(): Handle<K, T>? = synchronized(lock) {
-        activeCleanup?.takeIf { handle -> handle.operation.isActive }
+        activeCleanup?.takeUnless { handle -> handle.operation.isCancelled }
+    }
+
+    fun acknowledge(handle: Handle<K, T>) = synchronized(lock) {
+        if (activeCleanup === handle && handle.operation.isCompleted) {
+            activeCleanup = null
+        }
     }
 
     fun getOrStart(
         key: K,
         block: suspend () -> T
     ): Handle<K, T> = synchronized(lock) {
-        activeCleanup?.takeIf { handle -> handle.operation.isActive }?.let { handle ->
+        // 超时调用方会稍后回来领取结果，成功完成不能提前丢弃回执
+        activeCleanup?.takeIf { handle ->
+            !handle.operation.isCancelled && (handle.key == key || handle.operation.isActive)
+        }?.let { handle ->
             return@synchronized handle
         }
         val operation = scope.async { block() }
         Handle(key = key, operation = operation).also { handle ->
             activeCleanup = handle
-            operation.invokeOnCompletion {
-                synchronized(lock) {
-                    if (activeCleanup === handle) {
-                        activeCleanup = null
-                    }
-                }
-            }
         }
     }
 }

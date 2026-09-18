@@ -240,7 +240,8 @@ class ForegroundDownloadWorker(
                 return false
             }
             val generation = pumpScheduleCoordinator.request(
-                requestSuccessorWhenBusy = requestSuccessorWhenBusy
+                requestSuccessorWhenBusy = requestSuccessorWhenBusy,
+                initialDelayMs = initialDelayMs
             ) ?: return true
             if (isPumpBlocked(appContext)) {
                 pumpScheduleCoordinator.cancelUnclaimed(generation)
@@ -292,11 +293,13 @@ class ForegroundDownloadWorker(
             // 进程内泵没有 WorkManager 的 retry 归属。即使同时入队的 Worker
             // 还未启动或随后入队失败，也必须释放当前代次并安排新的持久泵，
             // 否则 active generation 会永久挡住后续下载
-            val completion = pumpScheduleCoordinator.completeImmediate(generation, result)
+            val completion = pumpScheduleCoordinator.completeImmediate(
+                generation, result, successorDelayMsFor(result)
+            )
             if (completion == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR) {
                 schedulePumpSuccessor(
                     context = context.applicationContext,
-                    initialDelayMs = successorDelayMsFor(result)
+                    initialDelayMs = pumpScheduleCoordinator.takeSuccessorDelayMs(generation)
                 )
             }
         }
@@ -354,8 +357,16 @@ class ForegroundDownloadWorker(
         ) {
             val shouldScheduleSuccessor = continueSoon || continueAfterContention ||
                 continueAfterRetry
+            val completionResult = when {
+                continueAfterRetry -> DownloadExecutionPumpResult.ContinueAfterRetry
+                continueAfterContention -> DownloadExecutionPumpResult.ContinueAfterContention
+                continueSoon -> DownloadExecutionPumpResult.ContinueSoon
+                else -> DownloadExecutionPumpResult.Completed
+            }
             val completion = if (shouldScheduleSuccessor) {
-                pumpScheduleCoordinator.completeWithSuccessor(generation)
+                pumpScheduleCoordinator.completeWithSuccessor(
+                    generation, successorDelayMsFor(completionResult)
+                )
             } else {
                 pumpScheduleCoordinator.complete(
                     generation = generation,
@@ -363,16 +374,9 @@ class ForegroundDownloadWorker(
                 )
             }
             if (completion == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR) {
-                val completionResult = when {
-                    continueAfterRetry -> DownloadExecutionPumpResult.ContinueAfterRetry
-                    continueAfterContention ->
-                        DownloadExecutionPumpResult.ContinueAfterContention
-                    continueSoon -> DownloadExecutionPumpResult.ContinueSoon
-                    else -> DownloadExecutionPumpResult.Completed
-                }
                 schedulePumpSuccessor(
                     context = context,
-                    initialDelayMs = successorDelayMsFor(completionResult)
+                    initialDelayMs = pumpScheduleCoordinator.takeSuccessorDelayMs(generation)
                 )
             }
         }
@@ -573,7 +577,9 @@ internal enum class DownloadPumpCompletion {
 }
 
 /** keeps stale WorkManager callbacks from changing a newer pump request */
-internal class DownloadPumpScheduleCoordinator {
+internal class DownloadPumpScheduleCoordinator(
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L }
+) {
     private val lock = Any()
     private var latestGeneration = 0L
     private var activeGeneration: Long? = null
@@ -584,18 +590,22 @@ internal class DownloadPumpScheduleCoordinator {
     private var queuedGeneration: Long? = null
     /** Worker 已观察到进程内 owner，进程内 owner 退出后必须重新交接一代 */
     private var workerObservedImmediateGeneration: Long? = null
-    private var successorRequested = false
+    private var successorRequestedAtMs: Long? = null
+    private var completedSuccessor: Pair<Long, Long>? = null
 
-    fun request(requestSuccessorWhenBusy: Boolean = true): Long? = synchronized(lock) {
+    fun request(
+        requestSuccessorWhenBusy: Boolean = true,
+        initialDelayMs: Long = 0L
+    ): Long? = synchronized(lock) {
         if (activeGeneration != null) {
             if (requestSuccessorWhenBusy) {
-                successorRequested = true
+                requestSuccessorLocked(initialDelayMs)
             }
             return@synchronized null
         }
         if (queuedGeneration != null) {
             if (requestSuccessorWhenBusy) {
-                successorRequested = true
+                requestSuccessorLocked(initialDelayMs)
             }
             return@synchronized null
         }
@@ -607,6 +617,13 @@ internal class DownloadPumpScheduleCoordinator {
     }
 
     fun reserveImmediate(requestSuccessorWhenBusy: Boolean = true): Long? = synchronized(lock) {
+        // 已入队但尚未启动的持久 Worker 不占用执行权，前台恢复可以接管同一代
+        val queued = queuedGeneration
+        if (queued != null && activeGeneration == queued && claimedGeneration == null) {
+            claimedGeneration = queued
+            immediateGeneration = queued
+            return@synchronized queued
+        }
         val generation = request(
             requestSuccessorWhenBusy = requestSuccessorWhenBusy
         ) ?: return@synchronized null
@@ -671,19 +688,23 @@ internal class DownloadPumpScheduleCoordinator {
         }
         claimedGeneration = null
         if (workWillRetry) {
+            // 退避中的 Worker 已释放执行权，手动继续可以接管同一代次
+            queuedGeneration = generation
             return@synchronized DownloadPumpCompletion.RETRYING
         }
         immediateGeneration = null
         activeGeneration = null
-        if (successorRequested) {
-            successorRequested = false
-            DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+        if (successorRequestedAtMs != null) {
+            completeSuccessorLocked(generation)
         } else {
             DownloadPumpCompletion.COMPLETED
         }
     }
 
-    fun completeWithSuccessor(generation: Long): DownloadPumpCompletion = synchronized(lock) {
+    fun completeWithSuccessor(
+        generation: Long,
+        initialDelayMs: Long = 0L
+    ): DownloadPumpCompletion = synchronized(lock) {
         if (activeGeneration != generation) {
             return@synchronized DownloadPumpCompletion.IGNORED
         }
@@ -692,13 +713,14 @@ internal class DownloadPumpScheduleCoordinator {
         // 当前 worker 只是遇到 用户发起的数据传输任务/并行 host 竞争，不属于真实失败。
         // 释放本代并把运行期间的新请求折叠进一个短延迟 successor。
         activeGeneration = null
-        successorRequested = false
-        DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+        requestSuccessorLocked(initialDelayMs)
+        completeSuccessorLocked(generation)
     }
 
     fun completeImmediate(
         generation: Long,
-        result: DownloadExecutionPumpResult
+        result: DownloadExecutionPumpResult,
+        initialDelayMs: Long = 0L
     ): DownloadPumpCompletion {
         return synchronized(lock) {
             if (activeGeneration != generation) {
@@ -713,11 +735,12 @@ internal class DownloadPumpScheduleCoordinator {
                     workerObservedImmediateGeneration = null
                     queuedGeneration = null
                     activeGeneration = null
-                    val shouldScheduleSuccessor = result != DownloadExecutionPumpResult.Completed ||
-                        successorRequested
-                    successorRequested = false
+                    if (result != DownloadExecutionPumpResult.Completed) {
+                        requestSuccessorLocked(initialDelayMs)
+                    }
+                    val shouldScheduleSuccessor = successorRequestedAtMs != null
                     return@synchronized if (shouldScheduleSuccessor) {
-                        DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+                        completeSuccessorLocked(generation)
                     } else {
                         DownloadPumpCompletion.COMPLETED
                     }
@@ -729,17 +752,16 @@ internal class DownloadPumpScheduleCoordinator {
             workerObservedImmediateGeneration = null
             activeGeneration = null
             if (result == DownloadExecutionPumpResult.Completed) {
-                if (successorRequested) {
-                    successorRequested = false
-                    DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+                if (successorRequestedAtMs != null) {
+                    completeSuccessorLocked(generation)
                 } else {
                     DownloadPumpCompletion.COMPLETED
                 }
             } else {
                 // 进程内泵没有可依赖的 WorkManager retry owner，所有非完成结果
                 // 都必须释放当前代次并交给新的持久 successor
-                successorRequested = false
-                DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+                requestSuccessorLocked(initialDelayMs)
+                completeSuccessorLocked(generation)
             }
         }
     }
@@ -758,7 +780,7 @@ internal class DownloadPumpScheduleCoordinator {
         claimedGeneration = null
         immediateGeneration = null
         activeGeneration = null
-        successorRequested = false
+        successorRequestedAtMs = null
         true
     }
 
@@ -774,7 +796,7 @@ internal class DownloadPumpScheduleCoordinator {
         workerObservedImmediateGeneration = null
         immediateGeneration = null
         activeGeneration = null
-        successorRequested = false
+        successorRequestedAtMs = null
         true
     }
 
@@ -785,7 +807,27 @@ internal class DownloadPumpScheduleCoordinator {
         immediateGeneration = null
         queuedGeneration = null
         workerObservedImmediateGeneration = null
-        successorRequested = false
+        successorRequestedAtMs = null
+        completedSuccessor = null
+    }
+
+    fun takeSuccessorDelayMs(generation: Long): Long = synchronized(lock) {
+        val completed = completedSuccessor?.takeIf { it.first == generation }
+            ?: return@synchronized 0L
+        completedSuccessor = null
+        (completed.second - nowMs()).coerceAtLeast(0L)
+    }
+
+    private fun requestSuccessorLocked(initialDelayMs: Long) {
+        val requestedAt = nowMs() + initialDelayMs.coerceAtLeast(0L)
+        successorRequestedAtMs = successorRequestedAtMs?.let { minOf(it, requestedAt) }
+            ?: requestedAt
+    }
+
+    private fun completeSuccessorLocked(generation: Long): DownloadPumpCompletion {
+        completedSuccessor = generation to (successorRequestedAtMs ?: nowMs())
+        successorRequestedAtMs = null
+        return DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
     }
 }
 

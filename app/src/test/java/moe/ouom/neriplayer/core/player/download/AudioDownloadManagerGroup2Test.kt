@@ -409,6 +409,45 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
     }
 
     @Test
+    fun `netease download binds checksum and stream duration to requested song`() {
+        val json = """{"code":200,"data":{"id":1897084202,"url":"https://example.com/song.mp3","type":"mp3","size":3131565,"time":195696,"md5":"ABCDEF0123456789ABCDEF0123456789"}}"""
+        val result = AudioDownloadSourceResolver.parseNeteaseDownloadLookup(json, 1897084202L)
+            as AudioDownloadSourceResolver.NeteaseDownloadLookup.Resolved
+        assertEquals(195696L, result.source.durationMs)
+        assertEquals("abcdef0123456789abcdef0123456789", result.source.contentMd5)
+        assertEquals(AudioDownloadSourceResolver.NeteaseDownloadLookup.Missing,
+            AudioDownloadSourceResolver.parseNeteaseDownloadLookup(json, 29450765L))
+        assertEquals(AudioDownloadSourceResolver.NeteaseDownloadLookup.Missing,
+            AudioDownloadSourceResolver.parseNeteaseDownloadLookup(json.replace("\"id\":1897084202,", ""), 1897084202L))
+        val invalid = AudioDownloadSourceResolver.parseNeteaseDownloadLookup(
+            json.replace("ABCDEF0123456789ABCDEF0123456789", "not-a-checksum"), 1897084202L
+        ) as AudioDownloadSourceResolver.NeteaseDownloadLookup.Resolved
+        assertNull(invalid.source.contentMd5)
+        assertFalse(AudioDownloadManager.shouldRetryTransientDownloadFailure(
+            DownloadIntegrityException("DOWNLOAD_INTEGRITY_CHECKSUM_MISMATCH", "mismatch")
+        ))
+    }
+
+    @Test
+    fun `matched album text cannot route bilibili downloads to netease`() {
+        val song = SongItem(
+            id = 117111510797424L, name = "红尘客栈", artist = "周杰伦",
+            album = "Netease十二新作", albumId = 0L, durationMs = 275000L, coverUrl = null,
+            channelId = "bilibili", audioId = "117111510797424", subAudioId = "41003451437"
+        )
+        assertTrue(AudioDownloadSourceResolver.isBiliSource(song))
+        assertFalse(AudioDownloadSourceResolver.isBiliSource(song.copy(channelId = "netease")))
+    }
+
+    @Test
+    fun `preview audio is never accepted as a complete download`() {
+        val result = AudioDownloadSourceResolver.parseNeteaseDownloadLookup(
+            """{"code":200,"data":[{"url":"https://example.com/preview.mp3","freeTrialInfo":{"start":0,"end":30}}]}"""
+        )
+        assertEquals(AudioDownloadSourceResolver.NeteaseDownloadLookup.ExplicitlyUnavailable, result)
+    }
+
+    @Test
     fun `transient download failure detection only retries unstable network failures`() {
         assertTrue(
             AudioDownloadManager.shouldRetryTransientDownloadFailure(

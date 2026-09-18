@@ -799,6 +799,7 @@ internal fun LocalAudioImportManager.buildQuickImportedSong(
             album = queryInfo.album,
             durationMs = durationMs,
             sourceAddedAt = filesystemCreation?.timestampMs ?: queryInfo.sourceAddedAt,
+            sourceModifiedAtMs = queryInfo.sourceModifiedAtMs,
             sourceAddedAtSource = filesystemCreation?.let { "FILESYSTEM_BIRTH" }
                 ?: queryInfo.sourceAddedAtSource,
             sourceAddedAtConfidence = filesystemCreation?.confidence
@@ -856,6 +857,7 @@ internal fun LocalAudioImportManager.queryQuickImportedAudioInfo(context: Contex
                 else -> "UNKNOWN"
             }
             QuickImportedAudioInfo(
+                sourceModifiedAtMs = dateModifiedSeconds.toEpochMillisOrNull(),
                 title = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
                     .takeIf { it >= 0 && !cursor.isNull(it) }
                     ?.let(cursor::getString),
@@ -993,6 +995,7 @@ internal fun LocalAudioImportManager.stabilizeExternalUri(
     return StabilizedExternalAudio(
         uri = Uri.fromFile(targetFile),
         sourceAddedAt = resolvedCopyInfo.sourceAddedAt,
+        sourceModifiedAtMs = resolvedCopyInfo.sourceLastModifiedAt,
         sourceAddedAtSource = resolvedCopyInfo.sourceAddedAtSource,
         sourceAddedAtConfidence = resolvedCopyInfo.sourceAddedAtConfidence
     )

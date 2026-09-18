@@ -11,6 +11,45 @@ import org.junit.Test
 
 class DownloadPumpScheduleCoordinatorTest {
     @Test
+    fun `retry deadline requested during an active pump survives its completion`() {
+        var now = 100L
+        val coordinator = DownloadPumpScheduleCoordinator { now }
+        val generation = coordinator.request()!!
+        assertTrue(coordinator.claimWorker(generation))
+        assertNull(coordinator.request(initialDelayMs = 30_000L))
+        now += 500L
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR,
+            coordinator.complete(generation, workWillRetry = false)
+        )
+        assertEquals(29_500L, coordinator.takeSuccessorDelayMs(generation))
+    }
+
+    @Test
+    fun `manual wake shortens a pending retry deadline`() {
+        val coordinator = DownloadPumpScheduleCoordinator { 100L }
+        val generation = coordinator.request()!!
+        coordinator.request(initialDelayMs = 30_000L)
+        coordinator.request(initialDelayMs = 0L)
+        coordinator.complete(generation, workWillRetry = false)
+        assertEquals(0L, coordinator.takeSuccessorDelayMs(generation))
+    }
+
+    @Test
+    fun `foreground resume takes over queued work without creating another generation`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.request()!!
+        assertTrue(coordinator.markWorkEnqueueStarted(generation))
+        assertEquals(generation, coordinator.reserveImmediate())
+        assertNull(coordinator.reserveImmediate())
+        assertFalse(coordinator.claimWorker(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR,
+            coordinator.completeImmediate(generation, DownloadExecutionPumpResult.Completed)
+        )
+    }
+
+    @Test
     fun `repeated requests collapse into one successor`() {
         val coordinator = DownloadPumpScheduleCoordinator()
         val firstGeneration = coordinator.request()
@@ -49,6 +88,49 @@ class DownloadPumpScheduleCoordinatorTest {
         )
         assertNull(coordinator.request())
         assertTrue(coordinator.claimWorker(generation))
+    }
+
+    @Test
+    fun `manual resume takes over a worker waiting for retry backoff`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.request()!!
+        assertTrue(coordinator.markWorkEnqueueStarted(generation))
+        assertTrue(coordinator.claimWorker(generation))
+        assertEquals(
+            DownloadPumpCompletion.RETRYING,
+            coordinator.complete(generation, workWillRetry = true)
+        )
+
+        assertEquals(generation, coordinator.reserveImmediate())
+        assertFalse(coordinator.markWorkEnqueueStarted(generation))
+        assertFalse(coordinator.claimWorker(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED,
+            coordinator.completeImmediate(generation, DownloadExecutionPumpResult.Completed)
+        )
+        assertTrue(coordinator.request() != null)
+        assertFalse(coordinator.claimWorker(generation))
+    }
+
+    @Test
+    fun `retrying worker remains the fallback when manual resume finishes before it starts`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = coordinator.request()!!
+        assertTrue(coordinator.markWorkEnqueueStarted(generation))
+        assertTrue(coordinator.claimWorker(generation))
+        coordinator.complete(generation, workWillRetry = true)
+
+        assertEquals(generation, coordinator.reserveImmediate())
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED,
+            coordinator.completeImmediate(generation, DownloadExecutionPumpResult.ContinueSoon)
+        )
+        assertTrue(coordinator.claimWorker(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED,
+            coordinator.complete(generation, workWillRetry = false)
+        )
+        assertTrue(coordinator.request() != null)
     }
 
     @Test

@@ -46,5 +46,7 @@ data class SongItem(
     val createdAtSource: String? = null,
     val createdAtConfidence: String? = null,
     // playlist membership time is separate from the source file creation time
-    val membershipAddedAtMs: Long? = null
+    val membershipAddedAtMs: Long? = null,
+    // 保留迁移前的文件修改时间，复制后的 Provider 时间不能重排原有歌曲
+    val sourceModifiedAtMs: Long? = null
 ) : Parcelable

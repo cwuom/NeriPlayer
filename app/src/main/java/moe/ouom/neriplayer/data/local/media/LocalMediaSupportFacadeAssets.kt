@@ -131,6 +131,17 @@ internal fun LocalMediaSupport.hasExpectedEditableMetadataImpl(
             )
 }
 
+internal fun normalizeWritableComments(propertyMap: PropertyMap) {
+    // 空 COMMENT 会触发 TagLib 清空所有 COMM，重复镜像也不能在每次编辑时累加
+    val comments = propertyMap["COMMENT"] ?: return
+    val nonBlankComments = comments.filter(String::isNotBlank).distinct()
+    if (nonBlankComments.isEmpty()) {
+        propertyMap.remove("COMMENT")
+    } else {
+        propertyMap["COMMENT"] = nonBlankComments.toTypedArray()
+    }
+}
+
 internal fun LocalMediaSupport.hasExpectedPropertyMapValuesImpl(
     actual: PropertyMap,
     expected: PropertyMap,
@@ -144,7 +155,14 @@ internal fun LocalMediaSupport.hasExpectedPropertyMapValuesImpl(
         .orEmpty()
 
     return requiredKeys.all { key ->
-        actual.normalizedValues(key) == expected.normalizedValues(key)
+        val actualValues = actual.normalizedValues(key)
+        val expectedValues = expected.normalizedValues(key)
+        if (key.equals("COMMENT", ignoreCase = true)) {
+            // MP3 的 COMM 与 TXXX 镜像会读出重复注释，仍须逐项保留全部不同内容
+            actualValues.toSet() == expectedValues.toSet()
+        } else {
+            actualValues == expectedValues
+        }
     }
 }
 

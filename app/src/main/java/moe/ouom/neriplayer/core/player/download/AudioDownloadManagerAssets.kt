@@ -5,15 +5,21 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadedS
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadedPayloadSummary
 import android.content.Context
 import android.media.MediaMetadataRetriever
+import android.os.ParcelFileDescriptor
+import com.kyant.taglib.TagLib
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.model.hasDownloadedAudioDurationMismatch
 import moe.ouom.neriplayer.core.download.resource.DownloadTransferPermitRegistry
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
@@ -27,6 +33,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.traffic.hasConfirmedInternetAccess
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 
 internal suspend fun <T> AudioDownloadManager.withTransferCyclePermit(
     context: Context,
@@ -247,16 +254,18 @@ internal suspend fun <T> AudioDownloadManager.observeSidecarStage(
     }
 }
 
-internal fun AudioDownloadManager.verifyDownloadedAudioPayload(
+internal suspend fun AudioDownloadManager.verifyDownloadedAudioPayload(
     song: SongItem,
     tempFile: File,
     displayFileName: String,
-    payloadSummary: DownloadedPayloadSummary
-) {
+    payloadSummary: DownloadedPayloadSummary,
+    resolvedSource: AudioDownloadManager.ResolvedDownloadSource? = null
+): Long? {
+    currentCoroutineContext().ensureActive()
     // 文件长度是提交前唯一可信的本地事实，传输计数只用于诊断
     val actualBytes = tempFile.length().coerceAtLeast(0L)
     if (actualBytes <= 0L) {
-        throw IOException("下载文件为空: $displayFileName")
+        throw DownloadIntegrityException("DOWNLOAD_INTEGRITY_EMPTY", "下载文件为空: $displayFileName")
     }
     if (payloadSummary.actualBytes > 0L && payloadSummary.actualBytes != actualBytes) {
         NPLogger.w(
@@ -266,7 +275,19 @@ internal fun AudioDownloadManager.verifyDownloadedAudioPayload(
         )
     }
     if (!isTransferSizeComplete(payloadSummary.expectedBytes, actualBytes)) {
-        throw IOException("下载文件不完整: $displayFileName, $actualBytes/${payloadSummary.expectedBytes}")
+        throw DownloadIntegrityException(
+            "DOWNLOAD_INTEGRITY_SIZE_MISMATCH",
+            "下载文件不完整: $displayFileName, $actualBytes/${payloadSummary.expectedBytes}"
+        )
+    }
+    // HLS 已解封装，来源响应长度不能当作最终音频长度
+    val sourceContentLength = resolvedSource
+        ?.takeIf { it.streamType == YouTubePlayableStreamType.DIRECT }?.contentLength
+    if (!isTransferSizeComplete(sourceContentLength, actualBytes)) {
+        throw DownloadIntegrityException(
+            "DOWNLOAD_INTEGRITY_SIZE_MISMATCH",
+            "下载文件长度与来源不符: $displayFileName, $actualBytes/$sourceContentLength"
+        )
     }
     NPLogger.d(
         TAG,
@@ -276,6 +297,27 @@ internal fun AudioDownloadManager.verifyDownloadedAudioPayload(
     )
 
     val sizeBeforeProbe = tempFile.length().coerceAtLeast(0L)
+    val expectedMd5 = resolvedSource?.contentMd5
+        ?.takeIf { it.matches(Regex("[a-fA-F0-9]{32}")) }
+    if (expectedMd5 != null) {
+        val digest = MessageDigest.getInstance("MD5")
+        tempFile.inputStream().buffered().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        val actualMd5 = digest.digest().joinToString("") { "%02x".format(it) }
+        if (!actualMd5.equals(expectedMd5, ignoreCase = true)) {
+            throw DownloadIntegrityException(
+                "DOWNLOAD_INTEGRITY_CHECKSUM_MISMATCH",
+                "下载音频摘要与来源不符: $displayFileName"
+            )
+        }
+    }
     val retriever = MediaMetadataRetriever()
     try {
         retriever.setDataSource(tempFile.absolutePath)
@@ -286,6 +328,25 @@ internal fun AudioDownloadManager.verifyDownloadedAudioPayload(
                     throw IOException("下载文件不包含音轨: $displayFileName")
                 }
             }
+        val containerDurationMs = runCatching {
+            ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                TagLib.getAudioProperties(descriptor.dup().detachFd())
+                    ?.length?.toLong()?.takeIf { it > 0L }
+            }
+        }.getOrNull()
+        val durationMs = containerDurationMs ?: retriever
+            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+        val expectedDurationMs = resolvedSource?.durationMs?.takeIf { it > 0L } ?: song.durationMs
+        if ((expectedDurationMs > 0L || expectedMd5 != null) && (durationMs == null || durationMs <= 0L)) {
+            throw DownloadIntegrityException("DOWNLOAD_INTEGRITY_DURATION_UNAVAILABLE", "无法确认下载音频时长")
+        }
+        // 来源摘要证明完整字节属于本次音源，歌单时长可能属于其它编码或旧版本
+        if (expectedMd5 == null && hasDownloadedAudioDurationMismatch(expectedDurationMs, durationMs)) {
+            throw DownloadIntegrityException(
+                "DOWNLOAD_INTEGRITY_DURATION_MISMATCH",
+                "下载音频时长不匹配: expectedMs=$expectedDurationMs, actualMs=$durationMs"
+            )
+        }
         val sizeAfterProbe = tempFile.length().coerceAtLeast(0L)
         if (sizeAfterProbe != sizeBeforeProbe) {
             throw IOException(
@@ -293,15 +354,15 @@ internal fun AudioDownloadManager.verifyDownloadedAudioPayload(
                     "$sizeBeforeProbe/$sizeAfterProbe"
             )
         }
+        currentCoroutineContext().ensureActive()
+        NPLogger.d(TAG, "下载音频校验通过: catalogMs=${song.durationMs}, " +
+            "sourceMs=${resolvedSource?.durationMs}, actualMs=$durationMs, sourceChecksumVerified=${expectedMd5 != null}")
+        return durationMs?.takeIf { it > 0L }
+    } catch (error: CancellationException) {
+        throw error
     } catch (error: Exception) {
-        NPLogger.w(
-            TAG,
-            "下载音频完整性校验失败: file=$displayFileName, " +
-                "bytes=$actualBytes, expected=${payloadSummary.expectedBytes}, " +
-                "error=${error.javaClass.simpleName}: ${error.message}",
-            error
-        )
-        throw IOException("下载文件校验失败: ${song.name}", error)
+        if (error is DownloadIntegrityException) throw error
+        throw DownloadIntegrityException("DOWNLOAD_INTEGRITY_AUDIO_UNREADABLE", "下载文件校验失败: ${song.name}", error)
     } finally {
         runCatching { retriever.release() }
     }

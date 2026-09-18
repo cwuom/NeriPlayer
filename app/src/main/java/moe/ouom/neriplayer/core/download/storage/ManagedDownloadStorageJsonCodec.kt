@@ -214,6 +214,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("translatedLyricPath", translatedLyricPath)
             put("romanizedLyricPath", romanizedLyricPath)
             put("durationMs", durationMs)
+            put("verifiedAudioDurationMs", verifiedAudioDurationMs)
             put("downloadTimeMs", downloadTimeMs)
             put("downloadFinalized", downloadFinalized)
             put("metadataEmbeddingState", metadataEmbeddingState?.name)
@@ -294,6 +295,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("createdAtSource", createdAtSource)
             put("createdAtConfidence", createdAtConfidence)
             put("membershipAddedAtMs", membershipAddedAtMs)
+            put("sourceModifiedAtMs", sourceModifiedAtMs)
             put("streamUrl", streamUrl)
             put(
                 "neteaseArtists",
@@ -386,6 +388,7 @@ internal object ManagedDownloadStorageJsonCodec {
             playlistContextId = optPresentString("playlistContextId"),
             logicalCreatedAtMs = optLong("logicalCreatedAtMs")
                 .takeIf { has("logicalCreatedAtMs") && it > 0L },
+            sourceModifiedAtMs = optLong("sourceModifiedAtMs").takeIf { it > 0L },
             createdAtSource = optPresentString("createdAtSource"),
             createdAtConfidence = optPresentString("createdAtConfidence"),
             membershipAddedAtMs = optLong("membershipAddedAtMs")
@@ -499,6 +502,7 @@ internal object ManagedDownloadStorageJsonCodec {
             translatedLyricPath = optString("translatedLyricPath").takeIf(String::isNotBlank),
             romanizedLyricPath = optString("romanizedLyricPath").takeIf(String::isNotBlank),
             durationMs = optLong("durationMs"),
+            verifiedAudioDurationMs = optLong("verifiedAudioDurationMs").takeIf { it > 0L },
             downloadTimeMs = optLong("downloadTimeMs")
                 .takeIf { has("downloadTimeMs") && it > 0L },
             downloadFinalized = if (acceptsLegacyV15Completion) {

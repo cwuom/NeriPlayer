@@ -948,6 +948,9 @@ class DownloadRecoveryRoomStoreGroup3Test : DownloadRecoveryRoomStoreTestSupport
                 )
             )
 
+            val committed = requireNotNull(database.downloadOperationDao().find(operationId))
+            assertEquals(null, committed.nextRetryAtMs)
+            database.downloadOperationDao().upsert(committed.copy(retryCount = 5))
             val retry = DownloadExecutionRoomStore.recordPostCoreRetryFailure(
                 context = context,
                 operationId = operationId,
@@ -957,7 +960,7 @@ class DownloadRecoveryRoomStoreGroup3Test : DownloadRecoveryRoomStoreTestSupport
                 database = database,
                 nowMs = 10L
             )
-            assertEquals(1, retry?.retryCount)
+            assertEquals(6, retry?.retryCount)
             assertTrue((retry?.nextRetryAtMs ?: 0L) > 10L)
             assertTrue(
                 DownloadExecutionRoomStore.markPostCoreRetryExhausted(
@@ -965,7 +968,7 @@ class DownloadRecoveryRoomStoreGroup3Test : DownloadRecoveryRoomStoreTestSupport
                     operationId = operationId,
                     stableKey = song.stableKey(),
                     expectedAttemptId = attemptId,
-                    minimumRetryCount = 1,
+                    minimumRetryCount = 6,
                     errorCode = "POST_CORE_RETRY_EXHAUSTED",
                     database = database,
                     nowMs = 20L

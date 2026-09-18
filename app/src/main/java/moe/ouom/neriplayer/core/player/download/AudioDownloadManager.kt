@@ -634,7 +634,8 @@ object AudioDownloadManager {
         val fileExtensionHint: String? = null,
         val streamType: YouTubePlayableStreamType = YouTubePlayableStreamType.DIRECT,
         val contentLength: Long? = null,
-        val durationMs: Long? = null
+        val durationMs: Long? = null,
+        val contentMd5: String? = null
     )
 
     internal enum class DownloadTransportKind {
@@ -835,7 +836,6 @@ object AudioDownloadManager {
         val coreCommitTracker: DownloadCoreCommitTracker = DownloadCoreCommitTracker(),
         var cancellationCleanupAttempted: Boolean = false,
         var attemptNumber: Int = 1,
-        var confirmedSourceMissCount: Int = 0,
         var activeTransportKind: DownloadTransportKind? = null,
         var activeWorkingFileName: String? = null,
         var resumeMetadataAvailable: Boolean = true,
@@ -1738,7 +1738,7 @@ object AudioDownloadManager {
     }
 
 
-    internal fun hasFastCachedManagedDownloadForStart(
+    internal suspend fun hasFastCachedManagedDownloadForStart(
         context: Context,
         song: SongItem
     ): Boolean = playbackCoordinator.hasFastCachedManagedDownloadForStart(context, song)

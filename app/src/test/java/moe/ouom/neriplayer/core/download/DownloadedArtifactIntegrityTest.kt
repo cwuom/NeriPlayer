@@ -13,6 +13,26 @@ import moe.ouom.neriplayer.data.model.stableKey
 
 class DownloadedArtifactIntegrityTest {
     @Test
+    fun `publication uses persisted verified duration and still rejects changed audio`() {
+        val song = remoteSong().copy(durationMs = 200869L)
+        val metadata = completeMetadata(song).copy(verifiedAudioDurationMs = 195696L)
+        val reloaded = moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+            .downloadedAudioMetadataFromJsonObject(
+                moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+                    .downloadedAudioMetadataToJson(metadata)
+            )
+        val result = verifyDownloadedArtifactIntegrity(song, reloaded,
+            readableReferences().copy(audioDurationMs = 195696L), true, true, true, true)
+        assertTrue(result.issues.toString(), result.isValid)
+        val changed = verifyDownloadedArtifactIntegrity(song, reloaded,
+            readableReferences().copy(audioDurationMs = 150000L), true, true, true, true)
+        assertTrue(DownloadedArtifactIntegrityIssue.AUDIO_DURATION_MISMATCH in changed.issues)
+        val legacy = verifyDownloadedArtifactIntegrity(song, metadata.copy(verifiedAudioDurationMs = null),
+            readableReferences().copy(audioDurationMs = 195696L), true, true, true, true)
+        assertTrue(DownloadedArtifactIntegrityIssue.AUDIO_DURATION_MISMATCH in legacy.issues)
+    }
+
+    @Test
     fun `source without artist does not require an invented artist`() {
         val song = remoteSong().copy(artist = "")
         val result = verifyDownloadedArtifactIntegrity(

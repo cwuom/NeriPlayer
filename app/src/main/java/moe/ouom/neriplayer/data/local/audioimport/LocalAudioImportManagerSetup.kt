@@ -617,7 +617,7 @@ internal fun LocalAudioImportManager.buildKnownSidecarReferencesForSongs(
 internal fun LocalAudioImportManager.orderScannedSongs(songs: List<SongItem>): List<SongItem> {
     return songs
         .distinctBy { it.identity() }
-        .sortedWith(localSongSourceCreationComparator())
+        .sortedWith(localSongSourceModificationComparator())
 }
 
 internal fun LocalAudioImportManager.distinctSongsPreservingOrder(songs: List<SongItem>): List<SongItem> {
@@ -880,6 +880,7 @@ internal suspend fun LocalAudioImportManager.scanExternalStorageFolderWithMediaS
                             .takeIf { !cursor.isNull(it) }
                             ?.let(cursor::getLong),
                         sourceAddedAt = sourceAddedAt,
+                        sourceModifiedAtMs = dateModifiedSeconds.toEpochMillisOrNull(),
                         sourceAddedAtSource = sourceAddedAtSource,
                         sourceAddedAtConfidence = sourceAddedAtConfidence,
                         localFile = resolvedFile,

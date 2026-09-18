@@ -18,7 +18,6 @@ import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePha
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
@@ -441,7 +440,8 @@ internal suspend fun AudioDownloadManager.buildCorePendingMetadata(
     context: Context,
     song: SongItem,
     audioTargetName: String,
-    operationId: String
+    operationId: String,
+    verifiedAudioDurationMs: Long? = null
 ): String {
     val libraryId = ManagedDownloadStorage.ensureManagedLibraryManifest(context)
     val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
@@ -477,6 +477,7 @@ internal suspend fun AudioDownloadManager.buildCorePendingMetadata(
         subAudioId = song.subAudioId,
         playlistContextId = song.playlistContextId,
         durationMs = song.durationMs,
+        verifiedAudioDurationMs = verifiedAudioDurationMs,
         downloadTimeMs = nowMs,
         downloadFinalized = false,
         createdAtMs = nowMs,
@@ -583,7 +584,7 @@ internal suspend fun AudioDownloadManager.executeDownloadSong(
             }
             ?: resolveDownloadAudioQualitySelection(context)
         val isYouTubeMusic = isYouTubeMusicSong(song)
-        val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
+        val isBili = AudioDownloadSourceResolver.isBiliSource(song)
         // 阶段契约由尝试层按 stage = "source_resolved" 和
         // stage = "prepare_working_file" 顺序推进
         // 真实传输前才会调用 clearCompletedAudioReference(songKey)，再进入

@@ -910,6 +910,49 @@ class LocalAudioImportManagerTest {
             resolveFilesystemCreationTime(importedFile) ?: sourceTime,
             song.addedAt
         )
+        assertEquals(sourceTime, song.sourceModifiedAtMs)
+    }
+
+    @Test
+    fun `source modification ordering takes precedence over creation and survives changed uris`() {
+        val first = SongItem(1L, "first", "artist", "local", 0L, 1000L, null).copy(
+            logicalCreatedAtMs = 900L, createdAtConfidence = "EXACT",
+            sourceModifiedAtMs = 100L, mediaUri = "content://new/a"
+        )
+        val second = first.copy(id = 2L, logicalCreatedAtMs = 200L, sourceModifiedAtMs = 300L)
+        val third = first.copy(id = 3L, sourceModifiedAtMs = 300L, mediaUri = "content://new/z")
+
+        assertEquals(
+            listOf(second, third, first),
+            listOf(first, second, third).sortedWith(localSongSourceModificationComparator())
+        )
+    }
+
+    @Test
+    fun `equal modification times use preserved identity despite reversed provider order`() {
+        val first = SongItem(1L, "first", "artist", "local", 0L, 1000L, null).copy(
+            sourceModifiedAtMs = 500L, sourceStableKey = "100|netease|", mediaUri = "content://old/z"
+        )
+        val second = first.copy(id = 2L, sourceStableKey = "200|netease|", mediaUri = "content://old/a")
+        val migratedFirst = first.copy(mediaUri = "content://new/z")
+        val migratedSecond = second.copy(mediaUri = "content://new/a")
+        assertEquals(listOf(first, second),
+            listOf(second, first).sortedWith(localSongSourceModificationComparator()))
+        assertEquals(listOf(migratedFirst, migratedSecond),
+            listOf(migratedSecond, migratedFirst).sortedWith(localSongSourceModificationComparator()))
+    }
+
+    @Test
+    fun `legacy SAF modification evidence sorts without promoting it to creation evidence`() {
+        val first = SongItem(1L, "first", "artist", "local", 0L, 1000L, null).copy(
+            addedAt = 100L, createdAtSource = "SAF_LAST_MODIFIED", createdAtConfidence = "INFERRED"
+        )
+        val second = first.copy(id = 2L, addedAt = 300L)
+        assertEquals(
+            listOf(second, first),
+            listOf(first, second).sortedWith(localSongSourceModificationComparator())
+        )
+        assertFalse(hasStableSongCreationEvidence(second))
     }
 
     @Test
@@ -952,7 +995,7 @@ class LocalAudioImportManagerTest {
         assertFalse(hasStableSongCreationEvidence(base.copy(
             createdAtSource = "MEDIASTORE_DATE_ADDED", createdAtConfidence = "PROVIDER_REPORTED"
         )))
-        assertEquals(listOf(base, other), listOf(base, other).sortedWith(localSongSourceCreationComparator()))
+        assertEquals(listOf(other, base), listOf(base, other).sortedWith(localSongSourceModificationComparator()))
     }
 
     @Test
@@ -961,7 +1004,7 @@ class LocalAudioImportManagerTest {
             logicalCreatedAtMs = 500L, createdAtConfidence = "EXACT", mediaUri = "content://new/z"
         )
         val second = first.copy(id = 2L, mediaUri = "content://new/a")
-        assertEquals(listOf(first, second), listOf(first, second).sortedWith(localSongSourceCreationComparator()))
+        assertEquals(listOf(first, second), listOf(first, second).sortedWith(localSongSourceModificationComparator()))
     }
 
     @Test
@@ -1032,7 +1075,7 @@ class LocalAudioImportManagerTest {
                 )
             }
         }
-        val ordered = input.sortedWith(localSongSourceCreationComparator())
+        val ordered = input.sortedWith(localSongSourceModificationComparator())
         val knownInput = input.filter { it.logicalCreatedAtMs != null }
         val unknownInput = input.filter { it.createdAtConfidence == "UNKNOWN" }
         val knownExpected = knownInput.sortedWith(

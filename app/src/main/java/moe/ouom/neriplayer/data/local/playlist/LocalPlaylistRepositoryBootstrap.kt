@@ -12,7 +12,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.audioimport.localSongNewestFirstComparator
-import moe.ouom.neriplayer.data.local.audioimport.localSongSourceCreationComparator
+import moe.ouom.neriplayer.data.local.audioimport.localSongSourceModificationComparator
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomShadowImportStatus
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
@@ -833,11 +833,11 @@ internal fun LocalPlaylistRepository.stampSongsForPlaylistInsert(
 ): List<SongItem> {
     if (songs.isEmpty()) return emptyList()
 
-    // 同一批本地文件按来源创建时间排列，单首加入仍由 membershipAddedAtMs 决定
+    // 新批次排在旧批次前，批次内部保留来源文件修改时间顺序
     val songsForInsert = if (
         songs.size > 1 && songs.any { LocalSongSupport.isLocalSong(it, context) }
     ) {
-        songs.sortedWith(localSongSourceCreationComparator())
+        songs.sortedWith(localSongSourceModificationComparator())
     } else {
         songs
     }

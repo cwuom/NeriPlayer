@@ -7,9 +7,9 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeWebRemixDirectMissingPoToken
@@ -18,11 +18,12 @@ import java.net.URLConnection
 
 internal class DownloadSourceUnavailableException(message: String) : IOException(message)
 
-/** 临时解析或传输失败已经耗尽进程内短重试，交给持久下载队列继续恢复 */
+/** 将临时失败交给持久下载队列，保留工作文件和已有恢复预算 */
 internal class RetryableDownloadFailureException(
     message: String,
     val networkUnavailable: Boolean,
-    cause: Throwable? = null
+    cause: Throwable? = null,
+    val errorCode: String? = null
 ) : IOException(message, cause)
 
 /**
@@ -32,6 +33,8 @@ internal class RetryableDownloadFailureException(
  */
 internal object AudioDownloadSourceResolver {
     private const val TAG = "NERI-Downloader"
+
+    internal fun isBiliSource(song: SongItem): Boolean = song.identity().album == "bilibili"
 
     internal sealed interface NeteaseDownloadLookup {
         data class Resolved(
@@ -50,7 +53,8 @@ internal object AudioDownloadSourceResolver {
             AppContainer.neteaseClient.getSongDownloadUrl(
                 songId,
                 level = preferredQuality
-            )
+            ),
+            expectedSongId = songId
         )
         if (primary is NeteaseDownloadLookup.Resolved) {
             return primary.source
@@ -87,11 +91,15 @@ internal object AudioDownloadSourceResolver {
             AppContainer.neteaseClient.getSongUrl(
                 songId,
                 bitrate = bitrateForQuality(level)
-            )
+            ),
+            expectedSongId = songId
         )
     }
 
-    internal fun parseNeteaseDownloadLookup(rawResponse: String): NeteaseDownloadLookup {
+    internal fun parseNeteaseDownloadLookup(
+        rawResponse: String,
+        expectedSongId: Long? = null
+    ): NeteaseDownloadLookup {
         return when (
             val parsed = NeteasePlaybackResponseParser.parsePlayback(
                 rawResponse = rawResponse,
@@ -99,6 +107,12 @@ internal object AudioDownloadSourceResolver {
             )
         ) {
             is NeteasePlaybackResponseParser.PlaybackResult.Success -> {
+                if (expectedSongId != null && parsed.songId != expectedSongId) {
+                    return NeteaseDownloadLookup.Missing
+                }
+                if (parsed.notice == NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP) {
+                    return NeteaseDownloadLookup.ExplicitlyUnavailable
+                }
                 val finalUrl = ensureHttps(parsed.url)
                 NeteaseDownloadLookup.Resolved(
                     AudioDownloadManager.ResolvedDownloadSource(
@@ -108,7 +122,9 @@ internal object AudioDownloadSourceResolver {
                             ?.lowercase()
                             ?.takeIf(String::isNotBlank)
                             ?: extFromUrl(finalUrl),
-                        contentLength = parsed.contentLength
+                        contentLength = parsed.contentLength,
+                        durationMs = parsed.durationMs,
+                        contentMd5 = parsed.contentMd5
                     )
                 )
             }
@@ -267,7 +283,7 @@ internal object AudioDownloadSourceResolver {
         song: SongItem,
         preferredQuality: String
     ): AudioDownloadManager.ResolvedDownloadSource? {
-        if (!song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)) {
+        if (!isBiliSource(song)) {
             return null
         }
         val resolved = resolveBiliSong(song, AppContainer.biliClient) ?: return null
@@ -281,7 +297,8 @@ internal object AudioDownloadSourceResolver {
         return AudioDownloadManager.ResolvedDownloadSource(
             url = url,
             mimeType = chosen.mimeType,
-            fileExtensionHint = mimeToExt(chosen.mimeType)
+            fileExtensionHint = mimeToExt(chosen.mimeType),
+            durationMs = resolved.pageInfo?.durationSec?.takeIf { it > 0 }?.times(1_000L)
         )
     }
 

@@ -1066,8 +1066,12 @@ internal class ManagedDownloadMigrationFinalizer(
         ) {
             return metadata
         }
+        val json = JSONObject(metadata)
+        val sourceModifiedAtMs = sourceEntry.metadata?.sourceModifiedAtMs?.takeIf { it > 0L }
+            ?: sourceEntry.entry.lastModifiedMs.takeIf { it > 0L }
+        sourceModifiedAtMs?.let { json.put("sourceModifiedAtMs", it) }
         val timestampMs = sourceEntry.logicalCreatedAtMs()?.takeIf { it > 0L }
-            ?: return metadata
+            ?: return json.toString()
         val source = sourceEntry.logicalCreatedAtSource()
             ?.trim()
             ?.takeIf(String::isNotBlank)
@@ -1075,9 +1079,8 @@ internal class ManagedDownloadMigrationFinalizer(
             ?.trim()
             ?.takeIf(String::isNotBlank)
         if (!isValidMigrationCreatedAtMetadata(timestampMs, source, confidence)) {
-            return metadata
+            return json.toString()
         }
-        val json = JSONObject(metadata)
         val existingTimestamp = json.optLong("createdAtMs", 0L)
             .takeIf {
                 json.has("createdAtMs") && !json.isNull("createdAtMs") && it > 0L

@@ -417,6 +417,12 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
 
             release.complete(Unit)
             assertEquals("settled", handle.operation.await())
+            val resumed = coordinator.getOrStart(key = 1L) {
+                error("completed cleanup must not run again before acknowledgement")
+            }
+            assertTrue(resumed === handle)
+            assertEquals("settled", awaitDownloadClearProviderCleanup(resumed.operation, 20L))
+            coordinator.acknowledge(resumed)
             assertNull(coordinator.activeOrNull())
         } finally {
             cleanupScope.cancel()

@@ -1375,6 +1375,7 @@ class LocalMediaSupportTest {
                   "originalName":"旧标题",
                   "originalArtist":"旧歌手",
                   "identityAlbum":"旧专辑",
+                  "sourceModifiedAtMs":123456,
                   "coverPath":"content://com.android.externalstorage.documents/tree/primary%3Aneriplayer-download/document/primary%3Aneriplayer-download%2FCovers%2Fsong.jpg"
                 }
             """.trimIndent()
@@ -1383,6 +1384,7 @@ class LocalMediaSupportTest {
         assertEquals("好想爱这个世界啊", parsed?.name)
         assertEquals("华晨宇", parsed?.artist)
         assertEquals("neriplayer-download", parsed?.album)
+        assertEquals(123456L, parsed?.sourceModifiedAtMs)
         assertEquals(
             "content://com.android.externalstorage.documents/tree/primary%3Aneriplayer-download/document/primary%3Aneriplayer-download%2FCovers%2Fsong.jpg",
             parsed?.coverPath
