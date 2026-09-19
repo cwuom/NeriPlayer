@@ -78,7 +78,10 @@ internal suspend fun GlobalDownloadManager.findExistingDownloadedAudio(
 internal fun GlobalDownloadManager.findFastCachedDownloadedSong(
     context: Context,
     song: SongItem,
-    catalogIndex: DownloadedSongCatalogIndex = downloadedSongCatalogIndex
+    catalogIndex: DownloadedSongCatalogIndex = downloadedSongCatalogIndex,
+    inspectReference: (String) -> ManagedDownloadReferenceLookup.Result? = { reference ->
+        ManagedDownloadReferenceLookup.inspect(context, reference)
+    }
 ): DownloadedSong? {
     val downloadedSong = catalogIndex.find(song) ?: return null
     val references = downloadedSongPlaybackReferenceCandidates(downloadedSong)
@@ -96,7 +99,7 @@ internal fun GlobalDownloadManager.findFastCachedDownloadedSong(
             sawUncertain = true
             continue
         }
-        val evidence = ManagedDownloadReferenceLookup.inspect(context, reference)
+        val evidence = inspectReference(reference)
         when (evidence) {
             ManagedDownloadReferenceLookup.Result.Present -> Unit
             ManagedDownloadReferenceLookup.Result.Missing -> {
@@ -105,7 +108,8 @@ internal fun GlobalDownloadManager.findFastCachedDownloadedSong(
             }
             is ManagedDownloadReferenceLookup.Result.PermissionLost,
             is ManagedDownloadReferenceLookup.Result.ProviderFailure,
-            ManagedDownloadReferenceLookup.Result.OutOfScope -> {
+            ManagedDownloadReferenceLookup.Result.OutOfScope,
+            null -> {
                 sawUncertain = true
                 continue
             }

@@ -1,12 +1,15 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import android.content.Context
+import android.util.Log
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -39,11 +42,12 @@ class DownloadMobileContinuationTest {
         val phase = InstrumentationRegistry.getArguments().getString("continuationNetwork")
         if (phase == "offline") assertNull(context.currentDownloadNetworkTypeOrNull())
         if (phase == "mobile") assertEquals(TrafficNetworkType.MOBILE, context.currentDownloadNetworkTypeOrNull())
-        val db = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).build()
         val workManager = WorkManager.getInstance(context)
-        ForegroundDownloadWorker.cancelAllOwned(context)
-        val beforeIds = workManager.getWorkInfosForUniqueWork(ForegroundDownloadWorker.PUMP_WORK_NAME)
-            .get().map { it.id }.toSet()
+        requireNotNull(ForegroundDownloadWorker.cancelAllOwned(context))
+            .result.get(10, TimeUnit.SECONDS)
+        val beforeWork = workManager.getWorkInfosForUniqueWork(ForegroundDownloadWorker.PUMP_WORK_NAME)
+            .get().associateBy { it.id }
+        val db = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).build()
         val previousOverride = GlobalDownloadManager.mobileDataDownloadOverrideAllowed
         try {
             val track = song(1L)
@@ -72,12 +76,30 @@ class DownloadMobileContinuationTest {
             )
 
             assertTrue(GlobalDownloadManager.continueDownloadsOnMobileDataAndWake(context, confirmation, db))
-            withTimeout(10_000L) {
-                while (workManager.getWorkInfosForUniqueWork(ForegroundDownloadWorker.PUMP_WORK_NAME)
-                        .get().none { it.id !in beforeIds }) {
-                    delay(25L)
+            val persistentPump = withTimeout(10_000L) {
+                var selected: WorkInfo? = null
+                while (selected == null) {
+                    val currentWork = workManager.getWorkInfosForUniqueWork(
+                        ForegroundDownloadWorker.PUMP_WORK_NAME
+                    ).get()
+                    selected = currentWork.firstOrNull { work ->
+                        work.id !in beforeWork &&
+                            work.state != WorkInfo.State.CANCELLED &&
+                            work.state != WorkInfo.State.FAILED
+                    } ?: currentWork.firstOrNull { work ->
+                        // 离线确认可以接管启动恢复已经登记的同一个持久任务
+                        beforeWork[work.id]?.state?.isFinished == false && !work.state.isFinished
+                    }
+                    if (selected == null) delay(25L)
                 }
+                selected
             }
+            val previousPump = beforeWork[persistentPump.id]
+            Log.i(
+                "DownloadMobileContinuationTest",
+                "persistent pump receipt: kind=${if (previousPump == null) "new" else "reused"}, " +
+                    "id=${persistentPump.id}, before=${previousPump?.state}, after=${persistentPump.state}"
+            )
             assertFalse(GlobalDownloadManager.mobileDataDownloadOverrideAllowed)
             assertFalse(DownloadExecutionRoomStore.read(context, request.operationId, db)!!.requiresWifiNetwork)
             assertTrue(DownloadExecutionRoomStore.read(context, unrelated.operationId, db)!!.requiresWifiNetwork)
@@ -93,8 +115,12 @@ class DownloadMobileContinuationTest {
             })
         } finally {
             GlobalDownloadManager.mobileDataDownloadOverrideAllowed = previousOverride
-            ForegroundDownloadWorker.cancelAllOwned(context)
-            db.close()
+            try {
+                requireNotNull(ForegroundDownloadWorker.cancelAllOwned(context))
+                    .result.get(10, TimeUnit.SECONDS)
+            } finally {
+                db.close()
+            }
         }
     }
 

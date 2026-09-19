@@ -248,7 +248,8 @@ internal class DownloadedSongBuilder(
             sourceChannelId = metadata?.channelId,
             sourceAudioId = metadata?.audioId,
             sourceSubAudioId = metadata?.subAudioId,
-            sourcePlaylistContextId = metadata?.playlistContextId
+            sourcePlaylistContextId = metadata?.playlistContextId,
+            localFileName = storedAudio.logicalName
         ).withRecoveredRemoteSourceStableKey()
     }
 

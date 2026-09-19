@@ -19,12 +19,10 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
         val finalizeBody = methodBody(source, "finalizeDownloadedAudio")
 
         val leaseIndex = finalizeBody.indexOf("acquireCommitLeaseOrNull(")
-        val metadataIndex = finalizeBody.indexOf("writePendingAudioMetadata(")
         val audioCommitIndex = finalizeBody.indexOf("saveAudioFromTemp(")
 
         assertTrue(leaseIndex >= 0)
-        assertTrue(metadataIndex > leaseIndex)
-        assertTrue(audioCommitIndex > metadataIndex)
+        assertTrue(audioCommitIndex > leaseIndex)
     }
 
     @Test
@@ -236,7 +234,7 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
     }
 
     @Test
-    fun `core publication promotes pending audio before entering asset enrichment`() {
+    fun `core publication records artifact before entering asset enrichment`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         )
@@ -256,7 +254,7 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
     }
 
     @Test
-    fun `stale admission still promotes core audio before skipping old publication`() {
+    fun `stale admission retains core audio before skipping old publication`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         )
@@ -266,7 +264,7 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
             "val publishedAudio = corePublicationCoordinator.promoteBeforePublication("
         )
         val staleReturnIndex = completionBody.indexOf(
-            "core 提交并提升后清空代次已失效"
+            "core 提交后清空代次已失效"
         )
 
         assertTrue(coreResultIndex >= 0)
@@ -313,64 +311,13 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
     }
 
     @Test
-    fun `unpublished core pending audio never enters completed publication`() {
+    fun `core deferral retains both artifact and durable staging evidence`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
-        )
-        val completionBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
-        val pendingGuard = completionBody.indexOf(
-            "if (publishedAudio.isPendingAudioWrite)"
-        )
-        val artifactIndex = completionBody.indexOf(
-            "val artifactCommitted"
-        )
-        val completedStatusIndex = completionBody.indexOf(
-            "status = DownloadStatus.COMPLETED"
-        )
-        val enrichmentIndex = completionBody.indexOf(
-            "assetEnrichmentCoordinator.tryEnqueue("
-        )
-
-        assertTrue(pendingGuard >= 0)
-        assertTrue(artifactIndex > pendingGuard)
-        assertTrue(completedStatusIndex < 0 || completedStatusIndex > pendingGuard)
-        assertTrue(enrichmentIndex < 0 || enrichmentIndex > pendingGuard)
-        assertTrue(
-            completionBody.substring(pendingGuard, artifactIndex)
-                .contains("return")
         )
         val recoveryBody = methodBody(source, "deferPendingCorePublication")
         assertTrue(recoveryBody.contains("managedDownloadArtifactCoordinator.markCoreCommitted("))
         assertTrue(recoveryBody.contains("markStagingPrepared("))
-    }
-
-    @Test
-    fun `enrichment does not write sidecars while core audio remains pending`() {
-        val source = readSource(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
-        )
-        val enrichmentBody = methodBody(source, "enrichCoreCommittedDownload")
-        val pendingGuard = enrichmentBody.indexOf(
-            "if (enrichmentAudio.isPendingAudioWrite)"
-        )
-        val sidecarIndex = enrichmentBody.indexOf(
-            "downloadSidecarsForCompletedAudio("
-        )
-        val metadataIndex = enrichmentBody.indexOf(
-            "persistDownloadedMetadata("
-        )
-
-        assertTrue(pendingGuard >= 0)
-        assertTrue(sidecarIndex > pendingGuard)
-        assertTrue(metadataIndex > pendingGuard)
-        assertTrue(
-            enrichmentBody.substring(pendingGuard, sidecarIndex)
-                .contains("return")
-        )
-        assertTrue(
-            enrichmentBody.substring(pendingGuard, sidecarIndex)
-                .contains("directoryCommitLease?.close()")
-        )
     }
 
     @Test

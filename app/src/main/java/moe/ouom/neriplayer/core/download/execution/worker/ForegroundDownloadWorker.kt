@@ -202,7 +202,9 @@ class ForegroundDownloadWorker(
         private const val ALL_DOWNLOAD_WORK_TAG = "download_execution_all"
         internal val fallbackExistingWorkPolicy = ExistingWorkPolicy.KEEP
         internal val pumpExistingWorkPolicy = ExistingWorkPolicy.APPEND_OR_REPLACE
-        private val pumpScheduleCoordinator = DownloadPumpScheduleCoordinator()
+        private val pumpScheduleCoordinator = DownloadPumpScheduleCoordinator(
+            lock = downloadWorkSubmissionLock
+        )
         private val pumpRetryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         private val pumpCallbackExecutor = Executor { runnable -> runnable.run() }
 
@@ -311,24 +313,20 @@ class ForegroundDownloadWorker(
             initialDelayMs: Long
         ): Boolean {
             val delayMs = initialDelayMs.coerceAtLeast(0L)
-            if (!pumpScheduleCoordinator.markWorkEnqueueStarted(generation)) {
-                return true
-            }
             return runCatching {
-                val operation = WorkManager.getInstance(context)
-                    .enqueueUniqueWork(
+                val workManager = WorkManager.getInstance(context)
+                val request = buildPumpRequest(initialDelayMs = delayMs, generation = generation)
+                var submittedOperation: Operation? = null
+                pumpScheduleCoordinator.submitWorkEnqueue(generation) {
+                    submittedOperation = workManager.enqueueUniqueWork(
                         PUMP_WORK_NAME,
                         existingWorkPolicy,
-                        buildPumpRequest(
-                            initialDelayMs = delayMs,
-                            generation = generation
-                        )
+                        request
                     )
-                observePumpEnqueue(
-                    context = context,
-                    generation = generation,
-                    operation = operation
-                )
+                }
+                submittedOperation?.let { operation ->
+                    observePumpEnqueue(context, generation, operation)
+                }
                 true
             }.onFailure { error ->
                 handlePumpEnqueueFailure(
@@ -473,13 +471,18 @@ class ForegroundDownloadWorker(
             }
         }
 
-        fun cancelAllOwned(context: Context) {
-            pumpScheduleCoordinator.invalidate()
-            PostCoreDownloadRecoveryWorker.scheduleCoordinator.invalidate()
-            DownloadStorageRecoveryWorker.scheduleCoordinator.invalidate()
-            runCatching {
+        fun cancelAllOwned(context: Context): Operation? {
+            val workManager = runCatching {
                 WorkManager.getInstance(context.applicationContext)
-                    .cancelAllWorkByTag(ALL_DOWNLOAD_WORK_TAG)
+            }.getOrNull()
+            val postCoreCoordinator = PostCoreDownloadRecoveryWorker.scheduleCoordinator
+            val storageCoordinator = DownloadStorageRecoveryWorker.scheduleCoordinator
+            return pumpScheduleCoordinator.invalidateAndSubmitCancellation {
+                postCoreCoordinator.invalidate()
+                storageCoordinator.invalidate()
+                runCatching {
+                    workManager?.cancelAllWorkByTag(ALL_DOWNLOAD_WORK_TAG)
+                }.getOrNull()
             }
         }
 
@@ -576,11 +579,14 @@ internal enum class DownloadPumpCompletion {
     COMPLETED_WITH_SUCCESSOR
 }
 
+// 三种 Worker 共用取消 tag，登记状态和系统提交也必须共用同一个短锁
+internal val downloadWorkSubmissionLock = Any()
+
 /** keeps stale WorkManager callbacks from changing a newer pump request */
 internal class DownloadPumpScheduleCoordinator(
+    private val lock: Any = Any(),
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L }
 ) {
-    private val lock = Any()
     private var latestGeneration = 0L
     private var activeGeneration: Long? = null
     private var claimedGeneration: Long? = null
@@ -677,6 +683,18 @@ internal class DownloadPumpScheduleCoordinator(
         }
         queuedGeneration = generation
         true
+    }
+
+    fun submitWorkEnqueue(generation: Long, submit: () -> Unit): Boolean = synchronized(lock) {
+        if (!markWorkEnqueueStarted(generation)) return@synchronized false
+        // 这里只提交 WorkManager 操作，不能在锁内等待完成或注册完成回调
+        submit()
+        true
+    }
+
+    fun <T> invalidateAndSubmitCancellation(submit: () -> T): T = synchronized(lock) {
+        invalidate()
+        submit()
     }
 
     fun complete(

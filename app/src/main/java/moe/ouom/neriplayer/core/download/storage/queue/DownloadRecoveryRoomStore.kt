@@ -13,6 +13,8 @@ import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NA
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
+import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -193,7 +195,8 @@ internal class DownloadRecoveryRoomStore(
         requiresWifiNetwork: Boolean = true,
         downloadAudioQuality: DownloadAudioQualitySelection? = null,
         excludedOperationIds: Collection<String> = emptySet(),
-        forceNewOperationForStableKeys: Collection<String> = emptySet()
+        forceNewOperationForStableKeys: Collection<String> = emptySet(),
+        batchIdentity: DownloadExecutionRoomStore.DownloadBatchIdentity? = null
     ): WaitingStorageMutationBatchResult {
         if (songs.isEmpty()) {
             return WaitingStorageMutationBatchResult(
@@ -208,7 +211,23 @@ internal class DownloadRecoveryRoomStore(
         val clearEpoch = PersistentDownloadClearFenceStore.currentEpoch(appContext)
         return database.withTransaction {
             val dao = database.downloadOperationDao()
-            val distinctSongs = songs.distinctBy(SongItem::stableKey)
+            val batchMembers = batchIdentity?.let { identity ->
+                val batchDao = database.downloadBatchDao()
+                val batch = batchDao.findBatch(identity.batchId, identity.generation)
+                if (batch == null || batch.stateBits and DownloadBatchState.OPEN == 0 ||
+                    batch.stateBits and (DownloadBatchState.CLEARING or DownloadBatchState.TERMINAL_MASK) != 0
+                ) {
+                    return@withTransaction WaitingStorageMutationBatchResult(emptyList(), emptyMap())
+                }
+                songs.map(SongItem::stableKey).distinct()
+                    .chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE)
+                    .flatMap { keys -> batchDao.findMembersByStableKeys(identity.batchId, keys) }
+                    .associateBy { it.stableKey }
+            }
+            val distinctSongs = songs.distinctBy(SongItem::stableKey).filter { song ->
+                batchMembers == null ||
+                    batchMembers[song.stableKey()]?.terminalBits == DownloadBatchMemberTerminal.NONE
+            }
             if (distinctSongs.isEmpty()) {
                 return@withTransaction WaitingStorageMutationBatchResult(
                     operationIds = emptyList(),
@@ -343,9 +362,20 @@ internal class DownloadRecoveryRoomStore(
                 } else {
                     reusableMetadata?.metadata?.requiresWifiNetwork ?: requiresWifiNetwork
                 }
+                val initialBatch = batchIdentity?.takeIf {
+                    (mustCreateReplacement || existingOperationId == null && deterministicOperationState == null) &&
+                        batchMembers?.get(key)?.operationId == null
+                }
+                val reusableRequest = reusableMetadata?.let { candidate ->
+                    DownloadExecutionRoomStore.read(
+                        context = appContext,
+                        operationId = candidate.metadata.operationId,
+                        database = database
+                    )
+                }
                 val request = DownloadExecutionRequest(
                     operationId = operationId,
-                    song = song,
+                    song = reusableRequest?.song ?: song,
                     preserveStaging = reusableMetadata?.metadata?.preserveStaging ?: false,
                     requiresWifiNetwork = effectiveRequiresWifiNetwork,
                     attemptId = reusableMetadata?.metadata?.attemptId,
@@ -354,7 +384,10 @@ internal class DownloadRecoveryRoomStore(
                     userInitiated = reusableMetadata?.metadata?.userInitiated == true ||
                         userInitiated,
                     downloadAudioQuality = reusableMetadata?.metadata?.downloadAudioQuality
-                        ?: downloadAudioQuality
+                        ?: downloadAudioQuality,
+                    batchId = initialBatch?.batchId ?: reusableMetadata?.header?.batchId,
+                    batchGeneration = initialBatch?.generation
+                        ?: reusableMetadata?.header?.batchGeneration
                 )
                 DownloadExecutionRoomStore.upsert(
                     context = appContext,
@@ -370,6 +403,17 @@ internal class DownloadRecoveryRoomStore(
                     },
                     database = database
                 )
+                if (initialBatch != null) {
+                    // operation 载荷和成员在同一页事务绑定，首次交接不再读写整份歌曲 JSON
+                    check(database.downloadBatchDao().bindMemberOperationCAS(
+                        batchId = initialBatch.batchId,
+                        batchGeneration = initialBatch.generation,
+                        stableKey = key,
+                        operationId = operationId,
+                        attemptId = request.attemptId,
+                        nowMs = nowMs
+                    ) > 0) { "new download operation lost its batch member" }
+                }
                 requestsByOperationId[operationId] = request
                 operationId
             }

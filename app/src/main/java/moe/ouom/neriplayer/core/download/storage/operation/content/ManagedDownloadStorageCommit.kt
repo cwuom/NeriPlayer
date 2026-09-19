@@ -13,9 +13,12 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.SnapshotEntryBuc
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.system.Os
+import android.system.OsConstants
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Mutex
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
@@ -23,8 +26,8 @@ import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_N
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
+import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
-import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
@@ -40,16 +43,22 @@ import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
+import java.io.FileDescriptor
+import java.io.FileOutputStream
 import java.io.File
 import java.io.IOException
-import java.nio.file.AtomicMoveNotSupportedException
+import java.io.InputStream
 import java.nio.file.FileAlreadyExistsException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import java.nio.channels.Channels
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import java.util.UUID
 import org.json.JSONObject
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
+private val audioCommitLocks = Array(64) { Mutex() }
+private val audioPublicationLocks = Array(64) { Mutex() }
+private val audioNamePreparationLocks = Array(64) { Any() }
 
 internal fun ManagedDownloadStorage.ensureManagedLibraryManifestBlocking(
     context: Context,
@@ -205,199 +214,310 @@ internal suspend fun ManagedDownloadStorage.saveAudioFromTempBlocking(
         )
     }
     val boundedFileName = boundManagedDownloadFileName(fileName)
-    val storedEntry = when (val root = resolveRootBlocking(context)) {
-        is RootHandle.FileRoot -> {
-            val temporaryRoot = resolveTemporaryRoot(
-                context = context,
-                root = root,
-                create = true
-            ) as? RootHandle.FileRoot
-                ?: throw IOException("无法准备下载 .tmp 目录")
-            val existingAudio = findExistingAudioForSeedStableKey(context, seedMetadataJson)
-            val reservedFinalName = existingAudio == null
-            val finalName = existingAudio?.name
-                ?: treeChildRegistry.reserveUniqueFileChildName(root.dir, boundedFileName)
-            val pendingName = buildPendingAudioWriteName(finalName)
-            val pendingTarget = File(temporaryRoot.dir, pendingName)
-            val audioEntry = try {
-                writeCollisionPendingMetadata(
+    val root = resolveRootBlocking(context)
+    val rootIdentity = when (root) {
+        is RootHandle.FileRoot -> root.dir.absolutePath
+        is RootHandle.TreeRoot -> root.tree.uri.toString()
+    }
+    val seedMetadata = seedMetadataJson?.let(::parseDownloadedAudioMetadataJson)
+    val owner = seedMetadata?.operationId?.takeIf(String::isNotBlank) ?: boundedFileName
+    val lockIndex = ("$rootIdentity|$owner".hashCode() and Int.MAX_VALUE) % audioCommitLocks.size
+    return audioCommitLocks[lockIndex].withLock {
+        val snapshot = snapshotCacheStore.cachedSnapshot(context, restorePersisted = false)
+            ?.takeIf { it.rootEntriesComplete }
+            ?: buildDownloadLibrarySnapshotBlocking(context, forceRefresh = true)
+        if (!snapshot.rootEntriesComplete) throw IOException("无法完整核查下载目录，暂停提交")
+        val existingAudio = findExistingAudioForCommit(context, snapshot, seedMetadata, tempFile)
+        val storedEntry = if (existingAudio != null) {
+            if (existingAudio.isPendingAudioWrite) {
+                writeSeedMetadataAfterAudioCommit(context, root, existingAudio.logicalName, seedMetadataJson)
+            }
+            existingAudio
+        } else when (root) {
+            is RootHandle.FileRoot -> {
+                val temporaryRoot = resolveTemporaryRoot(
                     context = context,
                     root = root,
-                    requestedAudioName = boundedFileName,
-                    actualAudioName = finalName,
-                    pendingMetadataJson = pendingMetadataJson
-                )
-                val writeResult = FileStorageBackend(temporaryRoot.dir).writeRecoverable(
-                    target = StorageTarget.FileTarget(pendingName)
-                ) { output ->
-                    tempFile.inputStream().use { input ->
-                        input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    create = true
+                ) as? RootHandle.FileRoot
+                    ?: throw IOException("无法准备下载 .tmp 目录")
+                val finalName = prepareAudioNameAndMetadata(context, root, snapshot, boundedFileName, pendingMetadataJson ?: seedMetadataJson)
+                val pendingName = buildPendingAudioWriteName(finalName)
+                val pendingTarget = File(temporaryRoot.dir, pendingName)
+                val audioEntry = try {
+                    val writeResult = FileStorageBackend(temporaryRoot.dir).writeRecoverable(
+                        target = StorageTarget.FileTarget(pendingName)
+                    ) { output ->
+                        tempFile.inputStream().use { input ->
+                            input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                        }
                     }
-                }
-                val stored = when (writeResult) {
-                    is StorageWriteResult.Written -> {
-                        writeResult.stat.toStoredEntryForBackend(temporaryRoot.dir)
-                    }
-                    StorageWriteResult.Missing -> throw IOException(
-                        "pending 音频写入目标不存在: $pendingName"
-                    )
-                    StorageWriteResult.OutOfScope -> throw IOException(
-                        "pending 音频写入目标越界: $pendingName"
-                    )
-                    StorageWriteResult.PermissionLost -> throw SecurityException(
-                        "pending 音频写入权限丢失: $pendingName"
-                    )
-                    is StorageWriteResult.ProviderFailure -> throw IOException(
-                        "pending 音频写入失败: $pendingName",
-                        writeResult.error
-                    )
-                    is StorageWriteResult.Unsupported -> throw IOException(
-                        "pending 音频不支持写入: $pendingName (${writeResult.operation})"
-                    )
-                }
-                verifyFileCommittedLength(
-                    target = pendingTarget,
-                    expectedSizeBytes = actualSizeBytes,
-                    description = pendingTarget.name
-                )
-                stored.copy(sizeBytes = actualSizeBytes)
-            } catch (error: Throwable) {
-                deletePendingFileAndConfirm(pendingTarget)?.let { cleanupError ->
-                    error.addSuppressed(
-                        IOException(
-                            "pending 音频写入失败后清理未确认: $pendingName",
-                            cleanupError
+                    val stored = when (writeResult) {
+                        is StorageWriteResult.Written -> {
+                            writeResult.stat.toStoredEntryForBackend(temporaryRoot.dir)
+                        }
+                        StorageWriteResult.Missing -> throw IOException(
+                            "pending 音频写入目标不存在: $pendingName"
                         )
+                        StorageWriteResult.OutOfScope -> throw IOException(
+                            "pending 音频写入目标越界: $pendingName"
+                        )
+                        StorageWriteResult.PermissionLost -> throw SecurityException(
+                            "pending 音频写入权限丢失: $pendingName"
+                        )
+                        is StorageWriteResult.ProviderFailure -> throw IOException(
+                            "pending 音频写入失败: $pendingName",
+                            writeResult.error
+                        )
+                        is StorageWriteResult.Unsupported -> throw IOException(
+                            "pending 音频不支持写入: $pendingName (${writeResult.operation})"
+                        )
+                    }
+                    verifyFileCommittedLength(
+                        target = pendingTarget,
+                        expectedSizeBytes = actualSizeBytes,
+                        description = pendingTarget.name
                     )
-                }
-                if (reservedFinalName) {
+                    stored.copy(sizeBytes = actualSizeBytes)
+                } catch (error: Throwable) {
+                    deletePendingFileAndConfirm(pendingTarget)?.let { cleanupError ->
+                        error.addSuppressed(
+                            IOException(
+                                "pending 音频写入失败后清理未确认: $pendingName",
+                                cleanupError
+                            )
+                        )
+                    }
                     treeChildRegistry.forgetFileChildName(root.dir, finalName)
+                    throw error
                 }
-                throw error
-            }
-            writeSeedMetadataAfterAudioCommit(
-                context = context,
-                root = root,
-                audioName = finalName,
-                seedMetadataJson = seedMetadataJson
-            )
-            audioEntry
-        }
-
-        is RootHandle.TreeRoot -> {
-            val temporaryRoot = resolveTemporaryRoot(
-                context = context,
-                root = root,
-                create = true
-            ) as? RootHandle.TreeRoot
-                ?: throw IOException("无法准备下载 .tmp 目录")
-            val existingAudio = findExistingAudioForSeedStableKey(context, seedMetadataJson)
-            val reservedFinalName = existingAudio == null
-            val finalName = existingAudio?.name
-                ?: treeChildRegistry.reserveUniqueTreeChildName(context, root.tree, boundedFileName)
-            val createdPendingName = buildPendingAudioWriteName(finalName)
-            val audioEntry = try {
-                writeCollisionPendingMetadata(
+                writeSeedMetadataAfterAudioCommit(
                     context = context,
                     root = root,
-                    requestedAudioName = boundedFileName,
-                    actualAudioName = finalName,
-                    pendingMetadataJson = pendingMetadataJson
+                    audioName = finalName,
+                    seedMetadataJson = seedMetadataJson
                 )
-                val entry = writeSafFileThroughBackend(
+                audioEntry
+            }
+
+            is RootHandle.TreeRoot -> {
+                val temporaryRoot = resolveTemporaryRoot(
                     context = context,
-                    parent = temporaryRoot.tree,
-                    displayName = createdPendingName,
-                    mimeType = mimeTypeFromName(finalName, mimeType),
-                    expectedSizeBytes = actualSizeBytes,
-                    sourceFile = tempFile
-                )
-                treeChildRegistry.rememberTreeChild(temporaryRoot.tree, entry)
-                entry
-            } catch (error: Throwable) {
-                treeChildRegistry.forgetTreeChildName(
-                    temporaryRoot.tree,
-                    createdPendingName
-                )
-                if (reservedFinalName) {
+                    root = root,
+                    create = true
+                ) as? RootHandle.TreeRoot
+                    ?: throw IOException("无法准备下载 .tmp 目录")
+                val finalName = prepareAudioNameAndMetadata(context, root, snapshot, boundedFileName, pendingMetadataJson ?: seedMetadataJson)
+                val createdPendingName = buildPendingAudioWriteName(finalName)
+                val audioEntry = try {
+                    val entry = writeSafFileThroughBackend(
+                        context = context,
+                        parent = temporaryRoot.tree,
+                        displayName = createdPendingName,
+                        mimeType = mimeTypeFromName(finalName, mimeType),
+                        expectedSizeBytes = actualSizeBytes,
+                        sourceFile = tempFile
+                    )
+                    treeChildRegistry.rememberTreeChild(temporaryRoot.tree, entry)
+                    entry
+                } catch (error: Throwable) {
+                    treeChildRegistry.forgetTreeChildName(
+                        temporaryRoot.tree,
+                        createdPendingName
+                    )
                     treeChildRegistry.forgetTreeChildName(root.tree, finalName)
+                    throw error
                 }
-                throw error
-            }
-            writeSeedMetadataAfterAudioCommit(
-                context = context,
-                root = root,
-                audioName = audioEntry.logicalName,
-                seedMetadataJson = seedMetadataJson
-            )
-            audioEntry
-        }
-    }
-    if (tempFile.exists() && !tempFile.delete()) {
-        NPLogger.w(TAG, "删除下载临时文件失败: ${tempFile.name}")
-    }
-    if (!updateSnapshotCacheAfterStoredEntryWrite(context, storedEntry, SnapshotEntryBucket.AUDIO)) {
-        invalidateSnapshotCache(context)
-    }
-    seedMetadataJson
-        ?.let(::parseDownloadedAudioMetadataJson)
-        ?.let { metadata ->
-            val metadataEntry = findMetadataForAudioBlocking(context, storedEntry)
-            if (metadataEntry == null || !updateSnapshotCacheAfterMetadataWrite(context, metadataEntry, metadata)) {
-                invalidateSnapshotCache(context)
+                writeSeedMetadataAfterAudioCommit(
+                    context = context,
+                    root = root,
+                    audioName = audioEntry.logicalName,
+                    seedMetadataJson = seedMetadataJson
+                )
+                audioEntry
             }
         }
-    return storedEntry
+        if (tempFile.exists() && !tempFile.delete()) {
+            NPLogger.w(TAG, "删除下载临时文件失败: ${tempFile.name}")
+        }
+        if (!updateSnapshotCacheAfterStoredEntryWrite(context, storedEntry, SnapshotEntryBucket.AUDIO)) {
+            invalidateSnapshotCache(context)
+        }
+        seedMetadataJson?.takeUnless { existingAudio != null && !existingAudio.isPendingAudioWrite }
+            ?.let { retargetAudioMetadata(it, storedEntry.logicalName) }
+            ?.let(::parseDownloadedAudioMetadataJson)
+            ?.let { metadata ->
+                val metadataEntry = findMetadataForAudioBlocking(context, storedEntry)
+                if (metadataEntry == null || !updateSnapshotCacheAfterMetadataWrite(context, metadataEntry, metadata)) {
+                    invalidateSnapshotCache(context)
+                }
+            }
+        storedEntry
+    }
 }
 
-internal fun ManagedDownloadStorage.findExistingAudioForSeedStableKey(
+private fun ManagedDownloadStorage.findExistingAudioForCommit(
     context: Context,
-    seedMetadataJson: String?
+    snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+    expected: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    tempFile: File
 ): StoredEntry? {
-    val stableKey = seedMetadataJson
-        ?.let(::parseDownloadedAudioMetadataJson)
-        ?.stableKey
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-        ?: return null
-    val cached = snapshotCacheStore.cachedSnapshot(
-        context = context,
-        restorePersisted = false
-    )
-    val snapshot = cached ?: buildDownloadLibrarySnapshotBlocking(context)
-    return ManagedDownloadStorageLookup.selectCanonicalAudioEntries(
-        audioEntries = snapshot.audioEntriesByStableKey[stableKey].orEmpty(),
-        metadataByAudioName = snapshot.metadataByAudioName
-    ).maxWithOrNull(
-        compareByDescending<StoredEntry> { it.lastModifiedMs }
-            .thenByDescending { it.sizeBytes }
-            .thenBy { it.name }
-    )
+    val stableKey = expected?.stableKey?.takeIf(String::isNotBlank) ?: return null
+    val operationId = expected.operationId?.takeIf(String::isNotBlank) ?: return null
+    val candidates = (snapshot.pendingAudioEntries + snapshot.audioEntriesByStableKey[stableKey].orEmpty())
+        .distinctBy(StoredEntry::reference)
+        .filter { entry ->
+            val metadata = metadataForAudioEntry(snapshot, entry)
+            metadata?.stableKey == stableKey && metadata.operationId == operationId
+        }
+    candidates.forEach { entry ->
+        val sameBytes = openCommittedAudioInput(context, entry).use { committed ->
+            tempFile.inputStream().use { downloaded -> equalAudioStreams(committed, downloaded) }
+        }
+        if (sameBytes) return entry
+    }
+    if (candidates.isNotEmpty()) {
+        throw IOException("下载 operation 已有不同内容的音频，保留原凭据: $operationId")
+    }
+    return null
 }
+
+private fun ManagedDownloadStorage.prepareAudioNameAndMetadata(
+    context: Context,
+    root: RootHandle,
+    snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+    desiredName: String,
+    pendingMetadataJson: String?
+): String {
+    val identity = when (root) {
+        is RootHandle.FileRoot -> root.dir.absolutePath
+        is RootHandle.TreeRoot -> root.tree.uri.toString()
+    }
+    val lock = audioNamePreparationLocks[(identity.hashCode() and Int.MAX_VALUE) % audioNamePreparationLocks.size]
+    return synchronized(lock) {
+        // 完整快照包含 .tmp；新写入由 registry 预留，避免每首都重新枚举整个目录
+        val temporaryRoot = resolveTemporaryRoot(context, root, create = false)
+        val cachedTemporaryEntries = (temporaryRoot as? RootHandle.TreeRoot)?.let {
+            treeChildRegistry.peekTreeChildren(it.tree)?.map(ManagedDownloadStoredEntryMapper::fromTreeChild)
+        }
+        val temporaryEntries = cachedTemporaryEntries ?: readTemporaryDirectoryEntries(
+            context, root, forceRefresh = false
+        ).let { listing ->
+            if (!listing.isComplete) throw IOException("无法完整核查 pending 凭据，暂停提交")
+            listing.entries
+        }
+        val expectedOwner = pendingMetadataJson?.let(::parseDownloadedAudioMetadataJson)
+        val pendingAudioNames = temporaryEntries.filter(StoredEntry::isPendingAudioWrite).mapTo(hashSetOf(), StoredEntry::logicalName)
+        val ownedReservation = temporaryEntries.firstOrNull { entry ->
+            val audioName = ManagedDownloadTreeNaming.metadataAudioName(entry.name) ?: return@firstOrNull false
+            if (audioName in pendingAudioNames || !ManagedDownloadTreeNaming.isPendingMetadataName(entry.name, audioName) ||
+                !isPendingAudioPromotionFinalNameCandidate(desiredName, audioName) || expectedOwner?.operationId.isNullOrBlank()
+            ) return@firstOrNull false
+            val owner = readTextInternal(context, entry.reference)?.let(::parseDownloadedAudioMetadataJson)
+            owner?.operationId == expectedOwner.operationId && owner.stableKey == expectedOwner.stableKey
+        }?.let { ManagedDownloadTreeNaming.metadataAudioName(it.name) }
+        if (ownedReservation != null) {
+            val occupied = when (root) {
+                is RootHandle.FileRoot -> File(root.dir, ownedReservation).exists()
+                is RootHandle.TreeRoot -> treeChildRegistry.cachedTreeChildren(context, root.tree, TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS)
+                    .any { ManagedDownloadTreeNaming.isExactTreeStoredName(it.name, ownedReservation) }
+            }
+            if (occupied) throw IOException("同一 operation 预留名称被占用，保留元信息等待恢复: $ownedReservation")
+            when (root) {
+                is RootHandle.FileRoot -> treeChildRegistry.rememberFileChildName(root.dir, ownedReservation)
+                is RootHandle.TreeRoot -> treeChildRegistry.rememberTreeChildName(root.tree, ownedReservation)
+            }
+            writeCollisionPendingMetadata(context, root, ownedReservation, pendingMetadataJson)
+            return@synchronized ownedReservation
+        }
+        val reservedNames = snapshot.pendingAudioEntries.map(StoredEntry::logicalName) +
+            snapshot.metadataEntriesByAudioName.keys + temporaryEntries.mapNotNull { entry ->
+                if (entry.isPendingAudioWrite) entry.logicalName
+                else ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+            }
+        val availableName = ManagedDownloadStorageNaming.createUniqueAudioName(reservedNames, desiredName)
+        val finalName = when (root) {
+            is RootHandle.FileRoot -> treeChildRegistry.reserveUniqueFileChildName(root.dir, availableName)
+            is RootHandle.TreeRoot -> treeChildRegistry.reserveUniqueTreeChildName(context, root.tree, availableName)
+        }
+        writeCollisionPendingMetadata(context, root, finalName, pendingMetadataJson)
+        finalName
+    }
+}
+
+private fun openCommittedAudioInput(context: Context, entry: StoredEntry): InputStream {
+    return if (entry.reference.startsWith("/")) {
+        File(entry.reference).inputStream()
+    } else {
+        context.contentResolver.openInputStream(entry.reference.toUri())
+            ?: throw IOException("下载 operation 的已提交音频暂时不可读取: ${entry.name}")
+    }
+}
+
+private fun equalAudioStreams(first: InputStream, second: InputStream): Boolean {
+    val firstBuffer = ByteArray(64 * 1024)
+    val secondBuffer = ByteArray(firstBuffer.size)
+    while (true) {
+        val count = first.read(firstBuffer)
+        if (count < 0) return second.read() < 0
+        if (count == 0) {
+            val single = first.read()
+            if (single != second.read()) return false
+            if (single < 0) return true
+            continue
+        }
+        var read = 0
+        while (read < count) {
+            val current = second.read(secondBuffer, read, count - read)
+            if (current < 0) return false
+            if (current == 0) {
+                val single = second.read()
+                if (single < 0) return false
+                secondBuffer[read++] = single.toByte()
+            } else {
+                read += current
+            }
+        }
+        for (index in 0 until count) if (firstBuffer[index] != secondBuffer[index]) return false
+    }
+}
+
+private fun retargetAudioMetadata(content: String, audioName: String): String =
+    JSONObject(content).put("audioFileName", audioName).toString()
 
 internal fun ManagedDownloadStorage.promoteFileTargetWithoutReplacement(
     pending: File,
     target: File,
-    displayName: String
+    displayName: String,
+    onTargetCreated: ((FileDescriptor) -> Unit)? = null,
+    verifyCommittedTarget: ((File) -> Boolean)? = null
 ) {
+    if (target.exists()) throw IOException("下载目标已存在，保留 pending 文件: $displayName")
     try {
-        Files.move(
-            pending.toPath(),
-            target.toPath(),
-            StandardCopyOption.ATOMIC_MOVE
-        )
-    } catch (_: AtomicMoveNotSupportedException) {
-        try {
-            Files.move(pending.toPath(), target.toPath())
-        } catch (error: FileAlreadyExistsException) {
-            throw IOException("下载目标已存在，保留 pending 文件: $displayName", error)
-        } catch (error: Exception) {
-            throw IOException("无法提交下载文件: $displayName", error)
+        // CREATE_NEW/O_EXCL 把占位和打开文件合成一个动作，不能用 ATOMIC_MOVE 覆盖后到的文件
+        if (onTargetCreated != null) {
+            val descriptor = Os.open(target.absolutePath, OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_EXCL, OsConstants.S_IRUSR or OsConstants.S_IWUSR)
+            FileOutputStream(descriptor).use { output ->
+                val identity = Os.fstat(descriptor).let { "${it.st_dev}:${it.st_ino}" }
+                onTargetCreated(descriptor)
+                pending.inputStream().use { it.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES) }
+                output.fd.sync()
+                if (publicationFileIdentity(target.absolutePath) != identity) throw IOException("发布目标身份发生变化: $displayName")
+            }
+        } else {
+            FileChannel.open(target.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { output ->
+                pending.inputStream().use { it.copyTo(Channels.newOutputStream(output), STREAM_COPY_BUFFER_SIZE_BYTES) }
+                output.force(true)
+            }
         }
+        val identical = verifyCommittedTarget?.invoke(target)
+            ?: pending.inputStream().use { source -> target.inputStream().use { equalAudioStreams(source, it) } }
+        if (!identical) throw IOException("发布目标内容未确认，保留 pending 文件: $displayName")
+        deletePendingFileAndConfirm(pending)?.let { throw IOException("发布完成但 pending 清理未确认: $displayName", it) }
     } catch (error: FileAlreadyExistsException) {
         throw IOException("下载目标已存在，保留 pending 文件: $displayName", error)
     } catch (error: Exception) {
-        throw IOException("无法提交下载文件: $displayName", error)
+        throw IOException("无法提交下载文件，保留恢复凭据: $displayName", error)
     }
 }
 
@@ -507,12 +627,31 @@ internal suspend fun ManagedDownloadStorage.promotePendingAudio(
             val pendingRoot = pendingFile.parentFile
                 ?.takeIf { it.isDirectory }
                 ?: root.dir
-            promotePendingFileAudio(
-                root = root.dir,
-                pendingName = audio.name,
-                finalName = finalName,
-                pendingRoot = pendingRoot
-            )?.toStoredEntry()
+            val target = File(root.dir, finalName)
+            val lock = audioPublicationLocks[(target.absolutePath.hashCode() and Int.MAX_VALUE) % audioPublicationLocks.size]
+            lock.withLock {
+                if (target.exists()) {
+                    if (!isVerifiedAudioPublicationTarget(context, root, audio.name, finalName, target.absolutePath, audio.reference) &&
+                        !resumeAudioPublicationCopy(context, root, audio.name, finalName, target.absolutePath, audio.reference)
+                    ) {
+                        throw IOException("下载目标缺少可验证的发布凭据，保留目标和 pending: $finalName")
+                    }
+                    deletePendingFileAndConfirm(pendingFile)?.let { throw IOException("已确认发布目标但 pending 清理失败", it) }
+                    target.toStoredEntry()
+                } else if (!pendingFile.isFile) {
+                    null
+                } else {
+                    promoteFileTargetWithoutReplacement(
+                        pending = File(pendingRoot, audio.name), target = target, displayName = finalName,
+                        onTargetCreated = { descriptor ->
+                            val identity = Os.fstat(descriptor).let { "${it.st_dev}:${it.st_ino}" }
+                            recordAudioPublicationTarget(context, root, audio, target.absolutePath, identity, finalName)
+                        },
+                        verifyCommittedTarget = { isVerifiedAudioPublicationTarget(context, root, audio.name, finalName, it.absolutePath, audio.reference) }
+                    )
+                    target.toStoredEntry()
+                }
+            }
         }
 
         is RootHandle.TreeRoot -> {
@@ -637,13 +776,8 @@ internal suspend fun ManagedDownloadStorage.promotePendingAudio(
                 ?.value
                 ?.sizeBytes
             val committedAtMs = System.currentTimeMillis()
-            // 新写入的 StoredEntry 已经在写入阶段完成长度读回校验。
-            // 优先复用这个尺寸，避免提升前再次完整读取 SAF 音频；复制阶段
-            // 仍会统计实际字节数，旧版本或未知尺寸才回退到完整读回
-            val expectedSizeBytes = audio.sizeBytes
-                .takeIf { audio.sizeKnown && it > 0L }
-                ?: pendingReportedSizeBytes?.takeIf { it > 0L }
-                ?: resolveCurrentTreePendingAudioSize(
+            // 标签回写会改变长度，提升必须重新核查当前 pending 内容
+            val expectedSizeBytes = resolveCurrentTreePendingAudioSize(
                     backend = pendingBackend,
                     reference = pendingReference,
                     reportedSizeBytes = pendingReportedSizeBytes,
@@ -886,17 +1020,14 @@ internal fun ManagedDownloadStorage.reconcileExistingTreePromotionTargetLocked(
     ) {
         return null
     }
-    if (
-        exactTarget.sizeBytes != null &&
-            exactTarget.sizeBytes > 0L &&
-            exactTarget.sizeBytes != expectedSizeBytes
+    val sameDocument = pendingUri != null && samePublicationReference(pendingUri.toString(), targetUri.toString())
+    val verifiedPublication = !sameDocument && isVerifiedAudioPublicationTarget(
+        context, root, pendingName, finalName, targetUri.toString(), pendingUri?.toString()
+    )
+    if (!sameDocument && !verifiedPublication &&
+        (pendingUri == null || !resumeAudioPublicationCopy(context, root, pendingName, finalName, targetUri.toString(), pendingUri.toString()))
     ) {
-        NPLogger.w(
-            TAG,
-            "SAF 提升发现未完成的同名目标，保留目标和 pending: " +
-                "name=$finalName, expected=$expectedSizeBytes, " +
-                "actual=${exactTarget.sizeBytes}"
-        )
+        NPLogger.w(TAG, "SAF 目标缺少可验证发布凭据，保留目标和 pending: $finalName")
         return null
     }
     val target = resolveNewTreePromotionDocument(
@@ -905,11 +1036,18 @@ internal fun ManagedDownloadStorage.reconcileExistingTreePromotionTargetLocked(
         uri = exactTarget.documentUri
     ) ?: return null
     val entry = try {
+        // 旧引用可能仍带标签写入前的长度，只有强凭据已确认目标时才能以实际内容为准
+        val verifiedSizeBytes = if (pendingUri == null && verifiedPublication) {
+            val input = context.contentResolver.openInputStream(targetUri)
+                ?: throw IOException("已确认发布目标暂时不可读: $finalName")
+            input.use { ManagedDownloadCommitIo.countInputStreamBytes(it, STREAM_COPY_BUFFER_SIZE_BYTES) }
+                .takeIf { it > 0L } ?: throw IOException("已确认发布目标为空: $finalName")
+        } else expectedSizeBytes
         verifiedTreeStoredEntry(
             context = context,
             target = target,
             expectedName = finalName,
-            expectedSizeBytes = expectedSizeBytes,
+            expectedSizeBytes = verifiedSizeBytes,
             fallbackLastModifiedMs = fallbackLastModifiedMs,
             description = finalName
         )
@@ -1063,6 +1201,11 @@ internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing
                 return@withLock null
             }
             try {
+                recordAudioPublicationTarget(
+                    context, root,
+                    StoredEntry(pendingName, pending.uri.toString(), pending.uri.toString(), null, expectedSizeBytes, fallbackLastModifiedMs),
+                    created.uri.toString(), targetName = finalName
+                )
                 val output = context.contentResolver.openOutputStream(created.uri, "w")
                     ?: throw IOException("SAF final 音频不可写: $finalName")
                 output.use { target ->
@@ -1082,6 +1225,9 @@ internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing
                     fallbackLastModifiedMs = fallbackLastModifiedMs,
                     description = finalName
                 )
+                if (!isVerifiedAudioPublicationTarget(context, root, pendingName, finalName, created.uri.toString(), pending.uri.toString())) {
+                    throw IOException("SAF 发布目标内容凭据校验失败: $finalName")
+                }
                 val pendingDeleted = deleteTrustedReference(
                     context,
                     TrustedManagedRef(
@@ -1192,7 +1338,20 @@ internal fun ManagedDownloadStorage.writeSeedMetadataAfterAudioCommit(
     audioName: String,
     seedMetadataJson: String?
 ) {
-    val content = seedMetadataJson?.takeIf(String::isNotBlank) ?: return
+    val incoming = seedMetadataJson?.takeIf(String::isNotBlank)
+        ?.let { retargetAudioMetadata(it, audioName) } ?: return
+    val content = preserveAudioPublicationReceipt(readAudioPublicationMetadata(context, root, audioName)?.toString(), incoming)
+    val temporaryRoot = resolveTemporaryRoot(context, root, create = true)
+        ?: throw IOException("无法保存 core pending 元信息")
+    val pendingWritten = writeRootText(
+        context = context,
+        root = temporaryRoot,
+        displayName = "$audioName$PENDING_METADATA_SUFFIX",
+        content = content
+    ) ?: throw IOException("无法确认 core pending 元信息: $audioName")
+    if (readTextInternal(context, pendingWritten.reference) != content) {
+        throw IOException("core pending 元信息读回不一致: $audioName")
+    }
     try {
         writeRootText(
             context = context,
@@ -1213,12 +1372,11 @@ internal fun ManagedDownloadStorage.writeSeedMetadataAfterAudioCommit(
 internal fun ManagedDownloadStorage.writeCollisionPendingMetadata(
     context: Context,
     root: RootHandle,
-    requestedAudioName: String,
     actualAudioName: String,
     pendingMetadataJson: String?
 ) {
-    val content = pendingMetadataJson?.takeIf(String::isNotBlank) ?: return
-    if (requestedAudioName == actualAudioName) return
+    val content = pendingMetadataJson?.takeIf(String::isNotBlank)
+        ?.let { retargetAudioMetadata(it, actualAudioName) } ?: return
     val temporaryRoot = resolveTemporaryRoot(
         context = context,
         root = root,
@@ -1230,7 +1388,7 @@ internal fun ManagedDownloadStorage.writeCollisionPendingMetadata(
         displayName = "$actualAudioName$PENDING_METADATA_SUFFIX",
         content = content
     )
-    if (metadataEntry == null) {
+    if (metadataEntry == null || readTextInternal(context, metadataEntry.reference) != content) {
         throw IOException(
             "无法为冲突后的下载音频写入 pending metadata: $actualAudioName"
         )

@@ -3,8 +3,13 @@ package moe.ouom.neriplayer.data.local.media
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.DocumentsContract
 import androidx.core.net.toUri
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -15,12 +20,14 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.net.URI
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 private const val METADATA_RECOVERY_VERSION = 1
 private const val METADATA_RECOVERY_DIRECTORY = "staged_metadata_writes"
@@ -51,8 +58,14 @@ internal object LocalMediaMetadataRecoveryStore {
     private const val TAG = "LocalMetadataRecovery"
     private val recoveryMutex = Mutex()
     private val activeRecordIds = ConcurrentHashMap.newKeySet<String>()
+    private val reservedTargetKeys = mutableMapOf<String, CompletableDeferred<Unit>>()
+    private val recordGeneration = AtomicLong()
     @Volatile
     private var recoveryCompleted = false
+    @Volatile
+    private var completedRecoveryGeneration = -1L
+    @Volatile
+    private var completedRecoveryDirectory: String? = null
 
     fun stagingDirectory(context: Context): File =
         File(context.noBackupFilesDir, METADATA_RECOVERY_DIRECTORY)
@@ -80,6 +93,7 @@ internal object LocalMediaMetadataRecoveryStore {
             stage = LocalMetadataRecoveryStage.PREPARED,
             journalFile = File(directory, "$METADATA_RECOVERY_PREFIX$id$METADATA_RECOVERY_SUFFIX")
         )
+        recordGeneration.incrementAndGet()
         activeRecordIds += id
         try {
             persist(record)
@@ -105,12 +119,20 @@ internal object LocalMediaMetadataRecoveryStore {
     }
 
     fun rollback(context: Context, record: LocalMetadataRecoveryRecord): Boolean {
-        val restored = replaceTargetFromFile(
-            context = context,
-            targetReference = record.targetReference,
-            source = record.backupFile,
-            lastModifiedMs = record.originalLastModifiedMs
-        ) && targetMatches(context, record.targetReference, record.originalSha256)
+        val restored = if (targetMatches(context, record.targetReference, record.originalSha256)) {
+            val targetFile = directFile(record.targetReference)
+            val originalTime = record.originalLastModifiedMs?.takeIf { it > 0L }
+            targetFile == null || originalTime == null || runCatching {
+                targetFile.lastModified() == originalTime || targetFile.setLastModified(originalTime)
+            }.getOrDefault(false)
+        } else {
+            replaceTargetFromFile(
+                context = context,
+                targetReference = record.targetReference,
+                source = record.backupFile,
+                lastModifiedMs = record.originalLastModifiedMs
+            ) && targetMatches(context, record.targetReference, record.originalSha256)
+        }
         if (restored) {
             val rolledBack = runCatching {
                 updateStage(record, LocalMetadataRecoveryStage.ROLLED_BACK)
@@ -130,44 +152,144 @@ internal object LocalMediaMetadataRecoveryStore {
         return false
     }
 
-    suspend fun recoverInterruptedWrites(context: Context): Int = withContext(Dispatchers.IO) {
-        recoveryMutex.withLock {
-            if (recoveryCompleted) return@withLock 0
-            val directory = stagingDirectory(context)
-            val journals = directory.listFiles { file ->
-                file.isFile && file.name.startsWith(METADATA_RECOVERY_PREFIX) &&
-                    file.name.endsWith(METADATA_RECOVERY_SUFFIX)
-            }.orEmpty()
-            var recoveredCount = 0
-            var allResolved = true
-            journals.forEach { journal ->
-                val record = runCatching { readRecord(context, journal) }
-                    .onFailure { error ->
-                        NPLogger.e(TAG, "读取元信息恢复凭据失败，原文件和备份均保留: ${journal.name}", error)
+    internal suspend fun <T> withRecoveredTargets(
+        context: Context,
+        targetReferences: Collection<String>,
+        blockedResult: T,
+        write: suspend () -> T
+    ): T = withContext(Dispatchers.IO) {
+        val targetKeys = targetReferences.map { reference ->
+            targetIdentity(reference) ?: return@withContext blockedResult
+        }.toSet()
+        if (targetKeys.isEmpty()) return@withContext blockedResult
+        var reservation: CompletableDeferred<Unit>? = null
+        try {
+            while (reservation == null) {
+                var blocked = false
+                val waitFor = recoveryMutex.withLock {
+                    val existing = targetKeys.firstNotNullOfOrNull(reservedTargetKeys::get)
+                    if (existing == null) {
+                        if (!recoverRecordsLocked(context, targetKeys).allResolved) {
+                            blocked = true
+                        } else {
+                            // 恢复与预约必须原子完成，避免新 journal 建立前被旧恢复抢占
+                            val acquired = CompletableDeferred<Unit>()
+                            targetKeys.forEach { key -> reservedTargetKeys[key] = acquired }
+                            reservation = acquired
+                        }
                     }
-                    .getOrNull() ?: run {
-                    allResolved = false
-                    return@forEach
+                    existing
                 }
-                if (record.id in activeRecordIds) {
-                    allResolved = false
-                    return@forEach
-                }
-                val recovered = recoverRecord(context, record)
-                if (recovered) {
-                    recoveredCount++
-                } else {
-                    allResolved = false
+                if (blocked) return@withContext blockedResult
+                // 正常并发编辑按目标排队，等待时不占用全局恢复锁
+                waitFor?.await()
+            }
+            write()
+        } finally {
+            reservation?.let { acquired ->
+                withContext(NonCancellable) {
+                    recoveryMutex.withLock {
+                        targetKeys.forEach { key ->
+                            if (reservedTargetKeys[key] === acquired) reservedTargetKeys.remove(key)
+                        }
+                        acquired.complete(Unit)
+                    }
                 }
             }
-            recoveryCompleted = allResolved
-            recoveredCount
+        }
+    }
+
+    suspend fun recoverInterruptedWrites(context: Context): Int = withContext(Dispatchers.IO) {
+        recoveryMutex.withLock {
+            val directoryPath = stagingDirectory(context).absolutePath
+            if (recoveryCompleted && completedRecoveryDirectory == directoryPath &&
+                completedRecoveryGeneration == recordGeneration.get()
+            ) return@withLock 0
+            val generationAtStart = recordGeneration.get()
+            val result = recoverRecordsLocked(context, targetKeys = null)
+            completedRecoveryDirectory = directoryPath
+            completedRecoveryGeneration = generationAtStart
+            recoveryCompleted = result.allResolved && reservedTargetKeys.isEmpty() &&
+                activeRecordIds.isEmpty() && generationAtStart == recordGeneration.get()
+            result.recoveredCount
+        }
+    }
+
+    private data class RecoveryPass(val recoveredCount: Int, val allResolved: Boolean)
+
+    private suspend fun recoverRecordsLocked(context: Context, targetKeys: Set<String>?): RecoveryPass {
+        val directory = stagingDirectory(context)
+        if (!directory.exists()) return RecoveryPass(0, true)
+        val journals = directory.listFiles { file ->
+            file.isFile && file.name.startsWith(METADATA_RECOVERY_PREFIX) &&
+                file.name.endsWith(METADATA_RECOVERY_SUFFIX)
+        } ?: return RecoveryPass(0, false)
+        var recoveredCount = 0
+        var allResolved = true
+        val candidates = linkedMapOf<String, MutableList<Pair<File, JSONObject>>>()
+        journals.forEach { journal ->
+            currentCoroutineContext().ensureActive()
+            val body = runCatching { JSONObject(journal.readText()) }.getOrNull()
+            val targetKey = body?.optString("targetReference")?.let(::targetIdentity)
+            if (body == null || targetKey == null) {
+                // 无法确认目标的凭据不能当成与本次编辑无关
+                NPLogger.w(TAG, "元信息恢复凭据目标未知，保留凭据并阻止新编辑: ${journal.name}")
+                allResolved = false
+                return@forEach
+            }
+            if (targetKeys != null && targetKey !in targetKeys) return@forEach
+            candidates.getOrPut(targetKey) { mutableListOf() }.add(journal to body)
+        }
+        // 未知目标可能属于任何已知记录的后继写入，不能先回放再拒绝新编辑
+        if (!allResolved) return RecoveryPass(0, false)
+        candidates.forEach { (targetKey, records) ->
+            currentCoroutineContext().ensureActive()
+            if (records.size != 1) {
+                // 旧版本可能留下多个写入意图，文件时间或随机 id 都不能证明提交顺序
+                NPLogger.w(TAG, "同一音频存在多个元信息恢复凭据，保留原内容与备份: count=${records.size}")
+                allResolved = false
+                return@forEach
+            }
+            val (journal, body) = records.single()
+            val record = runCatching { readRecord(context, journal, body) }
+                .onFailure { error ->
+                    NPLogger.e(TAG, "读取元信息恢复凭据失败，原文件和备份均保留: ${journal.name}", error)
+                }
+                .getOrNull()
+            if (record == null || record.id in activeRecordIds || targetKey in reservedTargetKeys) {
+                allResolved = false
+                return@forEach
+            }
+            if (recoverRecord(context, record)) recoveredCount++ else allResolved = false
+        }
+        return RecoveryPass(recoveredCount, allResolved)
+    }
+
+    internal fun targetIdentity(reference: String): String? {
+        val raw = reference.takeIf(String::isNotBlank) ?: return null
+        if (raw.startsWith('/')) return runCatching { "file:${File(raw).canonicalPath}" }.getOrNull()
+        if (raw.startsWith("file:", ignoreCase = true)) {
+            return runCatching {
+                URI(raw).path?.takeIf { it.startsWith('/') }
+                    ?.let { path -> "file:${File(path).canonicalPath}" }
+            }.getOrNull()
+        }
+        val uri = runCatching { raw.toUri() }.getOrNull() ?: return null
+        if (!uri.scheme.equals("content", ignoreCase = true)) return null
+        val authority = uri.authority?.takeIf(String::isNotBlank) ?: return null
+        val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+        return if (documentId != null) {
+            "document:${authority.length}:$authority:$documentId"
+        } else {
+            "uri:${uri.normalizeScheme()}"
         }
     }
 
     internal fun resetRecoveryForTest() {
         recoveryCompleted = false
+        completedRecoveryDirectory = null
         activeRecordIds.clear()
+        reservedTargetKeys.clear()
     }
 
     fun targetMatches(context: Context, targetReference: String, expectedSha256: String): Boolean {
@@ -271,9 +393,9 @@ internal object LocalMediaMetadataRecoveryStore {
 
     private fun readRecord(
         context: Context,
-        journalFile: File
+        journalFile: File,
+        body: JSONObject
     ): LocalMetadataRecoveryRecord {
-        val body = JSONObject(journalFile.readText())
         require(body.getInt("version") == METADATA_RECOVERY_VERSION)
         val directory = stagingDirectory(context).canonicalFile
         fun validatedStagingFile(key: String): File {

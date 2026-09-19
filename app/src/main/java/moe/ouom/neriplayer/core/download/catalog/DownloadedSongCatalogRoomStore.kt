@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.catalog.ManagedLibraryItemRoomStore
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -46,10 +47,13 @@ internal class DownloadedSongCatalogRoomStore(
             val cutoverState = database.syncMetadataDao()
                 .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
                 ?.value
-            val roomSongs = ManagedLibraryItemRoomStore.restore(context, database)
+            val (roomSongs, deletedStableKeys) = database.withTransaction {
+                ManagedLibraryItemRoomStore.restore(context, database) to
+                    ManagedLibraryItemRoomStore.deletedStableKeys(database, rootKey)
+            }
             readManagedCatalogBackup(rootKey)?.let { backupSongs ->
                 val mergedSongs = mergeCatalogBackupWithPreviews(
-                    backupSongs,
+                    backupSongs.withoutDeletedStableKeys(deletedStableKeys),
                     roomSongs.orEmpty()
                 )
                 if (cutoverState != ROOM_PRIMARY_STATE) {
@@ -78,7 +82,7 @@ internal class DownloadedSongCatalogRoomStore(
             // Room 行只保存轻量预览，升级首次恢复时必须先读取旧完整目录
             readLegacyCatalog(rootKey)?.let { legacySongs ->
                 val mergedSongs = mergeCatalogBackupWithPreviews(
-                    backupSongs = legacySongs,
+                    backupSongs = legacySongs.withoutDeletedStableKeys(deletedStableKeys),
                     previewSongs = roomSongs.orEmpty()
                 )
                 val roomUpdated = try {
@@ -98,6 +102,7 @@ internal class DownloadedSongCatalogRoomStore(
                     false
                 }
                 val backupWritten = writeManagedCatalogBackup(rootKey, mergedSongs)
+                if (backupWritten) prunePersistedDeletionMarkers(rootKey, mergedSongs)
                 // 任一步提升失败都不能标记 Room 主数据，避免清理器删掉唯一完整载荷
                 if (roomUpdated && backupWritten) {
                     markRoomPrimary(rootKey)
@@ -134,6 +139,7 @@ internal class DownloadedSongCatalogRoomStore(
                 )
             }
             if (writeManagedCatalogBackup(rootKey, songs)) {
+                prunePersistedDeletionMarkers(rootKey, songs)
                 markRoomPrimary(rootKey)
             }
         }
@@ -167,6 +173,7 @@ internal class DownloadedSongCatalogRoomStore(
             }
             // 预览行先以 delta 更新，完整备份只按同一批 snapshot 写一次
             if (writeManagedCatalogBackup(rootKey, snapshot)) {
+                prunePersistedDeletionMarkers(rootKey, snapshot)
                 markRoomPrimary(rootKey)
             }
         }
@@ -201,6 +208,7 @@ internal class DownloadedSongCatalogRoomStore(
                 )
             }
             if (backupWritten) {
+                prunePersistedDeletionMarkers(rootKey, emptyList())
                 markRoomPrimary(rootKey)
             }
         }
@@ -210,7 +218,9 @@ internal class DownloadedSongCatalogRoomStore(
         globalMutex.withLock {
             val rootKey = snapshotCacheKeyProvider(context)
             writeLegacyCatalog(rootKey, songs)
-            writeManagedCatalogBackup(rootKey, songs)
+            if (writeManagedCatalogBackup(rootKey, songs)) {
+                prunePersistedDeletionMarkers(rootKey, songs)
+            }
             if (songs.isNotEmpty()) {
                 clearConfirmedEmptyMarker(rootKey)
                 database.syncMetadataDao().deleteMigrationMetadata(
@@ -293,6 +303,35 @@ internal class DownloadedSongCatalogRoomStore(
                     NPLogger.w(loggerTag, "完整下载目录备份无效，回退 Room 预览: ${file.name}")
                 }
             }
+    }
+
+    private suspend fun prunePersistedDeletionMarkers(
+        rootKey: String,
+        snapshot: List<DownloadedSong>
+    ) {
+        if (ManagedLibraryItemRoomStore.deletedStableKeys(database, rootKey).isEmpty()) return
+        val legacyFile = File(context.filesDir, cacheFileName)
+        val legacySongs = if (legacyFile.exists()) {
+            // 旧完整备份仍可能被恢复，无法读取时保留删除凭据
+            readLegacyCatalog(rootKey) ?: return
+        } else {
+            emptyList()
+        }
+        val backupStableKeys = (snapshot.asSequence() + legacySongs.asSequence())
+            .mapNotNull { song -> song.stableKey?.trim()?.takeIf(String::isNotBlank) }
+            .toSet()
+        ManagedLibraryItemRoomStore.retainDeletedStableKeysPresentInBackups(
+            database = database,
+            libraryId = rootKey,
+            backupStableKeys = backupStableKeys
+        )
+    }
+
+    private fun List<DownloadedSong>.withoutDeletedStableKeys(
+        deletedStableKeys: Set<String>
+    ): List<DownloadedSong> {
+        if (deletedStableKeys.isEmpty()) return this
+        return filterNot { song -> song.stableKey?.trim() in deletedStableKeys }
     }
 
     private suspend fun markRoomPrimary(rootKey: String) {
@@ -472,8 +511,17 @@ internal fun mergeCatalogBackupWithPreviews(
         val mergedSong = if (preview == null) {
             backup
         } else {
+            val previewFilePath = preview.filePath.takeIf(String::isNotBlank)
+            val previewMediaUri = preview.mediaUri?.takeIf(String::isNotBlank)
+            val hasPreviewReference = previewFilePath != null || previewMediaUri != null
+            val mergedFilePath = previewFilePath ?: previewMediaUri ?: backup.filePath
+            val mergedMediaUri = if (hasPreviewReference) previewMediaUri else backup.mediaUri
+            val mergedReference = mergedMediaUri?.takeIf(String::isNotBlank) ?: mergedFilePath
+            val backupReference = backup.mediaUri?.takeIf(String::isNotBlank) ?: backup.filePath
             backup.copy(
-                filePath = preview.filePath.takeIf(String::isNotBlank) ?: backup.filePath,
+                filePath = mergedFilePath,
+                localFileName = preview.resolvedLocalFileName()
+                    ?: backup.resolvedLocalFileName().takeIf { mergedReference == backupReference },
                 fileSize = preview.fileSize.takeIf { it > 0L } ?: backup.fileSize,
                 downloadTime = preview.downloadTime.takeIf { it > 0L } ?: backup.downloadTime,
                 name = backup.name.ifBlank { preview.name },
@@ -483,7 +531,7 @@ internal fun mergeCatalogBackupWithPreviews(
                     ?.takeIf(String::isNotBlank)
                     ?.takeIf(::isResolvableLocalReference)
                     ?: backup.coverPath,
-                mediaUri = preview.mediaUri ?: backup.mediaUri
+                mediaUri = mergedMediaUri
             )
         }
         merged += mergedSong

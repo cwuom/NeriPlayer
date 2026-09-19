@@ -9,6 +9,8 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull as songRemoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
+import java.io.File
+import java.net.URI
 
 private const val BILIBILI_SOURCE_ALBUM_PREFIX = "Bilibili"
 
@@ -45,7 +47,8 @@ data class DownloadedSong(
     val sourceChannelId: String? = null,
     val sourceAudioId: String? = null,
     val sourceSubAudioId: String? = null,
-    val sourcePlaylistContextId: String? = null
+    val sourcePlaylistContextId: String? = null,
+    val localFileName: String? = null
 ) {
     fun displayName(): String = customName ?: name
     fun displayArtist(): String = customArtist ?: artist
@@ -55,6 +58,22 @@ data class DownloadedSong(
             ?.takeIf(String::isNotBlank)
             ?: filePath
     }
+}
+
+internal fun localFileNameFromFileReference(reference: String?): String? {
+    val raw = reference?.takeIf(String::isNotBlank) ?: return null
+    val path = when {
+        raw.startsWith('/') -> raw
+        raw.startsWith("file:", ignoreCase = true) -> runCatching { URI(raw).path }.getOrNull()
+        else -> null
+    } ?: return null
+    return File(path).name.takeIf(String::isNotBlank)
+}
+
+internal fun DownloadedSong.resolvedLocalFileName(): String? {
+    // document id 只用于定位，真实文件名由扫描或下载时的 StoredEntry 提供
+    return localFileName?.takeIf(String::isNotBlank)
+        ?: localFileNameFromFileReference(mediaUri?.takeIf(String::isNotBlank) ?: filePath)
 }
 
 internal fun isCompleteDownloadedSongSelection(
@@ -155,10 +174,9 @@ private fun DownloadedSong.rebuildRemoteSourceIdentity(): SongIdentity? {
 }
 
 internal fun DownloadedSong.toPlaybackSongItem(): SongItem {
-    val localFileName = ManagedDownloadStorage.normalizeManagedAudioFileName(filePath)
     return toPlaybackSongItem(
         playbackUri = mediaUri?.takeIf(String::isNotBlank) ?: filePath,
-        localFileName = localFileName,
+        localFileName = resolvedLocalFileName(),
         localFilePath = filePath.takeIf { it.startsWith("/") },
         resolvedDurationMs = durationMs
     )

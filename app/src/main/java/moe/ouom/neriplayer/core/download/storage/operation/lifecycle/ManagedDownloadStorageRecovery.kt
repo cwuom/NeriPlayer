@@ -4,6 +4,8 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.operation.content.invalidateSnapshotCache
 import moe.ouom.neriplayer.core.download.storage.operation.content.parseDownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.storage.operation.content.preserveAudioPublicationReceipt
+import moe.ouom.neriplayer.core.download.storage.operation.content.readAudioPublicationMetadata
 import moe.ouom.neriplayer.core.download.storage.operation.content.readTextInternal
 import moe.ouom.neriplayer.core.download.storage.operation.content.updateSnapshotCacheAfterMetadataWrite
 import moe.ouom.neriplayer.core.download.storage.operation.content.writeRootText
@@ -621,11 +623,15 @@ internal fun ManagedDownloadStorage.saveMetadataBlocking(
         invalidateSnapshotCache(context)
         return false
     }
+    val root = resolveRootBlocking(context)
+    val content = preserveAudioPublicationReceipt(
+        readAudioPublicationMetadata(context, root, audio.logicalName)?.toString(), json
+    )
     val metadataEntry = writeRootText(
         context = context,
-        root = resolveRootBlocking(context),
+        root = root,
         displayName = "${audio.logicalName}$METADATA_SUFFIX",
-        content = json,
+        content = content,
         expectedAbsent = expectedAbsent,
         knownTargetEntry = knownMetadataEntry
     )
@@ -633,9 +639,11 @@ internal fun ManagedDownloadStorage.saveMetadataBlocking(
         invalidateSnapshotCache(context)
         return false
     }
-    val storedMetadata = readTextInternal(context, metadataEntry.reference)
-        ?.let(::parseDownloadedAudioMetadataJson)
-    if (!isMetadataWriteVerified(expected = metadata, actual = storedMetadata)) {
+    val storedContent = readTextInternal(context, metadataEntry.reference)
+    val storedMetadata = storedContent?.let(::parseDownloadedAudioMetadataJson)
+    if (!isMetadataWriteVerified(expected = metadata, actual = storedMetadata) ||
+        content != json && storedContent != content
+    ) {
         invalidateSnapshotCache(context)
         NPLogger.w(TAG, "下载元数据写入读回校验失败: ${audio.name}")
         return false

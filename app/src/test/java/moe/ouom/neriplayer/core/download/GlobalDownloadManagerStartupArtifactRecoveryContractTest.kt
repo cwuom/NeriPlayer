@@ -26,7 +26,6 @@ import moe.ouom.neriplayer.core.download.policy.finalizedPublicationRecoveryLeas
 import moe.ouom.neriplayer.core.download.storage.operation.content.createDefaultRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.saveAudioFromTempBlocking
 import moe.ouom.neriplayer.core.download.storage.operation.content.scheduleSnapshotWarmup
-import moe.ouom.neriplayer.core.download.storage.operation.content.writeCollisionPendingMetadata
 import moe.ouom.neriplayer.core.download.storage.operation.content.writeSafFileThroughBackend
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.cleanupMigrationReplacementBackups
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.hasPendingStartupMigrationRecovery
@@ -531,38 +530,6 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     }
 
     @Test
-    fun `collision audio writes pair pending metadata with the reserved name`() {
-        val storageSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
-        ).readText()
-        val audioSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
-        ).readText()
-        val saveBody = methodBody(storageSource, "saveAudioFromTempBlocking")
-        val helperBody = methodBody(storageSource, "writeCollisionPendingMetadata")
-        val helperIndex = saveBody.indexOf("writeCollisionPendingMetadata(")
-        val secondHelperIndex = saveBody.indexOf(
-            "writeCollisionPendingMetadata(",
-            startIndex = helperIndex + 1
-        )
-        val copyIndex = saveBody.indexOf("writeRecoverable(")
-        val safCopyIndex = saveBody.indexOf("writeSafFileThroughBackend(")
-        val saveCall = methodBody(audioSource, "finalizeDownloadedAudio")
-
-        assertTrue(
-            "the actual reserved name must get a pending recovery credential before copy",
-            helperIndex >= 0 && copyIndex > helperIndex
-        )
-        assertTrue(secondHelperIndex > helperIndex)
-        assertTrue(safCopyIndex > secondHelperIndex)
-        assertEquals(2, saveBody.countOccurrences("writeCollisionPendingMetadata("))
-        assertTrue(helperBody.contains("requestedAudioName == actualAudioName"))
-        assertTrue(helperBody.contains("pendingMetadataJson"))
-        assertTrue(storageSource.contains("pendingMetadataJson: String?"))
-        assertTrue(saveCall.contains("pendingMetadataJson = pendingMetadata"))
-    }
-
-    @Test
     fun `new pending audio and metadata writes stay under the dedicated tmp child`() {
         val storageSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
@@ -642,15 +609,4 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         error("project source file not found: $path")
     }
 
-    private fun String.countOccurrences(needle: String): Int {
-        if (needle.isEmpty()) return 0
-        var count = 0
-        var offset = 0
-        while (true) {
-            val index = indexOf(needle, offset)
-            if (index < 0) return count
-            count++
-            offset = index + needle.length
-        }
-    }
 }

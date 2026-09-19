@@ -1,18 +1,21 @@
 package moe.ouom.neriplayer.core.download.artifact
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
 import android.content.Context
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import moe.ouom.neriplayer.core.download.storage.operation.content.isVerifiedAudioPublicationTarget
+import moe.ouom.neriplayer.core.download.storage.operation.content.samePublicationReference
+import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.stableKey
 
 /**
- * 负责把已通过完整性校验的核心音频从 staging 提升到正式目录
- *
- * 资产增强和歌词整理不属于核心提交。把这一步单独隔离后，宿主生命周期变化不会
- * 把“已经下载完成”的音频长期留在 .tmp
+ * 核心音频保留恢复凭据，元信息完成后才对正式目录发布
  */
 internal class DownloadCorePublicationCoordinator {
     suspend fun promoteBeforePublication(
@@ -23,22 +26,14 @@ internal class DownloadCorePublicationCoordinator {
         if (!audio.isPendingAudioWrite) {
             return audio
         }
-        // 新版本通常已经把 core metadata 写到根目录，先走这条快速路径
-        tryPromote(
-            context = context,
-            song = song,
-            audio = audio,
-            promotePendingMetadata = false
-        )?.let { promoted ->
-            return promoted
+        val metadata = readMetadata(context, audio) ?: return audio
+        if (metadata.stableKey != song.stableKey() || !isFinalizedDownloadedMetadata(metadata)) {
+            return audio
         }
-
-        // 兼容旧版本只写出 pending metadata 的情况，补一次带 metadata 提升的路径
         tryPromote(
             context = context,
             song = song,
-            audio = audio,
-            promotePendingMetadata = true
+            audio = audio
         )?.let { promoted ->
             return promoted
         }
@@ -64,7 +59,21 @@ internal class DownloadCorePublicationCoordinator {
             )
             null
         }
-        if (reconciled != null && !reconciled.isPendingAudioWrite) {
+        val reconciledMetadata = reconciled?.let { readMetadata(context, it) }
+        if (
+            reconciled != null && !reconciled.isPendingAudioWrite &&
+            metadata.operationId?.isNotBlank() == true &&
+            reconciledMetadata?.operationId == metadata.operationId &&
+            reconciledMetadata.stableKey == metadata.stableKey &&
+            isFinalizedDownloadedMetadata(reconciledMetadata) &&
+            withContext(Dispatchers.IO) {
+                samePublicationReference(audio.reference, reconciled.reference) ||
+                    ManagedDownloadStorage.isVerifiedAudioPublicationTarget(
+                        context, ManagedDownloadStorage.resolveRootBlocking(context), audio.name,
+                        audio.logicalName, reconciled.reference, audio.reference
+                    )
+            }
+        ) {
             NPLogger.d(
                 TAG,
                 "core 音频重扫命中并发提升结果: song=${song.name}, " +
@@ -83,16 +92,14 @@ internal class DownloadCorePublicationCoordinator {
     private suspend fun tryPromote(
         context: Context,
         song: SongItem,
-        audio: ManagedDownloadStorage.StoredEntry,
-        promotePendingMetadata: Boolean
+        audio: ManagedDownloadStorage.StoredEntry
     ): ManagedDownloadStorage.StoredEntry? {
         return try {
             withContext(NonCancellable) {
-                ManagedDownloadStorage.promoteCoreCommittedPendingAudio(
+                ManagedDownloadStorage.promoteFinalizedPendingAudio(
                     context = context,
-                    audio = audio,
-                    promotePendingMetadata = promotePendingMetadata
-                )
+                    audio = audio
+                )?.audio
             }?.takeUnless { it.isPendingAudioWrite }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -101,12 +108,20 @@ internal class DownloadCorePublicationCoordinator {
                 TAG,
                 "core 音频提升正式文件失败，保留可恢复 pending: " +
                     "song=${song.name}, file=${audio.name}, " +
-                    "promotePendingMetadata=$promotePendingMetadata, " +
                     "error=${error.message}",
                 error
             )
             null
         }
+    }
+
+    private suspend fun readMetadata(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry
+    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+        val entry = ManagedDownloadStorage.findMetadataForAudio(context, audio) ?: return null
+        return ManagedDownloadStorage.readText(context, entry.reference)
+            ?.let(ManagedDownloadStorage::parseDownloadedAudioMetadataJson)
     }
 
     private companion object {

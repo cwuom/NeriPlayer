@@ -3,9 +3,12 @@ package moe.ouom.neriplayer.core.download.artifact
 import android.content.Context
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
@@ -224,7 +227,8 @@ internal class ManagedDownloadArtifactCoordinator {
 
     suspend fun reconcileCatalog(
         context: Context,
-        songs: Collection<DownloadedSong>
+        songs: Collection<DownloadedSong>,
+        database: NeriUserDataDatabase? = null
     ) {
         val normalizedSongs = songs.mapNotNull { song ->
             val stableKey = song.stableKey?.trim()?.takeIf(String::isNotBlank)
@@ -234,10 +238,10 @@ internal class ManagedDownloadArtifactCoordinator {
         if (normalizedSongs.isEmpty()) return
         val appContext = context.applicationContext
         val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
-        val database = database(appContext)
+        val resolvedDatabase = database ?: database(appContext)
         val nowMs = System.currentTimeMillis()
         val observedKeys = normalizedSongs.mapTo(linkedSetOf()) { (stableKey, _) -> stableKey }
-        val staleCandidates = database.managedDownloadArtifactDao()
+        val staleCandidates = resolvedDatabase.managedDownloadArtifactDao()
             .findAllByRootKey(rootKey)
             .filter { artifact ->
                 artifact.stableKey !in observedKeys &&
@@ -250,7 +254,7 @@ internal class ManagedDownloadArtifactCoordinator {
                 reference = artifact.audioReference
             )
             if (ManagedDownloadReferenceLookup.canMarkMissing(evidence)) {
-                database.managedDownloadArtifactDao().markMissingIfUnchanged(
+                resolvedDatabase.managedDownloadArtifactDao().markMissingIfUnchanged(
                     rootKey = rootKey,
                     stableKey = artifact.stableKey,
                     expectedState = artifact.state,
@@ -261,8 +265,8 @@ internal class ManagedDownloadArtifactCoordinator {
                 )
             }
         }
-        database.withTransaction {
-            val dao = database.managedDownloadArtifactDao()
+        resolvedDatabase.withTransaction {
+            val dao = resolvedDatabase.managedDownloadArtifactDao()
             val existingByStableKey = dao.findAllByRootKey(rootKey).associateBy(
                 ManagedDownloadArtifactEntity::stableKey
             )
@@ -389,7 +393,10 @@ internal class ManagedDownloadArtifactCoordinator {
      */
     suspend fun findReadableCompletedStableKeys(
         context: Context,
-        stableKeys: Collection<String>
+        stableKeys: Collection<String>,
+        inspectReference: (String) -> ManagedDownloadReferenceLookup.Result? = { reference ->
+            ManagedDownloadReferenceLookup.inspect(context, reference)
+        }
     ): Set<String> {
         val normalizedKeys = stableKeys
             .map(String::trim)
@@ -412,6 +419,7 @@ internal class ManagedDownloadArtifactCoordinator {
                 )
             }
         return normalizedKeys.mapNotNull { stableKey ->
+            currentCoroutineContext().ensureActive()
             val artifact = artifacts[stableKey] ?: return@mapNotNull null
             val state = ManagedDownloadArtifactState.fromPersisted(artifact.state)
             if (!isBatchPresentationCompletedArtifactState(state)) return@mapNotNull null
@@ -422,7 +430,7 @@ internal class ManagedDownloadArtifactCoordinator {
                 }
             ).distinct()
             if (references.any { reference ->
-                    ManagedDownloadReferenceLookup.inspect(appContext, reference) is
+                    inspectReference(reference) is
                         ManagedDownloadReferenceLookup.Result.Present
                 }
             ) {
@@ -1568,10 +1576,8 @@ internal class ManagedDownloadArtifactCoordinator {
         song: DownloadedSong,
         nowMs: Long
     ): ManagedDownloadArtifactEntity {
-        val audioReference = song.filePath
-            .trim()
-            .takeIf(String::isNotBlank)
-            ?: song.mediaUri?.trim()?.takeIf(String::isNotBlank)
+        val audioReference = song.mediaUri?.trim()?.takeIf(String::isNotBlank)
+            ?: song.filePath.trim().takeIf(String::isNotBlank)
         val finalized = audioReference != null
         val currentState = current?.let { artifact ->
             ManagedDownloadArtifactState.fromPersisted(artifact.state)
@@ -1587,10 +1593,11 @@ internal class ManagedDownloadArtifactCoordinator {
             currentState = currentState,
             hasAudioReference = finalized
         )
-        val audioName = audioReference
-            ?.substringAfterLast('/')
-            ?.substringAfterLast('\\')
-            ?.takeIf(String::isNotBlank)
+        val currentReference = current?.audioReference?.trim()?.takeIf(String::isNotBlank)
+            ?: current?.locatorHint?.trim()?.takeIf(String::isNotBlank)
+        val sameAudioReference = audioReference != null && audioReference == currentReference
+        val audioName = song.resolvedLocalFileName()
+            ?: current?.audioName?.takeIf { sameAudioReference && it.isNotBlank() }
         return (current ?: ManagedDownloadArtifactEntity(
             rootKey = rootKey,
             stableKey = stableKey,
@@ -1617,6 +1624,7 @@ internal class ManagedDownloadArtifactCoordinator {
             leaseId = if (preservedState != null) current.leaseId else null,
             audioReference = audioReference,
             audioName = audioName,
+            metadataName = current?.metadataName?.takeIf { sameAudioReference },
             fileSize = song.fileSize,
             downloadedAtMs = song.downloadTime.takeIf { finalized },
             finalizedAtMs = if (nextState == ManagedDownloadArtifactState.FINALIZED) {

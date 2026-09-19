@@ -596,16 +596,20 @@ class PlaylistUsageRepository internal constructor(
                     )
                 }
                 val immediateCover = coverArtist.displayCoverUrl()?.takeIf { it.isNotBlank() }
-                val refreshedPicUrl = immediateCover
-                    ?: entry.picUrl?.takeIf { it.isNotBlank() }
-                    ?: if (resolveLocalMetadataFallback) {
-                        coverArtist.displayCoverUrl(
-                            context = localizedContext,
-                            resolveLocalMetadataFallback = true
-                        )?.takeIf { it.isNotBlank() }
-                    } else {
-                        null
-                    }
+                val resolvedFallback = if (resolveLocalMetadataFallback && immediateCover == null) {
+                    coverArtist.displayCoverUrl(
+                        context = localizedContext,
+                        resolveLocalMetadataFallback = true
+                    )?.takeIf { it.isNotBlank() }
+                } else {
+                    null
+                }
+                val refreshedPicUrl = resolveRefreshedLocalUsageCover(
+                    immediateCover = immediateCover,
+                    resolvedFallback = resolvedFallback,
+                    cachedCover = entry.picUrl,
+                    resolveLocalMetadataFallback = resolveLocalMetadataFallback
+                )
                 val refreshedTrackCount = artist.songs.size
                 if (
                     entry.name == artist.name &&

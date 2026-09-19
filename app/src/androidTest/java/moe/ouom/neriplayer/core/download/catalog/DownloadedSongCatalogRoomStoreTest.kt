@@ -14,9 +14,162 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.IOException
+import java.util.UUID
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 
 @RunWith(AndroidJUnit4::class)
 class DownloadedSongCatalogRoomStoreTest {
+    @Test
+    fun fullSnapshotRemovalSurvivesDatabaseReopenBeforeBackupWrite() = runTest {
+        assertRemovalSurvivesDatabaseReopen(useDelta = false)
+    }
+
+    @Test
+    fun deltaRemovalSurvivesDatabaseReopenBeforeBackupWrite() = runTest {
+        assertRemovalSurvivesDatabaseReopen(useDelta = true)
+    }
+
+    @Test
+    fun removalSurvivesLegacyFallbackAndExplicitReadditionRestoresTheSong() = runTest {
+        assertRemovalSurvivesDatabaseReopen(useDelta = true, verifyLegacyFallback = true)
+    }
+
+    private suspend fun assertRemovalSurvivesDatabaseReopen(
+        useDelta: Boolean,
+        verifyLegacyFallback: Boolean = false
+    ) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val fixtureId = UUID.randomUUID().toString()
+        val databaseName = "catalog-interrupted-$fixtureId.db"
+        val cacheFileName = "catalog-interrupted-$fixtureId.json"
+        val rootKey = ManagedDownloadStorage.currentSnapshotCacheKey(context)
+        fun openDatabase() = Room.databaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java,
+            databaseName
+        ).build()
+        fun store(database: NeriUserDataDatabase) = DownloadedSongCatalogRoomStore(
+            context = context,
+            database = database,
+            cacheFileName = cacheFileName,
+            snapshotCacheKeyProvider = { rootKey },
+            loggerTag = "DownloadedSongCatalogRoomStoreTest"
+        )
+        var database = openDatabase()
+        try {
+            val removedSong = song("removed", "/music/removed.mp3")
+            val retainedSong = song("retained", "/music/retained.mp3").copy(
+                id = 2L,
+                stableKey = "2|netease|",
+                originalLyric = "retained original lyric"
+            )
+            store(database).persist(listOf(removedSong, retainedSong))
+            if (verifyLegacyFallback) {
+                File(context.filesDir, cacheFileName).writeText(
+                    serializeDownloadedSongsCatalog(
+                        cacheKey = rootKey,
+                        songs = listOf(removedSong, retainedSong),
+                        includeOriginalLyrics = true
+                    )
+                )
+            }
+
+            // 只完成 Room 事务，保留旧备份以重现两次持久写之间的进程退出
+            if (useDelta) {
+                ManagedLibraryItemRoomStore.applyPreviewDelta(
+                    context = context,
+                    upserts = emptyList(),
+                    removedStableKeys = setOf("1|netease|"),
+                    database = database
+                )
+            } else {
+                ManagedLibraryItemRoomStore.replacePreviews(
+                    context = context,
+                    songs = listOf(retainedSong),
+                    database = database
+                )
+            }
+            assertEquals(
+                listOf("2|netease|"),
+                database.managedLibraryItemDao().findAll(rootKey).map { it.stableKey }
+            )
+            database.close()
+            database = openDatabase()
+
+            val restored = store(database).restore()
+            assertEquals(listOf("2|netease|"), restored?.map(DownloadedSong::stableKey))
+            assertEquals("retained original lyric", restored?.single()?.originalLyric)
+            if (verifyLegacyFallback) {
+                store(database).persist(listOf(retainedSong))
+                assertTrue(
+                    File(context.filesDir, cacheFileName + MANAGED_LIBRARY_CATALOG_BACKUP_SUFFIX)
+                        .delete()
+                )
+                assertEquals(
+                    listOf("2|netease|"),
+                    store(database).restore()?.map(DownloadedSong::stableKey)
+                )
+                ManagedLibraryItemRoomStore.upsertPreview(
+                    context = context,
+                    song = removedSong,
+                    database = database
+                )
+                assertEquals(
+                    setOf("1|netease|", "2|netease|"),
+                    store(database).restore()?.map(DownloadedSong::stableKey)?.toSet()
+                )
+            }
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+            listOf(
+                cacheFileName,
+                cacheFileName + MANAGED_LIBRARY_CATALOG_BACKUP_SUFFIX,
+                cacheFileName + CONFIRMED_EMPTY_CATALOG_MARKER_SUFFIX
+            ).forEach { name -> File(context.filesDir, name).delete() }
+        }
+    }
+
+    @Test
+    fun fullSnapshotKeepsLeaseProtectedPreviewAndItsBackupMetadata() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val rootKey = ManagedDownloadStorage.currentSnapshotCacheKey(context)
+        val cacheFileName = "catalog-leased-${UUID.randomUUID()}.json"
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).build()
+        try {
+            val store = DownloadedSongCatalogRoomStore(
+                context = context,
+                database = database,
+                cacheFileName = cacheFileName,
+                snapshotCacheKeyProvider = { rootKey },
+                loggerTag = "DownloadedSongCatalogRoomStoreTest"
+            )
+            val leasedSong = song("leased", "/music/leased.mp3").copy(
+                originalLyric = "leased original lyric"
+            )
+            store.persist(listOf(leasedSong))
+            val row = database.managedLibraryItemDao().findAll(rootKey).single()
+            database.managedLibraryItemDao().upsert(row.copy(leaseId = "active-lease"))
+
+            ManagedLibraryItemRoomStore.replacePreviews(context, emptyList(), database)
+
+            val restored = store.restore()
+            assertEquals(listOf("1|netease|"), restored?.map(DownloadedSong::stableKey))
+            assertEquals("leased original lyric", restored?.single()?.originalLyric)
+            assertEquals(
+                "active-lease",
+                database.managedLibraryItemDao().findAll(rootKey).single().leaseId
+            )
+        } finally {
+            database.close()
+            listOf(cacheFileName, cacheFileName + MANAGED_LIBRARY_CATALOG_BACKUP_SUFFIX)
+                .forEach { name -> File(context.filesDir, name).delete() }
+        }
+    }
+
     @Test
     fun persistAndRestoreKeepsMetadataAndRootIsolation() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()

@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.metadataEntri
 import moe.ouom.neriplayer.core.download.storage.operation.content.normalizeDirectoryUri
 import moe.ouom.neriplayer.core.download.storage.operation.content.parseDownloadedAudioMetadataEntriesBatch
 import moe.ouom.neriplayer.core.download.storage.operation.content.promotePendingAudio
+import moe.ouom.neriplayer.core.download.storage.operation.content.sealAudioPublicationReceipt
 import moe.ouom.neriplayer.core.download.storage.operation.content.readTextInternal
 import moe.ouom.neriplayer.core.download.storage.operation.content.resolveRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.resolveSnapshotForIndexedLookup
@@ -223,6 +224,7 @@ internal suspend fun ManagedDownloadStorage.promoteFinalizedPendingAudioImpl(
     }
     val root = resolveRootBlocking(context)
     if (!audio.isPendingAudioWrite) {
+        sealAudioPublicationReceipt(context, root, audio)
         val terminalTemporaryWriteTargets =
             terminalTemporaryWriteCleanupTargetsForFinalization(
                 pendingAudio = audio,
@@ -293,6 +295,7 @@ internal suspend fun ManagedDownloadStorage.promoteFinalizedPendingAudioImpl(
         invalidateSnapshotCache(context)
     }
     promoted?.let { finalizedAudio ->
+        sealAudioPublicationReceipt(context, root, finalizedAudio)
         val recordedTerminalCleanup = completeTerminalTemporaryWriteFinalization(
             context = context,
             preparation = preparation
@@ -401,6 +404,7 @@ internal suspend fun ManagedDownloadStorage.promoteCoreCommittedPendingAudioImpl
     if (promoted.isPendingAudioWrite) {
         return@withContext null
     }
+    sealAudioPublicationReceipt(context, root, promoted)
     if (promotePendingMetadata) {
         cleanupPendingCoreMetadataAfterAudioPromotion(
             context = context,

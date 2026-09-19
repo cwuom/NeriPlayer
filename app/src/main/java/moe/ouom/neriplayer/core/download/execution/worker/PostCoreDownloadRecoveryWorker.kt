@@ -12,6 +12,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -110,7 +111,9 @@ class PostCoreDownloadRecoveryWorker(
         private const val SUCCESSOR_DELAY_MS = 500L
         private const val STARTUP_RESTORE_WAIT_MS = 20_000L
         private const val GENERATION_KEY = "post_core_generation"
-        internal val scheduleCoordinator = DownloadPumpScheduleCoordinator()
+        internal val scheduleCoordinator = DownloadPumpScheduleCoordinator(
+            lock = downloadWorkSubmissionLock
+        )
         private val enqueueCallbackExecutor = Executor { it.run() }
 
         /** 同一时间只保留一个系统任务，避免歌曲数直接放大 WorkManager 队列 */
@@ -121,13 +124,18 @@ class PostCoreDownloadRecoveryWorker(
             val appContext = context.applicationContext
             if (PersistentDownloadClearFenceStore.isActive(appContext)) return false
             val generation = scheduleCoordinator.request(initialDelayMs = initialDelayMs) ?: return true
-            if (!scheduleCoordinator.markWorkEnqueueStarted(generation)) return true
             return runCatching {
-                val operation = WorkManager.getInstance(appContext).enqueueUniqueWork(
-                    WORK_NAME,
-                    ExistingWorkPolicy.APPEND_OR_REPLACE,
-                    buildRequest(initialDelayMs = initialDelayMs, generation = generation)
-                )
+                val workManager = WorkManager.getInstance(appContext)
+                val request = buildRequest(initialDelayMs = initialDelayMs, generation = generation)
+                var submittedOperation: Operation? = null
+                scheduleCoordinator.submitWorkEnqueue(generation) {
+                    submittedOperation = workManager.enqueueUniqueWork(
+                        WORK_NAME,
+                        ExistingWorkPolicy.APPEND_OR_REPLACE,
+                        request
+                    )
+                }
+                val operation = submittedOperation ?: return@runCatching true
                 operation.result.addListener(
                     Runnable {
                         runCatching { operation.result.get() }.onFailure { error ->

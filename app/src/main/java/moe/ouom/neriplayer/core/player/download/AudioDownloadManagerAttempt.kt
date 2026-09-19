@@ -1108,22 +1108,7 @@ internal suspend fun AudioDownloadManager.finalizeDownloadedAudio(
         attemptId = attemptId,
         operationId = effectiveOperationId
     )
-    if (!ManagedDownloadStorage.writePendingAudioMetadata(
-            context = context,
-            audioName = fileName,
-            json = pendingMetadata,
-            operationId = effectiveOperationId
-        )
-    ) {
-        throw IOException("无法写入下载 pending metadata: $fileName")
-    }
-    ensureSongDownloadNotCancelled(
-        songKey = songKey,
-        stage = "audio_pending_metadata_written",
-        batchSessionId = batchSessionId,
-        attemptId = attemptId,
-        operationId = effectiveOperationId
-    )
+    // 保存入口先预留实际名称再写 pending 凭据，避免同展示名的另一首歌覆盖身份
 
     val bytesAtCommit = workingFile.length().coerceAtLeast(0L)
     val commitExpectedBytes = resolveAudioCommitExpectedSize(

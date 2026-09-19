@@ -452,8 +452,7 @@ internal object ManagedDownloadStorage {
         val isPendingAudioWrite: Boolean
             get() = ManagedDownloadPendingAudioWriteNames.isArtifactName(name)
         val logicalName: String
-            get() = name.takeUnless { isPendingAudioWrite }
-                ?: name.substringBefore(PENDING_AUDIO_WRITE_MARKER, name)
+            get() = pendingAudioWriteNames.logicalAudioName(name)
         val extension: String
             get() = if (isPendingAudioWrite) {
                 ""

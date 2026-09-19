@@ -1,11 +1,10 @@
 package moe.ouom.neriplayer.core.player.download
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
-import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWithin
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
@@ -282,9 +281,13 @@ internal class AudioDownloadCoverCoordinator(
             if (!AudioDownloadTransferPolicy.isTransferSizeComplete(declaredLength, copiedBytes)) {
                 throw IOException("封面写入不完整: $copiedBytes/$declaredLength")
             }
-            if (!isUsableCoverBytes(bytes)) {
-                throw IOException("封面文件校验失败")
-            }
+            val image = prepareDownloadedCoverImage(bytes, maxResponseBytes)
+            val encoding = ManagedDownloadCoverAssetStore.resolveCoverEncoding(
+                sourceDisplayName = coverFileName,
+                detectedMimeType = image.mimeType,
+                fallbackExtension = "jpg",
+                fallbackMimeType = image.mimeType
+            )
             ensureNotCancelled(
                 songKey,
                 "cover_commit",
@@ -295,9 +298,9 @@ internal class AudioDownloadCoverCoordinator(
             )
             commitCover(
                 context,
-                bytes,
-                coverFileName,
-                contentType.takeIf(String::isNotBlank),
+                image.bytes,
+                ManagedDownloadCoverAssetStore.replaceCoverFileExtension(coverFileName, encoding.extension),
+                encoding.mimeType,
                 songKey,
                 batchSessionId,
                 attemptId,
@@ -305,18 +308,6 @@ internal class AudioDownloadCoverCoordinator(
                 operationId
             )
         }
-    }
-
-    private fun isUsableCoverBytes(bytes: ByteArray): Boolean {
-        if (bytes.isEmpty()) {
-            return false
-        }
-        return runCatching {
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-            options.outWidth > 0 && options.outHeight > 0 &&
-                isCoverPixelBudgetWithin(options.outWidth, options.outHeight)
-        }.getOrDefault(false)
     }
 
     companion object {

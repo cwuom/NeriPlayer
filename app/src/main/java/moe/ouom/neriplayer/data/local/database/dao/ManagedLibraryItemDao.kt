@@ -19,13 +19,17 @@ internal interface ManagedLibraryItemDao {
             "audio_reference = CASE WHEN metadata_revision <= :metadataRevision " +
             "THEN COALESCE(:audioReference, audio_reference) ELSE audio_reference END, " +
             "audio_name = CASE WHEN metadata_revision <= :metadataRevision " +
-            "THEN COALESCE(:audioName, audio_name) ELSE audio_name END, " +
+            "THEN CASE WHEN :audioReference IS NOT NULL " +
+            "AND :audioReference IS NOT COALESCE(audio_reference, locator_hint) " +
+            "THEN :audioName ELSE COALESCE(:audioName, audio_name) END ELSE audio_name END, " +
             "file_size = CASE WHEN metadata_revision <= :metadataRevision " +
             "THEN COALESCE(:fileSize, file_size) ELSE file_size END, " +
             "downloaded_at_ms = CASE WHEN metadata_revision <= :metadataRevision " +
             "THEN COALESCE(:downloadedAtMs, downloaded_at_ms) ELSE downloaded_at_ms END, " +
             "metadata_name = CASE WHEN metadata_revision <= :metadataRevision " +
-            "THEN COALESCE(:metadataName, metadata_name) ELSE metadata_name END, " +
+            "THEN CASE WHEN :audioReference IS NOT NULL " +
+            "AND :audioReference IS NOT COALESCE(audio_reference, locator_hint) " +
+            "THEN :metadataName ELSE COALESCE(:metadataName, metadata_name) END ELSE metadata_name END, " +
             "locator_hint = CASE WHEN metadata_revision <= :metadataRevision " +
             "THEN COALESCE(:locatorHint, locator_hint) ELSE locator_hint END, " +
             "title_preview = CASE WHEN metadata_revision <= :metadataRevision " +

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.local.database.store
 import android.content.Context
 import androidx.room.withTransaction
 import java.io.File
+import java.net.URI
 import java.net.URLDecoder
 import java.text.Normalizer
 import java.util.Locale
@@ -22,6 +23,7 @@ import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
+import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -117,7 +119,7 @@ internal class LegacyManagedRootLookup(
                 entry.reference.takeIf(String::isNotBlank),
                 entry.mediaUri.takeIf(String::isNotBlank),
                 entry.localFilePath?.takeIf(String::isNotBlank)
-            ).map { alias -> alias to entry }
+            ).map { alias -> (legacyManagedReferenceKey(alias) ?: alias) to entry }
         }
     )
     private val audioByName = uniqueEntryIndex(
@@ -137,12 +139,18 @@ internal class LegacyManagedRootLookup(
     )
 
     fun resolveAudio(payload: JSONObject): ManagedDownloadStorage.StoredEntry? {
+        resolveAudioByReference(payload)?.let { return it }
         val hints = legacyAudioLookupHints(payload)
-        hints.references.forEach { reference ->
-            audioByReference[reference]?.let { return it }
-        }
         hints.names.forEach { name ->
             audioByName[name]?.let { return it }
+        }
+        return null
+    }
+
+    fun resolveAudioByReference(payload: JSONObject): ManagedDownloadStorage.StoredEntry? {
+        legacyAudioLookupHints(payload).references.forEach { reference ->
+            audioByReference[legacyManagedReferenceKey(reference) ?: reference]
+                ?.let { return it }
         }
         return null
     }
@@ -161,6 +169,73 @@ internal class LegacyManagedRootLookup(
             ?: return null
         return coverByCanonicalName[canonicalLegacyName(fileName)]
     }
+}
+
+private fun legacyManagedReferenceKey(reference: String): String? {
+    val normalized = reference.trim()
+    return when {
+        normalized.startsWith("file:") -> runCatching {
+            "file:${File(URI(normalized)).canonicalPath}"
+        }.getOrNull()
+        normalized.startsWith("/") -> runCatching {
+            "file:${File(normalized).canonicalPath}"
+        }.getOrNull()
+        normalized.startsWith("content://") -> {
+            val authority = ManagedDownloadDirectoryIdentity.extractDirectoryAuthority(normalized)
+                .takeIf(String::isNotBlank) ?: return null
+            val encodedDocumentId = ManagedDownloadDirectoryIdentity.extractEncodedDirectoryDocumentId(
+                normalized,
+                "/document/"
+            ) ?: return null
+            val documentId = runCatching {
+                URLDecoder.decode(encodedDocumentId.replace("+", "%2B"), Charsets.UTF_8.name())
+            }.getOrNull() ?: return null
+            // tree URI 和普通 document URI 可以指向同一 opaque document ID
+            "document:$authority:$documentId"
+        }
+        else -> null
+    }
+}
+
+private fun knownLegacyManagedRootKey(rootKey: String): String? {
+    val normalized = rootKey.trim()
+    if (normalized.startsWith("file:/")) {
+        val path = normalized.removePrefix("file:")
+        return runCatching { "file:${File(path).canonicalPath}" }.getOrNull()
+    }
+    if (normalized.startsWith("tree:tree:")) {
+        val identity = normalized.removePrefix("tree:tree:")
+        val separator = identity.indexOf(':')
+        return normalized.takeIf { separator > 0 && separator < identity.lastIndex }
+    }
+    val uri = normalized.removePrefix("tree:")
+    if (!uri.startsWith("content://")) return null
+    if (ManagedDownloadDirectoryIdentity.extractDirectoryAuthority(uri).isBlank()) return null
+    if (ManagedDownloadDirectoryIdentity.extractDirectoryDocumentId(uri, "/tree/") == null &&
+        ManagedDownloadDirectoryIdentity.extractDirectoryDocumentId(uri, "/document/") == null
+    ) return null
+    return ManagedDownloadDirectoryIdentity.directoryIdentity(uri)?.let { "tree:$it" }
+}
+
+private fun hasKnownDifferentLegacyManagedRoot(payload: JSONObject, currentRootKey: String): Boolean {
+    val current = knownLegacyManagedRootKey(currentRootKey) ?: return false
+    val roots = linkedSetOf<String>()
+    fun addRootHints(row: JSONObject) {
+        listOf("rootKey", "root_key").forEach { field ->
+            if (!row.isNull(field)) {
+                knownLegacyManagedRootKey(row.optString(field))?.let(roots::add)
+            }
+        }
+    }
+    addRootHints(payload)
+    listOf("downloaded_song_catalog", "download_snapshot_metadata", "managed_download_artifact")
+        .forEach { key -> payload.optJSONObject(key)?.let(::addRootHints) }
+    payload.optJSONArray("download_snapshot_entries")?.let { entries ->
+        for (index in 0 until entries.length()) {
+            entries.optJSONObject(index)?.let(::addRootHints)
+        }
+    }
+    return roots.isNotEmpty() && current !in roots
 }
 
 private fun isSafeLegacyManagedFileName(name: String): Boolean {
@@ -198,6 +273,31 @@ internal fun legacyMetadataStructurallyEquals(
     upgraded: JSONObject
 ): Boolean {
     return existing != null && canonicalLegacyJson(existing) == canonicalLegacyJson(upgraded)
+}
+
+private fun hasConflictingLegacyMetadataIdentity(
+    existing: JSONObject?,
+    expectedStableKey: String
+): Boolean {
+    return knownLegacyMetadataStableKeys(existing).any { key -> key != expectedStableKey }
+}
+
+private fun knownLegacyMetadataStableKeys(existing: JSONObject?): List<String> {
+    existing ?: return emptyList()
+    val restorable = existing.optJSONObject("restorableMetadata")
+    val sourceIdentity = restorable?.optJSONObject("sourceIdentity")
+    fun JSONObject?.knownStableKey(field: String): String? {
+        if (this == null || isNull(field)) return null
+        return optString(field).trim().takeIf { key ->
+            key.isNotBlank() && !isUnresolvedLegacyStableKey(key)
+        }
+    }
+    return listOfNotNull(
+        existing.knownStableKey("stableKey"),
+        existing.knownStableKey("sourceStableKey"),
+        sourceIdentity.knownStableKey("stableKey"),
+        restorable.knownStableKey("sourceStableKey")
+    )
 }
 
 private fun canonicalLegacyJson(value: Any?): String {
@@ -523,13 +623,30 @@ internal class LegacyDownloadUpgradeCoordinator(
                 return@mapNotNull null
             }
             val audio = lookup.resolveAudio(payload) ?: return@mapNotNull null
-            val canonicalStableKey = snapshot.metadataByAudioName[audio.logicalName]
-                ?.stableKey
+            val metadata = snapshot.metadataByAudioName[audio.logicalName]
+                ?: return@mapNotNull null
+            val canonicalStableKey = metadata.stableKey
                 ?.trim()
                 ?.takeIf { stableKey ->
                     stableKey.isNotBlank() && !isUnresolvedLegacyStableKey(stableKey)
                 }
                 ?: return@mapNotNull null
+            val persistedMetadata = snapshot.metadataEntriesByAudioName[audio.logicalName]
+                ?.let { entry ->
+                    val raw = ManagedDownloadStorage.readText(context, entry.reference)
+                        ?: return@mapNotNull null
+                    runCatching { JSONObject(raw) }.getOrNull() ?: return@mapNotNull null
+                }
+            if (
+                (!isUnresolvedLegacyStableKey(row.stableKey) &&
+                    row.stableKey.trim() != canonicalStableKey) ||
+                hasConflictingLegacyMetadataIdentity(
+                    ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(metadata),
+                    canonicalStableKey
+                ) || hasConflictingLegacyMetadataIdentity(persistedMetadata, canonicalStableKey)
+            ) {
+                return@mapNotNull null
+            }
             val canonicalPayload = JSONObject(payload.toString()).apply {
                 put("legacyQuarantineStableKey", row.stableKey)
                 put("stableKey", canonicalStableKey)
@@ -734,6 +851,37 @@ internal class LegacyDownloadUpgradeCoordinator(
             val existingEntry = resolvedSnapshot.metadataEntriesByAudioName[audio.logicalName]
             val cachedExistingJson = resolvedSnapshot.metadataByAudioName[audio.logicalName]
                 ?.let(ManagedDownloadStorageJsonCodec::downloadedAudioMetadataToJson)
+            val existingJson = existingEntry
+                ?.let { ManagedDownloadStorage.readText(context, it.reference) }
+                ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
+            if (
+                hasConflictingLegacyMetadataIdentity(cachedExistingJson, effectiveStableKey) ||
+                hasConflictingLegacyMetadataIdentity(existingJson, effectiveStableKey)
+            ) {
+                return LegacyDownloadUpgradeRowResult(
+                    stableKey = effectiveStableKey,
+                    status = LegacyDownloadUpgradeRowStatus.CONFLICT,
+                    detail = "managed metadata belongs to a different stable identity"
+                )
+            }
+            if (
+                hasKnownDifferentLegacyManagedRoot(
+                    payload,
+                    ManagedDownloadStorage.currentSnapshotCacheKey(context)
+                ) &&
+                resolvedLookup.resolveAudioByReference(payload) != audio &&
+                (
+                    existingEntry != null && existingJson == null ||
+                        effectiveStableKey !in knownLegacyMetadataStableKeys(cachedExistingJson) &&
+                        effectiveStableKey !in knownLegacyMetadataStableKeys(existingJson)
+                    )
+            ) {
+                return LegacyDownloadUpgradeRowResult(
+                    stableKey = effectiveStableKey,
+                    status = LegacyDownloadUpgradeRowStatus.STORAGE_UNAVAILABLE,
+                    detail = "legacy root differs and the current audio identity is unknown"
+                )
+            }
             if (cachedExistingJson != null) {
                 val cachedCoverResult = buildUpgradedMetadata(
                     payload = payload,
@@ -760,9 +908,6 @@ internal class LegacyDownloadUpgradeCoordinator(
                     )
                 }
             }
-            val existingJson = existingEntry
-                ?.let { ManagedDownloadStorage.readText(context, it.reference) }
-                ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
             val coverResult = buildUpgradedMetadata(
                 payload = payload,
                 existing = existingJson,

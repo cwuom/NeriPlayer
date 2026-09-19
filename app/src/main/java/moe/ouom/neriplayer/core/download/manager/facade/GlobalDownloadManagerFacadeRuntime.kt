@@ -136,7 +136,8 @@ internal fun GlobalDownloadManager.buildOptimisticDownloadedSongImpl(
         sourceChannelId = sourceChannel,
         sourceAudioId = sourceAudioId,
         sourceSubAudioId = sourceSubAudioId,
-        sourcePlaylistContextId = song.playlistContextId?.takeIf { remoteSource != null }
+        sourcePlaylistContextId = song.playlistContextId?.takeIf { remoteSource != null },
+        localFileName = storedAudio.logicalName
     )
 }
 

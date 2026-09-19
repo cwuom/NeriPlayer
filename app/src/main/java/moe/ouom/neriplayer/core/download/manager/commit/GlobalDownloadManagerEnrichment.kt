@@ -132,7 +132,7 @@ internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
         )
         return
     }
-    // 启动恢复可能拿到旧版本留下的 pending 音频，增强前再次尝试正式提升
+    // 仅收敛已经完成的发布，未完成 core 保持 pending 并继续增强
     val enrichmentAudio = try {
         val invalidReason = invalidCoreAudioReason(context, song, storedAudio, operationId)
         if (invalidReason != null) {
@@ -173,23 +173,6 @@ internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
             TAG,
             "资产增强提升后准入已失效，保留 core 凭据: " +
                 "song=${song.name}, operationId=$operationId"
-        )
-        return
-    }
-    if (enrichmentAudio.isPendingAudioWrite) {
-        // 增强阶段也不能对 pending 引用写 sidecar 或最终 metadata，否则宿主取消
-        // 后会留下“UI 已完成但正式文件不存在”的假完成状态
-        directoryCommitLease?.close()
-        deferPendingCorePublication(
-            context = context,
-            song = song,
-            audio = enrichmentAudio,
-            existingMetadata = existingMetadataHint,
-            artifactLeaseId = artifactLeaseId,
-            expectedAttemptId = expectedAttemptId,
-            operationId = operationId,
-            admissionTicket = admissionTicket,
-            reason = "CORE_PUBLICATION_PENDING"
         )
         return
     }

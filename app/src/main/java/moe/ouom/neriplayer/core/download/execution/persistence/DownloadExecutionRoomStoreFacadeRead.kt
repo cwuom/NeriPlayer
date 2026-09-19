@@ -471,21 +471,53 @@ internal suspend fun DownloadExecutionRoomStore.attachBatchIdentityImpl(
     val boundMemberCount = database.withTransaction {
         val operationDao = database.downloadOperationDao()
         val batchDao = database.downloadBatchDao()
-        if (batchDao.findBatch(identity.batchId, identity.generation) == null) {
+        val batch = batchDao.findBatch(identity.batchId, identity.generation)
+        if (batch == null || batch.stateBits and DownloadBatchState.OPEN == 0 ||
+            batch.stateBits and (DownloadBatchState.CLEARING or DownloadBatchState.TERMINAL_MASK) != 0
+        ) {
             return@withTransaction 0
         }
+        val headers = distinctRequests.map(DownloadExecutionRequest::operationId)
+            .chunked(SQLITE_IN_QUERY_CHUNK_SIZE)
+            .flatMap { operationIds -> operationDao.findAllHeadersByOperationIds(operationIds) }
+            .associateBy(DownloadOperationHeaderRow::operationId)
+        val members = distinctRequests.map { it.song.stableKey() }
+            .chunked(SQLITE_IN_QUERY_CHUNK_SIZE)
+            .flatMap { keys -> batchDao.findMembersByStableKeys(identity.batchId, keys) }
+            .associateBy(DownloadBatchMemberEntity::stableKey)
+            .toMutableMap()
         var boundMembers = 0
         distinctRequests.forEach { request ->
             val stableKey = request.song.stableKey()
-            val header = operationDao.findHeader(request.operationId) ?: return@forEach
+            val header = headers[request.operationId] ?: return@forEach
             if (header.stableKey != stableKey) return@forEach
+            val member = members[stableKey] ?: return@forEach
+            if (member.terminalBits != DownloadBatchMemberTerminal.NONE ||
+                member.operationId != null && member.operationId != request.operationId
+            ) {
+                return@forEach
+            }
+            if (header.batchId == identity.batchId && header.batchGeneration == identity.generation &&
+                member.operationId == request.operationId &&
+                (request.attemptId == null || request.attemptId == member.attemptId)
+            ) {
+                // 已绑定成员的重复确认只读身份，避免再次搬运歌词等完整载荷
+                boundMembers++
+                return@forEach
+            }
             val existingRequest = readSourceHintJson(operationDao, header)
                 ?.let { sourceHintJson ->
                     requestFromEntity(header.toEntity(sourceHintJson))
                 }
+            val effectiveAttemptId = (existingRequest?.attemptId ?: request.attemptId)
+                ?.takeIf { it > 0L }
+            if (member.attemptId != null && member.attemptId != effectiveAttemptId) {
+                return@forEach
+            }
             val existingBatchId = existingRequest?.batchId ?: header.batchId
             val existingBatchGeneration =
                 existingRequest?.batchGeneration ?: header.batchGeneration
+            var operationIdentityWritten = false
             val operationBoundToTarget = when {
                 existingBatchId == null && existingBatchGeneration == null -> {
                     val payloadUpdatedAtMs = nextPayloadUpdatedAt(
@@ -498,7 +530,7 @@ internal suspend fun DownloadExecutionRoomStore.attachBatchIdentityImpl(
                         batchId = identity.batchId,
                         batchGeneration = identity.generation,
                         sourceHintJson = requestToJson(
-                            request.copy(
+                            (existingRequest ?: request).copy(
                                 batchId = identity.batchId,
                                 batchGeneration = identity.generation
                             )
@@ -506,9 +538,10 @@ internal suspend fun DownloadExecutionRoomStore.attachBatchIdentityImpl(
                         updatedAtMs = payloadUpdatedAtMs
                     ) > 0
                     if (bound) {
+                        operationIdentityWritten = true
                         persistedNetworkPolicies += Triple(
                             request.operationId,
-                            request.requiresWifiNetwork,
+                            (existingRequest ?: request).requiresWifiNetwork,
                             payloadUpdatedAtMs
                         )
                     }
@@ -525,17 +558,25 @@ internal suspend fun DownloadExecutionRoomStore.attachBatchIdentityImpl(
                 // 再挂到新批次，否则同一回调会同时推进两个批次
                 return@forEach
             }
-            val effectiveAttemptId = request.attemptId
-                ?: existingRequest?.attemptId
             val changed = batchDao.bindMemberOperationCAS(
                 batchId = identity.batchId,
                 batchGeneration = identity.generation,
                 stableKey = stableKey,
                 operationId = request.operationId,
-                attemptId = effectiveAttemptId?.takeIf { it > 0L },
+                attemptId = effectiveAttemptId,
                 nowMs = nowMs
             )
-            if (changed > 0) boundMembers++
+            if (changed == 0) {
+                check(!operationIdentityWritten) {
+                    "download operation lost its batch member during binding"
+                }
+                return@forEach
+            }
+            members[stableKey] = member.copy(
+                operationId = request.operationId,
+                attemptId = effectiveAttemptId
+            )
+            boundMembers++
         }
         boundMembers
     }

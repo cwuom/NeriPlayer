@@ -44,6 +44,25 @@ internal interface DownloadBatchDao {
         stableKeys: List<String>
     ): List<DownloadBatchEntity>
 
+    @Query(
+        "SELECT o.operation_id FROM download_operation o " +
+            "JOIN download_batch b ON b.batch_id = o.batch_id AND b.generation = o.batch_generation " +
+            "JOIN download_batch_member m ON m.batch_id = b.batch_id " +
+            "AND m.operation_id = o.operation_id AND m.stable_key = o.stable_key " +
+            "WHERE o.stable_key IN (:stableKeys) " +
+            "AND o.state IN (:states) AND o.stop_requested_by_user = 0 " +
+            "AND m.terminal_bits = 0 AND b.state_bits & ${DownloadBatchState.OPEN} != 0 " +
+            "AND b.state_bits & ${DownloadBatchState.TERMINAL_MASK} = 0 " +
+            "AND b.state_bits & ${DownloadBatchState.CLEARING} = 0 " +
+            "ORDER BY CASE WHEN o.library_id = :libraryId THEN 0 ELSE 1 END, " +
+            "o.stable_key ASC, o.updated_at_ms DESC, o.created_at_ms DESC, o.operation_id ASC"
+    )
+    suspend fun findOpenOwnedOperationIds(
+        libraryId: String,
+        stableKeys: List<String>,
+        states: List<String>
+    ): List<String>
+
     /** 清空只捕获当前 fence 之前的批次，已进入 CLEARING 的行可幂等重试 */
     @Query(
         "SELECT * FROM download_batch " +
@@ -216,6 +235,15 @@ internal interface DownloadBatchDao {
             "WHERE batch_id = :batchId AND stable_key = :stableKey LIMIT 1"
     )
     suspend fun findMember(batchId: String, stableKey: String): DownloadBatchMemberEntity?
+
+    @Query(
+        "SELECT * FROM download_batch_member " +
+            "WHERE batch_id = :batchId AND stable_key IN (:stableKeys)"
+    )
+    suspend fun findMembersByStableKeys(
+        batchId: String,
+        stableKeys: List<String>
+    ): List<DownloadBatchMemberEntity>
 
     @Query(
         "SELECT * FROM download_batch_member " +

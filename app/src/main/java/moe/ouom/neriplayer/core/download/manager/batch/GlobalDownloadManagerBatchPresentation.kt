@@ -22,11 +22,14 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PendingDownloadRe
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.RecoveryDirectSettlementResult
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.BatchDownloadSession
 import android.content.Context
+import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -34,12 +37,16 @@ import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
@@ -180,25 +187,64 @@ internal fun GlobalDownloadManager.reuseOrBeginDownloadRequestGeneration(
     return generation
 }
 
+internal data class DownloadBatchSnapshotSelection(
+    val identity: DownloadExecutionRoomStore.DownloadBatchIdentity?,
+    val songs: List<SongItem>,
+    val reusedRequests: List<DownloadExecutionRequest> = emptyList()
+)
+
 internal suspend fun GlobalDownloadManager.ensureDurableBatchSnapshot(
     context: Context,
     presentationId: Long,
     songs: Collection<SongItem>,
-    initiallyCompletedSongKeys: Set<String> = emptySet()
-): DownloadExecutionRoomStore.DownloadBatchIdentity? {
+    initiallyCompletedSongKeys: Set<String> = emptySet(),
+    database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+    excludedOperationIds: Set<String> = emptySet()
+): DownloadBatchSnapshotSelection? {
     if (presentationId <= 0L || songs.isEmpty()) return null
     durableBatchIdentityByPresentationId[presentationId]?.let { identity ->
-        return identity
+        return DownloadBatchSnapshotSelection(identity, songs.distinctBy(SongItem::stableKey))
     }
     val appContext = context.applicationContext
-    val identity = try {
-        DownloadExecutionRoomStore.createBatchSnapshot(
-            context = appContext,
-            songs = songs,
-            initiallyCompletedSongKeys = initiallyCompletedSongKeys,
-            clearEpoch = PersistentDownloadClearFenceStore.currentEpoch(appContext),
-            networkGeneration = AudioDownloadManager.currentDownloadNetworkGeneration()
-        )
+    val prepared = try {
+        database.withTransaction {
+            val selectedSongs = songs.distinctBy(SongItem::stableKey)
+            val states = DownloadExecutionRoomStore.HOST_ADMISSION_HANDOFF_STATES +
+                WAITING_STORAGE_MUTATION_OPERATION_STATE
+            val libraryId = DownloadExecutionRoomStore.currentLibraryId(appContext)
+            // 先查归属小字段，首次大批下载没有旧 owner 时不读取任何歌曲载荷
+            val ownedIds = selectedSongs.map(SongItem::stableKey)
+                .filterNot(cancellationForceNewSongKeys::contains)
+                .chunked(DownloadExecutionRoomStore.SQLITE_IN_QUERY_CHUNK_SIZE)
+                .flatMap { keys ->
+                    database.downloadBatchDao().findOpenOwnedOperationIds(libraryId, keys, states)
+                }.filterNot(excludedOperationIds::contains)
+            val ownedSnapshots = DownloadExecutionRoomStore.readOperationSnapshots(
+                appContext, ownedIds, database
+            )
+            val ownedHeaders = DownloadExecutionRoomStore.readOperationHeaders(appContext, ownedIds, database)
+            val reusedRequests = ownedIds.mapNotNull(ownedSnapshots::get)
+                .map { it.request }.distinctBy { it.song.stableKey() }
+                .filter { request ->
+                    ownedHeaders[request.operationId]?.libraryId == libraryId ||
+                        DownloadExecutionRoomStore.rehomeOperationToCurrentLibrary(
+                            appContext, request.operationId, request.song.stableKey(), states, database
+                        )
+                }
+            val reusedKeys = reusedRequests.mapTo(hashSetOf()) { it.song.stableKey() }
+            val newSongs = selectedSongs.filterNot { it.stableKey() in reusedKeys }
+            val identity = if (newSongs.isEmpty()) null else {
+                DownloadExecutionRoomStore.createBatchSnapshot(
+                    context = appContext,
+                    songs = newSongs,
+                    initiallyCompletedSongKeys = initiallyCompletedSongKeys,
+                    clearEpoch = PersistentDownloadClearFenceStore.currentEpoch(appContext),
+                    networkGeneration = AudioDownloadManager.currentDownloadNetworkGeneration(),
+                    database = database
+                )
+            }
+            DownloadBatchSnapshotSelection(identity, newSongs, reusedRequests)
+        }
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
@@ -210,6 +256,7 @@ internal suspend fun GlobalDownloadManager.ensureDurableBatchSnapshot(
         )
         return null
     }
+    val identity = prepared.identity ?: return prepared
     val storedIdentity = durableBatchIdentityByPresentationId.putIfAbsent(
         presentationId,
         identity
@@ -223,7 +270,7 @@ internal suspend fun GlobalDownloadManager.ensureDurableBatchSnapshot(
             )
         )
     }
-    return storedIdentity
+    return prepared.copy(identity = storedIdentity)
 }
 
 internal fun GlobalDownloadManager.persistInitialBatchMemberCompletion(
@@ -470,8 +517,13 @@ internal suspend fun GlobalDownloadManager.findFastCompletedBatchSongKeys(
     context: Context,
     songs: Collection<SongItem>,
     alreadyCompletedSongKeys: Set<String> = emptySet(),
-    catalogIndex: DownloadedSongCatalogIndex = downloadedSongCatalogIndex
+    catalogIndex: DownloadedSongCatalogIndex = downloadedSongCatalogIndex,
+    preflightProbe: BatchDownloadPreflightProbe = BatchDownloadPreflightProbe { reference ->
+        ManagedDownloadReferenceLookup.inspect(context, reference)
+    }
 ): Set<String> {
+    val coroutineContext = currentCoroutineContext()
+    coroutineContext.ensureActive()
     val activeTaskSongKeys = taskStore.currentTasks()
         .asSequence()
         .filter { task -> task.status != DownloadStatus.COMPLETED }
@@ -482,30 +534,38 @@ internal suspend fun GlobalDownloadManager.findFastCompletedBatchSongKeys(
         .toList()
     if (candidates.isEmpty()) return emptySet()
     val catalogCompleted = linkedSetOf<String>()
-    candidates
+    val catalogCandidates = candidates
         .asSequence()
         .filter { song -> song.stableKey() !in activeTaskSongKeys }
         .filter { song -> catalogIndex.find(song) != null }
-        .chunked(BATCH_FAST_COMPLETION_PROBE_CHUNK_SIZE)
-        .forEach { chunk ->
-            chunk.forEach { song ->
-                findFastCachedDownloadedSong(
-                    context = context,
-                    song = song,
-                    catalogIndex = catalogIndex
-                )?.let {
-                    song.stableKey().takeIf(String::isNotBlank)?.let(catalogCompleted::add)
-                }
-            }
-            // 让大歌单的快路径在每个有界窗口后让出执行器，避免一次性占满 IO 调度器
+    val inspectReference: (String) -> ManagedDownloadReferenceLookup.Result? = { reference ->
+        coroutineContext.ensureActive()
+        preflightProbe.inspect(reference)
+    }
+    for ((index, song) in catalogCandidates.withIndex()) {
+        coroutineContext.ensureActive()
+        if (preflightProbe.isExhausted) break
+        findFastCachedDownloadedSong(
+            context = context,
+            song = song,
+            catalogIndex = catalogIndex,
+            inspectReference = inspectReference
+        )?.let {
+            song.stableKey().takeIf(String::isNotBlank)?.let(catalogCompleted::add)
+        }
+        if ((index + 1) % BATCH_FAST_COMPLETION_PROBE_CHUNK_SIZE == 0) {
             yield()
         }
+    }
+    coroutineContext.ensureActive()
     val artifactCompleted = runCatching {
         managedDownloadArtifactCoordinator.findReadableCompletedStableKeys(
             context = context,
-            stableKeys = candidates.map(SongItem::stableKey)
+            stableKeys = candidates.map(SongItem::stableKey).filterNot(catalogCompleted::contains),
+            inspectReference = inspectReference
         )
     }.onFailure { error ->
+        if (error is CancellationException) throw error
         NPLogger.w(
             TAG,
             "批量预检读取 artifact 完成索引失败，保留常规准备路径: ${error.message}",

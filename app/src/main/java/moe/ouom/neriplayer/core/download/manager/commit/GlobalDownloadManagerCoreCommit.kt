@@ -396,8 +396,7 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
     } else {
         storedAudio
     }
-    // core 已完成完整性校验后立即离开 .tmp。元信息增强仍可异步执行，
-    // 但“下载完成”不再把 pending 音频留给一个可能被宿主取消的收尾任务
+    // core 只确认音频完整，正式文件等待元信息读回后发布
     if (isDownloadClearFenceActive(context, stableKey = songKey, operationId = operationId)) {
         // 清空栅栏拥有删除优先级，不能在删除事务期间把 pending 重新发布到正式目录
         NPLogger.d(
@@ -412,21 +411,6 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
         song = song,
         audio = committedAudio
     )
-    if (publishedAudio.isPendingAudioWrite) {
-        // Provider 短暂不可用时不能把 pending 当成最终文件，也不能继续发布完成态
-        deferPendingCorePublication(
-            context = context,
-            song = song,
-            audio = publishedAudio,
-            existingMetadata = existingMetadata,
-            artifactLeaseId = artifactLeaseForCommit,
-            expectedAttemptId = expectedAttemptId,
-            operationId = operationId,
-            admissionTicket = admissionTicket,
-            reason = "CORE_PUBLICATION_PENDING"
-        )
-        return
-    }
     if (
         admissionTicket != null &&
             !isDownloadAdmissionTicketCurrent(
@@ -436,11 +420,10 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
                 operationId = operationId
             )
     ) {
-        // core 已经完整落盘，不能因为旧代次失效而把最终文件继续留在 .tmp
-        // 这里只跳过旧代次的 artifact、UI 和增强发布，启动恢复会接管剩余步骤
+        // 旧代次只保留已写入的 core 凭据，不能再发布 artifact、UI 或增强任务
         NPLogger.d(
             TAG,
-            "core 提交并提升后清空代次已失效，跳过旧代次发布和资产增强: " +
+            "core 提交后清空代次已失效，跳过旧代次发布和资产增强: " +
                 "song=${song.name}, operationId=$operationId"
         )
         return

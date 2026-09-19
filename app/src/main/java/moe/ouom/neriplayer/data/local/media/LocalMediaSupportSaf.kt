@@ -157,11 +157,11 @@ internal fun LocalMediaSupport.buildEditableCoverWritePlan(
         ?: run {
             NPLogger.w(
                 TAG,
-                "本地封面引用不可读，保留现有嵌入封面并继续属性写入: " +
+                "本地封面引用不可读，保留现有嵌入元信息等待重试: " +
                     "stage=cover_read, ref=${redactCoverReference(replacementReference)}"
             )
-            // 封面嵌入失败不影响旁车保存，旁车仍会记录这次变更并等待重试
-            return EditableCoverWritePlan.Unchanged
+            // 未能读取请求写入的封面不能当作未修改，否则嵌入回读会误报成功
+            return EditableCoverWritePlan.Unreadable
         }
     val updatedPictures = replaceEditableCoverPictures(
         existingPictures = existingPictures,

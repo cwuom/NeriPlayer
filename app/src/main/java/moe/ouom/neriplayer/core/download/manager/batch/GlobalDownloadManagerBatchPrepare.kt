@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecution
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
 import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
@@ -68,76 +69,100 @@ internal fun GlobalDownloadManager.startBatchDownload(
 ): Job? {
     if (songs.isEmpty()) return null
 
+    val startupStartedAtNs = System.nanoTime()
     val appContext = context.applicationContext
-    val requestedSongs = songs.distinctBy(SongItem::stableKey)
+    var requestedSongs = songs.distinctBy(SongItem::stableKey)
     if (requestedSongs.isEmpty()) {
         return null
     }
-    val requestedSongKeys = requestedSongs.mapTo(linkedSetOf()) { song ->
+    var requestedSongKeys = requestedSongs.mapTo(linkedSetOf()) { song ->
         song.stableKey()
     }
     // 先分配 UI id，但不发布卡片。批次和成员必须先在同一条 Room 事务中落盘，避免出现只有内存总数的短暂批次
     val batchPresentationId = batchDownloadPresentationIdGenerator.incrementAndGet()
-    val startupJob = scope.launch {
-        // 请求创建时记录代次，清空开始后旧批量协程不能重新写入任务列表
-        val capturedAdmissionTicket = requestedAdmissionTicket
-            ?: openDownloadAdmissionTicketForStableKeysOrNull(
+    fun logStartupPhase(phase: String, count: Int) {
+        val elapsedMs = ((System.nanoTime() - startupStartedAtNs) / 1_000_000L).coerceAtLeast(0L)
+        NPLogger.d(
+            TAG,
+            "批量下载阶段: presentationId=$batchPresentationId, phase=$phase, " +
+                "elapsedMs=$elapsedMs, count=$count"
+        )
+    }
+    logStartupPhase("requested", requestedSongs.size)
+    // 在等待其它批次准备前固定票据，避免旧请求跨过一次清空后获取新代次
+    val capturedAdmissionTicket = requestedAdmissionTicket
+        ?: openDownloadAdmissionTicketForStableKeysOrNull(
+            context = appContext,
+            stableKeys = requestedSongKeys
+        )
+    val startupJob = scope.launchBatchDownloadStartup(
+        beforeStartup = admission@{
+            val clearBlockedSongs = requestedSongs.filter { song ->
+                isDownloadClearFenceActive(appContext, stableKey = song.stableKey())
+            }
+            val deletionSettled = if (clearBlockedSongs.isEmpty()) {
+                awaitDownloadedSongDeletion(requestedSongKeys)
+            } else {
+                true
+            }
+            if (!deletionSettled) {
+                val deferred = deferDownloadForDeleteCleanup(
+                    context = appContext,
+                    songs = requestedSongs,
+                    userInitiated = userInitiated,
+                    admissionTicket = capturedAdmissionTicket,
+                    batchPresentationId = batchPresentationId
+                )
+                if (!deferred) {
+                    if (batchPresentationId != 0L) {
+                        clearBatchDownloadPresentation(batchPresentationId)
+                    }
+                    NPLogger.d(
+                        TAG,
+                        "删除清理等待意图已过期，放弃批量下载请求: " +
+                            "requested=${requestedSongs.size}"
+                    )
+                } else {
+                    scheduleDeleteCleanupRetry(
+                        context = appContext,
+                        songKeys = requestedSongKeys,
+                        admissionTicket = capturedAdmissionTicket
+                    )
+                }
+                return@admission null
+            }
+            capturedAdmissionTicket
+                ?: if (awaitAdmissionWhenUnavailable) {
+                    awaitDownloadAdmissionTicketForStableKeys(
+                        context = appContext,
+                        stableKeys = requestedSongKeys
+                    )
+                } else {
+                    NPLogger.d(
+                        TAG,
+                        "清空期间跳过无票据批量下载请求: requested=${requestedSongs.size}"
+                    )
+                    return@admission null
+                }
+        }
+    ) startup@{ admissionTicket ->
+        if (!isDownloadAdmissionTicketCurrentForStableKeys(
                 context = appContext,
+                admissionTicket = admissionTicket,
                 stableKeys = requestedSongKeys
             )
-        val clearBlockedSongs = requestedSongs.filter { song ->
-            isDownloadClearFenceActive(appContext, stableKey = song.stableKey())
+        ) {
+            return@startup
         }
-        val deletionSettled = if (clearBlockedSongs.isEmpty()) {
-            awaitDownloadedSongDeletion(requestedSongKeys)
-        } else {
-            true
-        }
-        if (!deletionSettled) {
-            val deferred = deferDownloadForDeleteCleanup(
-                context = appContext,
-                songs = requestedSongs,
-                userInitiated = userInitiated,
-                admissionTicket = capturedAdmissionTicket,
-                batchPresentationId = batchPresentationId
-            )
-            if (!deferred) {
-                if (batchPresentationId != 0L) {
-                    clearBatchDownloadPresentation(batchPresentationId)
-                }
-                NPLogger.d(
-                    TAG,
-                    "删除清理等待意图已过期，放弃批量下载请求: " +
-                        "requested=${requestedSongs.size}"
-                )
-            } else {
-                scheduleDeleteCleanupRetry(
-                    context = appContext,
-                    songKeys = requestedSongKeys,
-                    admissionTicket = capturedAdmissionTicket
-                )
-            }
-            return@launch
-        }
-        val admissionTicket = capturedAdmissionTicket
-            ?: if (awaitAdmissionWhenUnavailable) {
-                awaitDownloadAdmissionTicketForStableKeys(
-                    context = appContext,
-                    stableKeys = requestedSongKeys
-                )
-            } else {
-                NPLogger.d(
-                    TAG,
-                    "清空期间跳过无票据批量下载请求: requested=${requestedSongs.size}"
-                )
-                return@launch
-            }
         val initialDownloadLibrarySnapshot = ManagedDownloadStorage
             .cachedDownloadLibrarySnapshot(
                 context = appContext,
                 restorePersisted = true
             )
         val batchCompletionCatalogIndex = loadBatchCompletionCatalogIndex(appContext)
+        val preflightProbe = BatchDownloadPreflightProbe { reference ->
+            ManagedDownloadReferenceLookup.inspect(appContext, reference)
+        }
         var initiallyCompletedSongKeys = findStrictlyCompletedBatchSongKeys(
             songs = requestedSongs,
             snapshot = initialDownloadLibrarySnapshot
@@ -150,20 +175,42 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 context = appContext,
                 songs = requestedSongs,
                 alreadyCompletedSongKeys = initiallyCompletedSongKeys,
-                catalogIndex = batchCompletionCatalogIndex
+                catalogIndex = batchCompletionCatalogIndex,
+                preflightProbe = preflightProbe
             )
+        var preparedSnapshot: DownloadBatchSnapshotSelection? = null
         var durableBatchIdentity: DownloadExecutionRoomStore.DownloadBatchIdentity? = null
         val batchCreated = admitDownloadMutationForStableKeys(
             context = appContext,
             admissionTicket = admissionTicket,
             stableKeys = requestedSongKeys
-        ) {
-            durableBatchIdentity = ensureDurableBatchSnapshot(
+        ) snapshotAdmission@{ admittedSongKeys ->
+            val admittedSongs = requestedSongs.filter { song ->
+                song.stableKey() in admittedSongKeys &&
+                    song.stableKey() !in initiallyCompletedSongKeys
+            }
+            // 显式恢复可能释放旧 owner，必须在新批次归属查询前完成
+            if (userInitiated && !clearSongCancellationForFreshStart(
+                    context = appContext,
+                    songKeys = admittedSongs.map(SongItem::stableKey)
+                )
+            ) {
+                return@snapshotAdmission
+            }
+            preparedSnapshot = ensureDurableBatchSnapshot(
                 context = appContext,
                 presentationId = batchPresentationId,
                 songs = requestedSongs,
-                initiallyCompletedSongKeys = initiallyCompletedSongKeys
+                initiallyCompletedSongKeys = initiallyCompletedSongKeys,
+                excludedOperationIds = requestedSongKeys.flatMap { key ->
+                    cancellationOperationIdsForSong(key)
+                }.toSet()
             )
+            val prepared = preparedSnapshot ?: return@snapshotAdmission
+            durableBatchIdentity = prepared.identity
+            requestedSongs = prepared.songs
+            requestedSongKeys = requestedSongs.mapTo(linkedSetOf(), SongItem::stableKey)
+            initiallyCompletedSongKeys = initiallyCompletedSongKeys.intersect(requestedSongKeys)
             if (durableBatchIdentity != null) {
                 beginBatchDownloadPresentation(
                     songs = requestedSongs,
@@ -178,12 +225,24 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 )
             }
         }
-        if (!batchCreated || durableBatchIdentity == null) {
+        if (!batchCreated || preparedSnapshot == null) {
             NPLogger.w(
                 TAG,
                 "持久批次创建失败，不发布只有内存的批次卡: requested=${requestedSongs.size}"
             )
-            return@launch
+            return@startup
+        }
+        val reusedRequests = checkNotNull(preparedSnapshot).reusedRequests
+        resumeOwnedBatchDownloadRequests(
+            context = appContext,
+            requests = reusedRequests,
+            admissionTicket = admissionTicket,
+            userInitiated = userInitiated
+        )
+        if (requestedSongs.isEmpty()) {
+            logStartupPhase("preflight_done", 0)
+            logStartupPhase("durable_queue_ready", reusedRequests.size)
+            return@startup
         }
         var existingRequestsToRecover = emptyList<DownloadExecutionRequest>()
         val admitted = admitDownloadMutationForStableKeys(
@@ -243,29 +302,13 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 }
             }
             if (admittedSongs.isEmpty()) {
+                logStartupPhase("preflight_done", initiallyCompletedSongKeys.size)
                 scheduleCompletedBatchDownloadPresentationRemoval(batchPresentationId)
                 NPLogger.d(
                     TAG,
                     "批量下载选择全部命中已完成音频，跳过建队: " +
                         "requested=${requestedSongs.size}, " +
                         "completed=${initiallyCompletedAdmittedKeys.size}"
-                )
-                return@admission
-            }
-            // 批量初次读取 in-flight operation 前先建立清空/取消身份快照。
-            // 否则清空刚结束时可能把旧 operation 误挂到新批次，后续
-            // Core Commit 只能结算旧批次，新的成员会一直停在尾项。
-            if (
-                userInitiated &&
-                    !clearSongCancellationForFreshStart(
-                        context = appContext,
-                        songKeys = admittedSongs.map(SongItem::stableKey)
-                    )
-            ) {
-                NPLogger.w(
-                    TAG,
-                    "批量下载暂缓，旧取消 operation 快照尚未完成: " +
-                        "songs=${admittedSongs.size}"
                 )
                 return@admission
             }
@@ -429,9 +472,11 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 context = appContext,
                 songs = stageCandidateSongs,
                 alreadyCompletedSongKeys = initiallyCompletedSongKeys,
-                catalogIndex = batchCompletionCatalogIndex
+                catalogIndex = batchCompletionCatalogIndex,
+                preflightProbe = preflightProbe
             )
             initiallyCompletedSongKeys = initiallyCompletedSongKeys + fastCompletedSongKeys
+            logStartupPhase("preflight_done", initiallyCompletedSongKeys.size)
             seedInitialBatchDownloadPresentation(
                 context = appContext,
                 batchId = batchPresentationId,
@@ -546,6 +591,7 @@ internal fun GlobalDownloadManager.startBatchDownload(
                     operationIds = operationIds
                 )
             }
+            logStartupPhase("durable_queue_ready", operationIds.size)
             val handedOffSongKeys = operationIdsBySongKey
                 .filterValues { operationId ->
                     operationHeaders[operationId]?.state in
@@ -622,7 +668,7 @@ internal fun GlobalDownloadManager.startBatchDownload(
     return startupJob
 }
 
-internal fun GlobalDownloadManager.startBatchDownloadConfirmed(
+internal suspend fun GlobalDownloadManager.startBatchDownloadConfirmed(
     context: Context,
     songs: List<SongItem>,
     cleanupBeforeStart: Boolean,
@@ -638,24 +684,20 @@ internal fun GlobalDownloadManager.startBatchDownloadConfirmed(
 ) {
     if (songs.isEmpty()) return
 
-    val appContext = context.applicationContext
-    val batchJob = scope.launch {
-        runBatchDownloadSession(
-            context = appContext,
-            songs = songs,
-            cleanupBeforeStart = cleanupBeforeStart,
-            requestGeneration = requestGeneration,
-            admissionTicket = admissionTicket,
-            deferForNetworkPolicy = deferForNetworkPolicy,
-            operationIdsBySongKey = operationIdsBySongKey,
-            operationRequestsBySongKey = operationRequestsBySongKey,
-            batchPresentationId = batchPresentationId,
-            durableBatchIdentity = durableBatchIdentity,
-            initialDownloadLibrarySnapshot = initialDownloadLibrarySnapshot,
-            userInitiated = userInitiated
-        )
-    }
-    registerActiveBatchDownloadJob(batchJob)
+    runBatchDownloadSession(
+        context = context.applicationContext,
+        songs = songs,
+        cleanupBeforeStart = cleanupBeforeStart,
+        requestGeneration = requestGeneration,
+        admissionTicket = admissionTicket,
+        deferForNetworkPolicy = deferForNetworkPolicy,
+        operationIdsBySongKey = operationIdsBySongKey,
+        operationRequestsBySongKey = operationRequestsBySongKey,
+        batchPresentationId = batchPresentationId,
+        durableBatchIdentity = durableBatchIdentity,
+        initialDownloadLibrarySnapshot = initialDownloadLibrarySnapshot,
+        userInitiated = userInitiated
+    )
 }
 
 internal suspend fun GlobalDownloadManager.runBatchDownloadSession(

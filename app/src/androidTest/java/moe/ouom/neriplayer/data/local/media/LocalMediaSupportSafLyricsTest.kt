@@ -1,10 +1,13 @@
 package moe.ouom.neriplayer.data.local.media
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -17,16 +20,25 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalMediaSupportSafLyricsTest {
-    private val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
+    private val baseContext = InstrumentationRegistry.getInstrumentation().targetContext
+    private lateinit var recoveryDirectory: File
+    private val targetContext = object : ContextWrapper(baseContext) {
+        override fun getApplicationContext(): Context = this
+        override fun getNoBackupFilesDir(): File = recoveryDirectory
+    }
 
     @Before
     fun resetProviderLyricsFixtures() {
+        // fixture 每次重置为新内容，恢复凭据也必须属于同一次测试
+        recoveryDirectory = File(baseContext.cacheDir, "saf-lyrics-recovery-${UUID.randomUUID()}")
+        check(recoveryDirectory.mkdirs())
         val providerUri = DocumentsContract.buildDocumentUri(
             Issue339LyricsTestDocumentProvider.AUTHORITY,
             Issue339LyricsTestDocumentProvider.ROOT_ID
@@ -38,6 +50,13 @@ class LocalMediaSupportSafLyricsTest {
             null
         )
         LocalMediaSupport.clearLyricsLookupCache()
+    }
+
+    @After
+    fun removeOwnedRecoveryFixture() {
+        if (::recoveryDirectory.isInitialized) {
+            check(recoveryDirectory.deleteRecursively())
+        }
     }
 
     @Test

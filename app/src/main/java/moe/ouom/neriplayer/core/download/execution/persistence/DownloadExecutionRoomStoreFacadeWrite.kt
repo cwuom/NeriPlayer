@@ -548,7 +548,8 @@ internal suspend fun DownloadExecutionRoomStore.promoteUserInitiatedOperationImp
         val header = dao.findHeader(normalizedOperationId) ?: return@withTransaction null
         if (
             header.stableKey != normalizedKey ||
-                header.state !in IN_FLIGHT_OPERATION_STATES + REUSABLE_OPERATION_STATES ||
+                header.state !in IN_FLIGHT_OPERATION_STATES + REUSABLE_OPERATION_STATES +
+                    WAITING_STORAGE_MUTATION_OPERATION_STATE ||
                 header.stopRequestedByUser
         ) {
             return@withTransaction null

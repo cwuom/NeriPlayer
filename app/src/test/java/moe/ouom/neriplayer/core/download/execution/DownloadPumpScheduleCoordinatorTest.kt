@@ -8,8 +8,130 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class DownloadPumpScheduleCoordinatorTest {
+    @Test
+    fun `cancellation submission cannot remove a newer queued fallback before worker entry`() {
+        assertCancellationKeepsNewFallback(coordinatorIndex = 0)
+    }
+
+    @Test
+    fun `tag cancellation cannot remove a newer post core fallback before worker entry`() {
+        assertCancellationKeepsNewFallback(coordinatorIndex = 1)
+    }
+
+    @Test
+    fun `tag cancellation cannot remove a newer storage fallback before worker entry`() {
+        assertCancellationKeepsNewFallback(coordinatorIndex = 2)
+    }
+
+    private fun assertCancellationKeepsNewFallback(coordinatorIndex: Int) {
+        val submissionLock = Any()
+        val coordinators = List(3) { DownloadPumpScheduleCoordinator(lock = submissionLock) }
+        val coordinator = coordinators[coordinatorIndex]
+        val persistedGenerations = ConcurrentHashMap.newKeySet<Long>()
+        val cancellationEntered = CountDownLatch(1)
+        val releaseCancellation = CountDownLatch(1)
+        val enqueueThread = AtomicReference<Thread>()
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val cancellation = executor.submit {
+                coordinators.first().invalidateAndSubmitCancellation {
+                    coordinators.drop(1).forEach { it.invalidate() }
+                    cancellationEntered.countDown()
+                    assertTrue(releaseCancellation.await(5, TimeUnit.SECONDS))
+                    persistedGenerations.clear()
+                }
+            }
+            assertTrue(cancellationEntered.await(5, TimeUnit.SECONDS))
+            val enqueue = executor.submit<Long> {
+                enqueueThread.set(Thread.currentThread())
+                val generation = requireNotNull(
+                    if (coordinatorIndex == 0) coordinator.reserveImmediate() else coordinator.request()
+                )
+                assertTrue(coordinator.submitWorkEnqueue(generation) {
+                    persistedGenerations.add(generation)
+                })
+                if (coordinatorIndex == 0) {
+                    coordinator.completeImmediate(generation, DownloadExecutionPumpResult.Completed)
+                }
+                generation
+            }
+            awaitCompletionOrMonitorEntry(enqueue, enqueueThread)
+            releaseCancellation.countDown()
+            cancellation.get(5, TimeUnit.SECONDS)
+            val generation = enqueue.get(5, TimeUnit.SECONDS)
+
+            assertEquals(setOf(generation), persistedGenerations)
+            // 尚未执行 doWork 的持久任务仍必须存在，随后才能接管同一代次
+            assertTrue(coordinator.claimWorker(generation))
+        } finally {
+            releaseCancellation.countDown()
+            executor.shutdownNow()
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun `an enqueue already registered cannot escape a following cancellation submission`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val persistedGenerations = ConcurrentHashMap.newKeySet<Long>()
+        val enqueueEntered = CountDownLatch(1)
+        val releaseEnqueue = CountDownLatch(1)
+        val cancellationThread = AtomicReference<Thread>()
+        val executor = Executors.newFixedThreadPool(2)
+        val generation = requireNotNull(coordinator.request())
+        try {
+            val enqueue = executor.submit {
+                assertTrue(coordinator.submitWorkEnqueue(generation) {
+                    enqueueEntered.countDown()
+                    assertTrue(releaseEnqueue.await(5, TimeUnit.SECONDS))
+                    persistedGenerations.add(generation)
+                })
+            }
+            assertTrue(enqueueEntered.await(5, TimeUnit.SECONDS))
+            val cancellation = executor.submit {
+                cancellationThread.set(Thread.currentThread())
+                coordinator.invalidateAndSubmitCancellation {
+                    persistedGenerations.clear()
+                }
+            }
+            awaitCompletionOrMonitorEntry(cancellation, cancellationThread)
+            releaseEnqueue.countDown()
+            enqueue.get(5, TimeUnit.SECONDS)
+            cancellation.get(5, TimeUnit.SECONDS)
+
+            assertTrue(persistedGenerations.isEmpty())
+            assertFalse(coordinator.claimWorker(generation))
+            val replacement = requireNotNull(coordinator.request())
+            assertTrue(coordinator.submitWorkEnqueue(replacement) {
+                persistedGenerations.add(replacement)
+            })
+            assertEquals(setOf(replacement), persistedGenerations)
+        } finally {
+            releaseEnqueue.countDown()
+            executor.shutdownNow()
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
+        }
+    }
+
+    private fun awaitCompletionOrMonitorEntry(
+        action: Future<*>,
+        actionThread: AtomicReference<Thread>
+    ) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (!action.isDone && actionThread.get()?.state != Thread.State.BLOCKED) {
+            assertTrue("the competing submission never reached the coordinator", System.nanoTime() < deadline)
+            Thread.sleep(1L)
+        }
+    }
+
     @Test
     fun `retry deadline requested during an active pump survives its completion`() {
         var now = 100L

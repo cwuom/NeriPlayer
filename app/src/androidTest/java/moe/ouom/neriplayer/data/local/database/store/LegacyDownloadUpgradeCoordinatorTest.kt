@@ -23,6 +23,261 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LegacyDownloadUpgradeCoordinatorTest {
     @Test
+    fun staleRootPayloadDoesNotOverwriteDifferentKnownSidecarIdentity() = runTest {
+        assertConflictingSidecarIdentityIsPreserved(topLevelStableKey = "2|netease|")
+    }
+
+    @Test
+    fun staleRootPayloadDoesNotOverwriteConflictingRestorableSourceIdentity() = runTest {
+        assertConflictingSidecarIdentityIsPreserved(topLevelStableKey = "1|netease|")
+    }
+
+    private suspend fun assertConflictingSidecarIdentityIsPreserved(topLevelStableKey: String) {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            val sqliteDatabase = database.openHelper.writableDatabase
+            val payload = sqliteDatabase.query(
+                "SELECT payload_json FROM legacy_download_upgrade_payload"
+            ).use { cursor ->
+                check(cursor.moveToFirst())
+                JSONObject(cursor.getString(0))
+                    .put("rootKey", "content://old.provider/tree/old-root")
+                    .put("mediaUri", "content://old.provider/document/missing-audio")
+                    .toString()
+            }
+            sqliteDatabase.execSQL(
+                "UPDATE legacy_download_upgrade_payload SET payload_json = ?",
+                arrayOf(payload)
+            )
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+            val existingMetadata = JSONObject()
+                .put("stableKey", topLevelStableKey)
+                .put("audioFileName", audioName(0))
+                .put("name", "Current song B")
+                .put("artist", "Current artist B")
+                .put("customName", "User title B")
+                .put("downloadFinalized", true)
+                .put(
+                    "restorableMetadata",
+                    JSONObject().put(
+                        "sourceIdentity",
+                        JSONObject().put("stableKey", "2|netease|")
+                    )
+                )
+                .toString()
+            metadataFile.writeText(existingMetadata)
+
+            val result = LegacyDownloadUpgradeCoordinator(fixture.context, database).execute()
+
+            assertEquals(existingMetadata, metadataFile.readText())
+            assertEquals(0, result.rowsCompleted)
+            assertEquals(1, result.rowsQuarantined)
+            assertTrue(
+                sqliteDatabase.query(
+                    "SELECT payload_json FROM legacy_download_upgrade_quarantine " +
+                        "WHERE stable_key = '1|netease|'"
+                ).use { cursor -> cursor.moveToFirst() && cursor.getString(0) == payload }
+            )
+            val snapshot = ManagedDownloadStorage.buildLegacyUpgradeSnapshot(fixture.context)
+            assertEquals(
+                0,
+                LegacyDownloadUpgradeCoordinator(fixture.context, database)
+                    .requeueResolvableQuarantinedRows(snapshot)
+            )
+            assertEquals(existingMetadata, metadataFile.readText())
+        } finally {
+            database.close()
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun matchingKnownSidecarIdentityKeepsCustomMetadataDuringUpgrade() = runTest {
+        assertMatchingSidecarMetadataSurvivesUpgrade(differentRoot = false)
+    }
+
+    @Test
+    fun knownDifferentRootStillMergesMatchingSidecarIdentity() = runTest {
+        assertMatchingSidecarMetadataSurvivesUpgrade(differentRoot = true)
+    }
+
+    private suspend fun assertMatchingSidecarMetadataSurvivesUpgrade(differentRoot: Boolean) {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            if (differentRoot) {
+                setLegacyPayloadStorageHints(
+                    database = database,
+                    rootKey = "file:${File(fixture.sandbox, "old-root").absolutePath}",
+                    mediaUri = File(fixture.sandbox, "old-root/${audioName(0)}").toURI().toString()
+                )
+            }
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+            metadataFile.writeText(
+                JSONObject()
+                    .put("stableKey", "1|netease|")
+                    .put("audioFileName", audioName(0))
+                    .put("name", "Current title")
+                    .put("artist", "Current artist")
+                    .put("customName", "User title")
+                    .put("matchedRomanizedLyric", "User romanized lyric")
+                    .put("downloadFinalized", true)
+                    .put(
+                        "restorableMetadata",
+                        JSONObject().put(
+                            "sourceIdentity",
+                            JSONObject().put("stableKey", "1|netease|")
+                        )
+                    )
+                    .toString()
+            )
+
+            val result = LegacyDownloadUpgradeCoordinator(fixture.context, database).execute()
+
+            assertTrue(result.isComplete)
+            assertEquals(1, result.rowsCompleted)
+            val restored = JSONObject(metadataFile.readText())
+            assertEquals("1|netease|", restored.getString("stableKey"))
+            assertEquals("User title", restored.getString("customName"))
+            assertEquals("User romanized lyric", restored.getString("matchedRomanizedLyric"))
+            assertEquals(
+                "1|netease|",
+                restored.getJSONObject("restorableMetadata")
+                    .getJSONObject("sourceIdentity").getString("stableKey")
+            )
+        } finally {
+            database.close()
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun knownDifferentRootDoesNotBootstrapSameNameWithoutIdentity() = runTest {
+        assertMetadataLessAudioRootBoundary(differentRoot = true)
+    }
+
+    @Test
+    fun sameRootPayloadBootstrapsMetadataLessAudio() = runTest {
+        assertMetadataLessAudioRootBoundary(differentRoot = false)
+    }
+
+    @Test
+    fun knownDifferentRootStillBootstrapsMatchingFileReference() = runTest {
+        assertMetadataLessAudioRootBoundary(differentRoot = true, currentAudioReference = true)
+    }
+
+    @Test
+    fun audioReferenceAliasesKeepOpaqueDocumentIdentity() {
+        val uri = "content://opaque.provider/tree/current-root/document/opaque%2Fnode%2BA"
+        val audio = ManagedDownloadStorage.StoredEntry(
+            name = "same-name.mp3",
+            reference = uri,
+            mediaUri = uri,
+            localFilePath = null,
+            sizeBytes = 1L,
+            lastModifiedMs = 1L
+        )
+        val lookup = LegacyManagedRootLookup(listOf(audio), emptyMap())
+        fun resolve(reference: String) = lookup.resolveAudioByReference(
+            JSONObject().put("mediaUri", reference).put("audioFileName", audio.name)
+        )
+
+        assertEquals(audio, resolve("content://opaque.provider/document/opaque%2fnode+A"))
+        assertEquals(null, resolve("content://opaque.provider/document/opaque%2Fnode%20A"))
+        assertEquals(null, resolve("content://other.provider/document/opaque%2Fnode%2BA"))
+        assertEquals(null, resolve("content://opaque.provider/document/opaque%2Fnode%2BA-child"))
+    }
+
+    private suspend fun assertMetadataLessAudioRootBoundary(
+        differentRoot: Boolean,
+        currentAudioReference: Boolean = false
+    ) {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            val rootKey = if (differentRoot) {
+                "file:${File(fixture.sandbox, "old-root").absolutePath}"
+            } else {
+                ManagedDownloadStorage.currentSnapshotCacheKey(fixture.context)
+            }
+            val payload = setLegacyPayloadStorageHints(
+                database = database,
+                rootKey = rootKey,
+                mediaUri = when {
+                    currentAudioReference -> File(fixture.managedRoot, audioName(0)).toURI().toString()
+                    differentRoot -> File(fixture.sandbox, "old-root/${audioName(0)}").toURI().toString()
+                    else -> null
+                }
+            )
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+
+            val result = LegacyDownloadUpgradeCoordinator(fixture.context, database).execute()
+
+            if (differentRoot && !currentAudioReference) {
+                assertFalse("another root's unknown file must not acquire the old identity", metadataFile.exists())
+                assertEquals(0, result.rowsCompleted)
+                assertEquals(1, result.rowsPending)
+                assertEquals(
+                    payload,
+                    database.openHelper.writableDatabase.query(
+                        "SELECT payload_json FROM legacy_download_upgrade_payload " +
+                            "WHERE stable_key = '1|netease|'"
+                    ).use { cursor ->
+                        check(cursor.moveToFirst())
+                        cursor.getString(0)
+                    }
+                )
+            } else {
+                assertTrue(result.isComplete)
+                assertEquals(1, result.rowsCompleted)
+                assertEquals("1|netease|", JSONObject(metadataFile.readText()).getString("stableKey"))
+            }
+        } finally {
+            database.close()
+            fixture.close()
+        }
+    }
+
+    private fun setLegacyPayloadStorageHints(
+        database: NeriUserDataDatabase,
+        rootKey: String,
+        mediaUri: String?
+    ): String {
+        val sqliteDatabase = database.openHelper.writableDatabase
+        val payload = sqliteDatabase.query(
+            "SELECT payload_json FROM legacy_download_upgrade_payload"
+        ).use { cursor ->
+            check(cursor.moveToFirst())
+            JSONObject(cursor.getString(0)).apply {
+                put("rootKey", rootKey)
+                put("mediaUri", mediaUri)
+                getJSONObject("downloaded_song_catalog").put("root_key", rootKey)
+            }.toString()
+        }
+        sqliteDatabase.execSQL(
+            "UPDATE legacy_download_upgrade_payload SET payload_json = ?",
+            arrayOf(payload)
+        )
+        return payload
+    }
+
+    @Test
     fun cancelledMarkerWithoutPendingOperationDoesNotCreateSyntheticJournalRow() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(

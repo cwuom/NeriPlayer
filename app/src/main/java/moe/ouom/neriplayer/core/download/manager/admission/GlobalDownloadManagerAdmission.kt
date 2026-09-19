@@ -398,7 +398,8 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueue(
             context = context,
             songs = page,
             userInitiated = userInitiated,
-            operationCreatedAtMs = operationCreatedAtMs
+            operationCreatedAtMs = operationCreatedAtMs,
+            batchIdentity = batchIdentity
         )
         if (batchIdentity != null && stagedPage.operationIds.isNotEmpty()) {
             val pageRequests = resolveOperationRequestsForBatchBinding(
@@ -434,7 +435,8 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueuePa
     context: Context,
     songs: List<SongItem>,
     userInitiated: Boolean,
-    operationCreatedAtMs: Long
+    operationCreatedAtMs: Long,
+    batchIdentity: DownloadExecutionRoomStore.DownloadBatchIdentity? = null
 ): StagedPendingDownloadQueue {
     val distinctSongs = songs.distinctBy(SongItem::stableKey)
     if (distinctSongs.isEmpty()) {
@@ -490,7 +492,8 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueuePa
         requiresWifiNetwork = requiresWifiNetwork,
         downloadAudioQuality = downloadAudioQuality,
         excludedOperationIds = excludedOperationIds,
-        forceNewOperationForStableKeys = forceNewOperationForStableKeys
+        forceNewOperationForStableKeys = forceNewOperationForStableKeys,
+        batchIdentity = batchIdentity
     )
     settleSupersededCancellationOperations(
         context = context.applicationContext,

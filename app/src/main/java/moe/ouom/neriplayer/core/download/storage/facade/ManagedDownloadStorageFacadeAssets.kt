@@ -8,7 +8,6 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.buildManagedL
 import moe.ouom.neriplayer.core.download.storage.operation.content.classifyMigrationDeleteFailure
 import moe.ouom.neriplayer.core.download.storage.operation.content.cleanupPendingAudioWrites
 import moe.ouom.neriplayer.core.download.storage.operation.content.deleteInternal
-import moe.ouom.neriplayer.core.download.storage.operation.content.deletePendingFileAndConfirm
 import moe.ouom.neriplayer.core.download.storage.operation.content.deleteReferencesInternalConcurrently
 import moe.ouom.neriplayer.core.download.storage.operation.content.enumerateCompleteRootReferences
 import moe.ouom.neriplayer.core.download.storage.operation.content.hasCompleteLyricsSidecars
@@ -218,16 +217,8 @@ internal suspend fun ManagedDownloadStorage.promotePendingFileAudioImpl(
             .takeIf { it.isFile }
             ?: return@withTargetLock null
         when {
-            target.isFile && target.length() == pending.length() -> {
-                deletePendingFileAndConfirm(pending)?.let { cleanupError ->
-                    throw IOException(
-                        "下载目标已存在但重复 pending 清理未确认: $finalName",
-                        cleanupError
-                    )
-                }
-            }
             target.isFile -> throw IOException(
-                "下载目标已存在且大小不一致，保留 pending 文件: $finalName"
+                "下载目标已存在且所有权未确认，保留 pending 文件: $finalName"
             )
             target.exists() -> throw IOException(
                 "下载目标不是普通文件，保留 pending 文件: $finalName"

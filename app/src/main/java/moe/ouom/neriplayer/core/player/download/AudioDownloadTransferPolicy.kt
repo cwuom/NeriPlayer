@@ -111,6 +111,18 @@ internal object AudioDownloadTransferPolicy {
         return fingerprint?.etag?.trim()?.takeIf(::isStrongEtag)
     }
 
+    internal fun hasStrongResponseEtag(headers: Map<String, List<String>>): Boolean {
+        return responseHeaderValue(headers, "ETag")?.let(::isStrongEtag) == true
+    }
+
+    internal fun buildSingleResponseRequest(request: Request): Request {
+        return request.newBuilder()
+            .removeHeader("Range")
+            .removeHeader("If-Range")
+            .header("Accept-Encoding", "identity")
+            .build()
+    }
+
     private fun isStrongEtag(value: String): Boolean {
         val trimmed = value.trim()
         return trimmed.length >= 2 &&

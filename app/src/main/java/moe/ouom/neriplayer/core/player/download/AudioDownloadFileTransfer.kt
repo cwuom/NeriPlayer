@@ -197,7 +197,8 @@ internal class AudioDownloadFileTransfer(
         transferGeneration: Long?,
         resumedBytes: Long,
         resumeFingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?,
-        startNs: Long
+        startNs: Long,
+        requireCompleteResponse: Boolean = false
     ): AudioDownloadManager.DownloadedPayloadSummary {
         val responseHeaders = response.headers.toMultimap()
         if (resumedBytes > 0L && response.code == 416) {
@@ -253,6 +254,12 @@ internal class AudioDownloadFileTransfer(
                     hooks.deleteWorkingFile(destFile)
                 }
                 throw error
+            }
+            if (requireCompleteResponse && range.length != range.total) {
+                throw IOException(
+                    "服务端缺少强 ETag 且未提供完整响应: " +
+                        "range=${range.start}-${range.end}, total=${range.total}"
+                )
             }
             if (
                 appending &&
@@ -501,6 +508,7 @@ internal class AudioDownloadFileTransfer(
             expectedAdditionalBytes = null
         )
         var rangeRestartError: ChunkRequestIOException? = null
+        var requiresSingleResponse = false
         guardedOutput.use { guarded ->
             guarded.sink().buffer().use { sink ->
                 while (true) {
@@ -553,6 +561,10 @@ internal class AudioDownloadFileTransfer(
                                 transferGeneration = transferGeneration,
                                 durableBytesRead = durableBytes
                             )
+                        }
+                        if (chunkResult.value.requiresSingleResponse) {
+                            requiresSingleResponse = true
+                            break
                         }
                         downloadedBytes = chunkResult.value.downloadedBytes
                         totalBytes = chunkResult.value.totalBytes
@@ -608,6 +620,37 @@ internal class AudioDownloadFileTransfer(
                 // 分块请求可能跨多个响应，结束前统一刷盘再做完整性校验
                 sink.flush()
                 output.fd.sync()
+            }
+        }
+        if (requiresSingleResponse) {
+            // 无强校验符不能拼接多个响应，关闭首片后只尝试一次完整 GET
+            AudioDownloadLog.d("分块响应缺少强 ETag，改用单个完整响应: ${destFile.name}")
+            hooks.ensureDownloadNotCancelled(
+                songId, songKey, destFile, batchSessionId, attemptId, operationId
+            )
+            val singleRequest = AudioDownloadTransferPolicy.buildSingleResponseRequest(request)
+            return@withContext hooks.executeTrackedCall(
+                client = client,
+                request = singleRequest,
+                songKey = songKey,
+                operationId = operationId
+            ) { response ->
+                downloadResponse(
+                    response = response,
+                    request = singleRequest,
+                    destFile = destFile,
+                    displayFileName = displayFileName,
+                    songId = songId,
+                    songKey = songKey,
+                    batchSessionId = batchSessionId,
+                    attemptId = attemptId,
+                    operationId = operationId,
+                    transferGeneration = transferGeneration,
+                    resumedBytes = 0L,
+                    resumeFingerprint = null,
+                    startNs = startNs,
+                    requireCompleteResponse = true
+                )
             }
         }
         rangeRestartError?.let { error ->
@@ -731,6 +774,19 @@ internal class AudioDownloadFileTransfer(
                     throw error
                 }
                 if (
+                    start == 0L && contentRange.length < contentRange.total &&
+                    !AudioDownloadTransferPolicy.hasStrongResponseEtag(responseHeaders)
+                ) {
+                    return@executeTrackedCall ChunkDownloadResult(
+                        chunkLength = requestedChunkLength,
+                        downloadedBytes = 0L,
+                        totalBytes = contentRange.total,
+                        isEndOfStream = false,
+                        strictTotalBytes = true,
+                        requiresSingleResponse = true
+                    )
+                }
+                if (
                     start > 0L &&
                     !AudioDownloadTransferPolicy.isResumeResponseCompatible(
                         effectiveFingerprint,
@@ -847,7 +903,8 @@ internal class AudioDownloadFileTransfer(
         val totalBytes: Long,
         val isEndOfStream: Boolean,
         val strictTotalBytes: Boolean,
-        val resumeMetadataAvailable: Boolean = true
+        val resumeMetadataAvailable: Boolean = true,
+        val requiresSingleResponse: Boolean = false
     )
 
     private object AudioDownloadLog {

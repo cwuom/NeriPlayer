@@ -15,12 +15,16 @@ import android.provider.OpenableColumns;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -33,6 +37,9 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     public static final String RESET = "test:resetMigration";
     public static final String QUERY_FAULT = "test:queryFault";
     public static final String QUERY_COUNT = "test:queryCount";
+    public static final String PUBLICATION_READ_FAULT = "test:publicationReadFault";
+    public static final String PUBLICATION_MISSING_READ = "test:publicationMissingRead";
+    public static final String PUBLICATION_CHILDREN_FAULT = "test:publicationChildrenFault";
 
     private static final String EXTRA_URI = "uri";
     private static final String EXTRA_DISPLAY_NAME =
@@ -46,10 +53,17 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         DocumentsContract.Document.COLUMN_LAST_MODIFIED
     };
     private static final Map<String, Node> NODES = new HashMap<>();
-    private static long nextNodeId;
     private static volatile String queryFault;
     private static volatile CountDownLatch queryGate = new CountDownLatch(0);
     private static final AtomicInteger childQueryCount = new AtomicInteger();
+    private static final AtomicInteger metadataReadCount = new AtomicInteger();
+    private static volatile String publicationReadFaultName;
+    private static String publicationReadFaultId;
+    private static final AtomicInteger publicationReadFaultCount = new AtomicInteger();
+    private static String publicationMissingReadId;
+    private static final AtomicInteger publicationMissingReadCount = new AtomicInteger();
+    private static String publicationChildrenFaultId;
+    private static final AtomicInteger publicationChildrenFaultCount = new AtomicInteger();
 
     @Override
     public boolean onCreate() {
@@ -75,6 +89,16 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         MatrixCursor cursor = new MatrixCursor(columns);
         String documentId = documentId(uri);
         if (isChildDocumentsUri(uri)) {
+            synchronized (NODES) {
+                if (documentId.equals(publicationChildrenFaultId)) {
+                    publicationChildrenFaultId = null;
+                    publicationChildrenFaultCount.incrementAndGet();
+                    Bundle extras = new Bundle();
+                    extras.putBoolean(DocumentsContract.EXTRA_LOADING, true);
+                    cursor.setExtras(extras);
+                    return cursor;
+                }
+            }
             if (ROOT_ID.equals(documentId)) {
                 childQueryCount.incrementAndGet();
             }
@@ -116,6 +140,19 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         if (node == null || node.directory) {
             throw new FileNotFoundException("Unknown migration fixture document: " + uri);
         }
+        synchronized (NODES) {
+            if (!mode.contains("w") && node.id.equals(publicationMissingReadId)) {
+                publicationMissingReadId = null;
+                publicationMissingReadCount.incrementAndGet();
+                throw new FileNotFoundException("No such file or directory: " + uri);
+            }
+            if (!mode.contains("w") && node.id.equals(publicationReadFaultId)) {
+                publicationReadFaultId = null;
+                publicationReadFaultCount.incrementAndGet();
+                throw new IllegalStateException("fixture publication metadata readback failure");
+            }
+        }
+        if (!mode.contains("w") && node.displayName.contains(".npmeta")) metadataReadCount.incrementAndGet();
         File file = backingFile(node.id);
         int flags = mode.contains("w")
             ? ParcelFileDescriptor.MODE_READ_WRITE |
@@ -167,7 +204,33 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         if (QUERY_COUNT.equals(method)) {
             Bundle result = new Bundle();
             result.putInt("count", childQueryCount.get());
+            result.putInt("metadataReads", metadataReadCount.get());
+            result.putInt("publicationReadFaults", publicationReadFaultCount.get());
+            result.putInt("publicationMissingReads", publicationMissingReadCount.get());
+            result.putInt("publicationChildrenFaults", publicationChildrenFaultCount.get());
             return result;
+        }
+        if (PUBLICATION_READ_FAULT.equals(method)) {
+            synchronized (NODES) {
+                publicationReadFaultName = arg;
+                publicationReadFaultId = null;
+                publicationReadFaultCount.set(0);
+            }
+            return new Bundle();
+        }
+        if (PUBLICATION_MISSING_READ.equals(method)) {
+            synchronized (NODES) {
+                publicationMissingReadId = arg == null ? null : documentId(Uri.parse(arg));
+                publicationMissingReadCount.set(0);
+            }
+            return new Bundle();
+        }
+        if (PUBLICATION_CHILDREN_FAULT.equals(method)) {
+            synchronized (NODES) {
+                publicationChildrenFaultId = arg == null ? null : documentId(Uri.parse(arg));
+                publicationChildrenFaultCount.set(0);
+            }
+            return new Bundle();
         }
         if (RESET.equals(method)) {
             reset();
@@ -208,7 +271,7 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             if (hasChildNamed(parent.id, displayName)) {
                 return new Bundle();
             }
-            String id = "migration-node-" + (++nextNodeId);
+            String id = "migration-node-" + UUID.randomUUID();
             boolean directory = DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType);
             NODES.put(id, new Node(id, parent.id, displayName, mimeType, directory));
             if (!directory) {
@@ -235,6 +298,17 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
                 return new Bundle();
             }
             node.displayName = displayName;
+            if (ROOT_ID.equals(node.parentId) && displayName.equals(publicationReadFaultName)) {
+                try {
+                    String metadata = new String(Files.readAllBytes(backingFile(node.id).toPath()), StandardCharsets.UTF_8);
+                    if (metadata.contains("\"audioPublicationReceipt\"")) {
+                        publicationReadFaultId = node.id;
+                        publicationReadFaultName = null;
+                    }
+                } catch (IOException error) {
+                    throw new IllegalStateException("fixture cannot inspect publication metadata", error);
+                }
+            }
             return documentResult(node.id);
         }
     }
@@ -361,9 +435,16 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         queryGate.countDown();
         queryFault = null;
         childQueryCount.set(0);
+        metadataReadCount.set(0);
         synchronized (NODES) {
+            publicationReadFaultName = null;
+            publicationReadFaultId = null;
+            publicationReadFaultCount.set(0);
+            publicationMissingReadId = null;
+            publicationMissingReadCount.set(0);
+            publicationChildrenFaultId = null;
+            publicationChildrenFaultCount.set(0);
             NODES.clear();
-            nextNodeId = 0L;
             deleteRecursively(backingDirectory());
             ensureRoot();
         }

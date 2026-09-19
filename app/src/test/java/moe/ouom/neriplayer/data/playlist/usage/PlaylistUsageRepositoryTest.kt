@@ -8,6 +8,7 @@ import android.os.LocaleList
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
@@ -20,10 +21,41 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockStatic
+import org.mockito.Mockito.CALLS_REAL_METHODS
 import org.mockito.Mockito.`when`
 import java.util.Locale
 
 class PlaylistUsageRepositoryTest {
+
+    @Test
+    fun `artist usage refresh replaces stale cover after local metadata changes`() {
+        val context = mockLocalizedContext()
+        val playlists = listOf(LocalPlaylist(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            songs = mutableListOf(localSong(null))
+        ))
+        val artist = buildLocalArtistSummaries(playlists, context).single()
+        val repo = PlaylistUsageRepository(context)
+        repo.recordOpen(
+            id = artist.id,
+            name = artist.name,
+            picUrl = "file:///covers/stale.jpg",
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL_ARTIST,
+            now = 100L
+        )
+        mockStatic(Class.forName("moe.ouom.neriplayer.data.model.MediaModelExtensionsKt"), CALLS_REAL_METHODS).use { extensions ->
+            extensions.`when`<String?> { artist.displayCoverUrl(context, true) }
+                .thenReturn("file:///covers/refreshed.jpg")
+
+            repo.syncLocalArtistEntries(playlists, resolveLocalMetadataFallback = false)
+            assertEquals("file:///covers/stale.jpg", repo.frequentPlaylistsFlow.value.single().picUrl)
+            repo.syncLocalArtistEntries(playlists, resolveLocalMetadataFallback = true)
+            assertEquals("file:///covers/refreshed.jpg", repo.frequentPlaylistsFlow.value.single().picUrl)
+        }
+    }
 
     @Test
     fun `full local cover refresh replaces a stale cached cover`() {
@@ -652,6 +684,7 @@ class PlaylistUsageRepositoryTest {
             `when`(this.resources).thenReturn(resources)
             `when`(getString(R.string.local_files)).thenReturn("本地文件")
             `when`(getString(R.string.favorite_my_music)).thenReturn("我喜欢的音乐")
+            `when`(getString(R.string.music_unknown_artist)).thenReturn("未知歌手")
         }
     }
 

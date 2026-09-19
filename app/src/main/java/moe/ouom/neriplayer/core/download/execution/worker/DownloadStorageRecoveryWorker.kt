@@ -8,6 +8,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -84,7 +85,9 @@ class DownloadStorageRecoveryWorker(
         private const val FIRST_CHECK_DELAY_MS = 5_000L
         private const val RETRY_BACKOFF_MS = 30_000L
         private const val GENERATION_KEY = "storage_recovery_generation"
-        internal val scheduleCoordinator = DownloadPumpScheduleCoordinator()
+        internal val scheduleCoordinator = DownloadPumpScheduleCoordinator(
+            lock = downloadWorkSubmissionLock
+        )
         private val enqueueCallbackExecutor = Executor { it.run() }
 
         /** 同一时间只保留一个空间探测任务，避免大量歌曲各自创建 Worker */
@@ -96,13 +99,18 @@ class DownloadStorageRecoveryWorker(
         private fun enqueue(context: Context, initialDelayMs: Long, retryEnqueue: Boolean): Boolean {
             val appContext = context.applicationContext
             val generation = scheduleCoordinator.request(initialDelayMs = initialDelayMs) ?: return true
-            if (!scheduleCoordinator.markWorkEnqueueStarted(generation)) return true
             return runCatching {
-                val operation = WorkManager.getInstance(appContext).enqueueUniqueWork(
-                    WORK_NAME,
-                    ExistingWorkPolicy.APPEND_OR_REPLACE,
-                    buildRequest(initialDelayMs, generation)
-                )
+                val workManager = WorkManager.getInstance(appContext)
+                val request = buildRequest(initialDelayMs, generation)
+                var submittedOperation: Operation? = null
+                scheduleCoordinator.submitWorkEnqueue(generation) {
+                    submittedOperation = workManager.enqueueUniqueWork(
+                        WORK_NAME,
+                        ExistingWorkPolicy.APPEND_OR_REPLACE,
+                        request
+                    )
+                }
+                val operation = submittedOperation ?: return@runCatching true
                 operation.result.addListener(
                     Runnable {
                         runCatching { operation.result.get() }.onFailure { error ->

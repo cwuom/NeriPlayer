@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -7,6 +9,7 @@ import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -19,16 +22,25 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalAudioImportSafLyricsTest {
-    private val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
+    private val baseContext = InstrumentationRegistry.getInstrumentation().targetContext
+    private lateinit var recoveryDirectory: File
+    private val targetContext = object : ContextWrapper(baseContext) {
+        override fun getApplicationContext(): Context = this
+        override fun getNoBackupFilesDir(): File = recoveryDirectory
+    }
 
     @Before
     fun resetProviderLyricsFixtures() {
+        // provider 会重置内容，旧测试的恢复意图不能指向新 fixture
+        recoveryDirectory = File(baseContext.cacheDir, "saf-import-recovery-${UUID.randomUUID()}")
+        check(recoveryDirectory.mkdirs())
         val providerUri = DocumentsContract.buildDocumentUri(
             Issue339LyricsTestDocumentProvider.AUTHORITY,
             Issue339LyricsTestDocumentProvider.ROOT_ID
@@ -39,6 +51,13 @@ class LocalAudioImportSafLyricsTest {
             null,
             null
         )
+    }
+
+    @After
+    fun removeOwnedRecoveryFixture() {
+        if (::recoveryDirectory.isInitialized) {
+            check(recoveryDirectory.deleteRecursively())
+        }
     }
 
     @Test

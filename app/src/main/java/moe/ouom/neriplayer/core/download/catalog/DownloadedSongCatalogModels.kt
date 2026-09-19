@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.catalog
 
-import android.net.Uri
-import androidx.core.net.toUri
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.localFileNameFromFileReference
+import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.model.remoteSourceIdentityOrNull as downloadedRemoteSourceIdentityOrNull
 import moe.ouom.neriplayer.core.download.model.remoteSourceStableKeyOrNull
 import moe.ouom.neriplayer.core.download.model.withRecoveredRemoteSourceStableKey
@@ -13,7 +13,6 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.URLDecoder
 import kotlin.math.abs
 import kotlin.math.max
 import java.util.Locale
@@ -262,28 +261,21 @@ private fun downloadedSongRemoteIdentity(song: DownloadedSong) =
 private fun localSongFileNames(song: SongItem): Set<String> {
     return listOfNotNull(
         song.localFileName,
-        song.localFilePath,
-        song.mediaUri
-    ).mapNotNull(::normalizedLocalFileName).toSet()
+        localFileNameFromFileReference(song.localFilePath),
+        localFileNameFromFileReference(song.mediaUri)
+    ).mapNotNull(::normalizedLocalDisplayName).toSet()
 }
 
 private fun downloadedSongLocalFileNames(song: DownloadedSong): Set<String> {
-    return listOfNotNull(song.filePath, song.mediaUri)
-        .mapNotNull(::normalizedLocalFileName)
+    return listOfNotNull(song.resolvedLocalFileName())
+        .mapNotNull(::normalizedLocalDisplayName)
         .toSet()
 }
 
-private fun normalizedLocalFileName(reference: String?): String? {
-    val raw = reference?.trim()?.takeIf(String::isNotBlank) ?: return null
-    val segment = runCatching { raw.toUri().lastPathSegment }
-        .getOrNull()
+private fun normalizedLocalDisplayName(name: String?): String? {
+    return name
         ?.takeIf(String::isNotBlank)
-        ?: raw.substringBefore('?').substringBefore('#').substringAfterLast('/')
-    val decoded = runCatching { URLDecoder.decode(segment, "UTF-8") }
-        .getOrElse { Uri.decode(segment) }
-    return decoded.substringAfterLast('/')
-        .trim()
-        .takeIf { it.isNotBlank() }
+        ?.trim()
         ?.lowercase(Locale.ROOT)
 }
 
@@ -503,6 +495,13 @@ internal fun projectDownloadedSongMetadata(
             ?.trim()
             ?.takeIf { updatedSourceChannel != null && it.isNotBlank() }
     val preservesExistingRemoteSource = existingRemoteSource != null
+    val updatedLocalReference = updatedSong.mediaUri?.takeIf(::isResolvableLocalReference)
+    val existingLocalReference = existing.mediaUri?.takeIf(String::isNotBlank) ?: existing.filePath
+    val updatedLocalFileName = updatedSong.localFileName?.takeIf(String::isNotBlank)
+        ?: localFileNameFromFileReference(updatedLocalReference)
+        ?: existing.resolvedLocalFileName().takeIf {
+            updatedLocalReference == null || updatedLocalReference == existingLocalReference
+        }
     return existing.copy(
         id = if (preservesExistingRemoteSource) existing.id else updatedSong.id,
         name = updatedSong.name,
@@ -533,7 +532,8 @@ internal fun projectDownloadedSongMetadata(
             ?: updatedSong.originalTranslatedLyric,
         originalRomanizedLyric = existing.originalRomanizedLyric
             ?: updatedSong.originalRomanizedLyric,
-        mediaUri = updatedSong.mediaUri?.takeIf(::isResolvableLocalReference) ?: existing.mediaUri,
+        mediaUri = updatedLocalReference ?: existing.mediaUri,
+        localFileName = updatedLocalFileName,
         durationMs = updatedSong.durationMs.takeIf { it > 0L } ?: existing.durationMs,
         stableKey = remoteSource?.stableKey()
             ?: updatedSong.stableKey().takeIf(String::isNotBlank)
@@ -618,6 +618,7 @@ internal fun serializeDownloadedSongsCatalog(
                         put("artist", song.artist)
                         put("album", song.album)
                         put("filePath", song.filePath)
+                        put("localFileName", song.localFileName)
                         put("fileSize", song.fileSize)
                         put("downloadTime", song.downloadTime)
                         put("coverPath", song.coverPath)
@@ -675,6 +676,8 @@ internal fun deserializeDownloadedSongsCatalog(
                     artist = item.optString("artist"),
                     album = item.optString("album"),
                     filePath = item.optString("filePath"),
+                    localFileName = item.optPresentCatalogString("localFileName")
+                        ?.takeIf(String::isNotBlank),
                     fileSize = item.optLong("fileSize"),
                     downloadTime = item.optLong("downloadTime"),
                     coverPath = item.optString("coverPath").takeIf(String::isNotBlank),

@@ -364,6 +364,7 @@ class GlobalDownloadManagerDeleteReferenceTest {
         val downloaded = downloadedSong(id = 42L, name = "managed").copy(
             filePath = "content://downloads/audio/managed.mp3",
             mediaUri = "content://downloads/audio/managed.mp3",
+            localFileName = "managed.mp3",
             durationMs = 180_000L,
             stableKey = "42|netease|"
         )

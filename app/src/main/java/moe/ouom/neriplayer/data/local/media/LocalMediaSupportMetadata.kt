@@ -64,6 +64,25 @@ internal fun LocalMediaSupport.resolveEditableSidecarFile(context: Context, sour
     return runCatching { resolveLocalFile(context, sourceUri) }.getOrNull()
 }
 
+internal fun LocalMediaSupport.isStandaloneContentMetadataTarget(
+    context: Context,
+    sourceUri: Uri,
+    localFile: File?
+): Boolean {
+    if (!sourceUri.scheme.equals("content", ignoreCase = true) || localFile != null) return false
+    if (DocumentsContract.isDocumentUri(context, sourceUri) || DocumentsContract.isTreeUri(sourceUri)) {
+        return false
+    }
+    if (isMediaStoreUri(sourceUri)) {
+        val relativePath = queryContentInfo(context, sourceUri).relativePath
+            ?.trim()?.trim('/')?.takeIf(String::isNotBlank) ?: return false
+        // 目录查询失败不代表相邻文件不存在，匹配根仍需保持侧载事务
+        return resolveExternalStorageTreeUri(context, relativePath) == null
+    }
+    // 单文件授权没有相邻文件命名空间，已有 SAF 目录授权仍沿完整侧载事务处理
+    return resolveLocalDocumentNavigation(context, sourceUri)?.parentDocumentId == null
+}
+
 internal fun LocalMediaSupport.writeLocalCoverSidecar(
     context: Context,
     sourceUri: Uri,

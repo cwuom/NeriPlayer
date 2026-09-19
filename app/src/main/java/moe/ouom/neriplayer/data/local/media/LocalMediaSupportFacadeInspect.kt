@@ -8,6 +8,8 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import com.kyant.taglib.PropertyMap
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayName
@@ -88,17 +90,25 @@ internal suspend fun LocalMediaSupport.writeEditableMetadataImpl(
     persistCompanionSidecars: Boolean = true
 ): LocalMediaMetadataWriteOutcome {
     return try {
-        LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context.applicationContext)
-        writeEditableMetadataInternal(
-            context = context,
-            song = song,
-            coverReference = coverReference,
-            writeCover = writeCover,
-            writeLyrics = writeLyrics,
-            embeddedPropertyMapOverride = embeddedPropertyMapOverride,
-            requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys,
-            persistCompanionSidecars = persistCompanionSidecars
-        )
+        val candidates = withContext(Dispatchers.IO) { editableLocalMediaUriCandidates(context, song) }
+        if (candidates.isEmpty()) return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+        LocalMediaMetadataRecoveryStore.withRecoveredTargets(
+            context = context.applicationContext,
+            targetReferences = candidates.map(Uri::toString),
+            blockedResult = LocalMediaMetadataWriteOutcome.FAILED
+        ) {
+            writeEditableMetadataInternal(
+                context = context,
+                song = song,
+                coverReference = coverReference,
+                writeCover = writeCover,
+                writeLyrics = writeLyrics,
+                embeddedPropertyMapOverride = embeddedPropertyMapOverride,
+                requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys,
+                persistCompanionSidecars = persistCompanionSidecars,
+                candidates = candidates
+            )
+        }
     } catch (error: CancellationException) {
         throw error
     } catch (error: SecurityException) {

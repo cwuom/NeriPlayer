@@ -382,10 +382,10 @@ object LocalMediaSupport {
         writeLyrics: Boolean = false,
         embeddedPropertyMapOverride: PropertyMap? = null,
         requiredEmbeddedPropertyKeys: Set<String> = emptySet(),
-        persistCompanionSidecars: Boolean = true
+        persistCompanionSidecars: Boolean = true,
+        candidates: List<Uri>
     ): LocalMediaMetadataWriteOutcome = withContext(Dispatchers.IO) {
         val startedAtMs = SystemClock.elapsedRealtime()
-        val candidates = editableLocalMediaUriCandidates(context, song)
         if (candidates.isEmpty()) {
             return@withContext LocalMediaMetadataWriteOutcome.NOT_WRITABLE
         }
@@ -393,6 +393,13 @@ object LocalMediaSupport {
         var fallbackOutcome = LocalMediaMetadataWriteOutcome.NOT_WRITABLE
         candidates.forEach { sourceUri ->
             currentCoroutineContext().ensureActive()
+            val localFile = if (persistCompanionSidecars) {
+                resolveEditableSidecarFile(context, sourceUri)
+            } else {
+                null
+            }
+            val persistAvailableSidecars = persistCompanionSidecars &&
+                !isStandaloneContentMetadataTarget(context, sourceUri, localFile)
             val stagedAttempted = shouldUseTransactionalStagedWrite(sourceUri)
             val writeTransaction = if (stagedAttempted) {
                 writeEditableMetadataThroughStagedContentCopy(
@@ -421,7 +428,7 @@ object LocalMediaSupport {
             val outcome = writeTransaction.outcome
             var embeddedTransactionSettled = outcome != LocalMediaMetadataWriteOutcome.SUCCESS
             try {
-                if (!persistCompanionSidecars) {
+                if (!persistAvailableSidecars) {
                     var finalOutcome = outcome
                     if (outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
                         val committed = runCatching {
@@ -454,7 +461,6 @@ object LocalMediaSupport {
                 // 容器时仍必须保存 Lyrics 和 npmeta，不能让嵌入失败阻断侧载重建
                 // MediaStore 路径可能能通过 stat 但仍会被 scoped storage 拒绝读取
                 // 这类来源始终沿 SAF 引用写入
-                val localFile = resolveEditableSidecarFile(context, sourceUri)
                 val displayName = song.localFileName
                     ?.takeIf(String::isNotBlank)
                     ?: sourceUri.lastPathSegment.orEmpty()

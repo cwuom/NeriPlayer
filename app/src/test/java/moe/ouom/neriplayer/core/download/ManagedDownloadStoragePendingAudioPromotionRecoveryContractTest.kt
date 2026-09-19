@@ -135,6 +135,10 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
             readStorageSource(),
             "reconcileExistingTreePromotionTargetLocked"
         )
+        val receiptVerificationIndex = helper.indexOf("isVerifiedAudioPublicationTarget(")
+        val ownershipGuardIndex = helper.indexOf("if (!sameDocument && !verifiedPublication &&")
+        val copyRecoveryIndex = helper.indexOf("resumeAudioPublicationCopy(")
+        val targetResolutionIndex = helper.indexOf("val target = resolveNewTreePromotionDocument(")
         val verificationIndex = helper.indexOf("verifiedTreeStoredEntry(")
         val deleteIndex = helper.indexOf("deleteTrustedReference(")
 
@@ -142,8 +146,14 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
         assertTrue(helper.contains("if (exactTargets.size != 1)"))
         assertTrue(helper.contains("exactTarget.isDirectory"))
         assertTrue(helper.contains("isTreePromotionBackupName"))
-        assertTrue(helper.contains("exactTarget.sizeBytes != expectedSizeBytes"))
-        assertTrue(verificationIndex >= 0)
+        assertTrue(receiptVerificationIndex >= 0)
+        assertTrue(ownershipGuardIndex > receiptVerificationIndex)
+        assertTrue(copyRecoveryIndex > ownershipGuardIndex)
+        assertTrue(targetResolutionIndex > copyRecoveryIndex)
+        assertTrue(helper.substring(ownershipGuardIndex, targetResolutionIndex).contains("return null"))
+        assertTrue(helper.contains("pendingUri == null && verifiedPublication"))
+        assertTrue(helper.contains("expectedSizeBytes = verifiedSizeBytes"))
+        assertTrue(verificationIndex > targetResolutionIndex)
         assertTrue(deleteIndex > verificationIndex)
     }
 
@@ -162,14 +172,28 @@ class ManagedDownloadStoragePendingAudioPromotionRecoveryContractTest {
     }
 
     @Test
-    fun `copy path reuses verified size and checks copied bytes`() {
+    fun `copy path measures current pending size and checks copied bytes before cleanup`() {
         val source = readStorageSource()
         val promotion = methodBody(source, "promotePendingAudio")
+        val sizeResolver = methodBody(source, "resolveCurrentTreePendingAudioSize")
         val copy = methodBody(source, "copyPendingTreeAudioWithoutReplacing")
+        val currentSizeIndex = promotion.indexOf("val expectedSizeBytes = resolveCurrentTreePendingAudioSize(")
+        val copyInvocationIndex = promotion.indexOf("copyPendingTreeAudioWithoutReplacing(")
+        val copyIndex = copy.indexOf("val copiedBytes = source.copyTo")
+        val byteCountCheckIndex = copy.indexOf("copiedBytes != expectedSizeBytes")
+        val verificationIndex = copy.indexOf("val entry = verifiedTreeStoredEntry(")
+        val receiptVerificationIndex = copy.indexOf("if (!isVerifiedAudioPublicationTarget(")
+        val deleteIndex = copy.indexOf("deleteTrustedReference(")
 
-        assertTrue(promotion.contains("audio.sizeKnown && it > 0L"))
-        assertTrue(copy.contains("val copiedBytes = source.copyTo"))
-        assertTrue(copy.contains("copiedBytes != expectedSizeBytes"))
+        assertTrue(currentSizeIndex >= 0)
+        assertTrue(copyInvocationIndex > currentSizeIndex)
+        assertTrue(sizeResolver.contains("countInputStreamBytes("))
+        assertTrue(sizeResolver.contains("countedSizeBytes = countedSizeBytes"))
+        assertTrue(copyIndex >= 0)
+        assertTrue(byteCountCheckIndex > copyIndex)
+        assertTrue(verificationIndex > byteCountCheckIndex)
+        assertTrue(receiptVerificationIndex > verificationIndex)
+        assertTrue(deleteIndex > receiptVerificationIndex)
     }
 
     private fun readStorageSource(): String {
