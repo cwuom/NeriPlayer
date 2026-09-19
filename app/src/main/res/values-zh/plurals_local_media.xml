@@ -5,6 +5,9 @@
         <item quantity="one">已删除 %d 首已下载歌曲及其本地文件</item>
         <item quantity="other">已删除 %d 首已下载歌曲及其本地文件</item>
     </plurals>
+    <plurals name="local_files_delete_downloaded_cleanup_pending">
+        <item quantity="other">已移除 %d 首已下载歌曲，文件正在后台清理</item>
+    </plurals>
     <plurals name="local_playlist_import_audio_success">
         <item quantity="other">已导入 %d 首本地音频</item>
     </plurals>
@@ -34,5 +37,17 @@
     </plurals>
     <plurals name="local_playlist_delete_undone">
         <item quantity="other">已恢复 %1$d 个歌单</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_preparing">
+        <item quantity="other">正在准备扫描，已等待 %d 秒</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_download_index">
+        <item quantity="other">正在读取下载目录索引，已等待 %d 秒</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_media_store">
+        <item quantity="other">正在读取系统媒体库，已等待 %d 秒</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_completed">
+        <item quantity="other">扫描完成，发现 %d 首歌曲</item>
     </plurals>
 </resources>

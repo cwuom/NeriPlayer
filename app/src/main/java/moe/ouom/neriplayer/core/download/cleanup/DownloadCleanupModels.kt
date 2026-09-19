@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 
 internal data class ManagedDownloadArtifactRemovalResult(

@@ -83,9 +83,9 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import java.io.File
@@ -152,7 +152,7 @@ fun LyricShareSheet(
         selectedLines.joinToString(separator = "\n") { it.text }
     }
     val selectedCharCount = selectedText.length
-    val coverUrl = remember(song, context) { song.displayCoverUrl(context) }
+    val coverUrl = rememberSongDisplayCoverUrl(song)
     var isSharingCard by remember { mutableStateOf(false) }
 
     LaunchedEffect(shareableLyrics, initialKey) {

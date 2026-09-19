@@ -1,0 +1,170 @@
+package moe.ouom.neriplayer.core.download.storage.queue
+
+import java.io.File
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class DownloadRecoveryRoomStoreRuntimeCharacterizationTest {
+    @Test
+    fun runtime_facade_methods_do_not_import_legacy_files() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/DownloadRecoveryRoomStore.kt"
+        ).readText()
+
+        listOf(
+            "upsertPendingDownloadQueue",
+            "listPendingQueuedDownloads",
+            "removePendingDownloadQueueEntries",
+            "clearPendingDownloadQueue"
+        ).forEach { methodName ->
+            val body = methodBody(source, methodName)
+            assertFalse(
+                "$methodName must use the Room operation journal directly",
+                body.contains("importQueueIfNeeded()") ||
+                    body.contains("importCancelledIfNeeded()") ||
+                    body.contains("markPrimary(") ||
+                    body.contains("ManagedDownloadQueueStore") ||
+                    body.contains("filesDir")
+            )
+        }
+    }
+
+    @Test
+    fun recovery_facade_does_not_expose_legacy_cancelled_key_api() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/recovery/" +
+                "ManagedDownloadRecoveryFiles.kt"
+        ).readText()
+
+        listOf(
+            "markCancelledDownloadKeys",
+            "listCancelledDownloadKeys",
+            "removeCancelledDownloadKeys",
+            "discardCancelledDownloadKeys",
+            "clearCancelledDownloadKeys"
+        ).forEach { methodName ->
+            assertFalse(
+                "recovery facade must not reintroduce stable-key cancellation state",
+                source.contains("fun $methodName(")
+            )
+        }
+    }
+
+    @Test
+    fun production_recovery_has_no_legacy_file_mutation_api() {
+        listOf(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/ManagedDownloadQueueStore.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/recovery/" +
+                "ManagedDownloadRecoveryFiles.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
+        ).forEach { path ->
+            val source = locateProjectFile(path).readText()
+            assertFalse(
+                "$path must not expose legacy queue file writers",
+                source.contains("upsertPendingDownloadQueueInFile") ||
+                    source.contains("removePendingDownloadQueueEntriesFromFile") ||
+                    source.contains("clearPendingDownloadQueueFile") ||
+                    source.contains("markCancelledDownloadKeysInFile") ||
+                    source.contains("removeCancelledDownloadKeysFromFile") ||
+                    source.contains("clearCancelledDownloadKeysFile")
+            )
+        }
+    }
+
+    @Test
+    fun `clear records the legacy queue suppression before deleting Room rows`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/" +
+                "DownloadRecoveryRoomStore.kt"
+        ).readText()
+        val clearBody = methodBody(source, "clearPendingDownloadQueue")
+        val suppressionIndex = clearBody.indexOf("markLegacyQueueImportSuppressed()")
+        val deleteIndex = clearBody.indexOf("DownloadExecutionRoomStore.deleteByState(")
+        val queueBootstrapBody = methodBody(source, "bootstrapLegacyQueueFile")
+        val cancelledBootstrapBody = methodBody(source, "bootstrapLegacyCancelledFile")
+
+        assertTrue(clearBody.contains("database.withTransaction"))
+        assertTrue(suppressionIndex >= 0)
+        assertTrue(deleteIndex > suppressionIndex)
+        assertTrue(queueBootstrapBody.contains("database.withTransaction"))
+        assertTrue(queueBootstrapBody.contains("isLegacyQueueFileImportBlocked()"))
+        assertTrue(cancelledBootstrapBody.contains("isLegacyQueueImportSuppressed()"))
+    }
+
+    @Test
+    fun `only an explicit user clear suppresses a legacy queue import`() {
+        assertTrue(
+            isLegacyQueueImportSuppressed(DownloadRecoveryRoomStore.USER_CLEARED_STATE)
+        )
+        assertFalse(
+            isLegacyQueueImportSuppressed(DownloadRecoveryRoomStore.ROOM_PRIMARY_STATE)
+        )
+        assertFalse(isLegacyQueueImportSuppressed(null))
+    }
+
+    @Test
+    fun `waiting operation identity changes with the clear epoch`() {
+        val firstEpoch = DownloadRecoveryRoomStore.waitingStorageMutationOperationId(
+            libraryId = "library",
+            stableKey = "netease:42",
+            clearEpoch = 1L
+        )
+        val sameEpoch = DownloadRecoveryRoomStore.waitingStorageMutationOperationId(
+            libraryId = "library",
+            stableKey = "netease:42",
+            clearEpoch = 1L
+        )
+        val nextEpoch = DownloadRecoveryRoomStore.waitingStorageMutationOperationId(
+            libraryId = "library",
+            stableKey = "netease:42",
+            clearEpoch = 2L
+        )
+
+        assertEquals(firstEpoch, sameEpoch)
+        assertNotEquals(firstEpoch, nextEpoch)
+    }
+
+    @Test
+    fun `forced fresh starts do not let a readable predecessor suppress replacement staging`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/" +
+                "DownloadRecoveryRoomStore.kt"
+        ).readText()
+        val waitingBody = methodBody(source, "upsertWaitingStorageMutationWithRequests")
+
+        assertTrue(waitingBody.contains("key !in forceNewKeys"))
+        assertTrue(waitingBody.contains("mustCreateFreshUserOperation"))
+    }
+
+    private fun methodBody(source: String, methodName: String): String {
+        val signatureStart = source.indexOf("suspend fun $methodName")
+        require(signatureStart >= 0) { "method not found: $methodName" }
+        val bodyStart = source.indexOf('{', signatureStart)
+        require(bodyStart >= 0) { "method body not found: $methodName" }
+        var depth = 0
+        for (index in bodyStart until source.length) {
+            when (source[index]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return source.substring(bodyStart, index + 1)
+                }
+            }
+        }
+        error("unterminated method body: $methodName")
+    }
+
+    private fun locateProjectFile(path: String): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        var attempts = 0
+        while (attempts++ < 5) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return moe.ouom.neriplayer.architecture.RefactoredSourceFamilyResolver.resolve(candidate)
+            directory = directory.parentFile ?: break
+        }
+        error("source file not found: $path")
+    }
+}

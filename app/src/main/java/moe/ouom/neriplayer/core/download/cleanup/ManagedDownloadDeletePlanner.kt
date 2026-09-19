@@ -1,10 +1,88 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
 import android.content.Context
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.readTemporaryDirectoryEntries
+import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
+import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_TEMPORARY_DIR_NAME
+import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
+
+internal data class ManagedDownloadFullDeletePlan(
+    val requestedReferences: Set<String>,
+    val snapshotComplete: Boolean
+)
 
 internal class ManagedDownloadDeletePlanner {
+
+    suspend fun buildFullLibraryDeletePlan(
+        context: Context
+    ): ManagedDownloadFullDeletePlan {
+        val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+            context = context,
+            forceRefresh = true
+        )
+        val root = ManagedDownloadStorage.resolveRootBlocking(context)
+        val temporaryEntries = ManagedDownloadStorage.readTemporaryDirectoryEntries(
+            context = context,
+            root = root,
+            forceRefresh = false,
+            rootAlreadyRefreshed = true
+        )
+        val canCompactManagedDirectories =
+            snapshot.rootEntriesComplete &&
+                snapshot.sidecarEntriesComplete &&
+                temporaryEntries.isComplete
+        fun managedDirectoryRoots(subdirectory: String): List<ManagedDownloadRootHandle> {
+            return if (canCompactManagedDirectories) {
+                ManagedDownloadStorage.treeDirectories.findSubdirectories(
+                    context = context,
+                    root = root,
+                    desiredName = subdirectory
+                )
+            } else {
+                emptyList()
+            }
+        }
+        val coverDirectoryRoots = managedDirectoryRoots(COVER_SUBDIRECTORY)
+        val lyricDirectoryRoots = managedDirectoryRoots(LYRIC_SUBDIRECTORY)
+        val temporaryDirectoryRoots = managedDirectoryRoots(DOWNLOAD_TEMPORARY_DIR_NAME)
+        val compactedDirectoryRoots =
+            coverDirectoryRoots + lyricDirectoryRoots + temporaryDirectoryRoots
+        val compactedDirectoryReferences = compactedDirectoryRoots
+            .mapTo(linkedSetOf(), ::rootReference)
+        val compactedChildReferences = buildSet {
+            if (coverDirectoryRoots.isNotEmpty()) {
+                snapshot.coverEntriesByName.values.forEach { entry -> add(entry.reference) }
+            }
+            if (lyricDirectoryRoots.isNotEmpty()) {
+                snapshot.lyricEntriesByName.values.forEach { entry -> add(entry.reference) }
+            }
+            if (temporaryDirectoryRoots.isNotEmpty()) {
+                temporaryEntries.entries.forEach { entry -> add(entry.reference) }
+            }
+        }
+        val requestedReferences = if (compactedDirectoryReferences.isEmpty()) {
+            ManagedDownloadArtifactPlanner.collectFullLibraryArtifactReferences(snapshot)
+        } else {
+            buildSet {
+                addAll(
+                    ManagedDownloadArtifactPlanner.collectFullLibraryArtifactReferences(snapshot) -
+                        compactedChildReferences
+                )
+                addAll(compactedDirectoryReferences)
+            }
+        }
+        return ManagedDownloadFullDeletePlan(
+            requestedReferences = requestedReferences,
+            snapshotComplete = snapshot.rootEntriesComplete &&
+                snapshot.sidecarEntriesComplete &&
+                temporaryEntries.isComplete
+        )
+    }
 
     suspend fun buildDeletePlans(
         context: Context,
@@ -13,8 +91,14 @@ internal class ManagedDownloadDeletePlanner {
         if (songs.isEmpty()) {
             return emptyList()
         }
-        val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
-            ?: ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+        var snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
+            ?: ManagedDownloadStorage.buildDownloadLibrarySnapshot(context)
+        if (requiresManagedDownloadDeleteSnapshotRefresh(snapshot, songs)) {
+            snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
+        }
         val deleteContexts = songs.map { song ->
             ManagedDownloadArtifactPlanner.buildDeleteContext(
                 song = song,
@@ -97,5 +181,24 @@ internal class ManagedDownloadDeletePlanner {
             requestedReferences = referencesToDelete,
             deletedReferences = deletedReferences
         )
+    }
+}
+
+private fun rootReference(root: ManagedDownloadRootHandle): String {
+    return when (root) {
+        is ManagedDownloadRootHandle.FileRoot -> root.dir.absolutePath
+        is ManagedDownloadRootHandle.TreeRoot -> root.tree.uri.toString()
+    }
+}
+
+internal fun requiresManagedDownloadDeleteSnapshotRefresh(
+    snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+    songs: List<DownloadedSong>
+): Boolean {
+    return songs.any { song ->
+        val playbackReference = resolveDownloadedSongPlaybackReference(song)
+            ?.takeIf(String::isNotBlank)
+            ?: return@any false
+        snapshot.audioEntriesByLookupKey[playbackReference] == null
     }
 }

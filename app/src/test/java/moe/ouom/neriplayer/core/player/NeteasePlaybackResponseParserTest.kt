@@ -126,6 +126,25 @@ class NeteasePlaybackResponseParserTest {
     }
 
     @Test
+    fun parseDownloadInfo_readsServerReportedSize() {
+        val raw = """
+            {
+              "code": 200,
+              "data": [{
+                "url": "https://m801.music.126.net/demo.mp3",
+                "type": "mp3",
+                "size": 3758751
+              }]
+            }
+        """.trimIndent()
+
+        assertEquals(
+            3_758_751L,
+            NeteasePlaybackResponseParser.parseDownloadInfo(raw)?.contentLength
+        )
+    }
+
+    @Test
     fun parsePlayback_treatsCode404AsRestrictedResource() {
         val raw = """
             {

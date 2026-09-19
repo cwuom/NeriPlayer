@@ -33,7 +33,9 @@ import androidx.work.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.sync.shouldDeferAutomaticSyncForPlayback
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.util.concurrent.TimeUnit
@@ -55,6 +57,7 @@ class GitHubSyncWorker(
         private const val NOTIFICATION_CHANNEL_ID = "github_sync_channel"
         private const val NOTIFICATION_ID = 1001
         private const val DEFAULT_DELAY_MS = 5_000L
+        private const val PLAYBACK_DEFERRAL_DELAY_MS = 60_000L
 
         /**
          * 调度延迟同步
@@ -172,6 +175,21 @@ class GitHubSyncWorker(
             // 检查是否已配置
             if (!storage.isConfigured()) {
                 NPLogger.d(TAG, "GitHub not configured")
+                return@withContext Result.success()
+            }
+            if (
+                shouldDeferAutomaticSyncForPlayback(
+                    forceSync = forceSync,
+                    triggerByUserAction = triggerByUserAction,
+                    playbackIntentActive = PlayerManager.playbackControlPlayingFlow.value
+                )
+            ) {
+                NPLogger.d(TAG, "Automatic sync deferred while playback has priority")
+                scheduleDelayedSync(
+                    context = applicationContext,
+                    initialDelayMs = PLAYBACK_DEFERRAL_DELAY_MS,
+                    appendToCurrentWork = true
+                )
                 return@withContext Result.success()
             }
             if (!hasValidatedNetwork()) {

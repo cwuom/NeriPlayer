@@ -4,6 +4,7 @@ import androidx.core.net.toUri
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
@@ -18,7 +19,7 @@ import kotlin.math.absoluteValue
 internal const val NETEASE_LOCAL_FALLBACK_DURATION_TOLERANCE_MS = 8_000L
 private val localFallbackNonTextRegex = Regex("[^\\p{L}\\p{N}]+")
 
-internal fun PlayerManager.tryResolveNeteaseMatchedLocalSource(song: SongItem): SongUrlResult? {
+internal suspend fun PlayerManager.tryResolveNeteaseMatchedLocalSource(song: SongItem): SongUrlResult? {
     if (!neteaseLocalSourceFallbackEnabled) return null
 
     val localSongs = localRepo.playlists.value.flatMap { it.songs }
@@ -26,7 +27,11 @@ internal fun PlayerManager.tryResolveNeteaseMatchedLocalSource(song: SongItem): 
     if (candidates.isEmpty()) return null
 
     for (candidate in candidates) {
-        val localMediaUri = localMediaSource(candidate) ?: continue
+        val localMediaUri = AudioDownloadManager.resolvePermittedLocalPlaybackUri(
+            context = application,
+            song = candidate,
+            rawLocalReference = localMediaSource(candidate)
+        ) ?: continue
         if (!isReadableLocalMediaUri(localMediaUri)) continue
         val playableUrl = toPlayableLocalUrl(localMediaUri) ?: localMediaUri
         NPLogger.w(

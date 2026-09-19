@@ -20,11 +20,34 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.DownloadStatus
-import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.model.hasDownloadTaskStartedWork
+import moe.ouom.neriplayer.core.download.model.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
+
+internal fun downloadStageLabelResource(
+    stage: AudioDownloadManager.DownloadStage
+): Int? {
+    return when (stage) {
+        AudioDownloadManager.DownloadStage.WAITING_HOST -> R.string.download_waiting_host
+        AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP ->
+            R.string.download_waiting_delete_cleanup
+        AudioDownloadManager.DownloadStage.RESOLVING_SOURCE -> R.string.download_resolving_source
+        AudioDownloadManager.DownloadStage.PREPARING_STORAGE ->
+            R.string.download_preparing_storage
+        AudioDownloadManager.DownloadStage.VERIFYING_AUDIO -> R.string.download_verifying_audio
+        AudioDownloadManager.DownloadStage.COMMITTING_CORE -> R.string.download_committing_core
+        AudioDownloadManager.DownloadStage.ASSETS_ENRICHING ->
+            R.string.download_assets_enriching
+        AudioDownloadManager.DownloadStage.WAITING_RETRY -> R.string.download_waiting_retry
+        AudioDownloadManager.DownloadStage.TRANSFERRING,
+        AudioDownloadManager.DownloadStage.FINALIZING -> null
+    }
+}
 
 @Composable
 fun ActiveDownloadTaskList(
@@ -34,19 +57,8 @@ fun ActiveDownloadTaskList(
     maxHeight: androidx.compose.ui.unit.Dp = 320.dp
 ) {
     val visibleTasks = remember(tasks, maxVisibleTasks) {
-        tasks.filter { task ->
-            task.status == DownloadStatus.DOWNLOADING ||
-                task.status == DownloadStatus.WAITING_NETWORK
-        }
-            .sortedWith(
-                compareBy<DownloadTask> { task ->
-                    when (task.status) {
-                        DownloadStatus.DOWNLOADING -> 0
-                        DownloadStatus.WAITING_NETWORK -> 1
-                        else -> 2
-                    }
-                }.thenBy { task -> task.attemptId }
-            )
+        visibleDownloadProgressTasks(tasks)
+            .filter(::hasDownloadTaskStartedWork)
             .take(maxVisibleTasks)
     }
     if (visibleTasks.isEmpty()) {
@@ -71,37 +83,19 @@ fun ActiveDownloadTaskList(
                     )
 
                     when {
-                        task.status == DownloadStatus.WAITING_NETWORK -> {
+                        progress != null && progress.stage !=
+                            AudioDownloadManager.DownloadStage.TRANSFERRING &&
+                            progress.stage != AudioDownloadManager.DownloadStage.FINALIZING &&
+                            progress.stage != AudioDownloadManager.DownloadStage.WAITING_RETRY -> {
+                            val stageLabel = downloadStageLabelResource(progress.stage)
+                                ?: R.string.download_progress
                             Text(
-                                text = stringResource(R.string.download_waiting_network_recovery),
+                                text = stringResource(stageLabel),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                            )
-                        }
-
-                        progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {
                             Text(
-                                text = stringResource(R.string.download_finalizing),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                            )
-                        }
-
-                        progress?.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY -> {
-                            Text(
-                                text = stringResource(R.string.download_waiting_network_recovery),
+                                text = formatDownloadTransferProgress(progress, showSpeed = false),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -126,21 +120,13 @@ fun ActiveDownloadTaskList(
                             }
                         }
 
-                        progress != null && progress.totalBytes > 0L -> {
+                        progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {
                             Text(
-                                text = stringResource(
-                                    R.string.download_current_file_progress,
-                                    progress.percentage,
-                                    progress.speedBytesPerSec / 1024
-                                ),
+                                text = stringResource(R.string.download_finalizing),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             LinearProgressIndicator(
-                                progress = {
-                                    (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
-                                        .coerceIn(0f, 1f)
-                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(4.dp)
@@ -148,7 +134,85 @@ fun ActiveDownloadTaskList(
                             )
                         }
 
+                        progress?.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY -> {
+                            Text(
+                                text = stringResource(
+                                    if (task.status == DownloadStatus.WAITING_NETWORK) {
+                                        R.string.download_waiting_network_recovery
+                                    } else {
+                                        R.string.download_waiting_retry
+                                    }
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatDownloadTransferProgress(progress, showSpeed = false),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (progress.totalBytes > 0L) {
+                                LinearProgressIndicator(
+                                    progress = {
+                                        (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+                                            .coerceIn(0f, 1f)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                )
+                            }
+                        }
+
+                        progress != null -> {
+                            Text(
+                                text = formatDownloadTransferProgress(progress),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (progress.totalBytes > 0L) {
+                                LinearProgressIndicator(
+                                    progress = {
+                                        (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+                                            .coerceIn(0f, 1f)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                )
+                            }
+                        }
+
                         else -> {
+                            Text(
+                                text = stringResource(
+                                    when (task.status) {
+                                        DownloadStatus.QUEUED -> R.string.download_queued_status
+                                        DownloadStatus.WAITING_NETWORK ->
+                                            R.string.download_waiting_network_recovery
+                                        DownloadStatus.DOWNLOADING -> R.string.download_waiting_host
+                                        else -> R.string.download_progress
+                                    }
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             LinearProgressIndicator(
                                 modifier = Modifier
                                     .fillMaxWidth()

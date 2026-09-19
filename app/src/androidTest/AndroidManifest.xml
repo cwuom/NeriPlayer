@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <provider
+            android:name="moe.ouom.neriplayer.core.download.execution.DownloadPreflightTestProvider"
+            android:authorities="moe.ouom.neriplayer.test.downloadpreflight"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+        <provider
             android:name="moe.ouom.neriplayer.data.local.media.StagedMetadataTestProvider"
             android:authorities="moe.ouom.neriplayer.test.stagedmetadataprovider"
             android:exported="true"
@@ -8,6 +13,11 @@
         <provider
             android:name="moe.ouom.neriplayer.data.local.media.Issue339LyricsTestDocumentProvider"
             android:authorities="moe.ouom.neriplayer.test.issue339lyrics"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+        <provider
+            android:name="moe.ouom.neriplayer.core.download.ManagedDownloadMigrationTestDocumentProvider"
+            android:authorities="moe.ouom.neriplayer.test.manageddownloadmigration"
             android:exported="true"
             android:grantUriPermissions="true" />
     </application>

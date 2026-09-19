@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlaybackBootstrapCoordinator
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.startup.app.InstrumentationTestRuntime
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
@@ -186,9 +187,10 @@ internal fun handleYouTubeAuthStateChanged(
  */
 internal fun warmYouTubePlaybackIfEnabled(
     youtubeEnabled: Boolean = true,
+    backgroundWarmupAllowed: Boolean = !InstrumentationTestRuntime.isActive,
     warmBootstrapAsync: () -> Unit
 ) {
-    if (youtubeEnabled && !ForegroundWebLoginGuard.isActive) {
+    if (youtubeEnabled && backgroundWarmupAllowed && !ForegroundWebLoginGuard.isActive) {
         warmBootstrapAsync()
     }
 }

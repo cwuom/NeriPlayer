@@ -16,6 +16,8 @@ import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.lyricon.mediaLyriconPositionMs
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.LocalPlaylistPlaybackSource
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
@@ -1213,7 +1215,22 @@ private fun PlayerManager.maybeHydrateSongForPlayback(
     }
 
     ioScope.launch {
-        val hydratedSong = LocalAudioImportManager.hydrateLocalSongMetadata(application, song)
+        val isPublishedManagedDownload = GlobalDownloadManager.hasDownloadedSongCached(song)
+        // 目录和 URI 线索只决定是否做轻量文本补全，不代表下载已经完成
+        val isManagedDownloadSource = isPublishedManagedDownload ||
+            ManagedDownloadStorage.isLikelyManagedDownloadSongFast(application, song)
+        // 已发布下载的标题和封面来自目录索引，来源线索命中时也只补侧载文本
+        // 避免 TagLib 读取整段音频和内嵌歌词抢占歌词快路径
+        val hydratedSong = if (isManagedDownloadSource) {
+            LocalAudioImportManager.hydrateLocalSongTextMetadata(
+                context = application,
+                song = song,
+                resolveCoverFallback = false,
+                includeEmbeddedFallback = false
+            )
+        } else {
+            LocalAudioImportManager.hydrateLocalSongMetadata(application, song)
+        }
         if (hydratedSong == song) {
             return@launch
         }

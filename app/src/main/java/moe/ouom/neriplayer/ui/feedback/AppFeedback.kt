@@ -411,6 +411,10 @@ suspend fun SnackbarHostState.showNeriSnackbar(
     )
 }
 
+internal fun SnackbarHostState.dismissCurrentNeriSnackbar() {
+    currentSnackbarData?.dismiss()
+}
+
 private fun shouldSkipSnackbarDuplicate(
     hostState: SnackbarHostState,
     message: String

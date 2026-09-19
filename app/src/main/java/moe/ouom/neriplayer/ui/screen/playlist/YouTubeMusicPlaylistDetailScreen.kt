@@ -140,7 +140,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -218,8 +217,7 @@ fun YouTubeMusicPlaylistDetailScreen(
 
     var showDownloadManager by remember { mutableStateOf(false) }
     val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
-    val pendingTaskCount = downloadTaskSummary.pendingTaskCount
-    val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
+    val hasDownloadManagerEntry = downloadTaskSummary.hasDownloadManagerEntry
 
     var showExportSheet by remember { mutableStateOf(false) }
     var showExportAllSheet by remember { mutableStateOf(false) }
@@ -983,25 +981,9 @@ fun YouTubeMusicPlaylistDetailScreen(
         BackHandler(enabled = selectionMode) { exitSelection() }
         
         if (showDownloadManager) {
-            val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
             val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-            val progress = batchDownloadProgress
             BatchDownloadManagerSheet(
-                batchDownloadProgress = progress,
                 downloadTasks = downloadTasks,
-                progressSummaryText = if (progress != null) {
-                    stringResource(
-                        R.string.download_progress_format,
-                        progress.completedSongs,
-                        progress.totalSongs
-                    )
-                } else {
-                    pluralStringResource(
-                        R.plurals.download_tasks_count,
-                        pendingTaskCount,
-                        pendingTaskCount
-                    )
-                },
                 onDismiss = { showDownloadManager = false }
             )
         }
