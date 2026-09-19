@@ -49,11 +49,14 @@ internal class DeferredDownloadScheduleQueue(
                     )
                 }
         } else {
+            val replacesInFlightRequest = !current.ready && current.request !== request
             current.copy(
                 request = request,
                 generation = nextGeneration(),
                 // 正在等待的 operation 保留最初的公平顺序
-                ready = current.ready
+                // in-flight 请求被新 attempt 替换时，旧调用已经不能重新入队，
+                // 必须为替代请求创建新的 ready 节点
+                ready = current.ready || replacesInFlightRequest
             )
         }
         requests[request.operationId] = entry

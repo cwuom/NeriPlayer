@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * 统一拥有持久下载引擎使用的传输槽位
  *
- * 普通请求使用先进先出的等待队列，用户手动重试可以优先使用唯一的临时溢出槽位。
+ * 普通请求使用先进先出的等待队列，用户手动重试可以优先使用唯一的临时溢出槽位
  * 取消和立即重排因此具有确定性，每个 permit 也始终只有一个 owner
  */
 internal class DownloadTransferPermitRegistry(

@@ -38,6 +38,22 @@ class DeferredDownloadScheduleQueueTest {
     }
 
     @Test
+    fun `replacement arriving while original is in flight becomes ready`() {
+        val queue = DeferredDownloadScheduleQueue()
+        val original = request("operation-in-flight", 1L, attemptId = 1L)
+        val replacement = original.copy(attemptId = 2L)
+
+        queue.enqueue(original)
+        assertEquals(original, queue.poll())
+        queue.enqueue(replacement)
+
+        queue.requeue(original)
+        queue.remove(original)
+        assertEquals(replacement, queue.poll())
+        assertNull(queue.poll())
+    }
+
+    @Test
     fun `removed request cannot be revived by a stale queue token`() {
         val queue = DeferredDownloadScheduleQueue()
         val removed = request("operation-removed", 1L)

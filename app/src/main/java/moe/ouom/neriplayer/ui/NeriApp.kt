@@ -3832,7 +3832,8 @@ private fun NeriAppContent(
                     requiredRoute?.let { route ->
                         navController.navigate(route) {
                             popUpTo(navController.graph.startDestinationId) {
-                                saveState = true
+                                inclusive = shouldApplyPersistedRoute
+                                saveState = !shouldApplyPersistedRoute
                             }
                             launchSingleTop = true
                             restoreState = true

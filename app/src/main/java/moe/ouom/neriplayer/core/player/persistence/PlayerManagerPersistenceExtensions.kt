@@ -2617,7 +2617,6 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
     triggerSync: Boolean,
     syncDownloadedMetadata: Boolean = true,
     fastLocalUsageSync: Boolean = false,
-    deferPersistence: Boolean = false,
     clearRestorableOverrides: RestorableMetadataClearPolicy =
         RestorableMetadataClearPolicy()
 ) {
@@ -2672,20 +2671,5 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
         )
         persistState()
     }
-    if (deferPersistence) {
-        ioScope.launch {
-            runSongMetadataMutation {
-                runCatching { persistMetadata() }
-                    .onFailure { error ->
-                        NPLogger.e(
-                            "PlayerManager",
-                            "后台同步歌曲元数据失败: ${error.message}",
-                            error
-                        )
-                    }
-            }
-        }
-    } else {
-        persistMetadata()
-    }
+    persistMetadata()
 }

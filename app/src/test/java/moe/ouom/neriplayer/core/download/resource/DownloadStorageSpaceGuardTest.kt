@@ -36,6 +36,45 @@ class DownloadStorageSpaceGuardTest {
     }
 
     @Test
+    fun `different operation directories share reservations on the same volume`() {
+        val firstRoot = temporaryRoot()
+        val secondRoot = temporaryRoot()
+        try {
+            val guard = DownloadStorageSpaceGuard(
+                minimumFreeBytes = 10L,
+                unknownReservationBytes = 5L,
+                usableSpaceOf = { 100L },
+                storageVolumeKeyOf = { "shared-volume" }
+            )
+            val first = guard.reserve(
+                root = firstRoot,
+                ownerKey = "first",
+                expectedAdditionalBytes = 60L
+            )
+
+            assertThrows(DownloadStorageSpaceException::class.java) {
+                guard.reserve(
+                    root = secondRoot,
+                    ownerKey = "second",
+                    expectedAdditionalBytes = 40L
+                )
+            }
+            assertEquals(60L, guard.snapshot(secondRoot).reservedBytes)
+
+            first.close()
+            val second = guard.reserve(
+                root = secondRoot,
+                ownerKey = "second",
+                expectedAdditionalBytes = 40L
+            )
+            second.close()
+        } finally {
+            firstRoot.deleteRecursively()
+            secondRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `unknown output extends reservation before writing`() {
         val root = temporaryRoot()
         try {

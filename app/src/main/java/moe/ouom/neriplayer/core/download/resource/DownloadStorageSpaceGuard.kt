@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.resource
 
 import android.os.StatFs
+import android.system.Os
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -20,6 +21,9 @@ internal class DownloadStorageSpaceGuard(
     private val unknownReservationBytes: Long = DEFAULT_UNKNOWN_RESERVATION_BYTES,
     private val usableSpaceOf: (File) -> Long = { root ->
         readDefaultUsableSpace(root)
+    },
+    private val storageVolumeKeyOf: (File) -> String = { root ->
+        readDefaultStorageVolumeKey(root)
     }
 ) {
     init {
@@ -44,6 +48,7 @@ internal class DownloadStorageSpaceGuard(
 
     class Lease internal constructor(
         private val guard: DownloadStorageSpaceGuard,
+        internal val storageVolumeKey: String,
         internal val rootPath: String,
         internal val ownerKey: String,
         initialReservedBytes: Long
@@ -77,14 +82,14 @@ internal class DownloadStorageSpaceGuard(
         }
     }
 
-    private data class RootState(
-        val root: File,
+    private data class VolumeState(
+        var probeRoot: File,
         var reservedBytes: Long = 0L,
         val owners: MutableMap<String, Lease> = linkedMapOf()
     )
 
     private val stateLock = Any()
-    private val statesByRoot = linkedMapOf<String, RootState>()
+    private val statesByVolume = linkedMapOf<String, VolumeState>()
 
     /**
      * 用空间租约包装输出流。关闭输出流时会自动释放租约，调用方无需额外记账
@@ -118,12 +123,14 @@ internal class DownloadStorageSpaceGuard(
         require(normalizedOwner.isNotEmpty()) { "ownerKey must not be blank" }
         val existingRoot = resolveExistingRoot(root)
         val rootPath = existingRoot.path
+        val storageVolumeKey = resolveStorageVolumeKey(existingRoot)
         val initialBytes = expectedAdditionalBytes
             ?.coerceAtLeast(0L)
             ?: unknownReservationBytes
         synchronized(stateLock) {
-            val existingState = statesByRoot[rootPath]
-            val state = existingState ?: RootState(root = existingRoot)
+            val existingState = statesByVolume[storageVolumeKey]
+            val state = existingState ?: VolumeState(probeRoot = existingRoot)
+            state.probeRoot = existingRoot
             check(normalizedOwner !in state.owners) {
                 "space reservation owner already exists: $normalizedOwner"
             }
@@ -133,12 +140,13 @@ internal class DownloadStorageSpaceGuard(
             )
             val lease = Lease(
                 guard = this,
+                storageVolumeKey = storageVolumeKey,
                 rootPath = rootPath,
                 ownerKey = normalizedOwner,
                 initialReservedBytes = initialBytes
             )
             if (existingState == null) {
-                statesByRoot[rootPath] = state
+                statesByVolume[storageVolumeKey] = state
             }
             state.owners[normalizedOwner] = lease
             state.reservedBytes = safeAdd(state.reservedBytes, initialBytes)
@@ -149,8 +157,9 @@ internal class DownloadStorageSpaceGuard(
     fun snapshot(root: File): Snapshot {
         val existingRoot = resolveExistingRoot(root)
         val rootPath = existingRoot.path
+        val storageVolumeKey = resolveStorageVolumeKey(existingRoot)
         synchronized(stateLock) {
-            val state = statesByRoot[rootPath]
+            val state = statesByVolume[storageVolumeKey]
             val reservedBytes = state?.reservedBytes ?: 0L
             val probe = readUsableSpace(existingRoot)
             return Snapshot(
@@ -168,7 +177,7 @@ internal class DownloadStorageSpaceGuard(
         totalAdditionalBytes: Long
     ) {
         synchronized(stateLock) {
-            val state = statesByRoot[lease.rootPath]
+            val state = statesByVolume[lease.storageVolumeKey]
                 ?: throw DownloadStorageSpaceException(
                     rootPath = lease.rootPath,
                     usableBytes = 0L,
@@ -195,19 +204,19 @@ internal class DownloadStorageSpaceGuard(
 
     private fun release(lease: Lease) {
         synchronized(stateLock) {
-            val state = statesByRoot[lease.rootPath] ?: return
+            val state = statesByVolume[lease.storageVolumeKey] ?: return
             val removed = state.owners.remove(lease.ownerKey) ?: return
             state.reservedBytes = (state.reservedBytes - removed.reservedBytes())
                 .coerceAtLeast(0L)
             if (state.owners.isEmpty()) {
-                statesByRoot.remove(lease.rootPath)
+                statesByVolume.remove(lease.storageVolumeKey)
             }
         }
     }
 
     private fun consume(lease: Lease, writtenBytes: Long) {
         synchronized(stateLock) {
-            val state = statesByRoot[lease.rootPath] ?: return
+            val state = statesByVolume[lease.storageVolumeKey] ?: return
             if (state.owners[lease.ownerKey] !== lease) return
             val currentReservedBytes = lease.reservedBytes()
             val consumedBytes = writtenBytes.coerceAtMost(currentReservedBytes)
@@ -218,14 +227,14 @@ internal class DownloadStorageSpaceGuard(
     }
 
     private fun ensureAvailableLocked(
-        state: RootState,
+        state: VolumeState,
         additionalBytes: Long,
         ownerReservedBytes: Long = 0L
     ) {
-        val probe = readUsableSpace(state.root)
+        val probe = readUsableSpace(state.probeRoot)
         if (!probe.known) {
             throw DownloadStorageSpaceException(
-                rootPath = state.root.path,
+                rootPath = state.probeRoot.path,
                 usableBytes = 0L,
                 reservedBytes = state.reservedBytes,
                 requestedBytes = additionalBytes,
@@ -239,7 +248,7 @@ internal class DownloadStorageSpaceGuard(
         val requiredBytes = safeAdd(requiredReservedBytes, minimumFreeBytes)
         if (usableBytes < requiredBytes) {
             throw DownloadStorageSpaceException(
-                rootPath = state.root.path,
+                rootPath = state.probeRoot.path,
                 usableBytes = usableBytes,
                 reservedBytes = state.reservedBytes,
                 requestedBytes = additionalBytes,
@@ -272,6 +281,14 @@ internal class DownloadStorageSpaceGuard(
             .getOrElse { candidate.absoluteFile }
     }
 
+    private fun resolveStorageVolumeKey(root: File): String {
+        return runCatching { storageVolumeKeyOf(root) }
+            .getOrNull()
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?: "path:${root.path}"
+    }
+
     private fun safeAdd(first: Long, second: Long): Long {
         if (second <= 0L) return first.coerceAtLeast(0L)
         return if (first > Long.MAX_VALUE - second) {
@@ -296,6 +313,13 @@ private fun readDefaultUsableSpace(root: File): Long {
     return statFsBytes
         ?.takeIf { bytes -> bytes > 0L }
         ?: Files.getFileStore(root.toPath()).usableSpace
+}
+
+private fun readDefaultStorageVolumeKey(root: File): String {
+    val deviceId = runCatching { Os.stat(root.path).st_dev }.getOrNull()
+    if (deviceId != null) return "device:$deviceId"
+    val fileStore = Files.getFileStore(root.toPath())
+    return "store:${fileStore.name()}:${fileStore.type()}:$fileStore"
 }
 
 internal class DownloadSpaceGuardedOutputStream(
@@ -334,14 +358,6 @@ internal class DownloadSpaceGuardedOutputStream(
             lease.close()
         }
         closeError?.let { error -> throw error }
-    }
-
-    private fun safeAdd(first: Long, second: Long): Long {
-        return if (first > Long.MAX_VALUE - second) {
-            Long.MAX_VALUE
-        } else {
-            first + second
-        }
     }
 }
 
