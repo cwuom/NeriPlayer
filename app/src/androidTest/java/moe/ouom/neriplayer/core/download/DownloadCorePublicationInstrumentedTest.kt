@@ -74,6 +74,37 @@ class DownloadCorePublicationInstrumentedTest {
         assertSafProviderCollisionRecovery(autoRenameCollision = false)
     }
 
+    @Test
+    fun privatePendingMetadataCleanupWaitsForAudioPublication() = runBlocking {
+        assertPendingMetadataCleanupWaitsForAudioPublication(saf = false)
+    }
+
+    @Test
+    fun safPendingMetadataCleanupWaitsForAudioPublication() = runBlocking {
+        assertPendingMetadataCleanupWaitsForAudioPublication(saf = true)
+    }
+
+    private suspend fun assertPendingMetadataCleanupWaitsForAudioPublication(saf: Boolean) {
+        withStorage(saf) {
+            val pending = commit()
+
+            assertFalse(
+                "core commit cleanup must retain the pending publication identity",
+                ManagedDownloadStorage.deletePendingAudioMetadata(context, fileName)
+            )
+            assertEquals(operationId, readPendingMetadata(fileName).getString("operationId"))
+
+            prepareTaggedAudio(pending)
+            val published = requireNotNull(
+                ManagedDownloadStorage.promoteFinalizedPendingAudio(context, pending)
+            ).audio
+
+            assertFalse(published.isPendingAudioWrite)
+            assertTrue(ManagedDownloadStorage.deletePendingAudioMetadata(context, fileName))
+            assertFalse(hasPendingMetadata(fileName))
+        }
+    }
+
     private suspend fun assertSafProviderCollisionRecovery(autoRenameCollision: Boolean) {
         withStorage(true) {
             val pending = commit()
@@ -1192,6 +1223,14 @@ class DownloadCorePublicationInstrumentedTest {
                 val root = requireNotNull(DocumentFile.fromTreeUri(context, uri))
                 requireNotNull(requireNotNull(root.findFile(".tmp")).findFile(name)).uri.toString()
             } ?: File(privateRoot(), ".tmp/$name").absolutePath
+        }
+
+        fun hasPendingMetadata(audioName: String): Boolean {
+            val name = "$audioName.npmeta.pending.json"
+            return treeUri?.let { uri ->
+                val root = requireNotNull(DocumentFile.fromTreeUri(context, uri))
+                root.findFile(".tmp")?.findFile(name) != null
+            } ?: File(privateRoot(), ".tmp/$name").isFile
         }
 
         fun finalNames(): List<String> = treeUri?.let { uri ->

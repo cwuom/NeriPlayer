@@ -203,27 +203,6 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
         if (!shouldPublishCoreCommit(coreMetadataReady, coreMetadataWritten)) {
             return@withContext false
         }
-        val pendingMetadataDeleted = runCatching {
-            ManagedDownloadStorage.deletePendingAudioMetadata(
-                context = context,
-                audioName = storedAudio.logicalName
-            )
-        }.getOrElse { error ->
-            NPLogger.w(
-                TAG,
-                "core metadata 已写入但 pending 清理失败，保留可恢复残留: " +
-                    "audio=${storedAudio.logicalName}, error=${error.message}",
-                error
-            )
-            false
-        }
-        if (!pendingMetadataDeleted) {
-            NPLogger.w(
-                TAG,
-                "core metadata 已写入但 pending 清理未确认，最终发布后将重试: " +
-                    "audio=${storedAudio.logicalName}"
-            )
-        }
         val journalCommitted = normalizedOperationId?.let { id ->
             if (DownloadExecutionRoomStore.markCoreCommitted(context, id)) {
                 true

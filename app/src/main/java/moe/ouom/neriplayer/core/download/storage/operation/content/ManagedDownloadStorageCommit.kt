@@ -158,6 +158,14 @@ internal fun ManagedDownloadStorage.deletePendingAudioMetadataBlocking(
     )
     if (!temporary.isComplete) return false
     val entries = rootEntries + temporary.entries
+    if (entries.any { entry ->
+            !entry.isDirectory &&
+                entry.isPendingAudioWrite &&
+                entry.logicalName == audioName
+        }
+    ) {
+        return false
+    }
     val pendingNames = pendingMetadataEntryNames(
         audioName = audioName,
         candidateNames = entries.filterNot(StoredEntry::isDirectory).map(StoredEntry::name)

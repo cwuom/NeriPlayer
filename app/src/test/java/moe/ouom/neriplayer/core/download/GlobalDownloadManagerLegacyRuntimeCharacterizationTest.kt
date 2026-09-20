@@ -206,6 +206,10 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
             "core commit must not keep the network host waiting for asset enrichment",
             body.contains("enqueueAndAwait") || body.contains(".join()")
         )
+        assertFalse(
+            "core commit must retain pending metadata until final audio publication",
+            body.contains("deletePendingAudioMetadata")
+        )
         assertTrue(
             "a failed core journal commit must stop final completion",
             journalFailureIndex > coreCommittedIndex &&
