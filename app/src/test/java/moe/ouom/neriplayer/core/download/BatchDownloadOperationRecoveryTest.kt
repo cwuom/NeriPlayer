@@ -771,6 +771,38 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
+    fun `batch wakes the shared pump after the first durable page`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val batchBody = methodBody(source, "startBatchDownload")
+        val stagingIndex = batchBody.indexOf(
+            "val stagedQueue = stageAndPromotePendingDownloadQueue("
+        )
+        val callbackIndex = batchBody.indexOf(
+            "onPageReady = { _, page ->",
+            stagingIndex
+        )
+        val pumpIndex = batchBody.indexOf(
+            "ForegroundDownloadWorker.schedulePump(appContext)",
+            callbackIndex
+        )
+        val fullQueueReadIndex = batchBody.indexOf(
+            "var operationHeaders = DownloadExecutionRoomStore.readOperationHeaders(",
+            stagingIndex
+        )
+
+        assertTrue(stagingIndex >= 0)
+        assertTrue("the first durable page must have an active callback", callbackIndex > stagingIndex)
+        assertTrue("the shared pump must be scheduled from that callback", pumpIndex > callbackIndex)
+        assertTrue("the first-page handoff must happen before reading the full staged queue",
+            pumpIndex < fullQueueReadIndex)
+        assertTrue(batchBody.contains("canStartFirstDurablePageImmediately"))
+        assertTrue(batchBody.contains("cleanupBeforeStart &&"))
+        assertTrue(batchBody.contains("!shouldDeferQueuedDownloadStartForNetwork("))
+    }
+
+    @Test
     fun `batch preflight settles finalized audio before staging and retains waiting operations`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

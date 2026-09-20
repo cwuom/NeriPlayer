@@ -718,6 +718,7 @@ internal object ManagedDownloadStorage {
         val verifiedAudioDurationMs: Long? = null,
         val downloadTimeMs: Long? = null,
         val downloadFinalized: Boolean? = null,
+        val audioPublicationPending: Boolean = false,
         val metadataEmbeddingState: DownloadedAudioEmbeddingState? = null,
         val createdAtMs: Long? = null,
         val createdAtSource: String? = null,

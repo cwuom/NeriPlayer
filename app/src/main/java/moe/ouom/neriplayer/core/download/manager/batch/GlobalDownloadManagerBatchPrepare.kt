@@ -161,7 +161,7 @@ internal fun GlobalDownloadManager.startBatchDownload(
             )
         val batchCompletionCatalogIndex = loadBatchCompletionCatalogIndex(appContext)
         val preflightProbe = BatchDownloadPreflightProbe { reference ->
-            ManagedDownloadReferenceLookup.inspect(appContext, reference)
+            ManagedDownloadReferenceLookup.inspectWithSize(appContext, reference)
         }
         var initiallyCompletedSongKeys = findStrictlyCompletedBatchSongKeys(
             songs = requestedSongs,
@@ -546,14 +546,33 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 clearBatchDownloadPresentation(batchPresentationId)
                 return@admission
             }
+            val canStartFirstDurablePageImmediately = cleanupBeforeStart &&
+                !shouldDeferQueuedDownloadStartForNetwork(
+                    networkType = appContext.currentDownloadNetworkTypeOrNull(),
+                    mobileDataOverrideAllowed = mobileDataDownloadOverrideAllowed,
+                    deferForNetworkPolicy = deferForNetworkPolicy
+                )
+            var firstDurablePagePumpScheduled = false
             val stagedQueue = stageAndPromotePendingDownloadQueue(
                 context = appContext,
                 songs = songsToStage,
                 userInitiated = userInitiated,
                 batchIdentity = durableBatchIdentity,
-                // 先完成首窗 task/attempt 与 presentation 的绑定，再唤醒共享泵
-                // 避免 page0 刚落库就被 Worker 抢跑，导致终态回调缺 operationId
-                onPageReady = { _, _ -> }
+                // 首页 operation 已和持久批次绑定，立即唤醒共享泵
+                // 后续页继续按原队列顺序落库，不再阻塞第一首开始传输
+                onPageReady = { _, page ->
+                    if (
+                        !firstDurablePagePumpScheduled &&
+                            canStartFirstDurablePageImmediately &&
+                            page.operationIds.isNotEmpty()
+                    ) {
+                        firstDurablePagePumpScheduled =
+                            ForegroundDownloadWorker.schedulePump(appContext)
+                        if (firstDurablePagePumpScheduled) {
+                            logStartupPhase("first_durable_page_ready", page.operationIds.size)
+                        }
+                    }
+                }
             )
             if (stagedQueue.skippedSongKeys.isNotEmpty()) {
                 NPLogger.w(

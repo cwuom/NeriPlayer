@@ -37,6 +37,7 @@ internal fun isFinalizedDownloadedAudioEntry(
 ): Boolean {
     return rootEntriesComplete &&
         !isPendingAudioWrite &&
+        metadata?.audioPublicationPending != true &&
         isFinalizedDownloadedMetadata(metadata)
 }
 

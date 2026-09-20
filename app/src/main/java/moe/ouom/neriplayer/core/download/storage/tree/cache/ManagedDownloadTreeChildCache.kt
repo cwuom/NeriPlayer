@@ -50,6 +50,19 @@ internal class ManagedDownloadTreeChildCache {
             ?.values
     }
 
+    fun cachedChild(
+        cacheKey: String,
+        childName: String,
+        nowMs: Long,
+        maxCacheAgeMs: Long
+    ): QueriedTreeChild? {
+        if (maxCacheAgeMs <= 0L || cacheKey in oversizedParents) return null
+        val cached = childrenByParent[cacheKey]
+            ?.takeIf { it.isComplete && nowMs - it.refreshedAtMs <= maxCacheAgeMs }
+            ?: return null
+        return cached.childrenByName[childName]
+    }
+
     fun peekChildren(cacheKey: String): Collection<QueriedTreeChild>? {
         if (cacheKey in oversizedParents) return null
         return childrenByParent[cacheKey]
@@ -61,6 +74,28 @@ internal class ManagedDownloadTreeChildCache {
     fun peekAllChildren(cacheKey: String): Collection<QueriedTreeChild>? {
         if (cacheKey in oversizedParents) return null
         return childrenByParent[cacheKey]?.childrenByName?.values
+    }
+
+    fun peekChild(
+        cacheKey: String,
+        childName: String,
+        includeIncomplete: Boolean
+    ): QueriedTreeChild? {
+        if (cacheKey in oversizedParents) return null
+        val cached = childrenByParent[cacheKey] ?: return null
+        if (!includeIncomplete && !cached.isComplete) return null
+        return cached.childrenByName[childName]
+    }
+
+    fun peekChildByReference(
+        cacheKey: String,
+        reference: String,
+        includeIncomplete: Boolean
+    ): QueriedTreeChild? {
+        if (cacheKey in oversizedParents) return null
+        val cached = childrenByParent[cacheKey] ?: return null
+        if (!includeIncomplete && !cached.isComplete) return null
+        return cached.childrenByReference[reference]
     }
 
     fun rememberChildren(
@@ -254,16 +289,16 @@ internal class ManagedDownloadTreeChildCache {
                 cachedChildrenCount.incrementAndGet()
                 return
             }
-            val staleNames = cached.childrenByName.values
-                .filter { existing ->
-                    existing.documentUri.toString() == child.documentUri.toString() &&
-                        existing.name != child.name
-                }
+            val childReference = child.documentUri.toString()
+            val existingByReference = cached.childrenByReference[childReference]
+            val existingByName = cached.childrenByName[child.name]
+            val replacedReferences = listOfNotNull(existingByReference, existingByName)
+                .mapTo(linkedSetOf()) { existing -> existing.documentUri.toString() }
+            val staleNames = listOfNotNull(existingByReference)
                 .map(QueriedTreeChild::name)
-            val currentNamePresent = child.name in cached.childrenByName
-            val staleChildCount = staleNames.count { it != child.name }
-            val nextChildCount = cached.childrenByName.size - staleChildCount +
-                if (currentNamePresent) 0 else 1
+                .filter { staleName -> staleName != child.name }
+            val previousChildCount = cached.childrenByName.size
+            val nextChildCount = previousChildCount - replacedReferences.size + 1
             val names = namesByParent[cacheKey]
             val existingNames = names?.names
             val staleNameCount = existingNames?.count { it in staleNames } ?: 0
@@ -285,7 +320,12 @@ internal class ManagedDownloadTreeChildCache {
                 markOversizedParentLocked(cacheKey)
                 return
             }
-            staleNames.forEach(cached.childrenByName::remove)
+            existingByReference?.let { existing ->
+                cached.childrenByName.remove(existing.name, existing)
+            }
+            existingByName?.let { existing ->
+                cached.childrenByReference.remove(existing.documentUri.toString(), existing)
+            }
             names?.let {
                 staleNames.forEach(names.names::remove)
                 if (child.name !in names.names &&
@@ -298,8 +338,8 @@ internal class ManagedDownloadTreeChildCache {
                 names.names += child.name
             }
             cached.childrenByName[child.name] = child
-            val addedCount = if (currentNamePresent) 0 else 1
-            cachedChildrenCount.addAndGet(addedCount - staleNames.size)
+            cached.childrenByReference[childReference] = child
+            cachedChildrenCount.addAndGet(nextChildCount - previousChildCount)
             cached.refreshedAtMs = refreshedAtMs
             return
         }
@@ -313,7 +353,9 @@ internal class ManagedDownloadTreeChildCache {
                 cached.refreshedAtMs = refreshedAtMs
             }
             childrenByParent[cacheKey]?.let { entries ->
-                if (entries.childrenByName.remove(childName) != null) {
+                val removed = entries.childrenByName.remove(childName)
+                if (removed != null) {
+                    entries.childrenByReference.remove(removed.documentUri.toString(), removed)
                     cachedChildrenCount.decrementAndGet()
                 }
                 entries.refreshedAtMs = refreshedAtMs
@@ -328,9 +370,10 @@ internal class ManagedDownloadTreeChildCache {
         if (references.isEmpty()) return
         val forgotten = synchronized(mutationLock) {
             childrenByParent.flatMap { (cacheKey, cachedChildren) ->
-                cachedChildren.childrenByName.values
-                    .filter { child -> child.documentUri.toString() in references }
-                    .map { child -> cacheKey to child.name }
+                references.mapNotNull { reference ->
+                    cachedChildren.childrenByReference[reference]
+                        ?.let { child -> cacheKey to child.name }
+                }
             }
         }
         forgotten.forEach { (cacheKey, childName) ->

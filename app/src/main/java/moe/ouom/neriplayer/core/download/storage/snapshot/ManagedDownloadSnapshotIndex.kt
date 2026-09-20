@@ -335,14 +335,69 @@ internal object ManagedDownloadSnapshotIndex {
                     remove(targetAudioName)
                 }
             }
+        val metadataByAudioName = if (isPendingMetadataWrite && hasCanonicalMetadata) {
+            snapshot.metadataByAudioName
+        } else {
+            snapshot.metadataByAudioName.toMutableMap().apply {
+                put(targetAudioName, metadata)
+            }
+        }
+        val canonicalTargetAudioName = ManagedDownloadTreeNaming.canonicalLookupName(targetAudioName)
+        val hasExactPendingAudio = snapshot.pendingAudioEntries.any { pending ->
+            pending.logicalName == targetAudioName
+        }
+        val existingIndexedMetadata = snapshot.metadataByAudioName[targetAudioName]
+            ?: if (hasExactPendingAudio) {
+                null
+            } else {
+                snapshot.metadataByCanonicalAudioName[canonicalTargetAudioName]
+            }
+        val effectiveMetadataUnchanged = isPendingMetadataWrite && hasCanonicalMetadata ||
+            existingIndexedMetadata?.hasSameAudioIndexIdentity(metadata) == true
+        val matchingAudioExists = snapshot.audioEntries.any { audio ->
+            ManagedDownloadTreeNaming.canonicalLookupName(audio.name) == canonicalTargetAudioName ||
+                ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName) == canonicalTargetAudioName
+        } || metadata.mediaUri
+            ?.takeIf(String::isNotBlank)
+            ?.let(snapshot.audioEntriesByLookupKey::containsKey) == true
+        if (effectiveMetadataUnchanged || existingIndexedMetadata == null && !matchingAudioExists) {
+            val metadataEntriesByAudioName = if (isPendingMetadataWrite && hasCanonicalMetadata) {
+                snapshot.metadataEntriesByAudioName
+            } else {
+                snapshot.metadataEntriesByAudioName.toMutableMap().apply {
+                    entries.removeAll { (_, entry) ->
+                        ManagedDownloadTreeNaming.metadataAudioName(entry.name) == targetAudioName
+                    }
+                    put(targetAudioName, metadataEntry)
+                }
+            }
+            val retainedMetadataReferences = metadataEntriesByAudioName.values
+                .mapTo(hashSetOf(), ManagedDownloadStorage.StoredEntry::reference)
+            val removedMetadataReferences = snapshot.metadataEntriesByAudioName.values
+                .asSequence()
+                .filter { entry -> entry.reference !in retainedMetadataReferences }
+                .mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::reference)
+            val knownReferences = updateKnownReferences(
+                snapshot = snapshot,
+                removedReferences = removedMetadataReferences,
+                addedReferences = if (metadataEntry in metadataEntriesByAudioName.values) {
+                    setOf(metadataEntry.reference)
+                } else {
+                    emptySet()
+                },
+                metadataEntriesByAudioName = metadataEntriesByAudioName
+            )
+            return snapshot.copy(
+                metadataEntriesByAudioName = metadataEntriesByAudioName,
+                metadataByAudioName = metadataByAudioName,
+                pendingMetadataByAudioName = pendingMetadataByAudioName,
+                knownReferences = knownReferences
+            )
+        }
         return compose(
             audioEntries = snapshot.audioEntries,
             metadataEntries = metadataEntries,
-            metadataByAudioName = snapshot.metadataByAudioName.toMutableMap().apply {
-                if (!isPendingMetadataWrite || !hasCanonicalMetadata) {
-                    put(targetAudioName, metadata)
-                }
-            },
+            metadataByAudioName = metadataByAudioName,
             coverEntries = snapshot.coverEntriesByName.values.toList(),
             lyricEntries = snapshot.lyricEntriesByName.values.toList(),
             rootEntriesComplete = snapshot.rootEntriesComplete,
@@ -358,53 +413,45 @@ internal object ManagedDownloadSnapshotIndex {
         bucket: ManagedDownloadStorage.SnapshotEntryBucket
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
         return when (bucket) {
-            ManagedDownloadStorage.SnapshotEntryBucket.AUDIO -> compose(
-                audioEntries = if (storedEntry.isPendingAudioWrite) {
-                    snapshot.audioEntries
-                } else {
-                    replaceStoredEntry(snapshot.audioEntries, storedEntry)
-                },
-                metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
-                metadataByAudioName = snapshot.metadataByAudioName,
-                coverEntries = snapshot.coverEntriesByName.values.toList(),
-                lyricEntries = snapshot.lyricEntriesByName.values.toList(),
-                rootEntriesComplete = snapshot.rootEntriesComplete,
-                sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
-                pendingAudioEntries = if (storedEntry.isPendingAudioWrite) {
-                    replaceStoredEntry(snapshot.pendingAudioEntries, storedEntry)
-                } else {
-                    snapshot.pendingAudioEntries.filterNot { pending ->
-                        pending.logicalName == storedEntry.name ||
-                        pending.reference == storedEntry.reference
-                    }
-                },
-                pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
-            )
+            ManagedDownloadStorage.SnapshotEntryBucket.AUDIO ->
+                applyAudioEntryWrite(snapshot, storedEntry)
 
-            ManagedDownloadStorage.SnapshotEntryBucket.COVER -> compose(
-                audioEntries = snapshot.audioEntries,
-                metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
-                metadataByAudioName = snapshot.metadataByAudioName,
-                coverEntries = replaceStoredEntry(snapshot.coverEntriesByName.values, storedEntry),
-                lyricEntries = snapshot.lyricEntriesByName.values.toList(),
-                rootEntriesComplete = snapshot.rootEntriesComplete,
-                sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
-                pendingAudioEntries = snapshot.pendingAudioEntries,
-                pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
-            )
-
-            ManagedDownloadStorage.SnapshotEntryBucket.LYRIC -> compose(
-                audioEntries = snapshot.audioEntries,
-                metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
-                metadataByAudioName = snapshot.metadataByAudioName,
-                coverEntries = snapshot.coverEntriesByName.values.toList(),
-                lyricEntries = replaceStoredEntry(snapshot.lyricEntriesByName.values, storedEntry),
-                rootEntriesComplete = snapshot.rootEntriesComplete,
-                sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
-                pendingAudioEntries = snapshot.pendingAudioEntries,
-                pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
-            )
+            ManagedDownloadStorage.SnapshotEntryBucket.COVER,
+            ManagedDownloadStorage.SnapshotEntryBucket.LYRIC ->
+                applySidecarWrite(snapshot, storedEntry, bucket)
         }
+    }
+
+    private fun applySidecarWrite(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        entry: ManagedDownloadStorage.StoredEntry,
+        bucket: ManagedDownloadStorage.SnapshotEntryBucket
+    ): ManagedDownloadStorage.DownloadLibrarySnapshot {
+        val covers = bucket == ManagedDownloadStorage.SnapshotEntryBucket.COVER
+        val entries = if (covers) snapshot.coverEntriesByName else snapshot.lyricEntriesByName
+        val replaced = entries.values.filter { it.name == entry.name || it.reference == entry.reference }
+        val updatedEntries = entries.toMutableMap().apply {
+            replaced.forEach { remove(it.name) }
+            put(entry.name, entry)
+        }
+        val removedReferences = replaced.mapTo(hashSetOf()) { it.reference }.apply {
+            remove(entry.reference)
+        }
+        // 替换旧引用时保留其它桶仍在使用的引用，新建侧载不需要遍历音频或元信息
+        if (removedReferences.isNotEmpty()) {
+            val otherSidecars = if (covers) snapshot.lyricEntriesByName else snapshot.coverEntriesByName
+            removedReferences.removeAll { reference ->
+                reference in snapshot.audioEntriesByLookupKey ||
+                    snapshot.pendingAudioEntries.any { it.reference == reference } ||
+                    snapshot.metadataEntriesByAudioName.values.any { it.reference == reference } ||
+                    otherSidecars.values.any { it.reference == reference }
+            }
+        }
+        return snapshot.copy(
+            coverEntriesByName = if (covers) updatedEntries else snapshot.coverEntriesByName,
+            lyricEntriesByName = if (covers) snapshot.lyricEntriesByName else updatedEntries,
+            knownReferences = (snapshot.knownReferences - removedReferences) + entry.reference
+        )
     }
 
     fun applySidecarRefresh(
@@ -439,13 +486,30 @@ internal object ManagedDownloadSnapshotIndex {
         if (references.isEmpty()) {
             return snapshot
         }
+        fun ManagedDownloadStorage.StoredEntry.matchesDeletedReference(): Boolean {
+            return reference in references || mediaUri in references || localFilePath in references
+        }
+        val affectsIndexedEntry = snapshot.audioEntries.any {
+            it.matchesDeletedReference()
+        } || snapshot.pendingAudioEntries.any {
+            it.matchesDeletedReference()
+        } || snapshot.metadataEntriesByAudioName.values.any { it.reference in references } ||
+            snapshot.coverEntriesByName.values.any { it.reference in references } ||
+            snapshot.lyricEntriesByName.values.any { it.reference in references }
+        if (!affectsIndexedEntry) {
+            return snapshot.copy(
+                knownReferences = snapshot.knownReferences - references
+            )
+        }
         val deletedMetadataAudioNames = snapshot.metadataEntriesByAudioName.values
             .filter { entry -> entry.reference in references }
             .mapNotNullTo(linkedSetOf()) { entry ->
                 ManagedDownloadTreeNaming.metadataAudioName(entry.name)
             }
         return compose(
-            audioEntries = snapshot.audioEntries.filterNot { entry -> entry.reference in references },
+            audioEntries = snapshot.audioEntries.filterNot {
+                it.matchesDeletedReference()
+            },
             metadataEntries = snapshot.metadataEntriesByAudioName.values
                 .filterNot { entry -> entry.reference in references },
             metadataByAudioName = snapshot.metadataByAudioName.filterKeys { audioName ->
@@ -457,8 +521,9 @@ internal object ManagedDownloadSnapshotIndex {
                 .filterNot { entry -> entry.reference in references },
             rootEntriesComplete = snapshot.rootEntriesComplete,
             sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
-            pendingAudioEntries = snapshot.pendingAudioEntries
-                .filterNot { entry -> entry.reference in references },
+            pendingAudioEntries = snapshot.pendingAudioEntries.filterNot {
+                it.matchesDeletedReference()
+            },
             pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
         )
     }
@@ -471,6 +536,157 @@ internal object ManagedDownloadSnapshotIndex {
             .filterNot { entry ->
                 entry.reference == storedEntry.reference || entry.name == storedEntry.name
             } + storedEntry
+    }
+
+    private fun applyAudioEntryWrite(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        storedEntry: ManagedDownloadStorage.StoredEntry
+    ): ManagedDownloadStorage.DownloadLibrarySnapshot {
+        if (storedEntry.isPendingAudioWrite) {
+            val replaced = snapshot.pendingAudioEntries.filter { pending ->
+                pending.reference == storedEntry.reference || pending.name == storedEntry.name
+            }
+            val pendingAudioEntries = replaceStoredEntry(snapshot.pendingAudioEntries, storedEntry)
+            return snapshot.copy(
+                pendingAudioEntries = pendingAudioEntries,
+                knownReferences = updateKnownReferences(
+                    snapshot = snapshot,
+                    removedReferences = replaced.mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::reference),
+                    addedReferences = setOf(storedEntry.reference),
+                    pendingAudioEntries = pendingAudioEntries
+                )
+            )
+        }
+
+        val existing = snapshot.audioEntriesByLookupKey[storedEntry.reference]
+            ?: snapshot.audioEntriesByLookupKey[storedEntry.mediaUri]
+            ?: storedEntry.localFilePath?.let(snapshot.audioEntriesByLookupKey::get)
+            ?: snapshot.audioEntries.firstOrNull { audio ->
+                audio.name == storedEntry.name || audio.logicalName == storedEntry.logicalName
+            }
+        if (existing != null) {
+            return compose(
+                audioEntries = replaceStoredEntry(snapshot.audioEntries, storedEntry),
+                metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
+                metadataByAudioName = snapshot.metadataByAudioName,
+                coverEntries = snapshot.coverEntriesByName.values.toList(),
+                lyricEntries = snapshot.lyricEntriesByName.values.toList(),
+                rootEntriesComplete = snapshot.rootEntriesComplete,
+                sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
+                pendingAudioEntries = snapshot.pendingAudioEntries.filterNot { pending ->
+                    pending.logicalName == storedEntry.name || pending.reference == storedEntry.reference
+                },
+                pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
+            )
+        }
+
+        val removedPending = snapshot.pendingAudioEntries.filter { pending ->
+            pending.logicalName == storedEntry.name || pending.reference == storedEntry.reference
+        }
+        val pendingAudioEntries = snapshot.pendingAudioEntries - removedPending.toSet()
+        val pendingNames = pendingAudioEntries.mapTo(hashSetOf()) { pending ->
+            ManagedDownloadTreeNaming.canonicalLookupName(pending.logicalName)
+        }
+        val pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName.filterKeys { audioName ->
+            ManagedDownloadTreeNaming.canonicalLookupName(audioName) in pendingNames
+        }
+        val metadata = snapshot.metadataByAudioName[storedEntry.name]
+            ?: snapshot.metadataByAudioName[storedEntry.logicalName]
+            ?: snapshot.metadataByCanonicalAudioName[
+                ManagedDownloadTreeNaming.canonicalLookupName(storedEntry.name)
+            ]
+        val audioEntriesByLookupKey = snapshot.audioEntriesByLookupKey.toMutableMap().apply {
+            put(storedEntry.reference, storedEntry)
+            put(storedEntry.mediaUri, storedEntry)
+            storedEntry.localFilePath?.let { put(it, storedEntry) }
+        }
+        val audioEntriesWithoutMetadata = if (metadata == null) {
+            snapshot.audioEntriesWithoutMetadata + storedEntry
+        } else {
+            snapshot.audioEntriesWithoutMetadata
+        }
+        return snapshot.copy(
+            audioEntries = snapshot.audioEntries + storedEntry,
+            audioEntriesByLookupKey = audioEntriesByLookupKey,
+            audioEntriesWithoutMetadata = audioEntriesWithoutMetadata,
+            audioEntriesByStableKey = addAudioIndexEntry(
+                snapshot.audioEntriesByStableKey,
+                metadata?.stableKey,
+                storedEntry
+            ),
+            audioEntriesBySongId = addAudioIndexEntry(
+                snapshot.audioEntriesBySongId,
+                metadata?.songId?.takeIf { it > 0L },
+                storedEntry
+            ),
+            audioEntriesByMediaUri = addAudioIndexEntry(
+                snapshot.audioEntriesByMediaUri,
+                metadata?.mediaUri?.takeIf(String::isNotBlank),
+                storedEntry
+            ),
+            audioEntriesByRemoteTrackKey = addAudioIndexEntry(
+                snapshot.audioEntriesByRemoteTrackKey,
+                metadata?.let {
+                    buildRemoteTrackKey(it.channelId, it.audioId, it.subAudioId)
+                },
+                storedEntry
+            ),
+            pendingAudioEntries = pendingAudioEntries,
+            pendingMetadataByAudioName = pendingMetadataByAudioName,
+            knownReferences = updateKnownReferences(
+                snapshot = snapshot,
+                removedReferences = removedPending.mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::reference),
+                addedReferences = setOf(storedEntry.reference),
+                pendingAudioEntries = pendingAudioEntries
+            )
+        )
+    }
+
+    private fun <K> addAudioIndexEntry(
+        index: Map<K, List<ManagedDownloadStorage.StoredEntry>>,
+        key: K?,
+        entry: ManagedDownloadStorage.StoredEntry
+    ): Map<K, List<ManagedDownloadStorage.StoredEntry>> {
+        if (key == null) return index
+        return index.toMutableMap().apply {
+            put(key, index[key].orEmpty() + entry)
+        }
+    }
+
+    private fun ManagedDownloadStorage.DownloadedAudioMetadata.hasSameAudioIndexIdentity(
+        other: ManagedDownloadStorage.DownloadedAudioMetadata
+    ): Boolean {
+        return stableKey == other.stableKey &&
+            songId == other.songId &&
+            mediaUri == other.mediaUri &&
+            channelId == other.channelId &&
+            audioId == other.audioId &&
+            subAudioId == other.subAudioId &&
+            audioFileName == other.audioFileName
+    }
+
+    private fun updateKnownReferences(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        removedReferences: Set<String>,
+        addedReferences: Set<String>,
+        metadataEntriesByAudioName: Map<String, ManagedDownloadStorage.StoredEntry> =
+            snapshot.metadataEntriesByAudioName,
+        pendingAudioEntries: List<ManagedDownloadStorage.StoredEntry> = snapshot.pendingAudioEntries
+    ): Set<String> {
+        if (removedReferences.isEmpty() && addedReferences.isEmpty()) {
+            return snapshot.knownReferences
+        }
+        return snapshot.knownReferences.toMutableSet().apply {
+            removedReferences.forEach { reference ->
+                val stillUsed = reference in snapshot.audioEntriesByLookupKey ||
+                    pendingAudioEntries.any { it.reference == reference } ||
+                    metadataEntriesByAudioName.values.any { it.reference == reference } ||
+                    snapshot.coverEntriesByName.values.any { it.reference == reference } ||
+                    snapshot.lyricEntriesByName.values.any { it.reference == reference }
+                if (!stillUsed) remove(reference)
+            }
+            addAll(addedReferences)
+        }
     }
 
     fun buildRemoteTrackKey(

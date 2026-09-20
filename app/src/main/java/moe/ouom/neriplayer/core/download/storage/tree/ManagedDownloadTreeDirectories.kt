@@ -42,7 +42,12 @@ internal class ManagedDownloadTreeDirectories(
             findKnownManagedSubdirectory(context, parent, displayName)
                 ?.also { subdirectoryCache[cacheKey] = it }
                 ?.let { return@withLock it }
-            val refresh = treeChildRegistry.treeChildrenForWrite(context, parent)
+            val refresh = treeChildRegistry.peekTreeChildren(parent)?.let { children ->
+                ManagedDownloadTreeChildRegistry.TreeChildrenRefresh(
+                    children = children.toList(),
+                    isComplete = true
+                )
+            } ?: treeChildRegistry.treeChildrenForWrite(context, parent)
             val existingChild = findManagedSubdirectoryChild(refresh.children, displayName)
             if (existingChild != null) {
                 return@withLock treeChildRegistry.toDocumentFile(context, parent, existingChild)
@@ -705,6 +710,12 @@ internal class ManagedDownloadTreeDirectories(
         parent: DocumentFile,
         displayName: String
     ): DocumentFile? {
+        treeChildRegistry.peekTreeChild(parent, displayName)
+            ?.takeIf(QueriedTreeChild::isDirectory)
+            ?.let { child ->
+                treeChildRegistry.toDocumentFile(context, parent, child)
+            }
+            ?.let { return it }
         val child = findManagedSubdirectoryChild(
             children = treeChildRegistry.peekTreeChildren(parent).orEmpty(),
             displayName = displayName

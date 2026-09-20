@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomReadStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.manager.batch.ensureDurableBatchSnapshot
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
@@ -54,9 +55,12 @@ class DownloadBatchAdmissionPerformanceTest {
                 var waitingNs = 0L
                 var promotionNs = 0L
                 var bindingNs = 0L
+                var firstPageReadyNs = 0L
+                var firstPageProbeQueries = 0L
+                var firstPageProbePayloadReadQueries = 0L
                 queries.reset()
                 val startedNs = SystemClock.elapsedRealtimeNanos()
-                songs.chunked(64).forEach { page ->
+                songs.chunked(64).forEachIndexed { pageIndex, page ->
                     DownloadExecutionRoomStore.prepareBatchMembersForTransfer(
                         context, batch, page.map(SongItem::stableKey), database = db
                     )
@@ -77,15 +81,46 @@ class DownloadBatchAdmissionPerformanceTest {
                     ))
                     bindingNs += SystemClock.elapsedRealtimeNanos() - bindingStartedNs
                     operationIds += waiting.operationIds
+                    if (pageIndex == 0) {
+                        firstPageReadyNs = SystemClock.elapsedRealtimeNanos() - startedNs
+                        val beforeProbe = queries.snapshot()
+                        val schedulable = DownloadExecutionRoomReadStore
+                            .listSchedulableForPumpPage(
+                                context = context,
+                                afterCursor = null,
+                                limit = 8,
+                                database = db,
+                                nowMs = 1_000L
+                            )
+                        val afterProbe = queries.snapshot()
+                        firstPageProbeQueries =
+                            afterProbe.getLong("queries") - beforeProbe.getLong("queries")
+                        firstPageProbePayloadReadQueries =
+                            afterProbe.getLong("payloadReadQueries") -
+                                beforeProbe.getLong("payloadReadQueries")
+                        assertEquals(waiting.operationIds.take(8),
+                            schedulable.requests.map { it.operationId })
+                        assertTrue(firstPageProbePayloadReadQueries in 1L..16L)
+                    }
                 }
                 val elapsedNs = SystemClock.elapsedRealtimeNanos() - startedNs
-                val metrics = queries.snapshot()
+                val observedMetrics = queries.snapshot()
+                val metrics = JSONObject(observedMetrics.toString())
+                    .put("queries", observedMetrics.getLong("queries") - firstPageProbeQueries)
+                    .put(
+                        "payloadReadQueries",
+                        observedMetrics.getLong("payloadReadQueries") -
+                            firstPageProbePayloadReadQueries
+                    )
                     .put("songs", songs.size)
                     .put("lyrics", includeLyrics)
                     .put("elapsedNs", elapsedNs)
                     .put("waitingNs", waitingNs)
                     .put("promotionNs", promotionNs)
                     .put("bindingNs", bindingNs)
+                    .put("firstPageReadyNs", firstPageReadyNs)
+                    .put("firstPageProbeQueries", firstPageProbeQueries)
+                    .put("firstPageProbePayloadReadQueries", firstPageProbePayloadReadQueries)
                     .put("snapshotNs", snapshotNs)
                     .put("snapshotQueries", snapshotMetrics.getLong("queries"))
                     .put("snapshotPayloadReadQueries", snapshotMetrics.getLong("payloadReadQueries"))
@@ -96,6 +131,7 @@ class DownloadBatchAdmissionPerformanceTest {
                 println("DOWNLOAD_ADMISSION_BENCHMARK=$metrics")
                 assertEquals(0L, metrics.getLong("payloadReadQueries"))
                 assertEquals(850L, metrics.getLong("payloadWrites"))
+                assertTrue(firstPageReadyNs > 0L && firstPageReadyNs < elapsedNs)
 
                 val members = db.downloadBatchDao().listMembers(batch.batchId)
                 assertEquals(850, members.size)

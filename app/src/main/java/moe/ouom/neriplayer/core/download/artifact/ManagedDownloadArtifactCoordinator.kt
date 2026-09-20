@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.matchesDownloadedCatalogFileSize
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
@@ -394,8 +395,8 @@ internal class ManagedDownloadArtifactCoordinator {
     suspend fun findReadableCompletedStableKeys(
         context: Context,
         stableKeys: Collection<String>,
-        inspectReference: (String) -> ManagedDownloadReferenceLookup.Result? = { reference ->
-            ManagedDownloadReferenceLookup.inspect(context, reference)
+        observeReference: (String) -> ManagedDownloadReferenceLookup.Observation? = { reference ->
+            ManagedDownloadReferenceLookup.inspectWithSize(context, reference)
         }
     ): Set<String> {
         val normalizedKeys = stableKeys
@@ -430,8 +431,12 @@ internal class ManagedDownloadArtifactCoordinator {
                 }
             ).distinct()
             if (references.any { reference ->
-                    inspectReference(reference) is
-                        ManagedDownloadReferenceLookup.Result.Present
+                    val observation = observeReference(reference)
+                    observation?.result == ManagedDownloadReferenceLookup.Result.Present &&
+                        matchesDownloadedCatalogFileSize(
+                            recordedSizeBytes = artifact.fileSize,
+                            observedSizeBytes = observation.sizeBytes
+                        )
                 }
             ) {
                 stableKey

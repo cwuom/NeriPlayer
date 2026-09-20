@@ -12,6 +12,18 @@ import org.junit.Test
 
 class DownloadedAudioEmbeddingStateTest {
     @Test
+    fun `publishing formal audio remains incomplete until its receipt is sealed`() {
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
+            audioPublicationPending = true
+        )
+        assertTrue(isFinalizedDownloadedMetadata(metadata))
+        assertFalse(isFinalizedDownloadedAudioEntry(true, false, metadata))
+        assertTrue(isFinalizedDownloadedAudioEntry(true, false, metadata.copy(audioPublicationPending = false)))
+    }
+
+    @Test
     fun `verified user opt out and shipped legacy completion are accepted`() {
         assertTrue(
             isAcceptedDownloadedAudioEmbeddingState(

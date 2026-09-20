@@ -558,7 +558,8 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
     writeLyrics: Boolean,
     fallbackOutcome: LocalMediaMetadataWriteOutcome,
     embeddedPropertyMapOverride: PropertyMap? = null,
-    requiredEmbeddedPropertyKeys: Set<String> = emptySet()
+    requiredEmbeddedPropertyKeys: Set<String> = emptySet(),
+    companionTransaction: LocalMediaCompanionTransaction? = null
 ): EditableMetadataWriteTransaction {
     val startedAtMs = SystemClock.elapsedRealtime()
     val stagingDirectory = LocalMediaMetadataRecoveryStore.stagingDirectory(context)
@@ -616,6 +617,10 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
                 output.fd.sync()
             }
         }
+        companionTransaction?.let { group ->
+            recoveryRecord = group.initialize(backup, updated, sourceFile?.lastModified()
+                ?.takeIf { it > 0L } ?: sourceInfo.lastModifiedMs?.takeIf { it > 0L })
+        }
         val stagedSong = song.copy(
             mediaUri = Uri.fromFile(updated).toString(),
             localFilePath = updated.absolutePath,
@@ -639,7 +644,7 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
             )
             return EditableMetadataWriteTransaction(fallbackOutcome)
         }
-        val preparedRecord = LocalMediaMetadataRecoveryStore.begin(
+        val preparedRecord = companionTransaction?.record ?: LocalMediaMetadataRecoveryStore.begin(
             context = context,
             targetReference = sourceUri.toString(),
             backupFile = backup,
@@ -650,7 +655,8 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
         )
         recoveryRecord = preparedRecord
         val replaceStartedAtMs = SystemClock.elapsedRealtime()
-        var activeRecord = LocalMediaMetadataRecoveryStore.markReplacing(preparedRecord)
+        var activeRecord = companionTransaction?.prepareUpdatedAudio()
+            ?: LocalMediaMetadataRecoveryStore.markReplacing(preparedRecord)
         recoveryRecord = activeRecord
         if (!LocalMediaMetadataRecoveryStore.replaceTargetFromFile(
                 context = context,
@@ -665,12 +671,14 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
                 )
             }
         ) {
-            if (!LocalMediaMetadataRecoveryStore.rollback(context, activeRecord)) {
+            if (!(companionTransaction?.rollback()
+                    ?: LocalMediaMetadataRecoveryStore.rollback(context, activeRecord))) {
                 NPLogger.e(TAG, "元信息替换失败且原音频恢复未确认: $sourceUri")
             }
             return EditableMetadataWriteTransaction(fallbackOutcome)
         }
-        activeRecord = LocalMediaMetadataRecoveryStore.markTargetVerified(activeRecord)
+        activeRecord = companionTransaction?.audioVerified()
+            ?: LocalMediaMetadataRecoveryStore.markTargetVerified(activeRecord)
         recoveryRecord = activeRecord
         if (writeCover) {
             val resolvedSource = runCatching {
@@ -701,15 +709,16 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
         return EditableMetadataWriteTransaction(
             outcome = LocalMediaMetadataWriteOutcome.SUCCESS,
             rollback = {
-                if (!LocalMediaMetadataRecoveryStore.rollback(context, verifiedRecord)) {
+                if (!(companionTransaction?.rollback() ?: LocalMediaMetadataRecoveryStore.rollback(context, verifiedRecord))) {
                     NPLogger.e(TAG, "回滚完整音频备份失败，恢复凭据已保留: $sourceUri")
                 }
             },
-            commit = { LocalMediaMetadataRecoveryStore.complete(verifiedRecord) }
+            commit = { companionTransaction?.commit() ?: LocalMediaMetadataRecoveryStore.complete(verifiedRecord) }
         )
     } catch (error: CancellationException) {
         recoveryRecord?.let { record ->
-            if (!LocalMediaMetadataRecoveryStore.rollback(context, record)) {
+            if (!(companionTransaction?.rollback()
+                    ?: LocalMediaMetadataRecoveryStore.rollback(context, record))) {
                 NPLogger.e(TAG, "元信息取消后原音频恢复未确认: $sourceUri")
             }
         }
@@ -717,7 +726,8 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
     } catch (error: Exception) {
         logEditableMetadataFailure("staged_copy", sourceUri, error)
         recoveryRecord?.let { record ->
-            if (!LocalMediaMetadataRecoveryStore.rollback(context, record)) {
+            if (!(companionTransaction?.rollback()
+                    ?: LocalMediaMetadataRecoveryStore.rollback(context, record))) {
                 NPLogger.e(TAG, "元信息异常后原音频恢复未确认: $sourceUri")
             }
         }

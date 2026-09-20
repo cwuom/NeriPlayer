@@ -756,7 +756,7 @@ internal fun GlobalDownloadManager.repairFinalizedDownloadedCoversFromRoot(
             val snapshot = runCatching {
                 ManagedDownloadStorage.buildDownloadLibrarySnapshot(
                     context = appContext,
-                    forceRefresh = true
+                    forceRefresh = false
                 )
             }.getOrElse { error ->
                 NPLogger.w(TAG, "读取历史缺失封面失败，等待下次恢复: ${error.message}")

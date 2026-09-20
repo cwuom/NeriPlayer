@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
+import android.os.Bundle
 import android.os.Environment
 import android.os.Process
 import android.os.ParcelFileDescriptor
@@ -14,18 +15,31 @@ import com.kyant.taglib.TagLib
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.artifact.DownloadCorePublicationCoordinator
+import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.operation.content.promoteFileTargetWithoutReplacement
 import moe.ouom.neriplayer.core.download.storage.operation.content.publicationFileIdentity
 import moe.ouom.neriplayer.core.download.storage.operation.content.recordAudioPublicationTarget
+import moe.ouom.neriplayer.core.download.storage.operation.content.markAudioPublicationPending
 import moe.ouom.neriplayer.core.download.storage.operation.content.promotePendingAudio
 import moe.ouom.neriplayer.core.download.storage.operation.content.sealAudioPublicationReceipt
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.recoverPreparedTerminalTemporaryWriteFinalizations
+import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.terminalTemporaryWriteCleanupJournalRoot
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
+import moe.ouom.neriplayer.core.download.storage.recovery.PersistentTerminalTemporaryWriteCleanupJournal
+import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupTarget
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.json.JSONObject
@@ -40,6 +54,373 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DownloadCorePublicationInstrumentedTest {
+    @Test
+    fun privateInterruptedPublicationStaysHiddenAcrossProcessDeath() = runBlocking {
+        assertInterruptedPublicationProcessDeath(false)
+    }
+
+    @Test
+    fun safInterruptedPublicationStaysHiddenAcrossProcessDeath() = runBlocking {
+        assertInterruptedPublicationProcessDeath(true)
+    }
+
+    @Test
+    fun safProviderRenameCollisionRefreshesTheStaleRootBeforeRetrying() = runBlocking {
+        assertSafProviderCollisionRecovery(autoRenameCollision = true)
+    }
+
+    @Test
+    fun safProviderNullCollisionRefreshesTheStaleRootBeforeRetrying() = runBlocking {
+        assertSafProviderCollisionRecovery(autoRenameCollision = false)
+    }
+
+    private suspend fun assertSafProviderCollisionRecovery(autoRenameCollision: Boolean) {
+        withStorage(true) {
+            val pending = commit()
+            prepareTaggedAudio(pending)
+            val taggedBytes = read(pending.reference)
+            val root = ManagedDownloadStorage.resolveRootBlocking(context) as ManagedDownloadRootHandle.TreeRoot
+            val partialTarget = createUnownedFile(taggedBytes.copyOf(257))
+            ManagedDownloadStorage.recordAudioPublicationTarget(
+                context = context,
+                root = root,
+                pending = pending,
+                targetReference = partialTarget
+            )
+            if (autoRenameCollision) {
+                context.contentResolver.call(
+                    root.tree.uri,
+                    ManagedDownloadMigrationTestDocumentProvider.AUTO_RENAME_NEXT_COLLISION,
+                    null,
+                    null
+                )
+            }
+
+            // createUnownedFile 绕过应用缓存，模拟文件管理器在完整快照后写入同名目标
+            val promoted = DownloadCorePublicationCoordinator()
+                .promoteBeforePublication(context, song, pending)
+
+            assertFalse(promoted.isPendingAudioWrite)
+            assertEquals(referenceIdentity(partialTarget), referenceIdentity(promoted.reference))
+            assertArrayEquals(taggedBytes, read(promoted.reference))
+            assertEquals(listOf(fileName), finalNames().filter { it.endsWith(".mp3") })
+        }
+    }
+
+    private suspend fun assertInterruptedPublicationProcessDeath(saf: Boolean) {
+        val phase = InstrumentationRegistry.getArguments().getString("publicationPhase")
+        require(phase == null || phase == "seed" || phase == "recover")
+        withStorage(saf, phase = phase) {
+            val marker = File(context.filesDir, "publication-phase.json")
+            if (phase != "recover") {
+                val pending = commit()
+                prepareTaggedAudio(pending)
+                val root = ManagedDownloadStorage.resolveRootBlocking(context)
+                ManagedDownloadStorage.markAudioPublicationPending(context, root, pending)
+                val partial = createUnownedFile(read(pending.reference).copyOf(257))
+                ManagedDownloadStorage.recordAudioPublicationTarget(context, root, pending, partial,
+                    partial.takeIf { it.startsWith("/") }?.let(::publicationFileIdentity))
+                marker.writeText(JSONObject().put("pid", Process.myPid()).put("operationId", operationId)
+                    .put("reference", pending.reference).put("partialReference", partial).toString())
+            }
+            if (phase != "seed") {
+                val state = JSONObject(marker.readText())
+                if (phase == "recover") assertFalse("recovery must use a fresh process", state.getInt("pid") == Process.myPid())
+                ManagedDownloadStorage.snapshotCacheStore.invalidate()
+                ManagedDownloadStorage.treeChildRegistry.clear()
+                val before = ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
+                assertTrue("a persisted partial target must stay hidden", ManagedLibraryRebuilder.plan(before).isEmpty())
+                val pending = requireNotNull(ManagedDownloadStorage.queryStoredEntry(context, state.getString("reference")))
+                val bytes = read(pending.reference)
+                val promoted = DownloadCorePublicationCoordinator().promoteBeforePublication(context, song, pending)
+                assertFalse(promoted.isPendingAudioWrite)
+                assertEquals(referenceIdentity(state.getString("partialReference")), referenceIdentity(promoted.reference))
+                assertArrayEquals(bytes, read(promoted.reference))
+                val after = ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
+                assertEquals(listOf(song.stableKey()), ManagedLibraryRebuilder.plan(after).map { it.stableKey })
+                assertEquals(listOf(fileName), finalNames().filter { it.endsWith(".mp3") })
+            }
+        }
+    }
+
+    @Test
+    fun privateReceiptCreationFailureRemovesOnlyTheNewEmptyTarget() = runBlocking {
+        withStorage(false) {
+            val pending = File(context.cacheDir, "receipt-failure-pending.mp3").apply { writeBytes(payload) }
+            val target = File(context.cacheDir, "receipt-failure-final.mp3")
+            assertThrows(IOException::class.java) {
+                ManagedDownloadStorage.promoteFileTargetWithoutReplacement(pending, target, target.name,
+                    onTargetCreated = { throw IOException("injected receipt failure") })
+            }
+            assertFalse("a failed receipt cannot leave an unclaimable target", target.exists())
+            assertArrayEquals(payload, pending.readBytes())
+            ManagedDownloadStorage.promoteFileTargetWithoutReplacement(pending, target, target.name,
+                onTargetCreated = {})
+            assertArrayEquals(payload, target.readBytes())
+            assertFalse(pending.exists())
+        }
+    }
+
+    @Test
+    fun privateReceiptCreationFailurePreservesAReplacedTarget() = runBlocking {
+        withStorage(false) {
+            val pending = File(context.cacheDir, "receipt-replaced-pending.mp3").apply { writeBytes(payload) }
+            val target = File(context.cacheDir, "receipt-replaced-final.mp3")
+            val owned = File(context.cacheDir, "receipt-replaced-owned.mp3")
+            val foreign = byteArrayOf(7, 1, 9)
+            assertThrows(IOException::class.java) {
+                ManagedDownloadStorage.promoteFileTargetWithoutReplacement(pending, target, target.name,
+                    onTargetCreated = {
+                        check(target.renameTo(owned))
+                        target.writeBytes(foreign)
+                        throw IOException("injected receipt failure after replacement")
+                    })
+            }
+            assertArrayEquals(foreign, target.readBytes())
+            assertArrayEquals(payload, pending.readBytes())
+        }
+    }
+
+    @Test
+    fun safFinalizationDoesNotReadUnrelatedMetadataAsTheLibraryGrows() = runBlocking {
+        val performanceEvidence = File(
+            InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,
+            "pr396-finalization-performance.log"
+        )
+        performanceEvidence.delete()
+        GlobalDownloadManager.startupRecoveryMutex.withLock {
+            GlobalDownloadManager.pendingDownloadRecoverySlot.withLock {
+                awaitConcurrentCatalogReadersIdle()
+                for (size in listOf(0, 64, 512, 850)) withStorage(
+                    saf = true,
+                    startupRecoveryLockHeld = true
+                ) {
+                    val root = ManagedDownloadStorage.resolveRootBlocking(context) as ManagedDownloadRootHandle.TreeRoot
+                    repeat(size) { index ->
+                        val name = "background-$index.mp3"
+                        val audio = requireNotNull(root.tree.createFile("audio/mpeg", name))
+                        requireNotNull(context.contentResolver.openOutputStream(audio.uri)).use { it.write(payload) }
+                        val metadata = requireNotNull(root.tree.createFile("application/json", "$name.npmeta.json"))
+                        val json = JSONObject().put("stableKey", "background-$index|netease|")
+                            .put("songId", 100_000 + index).put("name", "background-$index")
+                            .put("audioFileName", name).put("downloadFinalized", true)
+                            .put("metadataEmbeddingState", "EMBEDDED_VERIFIED").toString()
+                        requireNotNull(context.contentResolver.openOutputStream(metadata.uri)).use { it.write(json.toByteArray()) }
+                    }
+                    ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
+                    fun counters() = requireNotNull(context.contentResolver.call(
+                        root.tree.uri, ManagedDownloadMigrationTestDocumentProvider.QUERY_COUNT, null, null
+                    ))
+                    val before = counters()
+                    val started = System.nanoTime()
+                    var previousTime = started
+                    var previousQueries = before.getInt("count")
+                    var previousMetadataReads = before.getInt("metadataReads")
+                    fun measureStage(stage: String): Int {
+                        val now = System.nanoTime()
+                        val current = counters()
+                        val queries = current.getInt("count")
+                        val queryDelta = queries - previousQueries
+                        val metadataReadDelta = current.getInt("metadataReads") - previousMetadataReads
+                        val line = "library=$size stage=$stage elapsedMs=${(now - previousTime) / 1_000_000} " +
+                            "childQueries=$queryDelta metadataReads=$metadataReadDelta"
+                        android.util.Log.i("NeriFinalizationPerformance", line)
+                        performanceEvidence.appendText("$line\n")
+                        previousTime = now
+                        previousQueries = queries
+                        previousMetadataReads = current.getInt("metadataReads")
+                        return queryDelta
+                    }
+                    val pending = commit()
+                    assertEquals("core commit must reuse the complete root snapshot", 0, measureStage("core"))
+                    prepareTaggedAudio(pending, checkFinalName = false)
+                    assertEquals("metadata replacement must use its cached SAF reference", 0, measureStage("metadata"))
+                    val published = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, pending)).audio
+                    assertEquals("publication must validate its returned document directly", 0, measureStage("publish"))
+                    assertTrue(ManagedDownloadStorage.deletePendingAudioMetadata(context, fileName))
+                    assertNull(ManagedDownloadStorage.queryStoredEntry(context, pending.reference))
+                    assertFalse(requireNotNull(ManagedDownloadStorage.queryStoredEntry(context, published.reference)).isPendingAudioWrite)
+                    assertEquals("receipt cleanup must update the cached snapshot", 0, measureStage("cleanup"))
+                    val after = counters()
+                    val metadataReads = after.getInt("metadataReads") - before.getInt("metadataReads")
+                    val summary = "library=$size elapsedMs=${(System.nanoTime() - started) / 1_000_000} " +
+                        "metadataReads=$metadataReads childQueries=${after.getInt("count") - before.getInt("count")}"
+                    android.util.Log.i("NeriFinalizationPerformance", summary)
+                    performanceEvidence.appendText("$summary\n")
+                    assertTrue("finalizing one song must not read $size unrelated metadata files: $metadataReads", metadataReads <= 48)
+                }
+            }
+        }
+    }
+
+    private suspend fun awaitConcurrentCatalogReadersIdle() {
+        withTimeout(15_000L) {
+            while (
+                GlobalDownloadManager.finalizedCoverRepairActive.get() ||
+                    GlobalDownloadManager.catalogReconcileJob?.isActive == true ||
+                    GlobalDownloadManager.refreshJob?.isActive == true
+            ) {
+                delay(25L)
+            }
+        }
+    }
+
+    @Test
+    fun safPreparedFinalizationRecoveryScansEachRootOnlyOnce() = runBlocking {
+        withStorage(true) {
+            val root = ManagedDownloadStorage.resolveRootBlocking(context)
+            val journalRoot = ManagedDownloadStorage.terminalTemporaryWriteCleanupJournalRoot(root)
+            val preferences = context.getSharedPreferences(
+                "terminal_temporary_write_cleanup_v1",
+                Context.MODE_PRIVATE
+            )
+            assertTrue(preferences.edit().clear().commit())
+            try {
+                repeat(64) { index ->
+                    assertTrue(
+                        PersistentTerminalTemporaryWriteCleanupJournal.prepareFinalizationTargets(
+                            context = context,
+                            root = journalRoot,
+                            pendingAudioName = "pending-$index.mp3",
+                            finalAudioName = "final-$index.mp3",
+                            expectedOperationId = "operation-$index",
+                            targets = listOf(
+                                TerminalTemporaryWriteCleanupTarget("final-$index.mp3.npmeta.json")
+                            )
+                        ) != null
+                    )
+                }
+                val provider = (root as ManagedDownloadRootHandle.TreeRoot).tree.uri
+                ManagedDownloadStorage.treeChildRegistry.clear()
+                fun queryCount() = requireNotNull(
+                    context.contentResolver.call(
+                        provider,
+                        ManagedDownloadMigrationTestDocumentProvider.QUERY_COUNT,
+                        null,
+                        null
+                    )
+                ).getInt("count")
+                val before = queryCount()
+                ManagedDownloadStorage.recoverPreparedTerminalTemporaryWriteFinalizations(context)
+                assertEquals(
+                    "recovery cost must depend on roots instead of preparation count",
+                    1,
+                    queryCount() - before
+                )
+            } finally {
+                assertTrue(preferences.edit().clear().commit())
+            }
+        }
+    }
+
+    @Test
+    fun safPublicationCopyDoesNotHoldTheDirectoryMutationLock() = runBlocking {
+        withStorage(true) {
+            val pending = commit()
+            prepareTaggedAudio(pending)
+            val root = ManagedDownloadStorage.resolveRootBlocking(context) as ManagedDownloadRootHandle.TreeRoot
+            val provider = root.tree.uri
+            val gate = ManagedDownloadMigrationTestDocumentProvider.PUBLICATION_WRITE_GATE
+            context.contentResolver.call(provider, gate, "arm", Bundle().apply { putString("name", fileName) })
+            val executor = Executors.newFixedThreadPool(2)
+            val publication = executor.submit<ManagedDownloadStorage.StoredEntry?> {
+                runBlocking { ManagedDownloadStorage.promotePendingAudio(context, root, pending) }
+            }
+            try {
+                assertTrue(requireNotNull(context.contentResolver.call(provider, gate, "await", null)).getBoolean("entered"))
+                val unrelatedWrite = executor.submit<Boolean> {
+                    ManagedDownloadTreeMutationLocks.withLock(root.tree.uri) { true }
+                }
+                assertTrue(unrelatedWrite.get(2, TimeUnit.SECONDS))
+                val duringCopy = ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
+                assertTrue("a scan must not publish the partially copied formal audio", ManagedLibraryRebuilder.plan(duringCopy).isEmpty())
+            } finally {
+                context.contentResolver.call(provider, gate, "release", null)
+                val published = requireNotNull(publication.get(10, TimeUnit.SECONDS))
+                assertFalse(published.isPendingAudioWrite)
+                executor.shutdown()
+                assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
+                ManagedDownloadStorage.sealAudioPublicationReceipt(context, root, published)
+            }
+            val complete = ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
+            assertEquals(listOf(song.stableKey()), ManagedLibraryRebuilder.plan(complete).map { it.stableKey })
+        }
+    }
+
+    @Test
+    fun privateSealedPublicationStaysVisibleWithAnUnremovedTemporaryReceipt() = runBlocking {
+        withStorage(false) { assertSealedPublicationStaysVisibleWithTemporaryReceipt() }
+    }
+
+    @Test
+    fun safSealedPublicationStaysVisibleWithAnUnremovedTemporaryReceipt() = runBlocking {
+        withStorage(true) { assertSealedPublicationStaysVisibleWithTemporaryReceipt() }
+    }
+
+    private suspend fun Fixture.assertSealedPublicationStaysVisibleWithTemporaryReceipt() {
+        val pending = commit()
+        prepareTaggedAudio(pending)
+        val root = ManagedDownloadStorage.resolveRootBlocking(context)
+        val promoted = requireNotNull(ManagedDownloadStorage.promotePendingAudio(context, root, pending))
+        val receiptReference = pendingMetadataReference(fileName)
+        val receipt = read(receiptReference)
+        assertTrue(JSONObject(receipt.toString(Charsets.UTF_8)).optBoolean("audioPublicationPending"))
+        ManagedDownloadStorage.sealAudioPublicationReceipt(context, root, promoted)
+        if (receiptReference.startsWith("/")) {
+            File(receiptReference).writeBytes(receipt)
+        } else {
+            requireNotNull(context.contentResolver.openOutputStream(Uri.parse(receiptReference), "wt")).use { it.write(receipt) }
+        }
+        val entry = requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, promoted))
+        val metadata = JSONObject(requireNotNull(ManagedDownloadStorage.readText(context, entry.reference)))
+        assertFalse(metadata.getBoolean("audioPublicationPending"))
+        metadata.remove("audioPublicationPending")
+        assertTrue(ManagedDownloadStorage.saveMetadata(context, promoted, metadata.toString()))
+        ManagedDownloadStorage.snapshotCacheStore.invalidate()
+        ManagedDownloadStorage.treeChildRegistry.clear()
+        val complete = ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
+        assertEquals(listOf(song.stableKey()), ManagedLibraryRebuilder.plan(complete).map { it.stableKey })
+        val refreshed = requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, promoted))
+        assertFalse(JSONObject(requireNotNull(ManagedDownloadStorage.readText(context, refreshed.reference))).optBoolean("audioPublicationPending"))
+    }
+
+    @Test
+    fun privateCachedSnapshotDoesNotWaitForUnrelatedFullScan() = runBlocking {
+        withStorage(false) { assertCachedSnapshotDoesNotWaitForFullScan() }
+    }
+
+    @Test
+    fun safCachedSnapshotDoesNotWaitForUnrelatedFullScan() = runBlocking {
+        withStorage(true) { assertCachedSnapshotDoesNotWaitForFullScan() }
+    }
+
+    private suspend fun Fixture.assertCachedSnapshotDoesNotWaitForFullScan() {
+        val audio = commit()
+        val before = ManagedDownloadStorage.buildDownloadLibrarySnapshot(context)
+        assertTrue(before.pendingAudioEntries.any { it.reference == audio.reference })
+        val executor = Executors.newFixedThreadPool(2)
+        val locked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val holder = executor.submit {
+            synchronized(ManagedDownloadStorage.snapshotBuildLock) {
+                locked.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+        }
+        try {
+            assertTrue(locked.await(5, TimeUnit.SECONDS))
+            val lookup = executor.submit<ManagedDownloadStorage.DownloadLibrarySnapshot> {
+                runBlocking { ManagedDownloadStorage.buildDownloadLibrarySnapshot(context) }
+            }
+            assertTrue(before === lookup.get(2, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            holder.get(5, TimeUnit.SECONDS)
+            executor.shutdown()
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
+        }
+    }
+
     @Test
     fun privateCoreRemainsPendingUntilMetadataIsFinalized() = runBlocking {
         withStorage(false) { assertCoreRemainsPending() }
@@ -471,6 +852,9 @@ class DownloadCorePublicationInstrumentedTest {
         val promoted = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, pending)).audio
         val taggedBytes = read(promoted.reference)
         assertTrue(ManagedDownloadStorage.deletePendingAudioMetadata(context, fileName))
+        assertTrue("receipt cleanup must preserve the complete incremental snapshot", requireNotNull(
+            ManagedDownloadStorage.snapshotCacheStore.cachedSnapshot(context, restorePersisted = false)
+        ).rootEntriesComplete)
         val metadataEntry = requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, promoted))
         val metadata = JSONObject(requireNotNull(ManagedDownloadStorage.readText(context, metadataEntry.reference)))
         assertTrue("publication receipt must be sealed before temporary metadata is removed", metadata.has("audioPublicationReceipt"))
@@ -632,12 +1016,15 @@ class DownloadCorePublicationInstrumentedTest {
         }
     }
 
-    private suspend fun Fixture.prepareTaggedAudio(pending: ManagedDownloadStorage.StoredEntry) {
+    private suspend fun Fixture.prepareTaggedAudio(
+        pending: ManagedDownloadStorage.StoredEntry,
+        checkFinalName: Boolean = true
+    ) {
         assertEquals(
             DownloadedAudioTagWriteOutcome.SUCCESS,
             DownloadedAudioTagWriter.write(context, pending, song, null, standardizedLyricEmbeddingEnabled = true)
         )
-        if (pending.isPendingAudioWrite) assertTrue(finalNames().none { it.endsWith(".mp3") })
+        if (checkFinalName && pending.isPendingAudioWrite) assertFalse(finalNames().contains(fileName))
         val metadata = JSONObject()
             .put("stableKey", song.stableKey())
             .put("songId", song.id)
@@ -657,48 +1044,93 @@ class DownloadCorePublicationInstrumentedTest {
         return "${uri.authority}|${DocumentsContract.getDocumentId(uri)}"
     }
 
-    private suspend fun withStorage(saf: Boolean, phase: String? = null, block: suspend Fixture.() -> Unit) =
-        GlobalDownloadManager.startupRecoveryMutex.withLock {
-        val base = InstrumentationRegistry.getInstrumentation().targetContext
-        val previousDirectory = ManagedDownloadStorage.configuredDirectoryUri()
-        val sessionName = if (phase == null) UUID.randomUUID().toString() else "phase-v1-${if (saf) "saf" else "private"}"
-        val directory = File(base.cacheDir, "core-publication-$sessionName")
-        if (phase == "recover") {
-            check(File(directory, "files/publication-phase.json").isFile) { "publication seed is missing" }
-        } else {
-            check(!directory.exists()) { "unfinished publication fixture exists; recover it before reseeding" }
-            check(directory.mkdirs())
-        }
-        val context = object : ContextWrapper(base) {
-            override fun getApplicationContext(): Context = this
-            override fun getExternalFilesDir(type: String?): File = File(directory, type ?: "external").apply { mkdirs() }
-            override fun getFilesDir(): File = File(directory, "files").apply { mkdirs() }
-            override fun getCacheDir(): File = File(directory, "cache").apply { mkdirs() }
-        }
-        val providerUri = DocumentsContract.buildDocumentUri(
-            ManagedDownloadMigrationTestDocumentProvider.AUTHORITY,
-            ManagedDownloadMigrationTestDocumentProvider.ROOT_ID
-        )
-        val treeUri = DocumentsContract.buildTreeDocumentUri(
-            ManagedDownloadMigrationTestDocumentProvider.AUTHORITY,
-            ManagedDownloadMigrationTestDocumentProvider.ROOT_ID
-        )
-        if (saf && phase != "recover") base.contentResolver.call(providerUri, ManagedDownloadMigrationTestDocumentProvider.RESET, null, null)
-        ManagedDownloadStorage.primeSettings(if (saf) treeUri.toString() else null, null)
-        ManagedDownloadStorage.snapshotCacheStore.invalidate()
-        ManagedDownloadStorage.treeChildRegistry.clear()
-        try {
-            val owner = if (phase == "recover") {
-                JSONObject(File(context.filesDir, "publication-phase.json").readText()).getString("operationId")
-            } else UUID.randomUUID().toString()
-            Fixture(context, if (saf) treeUri else null, owner).block()
-        } finally {
-            ManagedDownloadStorage.primeSettings(previousDirectory, null)
+    private suspend fun withStorage(
+        saf: Boolean,
+        phase: String? = null,
+        startupRecoveryLockHeld: Boolean = false,
+        block: suspend Fixture.() -> Unit
+    ) {
+        suspend fun runFixture() {
+            val base = InstrumentationRegistry.getInstrumentation().targetContext
+            val previousDirectory = ManagedDownloadStorage.configuredDirectoryUri()
+            val sessionName = if (phase == null) {
+                UUID.randomUUID().toString()
+            } else {
+                "phase-v1-${if (saf) "saf" else "private"}"
+            }
+            val directory = File(base.cacheDir, "core-publication-$sessionName")
+            if (phase == "recover") {
+                check(File(directory, "files/publication-phase.json").isFile) {
+                    "publication seed is missing"
+                }
+            } else {
+                check(!directory.exists()) {
+                    "unfinished publication fixture exists; recover it before reseeding"
+                }
+                check(directory.mkdirs())
+            }
+            val context = object : ContextWrapper(base) {
+                override fun getApplicationContext(): Context = this
+
+                override fun getExternalFilesDir(type: String?): File =
+                    File(directory, type ?: "external").apply { mkdirs() }
+
+                override fun getFilesDir(): File =
+                    File(directory, "files").apply { mkdirs() }
+
+                override fun getCacheDir(): File =
+                    File(directory, "cache").apply { mkdirs() }
+            }
+            val providerUri = DocumentsContract.buildDocumentUri(
+                ManagedDownloadMigrationTestDocumentProvider.AUTHORITY,
+                ManagedDownloadMigrationTestDocumentProvider.ROOT_ID
+            )
+            val treeUri = DocumentsContract.buildTreeDocumentUri(
+                ManagedDownloadMigrationTestDocumentProvider.AUTHORITY,
+                ManagedDownloadMigrationTestDocumentProvider.ROOT_ID
+            )
+            if (saf && phase != "recover") {
+                base.contentResolver.call(
+                    providerUri,
+                    ManagedDownloadMigrationTestDocumentProvider.RESET,
+                    null,
+                    null
+                )
+            }
+            ManagedDownloadStorage.primeSettings(if (saf) treeUri.toString() else null, null)
             ManagedDownloadStorage.snapshotCacheStore.invalidate()
             ManagedDownloadStorage.treeChildRegistry.clear()
-            if (phase != "seed") {
-                if (saf) base.contentResolver.call(providerUri, ManagedDownloadMigrationTestDocumentProvider.RESET, null, null)
-                directory.deleteRecursively()
+            try {
+                val owner = if (phase == "recover") {
+                    JSONObject(
+                        File(context.filesDir, "publication-phase.json").readText()
+                    ).getString("operationId")
+                } else {
+                    UUID.randomUUID().toString()
+                }
+                Fixture(context, if (saf) treeUri else null, owner).block()
+            } finally {
+                ManagedDownloadStorage.primeSettings(previousDirectory, null)
+                ManagedDownloadStorage.snapshotCacheStore.invalidate()
+                ManagedDownloadStorage.treeChildRegistry.clear()
+                if (phase != "seed") {
+                    if (saf) {
+                        base.contentResolver.call(
+                            providerUri,
+                            ManagedDownloadMigrationTestDocumentProvider.RESET,
+                            null,
+                            null
+                        )
+                    }
+                    directory.deleteRecursively()
+                }
+            }
+        }
+        if (startupRecoveryLockHeld) {
+            runFixture()
+        } else {
+            GlobalDownloadManager.startupRecoveryMutex.withLock {
+                runFixture()
             }
         }
     }

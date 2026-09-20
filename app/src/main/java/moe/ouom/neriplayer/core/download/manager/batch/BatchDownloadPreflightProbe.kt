@@ -7,9 +7,10 @@ internal class BatchDownloadPreflightProbe(
     private val maxReferences: Int = 64,
     private val budgetNanos: Long = 500_000_000L,
     private val nanoTime: () -> Long = System::nanoTime,
-    private val inspectReference: (String) -> ManagedDownloadReferenceLookup.Result
+    private val inspectReference: (String) -> ManagedDownloadReferenceLookup.Observation
 ) {
-    private val evidenceByReference = mutableMapOf<String, ManagedDownloadReferenceLookup.Result>()
+    private val observationsByReference =
+        mutableMapOf<String, ManagedDownloadReferenceLookup.Observation>()
     private var startedAtNanos: Long? = null
     private var inspectedReferences = 0
 
@@ -18,12 +19,16 @@ internal class BatchDownloadPreflightProbe(
             startedAtNanos?.let { nanoTime() - it >= budgetNanos } == true
 
     fun inspect(reference: String): ManagedDownloadReferenceLookup.Result? {
+        return observe(reference)?.result
+    }
+
+    fun observe(reference: String): ManagedDownloadReferenceLookup.Observation? {
         val normalized = reference.trim()
-        evidenceByReference[normalized]?.let { return it }
+        observationsByReference[normalized]?.let { return it }
         if (isExhausted) return null
         if (startedAtNanos == null) startedAtNanos = nanoTime()
         inspectedReferences++
         // 同步 Provider 调用不能强制中止，时间预算只阻止后续调用
-        return inspectReference(normalized).also { evidenceByReference[normalized] = it }
+        return inspectReference(normalized).also { observationsByReference[normalized] = it }
     }
 }

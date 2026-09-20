@@ -150,6 +150,26 @@ class ManagedDownloadStorageCommitWriterTest {
         )
         assertNull(selectCachedSafWriteChild("missing.json", listOf(target)))
         assertNull(selectCachedSafWriteChild(target.name, null))
+        assertTrue(isSafWriteTargetKnownAbsent("missing.json", listOf(target)))
+        assertTrue(!isSafWriteTargetKnownAbsent(target.name, listOf(directory)))
+        assertTrue(!isSafWriteTargetKnownAbsent("missing.json", null))
+    }
+
+    @Test
+    fun `cached SAF absence remains an optimistic hint with a safe fallback`() {
+        val target = QueriedTreeChild(
+            name = "other.json",
+            documentUri = mock(Uri::class.java),
+            sizeBytes = 12L,
+            lastModifiedMs = 1L,
+            isDirectory = false
+        )
+
+        val hint = resolveCachedSafWriteHint("song.json", listOf(target))
+
+        assertNull(hint.child)
+        assertTrue(hint.targetKnownAbsent)
+        assertTrue(hint.fallbackOnOptimisticCommitFailure)
     }
 
     @Test

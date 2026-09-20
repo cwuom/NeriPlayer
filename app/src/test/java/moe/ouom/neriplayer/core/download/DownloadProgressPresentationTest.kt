@@ -1071,6 +1071,23 @@ class DownloadProgressPresentationTest {
     }
 
     @Test
+    fun `post transfer stages show retained bytes without pretending final completion`() {
+        for (stage in listOf(
+            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
+            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
+            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+            AudioDownloadManager.DownloadStage.FINALIZING
+        )) {
+            val text = formatDownloadTransferProgress(AudioDownloadManager.DownloadProgress(
+                songKey = "song", songId = 1, fileName = "song.mp3",
+                bytesRead = 1024, totalBytes = 1024, speedBytesPerSec = 0, stage = stage
+            ))
+            assertFalse("$stage is still working: $text", text.contains('%'))
+            assertTrue(text.contains(" / "))
+        }
+    }
+
+    @Test
     fun `transfer presentation keeps an unknown total honest`() {
         val mebibyte = 1024L * 1024L
         val text = formatDownloadTransferProgress(

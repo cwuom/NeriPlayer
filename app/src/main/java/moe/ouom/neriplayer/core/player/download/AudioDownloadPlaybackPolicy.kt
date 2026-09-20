@@ -287,6 +287,9 @@ internal fun isReadableManagedAudioPlaybackAllowed(
     if (downloadCancelled) {
         return false
     }
+    if (!audioIsPending && metadata?.audioPublicationPending == true) {
+        return false
+    }
     val artifactState = metadata?.artifactState
         ?.trim()
         ?.takeIf(String::isNotBlank)

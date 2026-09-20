@@ -35,6 +35,11 @@ internal object ManagedDownloadReferenceIo {
         data class ProviderFailure(val error: Throwable) : AccessResult
     }
 
+    data class AccessObservation(
+        val result: AccessResult,
+        val sizeBytes: Long?
+    )
+
     data class BatchDeleteResult(
         val results: List<DeleteResult>,
         val supported: Boolean
@@ -76,16 +81,21 @@ internal object ManagedDownloadReferenceIo {
     }
 
     fun inspect(context: Context, reference: String?): AccessResult {
+        return inspectWithSize(context, reference).result
+    }
+
+    fun inspectWithSize(context: Context, reference: String?): AccessObservation {
         val normalized = reference?.trim()?.takeIf(String::isNotBlank)
-            ?: return AccessResult.Missing
+            ?: return AccessObservation(AccessResult.Missing, null)
         if (normalized.startsWith("/")) {
-            return inspectFile(File(normalized))
+            return inspectFileWithSize(File(normalized))
         }
-        normalized.toLocalFileReference()?.let { return inspectFile(it) }
+        normalized.toLocalFileReference()?.let { return inspectFileWithSize(it) }
         val uri = runCatching { normalized.toUri() }.getOrElse { error ->
-            return AccessResult.ProviderFailure(error)
+            return AccessObservation(AccessResult.ProviderFailure(error), null)
         }
-        return inspect(context, uri)
+        uri.toLocalFile()?.let { return inspectFileWithSize(it) }
+        return inspectDocumentWithSize(context, uri)
     }
 
     fun inspect(context: Context, uri: Uri): AccessResult {
@@ -237,17 +247,23 @@ internal object ManagedDownloadReferenceIo {
     }
 
     private fun inspectFile(file: File): AccessResult {
+        return inspectFileWithSize(file).result
+    }
+
+    private fun inspectFileWithSize(file: File): AccessObservation {
         return try {
-            if (!file.isFile) AccessResult.Missing
-            else file.inputStream().use { AccessResult.Accessible }
+            if (!file.isFile) AccessObservation(AccessResult.Missing, null)
+            else file.inputStream().use { input ->
+                AccessObservation(AccessResult.Accessible, input.channel.size())
+            }
         } catch (_: SecurityException) {
-            AccessResult.PermissionLost
+            AccessObservation(AccessResult.PermissionLost, null)
         } catch (error: CancellationException) {
             throw error
         } catch (_: FileNotFoundException) {
-            AccessResult.Missing
+            AccessObservation(AccessResult.Missing, null)
         } catch (error: Throwable) {
-            AccessResult.ProviderFailure(error)
+            AccessObservation(AccessResult.ProviderFailure(error), null)
         }
     }
 
@@ -267,38 +283,48 @@ internal object ManagedDownloadReferenceIo {
     }
 
     private fun inspectDocument(context: Context, uri: Uri): AccessResult {
+        return inspectDocumentWithSize(context, uri).result
+    }
+
+    private fun inspectDocumentWithSize(context: Context, uri: Uri): AccessObservation {
         try {
             val cursor = queryDocumentCursor(
                 context = context,
                 uri = uri,
                 projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-            ) ?: return inspectDocumentWithoutCursor(context, uri)
+            ) ?: return inspectDocumentWithoutCursorWithSize(context, uri)
             cursor.use {
-                if (!it.moveToFirst()) return AccessResult.Missing
+                if (!it.moveToFirst()) return AccessObservation(AccessResult.Missing, null)
             }
             try {
-                context.contentResolver.openFileDescriptor(uri, "r")?.use {
-                    return AccessResult.Accessible
-                } ?: return AccessResult.ProviderFailure(
-                    IllegalStateException("provider returned null file descriptor")
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                    return AccessObservation(
+                        result = AccessResult.Accessible,
+                        sizeBytes = descriptor.statSize.takeIf { it >= 0L }
+                    )
+                } ?: return AccessObservation(
+                    AccessResult.ProviderFailure(
+                        IllegalStateException("provider returned null file descriptor")
+                    ),
+                    null
                 )
             } catch (_: SecurityException) {
-                return AccessResult.PermissionLost
+                return AccessObservation(AccessResult.PermissionLost, null)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: FileNotFoundException) {
-                return classifyDocumentOpenFailure(error)
+                return AccessObservation(classifyDocumentOpenFailure(error), null)
             } catch (error: Throwable) {
-                return classifyDocumentOpenFailure(error)
+                return AccessObservation(classifyDocumentOpenFailure(error), null)
             }
         } catch (_: SecurityException) {
-            return AccessResult.PermissionLost
+            return AccessObservation(AccessResult.PermissionLost, null)
         } catch (error: CancellationException) {
             throw error
         } catch (error: FileNotFoundException) {
-            return classifyDocumentFailure(error)
+            return AccessObservation(classifyDocumentFailure(error), null)
         } catch (error: Throwable) {
-            return classifyDocumentFailure(error)
+            return AccessObservation(classifyDocumentFailure(error), null)
         }
     }
 
@@ -349,16 +375,32 @@ internal object ManagedDownloadReferenceIo {
     }
 
     private fun inspectDocumentWithoutCursor(context: Context, uri: Uri): AccessResult {
+        return inspectDocumentWithoutCursorWithSize(context, uri).result
+    }
+
+    private fun inspectDocumentWithoutCursorWithSize(
+        context: Context,
+        uri: Uri
+    ): AccessObservation {
         return try {
-            context.contentResolver.openFileDescriptor(uri, "r")?.use {
-                AccessResult.Accessible
-            } ?: AccessResult.ProviderFailure(nullDocumentCursorFailure(uri))
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                AccessObservation(
+                    AccessResult.Accessible,
+                    descriptor.statSize.takeIf { it >= 0L }
+                )
+            } ?: AccessObservation(
+                AccessResult.ProviderFailure(nullDocumentCursorFailure(uri)),
+                null
+            )
         } catch (_: SecurityException) {
-            AccessResult.PermissionLost
+            AccessObservation(AccessResult.PermissionLost, null)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            AccessResult.ProviderFailure(nullDocumentCursorFailure(uri, error))
+            AccessObservation(
+                AccessResult.ProviderFailure(nullDocumentCursorFailure(uri, error)),
+                null
+            )
         }
     }
 

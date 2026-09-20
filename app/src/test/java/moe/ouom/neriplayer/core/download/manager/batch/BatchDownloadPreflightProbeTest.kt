@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.batch
 
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup.Result
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup.Observation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -12,7 +13,10 @@ class BatchDownloadPreflightProbeTest {
         val calls = mutableListOf<String>()
         val probe = BatchDownloadPreflightProbe(maxReferences = 2) { reference ->
             calls += reference
-            if (reference == "missing") Result.Missing else Result.Present
+            Observation(
+                if (reference == "missing") Result.Missing else Result.Present,
+                1L
+            )
         }
         assertEquals(Result.Present, probe.inspect("present"))
         assertEquals(Result.Missing, probe.inspect("missing"))
@@ -30,7 +34,7 @@ class BatchDownloadPreflightProbeTest {
         val probe = BatchDownloadPreflightProbe(budgetNanos = 500L, nanoTime = { now }) {
             calls++
             now += 600L
-            Result.Present
+            Observation(Result.Present, 1L)
         }
         assertEquals(Result.Present, probe.inspect("slow"))
         assertNull(probe.inspect("not-inspected"))
@@ -40,8 +44,11 @@ class BatchDownloadPreflightProbeTest {
     @Test
     fun newStartObtainsFreshEvidenceAfterPermissionChanges() {
         var permitted = false
-        val inspect: (String) -> Result = {
-            if (permitted) Result.Present else Result.PermissionLost(SecurityException("fixture"))
+        val inspect: (String) -> Observation = {
+            Observation(
+                if (permitted) Result.Present else Result.PermissionLost(SecurityException("fixture")),
+                1L
+            )
         }
         val firstStart = BatchDownloadPreflightProbe(inspectReference = inspect)
         assertTrue(firstStart.inspect("audio") is Result.PermissionLost)

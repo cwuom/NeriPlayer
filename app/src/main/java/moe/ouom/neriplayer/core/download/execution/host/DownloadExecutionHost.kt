@@ -1330,6 +1330,11 @@ class DefaultDownloadExecutionHost(
                         // 调度窗口，让源解析和文件准备不会挤占用户配置的传输槽位
                         val configuredCapacity = configuredDispatchWindow(appContext)
                         val occupancy = transferLaneOccupancy(appContext)
+                        if (recoveryRequired.get()) {
+                            queueExhausted = true
+                            pumpPendingPage = null
+                            break
+                        }
                         val laneHasCapacity = occupancy < configuredCapacity
                         val mayProbeBlockedLane = !laneHasCapacity &&
                             !blockedLaneProbeUsed &&
@@ -1360,6 +1365,11 @@ class DefaultDownloadExecutionHost(
                         }
                         waitedForPendingUidtGrace = false
                         selection.requests.forEach { request ->
+                            if (recoveryRequired.get()) {
+                                queueExhausted = true
+                                pumpPendingPage = null
+                                return@forEach
+                            }
                             // 按持久顺序领取后再并发执行，避免协程启动次序反过来决定队列次序
                             if (!tryAcquireHostAdmissionSuspending(
                                     appContext, request.operationId, configuredCapacity
@@ -1367,6 +1377,12 @@ class DefaultDownloadExecutionHost(
                             ) {
                                 deferredTransferOperationIds += request.operationId
                                 queueExhausted = true
+                                return@forEach
+                            }
+                            if (recoveryRequired.get()) {
+                                releaseHandoffAdmissionIfIdle(appContext, request.operationId)
+                                queueExhausted = true
+                                pumpPendingPage = null
                                 return@forEach
                             }
                             val reservationToken = reserveTransferSlot(
@@ -1386,6 +1402,16 @@ class DefaultDownloadExecutionHost(
                                         pumpPendingPage?.requests.orEmpty(),
                                     continuationCursor = pumpPendingPage?.continuationCursor
                                 )
+                                return@forEach
+                            }
+                            if (recoveryRequired.get()) {
+                                releaseTransferReservation(
+                                    operationId = request.operationId,
+                                    reservationToken = reservationToken
+                                )
+                                releaseHandoffAdmissionIfIdle(appContext, request.operationId)
+                                queueExhausted = true
+                                pumpPendingPage = null
                                 return@forEach
                             }
                             deferredTransferOperationIds.remove(request.operationId)

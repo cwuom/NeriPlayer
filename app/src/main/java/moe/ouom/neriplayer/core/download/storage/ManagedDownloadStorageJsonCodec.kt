@@ -217,6 +217,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("verifiedAudioDurationMs", verifiedAudioDurationMs)
             put("downloadTimeMs", downloadTimeMs)
             put("downloadFinalized", downloadFinalized)
+            put("audioPublicationPending", audioPublicationPending)
             put("metadataEmbeddingState", metadataEmbeddingState?.name)
             put("createdAtMs", createdAtMs)
             put("createdAtSource", createdAtSource)
@@ -510,6 +511,7 @@ internal object ManagedDownloadStorageJsonCodec {
             } else {
                 declaredDownloadFinalized
             },
+            audioPublicationPending = optBoolean("audioPublicationPending", false),
             metadataEmbeddingState = if (acceptsLegacyV15Completion) {
                 DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED
             } else {

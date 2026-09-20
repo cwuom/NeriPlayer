@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.download.model.hasDownloadedAudioDurationMismatc
 import moe.ouom.neriplayer.core.download.model.expectedDownloadedAudioDurationMs
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
+import moe.ouom.neriplayer.core.download.policy.matchesDownloadedCatalogFileSize
 import moe.ouom.neriplayer.core.download.policy.shouldTrustDirectPresentDownloadedSongReference
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.DownloadedSongReferenceProbe
 import android.content.Context
@@ -79,8 +80,8 @@ internal fun GlobalDownloadManager.findFastCachedDownloadedSong(
     context: Context,
     song: SongItem,
     catalogIndex: DownloadedSongCatalogIndex = downloadedSongCatalogIndex,
-    inspectReference: (String) -> ManagedDownloadReferenceLookup.Result? = { reference ->
-        ManagedDownloadReferenceLookup.inspect(context, reference)
+    observeReference: (String) -> ManagedDownloadReferenceLookup.Observation? = { reference ->
+        ManagedDownloadReferenceLookup.inspectWithSize(context, reference)
     }
 ): DownloadedSong? {
     val downloadedSong = catalogIndex.find(song) ?: return null
@@ -99,7 +100,8 @@ internal fun GlobalDownloadManager.findFastCachedDownloadedSong(
             sawUncertain = true
             continue
         }
-        val evidence = inspectReference(reference)
+        val observation = observeReference(reference)
+        val evidence = observation?.result
         when (evidence) {
             ManagedDownloadReferenceLookup.Result.Present -> Unit
             ManagedDownloadReferenceLookup.Result.Missing -> {
@@ -113,6 +115,12 @@ internal fun GlobalDownloadManager.findFastCachedDownloadedSong(
                 sawUncertain = true
                 continue
             }
+        }
+        val observedSizeBytes = observation.sizeBytes
+        if (!matchesDownloadedCatalogFileSize(downloadedSong.fileSize, observedSizeBytes)) {
+            sawIncompleteAudio = true
+            sawUncertain = true
+            continue
         }
         val cachedAudio = snapshot?.let { currentSnapshot ->
             currentSnapshot.audioEntriesByLookupKey[reference]
@@ -129,7 +137,9 @@ internal fun GlobalDownloadManager.findFastCachedDownloadedSong(
                     reference = reference,
                     evidence = evidence,
                     snapshot = snapshot,
-                    cachedAudio = cachedAudio
+                    cachedAudio = cachedAudio,
+                    recordedSizeBytes = downloadedSong.fileSize,
+                    observedSizeBytes = observedSizeBytes
                 )
             ) {
                 NPLogger.d(
@@ -208,6 +218,13 @@ internal fun GlobalDownloadManager.findFastCachedDownloadedSong(
         )
     }
     return null
+}
+
+internal fun readDownloadedCatalogReferenceSize(context: Context, reference: String): Long? {
+    val observation = ManagedDownloadReferenceLookup.inspectWithSize(context, reference)
+    return observation.sizeBytes.takeIf {
+        observation.result == ManagedDownloadReferenceLookup.Result.Present
+    }
 }
 
 internal suspend fun GlobalDownloadManager.repairDownloadedCoverIfMissing(

@@ -167,6 +167,36 @@ class ManagedDownloadTreeChildCacheTest {
             listOf("new.txt"),
             cache.peekAllChildren("parent")?.map(QueriedTreeChild::name)?.toList()
         )
+        assertNull(cache.peekChild("parent", "old.txt", includeIncomplete = true))
+        assertEquals(
+            "new.txt",
+            cache.peekChildByReference("parent", sameUri.toString(), includeIncomplete = true)?.name
+        )
+    }
+
+    @Test
+    fun `forget by reference removes the direct name and reference indexes`() {
+        val cache = ManagedDownloadTreeChildCache()
+        val reference = uri("content://provider/song/known")
+        cache.rememberChildren(
+            cacheKey = "parent",
+            children = listOf(child("known.mp3", reference)),
+            refreshedAtMs = 1L,
+            isComplete = true
+        )
+
+        cache.forgetChildrenByReference(setOf(reference.toString())) { cacheKey, childName ->
+            cache.forgetChildName(cacheKey, childName, refreshedAtMs = 2L)
+        }
+
+        assertNull(cache.peekChild("parent", "known.mp3", includeIncomplete = true))
+        assertNull(
+            cache.peekChildByReference(
+                "parent",
+                reference.toString(),
+                includeIncomplete = true
+            )
+        )
     }
 
     @Test

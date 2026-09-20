@@ -106,7 +106,10 @@ class TerminalTemporaryWriteCleanupJournalTest {
         val captured = journal.availableEntries().single()
         journal.enqueue(root, listOf("second.mp3", "shared.mp3"))
         val restored = TerminalTemporaryWriteCleanupJournal(store)
-        assertFalse(restored.consume(captured))
+        assertEquals(
+            TerminalTemporaryWriteCleanupConsumeResult.REFRESHED_TARGETS_RETAINED,
+            restored.consumeWithResult(captured)
+        )
         assertEquals(listOf("second.mp3", "shared.mp3"), restored.availableEntries().single().targetNames)
         assertTrue(restored.consume(restored.availableEntries().single()))
         assertTrue(restored.availableEntries().isEmpty())

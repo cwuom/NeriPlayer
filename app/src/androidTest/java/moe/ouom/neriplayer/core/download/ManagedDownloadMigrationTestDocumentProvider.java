@@ -37,9 +37,16 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     public static final String RESET = "test:resetMigration";
     public static final String QUERY_FAULT = "test:queryFault";
     public static final String QUERY_COUNT = "test:queryCount";
+    public static final String REFERENCE_QUERY_FAULT = "test:referenceQueryFault";
     public static final String PUBLICATION_READ_FAULT = "test:publicationReadFault";
     public static final String PUBLICATION_MISSING_READ = "test:publicationMissingRead";
     public static final String PUBLICATION_CHILDREN_FAULT = "test:publicationChildrenFault";
+    public static final String PUBLICATION_WRITE_GATE = "test:publicationWriteGate";
+    public static final String AUTO_RENAME_NEXT_COLLISION = "test:autoRenameNextCollision";
+    private static volatile String publicationWriteGateName;
+    private static volatile boolean autoRenameNextCollision;
+    private static volatile CountDownLatch publicationWriteEntered = new CountDownLatch(0);
+    private static volatile CountDownLatch publicationWriteRelease = new CountDownLatch(0);
 
     private static final String EXTRA_URI = "uri";
     private static final String EXTRA_DISPLAY_NAME =
@@ -56,6 +63,12 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     private static volatile String queryFault;
     private static volatile CountDownLatch queryGate = new CountDownLatch(0);
     private static final AtomicInteger childQueryCount = new AtomicInteger();
+    private static final AtomicInteger documentQueryCount = new AtomicInteger();
+    private static final AtomicInteger rootDocumentQueryCount = new AtomicInteger();
+    private static final AtomicInteger documentPathCount = new AtomicInteger();
+    private static final AtomicInteger referenceQueryFaultCount = new AtomicInteger();
+    private static volatile String referenceQueryFaultId;
+    private static volatile String referenceQueryFaultKind;
     private static final AtomicInteger metadataReadCount = new AtomicInteger();
     private static volatile String publicationReadFaultName;
     private static String publicationReadFaultId;
@@ -127,6 +140,16 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             }
             return cursor;
         }
+        documentQueryCount.incrementAndGet();
+        if (ROOT_ID.equals(documentId)) rootDocumentQueryCount.incrementAndGet();
+        if (documentId.equals(referenceQueryFaultId)) {
+            referenceQueryFaultCount.incrementAndGet();
+            if ("null".equals(referenceQueryFaultKind)) return null;
+            if ("permission".equals(referenceQueryFaultKind)) {
+                throw new SecurityException("fixture exact reference permission denied");
+            }
+            throw new IllegalStateException("fixture exact reference unavailable");
+        }
         Node node = nodeFor(documentId);
         if (node != null) {
             cursor.addRow(documentRow(columns, node));
@@ -139,6 +162,17 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         Node node = nodeFor(documentId(uri));
         if (node == null || node.directory) {
             throw new FileNotFoundException("Unknown migration fixture document: " + uri);
+        }
+        if (mode.contains("w") && node.displayName.equals(publicationWriteGateName)) {
+            publicationWriteEntered.countDown();
+            try {
+                if (!publicationWriteRelease.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
+                    throw new FileNotFoundException("publication write test gate timed out");
+                }
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new FileNotFoundException("publication write test interrupted");
+            }
         }
         synchronized (NODES) {
             if (!mode.contains("w") && node.id.equals(publicationMissingReadId)) {
@@ -195,6 +229,30 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
+        if (PUBLICATION_WRITE_GATE.equals(method)) {
+            Bundle result = new Bundle();
+            if ("arm".equals(arg)) {
+                publicationWriteRelease.countDown();
+                publicationWriteEntered = new CountDownLatch(1);
+                publicationWriteRelease = new CountDownLatch(1);
+                publicationWriteGateName = extras.getString("name");
+            } else if ("await".equals(arg)) {
+                try {
+                    result.putBoolean("entered", publicationWriteEntered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(error);
+                }
+            } else {
+                publicationWriteGateName = null;
+                publicationWriteRelease.countDown();
+            }
+            return result;
+        }
+        if (AUTO_RENAME_NEXT_COLLISION.equals(method)) {
+            autoRenameNextCollision = true;
+            return new Bundle();
+        }
         if (QUERY_FAULT.equals(method)) {
             queryGate.countDown();
             queryGate = new CountDownLatch("blocked".equals(arg) ? 1 : 0);
@@ -204,10 +262,37 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         if (QUERY_COUNT.equals(method)) {
             Bundle result = new Bundle();
             result.putInt("count", childQueryCount.get());
+            result.putInt("documentQueries", documentQueryCount.get());
+            result.putInt("rootDocumentQueries", rootDocumentQueryCount.get());
+            result.putInt("documentPaths", documentPathCount.get());
+            result.putInt("referenceQueryFaults", referenceQueryFaultCount.get());
             result.putInt("metadataReads", metadataReadCount.get());
             result.putInt("publicationReadFaults", publicationReadFaultCount.get());
             result.putInt("publicationMissingReads", publicationMissingReadCount.get());
             result.putInt("publicationChildrenFaults", publicationChildrenFaultCount.get());
+            return result;
+        }
+        if (REFERENCE_QUERY_FAULT.equals(method)) {
+            referenceQueryFaultId = arg == null ? null : documentId(Uri.parse(arg));
+            referenceQueryFaultKind = extras == null ? null : extras.getString("fault");
+            referenceQueryFaultCount.set(0);
+            return new Bundle();
+        }
+        if ("android:findDocumentPath".equals(method)) {
+            documentPathCount.incrementAndGet();
+            Uri target = extras == null ? null : uriExtra(extras);
+            List<String> path = new ArrayList<>();
+            synchronized (NODES) {
+                Node node = target == null ? null : NODES.get(documentId(target));
+                while (node != null) {
+                    path.add(0, node.id);
+                    node = node.parentId == null ? null : NODES.get(node.parentId);
+                }
+            }
+            Bundle result = new Bundle();
+            if (!path.isEmpty()) {
+                result.putParcelable("result", new DocumentsContract.Path(null, path));
+            }
             return result;
         }
         if (PUBLICATION_READ_FAULT.equals(method)) {
@@ -269,7 +354,11 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         }
         synchronized (NODES) {
             if (hasChildNamed(parent.id, displayName)) {
-                return new Bundle();
+                if (!autoRenameNextCollision) {
+                    return new Bundle();
+                }
+                autoRenameNextCollision = false;
+                displayName = nextAvailableDisplayName(parent.id, displayName);
             }
             String id = "migration-node-" + UUID.randomUUID();
             boolean directory = DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType);
@@ -381,6 +470,22 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         return false;
     }
 
+    private String nextAvailableDisplayName(String parentId, String requestedName) {
+        int extensionIndex = requestedName.lastIndexOf('.');
+        String stem = extensionIndex > 0
+            ? requestedName.substring(0, extensionIndex)
+            : requestedName;
+        String extension = extensionIndex > 0
+            ? requestedName.substring(extensionIndex)
+            : "";
+        for (int suffix = 1; ; suffix++) {
+            String candidate = stem + " (" + suffix + ")" + extension;
+            if (!hasChildNamed(parentId, candidate)) {
+                return candidate;
+            }
+        }
+    }
+
     private boolean deleteDocument(String documentId) {
         if (ROOT_ID.equals(documentId)) {
             return false;
@@ -432,9 +537,18 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     }
 
     private void reset() {
+        publicationWriteGateName = null;
+        autoRenameNextCollision = false;
+        publicationWriteRelease.countDown();
         queryGate.countDown();
         queryFault = null;
         childQueryCount.set(0);
+        documentQueryCount.set(0);
+        rootDocumentQueryCount.set(0);
+        documentPathCount.set(0);
+        referenceQueryFaultCount.set(0);
+        referenceQueryFaultId = null;
+        referenceQueryFaultKind = null;
         metadataReadCount.set(0);
         synchronized (NODES) {
             publicationReadFaultName = null;

@@ -250,12 +250,15 @@ internal fun shouldTrustDirectPresentDownloadedSongReference(
     reference: String?,
     evidence: ManagedDownloadReferenceLookup.Result,
     snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
-    cachedAudio: ManagedDownloadStorage.StoredEntry?
+    cachedAudio: ManagedDownloadStorage.StoredEntry?,
+    recordedSizeBytes: Long? = null,
+    observedSizeBytes: Long? = null
 ): Boolean {
     if (
         !isFormalManagedAudioReference(reference) ||
         evidence != ManagedDownloadReferenceLookup.Result.Present ||
-        cachedAudio?.isPendingAudioWrite == true
+        cachedAudio?.isPendingAudioWrite == true ||
+        !matchesDownloadedCatalogFileSize(recordedSizeBytes, observedSizeBytes)
     ) {
         return false
     }
@@ -269,6 +272,15 @@ internal fun shouldTrustDirectPresentDownloadedSongReference(
         metadata = ManagedDownloadStorage.metadataForAudioEntry(snapshot, cachedAudio),
         allowLegacyPublishedAudio = true
     )
+}
+
+internal fun matchesDownloadedCatalogFileSize(
+    recordedSizeBytes: Long?,
+    observedSizeBytes: Long?
+): Boolean {
+    return recordedSizeBytes != null && recordedSizeBytes > 0L &&
+        observedSizeBytes != null && observedSizeBytes > 0L &&
+        recordedSizeBytes == observedSizeBytes
 }
 
 internal fun shouldFinalizeDownloadedSidecars(

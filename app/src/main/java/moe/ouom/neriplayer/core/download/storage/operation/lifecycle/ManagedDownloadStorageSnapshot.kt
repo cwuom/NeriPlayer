@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.notifyLyricsR
 import moe.ouom.neriplayer.core.download.storage.operation.content.readTextInternal
 import moe.ouom.neriplayer.core.download.storage.operation.content.resolveCurrentTreePendingAudioSize
 import moe.ouom.neriplayer.core.download.storage.operation.content.resolveSnapshotForIndexedLookup
+import moe.ouom.neriplayer.core.download.storage.operation.content.rootKeyForResolvedRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.writeRootText
 import moe.ouom.neriplayer.core.download.storage.operation.findAudioEntry
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
@@ -58,11 +59,21 @@ internal fun ManagedDownloadStorage.refreshDownloadSidecarSnapshotBlocking(
     respectThrottle: Boolean,
     refreshCovers: Boolean = true
 ): DownloadLibrarySnapshot {
-    val activeSnapshot = snapshotCacheStore.cachedSnapshot(
+    val captured = snapshotCacheStore.captureSnapshot(
         context = context,
         restorePersisted = false
-    ) ?: return snapshot
-    val cacheKey = snapshotCacheStore.currentKey(context)
+    )
+    val activeSnapshot = captured.snapshot
+        ?: return snapshotCacheStore.currentSnapshotOrPartial(context)
+    val cacheKey = captured.cacheKey
+    fun selectCurrent(candidate: DownloadLibrarySnapshot): DownloadLibrarySnapshot {
+        return snapshotCacheStore.selectSnapshotIfUnchanged(
+            context = context,
+            cacheKey = cacheKey,
+            snapshot = candidate,
+            expectedRevision = captured.revision
+        ).snapshot
+    }
     if (
         shouldSkipRedundantForcedSidecarRefresh(
             requestedSnapshot = snapshot,
@@ -70,7 +81,7 @@ internal fun ManagedDownloadStorage.refreshDownloadSidecarSnapshotBlocking(
             respectThrottle = respectThrottle
         )
     ) {
-        return activeSnapshot
+        return selectCurrent(activeSnapshot)
     }
     synchronized(sidecarRefreshLock) {
         val nowMs = System.currentTimeMillis()
@@ -79,9 +90,12 @@ internal fun ManagedDownloadStorage.refreshDownloadSidecarSnapshotBlocking(
                 lastSidecarRefreshKey == cacheKey &&
                 nowMs - lastSidecarRefreshAtMs < SIDECAR_REFRESH_THROTTLE_MS
         ) {
-            return activeSnapshot
+            return selectCurrent(activeSnapshot)
         }
         val root = resolveRootBlocking(context)
+        if (rootKeyForResolvedRoot(root) != cacheKey) {
+            return selectCurrent(activeSnapshot)
+        }
         val coverRefresh = if (refreshCovers) {
             val standardCovers = treeDirectories.refreshSubdirectoryEntries(
                 context = context,
@@ -110,7 +124,7 @@ internal fun ManagedDownloadStorage.refreshDownloadSidecarSnapshotBlocking(
             // buildDownloadLibrarySnapshot 已经把可用的旧侧载合并进 requested
             // snapshot。返回 activeSnapshot 会把同一轮更新的音频核心条目回退掉，
             // 进而让刚提交的歌曲暂时变白
-            return snapshot
+            return selectCurrent(snapshot)
         }
         lastSidecarRefreshKey = cacheKey
         lastSidecarRefreshAtMs = System.currentTimeMillis()
@@ -120,14 +134,19 @@ internal fun ManagedDownloadStorage.refreshDownloadSidecarSnapshotBlocking(
             lyricEntries = lyricRefresh.entries
         )
         if (updatedSnapshot !== activeSnapshot) {
-            snapshotCacheStore.putSnapshot(
+            val publication = snapshotCacheStore.publishSnapshotIfUnchanged(
                 context = context,
                 cacheKey = cacheKey,
-                snapshot = updatedSnapshot
+                snapshot = updatedSnapshot,
+                expectedRevision = captured.revision
             )
-            notifyLyricsRefresh()
+            if (publication.published) {
+                notifyLyricsRefresh()
+            }
+            // 并发 core 提交优先于本轮侧载刷新，调用方必须使用实际生效的快照
+            return publication.snapshot
         }
-        return updatedSnapshot
+        return selectCurrent(updatedSnapshot)
     }
 }
 
@@ -299,13 +318,9 @@ internal fun ManagedDownloadStorage.findMetadataByDirectLookup(
             }
 
             is RootHandle.TreeRoot -> {
-                val children = treeChildRegistry.cachedTreeChildren(
-                    context = context,
-                    parent = candidateRoot.tree,
-                    // 写入路径优先复用已确认的目录快照，避免每次回写都重新枚举 SAF
-                    maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
-                )
-                children.asSequence()
+                fun selectMetadata(
+                    children: Collection<QueriedTreeChild>
+                ): StoredEntry? = children.asSequence()
                     .filterNot(QueriedTreeChild::isDirectory)
                     .filter { child -> child.name == metadataName }
                     .firstOrNull()
@@ -330,6 +345,15 @@ internal fun ManagedDownloadStorage.findMetadataByDirectLookup(
                             )
                         )
                         ?.toStoredEntry()
+                treeChildRegistry.peekTreeChildren(candidateRoot.tree)
+                    ?.let(::selectMetadata)
+                    ?: selectMetadata(
+                        treeChildRegistry.cachedTreeChildren(
+                            context = context,
+                            parent = candidateRoot.tree,
+                            maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+                        )
+                    )
             }
         }
     }

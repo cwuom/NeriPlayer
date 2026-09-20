@@ -7,7 +7,6 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.ensureManaged
 import moe.ouom.neriplayer.core.download.storage.operation.content.fastIndexRootIdentity
 import moe.ouom.neriplayer.core.download.storage.operation.content.fastIndexShardStorage
 import moe.ouom.neriplayer.core.download.storage.operation.content.hasManagedDownloadPathHint
-import moe.ouom.neriplayer.core.download.storage.operation.content.inspectStorageReference
 import moe.ouom.neriplayer.core.download.storage.operation.content.isDocumentWithinManagedTree
 import moe.ouom.neriplayer.core.download.storage.operation.content.isDurableCoreMetadata
 import moe.ouom.neriplayer.core.download.storage.operation.content.isMediaStoreSongWithinManagedRoot
@@ -19,7 +18,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.pendingArtifa
 import moe.ouom.neriplayer.core.download.storage.operation.content.readManagedLibraryIdForRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.readTextInternal
 import moe.ouom.neriplayer.core.download.storage.operation.content.restoreFastIndexPreviewBlocking
-import moe.ouom.neriplayer.core.download.storage.operation.content.storageReferenceForInspection
+import moe.ouom.neriplayer.core.download.storage.operation.content.rootKeyForResolvedRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.writeFastIndexShardBlocking
 import moe.ouom.neriplayer.core.download.storage.operation.findAudioEntry
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.composeSnapshot
@@ -53,7 +52,7 @@ import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLo
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.metadata.resolveCreatedAtConfidence
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationEntryCollector
-import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadStoredReferenceLookup
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndex
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexEntryFactory
@@ -646,34 +645,16 @@ internal fun ManagedDownloadStorage.findPendingDownloadedAudioImpl(
 
 internal suspend fun ManagedDownloadStorage.queryStoredEntryImpl(context: Context, reference: String?): StoredEntry? = withContext(Dispatchers.IO) {
     val target = reference?.takeIf { it.isNotBlank() } ?: return@withContext null
-    val cachedSnapshot = buildDownloadLibrarySnapshotBlocking(context)
-    val cachedEntry = cachedSnapshot.audioEntriesByLookupKey[target]
-        ?: cachedSnapshot.pendingAudioEntries.firstOrNull { entry ->
-            entry.reference == target ||
-                entry.mediaUri == target ||
-                entry.localFilePath == target
-        }
-        ?: return@withContext null
-    if (
-        inspectStorageReference(context, storageReferenceForInspection(cachedEntry)) ==
-            ManagedDownloadReferenceIo.AccessResult.Accessible
-    ) {
-        return@withContext cachedEntry
-    }
-    val refreshedSnapshot = buildDownloadLibrarySnapshotBlocking(
-        context,
-        forceRefresh = true
+    val root = resolveRootBlocking(context)
+    val knownEntry = snapshotCacheStore.cachedSnapshot(context, restorePersisted = false)
+        ?.takeIf { snapshotCacheStore.currentKey(context) == rootKeyForResolvedRoot(root) }
+        ?.audioEntriesByLookupKey?.get(target)
+    ManagedDownloadStoredReferenceLookup.query(
+        context = context,
+        root = root,
+        reference = target,
+        knownEntry = knownEntry
     )
-    (refreshedSnapshot.audioEntriesByLookupKey[target]
-        ?: refreshedSnapshot.pendingAudioEntries.firstOrNull { entry ->
-            entry.reference == target ||
-                entry.mediaUri == target ||
-                entry.localFilePath == target
-        })
-        ?.takeIf { refreshedEntry ->
-            inspectStorageReference(context, storageReferenceForInspection(refreshedEntry)) ==
-                ManagedDownloadReferenceIo.AccessResult.Accessible
-        }
 }
 
 internal suspend fun ManagedDownloadStorage.buildDownloadLibrarySnapshotImpl(
@@ -1014,14 +995,31 @@ internal fun ManagedDownloadStorage.buildDownloadLibrarySnapshotBlockingImpl(
     context: Context,
     forceRefresh: Boolean = false,
     includeMetadataLessAudioForLegacyUpgrade: Boolean = false
+): DownloadLibrarySnapshot {
+    if (!forceRefresh && !includeMetadataLessAudioForLegacyUpgrade) {
+        // 增量快照可独立读取，不能让已提交歌曲排在无关的全目录扫描之后
+        // 仍核查当前根目录权限，缓存不用于绕过授权或换根
+        resolveRootBlocking(context)
+        snapshotCacheStore.cachedSnapshot(context, restorePersisted = false)?.let { return it }
+    }
+    return rebuildDownloadLibrarySnapshotBlocking(
+        context, forceRefresh, includeMetadataLessAudioForLegacyUpgrade
+    )
+}
+
+private fun ManagedDownloadStorage.rebuildDownloadLibrarySnapshotBlocking(
+    context: Context,
+    forceRefresh: Boolean,
+    includeMetadataLessAudioForLegacyUpgrade: Boolean
 ): DownloadLibrarySnapshot = synchronized(snapshotBuildLock) {
     // 先确认配置目录仍可写, 避免权限失效时恢复旧索引并误认为目录正常
     val root = resolveRootBlocking(context)
-    val cacheKey = snapshotCacheStore.currentKey(context)
-    val cachedSnapshot = snapshotCacheStore.cachedSnapshot(
+    val cacheKey = rootKeyForResolvedRoot(root)
+    val captured = snapshotCacheStore.captureSnapshot(
         context = context,
         restorePersisted = true
     )
+    val cachedSnapshot = captured.snapshot
     if (!forceRefresh && !includeMetadataLessAudioForLegacyUpgrade) {
         cachedSnapshot?.let { return@synchronized it }
     }
@@ -1202,7 +1200,11 @@ internal fun ManagedDownloadStorage.buildDownloadLibrarySnapshotBlockingImpl(
         pendingMetadataByAudioName = pendingMetadataByAudioName
     )
     if (!includeMetadataLessAudioForLegacyUpgrade) {
-        snapshotCacheStore.putSnapshot(context, cacheKey, snapshot)
+        val publication = snapshotCacheStore.publishSnapshotIfUnchanged(
+            context, cacheKey, snapshot, expectedRevision = captured.revision
+        )
+        // 并发提交或删除优先于本轮扫描，不能把未发布的旧目录视图交给调用方
+        return@synchronized publication.snapshot
     }
     return@synchronized snapshot
 }

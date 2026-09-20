@@ -99,25 +99,12 @@ fun ActiveDownloadTaskList(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (progress.totalBytes > 0L) {
-                                LinearProgressIndicator(
-                                    progress = {
-                                        (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
-                                            .coerceIn(0f, 1f)
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                )
-                            } else {
-                                LinearProgressIndicator(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                )
-                            }
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                            )
                         }
 
                         progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {

@@ -18,6 +18,9 @@ internal object ManagedLibraryRebuilder {
     ): List<ManagedLibraryRebuildItem> {
         return snapshot.audioEntries.mapNotNull { audio ->
             val metadata = ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
+            if (metadata?.audioPublicationPending == true) {
+                return@mapNotNull null
+            }
             if (
                 !isFinalizedDownloadedAudioEntry(
                     rootEntriesComplete = snapshot.rootEntriesComplete ||

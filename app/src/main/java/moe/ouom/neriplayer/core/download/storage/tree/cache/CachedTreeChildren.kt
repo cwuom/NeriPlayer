@@ -8,6 +8,7 @@ internal class CachedTreeChildren(
     initialComplete: Boolean
 ) {
     val childrenByName: MutableMap<String, QueriedTreeChild> = ConcurrentHashMap()
+    val childrenByReference: MutableMap<String, QueriedTreeChild> = ConcurrentHashMap()
 
     @Volatile
     var refreshedAtMs: Long = initialRefreshedAtMs
@@ -17,7 +18,14 @@ internal class CachedTreeChildren(
 
     init {
         initialChildren.forEach { child ->
+            childrenByReference[child.documentUri.toString()]?.let { previous ->
+                childrenByName.remove(previous.name)
+            }
+            childrenByName[child.name]?.let { previous ->
+                childrenByReference.remove(previous.documentUri.toString())
+            }
             childrenByName[child.name] = child
+            childrenByReference[child.documentUri.toString()] = child
         }
     }
 }

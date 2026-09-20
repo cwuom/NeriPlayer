@@ -14,21 +14,35 @@ internal object ManagedDownloadReferenceLookup {
         data class ProviderFailure(val cause: Throwable) : Result
     }
 
+    data class Observation(
+        val result: Result,
+        val sizeBytes: Long?
+    )
+
     fun canMarkMissing(result: Result): Boolean = result is Result.Missing
 
     fun inspect(context: Context, reference: String?): Result {
+        return inspectWithSize(context, reference).result
+    }
+
+    fun inspectWithSize(context: Context, reference: String?): Observation {
         val normalized = reference?.trim().orEmpty()
-        if (normalized.isBlank()) return Result.OutOfScope
-        return when (val result = ManagedDownloadReferenceIo.inspect(context, normalized)) {
+        if (normalized.isBlank()) return Observation(Result.OutOfScope, null)
+        val observation = ManagedDownloadReferenceIo.inspectWithSize(context, normalized)
+        val result = when (val access = observation.result) {
             ManagedDownloadReferenceIo.AccessResult.Accessible -> Result.Present
             ManagedDownloadReferenceIo.AccessResult.Missing -> Result.Missing
             ManagedDownloadReferenceIo.AccessResult.PermissionLost -> {
                 Result.PermissionLost(SecurityException("SAF permission lost: $normalized"))
             }
             is ManagedDownloadReferenceIo.AccessResult.ProviderFailure -> {
-                Result.ProviderFailure(result.error)
+                Result.ProviderFailure(access.error)
             }
         }
+        return Observation(
+            result = result,
+            sizeBytes = observation.sizeBytes.takeIf { result == Result.Present }
+        )
     }
 
     fun isMissingFailure(error: Throwable): Boolean {

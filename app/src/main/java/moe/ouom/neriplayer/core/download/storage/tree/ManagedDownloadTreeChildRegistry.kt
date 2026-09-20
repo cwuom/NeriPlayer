@@ -61,6 +61,15 @@ internal class ManagedDownloadTreeChildRegistry(
         )
     }
 
+    fun peekTreeChildrenNamesForWrite(parent: DocumentFile): Set<String>? {
+        return treeChildCache.cachedNames(
+            cacheKey = parent.uri.toString(),
+            nowMs = System.currentTimeMillis(),
+            maxCacheAgeMs = Long.MAX_VALUE,
+            allowReservedNames = true
+        )
+    }
+
     fun refreshTreeChildren(context: Context, parent: DocumentFile): Collection<QueriedTreeChild> {
         return refreshTreeChildrenWithStatus(context, parent).children
     }
@@ -123,6 +132,12 @@ internal class ManagedDownloadTreeChildRegistry(
         childName: String,
         maxCacheAgeMs: Long = treeWriteCacheValidateIntervalMs
     ): QueriedTreeChild? {
+        treeChildCache.cachedChild(
+            cacheKey = parent.uri.toString(),
+            childName = childName,
+            nowMs = System.currentTimeMillis(),
+            maxCacheAgeMs = maxCacheAgeMs
+        )?.let { return it }
         return cachedTreeChildren(context, parent, maxCacheAgeMs)
             .firstOrNull { child -> child.name == childName }
     }
@@ -133,9 +148,7 @@ internal class ManagedDownloadTreeChildRegistry(
         childName: String
     ): QueriedTreeChild? {
         // a failed provider query is incomplete, but its fallback entries are still useful
-        peekTreeChildrenIncludingIncomplete(parent)
-            ?.firstOrNull { child -> child.name == childName }
-            ?.let { return it }
+        peekTreeChildIncludingIncomplete(parent, childName)?.let { return it }
         return cachedTreeChild(context, parent, childName)
     }
 
@@ -159,7 +172,34 @@ internal class ManagedDownloadTreeChildRegistry(
     }
 
     fun peekTreeChild(parent: DocumentFile, childName: String): QueriedTreeChild? {
-        return peekTreeChildren(parent)?.firstOrNull { child -> child.name == childName }
+        return treeChildCache.peekChild(
+            cacheKey = parent.uri.toString(),
+            childName = childName,
+            includeIncomplete = false
+        )
+    }
+
+    fun peekTreeChildIncludingIncomplete(
+        parent: DocumentFile,
+        childName: String
+    ): QueriedTreeChild? {
+        return treeChildCache.peekChild(
+            cacheKey = parent.uri.toString(),
+            childName = childName,
+            includeIncomplete = true
+        )
+    }
+
+    fun peekTreeChildByReference(
+        parent: DocumentFile,
+        reference: String,
+        includeIncomplete: Boolean = false
+    ): QueriedTreeChild? {
+        return treeChildCache.peekChildByReference(
+            cacheKey = parent.uri.toString(),
+            reference = reference,
+            includeIncomplete = includeIncomplete
+        )
     }
 
     fun rememberTreeChildren(
@@ -238,7 +278,8 @@ internal class ManagedDownloadTreeChildRegistry(
         val lock = childNameReservationLocks.computeIfAbsent("tree:$cacheKey") { Any() }
         return synchronized(lock) {
             ManagedDownloadStorageNaming.createUniqueAudioName(
-                existingNames = cachedTreeChildrenNamesForWrite(context, parent),
+                existingNames = peekTreeChildrenNamesForWrite(parent)
+                    ?: cachedTreeChildrenNamesForWrite(context, parent),
                 desiredName = desiredName
             )
                 .also { reservedName -> rememberTreeChildName(parent, reservedName) }

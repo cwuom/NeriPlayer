@@ -519,7 +519,7 @@ internal suspend fun GlobalDownloadManager.findFastCompletedBatchSongKeys(
     alreadyCompletedSongKeys: Set<String> = emptySet(),
     catalogIndex: DownloadedSongCatalogIndex = downloadedSongCatalogIndex,
     preflightProbe: BatchDownloadPreflightProbe = BatchDownloadPreflightProbe { reference ->
-        ManagedDownloadReferenceLookup.inspect(context, reference)
+        ManagedDownloadReferenceLookup.inspectWithSize(context, reference)
     }
 ): Set<String> {
     val coroutineContext = currentCoroutineContext()
@@ -538,9 +538,9 @@ internal suspend fun GlobalDownloadManager.findFastCompletedBatchSongKeys(
         .asSequence()
         .filter { song -> song.stableKey() !in activeTaskSongKeys }
         .filter { song -> catalogIndex.find(song) != null }
-    val inspectReference: (String) -> ManagedDownloadReferenceLookup.Result? = { reference ->
+    val observeReference: (String) -> ManagedDownloadReferenceLookup.Observation? = { reference ->
         coroutineContext.ensureActive()
-        preflightProbe.inspect(reference)
+        preflightProbe.observe(reference)
     }
     for ((index, song) in catalogCandidates.withIndex()) {
         coroutineContext.ensureActive()
@@ -549,7 +549,7 @@ internal suspend fun GlobalDownloadManager.findFastCompletedBatchSongKeys(
             context = context,
             song = song,
             catalogIndex = catalogIndex,
-            inspectReference = inspectReference
+            observeReference = observeReference
         )?.let {
             song.stableKey().takeIf(String::isNotBlank)?.let(catalogCompleted::add)
         }
@@ -562,7 +562,7 @@ internal suspend fun GlobalDownloadManager.findFastCompletedBatchSongKeys(
         managedDownloadArtifactCoordinator.findReadableCompletedStableKeys(
             context = context,
             stableKeys = candidates.map(SongItem::stableKey).filterNot(catalogCompleted::contains),
-            inspectReference = inspectReference
+            observeReference = observeReference
         )
     }.onFailure { error ->
         if (error is CancellationException) throw error

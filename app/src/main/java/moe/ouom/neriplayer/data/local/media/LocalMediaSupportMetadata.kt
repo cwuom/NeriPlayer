@@ -89,7 +89,8 @@ internal fun LocalMediaSupport.writeLocalCoverSidecar(
     file: File?,
     displayName: String,
     coverReference: String?,
-    stableIdentityKey: String?
+    stableIdentityKey: String?,
+    companionTransaction: LocalMediaCompanionTransaction? = null
 ): Boolean {
     val mutation = resolveEditableCoverMutation(
         writeCover = true,
@@ -104,7 +105,8 @@ internal fun LocalMediaSupport.writeLocalCoverSidecar(
             file = localFile,
             coverReference = coverReference,
             mutation = mutation,
-            stableIdentityKey = stableIdentityKey
+            stableIdentityKey = stableIdentityKey,
+            companionTransaction = companionTransaction
         )
     }
     if (shouldSkipLocalCoverSidecar(sourceUri.toString(), localFile)) {
@@ -128,7 +130,8 @@ internal fun LocalMediaSupport.writeLocalCoverSidecar(
         displayName = displayName,
         coverReference = coverReference,
         mutation = mutation,
-        stableIdentityKey = stableIdentityKey
+        stableIdentityKey = stableIdentityKey,
+        companionTransaction = companionTransaction
     )
 }
 
@@ -137,7 +140,8 @@ internal fun LocalMediaSupport.writeLocalFileCoverSidecar(
     file: File,
     coverReference: String?,
     mutation: EditableCoverMutation,
-    stableIdentityKey: String?
+    stableIdentityKey: String?,
+    companionTransaction: LocalMediaCompanionTransaction? = null
 ): Boolean {
     val parent = file.parentFile ?: return false
     val coverDirectory = findCoversDirectory(parent) ?: File(parent, "Covers")
@@ -153,7 +157,12 @@ internal fun LocalMediaSupport.writeLocalFileCoverSidecar(
     }.filter(File::isFile)
     if (mutation == EditableCoverMutation.CLEAR) {
         return (existingSpecificFiles + existingParentSpecificFiles).all { candidate ->
-            !candidate.exists() || candidate.delete()
+            !candidate.exists() || if (companionTransaction != null) {
+                companionTransaction.deferDelete(candidate.absolutePath)
+                true
+            } else {
+                candidate.delete()
+            }
         }
     }
     val reference = coverReference?.trim()?.takeIf(String::isNotBlank) ?: return false
@@ -164,9 +173,21 @@ internal fun LocalMediaSupport.writeLocalFileCoverSidecar(
         coverDirectory,
         localCoverSidecarName(baseName, extension, stableIdentityKey)
     )
+    companionTransaction?.beforeWrite(
+        reference = target.absolutePath,
+        bytes = bytes,
+        created = !target.exists()
+    )
     if (!writeBytesFileAtomically(target, bytes)) return false
+    companionTransaction?.afterWrite(target.absolutePath)
     (existingSpecificFiles + existingParentSpecificFiles).filter { it != target }.forEach { old ->
-        if (old.exists() && !old.delete()) return false
+        if (old.exists()) {
+            if (companionTransaction != null) {
+                companionTransaction.deferDelete(old.absolutePath)
+            } else if (!old.delete()) {
+                return false
+            }
+        }
     }
     return target.isFile && target.length() == bytes.size.toLong()
 }
@@ -177,7 +198,8 @@ internal fun LocalMediaSupport.writeDocumentCoverSidecar(
     displayName: String,
     coverReference: String?,
     mutation: EditableCoverMutation,
-    stableIdentityKey: String?
+    stableIdentityKey: String?,
+    companionTransaction: LocalMediaCompanionTransaction? = null
 ): Boolean {
     val navigation = resolveLocalDocumentNavigation(context, sourceUri) ?: return false
     val parentId = navigation.parentDocumentId ?: return false
@@ -220,7 +242,12 @@ internal fun LocalMediaSupport.writeDocumentCoverSidecar(
                 !child.isDirectory && child.displayName in managedNames
             }
             val deleted = (specific + parentSpecific).distinctBy(DocumentChild::uri).all { child ->
-                deleteDocumentReference(context, child)
+                if (companionTransaction != null) {
+                    companionTransaction.deferDelete(child.uri)
+                    true
+                } else {
+                    deleteDocumentReference(context, child)
+                }
             }
             if (deleted) {
                 invalidateDocumentChildrenCache(baseUri, parentId)
@@ -271,7 +298,7 @@ internal fun LocalMediaSupport.writeDocumentCoverSidecar(
         val specific = coversChildren.filter { child ->
             !child.isDirectory && child.displayName in managedNames
         }
-        val target = findExactDocumentSidecarChild(coversChildren, targetName)?.uri
+        val targetChild = findExactDocumentSidecarChild(coversChildren, targetName)
             ?: createDocumentSidecarForMutation(
                 context = context,
                 baseUri = baseUri,
@@ -279,13 +306,25 @@ internal fun LocalMediaSupport.writeDocumentCoverSidecar(
                 mimeType = mimeType,
                 displayName = targetName,
                 coversChildren
-            )?.uri
+            )
             ?: return@withDocumentMutationLock false
+        val target = targetChild.uri
+        if (targetChild.createdByCurrentMutation) {
+            companionTransaction?.created(target)
+        }
+        companionTransaction?.beforeWrite(
+            reference = target,
+            bytes = bytes,
+            created = targetChild.createdByCurrentMutation
+        )
         if (!writeBytesContent(context, target, bytes)) return@withDocumentMutationLock false
+        companionTransaction?.afterWrite(target)
         (specific + parentSpecific).distinctBy(DocumentChild::uri)
             .filter { it.uri != target }
             .forEach { old ->
-                if (!deleteDocumentReference(context, old)) {
+                if (companionTransaction != null) {
+                    companionTransaction.deferDelete(old.uri)
+                } else if (!deleteDocumentReference(context, old)) {
                     return@withDocumentMutationLock false
                 }
             }
@@ -302,7 +341,8 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
     file: File?,
     displayName: String,
     song: SongItem,
-    knownReferences: NearbyLyricReferences? = null
+    knownReferences: NearbyLyricReferences? = null,
+    companionTransaction: LocalMediaCompanionTransaction? = null
 ): Boolean {
     val contents = listOf(
         LyricKind.ORIGINAL to (song.matchedLyric ?: song.originalLyric),
@@ -366,7 +406,15 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
             Triple(target, contentValue, previous)
         }
         val written = plans.all { (target, content, _) ->
-            writeTextFileAtomically(target, content) && readTextFile(target) == content
+            val bytes = content.toByteArray(Charsets.UTF_8)
+            companionTransaction?.beforeWrite(
+                reference = target.absolutePath,
+                bytes = bytes,
+                created = !target.exists()
+            )
+            val success = writeTextFileAtomically(target, content) && readTextFile(target) == content
+            if (success) companionTransaction?.afterWrite(target.absolutePath)
+            success
         }
         if (!written) {
             plans.asReversed().forEach { (target, _, previous) ->
@@ -417,6 +465,9 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
             },
             existing = existingReferences
         )
+        lyricResolution.createdReferences.keys.forEach { reference ->
+            companionTransaction?.created(reference)
+        }
         val references = lyricResolution.references
         var invalidPlan = false
         val plans = contents.mapNotNull { (kind, content) ->
@@ -445,9 +496,17 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
         if (invalidPlan) return@writeDocumentSidecars false
         var written = true
         plans.forEach { (reference, content, _) ->
+            val bytes = content.toByteArray(Charsets.UTF_8)
+            companionTransaction?.beforeWrite(
+                reference = reference,
+                bytes = bytes,
+                created = reference in lyricResolution.createdReferences
+            )
             if (!writeTextContent(context, reference, content)) {
                 written = false
                 NPLogger.w(TAG, "SAF lyric variant write failed: reference=$reference")
+            } else {
+                companionTransaction?.afterWrite(reference)
             }
         }
         if (!written) {

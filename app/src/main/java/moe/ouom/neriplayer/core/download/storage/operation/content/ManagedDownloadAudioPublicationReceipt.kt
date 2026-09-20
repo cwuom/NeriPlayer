@@ -29,6 +29,43 @@ import org.json.JSONException
 import org.json.JSONObject
 
 private const val PUBLICATION_RECEIPT_KEY = "audioPublicationReceipt"
+private const val PUBLICATION_PENDING_KEY = "audioPublicationPending"
+
+internal fun ManagedDownloadStorage.markAudioPublicationPending(
+    context: Context,
+    root: RootHandle,
+    pending: StoredEntry,
+    finalName: String = pending.logicalName
+) {
+    try {
+        val temporaryRoot = publicationTemporaryRoot(context, root)
+        val current = readPublicationMetadataFile(context, root, "$finalName$METADATA_SUFFIX")
+        val source = temporaryRoot?.let {
+            readPublicationMetadataFile(context, it, "${pending.logicalName}$PENDING_METADATA_SUFFIX")
+                ?: readPublicationMetadataFile(context, it, "${pending.logicalName}$METADATA_SUFFIX")
+        } ?: readPublicationMetadataFile(context, root, "${pending.logicalName}$PENDING_METADATA_SUFFIX")
+            ?: current?.takeIf { metadata ->
+                val receiptMatches = metadata.optJSONObject(PUBLICATION_RECEIPT_KEY)?.let { receipt ->
+                    receipt.optString("sourceName") == pending.name &&
+                        samePublicationReference(receipt.optString("sourceReference"), pending.reference)
+                } == true
+                val legacyReferenceMatches = metadata.optString("mediaUri")
+                    .takeIf(String::isNotBlank)
+                    ?.let { samePublicationReference(it, pending.reference) } == true
+                receiptMatches || legacyReferenceMatches
+            }
+            ?: throw IOException("发布标记缺少 pending 身份凭据: ${pending.logicalName}")
+        val metadata = current ?: source
+        if (!samePublicationOwner(source, metadata)) {
+            throw IOException("正式元信息属于另一下载，拒绝设置发布标记: $finalName")
+        }
+        metadata.put(PUBLICATION_PENDING_KEY, true)
+        writePublicationMetadata(context, root, finalName, metadata.toString())
+    } catch (error: Throwable) {
+        invalidateSnapshotCache(context)
+        throw error
+    }
+}
 
 internal fun ManagedDownloadStorage.recordAudioPublicationTarget(
     context: Context,
@@ -102,13 +139,20 @@ internal fun ManagedDownloadStorage.isVerifiedAudioPublicationTarget(
 
 }.getOrDefault(false)
 
-internal fun preserveAudioPublicationReceipt(previous: String?, incoming: String): String {
+internal fun preserveAudioPublicationReceipt(
+    previous: String?,
+    incoming: String,
+    allowPublicationCompletion: Boolean = false
+): String {
     val old = previous?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return incoming
     val next = JSONObject(incoming)
-    val receipt = old.optJSONObject(PUBLICATION_RECEIPT_KEY) ?: return incoming
-    if (old.optString("stableKey").isNotBlank() && old.optString("stableKey") == next.optString("stableKey") &&
-        publicationOwner(old).isNotBlank() && publicationOwner(old) == publicationOwner(next)
-    ) next.put(PUBLICATION_RECEIPT_KEY, receipt)
+    if (!samePublicationOwner(old, next)) return incoming
+    if (old.has(PUBLICATION_PENDING_KEY) &&
+        (!next.has(PUBLICATION_PENDING_KEY) || old.getBoolean(PUBLICATION_PENDING_KEY) && !allowPublicationCompletion)
+    ) {
+        next.put(PUBLICATION_PENDING_KEY, old.getBoolean(PUBLICATION_PENDING_KEY))
+    }
+    old.optJSONObject(PUBLICATION_RECEIPT_KEY)?.let { next.put(PUBLICATION_RECEIPT_KEY, it) }
     return next.toString()
 }
 
@@ -152,18 +196,25 @@ internal fun ManagedDownloadStorage.resumeAudioPublicationCopy(
 
 internal fun ManagedDownloadStorage.sealAudioPublicationReceipt(context: Context, root: RootHandle, audio: StoredEntry) {
     try {
-        val receipt = readAudioPublicationMetadata(context, root, audio.name) ?: return
+        val publication = readAudioPublicationMetadata(context, root, audio.name) ?: return
+        if (!publication.has(PUBLICATION_RECEIPT_KEY) && !publication.optBoolean(PUBLICATION_PENDING_KEY)) return
         val currentEntry = findMetadataForAudioBlocking(context, audio, root) ?: throw IOException("正式音频缺少metadata")
         val current = readTextInternal(context, currentEntry.reference) ?: throw IOException("正式metadata不可读")
-        val content = preserveAudioPublicationReceipt(receipt.toString(), current)
-        if (content == current) return
-        val written = writeRootText(context, root, "${audio.name}$METADATA_SUFFIX", content)
-            ?: throw IOException("正式发布凭据保存失败")
-        if (readTextInternal(context, written.reference) != content) throw IOException("正式发布凭据读回失败")
-        val metadata = parseDownloadedAudioMetadataJson(content)
-        if (metadata == null || !updateSnapshotCacheAfterMetadataWrite(context, written, metadata)) {
-            invalidateSnapshotCache(context)
+        val metadata = JSONObject(current)
+        if (!samePublicationOwner(publication, metadata)) throw IOException("正式发布元信息身份已变化")
+        if (publication.optBoolean(PUBLICATION_PENDING_KEY) || metadata.optBoolean(PUBLICATION_PENDING_KEY)) {
+            val receipt = publication.optJSONObject(PUBLICATION_RECEIPT_KEY)
+                ?: throw IOException("发布尚未完成，缺少完整音频凭据")
+            if (!isVerifiedAudioPublicationTarget(
+                    context, root, receipt.optString("sourceName"), audio.name, audio.reference,
+                    receipt.optString("sourceReference")
+                )
+            ) throw IOException("发布音频尚未通过完整性校验")
+            metadata.put(PUBLICATION_PENDING_KEY, false)
         }
+        val content = preserveAudioPublicationReceipt(publication.toString(), metadata.toString(), allowPublicationCompletion = true)
+        if (content == current) return
+        writePublicationMetadata(context, root, audio.name, content)
     } catch (error: Throwable) {
         invalidateSnapshotCache(context)
         throw error
@@ -171,11 +222,38 @@ internal fun ManagedDownloadStorage.sealAudioPublicationReceipt(context: Context
 }
 
 internal fun ManagedDownloadStorage.readAudioPublicationMetadata(context: Context, root: RootHandle, audioName: String): JSONObject? {
-    val temporaryRoot = when (root) {
+    val temporaryRoot = publicationTemporaryRoot(context, root)
+    val roots = listOfNotNull(temporaryRoot, root)
+    var markerOnly: JSONObject? = null
+    for (candidateRoot in roots) {
+        for (name in listOf("$audioName$PENDING_METADATA_SUFFIX", "$audioName$METADATA_SUFFIX")) {
+            val metadata = readPublicationMetadataFile(context, candidateRoot, name) ?: continue
+            if (metadata.has(PUBLICATION_RECEIPT_KEY) || metadata.has(PUBLICATION_PENDING_KEY)) {
+                if (candidateRoot != root) {
+                    val formal = readPublicationMetadataFile(context, root, "$audioName$METADATA_SUFFIX")
+                    if (formal != null && samePublicationOwner(metadata, formal) && formal.has(PUBLICATION_PENDING_KEY)) {
+                        // 正式标记是封存结果，清理失败残留的临时凭据不能重新隐藏成品
+                        metadata.put(PUBLICATION_PENDING_KEY, formal.getBoolean(PUBLICATION_PENDING_KEY))
+                    }
+                }
+                if (metadata.has(PUBLICATION_RECEIPT_KEY)) return metadata
+                if (markerOnly == null || candidateRoot == root && name == "$audioName$METADATA_SUFFIX") {
+                    markerOnly = metadata
+                }
+            }
+        }
+    }
+    return markerOnly
+}
+
+private fun ManagedDownloadStorage.publicationTemporaryRoot(context: Context, root: RootHandle): RootHandle? =
+    when (root) {
         is RootHandle.FileRoot -> resolveTemporaryRoot(context, root, create = false)
         is RootHandle.TreeRoot -> {
-            val cached = treeChildRegistry.peekTreeChildrenIncludingIncomplete(root.tree)
-                ?.firstOrNull { it.isDirectory && it.name == DOWNLOAD_TEMPORARY_DIR_NAME }
+            val cached = treeChildRegistry.peekTreeChildIncludingIncomplete(
+                root.tree,
+                DOWNLOAD_TEMPORARY_DIR_NAME
+            )?.takeIf { it.isDirectory }
             val directory = if (cached != null) {
                 treeChildRegistry.toDocumentFile(context, root.tree, cached)
                     ?: throw IOException("已知的发布暂存目录暂时不可访问")
@@ -187,35 +265,43 @@ internal fun ManagedDownloadStorage.readAudioPublicationMetadata(context: Contex
             directory?.let(RootHandle::TreeRoot)
         }
     }
-    val roots = listOfNotNull(temporaryRoot, root)
-    roots.forEach { candidateRoot ->
-        listOf("$audioName$PENDING_METADATA_SUFFIX", "$audioName$METADATA_SUFFIX").forEach { name ->
-            val reference = when (candidateRoot) {
-                is RootHandle.FileRoot -> File(candidateRoot.dir, name).takeIf(File::isFile)?.absolutePath
-                is RootHandle.TreeRoot -> findPublicationMetadataReference(context, candidateRoot.tree, name)
-            }
-            if (reference != null) {
-                val content = readTextInternal(context, reference)
-                    ?: throw IOException("已找到的发布元信息暂时不可读: $name")
-                val metadata = try {
-                    JSONObject(content)
-                } catch (error: JSONException) {
-                    throw IOException("已找到的发布元信息无法解析: $name", error)
-                }
-                if (metadata.has(PUBLICATION_RECEIPT_KEY)) {
-                    if (metadata.optJSONObject(PUBLICATION_RECEIPT_KEY) == null) {
-                        throw IOException("已找到的发布凭据格式无效: $name")
-                    }
-                    return metadata
-                }
-            }
+
+private fun ManagedDownloadStorage.readPublicationMetadataFile(context: Context, root: RootHandle, name: String): JSONObject? {
+    val reference = when (root) {
+        is RootHandle.FileRoot -> File(root.dir, name).let { file ->
+            if (file.exists() && !file.isFile) throw IOException("发布元信息不是文件: $name")
+            file.takeIf(File::isFile)?.absolutePath
         }
+        is RootHandle.TreeRoot -> findPublicationMetadataReference(context, root.tree, name)
+    } ?: return null
+    val content = readTextInternal(context, reference)
+        ?: throw IOException("已找到的发布元信息暂时不可读: $name")
+    val metadata = try {
+        JSONObject(content)
+    } catch (error: JSONException) {
+        throw IOException("已找到的发布元信息无法解析: $name", error)
     }
-    return null
+    if (metadata.has(PUBLICATION_RECEIPT_KEY) && metadata.optJSONObject(PUBLICATION_RECEIPT_KEY) == null) {
+        throw IOException("已找到的发布凭据格式无效: $name")
+    }
+    if (metadata.has(PUBLICATION_PENDING_KEY) && metadata.opt(PUBLICATION_PENDING_KEY) !is Boolean) {
+        throw IOException("已找到的发布标记格式无效: $name")
+    }
+    return metadata
+}
+
+private fun ManagedDownloadStorage.writePublicationMetadata(context: Context, root: RootHandle, audioName: String, content: String) {
+    val written = writeRootText(context, root, "$audioName$METADATA_SUFFIX", content)
+        ?: throw IOException("正式发布凭据保存失败")
+    if (readTextInternal(context, written.reference) != content) throw IOException("正式发布凭据读回失败")
+    val metadata = parseDownloadedAudioMetadataJson(content)
+    if (metadata == null || !updateSnapshotCacheAfterMetadataWrite(context, written, metadata)) {
+        invalidateSnapshotCache(context)
+    }
 }
 
 private fun ManagedDownloadStorage.findPublicationMetadataReference(context: Context, parent: DocumentFile, name: String): String? {
-    val known = treeChildRegistry.peekTreeChildrenIncludingIncomplete(parent)?.firstOrNull { it.name == name }
+    val known = treeChildRegistry.peekTreeChildIncludingIncomplete(parent, name)
     val child = known ?: run {
         val cached = treeChildRegistry.cachedTreeChildrenIfFresh(parent, TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS)
         val refresh = cached?.let { ManagedDownloadTreeChildRegistry.TreeChildrenRefresh(it.toList(), isComplete = true) }
@@ -233,6 +319,10 @@ internal fun publicationFileIdentity(reference: String): String = Os.stat(refere
 private fun publicationOwner(metadata: JSONObject): String = metadata.optString("operationId").takeIf(String::isNotBlank)
     ?: metadata.optString("terminalTemporaryWriteCleanupToken").takeIf(String::isNotBlank)
     ?: metadata.optString("stableKey").takeIf(String::isNotBlank)?.let { "legacy:$it" }.orEmpty()
+
+private fun samePublicationOwner(first: JSONObject, second: JSONObject): Boolean =
+    first.optString("stableKey").isNotBlank() && first.optString("stableKey") == second.optString("stableKey") &&
+        publicationOwner(first).isNotBlank() && publicationOwner(first) == publicationOwner(second)
 
 internal fun samePublicationReference(first: String, second: String): Boolean {
     if (first == second) return first.isNotBlank()

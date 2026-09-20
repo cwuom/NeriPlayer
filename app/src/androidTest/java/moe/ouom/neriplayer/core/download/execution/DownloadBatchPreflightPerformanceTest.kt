@@ -38,7 +38,7 @@ class DownloadBatchPreflightPerformanceTest {
         withFixture(List(850) { "present" }) { songs, catalog ->
             call("reset", "1")
             val probe = BatchDownloadPreflightProbe { reference ->
-                ManagedDownloadReferenceLookup.inspect(context, reference)
+                ManagedDownloadReferenceLookup.inspectWithSize(context, reference)
             }
             val startedNs = SystemClock.elapsedRealtimeNanos()
             val firstCompleted = GlobalDownloadManager.findFastCompletedBatchSongKeys(
@@ -87,6 +87,25 @@ class DownloadBatchPreflightPerformanceTest {
     }
 
     @Test
+    fun sizeMismatchCannotFallThroughToTheArtifactLedger() = runBlocking {
+        withFixture(listOf("present"), recordedSizeBytes = 2L) { songs, catalog ->
+            call("reset")
+            assertEquals(
+                emptySet<String>(),
+                GlobalDownloadManager.findFastCompletedBatchSongKeys(
+                    context,
+                    songs,
+                    catalogIndex = catalog
+                )
+            )
+            val stats = call("stats")
+            assertEquals(1, stats.getInt("queries"))
+            assertEquals(1, stats.getInt("opens"))
+            assertEquals(1, stats.getInt("maxReferenceQueries"))
+        }
+    }
+
+    @Test
     fun finalizedArtifactCanSupplyPositiveEvidenceWithoutCatalog() = runBlocking {
         withFixture(listOf("present")) { songs, _ ->
             call("reset")
@@ -113,6 +132,7 @@ class DownloadBatchPreflightPerformanceTest {
 
     private suspend fun withFixture(
         modes: List<String>,
+        recordedSizeBytes: Long = 1L,
         block: suspend (List<SongItem>, moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex) -> Unit
     ) {
         val runId = UUID.randomUUID().toString()
@@ -128,7 +148,7 @@ class DownloadBatchPreflightPerformanceTest {
         val catalog = buildDownloadedSongCatalogIndex(songs.mapIndexed { index, song ->
             DownloadedSong(
                 id = song.id, name = song.name, artist = song.artist, album = song.album,
-                filePath = references[index], fileSize = 1L, downloadTime = 1L,
+                filePath = references[index], fileSize = recordedSizeBytes, downloadTime = 1L,
                 stableKey = song.stableKey(), durationMs = song.durationMs
             )
         })
@@ -147,7 +167,8 @@ class DownloadBatchPreflightPerformanceTest {
             songs.forEachIndexed { index, song ->
                 db.managedDownloadArtifactDao().upsert(ManagedLibraryItemEntity(
                     rootKey = rootKey, stableKey = song.stableKey(), artifactId = "$runId-$index",
-                    state = "FINALIZED", audioReference = references[index], fileSize = 1L
+                    state = "FINALIZED", audioReference = references[index],
+                    fileSize = recordedSizeBytes
                 ))
             }
         }

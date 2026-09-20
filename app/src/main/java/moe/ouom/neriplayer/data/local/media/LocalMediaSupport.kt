@@ -401,6 +401,9 @@ object LocalMediaSupport {
             val persistAvailableSidecars = persistCompanionSidecars &&
                 !isStandaloneContentMetadataTarget(context, sourceUri, localFile)
             val stagedAttempted = shouldUseTransactionalStagedWrite(sourceUri)
+            val companionTransaction = if (persistAvailableSidecars) {
+                LocalMediaCompanionTransaction(context, sourceUri.toString())
+            } else null
             val writeTransaction = if (stagedAttempted) {
                 writeEditableMetadataThroughStagedContentCopy(
                     context = context,
@@ -411,7 +414,8 @@ object LocalMediaSupport {
                     writeLyrics = writeLyrics,
                     fallbackOutcome = LocalMediaMetadataWriteOutcome.FAILED,
                     embeddedPropertyMapOverride = embeddedPropertyMapOverride,
-                    requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys
+                    requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys,
+                    companionTransaction = companionTransaction
                 )
             } else {
                 writeEditableMetadataDirectTransaction(
@@ -427,6 +431,7 @@ object LocalMediaSupport {
             }
             val outcome = writeTransaction.outcome
             var embeddedTransactionSettled = outcome != LocalMediaMetadataWriteOutcome.SUCCESS
+            var companionTransactionSettled = companionTransaction == null
             try {
                 if (!persistAvailableSidecars) {
                     var finalOutcome = outcome
@@ -470,6 +475,7 @@ object LocalMediaSupport {
                     file = localFile,
                     displayName = displayName,
                 )
+                companionTransaction?.initializeSidecarsOnly()
                 val lyricsSidecarWritten = if (writeLyrics) {
                     currentCoroutineContext().ensureActive()
                     writeLocalLyricsSidecars(
@@ -478,7 +484,8 @@ object LocalMediaSupport {
                         file = localFile,
                         displayName = displayName,
                         song = song,
-                        knownReferences = knownSidecarReferences.lyricReferences
+                        knownReferences = knownSidecarReferences.lyricReferences,
+                        companionTransaction = companionTransaction
                     )
                 } else {
                     true
@@ -491,7 +498,8 @@ object LocalMediaSupport {
                         file = localFile,
                         displayName = displayName,
                         coverReference = coverReference,
-                        stableIdentityKey = editableMetadataSourceStableKey(song)
+                        stableIdentityKey = editableMetadataSourceStableKey(song),
+                        companionTransaction = companionTransaction
                     )
                 } else {
                     true
@@ -516,7 +524,8 @@ object LocalMediaSupport {
                     writeFullMetadata = true,
                     writeLyricFields = writeLyrics,
                     coverReference = metadataCoverReference,
-                    clearCoverReference = writeCover && coverReference.isNullOrBlank()
+                    clearCoverReference = writeCover && coverReference.isNullOrBlank(),
+                    companionTransaction = companionTransaction
                 )
                 val sidecarsWritten = lyricsSidecarWritten && coverSidecarWritten &&
                     metadataSidecarWritten
@@ -526,27 +535,25 @@ object LocalMediaSupport {
                     coverSidecarWritten = coverSidecarWritten,
                     allowSidecarAuthoritativeFallback = embeddedPropertyMapOverride == null
                 )
-                if (!sidecarsWritten && outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
-                    writeTransaction.rollback?.invoke()
+                if (!sidecarsWritten) {
+                    companionTransaction?.rollback() ?: writeTransaction.rollback?.invoke()
                     embeddedTransactionSettled = true
+                    companionTransactionSettled = true
                     NPLogger.w(TAG, "write local metadata sidecar failed for $sourceUri")
-                } else if (!sidecarsWritten) {
-                    NPLogger.w(
-                        TAG,
-                        "write local metadata sidecar failed after embedded write failure: $sourceUri"
-                    )
                 }
-                if (sidecarsWritten && finalOutcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+                if (sidecarsWritten && (finalOutcome == LocalMediaMetadataWriteOutcome.SUCCESS ||
+                        finalOutcome == LocalMediaMetadataWriteOutcome.SIDECAR_ONLY)) {
                     val committed = runCatching {
-                        writeTransaction.commit?.invoke()
+                        companionTransaction?.commit() ?: writeTransaction.commit?.invoke()
                     }.onFailure { error ->
                         logEditableMetadataFailure("commit_recovery_record", sourceUri, error)
                     }.isSuccess
                     if (!committed) {
-                        writeTransaction.rollback?.invoke()
+                        companionTransaction?.rollback() ?: writeTransaction.rollback?.invoke()
                         finalOutcome = LocalMediaMetadataWriteOutcome.FAILED
                     }
                     embeddedTransactionSettled = true
+                    companionTransactionSettled = true
                 }
                 logEditableMetadataWriteTiming(
                     sourceUri = sourceUri,
@@ -562,8 +569,14 @@ object LocalMediaSupport {
                     candidate = finalOutcome
                 )
             } finally {
-                if (!embeddedTransactionSettled) {
+                if (!companionTransactionSettled) {
+                    companionTransaction?.rollback()
+                } else if (!embeddedTransactionSettled) {
                     writeTransaction.rollback?.invoke()
+                }
+                if (companionTransaction != null) {
+                    clearLyricsLookupCache()
+                    clearCoverLookupCache()
                 }
             }
         }

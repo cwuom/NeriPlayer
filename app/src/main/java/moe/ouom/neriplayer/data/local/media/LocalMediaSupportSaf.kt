@@ -472,13 +472,17 @@ internal fun LocalMediaSupport.parseId3Metadata(bytes: ByteArray): ContainerMeta
     val limit = minOf(bytes.size, 10 + tagSize)
     var offset = 10
 
-    if (majorVersion > 2 && (flags and 0x40) != 0 && offset + 4 <= limit) {
+    if (majorVersion > 2 && (flags and 0x40) != 0) {
+        if (offset + 4 > limit) return null
         val extendedSize = if (majorVersion >= 4) {
-            bytes.readSynchsafeInt(offset)
+            bytes.readSynchsafeInt(offset).toLong()
         } else {
-            bytes.readBigEndianInt(offset)
+            // v2.3 的长度不含 size 字段本身，v2.4 则包含
+            bytes.readBigEndianInt(offset).toLong() + 4L
         }
-        offset += extendedSize.coerceAtLeast(0)
+        val minimumSize = if (majorVersion >= 4) 6L else 10L
+        if (extendedSize < minimumSize || extendedSize > limit - offset) return null
+        offset += extendedSize.toInt()
     }
 
     var title: String? = null

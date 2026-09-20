@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -51,7 +52,11 @@ internal data class LocalMetadataRecoveryRecord(
     val updatedSha256: String,
     val originalLastModifiedMs: Long?,
     val stage: LocalMetadataRecoveryStage,
-    val journalFile: File
+    val journalFile: File,
+    val companionTransaction: Boolean = false,
+    val companionCommitted: Boolean = false,
+    val audioUnchanged: Boolean = false,
+    val companions: List<LocalMediaCompanionRecoveryEntry> = emptyList()
 )
 
 internal object LocalMediaMetadataRecoveryStore {
@@ -75,10 +80,12 @@ internal object LocalMediaMetadataRecoveryStore {
         targetReference: String,
         backupFile: File,
         updatedFile: File,
-        originalLastModifiedMs: Long?
+        originalLastModifiedMs: Long?,
+        companionTransaction: Boolean = false,
+        audioUnchanged: Boolean = false
     ): LocalMetadataRecoveryRecord {
-        require(backupFile.isFile && backupFile.length() > 0L)
-        require(updatedFile.isFile && updatedFile.length() > 0L)
+        require(backupFile.isFile && (backupFile.length() > 0L || companionTransaction && audioUnchanged))
+        require(updatedFile.isFile && (updatedFile.length() > 0L || companionTransaction && audioUnchanged))
         val directory = stagingDirectory(context)
         require(directory.exists() || directory.mkdirs())
         val id = UUID.randomUUID().toString()
@@ -91,7 +98,9 @@ internal object LocalMediaMetadataRecoveryStore {
             updatedSha256 = sha256(updatedFile),
             originalLastModifiedMs = originalLastModifiedMs,
             stage = LocalMetadataRecoveryStage.PREPARED,
-            journalFile = File(directory, "$METADATA_RECOVERY_PREFIX$id$METADATA_RECOVERY_SUFFIX")
+            journalFile = File(directory, "$METADATA_RECOVERY_PREFIX$id$METADATA_RECOVERY_SUFFIX"),
+            companionTransaction = companionTransaction,
+            audioUnchanged = audioUnchanged
         )
         recordGeneration.incrementAndGet()
         activeRecordIds += id
@@ -115,11 +124,35 @@ internal object LocalMediaMetadataRecoveryStore {
         if (record.stage != LocalMetadataRecoveryStage.TARGET_VERIFIED) {
             throw IllegalStateException("metadata target was not verified")
         }
+        check(!record.companionTransaction || record.companionCommitted)
         cleanup(record)
     }
 
+    internal fun saveCompanionRecord(record: LocalMetadataRecoveryRecord): LocalMetadataRecoveryRecord {
+        check(record.companionTransaction)
+        persist(record)
+        recoveryCompleted = false
+        return record
+    }
+
+    internal fun releaseCompanionRecord(record: LocalMetadataRecoveryRecord) {
+        activeRecordIds -= record.id
+        recoveryCompleted = false
+    }
+
+    internal fun updatedCompanionAudio(record: LocalMetadataRecoveryRecord): LocalMetadataRecoveryRecord =
+        saveCompanionRecord(record.copy(updatedSha256 = sha256(record.updatedFile)))
+
     fun rollback(context: Context, record: LocalMetadataRecoveryRecord): Boolean {
-        val restored = if (targetMatches(context, record.targetReference, record.originalSha256)) {
+        if (record.companionCommitted) {
+            releaseCompanionRecord(record)
+            return false
+        }
+        val companionsRestored = !record.companionTransaction ||
+            rollbackLocalMediaCompanions(context, record)
+        val audioRestored = if (record.audioUnchanged) {
+            true
+        } else if (targetMatches(context, record.targetReference, record.originalSha256)) {
             val targetFile = directFile(record.targetReference)
             val originalTime = record.originalLastModifiedMs?.takeIf { it > 0L }
             targetFile == null || originalTime == null || runCatching {
@@ -133,6 +166,7 @@ internal object LocalMediaMetadataRecoveryStore {
                 lastModifiedMs = record.originalLastModifiedMs
             ) && targetMatches(context, record.targetReference, record.originalSha256)
         }
+        val restored = companionsRestored && audioRestored
         if (restored) {
             val rolledBack = runCatching {
                 updateStage(record, LocalMetadataRecoveryStage.ROLLED_BACK)
@@ -324,6 +358,11 @@ internal object LocalMediaMetadataRecoveryStore {
     }
 
     private fun recoverRecord(context: Context, record: LocalMetadataRecoveryRecord): Boolean {
+        if (record.companionTransaction) {
+            if (!record.companionCommitted) return rollback(context, record)
+            val audioVerified = record.audioUnchanged || targetMatches(context, record.targetReference, record.updatedSha256)
+            return audioVerified && finishLocalMediaCompanionDeletes(context, record) && cleanup(record)
+        }
         val targetMatchesOriginal = targetMatches(
             context,
             record.targetReference,
@@ -387,6 +426,12 @@ internal object LocalMediaMetadataRecoveryStore {
             put("updatedSha256", record.updatedSha256)
             put("originalLastModifiedMs", record.originalLastModifiedMs ?: JSONObject.NULL)
             put("stage", record.stage.name)
+            if (record.companionTransaction) {
+                put("companionTransaction", true)
+                put("companionCommitted", record.companionCommitted)
+                put("audioUnchanged", record.audioUnchanged)
+                put("companions", JSONArray().apply { record.companions.forEach { put(it.toJson()) } })
+            }
         }
         ManagedDownloadAtomicFile.writeTextAtomically(record.journalFile, body.toString())
     }
@@ -413,13 +458,20 @@ internal object LocalMediaMetadataRecoveryStore {
             originalLastModifiedMs = body.optLong("originalLastModifiedMs")
                 .takeIf { !body.isNull("originalLastModifiedMs") && it > 0L },
             stage = LocalMetadataRecoveryStage.valueOf(body.getString("stage")),
-            journalFile = journalFile
+            journalFile = journalFile,
+            companionTransaction = body.optBoolean("companionTransaction"),
+            companionCommitted = body.optBoolean("companionCommitted"),
+            audioUnchanged = body.optBoolean("audioUnchanged"),
+            companions = body.optJSONArray("companions")?.let { entries ->
+                List(entries.length()) { index -> LocalMediaCompanionRecoveryEntry.fromJson(entries.getJSONObject(index), directory) }
+            }.orEmpty()
         )
     }
 
     private fun cleanup(record: LocalMetadataRecoveryRecord): Boolean {
         activeRecordIds -= record.id
-        val recoveryFilesRemoved = listOf(record.backupFile, record.updatedFile).all { file ->
+        val recoveryFilesRemoved = (listOf(record.backupFile, record.updatedFile) +
+            record.companions.mapNotNull { it.backupFile }).all { file ->
             if (file.exists() && !file.delete()) {
                 NPLogger.w(TAG, "删除已完成的元信息恢复副本失败: ${file.name}")
                 false

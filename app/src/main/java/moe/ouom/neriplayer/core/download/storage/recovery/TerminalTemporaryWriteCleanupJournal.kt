@@ -42,6 +42,12 @@ internal data class TerminalTemporaryWriteCleanupJournalEntry(
         get() = targets.map(TerminalTemporaryWriteCleanupTarget::displayName).distinct()
 }
 
+internal enum class TerminalTemporaryWriteCleanupConsumeResult {
+    CONSUMED,
+    REFRESHED_TARGETS_RETAINED,
+    FAILED
+}
+
 /**
  * 待提交音频改名期间保留持久所有权记录
  *
@@ -205,18 +211,25 @@ internal class TerminalTemporaryWriteCleanupJournal(
         TerminalTemporaryWriteCleanupPreparationSnapshot.Available(entries.preparations)
     }
 
-    fun consume(entry: TerminalTemporaryWriteCleanupJournalEntry): Boolean = synchronized(lock) {
-        val normalizedRoot = entry.root.normalizedOrNull() ?: return@synchronized false
+    fun consume(entry: TerminalTemporaryWriteCleanupJournalEntry): Boolean {
+        return consumeWithResult(entry) == TerminalTemporaryWriteCleanupConsumeResult.CONSUMED
+    }
+
+    fun consumeWithResult(
+        entry: TerminalTemporaryWriteCleanupJournalEntry
+    ): TerminalTemporaryWriteCleanupConsumeResult = synchronized(lock) {
+        val normalizedRoot = entry.root.normalizedOrNull()
+            ?: return@synchronized TerminalTemporaryWriteCleanupConsumeResult.FAILED
         if (entry.targets.mapNotNull { target -> target.normalizedOrNull() }
                 .isEmpty()
         ) {
-            return@synchronized false
+            return@synchronized TerminalTemporaryWriteCleanupConsumeResult.FAILED
         }
         val current = readStateLocked()
-            ?: return@synchronized false
+            ?: return@synchronized TerminalTemporaryWriteCleanupConsumeResult.FAILED
         val currentEntry = current.terminalEntries.firstOrNull { candidate ->
             candidate.root == normalizedRoot
-        } ?: return@synchronized true
+        } ?: return@synchronized TerminalTemporaryWriteCleanupConsumeResult.CONSUMED
         val capturedTargets = entry.targets.mapNotNull { it.normalizedOrNull() }.toSet()
         val consumable = currentEntry.targets.filter { target ->
             target in capturedTargets &&
@@ -224,7 +237,13 @@ internal class TerminalTemporaryWriteCleanupJournal(
                 (entry.targetGenerations[target] ?: entry.generationId)
         }.toSet()
         val hasRefreshedTargets = currentEntry.targets.any { it in capturedTargets && it !in consumable }
-        if (consumable.isEmpty()) return@synchronized !hasRefreshedTargets
+        if (consumable.isEmpty()) {
+            return@synchronized if (hasRefreshedTargets) {
+                TerminalTemporaryWriteCleanupConsumeResult.REFRESHED_TARGETS_RETAINED
+            } else {
+                TerminalTemporaryWriteCleanupConsumeResult.CONSUMED
+            }
+        }
         val remainingTargets = currentEntry.targets.filterNot(consumable::contains)
         val updated = current.copy(
             terminalEntries = current.terminalEntries.mapNotNull { candidate ->
@@ -236,7 +255,14 @@ internal class TerminalTemporaryWriteCleanupJournal(
                 }
             }
         )
-        store.write(encodeOrNull(updated)) && !hasRefreshedTargets
+        if (!store.write(encodeOrNull(updated))) {
+            return@synchronized TerminalTemporaryWriteCleanupConsumeResult.FAILED
+        }
+        if (hasRefreshedTargets) {
+            TerminalTemporaryWriteCleanupConsumeResult.REFRESHED_TARGETS_RETAINED
+        } else {
+            TerminalTemporaryWriteCleanupConsumeResult.CONSUMED
+        }
     }
 
     /** 并发入队只刷新代次且目标集合未变时返回当前记录
@@ -646,6 +672,15 @@ internal object PersistentTerminalTemporaryWriteCleanupJournal {
         runCatching {
             journal(context).consume(entry)
         }.getOrDefault(false)
+    }
+
+    fun consumeWithResult(
+        context: Context,
+        entry: TerminalTemporaryWriteCleanupJournalEntry
+    ): TerminalTemporaryWriteCleanupConsumeResult = synchronized(lock) {
+        runCatching {
+            journal(context).consumeWithResult(entry)
+        }.getOrDefault(TerminalTemporaryWriteCleanupConsumeResult.FAILED)
     }
 
     fun currentEntryIfTargetsMatch(

@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
+import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.IOException
 
 /** Compatibility adapter for code that still names the old Room store. */
@@ -19,8 +20,7 @@ internal class ManagedDownloadSnapshotRoomStore(
             context.applicationContext,
             expectedKey
         ) ?: return null
-        markRoomPrimary(restored.first)
-        ManagedDownloadSnapshotDiskCache.delete(context.applicationContext)
+        markDiskPrimary(restored.first)
         return restored
     }
 
@@ -41,11 +41,11 @@ internal class ManagedDownloadSnapshotRoomStore(
             return false
         }
         return try {
-            cacheFile.writeText(
-                ManagedDownloadSnapshotIndex.serializePayload(cacheKey, snapshot),
-                Charsets.UTF_8
+            // 先纠正旧提升标记，避免清理器把唯一的新快照当作可删除的旧 JSON
+            markDiskPrimary(cacheKey)
+            cacheFile.writeTextAtomically(
+                ManagedDownloadSnapshotIndex.serializePayload(cacheKey, snapshot)
             )
-            markRoomPrimary(cacheKey)
             true
         } catch (error: IOException) {
             NPLogger.w(TAG, "写入下载索引缓存失败: ${error.message}")
@@ -57,12 +57,12 @@ internal class ManagedDownloadSnapshotRoomStore(
         ManagedDownloadSnapshotDiskCache.delete(context.applicationContext)
     }
 
-    private suspend fun markRoomPrimary(rootKey: String) {
+    private suspend fun markDiskPrimary(rootKey: String) {
         val nowMs = System.currentTimeMillis()
         database.syncMetadataDao().upsertMigrationMetadata(
             MigrationMetadataEntity(
                 key = CUTOVER_STATE_METADATA_KEY,
-                value = ROOM_PRIMARY_STATE,
+                value = DISK_PRIMARY_STATE,
                 updatedAt = nowMs
             )
         )
@@ -80,5 +80,6 @@ internal class ManagedDownloadSnapshotRoomStore(
         const val CUTOVER_STATE_METADATA_KEY = "managed_download_snapshot_cutover_state"
         const val ROOT_KEY_METADATA_KEY = "managed_download_snapshot_root_key"
         const val ROOM_PRIMARY_STATE = "room_primary"
+        const val DISK_PRIMARY_STATE = "disk_primary"
     }
 }

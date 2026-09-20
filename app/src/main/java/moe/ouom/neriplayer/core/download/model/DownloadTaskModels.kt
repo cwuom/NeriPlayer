@@ -331,9 +331,11 @@ internal fun formatDownloadTransferProgress(
     val downloadedBytes = progress.bytesRead
         .coerceAtLeast(0L)
         .let { bytes -> totalBytes?.let(bytes::coerceAtMost) ?: bytes }
-    val percentageText = totalBytes?.let { total ->
-        "${((downloadedBytes.toDouble() / total.toDouble()) * 100.0).toInt().coerceIn(0, 100)}%"
-    }
+    val percentageText = totalBytes
+        ?.takeIf { progress.stage == AudioDownloadManager.DownloadStage.TRANSFERRING }
+        ?.let { total ->
+            "${((downloadedBytes.toDouble() / total.toDouble()) * 100.0).toInt().coerceIn(0, 100)}%"
+        }
     val transferText = totalBytes?.let { total ->
         "${formatFileSize(downloadedBytes)} / ${formatFileSize(total)}"
     } ?: formatFileSize(downloadedBytes)

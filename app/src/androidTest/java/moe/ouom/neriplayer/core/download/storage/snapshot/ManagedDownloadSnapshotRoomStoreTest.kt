@@ -7,20 +7,21 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_FILE_NAME
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadSnapshotRoomStoreTest {
     @Test
     fun persistAndRestoreKeepsSnapshotIndexesAndRootIsolation() = runTest {
-        val context = ApplicationProvider.getApplicationContext<Context>()
+        val context = isolatedContext()
         val database = Room.inMemoryDatabaseBuilder(
             context,
             NeriUserDataDatabase::class.java
@@ -53,17 +54,18 @@ class ManagedDownloadSnapshotRoomStoreTest {
             assertNull(store.restore(expectedKey = "root-b"))
         } finally {
             database.close()
+            context.filesDir.deleteRecursively()
         }
     }
 
     @Test
-    fun importsLegacyDiskCacheAndDeletesJsonAfterRoomPromotion() = runTest {
-        val context = ApplicationProvider.getApplicationContext<Context>()
+    fun readsLegacyDiskCacheWithoutDeletingItsOnlyDurableCopy() = runTest {
+        val context = isolatedContext()
         val database = Room.inMemoryDatabaseBuilder(
             context,
             NeriUserDataDatabase::class.java
         ).allowMainThreadQueries().build()
-        val cacheFile = ManagedDownloadSnapshotDiskCache.cacheFile(context)
+        val cacheFile = File(context.filesDir, SNAPSHOT_CACHE_FILE_NAME)
         cacheFile.delete()
         cacheFile.writeText(
             ManagedDownloadSnapshotIndex.serializePayload(
@@ -78,9 +80,14 @@ class ManagedDownloadSnapshotRoomStoreTest {
             val restored = store.restore(expectedKey = "root-a")
 
             assertEquals("root-a", restored?.first)
-            assertFalse(cacheFile.exists())
+            assertTrue(cacheFile.exists())
             assertEquals(
-                ManagedDownloadSnapshotRoomStore.ROOM_PRIMARY_STATE,
+                snapshot().audioEntries,
+                ManagedDownloadSnapshotRoomStore(context, database)
+                    .restore(expectedKey = "root-a")?.second?.audioEntries
+            )
+            assertEquals(
+                ManagedDownloadSnapshotRoomStore.DISK_PRIMARY_STATE,
                 database.syncMetadataDao()
                     .getMigrationMetadata(
                         ManagedDownloadSnapshotRoomStore.CUTOVER_STATE_METADATA_KEY
@@ -90,6 +97,7 @@ class ManagedDownloadSnapshotRoomStoreTest {
         } finally {
             cacheFile.delete()
             database.close()
+            context.filesDir.deleteRecursively()
         }
     }
 
@@ -118,6 +126,16 @@ class ManagedDownloadSnapshotRoomStoreTest {
         } finally {
             database.close()
             isolatedRoot.deleteRecursively()
+        }
+    }
+
+    private fun isolatedContext(): Context {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val directory = File(baseContext.cacheDir, "snapshot-room-store-${UUID.randomUUID()}")
+        check(directory.mkdirs())
+        return object : ContextWrapper(baseContext) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = directory
         }
     }
 

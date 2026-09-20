@@ -135,7 +135,12 @@ internal fun ManagedDownloadStorage.deletePendingAudioMetadataBlocking(
                 ?: return false
         }
         is RootHandle.TreeRoot -> {
-            val refresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+            val refresh = treeChildRegistry.peekTreeChildren(root.tree)?.let { children ->
+                ManagedDownloadTreeChildRegistry.TreeChildrenRefresh(
+                    children = children.toList(),
+                    isComplete = true
+                )
+            } ?: treeChildRegistry.refreshTreeChildrenWithStatus(
                 context = context,
                 parent = root.tree
             )
@@ -171,7 +176,7 @@ internal fun ManagedDownloadStorage.deletePendingAudioMetadataBlocking(
     )
     if (deletedReferences.isNotEmpty()) {
         forgetDeletedReferencesFromCaches(deletedReferences)
-        invalidateSnapshotCache(context)
+        snapshotCacheStore.updateAfterDelete(context, deletedReferences.toSet())
     }
     return deletedReferences.containsAll(references)
 }
@@ -499,7 +504,17 @@ internal fun ManagedDownloadStorage.promoteFileTargetWithoutReplacement(
             val descriptor = Os.open(target.absolutePath, OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_EXCL, OsConstants.S_IRUSR or OsConstants.S_IWUSR)
             FileOutputStream(descriptor).use { output ->
                 val identity = Os.fstat(descriptor).let { "${it.st_dev}:${it.st_ino}" }
-                onTargetCreated(descriptor)
+                try {
+                    onTargetCreated(descriptor)
+                } catch (error: Throwable) {
+                    // 凭据未保存时只清理本次独占创建的 inode，避免留下无法恢复的空目标
+                    if (runCatching { publicationFileIdentity(target.absolutePath) }.getOrNull() == identity) {
+                        if (!target.delete() && target.exists()) {
+                            error.addSuppressed(IOException("发布凭据失败后无法清理新目标: $displayName"))
+                        }
+                    }
+                    throw error
+                }
                 pending.inputStream().use { it.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES) }
                 output.fd.sync()
                 if (publicationFileIdentity(target.absolutePath) != identity) throw IOException("发布目标身份发生变化: $displayName")
@@ -641,6 +656,7 @@ internal suspend fun ManagedDownloadStorage.promotePendingAudio(
                 } else if (!pendingFile.isFile) {
                     null
                 } else {
+                    markAudioPublicationPending(context, root, audio, finalName)
                     promoteFileTargetWithoutReplacement(
                         pending = File(pendingRoot, audio.name), target = target, displayName = finalName,
                         onTargetCreated = { descriptor ->
@@ -654,24 +670,31 @@ internal suspend fun ManagedDownloadStorage.promotePendingAudio(
             }
         }
 
-        is RootHandle.TreeRoot -> {
+        is RootHandle.TreeRoot -> audioPublicationLocks[
+            ("${root.tree.uri}|${ManagedDownloadTreeNaming.canonicalLookupName(finalName)}"
+                .hashCode() and Int.MAX_VALUE) % audioPublicationLocks.size
+        ].withLock {
             val pendingUri = audio.reference.toUri()
             val pendingBackend = SafStorageBackend(context)
             val initialPendingReference = StorageReference.SafRef(pendingUri)
             val pendingStat = pendingBackend.stat(initialPendingReference)
-            val rootChildren = treeChildRegistry.cachedTreeChildren(
-                context = context,
+            val rootChildren = treeChildRegistry.peekTreeChildren(root.tree)
+                ?: treeChildRegistry.cachedTreeChildren(
+                    context = context,
+                    parent = root.tree,
+                    maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+                )
+            val pendingIsDirectRootChild = treeChildRegistry.peekTreeChildByReference(
                 parent = root.tree,
-                maxCacheAgeMs = 0L
-            )
-            val pendingIsDirectRootChild = rootChildren.any { child ->
-                !child.isDirectory && sameTreeDocument(child.documentUri, pendingUri)
-            }
-            val exactTargetCandidates = rootChildren.filter { child ->
+                reference = pendingUri.toString()
+            )?.isDirectory == false
+            val exactNamedTarget = treeChildRegistry.peekTreeChild(root.tree, finalName)
+                ?.takeIf { child -> !child.isDirectory }
+            val exactTargetCandidates = exactNamedTarget?.let(::listOf) ?: rootChildren.filter { child ->
                 !child.isDirectory &&
                     ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
             }
-            val hasPromotionBackup = rootChildren.any { child ->
+            val hasPromotionBackup = exactTargetCandidates.isNotEmpty() && rootChildren.any { child ->
                 isTreePromotionBackupName(child.name, finalName)
             }
             if (exactTargetCandidates.size == 1 && !hasPromotionBackup) {
@@ -820,6 +843,14 @@ internal suspend fun ManagedDownloadStorage.promotePendingAudio(
                     treeChildRegistry.rememberTreeChild(root.tree, it)
                 }
             }
+            val resolvedPendingAudio = audio.copy(
+                reference = pending.uri.toString(),
+                mediaUri = pending.uri.toString(),
+                localFilePath = null,
+                sizeBytes = expectedSizeBytes,
+                sizeKnown = true
+            )
+            markAudioPublicationPending(context, root, resolvedPendingAudio, finalName)
             copyPendingTreeAudioWithoutReplacing(
                 context = context,
                 root = root,
@@ -850,6 +881,27 @@ internal fun ManagedDownloadStorage.resolvePendingTemporaryTreeDocument(
         root = root,
         create = false
     ) as? RootHandle.TreeRoot ?: return null
+    treeChildRegistry.peekTreeChildByReference(
+        parent = temporaryRoot.tree,
+        reference = pendingUri.toString(),
+        includeIncomplete = true
+    )?.takeIf { child -> !child.isDirectory }
+        ?.let { child ->
+            return treeChildRegistry.toDocumentFile(
+                context = context,
+                parent = temporaryRoot.tree,
+                child = child
+            )
+        }
+    treeChildRegistry.peekTreeChildIncludingIncomplete(temporaryRoot.tree, pendingName)
+        ?.takeIf { child -> !child.isDirectory && sameTreeDocument(child.documentUri, pendingUri) }
+        ?.let { child ->
+            return treeChildRegistry.toDocumentFile(
+                context = context,
+                parent = temporaryRoot.tree,
+                child = child
+            )
+        }
     val cached = treeChildRegistry.cachedTreeChildren(
         context = context,
         parent = temporaryRoot.tree,
@@ -1091,6 +1143,11 @@ internal fun ManagedDownloadStorage.reconcileExistingTreePromotionTargetLocked(
     return entry
 }
 
+private data class PreparedTreeAudioPublication(
+    val created: DocumentFile? = null,
+    val recovered: StoredEntry? = null
+)
+
 internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing(
     context: Context,
     root: RootHandle.TreeRoot,
@@ -1103,8 +1160,35 @@ internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing
 ): StoredEntry? {
     val backend = SafStorageBackend(context)
     val copied = backend.read(StorageReference.SafRef(pending.uri)) { source ->
-        ManagedDownloadTreeMutationLocks.withLock(root.tree.uri) {
-            val beforeCreate = treeChildRegistry.treeChildrenForWrite(context, root.tree)
+        val prepared = ManagedDownloadTreeMutationLocks.withLock(root.tree.uri) {
+            fun refreshAndReconcileExistingTarget(): StoredEntry? {
+                val refreshed = treeChildRegistry.treeChildrenForWrite(context, root.tree)
+                val exactTarget = refreshed.children
+                    .filter { child ->
+                        ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
+                    }
+                    .singleOrNull()
+                    ?: return null
+                return reconcileExistingTreePromotionTargetLocked(
+                    context = context,
+                    root = root,
+                    refresh = refreshed,
+                    targetUri = exactTarget.documentUri,
+                    pendingUri = pending.uri,
+                    pendingName = pendingName,
+                    pendingParent = pendingParent,
+                    finalName = finalName,
+                    expectedSizeBytes = expectedSizeBytes,
+                    fallbackLastModifiedMs = fallbackLastModifiedMs
+                )
+            }
+
+            val beforeCreate = treeChildRegistry.peekTreeChildren(root.tree)?.let { children ->
+                ManagedDownloadTreeChildRegistry.TreeChildrenRefresh(
+                    children = children.toList(),
+                    isComplete = true
+                )
+            } ?: treeChildRegistry.treeChildrenForWrite(context, root.tree)
             val recovered = beforeCreate.children
                 .filter { child ->
                     ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
@@ -1125,7 +1209,7 @@ internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing
                     )
                 }
             if (recovered != null) {
-                return@withLock recovered
+                return@withLock PreparedTreeAudioPublication(recovered = recovered)
             }
             if (!canCreateTreePromotionTargetWithoutReplacing(
                     enumerationComplete = beforeCreate.isComplete,
@@ -1157,7 +1241,13 @@ internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing
                 return@withLock null
             } catch (error: Throwable) {
                 throw IOException("SAF 无覆写提升创建失败: $finalName", error)
-            } ?: return@withLock null
+            }
+            if (createdUri == null) {
+                val recoveredAfterCollision = refreshAndReconcileExistingTarget()
+                return@withLock recoveredAfterCollision?.let { recoveredEntry ->
+                    PreparedTreeAudioPublication(recovered = recoveredEntry)
+                }
+            }
             val created = resolveNewTreePromotionDocument(
                 context = context,
                 parent = root.tree,
@@ -1180,6 +1270,12 @@ internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing
             }
             if (!ManagedDownloadTreeNaming.isExactTreeStoredName(created.name, finalName)) {
                 discardNewTreePromotionTarget(context, root.tree, created.name ?: finalName, created.uri)
+                val recoveredAfterCollision = refreshAndReconcileExistingTarget()
+                if (recoveredAfterCollision != null) {
+                    return@withLock PreparedTreeAudioPublication(
+                        recovered = recoveredAfterCollision
+                    )
+                }
                 NPLogger.w(
                     TAG,
                     "SAF 提升创建返回非目标名称，保留 pending 音频: " +
@@ -1187,68 +1283,62 @@ internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing
                 )
                 return@withLock null
             }
-            val afterCreate = treeChildRegistry.treeChildrenForWrite(context, root.tree)
-            val exactTargets = afterCreate.children.filter { child ->
-                ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
-            }
-            if (
-                !afterCreate.isComplete ||
-                    exactTargets.size != 1 ||
-                    exactTargets.none { child -> sameTreeDocument(child.documentUri, created.uri) }
-            ) {
-                discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
-                NPLogger.w(TAG, "SAF 提升创建后目标不唯一，保留 pending 音频: $finalName")
-                return@withLock null
-            }
-            try {
-                recordAudioPublicationTarget(
-                    context, root,
-                    StoredEntry(pendingName, pending.uri.toString(), pending.uri.toString(), null, expectedSizeBytes, fallbackLastModifiedMs),
-                    created.uri.toString(), targetName = finalName
-                )
-                val output = context.contentResolver.openOutputStream(created.uri, "w")
-                    ?: throw IOException("SAF final 音频不可写: $finalName")
-                output.use { target ->
-                    val copiedBytes = source.copyTo(target, STREAM_COPY_BUFFER_SIZE_BYTES)
-                    if (copiedBytes != expectedSizeBytes) {
-                        throw IOException(
-                            "SAF pending 音频复制长度不匹配: $pendingName, " +
-                                "expected=$expectedSizeBytes, actual=$copiedBytes"
-                        )
-                    }
-                }
-                val entry = verifiedTreeStoredEntry(
-                    context = context,
-                    target = created,
-                    expectedName = finalName,
-                    expectedSizeBytes = expectedSizeBytes,
-                    fallbackLastModifiedMs = fallbackLastModifiedMs,
-                    description = finalName
-                )
-                if (!isVerifiedAudioPublicationTarget(context, root, pendingName, finalName, created.uri.toString(), pending.uri.toString())) {
-                    throw IOException("SAF 发布目标内容凭据校验失败: $finalName")
-                }
-                val pendingDeleted = deleteTrustedReference(
-                    context,
-                    TrustedManagedRef(
-                        reference = StorageReference.SafRef(pending.uri),
-                        externalReference = pending.uri.toString()
+            // createDocument 返回新文档身份，且上面已经核对 Provider 实际保存的名称
+            // 同一目标由 publication lock 串行，避免在每首歌发布时再次枚举整个根目录
+            PreparedTreeAudioPublication(created = created)
+        } ?: return@read null
+        prepared.recovered?.let { return@read it }
+        val created = requireNotNull(prepared.created)
+        // 目标身份已在目录锁内确认，同目标由 publication lock 串行
+        // 大文件复制和完整哈希不应阻塞同目录中其它歌曲的写入
+        try {
+            recordAudioPublicationTarget(
+                context, root,
+                StoredEntry(pendingName, pending.uri.toString(), pending.uri.toString(), null, expectedSizeBytes, fallbackLastModifiedMs),
+                created.uri.toString(), targetName = finalName
+            )
+            val output = context.contentResolver.openOutputStream(created.uri, "w")
+                ?: throw IOException("SAF final 音频不可写: $finalName")
+            output.use { target ->
+                val copiedBytes = source.copyTo(target, STREAM_COPY_BUFFER_SIZE_BYTES)
+                if (copiedBytes != expectedSizeBytes) {
+                    throw IOException(
+                        "SAF pending 音频复制长度不匹配: $pendingName, " +
+                            "expected=$expectedSizeBytes, actual=$copiedBytes"
                     )
-                ).isConfirmedStorageMutation()
-                if (pendingDeleted) {
-                    treeChildRegistry.forgetTreeChildName(
-                        pendingParent ?: root.tree,
-                        pendingName
-                    )
-                } else {
-                    NPLogger.w(TAG, "音频已提升但 pending 文件清理失败: $pendingName")
                 }
-                treeChildRegistry.rememberTreeChild(root.tree, entry)
-                entry
-            } catch (error: Throwable) {
-                discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
-                throw error
             }
+            val entry = verifiedTreeStoredEntry(
+                context = context,
+                target = created,
+                expectedName = finalName,
+                expectedSizeBytes = expectedSizeBytes,
+                fallbackLastModifiedMs = fallbackLastModifiedMs,
+                description = finalName
+            )
+            if (!isVerifiedAudioPublicationTarget(context, root, pendingName, finalName, created.uri.toString(), pending.uri.toString())) {
+                throw IOException("SAF 发布目标内容凭据校验失败: $finalName")
+            }
+            val pendingDeleted = deleteTrustedReference(
+                context,
+                TrustedManagedRef(
+                    reference = StorageReference.SafRef(pending.uri),
+                    externalReference = pending.uri.toString()
+                )
+            ).isConfirmedStorageMutation()
+            if (pendingDeleted) {
+                treeChildRegistry.forgetTreeChildName(
+                    pendingParent ?: root.tree,
+                    pendingName
+                )
+            } else {
+                NPLogger.w(TAG, "音频已提升但 pending 文件清理失败: $pendingName")
+            }
+            treeChildRegistry.rememberTreeChild(root.tree, entry)
+            entry
+        } catch (error: Throwable) {
+            discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
+            throw error
         }
     }
     return when (copied) {

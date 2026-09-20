@@ -20,8 +20,43 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 
 class AssetEnrichmentCoordinatorTest {
+    @Test
+    fun `manager enrichment can finish one full transport wave without a hidden four song limit`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(
+            scope,
+            parallelism = GlobalDownloadManager.ASSET_ENRICHMENT_PARALLELISM,
+            maxActiveJobs = GlobalDownloadManager.ASSET_ENRICHMENT_MAX_ACTIVE_JOBS
+        )
+        val started = AtomicInteger()
+        val allStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val waveSize = AudioDownloadManager.MAX_CONCURRENT_DOWNLOADS_LIMIT
+        try {
+            val jobs = (0 until waveSize).map { index ->
+                coordinator.tryEnqueue("wave-$index") {
+                    if (started.incrementAndGet() == waveSize) allStarted.complete(Unit)
+                    release.await()
+                }
+            }
+            assertEquals(waveSize, jobs.count { it != null })
+            withTimeout(2_000) { allStarted.await() }
+            assertEquals(waveSize, started.get())
+            assertEquals(null, coordinator.tryEnqueue("wave-overflow") {})
+            release.complete(Unit)
+            jobs.filterNotNull().forEach { it.join() }
+            assertEquals(0, coordinator.activeCount())
+        } finally {
+            release.complete(Unit)
+            coordinator.cancelAllAndJoin()
+            scope.cancel()
+        }
+    }
+
     @Test
     fun `same operation is enqueued only once`() = runBlocking {
         val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)

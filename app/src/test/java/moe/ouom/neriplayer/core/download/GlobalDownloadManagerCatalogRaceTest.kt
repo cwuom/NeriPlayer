@@ -46,7 +46,9 @@ class GlobalDownloadManagerCatalogRaceTest {
                 reference = reference,
                 evidence = ManagedDownloadReferenceLookup.Result.Present,
                 snapshot = null,
-                cachedAudio = null
+                cachedAudio = null,
+                recordedSizeBytes = 1L,
+                observedSizeBytes = 1L
             )
         )
         assertTrue(
@@ -54,7 +56,9 @@ class GlobalDownloadManagerCatalogRaceTest {
                 reference = reference,
                 evidence = ManagedDownloadReferenceLookup.Result.Present,
                 snapshot = staleSnapshot,
-                cachedAudio = audio
+                cachedAudio = audio,
+                recordedSizeBytes = 1L,
+                observedSizeBytes = 1L
             )
         )
         assertFalse(

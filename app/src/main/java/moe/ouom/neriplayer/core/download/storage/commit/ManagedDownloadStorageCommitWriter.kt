@@ -19,7 +19,6 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
-import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLocks
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
@@ -339,6 +338,22 @@ internal class ManagedDownloadStorageCommitWriter(
         return referenceTreeId == rootDocumentId
     }
 
+    private fun bindSafReferenceToRoot(
+        rootUri: android.net.Uri,
+        referenceUri: android.net.Uri
+    ): android.net.Uri? {
+        if (!referenceUri.authority.equals(rootUri.authority, ignoreCase = true)) {
+            return null
+        }
+        val documentId = runCatching {
+            DocumentsContract.getDocumentId(referenceUri)
+        }.getOrNull() ?: return null
+        val bound = runCatching {
+            DocumentsContract.buildDocumentUriUsingTree(rootUri, documentId)
+        }.getOrNull() ?: return null
+        return bound.takeIf { uri -> isSafReferenceBoundToRoot(rootUri, uri) }
+    }
+
     fun writeMigrationRootStream(
         context: Context,
         root: ManagedDownloadRootHandle,
@@ -566,35 +581,39 @@ internal class ManagedDownloadStorageCommitWriter(
             is ManagedDownloadRootHandle.TreeRoot -> {
                 val encoded = content.toByteArray(Charsets.UTF_8)
                 // 扫描已确认的根目录快照时复用目标 URI，可省去一次大目录查询
-                // 缓存不完整或过期时仍走原有安全路径
-                val cachedTargetEntry = if (knownTargetEntry == null && !expectedAbsent) {
-                    selectCachedSafWriteChild(
-                        displayName = displayName,
-                        cachedChildren = treeChildRegistry.cachedTreeChildrenIfFresh(
-                            parent = root.tree,
-                            maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
-                        )
-                    )
-                        ?.let(ManagedDownloadStoredEntryMapper::fromTreeChild)
-                        ?.takeIf { entry ->
-                            safDocumentUri(entry)?.let { uri ->
-                                isSafReferenceBoundToRoot(root.tree.uri, uri)
-                            } == true
-                        }
+                // Provider 若在应用外修改目标，乐观写入失败后仍走原有安全路径
+                val cachedChildren = if (knownTargetEntry == null && !expectedAbsent) {
+                    treeChildRegistry.peekTreeChildren(root.tree)
                 } else {
                     null
                 }
-                val effectiveKnownTarget = knownTargetEntry ?: cachedTargetEntry
+                val cachedHint = resolveCachedSafWriteHint(
+                    displayName = displayName,
+                    cachedChildren = cachedChildren
+                )
+                val cachedTargetReference = cachedHint.child
+                    ?.documentUri
+                    ?.let { uri -> bindSafReferenceToRoot(root.tree.uri, uri) }
+                    ?.toString()
+                val explicitKnownTargetReference = knownTargetEntry
+                    ?.let(::safDocumentUri)
+                    ?.let { uri -> bindSafReferenceToRoot(root.tree.uri, uri) }
+                    ?.toString()
+                val effectiveKnownTargetReference = explicitKnownTargetReference
+                    ?: cachedTargetReference
+                val effectiveExpectedAbsent = expectedAbsent ||
+                    knownTargetEntry == null && cachedHint.targetKnownAbsent
                 writeSafEntry(
                     context = context,
                     parent = root.tree,
                     displayName = displayName,
                     mimeType = "application/json",
                     expectedSizeBytes = encoded.size.toLong(),
-                    expectedAbsent = expectedAbsent,
-                    knownExistingReference = effectiveKnownTarget?.reference,
+                    expectedAbsent = effectiveExpectedAbsent,
+                    knownExistingReference = effectiveKnownTargetReference,
                     // 外部文件管理器可能在缓存有效期内改名，失败时回退完整查找
-                    fallbackOnOptimisticCommitFailure = cachedTargetEntry != null
+                    fallbackOnOptimisticCommitFailure =
+                        cachedHint.fallbackOnOptimisticCommitFailure
                 ) { output -> output.write(encoded) }
             }
         }
@@ -1441,6 +1460,38 @@ internal fun selectCachedSafWriteChild(
     return cachedChildren?.firstOrNull { child ->
         child.name == displayName && !child.isDirectory
     }
+}
+
+internal data class CachedSafWriteHint(
+    val child: QueriedTreeChild?,
+    val targetKnownAbsent: Boolean,
+    val fallbackOnOptimisticCommitFailure: Boolean
+)
+
+internal fun resolveCachedSafWriteHint(
+    displayName: String,
+    cachedChildren: Collection<QueriedTreeChild>?
+): CachedSafWriteHint {
+    if (cachedChildren == null) {
+        return CachedSafWriteHint(
+            child = null,
+            targetKnownAbsent = false,
+            fallbackOnOptimisticCommitFailure = false
+        )
+    }
+    return CachedSafWriteHint(
+        child = selectCachedSafWriteChild(displayName, cachedChildren),
+        targetKnownAbsent = isSafWriteTargetKnownAbsent(displayName, cachedChildren),
+        // 完整缓存只提供乐观提示，Provider 外部变更时必须回退实时查询
+        fallbackOnOptimisticCommitFailure = true
+    )
+}
+
+internal fun isSafWriteTargetKnownAbsent(
+    displayName: String,
+    cachedChildren: Collection<QueriedTreeChild>?
+): Boolean = cachedChildren != null && cachedChildren.none { child ->
+    child.name == displayName
 }
 
 internal fun sameManagedMigrationStoredEntryIdentity(

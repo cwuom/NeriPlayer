@@ -22,6 +22,7 @@ import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.recovery.PersistentTerminalTemporaryWriteCleanupJournal
+import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupConsumeResult
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupFinalizationPreparation
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupJournalEntry
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupPreparationSnapshot
@@ -100,8 +101,23 @@ internal suspend fun ManagedDownloadStorage.cleanupPersistedTerminalTemporaryWri
             return aggregate()
         }
 
-        if (PersistentTerminalTemporaryWriteCleanupJournal.consume(context, currentEntry)) {
-            return aggregate()
+        when (
+            PersistentTerminalTemporaryWriteCleanupJournal.consumeWithResult(
+                context = context,
+                entry = currentEntry
+            )
+        ) {
+            TerminalTemporaryWriteCleanupConsumeResult.CONSUMED -> return aggregate()
+            TerminalTemporaryWriteCleanupConsumeResult.REFRESHED_TARGETS_RETAINED -> {
+                NPLogger.d(
+                    TAG,
+                    "终态临时写入旧代次已清理，新代次记录留给后续任务: " +
+                        "root=${currentEntry.root.identity}, " +
+                        "targets=${currentEntry.targetNames.size}"
+                )
+                return aggregate()
+            }
+            TerminalTemporaryWriteCleanupConsumeResult.FAILED -> Unit
         }
 
         // 当前记录缺失通常表示另一个清理 Worker 已经消费它，目标集合变化或日志不可读
@@ -284,47 +300,55 @@ internal fun ManagedDownloadStorage.recoverPreparedTerminalTemporaryWriteFinaliz
             is TerminalTemporaryWriteCleanupPreparationSnapshot.Available -> {
                 var failedCount = 0
                 var externalSignalRequiredCount = 0
-                snapshot.entries.forEach { preparation ->
-                    val root = resolveTerminalTemporaryWriteCleanupRoot(context, preparation)
-                    if (root == null) {
-                        failedCount += preparation.targetNames.size
-                        externalSignalRequiredCount += preparation.targetNames.size
-                        NPLogger.w(
-                            TAG,
-                            "最终发布准备目录不可恢复，保留等待恢复: " +
-                                "root=${preparation.root.identity}, " +
-                                "targets=${preparation.targetNames.size}"
+                snapshot.entries.groupBy { preparation -> preparation.root }
+                    .forEach rootGroup@{ (_, preparations) ->
+                        val root = resolveTerminalTemporaryWriteCleanupRoot(
+                            context,
+                            preparations.first()
                         )
-                        return@forEach
+                        if (root == null) {
+                            val blockedTargets = preparations.sumOf { it.targetNames.size }
+                            failedCount += blockedTargets
+                            externalSignalRequiredCount += blockedTargets
+                            NPLogger.w(
+                                TAG,
+                                "最终发布准备目录不可恢复，保留等待恢复: " +
+                                    "root=${preparations.first().root.identity}, " +
+                                    "targets=$blockedTargets"
+                            )
+                            return@rootGroup
+                        }
+                        val refresh = treeDirectories.refreshRootEntries(context, root)
+                        if (!refresh.isComplete) {
+                            val blockedTargets = preparations.sumOf { it.targetNames.size }
+                            failedCount += blockedTargets
+                            NPLogger.w(
+                                TAG,
+                                "最终发布准备恢复跳过不完整目录枚举: " +
+                                    "targets=$blockedTargets"
+                            )
+                            return@rootGroup
+                        }
+                        val rootEntries = refresh.entries.filterNot(StoredEntry::isDirectory)
+                        preparations.forEach preparation@{ preparation ->
+                            if (!isPreparedTerminalTemporaryWriteFinalizationReady(
+                                    context = context,
+                                    preparation = preparation,
+                                    rootEntries = rootEntries
+                                )
+                            ) {
+                                return@preparation
+                            }
+                            if (!completeTerminalTemporaryWriteFinalization(context, preparation)) {
+                                failedCount += preparation.targetNames.size
+                                NPLogger.w(
+                                    TAG,
+                                    "最终发布准备未能转换为终态清理记录，保留等待恢复: " +
+                                        "audio=${preparation.finalAudioName}"
+                                )
+                            }
+                        }
                     }
-                    val refresh = treeDirectories.refreshRootEntries(context, root)
-                    if (!refresh.isComplete) {
-                        failedCount += preparation.targetNames.size
-                        NPLogger.w(
-                            TAG,
-                            "最终发布准备恢复跳过不完整目录枚举: " +
-                                "targets=${preparation.targetNames.size}"
-                        )
-                        return@forEach
-                    }
-                    val rootEntries = refresh.entries.filterNot(StoredEntry::isDirectory)
-                    if (!isPreparedTerminalTemporaryWriteFinalizationReady(
-                            context = context,
-                            preparation = preparation,
-                            rootEntries = rootEntries
-                        )
-                    ) {
-                        return@forEach
-                    }
-                    if (!completeTerminalTemporaryWriteFinalization(context, preparation)) {
-                        failedCount += preparation.targetNames.size
-                        NPLogger.w(
-                            TAG,
-                            "最终发布准备未能转换为终态清理记录，保留等待恢复: " +
-                                "audio=${preparation.finalAudioName}"
-                        )
-                    }
-                }
                 StartupRecoveryResult(
                     failedCount = failedCount,
                     externalSignalRequiredCount = externalSignalRequiredCount
@@ -627,6 +651,11 @@ internal fun ManagedDownloadStorage.saveMetadataBlocking(
     val content = preserveAudioPublicationReceipt(
         readAudioPublicationMetadata(context, root, audio.logicalName)?.toString(), json
     )
+    val expectedMetadata = if (content == json) metadata else parseDownloadedAudioMetadataJson(content)
+    if (expectedMetadata == null) {
+        invalidateSnapshotCache(context)
+        return false
+    }
     val metadataEntry = writeRootText(
         context = context,
         root = root,
@@ -641,7 +670,7 @@ internal fun ManagedDownloadStorage.saveMetadataBlocking(
     }
     val storedContent = readTextInternal(context, metadataEntry.reference)
     val storedMetadata = storedContent?.let(::parseDownloadedAudioMetadataJson)
-    if (!isMetadataWriteVerified(expected = metadata, actual = storedMetadata) ||
+    if (storedMetadata == null || !isMetadataWriteVerified(expected = expectedMetadata, actual = storedMetadata) ||
         content != json && storedContent != content
     ) {
         invalidateSnapshotCache(context)
@@ -650,7 +679,7 @@ internal fun ManagedDownloadStorage.saveMetadataBlocking(
     }
     if (
         updateSnapshotCache &&
-        !updateSnapshotCacheAfterMetadataWrite(context, metadataEntry, metadata)
+        !updateSnapshotCacheAfterMetadataWrite(context, metadataEntry, storedMetadata)
     ) {
         invalidateSnapshotCache(context)
     }
