@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.local.media
+﻿package moe.ouom.neriplayer.data.local.media
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -624,7 +624,8 @@ object LocalMediaSupport {
      * 只读取歌词相关字段，避免歌词首屏触发 TagLib、封面和音频轨道解析
      */
     internal fun inspectLyricsFast(
-        song: SongItem
+        song: SongItem,
+        context: android.content.Context? = null
     ): LocalLyricsScanMetadata {
         val stored = LocalLyricsScanMetadata(
             lyric = song.matchedLyric ?: song.originalLyric,
@@ -635,8 +636,14 @@ object LocalMediaSupport {
         val source = song.localMediaUri()
         val cacheKey = buildLocalLyricsCacheKey(song, source)
         synchronized(localLyricsLookupCache) {
-            localLyricsLookupCache[cacheKey]?.let { return it }
+            localLyricsLookupCache[cacheKey]?.let { 
+                NPLogger.d(TAG, "inspectLyricsFast: cache hit for ${song.name}")
+                return it 
+            }
         }
+
+        NPLogger.d(TAG, "inspectLyricsFast: cache miss for ${song.name}, source=$source")
+        NPLogger.d(TAG, "  localFilePath=${song.localFilePath}")
 
         val directFile = song.localFilePath
             ?.takeIf(String::isNotBlank)
@@ -647,6 +654,15 @@ object LocalMediaSupport {
                 ?.path
                 ?.let(::File)
                 ?.takeIf(File::isFile)
+            ?: context?.let { ctx ->
+                source?.let { uri ->
+                    resolveLocalFile(ctx, uri)
+                        ?: parseSafDocumentIdToPath(uri)
+                }
+            }
+        
+        NPLogger.d(TAG, "  directFile=$directFile, isLocalSong=${song.isLocalSong()}")
+        
         val scanned = if (directFile != null) {
             runCatching {
                 inspectLyricsFromDirectFile(
@@ -657,6 +673,7 @@ object LocalMediaSupport {
                 LocalLyricsScanMetadata(null, null, null)
             }
         } else {
+            NPLogger.w(TAG, "inspectLyricsFast: directFile is null, skipping SAF lyrics lookup for ${song.name}")
             // SAF 歌词引用在导入阶段已写入 SongItem, 首屏不再同步查询文档树
             LocalLyricsScanMetadata(null, null, null)
         }
@@ -674,40 +691,14 @@ object LocalMediaSupport {
     private fun inspectLyricsFromDirectFile(
         file: File
     ): LocalLyricsScanMetadata {
-        val metadataFile = File(
-            file.parentFile ?: return LocalLyricsScanMetadata(null, null, null),
-            file.name + LOCAL_METADATA_SUFFIX
-        )
-        val localMetadata = if (metadataFile.isFile) {
-            readTextFile(metadataFile)?.let {
-                parseLocalMetadataSidecar(metadataFile.absolutePath, it)
-            }
-        } else {
-            null
-        }
         val nearbyFiles = findNearbyLyricFiles(file)
         fun read(reference: File?): String? {
             return reference?.let(::readTextFile)
         }
-        val nearbyLyric = read(nearbyFiles.original)
-        val nearbyTranslatedLyric = read(nearbyFiles.translated)
-        val nearbyRomanizedLyric = read(nearbyFiles.romanized)
         return LocalLyricsScanMetadata(
-            lyric = if (localMetadata?.hasLyricOverride == true) {
-                localMetadata.lyric
-            } else {
-                nearbyLyric
-            },
-            translatedLyric = if (localMetadata?.hasTranslatedLyricOverride == true) {
-                localMetadata.translatedLyric
-            } else {
-                nearbyTranslatedLyric
-            },
-            romanizedLyric = if (localMetadata?.hasRomanizedLyricOverride == true) {
-                localMetadata.romanizedLyric
-            } else {
-                nearbyRomanizedLyric
-            }
+            lyric = read(nearbyFiles.original),
+            translatedLyric = read(nearbyFiles.translated),
+            romanizedLyric = read(nearbyFiles.romanized)
         )
     }
 
@@ -1210,6 +1201,28 @@ object LocalMediaSupport {
             ?: queryContentInfo(context, uri).filePath
             ?: resolvePathFromDescriptor(context, uri)
         return resolvedPath?.let(::File)?.takeIf(File::exists)
+    }
+
+    private fun parseSafDocumentIdToPath(uri: Uri): File? {
+        val documentId = DocumentsContract.getDocumentId(uri)
+            ?: uri.lastPathSegment
+            ?: uri.pathSegments?.lastOrNull()
+        
+        if (documentId == null) return null
+        
+        val path = when {
+            documentId.startsWith("primary:") -> {
+                val relativePath = documentId.substringAfter("primary:")
+                File(Environment.getExternalStorageDirectory(), relativePath)
+            }
+            documentId.startsWith("home:") -> {
+                val relativePath = documentId.substringAfter("home:")
+                File(Environment.getExternalStorageDirectory(), relativePath)
+            }
+            else -> null
+        }
+        
+        return path?.takeIf { it.exists() }
     }
 
     fun inspectQuick(

@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screen
+﻿package moe.ouom.neriplayer.ui.screen
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -669,6 +669,69 @@ fun LyricsScreen(
                     vertical = if (isTabletLandscape) 6.dp else 10.dp
                 )
         ) {
+            // 译/音切换按钮 - 放在进度条上方左侧
+            val hasPhoneticLyrics = effectivePhoneticLyrics.isNotEmpty()
+            val phoneticToggleEnabled = showLyricTranslation && hasPhoneticLyrics
+            val phoneticToggleChecked = showLyricTranslation && lyricTranslationUsePhonetic && hasPhoneticLyrics
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            if (phoneticToggleChecked) {
+                                LocalNeriTargetColorScheme.current.primary.copy(alpha = 0.15f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                            }
+                        )
+                        .clickable(enabled = phoneticToggleEnabled) {
+                            scope.launch {
+                                settingsRepo.setLyricTranslationUsePhonetic(!lyricTranslationUsePhonetic)
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "译",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (showLyricTranslation && !lyricTranslationUsePhonetic) {
+                                LocalNeriTargetColorScheme.current.primary
+                            } else if (phoneticToggleEnabled) {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            }
+                        )
+                        Text(
+                            text = "/",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                        Text(
+                            text = "音",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (phoneticToggleChecked) {
+                                LocalNeriTargetColorScheme.current.primary
+                            } else if (phoneticToggleEnabled) {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // 进度条
             LyricsProgressSection(
                 songKey = currentSong?.stableKey(),
@@ -697,7 +760,7 @@ fun LyricsScreen(
                     )
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // 播放控制按钮
             Row(

@@ -746,7 +746,7 @@ internal object PlayerLyricsProvider {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
         val localLyrics = if (song.isLocalSong()) {
-            LocalMediaSupport.inspectLyricsFast(song)
+            LocalMediaSupport.inspectLyricsFast(song, application)
         } else {
             null
         }
@@ -868,7 +868,7 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val localRomanizedLyric = if (song.isLocalSong()) {
-                LocalMediaSupport.inspectLyricsFast(song).romanizedLyric
+                LocalMediaSupport.inspectLyricsFast(song, application).romanizedLyric
             } else {
                 null
             }
@@ -944,7 +944,7 @@ internal object PlayerLyricsProvider {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
             val localLyric = if (song.isLocalSong()) {
-                LocalMediaSupport.inspectLyricsFast(song).lyric
+                LocalMediaSupport.inspectLyricsFast(song, application).lyric
             } else {
                 null
             }

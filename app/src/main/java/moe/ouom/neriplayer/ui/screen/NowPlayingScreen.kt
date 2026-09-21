@@ -2248,7 +2248,7 @@ fun NowPlayingScreen(
         val loadedLyricsState = withContext(Dispatchers.IO) {
             val isLocalSong = song?.isLocalSong() == true
             val localLyrics = if (isLocalSong) {
-                runCatching { LocalMediaSupport.inspectLyricsFast(song) }
+                runCatching { LocalMediaSupport.inspectLyricsFast(song, context) }
                     .onFailure { error ->
                         NPLogger.w(
                             "NowPlayingLyrics",
@@ -4961,7 +4961,7 @@ fun EditSongInfoSheet(
                             val loadedLyricsResult: Pair<String, String> = withContext(Dispatchers.IO) {
                                 val isLocalSong = actualSong.isLocalSong()
                                 val localLyrics = if (isLocalSong) {
-                                    runCatching { LocalMediaSupport.inspectLyricsFast(actualSong) }
+                                    runCatching { LocalMediaSupport.inspectLyricsFast(actualSong, context) }
                                         .onFailure { error ->
                                             NPLogger.w(
                                                 "NowPlayingLyrics",
