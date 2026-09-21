@@ -18,11 +18,27 @@ class PostCoreRecoveryOwnershipContractTest {
         )
         val lockIndex = body.indexOf("withSongExecutionLock(song.stableKey())")
         val activeOwnerIndex = body.indexOf("assetEnrichmentCoordinator.isActive(operationId)")
-        val artifactClaimIndex = body.indexOf("managedDownloadArtifactCoordinator.claim(")
+        val artifactClaimIndex = body.indexOf("claimArtifactForRecovery(")
 
         assertTrue(lockIndex >= 0)
         assertTrue(activeOwnerIndex > lockIndex)
         assertTrue(artifactClaimIndex > activeOwnerIndex)
+    }
+
+    @Test
+    fun `post core worker uses the shared durable recovery lease claim`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/manager/runtime/" +
+                "GlobalDownloadManagerRequest.kt"
+        ).readText()
+        val body = source.substringAfter(
+            "internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation("
+        ).substringBefore(
+            "internal fun GlobalDownloadManager.settleAndRemoveRecoveredTask("
+        )
+
+        assertTrue(body.contains("claimArtifactForRecovery("))
+        assertTrue(!body.contains("managedDownloadArtifactCoordinator.claim("))
     }
 
     @Test

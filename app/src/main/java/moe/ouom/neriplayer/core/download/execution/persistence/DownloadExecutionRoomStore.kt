@@ -444,6 +444,24 @@ internal object DownloadExecutionRoomStore {
         return this.markStagingPreparedImpl(context, operationId, stableKey, database)
     }
 
+    suspend fun rebindArtifactLeaseForRecovery(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        expectedArtifactLeaseId: String,
+        recoveryArtifactLeaseId: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        return this.rebindArtifactLeaseForRecoveryImpl(
+            context = context,
+            operationId = operationId,
+            stableKey = stableKey,
+            expectedArtifactLeaseId = expectedArtifactLeaseId,
+            recoveryArtifactLeaseId = recoveryArtifactLeaseId,
+            database = database
+        )
+    }
+
     /** 用户重新点击下载时，只提升可恢复 operation 的意图，不重置租约或进度 */
     suspend fun promoteUserInitiatedOperation(
         context: Context,

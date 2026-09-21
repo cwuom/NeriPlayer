@@ -184,7 +184,9 @@ class ManagedDownloadArtifactPolicyTest {
         listOf(
             ManagedDownloadArtifactState.CORE_COMMITTED,
             ManagedDownloadArtifactState.ASSETS_ENRICHING,
-            ManagedDownloadArtifactState.DEGRADED_COMPLETE
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+            ManagedDownloadArtifactState.REPAIR_REQUIRED,
+            ManagedDownloadArtifactState.FINALIZED
         ).forEach { state ->
             assertTrue(
                 shouldReclaimPostCoreArtifactLeaseForRecovery(
@@ -234,18 +236,37 @@ class ManagedDownloadArtifactPolicyTest {
         )
         assertFalse(
             shouldReclaimPostCoreArtifactLeaseForRecovery(
-                artifactState = ManagedDownloadArtifactState.FINALIZED,
-                currentLeaseOwnerId = "request-owner",
+                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                currentLeaseOwnerId = "different-owner",
                 recoveryEnabled = true,
                 recoveryLeaseOwnerId = "stable-recovery-owner",
                 previousLeaseOwnerId = "request-owner"
             )
         )
-        assertFalse(
-            shouldReclaimPostCoreArtifactLeaseForRecovery(
-                artifactState = ManagedDownloadArtifactState.CORE_COMMITTED,
+        assertTrue(
+            hasForeignPostCoreRecoveryLeaseOwner(
                 currentLeaseOwnerId = "different-owner",
-                recoveryEnabled = true,
+                recoveryLeaseOwnerId = "stable-recovery-owner",
+                previousLeaseOwnerId = "request-owner"
+            )
+        )
+        assertFalse(
+            hasForeignPostCoreRecoveryLeaseOwner(
+                currentLeaseOwnerId = "request-owner",
+                recoveryLeaseOwnerId = "stable-recovery-owner",
+                previousLeaseOwnerId = "request-owner"
+            )
+        )
+        assertFalse(
+            hasForeignPostCoreRecoveryLeaseOwner(
+                currentLeaseOwnerId = "stable-recovery-owner",
+                recoveryLeaseOwnerId = "stable-recovery-owner",
+                previousLeaseOwnerId = "request-owner"
+            )
+        )
+        assertFalse(
+            hasForeignPostCoreRecoveryLeaseOwner(
+                currentLeaseOwnerId = null,
                 recoveryLeaseOwnerId = "stable-recovery-owner",
                 previousLeaseOwnerId = "request-owner"
             )

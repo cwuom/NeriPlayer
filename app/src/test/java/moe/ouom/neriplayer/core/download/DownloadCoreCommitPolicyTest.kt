@@ -298,6 +298,29 @@ class DownloadCoreCommitPolicyTest {
                 artifactState = null
             )
         )
+        assertTrue(
+            requiresFinalizedPublicationRecovery(
+                metadataFinalized = true,
+                operationState = "RETRYABLE",
+                artifactState = "DOWNLOADING"
+            )
+        )
+        assertTrue(
+            requiresFinalizedPublicationRecovery(
+                metadataFinalized = true,
+                operationState = null,
+                artifactState = "DOWNLOADING",
+                recoveryLeaseOwned = true
+            )
+        )
+        assertFalse(
+            requiresFinalizedPublicationRecovery(
+                metadataFinalized = true,
+                operationState = null,
+                artifactState = "DOWNLOADING",
+                recoveryLeaseOwned = false
+            )
+        )
     }
 
     @Test

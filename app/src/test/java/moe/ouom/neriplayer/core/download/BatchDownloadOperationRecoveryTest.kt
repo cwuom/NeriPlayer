@@ -618,13 +618,10 @@ class BatchDownloadOperationRecoveryTest {
         ).readText()
         val recoveryBody = methodBody(source, "recoverPostCoreDownloadOperation")
 
-        assertTrue(
-            recoveryBody.contains("finalizedPublicationRecoveryLeaseOwnerId(")
-        )
-        assertTrue(recoveryBody.contains("allowPostCoreRecoveryReclaim = true"))
-        assertTrue(recoveryBody.contains("postCoreRecoveryPreviousLeaseId = request?.artifactLeaseId"))
+        assertTrue(recoveryBody.contains("claimArtifactForRecovery("))
         assertTrue(recoveryBody.contains("claim is ManagedDownloadArtifactClaim.InFlight"))
-        assertTrue(recoveryBody.contains("artifact.leaseId != recoveryLeaseOwnerId"))
+        assertTrue(recoveryBody.contains("val request = recoveryClaim.request"))
+        assertTrue(recoveryBody.contains("val artifact = recoveryClaim.artifact"))
         assertTrue(recoveryBody.contains("val expectedArtifactLeaseId = artifact?.leaseId"))
         assertTrue(recoveryBody.contains("expectedArtifactLeaseId = expectedArtifactLeaseId"))
         assertTrue(recoveryBody.contains("expectedLeaseId = expectedArtifactLeaseId"))

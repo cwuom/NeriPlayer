@@ -535,6 +535,64 @@ internal suspend fun DownloadExecutionRoomStore.markStagingPreparedImpl(
     }
 }
 
+internal suspend fun DownloadExecutionRoomStore.rebindArtifactLeaseForRecoveryImpl(
+    context: Context,
+    operationId: String,
+    stableKey: String,
+    expectedArtifactLeaseId: String,
+    recoveryArtifactLeaseId: String,
+    database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+): Boolean {
+    val normalizedOperationId = operationId.trim().takeIf(String::isNotBlank) ?: return false
+    val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+    val normalizedExpectedLeaseId = expectedArtifactLeaseId
+        .trim()
+        .takeIf(String::isNotBlank)
+        ?: return false
+    val normalizedRecoveryLeaseId = recoveryArtifactLeaseId
+        .trim()
+        .takeIf(String::isNotBlank)
+        ?: return false
+    return database.withTransaction {
+        val dao = database.downloadOperationDao()
+        val header = dao.findHeader(normalizedOperationId) ?: return@withTransaction false
+        if (
+            header.stableKey != normalizedKey ||
+                header.stopRequestedByUser ||
+                header.state !in ARTIFACT_LEASE_RECOVERY_REBIND_STATES
+        ) {
+            return@withTransaction false
+        }
+        val decoded = readRequestFromHeader(dao, header)
+        val request = decoded.request ?: run {
+            if (decoded.payloadWasRead) {
+                invalidateMalformedPayloadInTransaction(database, header)
+            }
+            return@withTransaction false
+        }
+        if (request.song.stableKey() != normalizedKey) {
+            invalidateMalformedPayloadInTransaction(database, header)
+            return@withTransaction false
+        }
+        if (request.artifactLeaseId == normalizedRecoveryLeaseId) {
+            return@withTransaction true
+        }
+        if (request.artifactLeaseId != normalizedExpectedLeaseId) {
+            return@withTransaction false
+        }
+        dao.updateRequestPayload(
+            operationId = normalizedOperationId,
+            stableKey = normalizedKey,
+            sourceHintJson = requestToJson(
+                request.copy(artifactLeaseId = normalizedRecoveryLeaseId)
+            ).toString(),
+            updatedAtMs = nextPayloadUpdatedAt(
+                previousUpdatedAtMs = header.updatedAtMs
+            )
+        ) > 0
+    }
+}
+
 internal suspend fun DownloadExecutionRoomStore.promoteUserInitiatedOperationImpl(
     context: Context,
     operationId: String,
@@ -582,6 +640,16 @@ internal suspend fun DownloadExecutionRoomStore.promoteUserInitiatedOperationImp
         promoted
     }
 }
+
+private val ARTIFACT_LEASE_RECOVERY_REBIND_STATES = setOf(
+    "COMMITTING",
+    "CORE_COMMITTED",
+    "ASSETS_ENRICHING",
+    "DEGRADED_COMPLETE",
+    "RETRYABLE",
+    "COMPLETED",
+    "FINALIZED"
+)
 
 internal suspend fun DownloadExecutionRoomStore.ensureAttemptIdImpl(
     context: Context,

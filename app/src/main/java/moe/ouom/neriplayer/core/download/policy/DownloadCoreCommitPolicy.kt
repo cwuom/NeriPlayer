@@ -133,14 +133,17 @@ internal fun isDownloadFinalizationDurablySettled(
 internal fun requiresFinalizedPublicationRecovery(
     metadataFinalized: Boolean?,
     operationState: String?,
-    artifactState: String?
+    artifactState: String?,
+    recoveryLeaseOwned: Boolean = false
 ): Boolean {
     if (metadataFinalized != true) return false
+    if (recoveryLeaseOwned) return true
     return operationState in setOf(
         "COMMITTING",
         "CORE_COMMITTED",
         "ASSETS_ENRICHING",
-        "DEGRADED_COMPLETE"
+        "DEGRADED_COMPLETE",
+        "RETRYABLE"
     ) || artifactState in setOf(
         "COMMITTING",
         "CORE_COMMITTED",

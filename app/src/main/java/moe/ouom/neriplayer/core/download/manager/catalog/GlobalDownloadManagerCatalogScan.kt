@@ -368,7 +368,7 @@ internal fun GlobalDownloadManager.buildSongFromDurableMetadata(
         id = metadata.songId ?: 0L,
         name = metadata.name ?: audio.nameWithoutExtension,
         artist = metadata.artist ?: "",
-        album = metadata.identityAlbum ?: metadata.album ?: "local",
+        album = metadata.album ?: metadata.identityAlbum ?: "local",
         albumId = 0L,
         durationMs = metadata.durationMs,
         coverUrl = metadata.coverUrl,

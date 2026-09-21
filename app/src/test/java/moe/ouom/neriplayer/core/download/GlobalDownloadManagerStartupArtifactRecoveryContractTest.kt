@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.download.manager.commit.publishFinalizedDownload
 import moe.ouom.neriplayer.core.download.manager.commit.schedulePostCoreEnrichmentRetry
 import moe.ouom.neriplayer.core.download.manager.commit.settlePostCoreEnrichmentFailure
 import moe.ouom.neriplayer.core.download.manager.recovery.prepareFinalizedPublicationArtifactLease
+import moe.ouom.neriplayer.core.download.manager.recovery.claimArtifactForRecovery
 import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingAudioWritesFromRoot
 import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingDownloadsForStartup
 import moe.ouom.neriplayer.core.download.manager.recovery.recoverUnfinalizedPublishedAudioFromRoot
@@ -389,6 +390,11 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         val pendingBody = methodBody(source, "recoverPendingAudioWritesFromRoot")
         val publishedBody = methodBody(source, "recoverUnfinalizedPublishedAudioFromRoot")
         val leaseBody = methodBody(source, "prepareFinalizedPublicationArtifactLease")
+        val recoveryLeaseSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/manager/recovery/" +
+                "GlobalDownloadManagerRecoveryLease.kt"
+        ).readText()
+        val recoveryLeaseBody = methodBody(recoveryLeaseSource, "claimArtifactForRecovery")
 
         listOf(pendingBody, publishedBody).forEach { body ->
             val leaseIndex = body.indexOf("prepareFinalizedPublicationArtifactLease(")
@@ -401,16 +407,29 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
                     .contains("expectedArtifactLeaseId = publicationLease.leaseId")
             )
         }
-        assertTrue(leaseBody.contains("managedDownloadArtifactCoordinator.claim("))
-        assertTrue(leaseBody.contains("finalizedPublicationRecoveryLeaseOwnerId("))
-        assertTrue(leaseBody.contains("leaseOwnerId = recoveryLeaseOwnerId"))
-        assertTrue(leaseBody.contains("allowFreshTransferReclaim = false"))
-        assertTrue(leaseBody.contains("allowPostCoreRecoveryReclaim = true"))
+        assertTrue(leaseBody.contains("claimArtifactForRecovery("))
+        assertTrue(recoveryLeaseBody.contains("database.withTransaction"))
+        assertTrue(recoveryLeaseBody.contains("managedDownloadArtifactCoordinator.claim("))
+        assertTrue(recoveryLeaseBody.contains("finalizedPublicationRecoveryLeaseOwnerId("))
+        assertTrue(recoveryLeaseBody.contains("leaseOwnerId = recoveryLeaseOwnerId"))
+        assertTrue(recoveryLeaseBody.contains("allowFreshTransferReclaim = false"))
+        assertTrue(recoveryLeaseBody.contains("allowPostCoreRecoveryReclaim = true"))
         assertTrue(
-            leaseBody.contains("postCoreRecoveryPreviousLeaseId = request?.artifactLeaseId")
+            recoveryLeaseBody.contains(
+                "postCoreRecoveryPreviousLeaseId = request?.artifactLeaseId"
+            )
         )
-        assertTrue(leaseBody.contains("publicationLease.leaseId != recoveryLeaseOwnerId"))
+        assertTrue(
+            recoveryLeaseBody.contains(
+                "DownloadExecutionRoomStore.rebindArtifactLeaseForRecovery("
+            )
+        )
+        assertTrue(recoveryLeaseBody.contains("database = database"))
+        assertTrue(recoveryLeaseBody.contains("throw RecoveryArtifactLeaseRebindRejected()"))
         assertTrue(leaseBody.contains("finalizedPublicationLeaseOrNull()"))
+        assertTrue(publishedBody.contains("currentLeaseIdsAnyRoot("))
+        assertTrue(publishedBody.contains("finalizedPublicationRecoveryLeaseOwnerId("))
+        assertTrue(publishedBody.contains("recoveryLeaseOwned = recoveryLeaseOwned"))
     }
 
     @Test

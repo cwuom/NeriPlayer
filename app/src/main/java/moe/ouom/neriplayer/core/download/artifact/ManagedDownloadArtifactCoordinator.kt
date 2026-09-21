@@ -98,7 +98,8 @@ internal class ManagedDownloadArtifactCoordinator {
         leaseOwnerId: String? = null,
         allowFreshTransferReclaim: Boolean = false,
         allowPostCoreRecoveryReclaim: Boolean = false,
-        postCoreRecoveryPreviousLeaseId: String? = null
+        postCoreRecoveryPreviousLeaseId: String? = null,
+        databaseOverride: NeriUserDataDatabase? = null
     ): ManagedDownloadArtifactClaim {
         val appContext = context.applicationContext
         val normalizedLeaseOwnerId = leaseOwnerId
@@ -107,7 +108,7 @@ internal class ManagedDownloadArtifactCoordinator {
         val stableKey = song.stableKey().trim().takeIf(String::isNotBlank)
             ?: return createUntrackedClaim(normalizedLeaseOwnerId)
         val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
-        val database = database(appContext)
+        val database = databaseOverride ?: database(appContext)
         val nowMs = System.currentTimeMillis()
         val dao = database.managedDownloadArtifactDao()
         val current = dao.find(rootKey, stableKey)
@@ -916,7 +917,6 @@ internal class ManagedDownloadArtifactCoordinator {
             )
         }
     }
-
     private suspend fun resolveExistingClaim(
         context: Context,
         database: NeriUserDataDatabase,
@@ -932,6 +932,9 @@ internal class ManagedDownloadArtifactCoordinator {
     ): ManagedDownloadArtifactClaim {
         val dao = database.managedDownloadArtifactDao()
         val artifactState = ManagedDownloadArtifactState.fromPersisted(current.state)
+        if (allowPostCoreRecoveryReclaim && hasForeignPostCoreRecoveryLeaseOwner(
+                current.leaseId, leaseOwnerId, postCoreRecoveryPreviousLeaseId
+            )) return ManagedDownloadArtifactClaim.InFlight(current)
         if (shouldReclaimPostCoreArtifactLeaseForRecovery(
                 artifactState = artifactState,
                 currentLeaseOwnerId = current.leaseId,

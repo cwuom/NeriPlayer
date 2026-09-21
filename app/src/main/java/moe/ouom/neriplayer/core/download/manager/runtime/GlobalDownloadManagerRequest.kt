@@ -32,7 +32,7 @@ import moe.ouom.neriplayer.core.download.model.BatchOperationScheduleAction
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.resolveBatchOperationScheduleAction
 import moe.ouom.neriplayer.core.download.policy.isDownloadFinalizationDurablySettled
-import moe.ouom.neriplayer.core.download.policy.finalizedPublicationRecoveryLeaseOwnerId
+import moe.ouom.neriplayer.core.download.manager.recovery.claimArtifactForRecovery
 import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.MobileDataDownloadBatchIdentity
 import android.content.Context
@@ -467,29 +467,12 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
             )
             return@withSongExecutionLock
         }
-        val request = DownloadExecutionRoomStore.read(context, operationId)
-            ?.takeIf { persisted -> persisted.song.stableKey() == song.stableKey() }
-        val recoveryLeaseOwnerId = finalizedPublicationRecoveryLeaseOwnerId(
-            stableKey = song.stableKey(),
+        val recoveryClaim = claimArtifactForRecovery(
+            context = context,
+            song = song,
             operationId = operationId
         )
-        val claim = runCatching {
-            managedDownloadArtifactCoordinator.claim(
-                context = context,
-                song = song,
-                reconcileStorage = false,
-                leaseOwnerId = recoveryLeaseOwnerId,
-                allowFreshTransferReclaim = false,
-                allowPostCoreRecoveryReclaim = true,
-                postCoreRecoveryPreviousLeaseId = request?.artifactLeaseId
-            )
-        }.onFailure { error ->
-            NPLogger.w(
-                TAG,
-                "读取 core artifact 凭据失败，保留 operation 等待重试: " +
-                    "operationId=$operationId, error=${error.message}"
-            )
-        }.getOrNull()
+        val claim = recoveryClaim?.claim
         if (claim == null || claim is ManagedDownloadArtifactClaim.InFlight) {
             NPLogger.d(
                 TAG,
@@ -499,21 +482,8 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
             scheduleStartupArtifactRecovery(context)
             return@withSongExecutionLock
         }
-        val artifact = when (claim) {
-            is ManagedDownloadArtifactClaim.AlreadyDownloaded -> claim.artifact
-            is ManagedDownloadArtifactClaim.RepairRequired -> claim.artifact
-            is ManagedDownloadArtifactClaim.Acquired -> claim.artifact
-            is ManagedDownloadArtifactClaim.InFlight -> null
-        }
-        if (artifact?.leaseId != null && artifact.leaseId != recoveryLeaseOwnerId) {
-            NPLogger.d(
-                TAG,
-                "core operation 的 artifact 已由不同恢复 owner 接管: " +
-                    "song=${song.name}, operationId=$operationId"
-            )
-            scheduleStartupArtifactRecovery(context)
-            return@withSongExecutionLock
-        }
+        val request = recoveryClaim.request
+        val artifact = recoveryClaim.artifact
         // 恢复使用独立且跨进程稳定的 owner，迟到的原下载回调仍携带 request lease
         // 因而不能再把当前恢复租约清成 FAILED_RETRYABLE
         val expectedArtifactLeaseId = artifact?.leaseId

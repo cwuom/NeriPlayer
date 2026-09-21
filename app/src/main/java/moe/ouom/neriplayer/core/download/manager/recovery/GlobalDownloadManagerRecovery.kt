@@ -588,12 +588,25 @@ internal suspend fun GlobalDownloadManager.recoverUnfinalizedPublishedAudioFromR
                 val artifactState = managedDownloadArtifactCoordinator.currentState(context, song)
                     ?.name
                     ?: currentMetadata.artifactState
+                val metadataFinalized = isFinalizedDownloadedMetadata(currentMetadata)
+                val recoveryLeaseOwned = metadataFinalized &&
+                    artifactState == "DOWNLOADING" &&
+                    managedDownloadArtifactCoordinator.currentLeaseIdsAnyRoot(
+                        context = context,
+                        song = song
+                    ).contains(
+                        finalizedPublicationRecoveryLeaseOwnerId(
+                            stableKey = song.stableKey(),
+                            operationId = currentMetadata.operationId
+                        )
+                    )
                 if (
-                    isFinalizedDownloadedMetadata(currentMetadata) &&
+                    metadataFinalized &&
                         requiresFinalizedPublicationRecovery(
                             metadataFinalized = true,
                             operationState = operationState,
-                            artifactState = artifactState
+                            artifactState = artifactState,
+                            recoveryLeaseOwned = recoveryLeaseOwned
                         )
                 ) {
                     val publicationLease = prepareFinalizedPublicationArtifactLease(
@@ -663,47 +676,12 @@ internal suspend fun GlobalDownloadManager.prepareFinalizedPublicationArtifactLe
     operationId: String?
 ): ManagedDownloadArtifactPublicationLease? {
     val normalizedOperationId = operationId?.trim()?.takeIf(String::isNotBlank)
-    val request = normalizedOperationId
-        ?.let { persistedOperationId ->
-            DownloadExecutionRoomStore.read(context, persistedOperationId)
-        }
-        ?.takeIf { persisted -> persisted.song.stableKey() == song.stableKey() }
-    val recoveryLeaseOwnerId = finalizedPublicationRecoveryLeaseOwnerId(
-        stableKey = song.stableKey(),
+    val recoveryClaim = claimArtifactForRecovery(
+        context = context,
+        song = song,
         operationId = normalizedOperationId
-    )
-    val claim = runCatching {
-        managedDownloadArtifactCoordinator.claim(
-            context = context,
-            song = song,
-            reconcileStorage = false,
-            leaseOwnerId = recoveryLeaseOwnerId,
-            allowFreshTransferReclaim = false,
-            allowPostCoreRecoveryReclaim = true,
-            postCoreRecoveryPreviousLeaseId = request?.artifactLeaseId
-        )
-    }.onFailure { error ->
-        NPLogger.w(
-            TAG,
-            "恢复最终发布 artifact lease 失败，保留等待重试: " +
-                "song=${song.name}, operationId=$normalizedOperationId, " +
-                "error=${error.message}",
-            error
-        )
-    }.getOrNull() ?: return null
-    val publicationLease = claim.finalizedPublicationLeaseOrNull()
-    if (
-        request != null &&
-            publicationLease?.leaseId != null &&
-            publicationLease.leaseId != recoveryLeaseOwnerId
-    ) {
-        NPLogger.d(
-            TAG,
-            "恢复最终发布遇到不同 artifact owner，保留等待接管者收口: " +
-                "song=${song.name}, operationId=$normalizedOperationId"
-        )
-        return null
-    }
+    ) ?: return null
+    val publicationLease = recoveryClaim.claim.finalizedPublicationLeaseOrNull()
     return publicationLease.also { lease ->
         if (lease == null) {
             NPLogger.d(

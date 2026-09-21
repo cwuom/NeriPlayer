@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.download.model.DownloadedArtifactIntegrityIssue
 import moe.ouom.neriplayer.core.download.model.DownloadedArtifactReferenceState
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.model.verifyDownloadedArtifactIntegrity
+import moe.ouom.neriplayer.core.download.manager.catalog.buildSongFromDurableMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,6 +13,44 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 
 class DownloadedArtifactIntegrityTest {
+    @Test
+    fun `durable Netease recovery preserves display album for final verification`() {
+        val original = remoteSong().copy(
+            id = 1_334_398_712L,
+            name = "メリーメリー",
+            album = "rye",
+            audioId = "1334398712",
+            mediaUri = null
+        )
+        val metadata = completeMetadata(original)
+        val audio = ManagedDownloadStorage.StoredEntry(
+            name = "メリーメリー - 鹿乃 - rye - netease.mp3" +
+                ".npdl_pending.recovery.pending",
+            reference = "content://downloads/audio/merimerry.mp3",
+            mediaUri = "content://downloads/audio/merimerry.mp3",
+            localFilePath = null,
+            sizeBytes = 4_096L,
+            lastModifiedMs = 1L
+        )
+
+        val recovered = requireNotNull(
+            GlobalDownloadManager.buildSongFromDurableMetadata(audio, metadata)
+        )
+        val result = verifyDownloadedArtifactIntegrity(
+            song = recovered,
+            metadata = metadata,
+            references = readableReferences(),
+            expectCover = true,
+            expectOriginalLyric = true,
+            expectTranslatedLyric = true,
+            expectRomanizedLyric = true
+        )
+
+        assertEquals("rye", recovered.album)
+        assertEquals(metadata.stableKey, recovered.stableKey())
+        assertTrue(result.issues.toString(), result.isValid)
+    }
+
     @Test
     fun `publication uses persisted verified duration and still rejects changed audio`() {
         val song = remoteSong().copy(durationMs = 200869L)
