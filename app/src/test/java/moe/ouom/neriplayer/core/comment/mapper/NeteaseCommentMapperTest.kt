@@ -89,6 +89,35 @@ class NeteaseCommentMapperTest {
     }
 
     @Test
+    fun `reply count falls back to showFloorComment`() {
+        val page = parseNeteaseCommentPage(
+            rawJson = """
+                {
+                  "code": 200,
+                  "comments": [
+                    { "commentId": 1, "showFloorComment": { "replyCount": 5 } },
+                    { "commentId": 2, "replyCount": 0, "showFloorComment": { "replyCount": 9 } },
+                    { "commentId": 3, "showFloorComment": { "replyCount": 0 } },
+                    { "commentId": 4, "showFloorComment": {} },
+                    { "commentId": 5 }
+                  ]
+                }
+            """.trimIndent(),
+            page = 1,
+            pageSize = 20
+        )
+
+        // 顶层缺失时用 showFloorComment.replyCount
+        assertEquals(5L, page.comments[0].replyCount)
+        // 顶层存在时优先用顶层（0 也是有效值）
+        assertEquals(0L, page.comments[1].replyCount)
+        assertEquals(0L, page.comments[2].replyCount)
+        // 两处都没有 -> null（UI 隐藏该字段，而不是显示 0 条回复）
+        assertNull(page.comments[3].replyCount)
+        assertNull(page.comments[4].replyCount)
+    }
+
+    @Test
     fun `empty comment array produces an empty page`() {
         val page = parseNeteaseCommentPage("""{"code":200,"comments":[]}""", page = 1, pageSize = 20)
 

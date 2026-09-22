@@ -63,12 +63,25 @@ private fun parseNeteaseComment(item: JSONObject): SongComment {
         avatarUrl = user.optString("avatarUrl").takeIf { it.isNotBlank() },
         content = item.optString("content"),
         likeCount = item.optLong("likedCount", 0L),
-        replyCount = item.optLong("replyCount", -1L).takeIf { it >= 0L },
+        replyCount = resolveNeteaseReplyCount(item),
         // 网易云的时间戳已经是毫秒
         createTime = createTime,
         platform = CommentPlatform.NETEASE,
         userLevel = user.optInt("level", 0).takeIf { it > 0 }
     )
+}
+
+/**
+ * 网易云回复数的位置随接口形态而变：老接口放在顶层 `replyCount`，
+ * 新版 `/api/v1/resource/comments` 把它放在 `showFloorComment.replyCount`（"楼中楼"预览）。
+ * 两处都没有时返回 null —— UI 会隐藏该字段；不能返回 0，否则会错误显示"0 条回复"。
+ */
+private fun resolveNeteaseReplyCount(item: JSONObject): Long? {
+    val direct = item.optLong("replyCount", -1L)
+    if (direct >= 0L) return direct
+
+    val floorComment = item.optJSONObject("showFloorComment") ?: return null
+    return floorComment.optLong("replyCount", -1L).takeIf { it >= 0L }
 }
 
 /**
