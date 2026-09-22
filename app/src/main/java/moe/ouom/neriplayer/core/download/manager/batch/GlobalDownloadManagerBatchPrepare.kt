@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.core.download.manager.runtime.publishOptimisticDownlo
 import moe.ouom.neriplayer.core.download.manager.runtime.settleAlreadyDownloadedOperation
 import moe.ouom.neriplayer.core.download.manager.runtime.settleAndRemoveRecoveredTask
 import moe.ouom.neriplayer.core.download.manager.runtime.shouldSkipDownload
+import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
 import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.QueuedDownloadRequest
@@ -559,15 +560,17 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 userInitiated = userInitiated,
                 batchIdentity = durableBatchIdentity,
                 // 首页 operation 已和持久批次绑定，立即唤醒共享泵
-                // 后续页继续按原队列顺序落库，不再阻塞第一首开始传输
+                // 后续页按原队列顺序提升，不再阻塞第一首开始传输
                 onPageReady = { _, page ->
                     if (
                         !firstDurablePagePumpScheduled &&
                             canStartFirstDurablePageImmediately &&
                             page.operationIds.isNotEmpty()
                     ) {
-                        firstDurablePagePumpScheduled =
-                            ForegroundDownloadWorker.schedulePump(appContext)
+                        firstDurablePagePumpScheduled = wakeDownloadExecutionPump(
+                            context = appContext,
+                            reason = "batch_first_durable_page"
+                        )
                         if (firstDurablePagePumpScheduled) {
                             logStartupPhase("first_durable_page_ready", page.operationIds.size)
                         }

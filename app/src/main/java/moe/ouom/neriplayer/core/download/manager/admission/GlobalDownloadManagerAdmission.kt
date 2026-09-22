@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPu
 import moe.ouom.neriplayer.core.download.policy.nextDownloadOperationCreatedAtMs
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.StagedPendingDownloadQueue
 import android.content.Context
+import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -24,6 +25,7 @@ import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteI
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -382,27 +384,105 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueue(
             cancellationOperationSnapshotCutoffs[song.stableKey()]
         }
     )
+    val appContext = context.applicationContext
+    val database = NeriUserDataDatabase.getInstance(appContext)
+    val excludedOperationIds = distinctSongs
+        .flatMap { song -> cancellationOperationIdsForSong(song.stableKey()) }
+        .toSet()
+    val forceNewOperationForStableKeys = distinctSongs
+        .map(SongItem::stableKey)
+        .filter(cancellationForceNewSongKeys::contains)
+        .toSet()
+    val currentNetworkType = appContext.currentDownloadNetworkTypeOrNull()
+    val requiresWifiNetwork = !userInitiated ||
+        currentNetworkType == null || currentNetworkType == TrafficNetworkType.WIFI
+    val downloadAudioQuality = resolveDownloadAudioQualitySelection(appContext)
+    // 首批交接前保存整批载荷，进程退出后尾部歌曲仍可沿原恢复入口继续
+    val waitingBatch = database.withTransaction {
+        if (batchIdentity != null) {
+            DownloadExecutionRoomStore.prepareBatchMembersForTransfer(
+                context = appContext,
+                identity = batchIdentity,
+                stableKeys = distinctSongs.map(SongItem::stableKey),
+                database = database
+            )
+        }
+        val waiting = DownloadRecoveryRoomStore(appContext, database)
+            .upsertWaitingStorageMutationWithRequests(
+                songs = distinctSongs,
+                nowMs = operationCreatedAtMs,
+                userInitiated = userInitiated,
+                requiresWifiNetwork = requiresWifiNetwork,
+                downloadAudioQuality = downloadAudioQuality,
+                excludedOperationIds = excludedOperationIds,
+                forceNewOperationForStableKeys = forceNewOperationForStableKeys,
+                batchIdentity = batchIdentity
+            )
+        if (batchIdentity != null) {
+            val waitingKeys = waiting.requestsByOperationId.values
+                .mapTo(hashSetOf()) { it.song.stableKey() }
+            val reusedRequests = DownloadExecutionRoomStore.findReadableOperationsBySongKeys(
+                context = appContext,
+                songKeys = distinctSongs.map(SongItem::stableKey).filterNot(waitingKeys::contains),
+                states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES +
+                    DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES,
+                excludeUserStoppedOperations = true,
+                excludedOperationIds = excludedOperationIds,
+                database = database
+            ).values.map { request ->
+                if (userInitiated && !request.userInitiated) {
+                    DownloadExecutionRoomStore.promoteUserInitiatedOperation(
+                        context = appContext,
+                        operationId = request.operationId,
+                        stableKey = request.song.stableKey(),
+                        database = database
+                    ) ?: request
+                } else {
+                    request
+                }
+            }
+            DownloadExecutionRoomStore.attachBatchIdentity(
+                context = appContext,
+                identity = batchIdentity,
+                requests = waiting.requestsByOperationId.values.filter { request ->
+                    request.batchId != batchIdentity.batchId ||
+                        request.batchGeneration != batchIdentity.generation
+                } + reusedRequests,
+                database = database
+            )
+        }
+        waiting
+    }
+    val waitingRequestsBySongKey = waitingBatch.requestsByOperationId.values
+        .associateBy { it.song.stableKey() }
+    // 已落库的替代任务不再需要强制新建，尾部准备中断后也应复用这一代
+    forceNewOperationForStableKeys
+        .filter(waitingRequestsBySongKey::containsKey)
+        .forEach(cancellationForceNewSongKeys::remove)
     val operationIds = linkedSetOf<String>()
     val skippedSongKeys = linkedSetOf<String>()
     val operationIdsBySongKey = linkedMapOf<String, String>()
     val operationRequestsBySongKey = linkedMapOf<String, DownloadExecutionRequest>()
-    distinctSongs.chunked(BATCH_OPERATION_STAGE_PAGE_SIZE).forEachIndexed { pageIndex, page ->
-        if (batchIdentity != null) {
-            DownloadExecutionRoomStore.prepareBatchMembersForTransfer(
-                context = context.applicationContext,
-                identity = batchIdentity,
-                stableKeys = page.map(SongItem::stableKey)
-            )
-        }
+    val firstPageSize = currentDownloadParallelism(context)
+        .coerceIn(1, BATCH_OPERATION_STAGE_PAGE_SIZE)
+    // 先提升当前传输窗口，后续保持较大事务页以减少写入开销
+    val pages = sequence {
+        yield(distinctSongs.take(firstPageSize))
+        yieldAll(distinctSongs.asSequence().drop(firstPageSize).chunked(BATCH_OPERATION_STAGE_PAGE_SIZE))
+    }
+    pages.forEachIndexed { pageIndex, page ->
+        val pageRequests = page.mapNotNull { waitingRequestsBySongKey[it.stableKey()] }
         val stagedPage = stageAndPromotePendingDownloadQueuePage(
             context = context,
             songs = page,
             userInitiated = userInitiated,
-            operationCreatedAtMs = operationCreatedAtMs,
-            batchIdentity = batchIdentity
+            waitingBatch = DownloadRecoveryRoomStore.WaitingStorageMutationBatchResult(
+                operationIds = pageRequests.map(DownloadExecutionRequest::operationId),
+                requestsByOperationId = pageRequests.associateBy(DownloadExecutionRequest::operationId)
+            )
         )
         if (batchIdentity != null && stagedPage.operationIds.isNotEmpty()) {
-            val pageRequests = resolveOperationRequestsForBatchBinding(
+            val bindingRequests = resolveOperationRequestsForBatchBinding(
                 context = context.applicationContext,
                 operationIds = stagedPage.operationIds,
                 knownRequests = stagedPage.operationRequestsBySongKey.values
@@ -410,7 +490,7 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueue(
             DownloadExecutionRoomStore.attachBatchIdentity(
                 context = context.applicationContext,
                 identity = batchIdentity,
-                requests = pageRequests
+                requests = bindingRequests
             )
         }
         onPageReady(pageIndex, stagedPage)
@@ -435,8 +515,7 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueuePa
     context: Context,
     songs: List<SongItem>,
     userInitiated: Boolean,
-    operationCreatedAtMs: Long,
-    batchIdentity: DownloadExecutionRoomStore.DownloadBatchIdentity? = null
+    waitingBatch: DownloadRecoveryRoomStore.WaitingStorageMutationBatchResult
 ): StagedPendingDownloadQueue {
     val distinctSongs = songs.distinctBy(SongItem::stableKey)
     if (distinctSongs.isEmpty()) {
@@ -450,14 +529,6 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueuePa
     val excludedOperationIds = distinctSongs
         .flatMap { song -> cancellationOperationIdsForSong(song.stableKey()) }
         .toSet()
-    val forceNewOperationForStableKeys = distinctSongs
-        .map(SongItem::stableKey)
-        .filter(cancellationForceNewSongKeys::contains)
-        .toSet()
-    val currentNetworkType = context.currentDownloadNetworkTypeOrNull()
-    val requiresWifiNetwork = !userInitiated ||
-        currentNetworkType == null || currentNetworkType == TrafficNetworkType.WIFI
-    val downloadAudioQuality = resolveDownloadAudioQualitySelection(context)
     val recoveryStore = DownloadRecoveryRoomStore(context.applicationContext)
     val existingReusableOperationsBySongKey = DownloadExecutionRoomStore
         .findReadableOperationsBySongKeys(
@@ -485,32 +556,12 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueuePa
     val existingReusableOperationIds = effectiveExistingReusableOperationsBySongKey.values
         .map(DownloadExecutionRequest::operationId)
         .distinct()
-    val waitingBatch = recoveryStore.upsertWaitingStorageMutationWithRequests(
-        songs = distinctSongs,
-        nowMs = operationCreatedAtMs,
-        userInitiated = userInitiated,
-        requiresWifiNetwork = requiresWifiNetwork,
-        downloadAudioQuality = downloadAudioQuality,
-        excludedOperationIds = excludedOperationIds,
-        forceNewOperationForStableKeys = forceNewOperationForStableKeys,
-        batchIdentity = batchIdentity
-    )
     settleSupersededCancellationOperations(
         context = context.applicationContext,
         songKeys = distinctSongs.map(SongItem::stableKey),
         excludedOperationIds = waitingBatch.operationIds
     )
     val waitingOperationIds = waitingBatch.operationIds
-    forceNewOperationForStableKeys.forEach { songKey ->
-        if (waitingOperationIds.any { operationId ->
-                waitingBatch.requestsByOperationId[operationId]
-                    ?.song
-                    ?.stableKey() == songKey
-            }
-        ) {
-            cancellationForceNewSongKeys.remove(songKey)
-        }
-    }
     if (ManagedDownloadDirectoryMutationFence.isActive(context)) {
         existingReusableOperationIds.forEach { operationId ->
             DownloadExecutionRoomStore.markWaitingForStorageMutation(

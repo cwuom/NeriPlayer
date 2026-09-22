@@ -781,7 +781,7 @@ class BatchDownloadOperationRecoveryTest {
             stagingIndex
         )
         val pumpIndex = batchBody.indexOf(
-            "ForegroundDownloadWorker.schedulePump(appContext)",
+            "wakeDownloadExecutionPump(",
             callbackIndex
         )
         val fullQueueReadIndex = batchBody.indexOf(

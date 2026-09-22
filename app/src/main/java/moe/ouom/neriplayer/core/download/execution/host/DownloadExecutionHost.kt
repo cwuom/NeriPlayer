@@ -34,6 +34,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.selects.select
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
@@ -102,7 +103,7 @@ class DefaultDownloadExecutionHost(
     internal data class PumpCandidateSelection(
         val requests: List<DownloadExecutionRequest>,
         val hasSchedulableRequest: Boolean,
-        val shortestPendingUidtGraceDelayMs: Long?,
+        val pendingUidtGraceDeadlinesNs: Map<String, Long>,
         val nextRetryAtMs: Long?,
         val nextCursor: DownloadExecutionPumpCursor?,
         val exhausted: Boolean,
@@ -1295,7 +1296,9 @@ class DefaultDownloadExecutionHost(
                 var sawRetry = false
                 // 失败必须先阻止补位，再释放传输槽位，不能等待 select 消费完成事件
                 val recoveryRequired = AtomicBoolean(false)
-                var waitedForPendingUidtGrace = false
+                val pendingUidtGraceDeadlinesNs = linkedMapOf<String, Long>()
+                val reconsideredUidtOperationIds = mutableSetOf<String>()
+                val pendingUidtOperationIds = mutableSetOf<String>()
                 var queueExhausted = false
                 var lastSelection: PumpCandidateSelection? = null
                 var nextRetryAtMs: Long? = null
@@ -1311,6 +1314,12 @@ class DefaultDownloadExecutionHost(
                 val transferRunning = linkedMapOf<String, Deferred<DownloadExecutionResult>>()
                 val sideChannelRunning = linkedMapOf<String, Deferred<DownloadExecutionResult>>()
 
+                fun remainingUidtGraceDelayMs(): Long? {
+                    val deadlineNs = pendingUidtGraceDeadlinesNs.values.minOrNull() ?: return null
+                    val remainingNs = deadlineNs - System.nanoTime()
+                    return if (remainingNs <= 0L) 0L else (remainingNs / 1_000_000L).coerceAtLeast(1L)
+                }
+
                 while (completedOperations < maxCompletedOperations) {
                     if (recoveryRequired.get()) {
                         queueExhausted = true
@@ -1321,6 +1330,23 @@ class DefaultDownloadExecutionHost(
                             transferRunning.isEmpty() && sideChannelRunning.isEmpty()
                     ) {
                         return@supervisorScope DownloadExecutionPumpResult.Completed
+                    }
+                    if (
+                        !recoveryRequired.get() && pendingUidtGraceDeadlinesNs.isNotEmpty() &&
+                            transferLaneOccupancy(appContext) < configuredDispatchWindow(appContext)
+                    ) {
+                        val nowNs = System.nanoTime()
+                        val expiredOperationIds = pendingUidtGraceDeadlinesNs
+                            .filterValues { deadlineNs -> deadlineNs <= nowNs }
+                            .keys
+                        if (expiredOperationIds.isNotEmpty()) {
+                            // 到期项可能已在游标之前，有空位就重读队首，不等待其它慢任务收尾
+                            expiredOperationIds.forEach(pendingUidtGraceDeadlinesNs::remove)
+                            reconsideredUidtOperationIds += expiredOperationIds
+                            pumpCursor = null
+                            pumpPendingPage = null
+                            queueExhausted = false
+                        }
                     }
 
                     // 每次只填满当前剩余容量。collectPumpCandidates 会保留页内
@@ -1354,6 +1380,17 @@ class DefaultDownloadExecutionHost(
                             pendingPage = pumpPendingPage
                         )
                         lastSelection = selection
+                        selection.pendingUidtGraceDeadlinesNs.forEach { (operationId, deadlineNs) ->
+                            pendingUidtOperationIds += operationId
+                            // 同一项每轮只做一次到期补偿，异常反复 grace 交给有界 successor
+                            if (operationId !in reconsideredUidtOperationIds) {
+                                pendingUidtGraceDeadlinesNs.putIfAbsent(operationId, deadlineNs)
+                            }
+                        }
+                        selection.requests.forEach { request ->
+                            pendingUidtOperationIds.remove(request.operationId)
+                            pendingUidtGraceDeadlinesNs.remove(request.operationId)
+                        }
                         nextRetryAtMs = selection.nextRetryAtMs?.let { deadlineMs ->
                             nextRetryAtMs?.coerceAtMost(deadlineMs) ?: deadlineMs
                         }
@@ -1363,7 +1400,6 @@ class DefaultDownloadExecutionHost(
                             if (selection.exhausted) queueExhausted = true
                             break
                         }
-                        waitedForPendingUidtGrace = false
                         selection.requests.forEach { request ->
                             if (recoveryRequired.get()) {
                                 queueExhausted = true
@@ -1453,30 +1489,41 @@ class DefaultDownloadExecutionHost(
 
                     if (transferRunning.isNotEmpty() || sideChannelRunning.isNotEmpty()) {
                         // 任一 operation 完成就继续填充窗口，不等待同一轮其它慢任务
-                        val completed = select<Any> {
-                            transferRunning.forEach { (operationId, execution) ->
-                                execution.onAwait { result ->
-                                    PumpExecutionCompletion(
-                                        operationId = operationId,
-                                        execution = execution,
-                                        result = result
+                        val awaitCompletion: suspend () -> Any = {
+                            select<Any> {
+                                transferRunning.forEach { (operationId, execution) ->
+                                    execution.onAwait { result ->
+                                        PumpExecutionCompletion(
+                                            operationId = operationId,
+                                            execution = execution,
+                                            result = result
+                                        )
+                                    }
+                                }
+                                sideChannelRunning.forEach { (operationId, execution) ->
+                                    execution.onAwait { result ->
+                                        PumpExecutionCompletion(
+                                            operationId = operationId,
+                                            execution = execution,
+                                            result = result
+                                        )
+                                    }
+                                }
+                                transferReleaseSignals.onReceive { operationId ->
+                                    PumpTransferRelease(
+                                        drainTransferReleaseOperationIds(operationId)
                                     )
                                 }
                             }
-                            sideChannelRunning.forEach { (operationId, execution) ->
-                                execution.onAwait { result ->
-                                    PumpExecutionCompletion(
-                                        operationId = operationId,
-                                        execution = execution,
-                                        result = result
-                                    )
-                                }
-                            }
-                            transferReleaseSignals.onReceive { operationId ->
-                                PumpTransferRelease(
-                                    drainTransferReleaseOperationIds(operationId)
-                                )
-                            }
+                        }
+                        val graceDelayMs = remainingUidtGraceDelayMs()?.takeIf {
+                            !recoveryRequired.get() &&
+                                transferLaneOccupancy(appContext) < configuredDispatchWindow(appContext)
+                        }
+                        val completed = if (graceDelayMs != null) {
+                            withTimeoutOrNull(graceDelayMs) { awaitCompletion() } ?: continue
+                        } else {
+                            awaitCompletion()
                         }
                         when (completed) {
                             is PumpTransferRelease -> {
@@ -1513,16 +1560,11 @@ class DefaultDownloadExecutionHost(
                         if (transferRunning.isNotEmpty() || sideChannelRunning.isNotEmpty()) continue
 
                         val selection = lastSelection
-                        val graceDelayMs = selection?.shortestPendingUidtGraceDelayMs
-                        if (queueExhausted && graceDelayMs != null && !waitedForPendingUidtGrace &&
+                        val remainingGraceDelayMs = remainingUidtGraceDelayMs()
+                        if (queueExhausted && remainingGraceDelayMs != null &&
                             !recoveryRequired.get()
                         ) {
-                            waitedForPendingUidtGrace = true
-                            // 用户发起的数据传输任务 延后项可能位于当前游标之前，等待后从队首重读
-                            pumpCursor = null
-                            pumpPendingPage = null
-                            queueExhausted = false
-                            delay(graceDelayMs)
+                            delay(remainingGraceDelayMs)
                             continue
                         }
                         if (queueExhausted) {
@@ -1534,7 +1576,9 @@ class DefaultDownloadExecutionHost(
                             ) {
                                 return@supervisorScope DownloadExecutionPumpResult.Retry
                             }
-                            if (deferredTransferOperationIds.isNotEmpty()) {
+                            if (deferredTransferOperationIds.isNotEmpty() ||
+                                !sawRetry && pendingUidtOperationIds.isNotEmpty()
+                            ) {
                                 // 这是槽位竞争而不是网络/传输失败，使用短唤醒让释放后的
                                 // 补位不必等待常规重试窗口
                                 return@supervisorScope DownloadExecutionPumpResult.ContinueAfterContention
@@ -1546,7 +1590,7 @@ class DefaultDownloadExecutionHost(
                             ) {
                                 // durable 行仍在队列中，但本轮已尝试过或正在 用户发起的数据传输任务
                                 // grace 中，短唤醒即可，不能触发系统长 backoff
-                                if (graceDelayMs != null) {
+                                if (pendingUidtOperationIds.isNotEmpty()) {
                                     DownloadExecutionPumpResult.ContinueAfterContention
                                 } else {
                                     DownloadExecutionPumpResult.ContinueSoon
@@ -1557,14 +1601,11 @@ class DefaultDownloadExecutionHost(
                         }
                     } else {
                         val selection = lastSelection
-                        val graceDelayMs = selection?.shortestPendingUidtGraceDelayMs
-                        if (graceDelayMs != null && !waitedForPendingUidtGrace) {
-                            waitedForPendingUidtGrace = true
-                            if (selection.exhausted) {
-                                pumpCursor = null
-                                pumpPendingPage = null
-                                queueExhausted = false
-                            }
+                        val graceDelayMs = remainingUidtGraceDelayMs()?.takeIf {
+                            !recoveryRequired.get() &&
+                                transferLaneOccupancy(appContext) < configuredDispatchWindow(appContext)
+                        }
+                        if (graceDelayMs != null) {
                             delay(graceDelayMs)
                             continue
                         }
@@ -1577,7 +1618,9 @@ class DefaultDownloadExecutionHost(
                             ) {
                                 return@supervisorScope DownloadExecutionPumpResult.Retry
                             }
-                            if (deferredTransferOperationIds.isNotEmpty()) {
+                            if (deferredTransferOperationIds.isNotEmpty() ||
+                                !sawRetry && pendingUidtOperationIds.isNotEmpty()
+                            ) {
                                 return@supervisorScope DownloadExecutionPumpResult.ContinueAfterContention
                             }
                             return@supervisorScope if (sawRetry) {
@@ -1591,7 +1634,7 @@ class DefaultDownloadExecutionHost(
                         } else if (sawRetry) {
                             DownloadExecutionPumpResult.ContinueAfterRetry
                         } else {
-                            if (graceDelayMs != null) {
+                            if (pendingUidtOperationIds.isNotEmpty()) {
                                 DownloadExecutionPumpResult.ContinueAfterContention
                             } else {
                                 DownloadExecutionPumpResult.ContinueSoon

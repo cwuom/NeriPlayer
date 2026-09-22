@@ -572,8 +572,8 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         requests.forEach { request -> store.save(context, request) }
         val firstEnrichment = CompletableDeferred<Unit>()
         val secondEnrichment = CompletableDeferred<Unit>()
-        val firstStarted = CompletableDeferred<Unit>()
-        val secondStarted = CompletableDeferred<Unit>()
+        val firstCommitted = CompletableDeferred<Unit>()
+        val secondCommitted = CompletableDeferred<Unit>()
         val thirdStarted = CompletableDeferred<Unit>()
         lateinit var host: DefaultDownloadExecutionHost
         host = DefaultDownloadExecutionHost(
@@ -581,8 +581,8 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
             entryPoint = DownloadOperationEntryPoint { entryContext, request ->
                 if (request.operationId == requests[2].operationId) {
                     // 测试入口不经过真实网络 permit，先等待两个物理槽位完成交接
-                    firstStarted.await()
-                    secondStarted.await()
+                    firstCommitted.await()
+                    secondCommitted.await()
                 }
                 val token = host.onTransferStarted(
                     context = entryContext,
@@ -592,7 +592,6 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
                 assertNotNull(token)
                 when (request.operationId) {
                     requests[0].operationId -> {
-                        firstStarted.complete(Unit)
                         assertTrue(
                             host.onCoreCommitted(
                                 context = entryContext,
@@ -601,11 +600,11 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
                                 transferOwnerToken = token
                             )
                         )
+                        firstCommitted.complete(Unit)
                         firstEnrichment.await()
                     }
 
                     requests[1].operationId -> {
-                        secondStarted.complete(Unit)
                         assertTrue(
                             host.onCoreCommitted(
                                 context = entryContext,
@@ -614,6 +613,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
                                 transferOwnerToken = token
                             )
                         )
+                        secondCommitted.complete(Unit)
                         secondEnrichment.await()
                     }
 
@@ -629,10 +629,9 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         try {
             withContext(Dispatchers.Default) {
                 withTimeout(2_000L) {
-                    firstStarted.await()
-                    secondStarted.await()
-                    // The first two execute calls remain in enrichment, but the third
-                    // can enter after their Core Commit callbacks release transfer lanes
+                    firstCommitted.await()
+                    secondCommitted.await()
+                    // 前两首仍在后处理，第三首必须在释放传输槽位后进入
                     thirdStarted.await()
                 }
             }

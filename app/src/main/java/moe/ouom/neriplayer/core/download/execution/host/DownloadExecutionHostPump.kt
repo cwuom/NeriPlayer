@@ -34,7 +34,7 @@ internal suspend fun DefaultDownloadExecutionHost.collectPumpCandidates(
     val observedOperationIds = mutableSetOf<String>()
     val observedStableKeys = mutableSetOf<String>()
     var hasSchedulableRequest = false
-    var shortestPendingUidtGraceDelayMs: Long? = null
+    val pendingUidtGraceDeadlinesNs = linkedMapOf<String, Long>()
     var nextRetryAtMs: Long? = null
     var rowsRead = 0
     var pagesRead = 0
@@ -80,8 +80,8 @@ internal suspend fun DefaultDownloadExecutionHost.collectPumpCandidates(
                 // 被记录，否则旧 predecessor 会让泵错误地提前收口
                 hasSchedulableRequest = true
                 rowsDeferredUidt++
-                shortestPendingUidtGraceDelayMs =
-                    shortestPendingUidtGraceDelayMs?.coerceAtMost(graceDelayMs) ?: graceDelayMs
+                pendingUidtGraceDeadlinesNs[request.operationId] =
+                    System.nanoTime() + graceDelayMs * 1_000_000L
                 continue
             }
             if (
@@ -159,7 +159,7 @@ internal suspend fun DefaultDownloadExecutionHost.collectPumpCandidates(
     return PumpCandidateSelection(
         requests = candidates,
         hasSchedulableRequest = hasSchedulableRequest,
-        shortestPendingUidtGraceDelayMs = shortestPendingUidtGraceDelayMs,
+        pendingUidtGraceDeadlinesNs = pendingUidtGraceDeadlinesNs,
         nextRetryAtMs = nextRetryAtMs,
         nextCursor = cursor,
         exhausted = exhausted,
