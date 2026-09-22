@@ -1744,10 +1744,10 @@ object AudioDownloadManager {
     }
 
 
-    internal suspend fun hasFastCachedManagedDownloadForStart(
+    internal suspend fun findFastCachedManagedDownloadForStart(
         context: Context,
         song: SongItem
-    ): Boolean = playbackCoordinator.hasFastCachedManagedDownloadForStart(context, song)
+    ): ManagedDownloadStorage.StoredEntry? = playbackCoordinator.findFastCachedManagedDownloadForStart(context, song)
 
     internal fun resolveLocalLyricForDownload(rawLyric: String?): String? {
         return AudioDownloadLyricsCoordinator.resolveLocalLyric(rawLyric)

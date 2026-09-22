@@ -43,11 +43,13 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -55,6 +57,62 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DownloadCorePublicationInstrumentedTest {
+    @Test
+    fun privateCachedPendingAudioReturnsReferenceForFinalization() = runBlocking {
+        withStorage(false) { assertCachedDownloadReturnsAudio(finalized = false) }
+    }
+
+    @Test
+    fun safCachedPendingAudioReturnsReferenceForFinalization() = runBlocking {
+        withStorage(true) { assertCachedDownloadReturnsAudio(finalized = false) }
+    }
+
+    @Test
+    fun privateCachedFinalAudioReturnsReferenceWithoutAnotherTransfer() = runBlocking {
+        withStorage(false) { assertCachedDownloadReturnsAudio(finalized = true) }
+    }
+
+    @Test
+    fun safCachedFinalAudioReturnsReferenceWithoutAnotherTransfer() = runBlocking {
+        withStorage(true) { assertCachedDownloadReturnsAudio(finalized = true) }
+    }
+
+    private suspend fun Fixture.assertCachedDownloadReturnsAudio(finalized: Boolean) {
+        val pending = commit()
+        val expected = if (finalized) {
+            prepareTaggedAudio(pending)
+            DownloadCorePublicationCoordinator().promoteBeforePublication(context, song, pending)
+        } else {
+            pending
+        }
+        ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
+        val original = read(expected.reference)
+        val attemptId = GlobalDownloadManager.taskStore.ensureDownloadTasks(listOf(song))
+            .getValue(song.stableKey())
+        try {
+            repeat(2) {
+                val resumed = AudioDownloadManager.downloadSongWithResult(
+                    context = context,
+                    song = song,
+                    attemptId = attemptId,
+                    operationId = UUID.randomUUID().toString()
+                )
+                assertNotNull("a cache hit must return the audio that finalization will consume", resumed)
+                assertEquals(referenceIdentity(expected.reference), referenceIdentity(requireNotNull(resumed).reference))
+                assertArrayEquals(original, read(resumed.reference))
+            }
+        } finally {
+            GlobalDownloadManager.taskStore.removeDownloadTask(song.stableKey(), attemptId)
+        }
+        if (!finalized) {
+            prepareTaggedAudio(expected)
+            val published = DownloadCorePublicationCoordinator()
+                .promoteBeforePublication(context, song, expected)
+            assertFalse(published.isPendingAudioWrite)
+            assertEquals(listOf(fileName), finalNames().filter { it.endsWith(".mp3") })
+        }
+    }
+
     @Test
     fun privateInterruptedPublicationStaysHiddenAcrossProcessDeath() = runBlocking {
         assertInterruptedPublicationProcessDeath(false)

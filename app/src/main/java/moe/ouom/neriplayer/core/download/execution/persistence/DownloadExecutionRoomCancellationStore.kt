@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.recovery.CLEARED_ARTIFACT_RECOVERY_STOP_STATES
 import android.content.Context
 import androidx.room.withTransaction
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -111,17 +112,21 @@ internal object DownloadExecutionRoomCancellationStore {
             .toList()
     }
 
-    /** 清空 owner 捕获只读取身份列，避免把大段 sourceHintJson 装入 CursorWindow */
+    /** 清空也捕获失败历史，让重启恢复能读取到保留音频的用户停止凭据 */
     suspend fun listCancellationIdentitiesAnyLibrary(
         context: Context,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): List<OperationIdentity> {
         val dao = database.downloadOperationDao()
         val identities = mutableListOf<OperationIdentity>()
+        val clearOwnershipStates = (
+            DownloadExecutionRoomStore.Access.CANCELLATION_CANDIDATE_OPERATION_STATES +
+                CLEARED_ARTIFACT_RECOVERY_STOP_STATES
+            ).distinct()
         var afterOperationId = ""
         while (true) {
             val page = dao.findCancellationIdentitiesAfterOperationId(
-                states = DownloadExecutionRoomStore.Access.CANCELLATION_CANDIDATE_OPERATION_STATES,
+                states = clearOwnershipStates,
                 afterOperationId = afterOperationId,
                 limit = DownloadExecutionRoomStore.Access.CANCELLATION_QUERY_PAGE_SIZE
             )

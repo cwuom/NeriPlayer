@@ -332,12 +332,12 @@ class DownloadedMp3IntegrityTest {
         try {
             publish(metadata)
             assertNull(GlobalDownloadManager.validateExistingDownloadedAudio(context, track, stored, metadata))
-            assertFalse(AudioDownloadManager.hasFastCachedManagedDownloadForStart(context, track))
+            assertNull(AudioDownloadManager.findFastCachedManagedDownloadForStart(context, track))
             publish(metadata.copy(verifiedAudioDurationMs = 1306L))
-            assertTrue(AudioDownloadManager.hasFastCachedManagedDownloadForStart(context, track))
+            assertEquals(stored, AudioDownloadManager.findFastCachedManagedDownloadForStart(context, track))
             publish(metadata.copy(downloadFinalized = true, artifactState = "COMPLETE"))
             assertTrue(audio.delete())
-            assertFalse(AudioDownloadManager.hasFastCachedManagedDownloadForStart(context, track))
+            assertNull(AudioDownloadManager.findFastCachedManagedDownloadForStart(context, track))
             assertNull(GlobalDownloadManager.validateExistingDownloadedAudio(
                 context, track, stored, metadata.copy(downloadFinalized = true)
             ))

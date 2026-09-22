@@ -74,6 +74,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_M
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.execution.recovery.loadExplicitDownloadResumeCandidates
 import moe.ouom.neriplayer.core.download.execution.recovery.resumeExplicitDownload
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
@@ -282,6 +283,35 @@ private suspend fun loadDownloadProgressBootstrapState(
         ?: DownloadProgressBootstrapProbeResult.Unavailable
 }
 
+internal suspend fun readDurablePendingDownloadSongKeys(
+    context: android.content.Context,
+    database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+): Set<String> {
+    val durablePendingSongKeys = linkedSetOf<String>()
+    val resumableDownloads = ManagedDownloadStorage.listPendingResumableDownloads(context)
+    val operationHeaders = DownloadExecutionRoomStore.readOperationHeaders(
+        context = context,
+        operationIds = resumableDownloads.mapNotNull { it.operationId },
+        database = database
+    )
+    resumableDownloads.forEach { entry ->
+        val operation = entry.operationId?.trim()?.let(operationHeaders::get)
+        // 没有 Room 身份的旧断点仍需恢复，已有取消凭据的文件只等待后台清理
+        if (operation == null || !operation.stopRequestedByUser &&
+            operation.state in DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES
+        ) {
+            durablePendingSongKeys += entry.song.stableKey()
+        }
+    }
+    durablePendingSongKeys += DownloadExecutionRoomStore.listByStates(
+        context = context,
+        states = DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES,
+        excludeUserStoppedOperations = true,
+        database = database
+    ).map { entry -> entry.request.song.stableKey() }
+    return durablePendingSongKeys
+}
+
 private suspend fun readDownloadProgressBootstrapState(
     context: android.content.Context
 ): DownloadProgressBootstrapState = withContext(Dispatchers.IO) {
@@ -292,17 +322,7 @@ private suspend fun readDownloadProgressBootstrapState(
             clearProgress = PersistentDownloadClearProgressStore.read(appContext)
         )
     }
-
-    val durablePendingSongKeys = linkedSetOf<String>()
-    durablePendingSongKeys += ManagedDownloadStorage.listPendingQueuedDownloads(appContext)
-        .map { entry -> entry.song.stableKey() }
-    durablePendingSongKeys += ManagedDownloadStorage.listPendingResumableDownloads(appContext)
-        .map { entry -> entry.song.stableKey() }
-    durablePendingSongKeys += DownloadExecutionRoomStore.listByStates(
-        context = appContext,
-        states = DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES,
-        excludeUserStoppedOperations = true
-    ).map { entry -> entry.request.song.stableKey() }
+    val durablePendingSongKeys = readDurablePendingDownloadSongKeys(appContext)
 
     if (PersistentDownloadClearFenceStore.isTaskProgressActive(appContext)) {
         return@withContext DownloadProgressBootstrapState(

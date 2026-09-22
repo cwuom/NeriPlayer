@@ -561,17 +561,21 @@ internal suspend fun AudioDownloadManager.executeDownloadSong(
             return null
         }
 
-        if (!forceFreshTransfer && hasFastCachedManagedDownloadForStart(context, song)) {
-            NPLogger.d(
-                TAG,
-                "${context.getString(R.string.download_file_exists, song.name)}, songKey=$songKey"
-            )
-            clearVisibleProgressForSong(
-                songKey = songKey,
-                expectedAttemptId = attemptId,
-                expectedOperationId = effectiveOperationId
-            )
-            return null
+        if (!forceFreshTransfer) {
+            val cachedAudio = findFastCachedManagedDownloadForStart(context, song)
+            if (cachedAudio != null) {
+                NPLogger.d(
+                    TAG,
+                    "${context.getString(R.string.download_file_exists, song.name)}, songKey=$songKey"
+                )
+                clearVisibleProgressForSong(
+                    songKey = songKey,
+                    expectedAttemptId = attemptId,
+                    expectedOperationId = effectiveOperationId
+                )
+                // pending 音频尚不在正式索引中，收尾必须接收本次已验证的引用
+                return cachedAudio
+            }
         }
 
         val resolvedDownloadAudioQuality = downloadAudioQuality

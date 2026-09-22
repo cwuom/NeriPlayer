@@ -181,7 +181,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
         ).readText()
         val executionBody = methodBody(source, "executeDownloadSong")
         val cachedLookupIndex = executionBody.indexOf(
-            "hasFastCachedManagedDownloadForStart(context, song)"
+            "findFastCachedManagedDownloadForStart(context, song)"
         )
         val bridgeClearIndex = executionBody.indexOf(
             "clearCompletedAudioReference(songKey)"
@@ -206,7 +206,8 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
         assertTrue(facadeSource.contains("forceFreshTransfer: Boolean = false"))
         assertTrue(
             executionBody.contains(
-                "if (!forceFreshTransfer && hasFastCachedManagedDownloadForStart(context, song))"
+                "if (!forceFreshTransfer) {\n" +
+                    "            val cachedAudio = findFastCachedManagedDownloadForStart(context, song)"
             )
         )
         assertTrue(facadeSource.contains("forceFreshTransfer = forceFreshTransfer"))

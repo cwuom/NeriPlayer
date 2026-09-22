@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
 import moe.ouom.neriplayer.core.download.manager.runtime.validateExistingDownloadedAudio
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.downloadedSongPlaybackReferenceCandidates
@@ -618,10 +619,10 @@ internal class AudioDownloadPlaybackCoordinator(
         )
     }
 
-    internal suspend fun hasFastCachedManagedDownloadForStart(
+    internal suspend fun findFastCachedManagedDownloadForStart(
         context: Context,
         song: SongItem
-    ): Boolean {
+    ): ManagedDownloadStorage.StoredEntry? {
         val cached = findDurableCachedManagedAudio(context, song)
         val snapshot = cached?.snapshot
         val cachedAudio = cached?.audio
@@ -630,9 +631,11 @@ internal class AudioDownloadPlaybackCoordinator(
             return GlobalDownloadManager.validateExistingDownloadedAudio(
                 context, song, cachedAudio,
                 ManagedDownloadStorage.metadataForAudioEntry(snapshot, cachedAudio)
-            ) != null
+            )
         }
-        return GlobalDownloadManager.findFastCachedDownloadedSongPlaybackUri(context, song) != null
+        val reference = GlobalDownloadManager.findFastCachedDownloadedSongPlaybackUri(context, song)
+            ?: return null
+        return GlobalDownloadManager.resolveStoredAudio(context, reference)
     }
 
     private fun resolveRecentlyCommittedAudioReference(
