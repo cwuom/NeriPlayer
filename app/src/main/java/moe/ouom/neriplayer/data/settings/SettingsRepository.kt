@@ -29,6 +29,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
@@ -59,6 +60,8 @@ private val NOW_PLAYING_CONTROL_SIZE =
     intPreferencesKey("nowplaying_control_size")
 private val LYRICS_CONTROL_SIZE =
     intPreferencesKey("lyrics_control_size")
+private val XIAOMI_SUPER_ISLAND_SETTINGS =
+    stringPreferencesKey("xiaomi_super_island_settings")
 
 class SettingsRepository(private val context: Context) {
     private val autoSettingsRepository = AutoSettingsRepository(context)
@@ -253,6 +256,9 @@ class SettingsRepository(private val context: Context) {
     val amllLyricsEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.amllLyricsEnabledFlow
 
+    val liveUpdateLyricEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.liveUpdateLyricEnabledFlow
+
     val statusBarLyricsEnabledFlow : Flow<Boolean> =
         autoSettingsRepository.statusBarLyricsFlow
 
@@ -264,6 +270,12 @@ class SettingsRepository(private val context: Context) {
 
     val dynamicIslandLyricsEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled)
+
+    val xiaomiSuperIslandLyricEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.xiaomiSuperIslandLyricEnabledFlow
+
+    val xiaomiSuperIslandSettingsFlow: Flow<XiaomiSuperIslandSettings> =
+        dataStoreSettingFlow { XiaomiSuperIslandSettings.decode(it[XIAOMI_SUPER_ISLAND_SETTINGS]) }
 
     val floatingLyricsPreferencesFlow: Flow<FloatingLyricsPreferences> =
         dataStoreSettingFlow { prefs ->
@@ -846,6 +858,16 @@ class SettingsRepository(private val context: Context) {
             setExternalBluetoothTranslationEnabled(true)
         }
         setSetting(AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled, enabled)
+    }
+
+    suspend fun setXiaomiSuperIslandLyricEnabled(enabled: Boolean) {
+        setSetting(AutoSettingsSchema.lyrics.xiaomiSuperIslandLyricEnabled, enabled)
+    }
+
+    suspend fun setXiaomiSuperIslandSettings(settings: XiaomiSuperIslandSettings) {
+        context.dataStore.edit {
+            it[XIAOMI_SUPER_ISLAND_SETTINGS] = settings.sanitized().encode()
+        }
     }
 
     suspend fun setFloatingLyricsPreferences(preferences: FloatingLyricsPreferences) {

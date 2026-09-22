@@ -985,6 +985,7 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
   提供附带署名条件的替代授权；第三方源码和未列入范围的仓库内容不适用。
 - ✍️ 外部 Native 贡献不会因提交 PR 自动进入替代授权范围，
   只有贡献者明确记录双授权同意时才适用。
+- 📦 小米超级岛歌词的 Shizuku/XMSF 网络隔离适配直接移植了 Capsulyric 的相关源码；Capsulyric 使用 GPL-3.0，完整来源说明见 [THIRD_PARTY_LICENSES.md](./THIRD_PARTY_LICENSES.md)。
 - 📚 详细条款请参阅 [LICENSE](./LICENSE)。
 
 ---
