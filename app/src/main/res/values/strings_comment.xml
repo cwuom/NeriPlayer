@@ -8,7 +8,6 @@
     <string name="comment_empty">暂无评论</string>
     <string name="comment_retry">重新加载</string>
     <string name="comment_refresh">刷新评论</string>
-    <string name="comment_load_more">加载更多评论</string>
     <string name="comment_like_count_format">%1$s 赞</string>
     <string name="comment_reply_count_format">%1$s 条回复</string>
     <string name="comment_error_network">网络异常，请检查网络后重试</string>

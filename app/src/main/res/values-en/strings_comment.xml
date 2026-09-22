@@ -8,7 +8,6 @@
     <string name="comment_empty">No comments yet</string>
     <string name="comment_retry">Reload</string>
     <string name="comment_refresh">Refresh comments</string>
-    <string name="comment_load_more">Load more comments</string>
     <string name="comment_like_count_format">%1$s likes</string>
     <string name="comment_reply_count_format">%1$s replies</string>
     <string name="comment_error_network">Network error. Check your connection and try again</string>
