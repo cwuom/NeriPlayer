@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.artifact
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.model.publicationOwnerId
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -61,9 +62,9 @@ internal class DownloadCorePublicationCoordinator {
         }
         val reconciledMetadata = reconciled?.let { readMetadata(context, it) }
         if (
-            reconciled != null && !reconciled.isPendingAudioWrite &&
-            metadata.operationId?.isNotBlank() == true &&
-            reconciledMetadata?.operationId == metadata.operationId &&
+            reconciled != null && !reconciled.isPendingAudioWrite && reconciledMetadata != null &&
+            metadata.publicationOwnerId() != null &&
+            reconciledMetadata.publicationOwnerId() == metadata.publicationOwnerId() &&
             reconciledMetadata.stableKey == metadata.stableKey &&
             isFinalizedDownloadedMetadata(reconciledMetadata) &&
             withContext(Dispatchers.IO) {

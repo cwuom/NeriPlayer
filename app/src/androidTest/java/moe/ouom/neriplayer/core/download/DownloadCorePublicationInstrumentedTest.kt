@@ -27,6 +27,8 @@ import moe.ouom.neriplayer.core.download.artifact.DownloadCorePublicationCoordin
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.operation.content.promoteFileTargetWithoutReplacement
 import moe.ouom.neriplayer.core.download.storage.operation.content.publicationFileIdentity
@@ -57,6 +59,146 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DownloadCorePublicationInstrumentedTest {
+    @Test
+    fun privateNewRequestCanFinalizePreviousPendingAudio() = runBlocking {
+        withStorage(false) { assertNewRequestKeepsAudioOwner(formal = false) }
+    }
+
+    @Test
+    fun safNewRequestCanFinalizePreviousPendingAudio() = runBlocking {
+        withStorage(true) { assertNewRequestKeepsAudioOwner(formal = false) }
+    }
+
+    @Test
+    fun privateNewRequestCanFinalizePreviousFormalAudio() = runBlocking {
+        withStorage(false) { assertNewRequestKeepsAudioOwner(formal = true) }
+    }
+
+    @Test
+    fun safNewRequestCanFinalizePreviousFormalAudio() = runBlocking {
+        withStorage(true) { assertNewRequestKeepsAudioOwner(formal = true) }
+    }
+
+    @Test
+    fun privateCommitReentryPreservesAdoptedPendingPublicationOwner() = runBlocking {
+        withStorage(false) { assertCommitReentryKeepsAdoptedPendingOwner() }
+    }
+
+    @Test
+    fun safCommitReentryPreservesAdoptedPendingPublicationOwner() = runBlocking {
+        withStorage(true) { assertCommitReentryKeepsAdoptedPendingOwner() }
+    }
+
+    private suspend fun Fixture.assertNewRequestKeepsAudioOwner(formal: Boolean) {
+        val pending = commit()
+        val root = ManagedDownloadStorage.resolveRootBlocking(context)
+        val audio = if (formal) {
+            requireNotNull(ManagedDownloadStorage.promotePendingAudio(context, root, pending)).also {
+                ManagedDownloadStorage.sealAudioPublicationReceipt(context, root, it)
+            }
+        } else pending
+        val requestId = UUID.randomUUID().toString()
+        assertEquals(DownloadedAudioTagWriteOutcome.SUCCESS,
+            DownloadedAudioTagWriter.write(context, audio, song, null, standardizedLyricEmbeddingEnabled = true))
+        assertTrue(DownloadedAudioMetadataStore(1, 0L, "PublicationTest").persist(
+            context, audio, song, downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
+            resolveExistingSidecars = false, operationId = requestId
+        ))
+        val promoted = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, audio)).audio
+        assertFalse(promoted.isPendingAudioWrite)
+        val metadata = JSONObject(read(requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, promoted)).reference)
+            .toString(Charsets.UTF_8))
+        assertEquals("the execution journal must keep the current request", requestId, metadata.getString("operationId"))
+        assertEquals("a new execution must retain the durable publication owner", operationId, metadata.getString("audioPublicationOwnerId"))
+        assertTrue(metadata.getBoolean("downloadFinalized"))
+        assertFalse(metadata.getBoolean("audioPublicationPending"))
+        assertTrue(ManagedDownloadStorage.deletePendingAudioMetadata(context, fileName))
+        ManagedDownloadStorage.snapshotCacheStore.invalidate()
+        ManagedDownloadStorage.treeChildRegistry.clear()
+        val recovered = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, promoted)).audio
+        assertEquals(referenceIdentity(promoted.reference), referenceIdentity(recovered.reference))
+        val nextRequestId = UUID.randomUUID().toString()
+        assertTrue(DownloadedAudioMetadataStore(1, 0L, "PublicationTest").persist(
+            context, recovered, song, downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
+            resolveExistingSidecars = false, operationId = nextRequestId
+        ))
+        val republished = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, recovered)).audio
+        val nextMetadata = JSONObject(read(requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, republished)).reference)
+            .toString(Charsets.UTF_8))
+        assertEquals(nextRequestId, nextMetadata.getString("operationId"))
+        assertEquals("a second execution must retain the original physical owner", operationId,
+            nextMetadata.getString("audioPublicationOwnerId"))
+        assertFalse(nextMetadata.getBoolean("audioPublicationPending"))
+        assertEquals(referenceIdentity(promoted.reference), referenceIdentity(republished.reference))
+        assertEquals(listOf(fileName), finalNames().filter { it.endsWith(".mp3") })
+    }
+
+    private suspend fun Fixture.assertCommitReentryKeepsAdoptedPendingOwner() {
+        val pending = commit()
+        prepareTaggedAudio(pending)
+        val requestId = UUID.randomUUID().toString()
+        val metadataStore = DownloadedAudioMetadataStore(1, 0L, "PublicationTest")
+        assertTrue(metadataStore.persist(
+            context, pending, song, downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
+            resolveExistingSidecars = false, operationId = requestId
+        ))
+        val root = ManagedDownloadStorage.resolveRootBlocking(context)
+        ManagedDownloadStorage.markAudioPublicationPending(context, root, pending)
+        val taggedBytes = read(pending.reference)
+        val partialTarget = createUnownedFile(taggedBytes.copyOf(257))
+        ManagedDownloadStorage.recordAudioPublicationTarget(
+            context, root, pending, partialTarget,
+            partialTarget.takeIf { it.startsWith("/") }?.let(::publicationFileIdentity)
+        )
+        val originalReceipt = readPendingMetadata(fileName).getJSONObject("audioPublicationReceipt").toString()
+        ManagedDownloadStorage.snapshotCacheStore.invalidate()
+        ManagedDownloadStorage.treeChildRegistry.clear()
+
+        val replayed = commit(bytes = taggedBytes, ownerOperationId = requestId)
+
+        assertEquals("seed replay must reuse the adopted pending audio", referenceIdentity(pending.reference),
+            referenceIdentity(replayed.reference))
+        val replayedMetadata = JSONObject(read(requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, replayed)).reference)
+            .toString(Charsets.UTF_8))
+        assertEquals(requestId, replayedMetadata.getString("operationId"))
+        assertEquals("seed replay must retain the original physical owner", operationId,
+            replayedMetadata.optString("audioPublicationOwnerId"))
+        assertEquals(originalReceipt, replayedMetadata.getJSONObject("audioPublicationReceipt").toString())
+        assertTrue(replayedMetadata.getBoolean("audioPublicationPending"))
+        val replayedPendingMetadata = readPendingMetadata(fileName)
+        assertEquals(operationId, replayedPendingMetadata.getString("audioPublicationOwnerId"))
+        assertEquals(originalReceipt, replayedPendingMetadata.getJSONObject("audioPublicationReceipt").toString())
+        val cachedSnapshot = requireNotNull(ManagedDownloadStorage.snapshotCacheStore.cachedSnapshot(
+            context, restorePersisted = false
+        ))
+        val cachedMetadata = requireNotNull(ManagedDownloadStorage.metadataForAudioEntry(cachedSnapshot, replayed))
+        assertEquals(requestId, cachedMetadata.operationId)
+        assertEquals("seed replay must preserve ownership in the snapshot cache", operationId,
+            cachedMetadata.audioPublicationOwnerId)
+        assertArrayEquals(taggedBytes, read(replayed.reference))
+        assertArrayEquals(taggedBytes.copyOf(257), read(partialTarget))
+
+        assertTrue(metadataStore.persist(
+            context, replayed, song, downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
+            resolveExistingSidecars = false, operationId = requestId
+        ))
+        val finalized = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, replayed)).audio
+        assertFalse(finalized.isPendingAudioWrite)
+        assertEquals(referenceIdentity(partialTarget), referenceIdentity(finalized.reference))
+        assertArrayEquals(taggedBytes, read(finalized.reference))
+        val finalizedMetadata = JSONObject(read(requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, finalized)).reference)
+            .toString(Charsets.UTF_8))
+        assertEquals(requestId, finalizedMetadata.getString("operationId"))
+        assertEquals(operationId, finalizedMetadata.getString("audioPublicationOwnerId"))
+        assertEquals(originalReceipt, finalizedMetadata.getJSONObject("audioPublicationReceipt").toString())
+        assertFalse(finalizedMetadata.getBoolean("audioPublicationPending"))
+        assertEquals(listOf(fileName), finalNames().filter { it.endsWith(".mp3") })
+    }
+
     @Test
     fun safStaleNegativeMetadataCacheCannotDowngradeFinalizedTags() = runBlocking {
         withStorage(true) {

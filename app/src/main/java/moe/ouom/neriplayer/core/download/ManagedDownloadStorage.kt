@@ -742,7 +742,8 @@ internal object ManagedDownloadStorage {
         val sourceCreatedAtMs: Long? = null,
         val sourceModifiedAtMs: Long? = null,
         val restorableMetadata: ManagedDownloadRestorableMetadata? = null,
-        val createdAtConfidence: String? = null
+        val createdAtConfidence: String? = null,
+        val audioPublicationOwnerId: String? = null
     )
     fun primeSettings(directoryUri: String?, directoryLabel: String?, fileNameTemplate: String? = null) {
         return this.primeSettingsImpl(directoryUri, directoryLabel, fileNameTemplate)

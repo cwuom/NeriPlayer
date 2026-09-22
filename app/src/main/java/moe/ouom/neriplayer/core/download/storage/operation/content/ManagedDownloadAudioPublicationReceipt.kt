@@ -342,7 +342,8 @@ private fun ManagedDownloadStorage.findPublicationMetadataReference(
 
 internal fun publicationFileIdentity(reference: String): String = Os.stat(reference).let { "${it.st_dev}:${it.st_ino}" }
 
-private fun publicationOwner(metadata: JSONObject): String = metadata.optString("operationId").takeIf(String::isNotBlank)
+private fun publicationOwner(metadata: JSONObject): String = metadata.optString("audioPublicationOwnerId").takeIf(String::isNotBlank)
+    ?: metadata.optString("operationId").takeIf(String::isNotBlank)
     ?: metadata.optString("terminalTemporaryWriteCleanupToken").takeIf(String::isNotBlank)
     ?: metadata.optString("stableKey").takeIf(String::isNotBlank)?.let { "legacy:$it" }.orEmpty()
 

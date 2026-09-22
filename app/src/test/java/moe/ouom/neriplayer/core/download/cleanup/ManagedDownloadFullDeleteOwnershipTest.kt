@@ -9,6 +9,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ManagedDownloadFullDeleteOwnershipTest {
+    @Test fun `new execution and original pending receipt share physical publication ownership`() {
+        val audio = entry("song.mp3")
+        val formal = entry("song.mp3.npmeta.json")
+        val pending = entry(".tmp/song.mp3.npmeta.pending.json")
+        val old = metadata(audio).copy(operationId = "original-write")
+        val current = old.copy(operationId = "retry-request", audioPublicationOwnerId = "original-write")
+        val state = inventory(listOf(audio, formal), emptyList(), mapOf(
+            formal.reference to current, pending.reference to old
+        )).copy(temporaryEntries = listOf(pending))
+
+        val plan = planOwnedFullLibraryDeletion(state)
+
+        assertTrue(plan.snapshotComplete)
+        assertEquals(setOf(audio.reference, formal.reference, pending.reference), plan.requestedReferences)
+        val conflicting = state.copy(metadataByReference = state.metadataByReference +
+            (pending.reference to ManagedMetadataReadResult.Found(old.copy(operationId = "another-write"))))
+        assertFalse(planOwnedFullLibraryDeletion(conflicting).snapshotComplete)
+        assertTrue(planOwnedFullLibraryDeletion(conflicting).requestedReferences.isEmpty())
+    }
+
     @Test fun `stale catalog cover never expands full deletion beyond current receipt`() {
         catalogCoverOwnership(full = true, hasReceipt = true)
     }

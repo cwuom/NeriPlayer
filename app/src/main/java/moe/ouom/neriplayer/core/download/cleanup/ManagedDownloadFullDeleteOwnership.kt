@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioM
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongDeleteTarget
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.publicationOwnerId
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadResult
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 
@@ -65,7 +66,7 @@ internal fun planOwnedFullLibraryDeletion(
             (inventory.metadataByReference[entry.reference] as? ManagedMetadataReadResult.Found)?.metadata
         }
         listOf<(DownloadedAudioMetadata) -> String?>(
-            { it.stableKey }, { it.operationId }, { it.artifactId }, { it.libraryId }
+            { it.stableKey }, { it.publicationOwnerId() }, { it.artifactId }, { it.libraryId }
         ).any { field -> receipts.mapNotNull { field(it)?.takeIf(String::isNotBlank) }.distinct().size > 1 }
     }
     parsed.forEach { owner ->

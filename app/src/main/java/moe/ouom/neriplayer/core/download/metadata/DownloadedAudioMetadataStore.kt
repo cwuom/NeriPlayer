@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.publicationOwnerId
 import moe.ouom.neriplayer.core.download.model.resolvePersistedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
@@ -317,6 +318,9 @@ internal class DownloadedAudioMetadataStore(
             createdAtConfidence = createdAtConfidence,
             artifactId = existingMetadata?.artifactId,
             operationId = operationId ?: existingMetadata?.operationId,
+            // 重试请求可以换代，但复用音频的发布凭据仍属于原来的物理写入
+            audioPublicationOwnerId = existingMetadata
+                ?.takeIf { it.stableKey == song.stableKey() }?.publicationOwnerId(),
             artifactState = artifactStateOverride
                 ?: if (downloadFinalized) {
                     "COMPLETE"
@@ -649,6 +653,7 @@ internal class DownloadedAudioMetadataStore(
         createdAtConfidence: String,
         artifactId: String?,
         operationId: String?,
+        audioPublicationOwnerId: String?,
         artifactState: String?,
         audioFileName: String?,
         libraryId: String?,
@@ -702,6 +707,7 @@ internal class DownloadedAudioMetadataStore(
             put("createdAtConfidence", createdAtConfidence)
             put("artifactId", artifactId)
             put("operationId", operationId)
+            put("audioPublicationOwnerId", audioPublicationOwnerId)
             put("artifactState", artifactState)
             put("audioFileName", audioFileName)
             put("libraryId", libraryId)

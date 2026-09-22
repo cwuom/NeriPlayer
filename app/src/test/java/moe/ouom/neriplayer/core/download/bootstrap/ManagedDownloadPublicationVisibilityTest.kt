@@ -28,6 +28,36 @@ class ManagedDownloadPublicationVisibilityTest {
     }
 
     @Test
+    fun `metadata roundtrip retains physical owner independently of current execution`() {
+        val original = metadata(publishing = true).copy(
+            operationId = "retry-request", audioPublicationOwnerId = "original-write"
+        )
+        val encoded = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(original)
+        val restored = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(encoded)
+
+        assertEquals("retry-request", restored.operationId)
+        assertEquals("original-write", restored.audioPublicationOwnerId)
+        assertTrue(restored.audioPublicationPending)
+    }
+
+    @Test
+    fun `changing execution cannot change the explicit publication owner`() {
+        val previous = json().put("audioPublicationPending", true)
+            .put("audioPublicationReceipt", JSONObject().put("sha256", "digest"))
+        val next = json().put("operationId", "retry-request")
+            .put("audioPublicationOwnerId", "operation")
+        val merged = JSONObject(preserveAudioPublicationReceipt(previous.toString(), next.toString()))
+
+        assertEquals("retry-request", merged.getString("operationId"))
+        assertTrue(merged.getBoolean("audioPublicationPending"))
+        assertEquals("digest", merged.getJSONObject("audioPublicationReceipt").getString("sha256"))
+        val foreign = JSONObject(preserveAudioPublicationReceipt(previous.toString(),
+            next.put("audioPublicationOwnerId", "another-write").toString()))
+        assertFalse(foreign.has("audioPublicationReceipt"))
+        assertFalse(foreign.has("audioPublicationPending"))
+    }
+
+    @Test
     fun `sealed formal audio stays visible when pending deletion failed`() {
         val snapshot = snapshot(metadata(publishing = false)).let { current ->
             val pending = current.audioEntries.single().copy(

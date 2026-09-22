@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.resolveTemp
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.SnapshotEntryBucket
+import moe.ouom.neriplayer.core.download.model.publicationOwnerId
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -60,6 +61,9 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle 
 private val audioCommitLocks = Array(64) { Mutex() }
 private val audioPublicationLocks = Array(64) { Mutex() }
 private val audioNamePreparationLocks = Array(64) { Any() }
+private const val AUDIO_COMMIT_SNAPSHOT_ATTEMPTS = 3
+
+private data class CommittedSeedMetadata(val entry: StoredEntry?, val content: String)
 
 internal fun ManagedDownloadStorage.ensureManagedLibraryManifestBlocking(
     context: Context,
@@ -251,14 +255,17 @@ internal suspend fun ManagedDownloadStorage.saveAudioFromTempBlocking(
     val owner = seedMetadata?.operationId?.takeIf(String::isNotBlank) ?: boundedFileName
     val lockIndex = ("$rootIdentity|$owner".hashCode() and Int.MAX_VALUE) % audioCommitLocks.size
     return audioCommitLocks[lockIndex].withLock {
-        val snapshot = snapshotCacheStore.cachedSnapshot(context, restorePersisted = false)
-            ?.takeIf { it.rootEntriesComplete }
-            ?: buildDownloadLibrarySnapshotBlocking(context, forceRefresh = true)
-        if (!snapshot.rootEntriesComplete) throw IOException("无法完整核查下载目录，暂停提交")
+        val snapshot = completeSnapshotForAudioCommit(context, root)
         val existingAudio = findExistingAudioForCommit(context, snapshot, seedMetadata, tempFile)
+        var committedSeedMetadata: CommittedSeedMetadata? = null
         val storedEntry = if (existingAudio != null) {
             if (existingAudio.isPendingAudioWrite) {
-                writeSeedMetadataAfterAudioCommit(context, root, existingAudio.logicalName, seedMetadataJson)
+                val inheritedSeed = seedMetadataJson?.let {
+                    inheritPendingPublicationOwner(context, root, existingAudio, it)
+                }
+                committedSeedMetadata = writeSeedMetadataAfterAudioCommit(
+                    context, root, existingAudio.logicalName, inheritedSeed
+                )
             }
             existingAudio
         } else when (root) {
@@ -319,7 +326,7 @@ internal suspend fun ManagedDownloadStorage.saveAudioFromTempBlocking(
                     treeChildRegistry.forgetFileChildName(root.dir, finalName)
                     throw error
                 }
-                writeSeedMetadataAfterAudioCommit(
+                committedSeedMetadata = writeSeedMetadataAfterAudioCommit(
                     context = context,
                     root = root,
                     audioName = finalName,
@@ -356,7 +363,7 @@ internal suspend fun ManagedDownloadStorage.saveAudioFromTempBlocking(
                     treeChildRegistry.forgetTreeChildName(root.tree, finalName)
                     throw error
                 }
-                writeSeedMetadataAfterAudioCommit(
+                committedSeedMetadata = writeSeedMetadataAfterAudioCommit(
                     context = context,
                     root = root,
                     audioName = audioEntry.logicalName,
@@ -371,17 +378,62 @@ internal suspend fun ManagedDownloadStorage.saveAudioFromTempBlocking(
         if (!updateSnapshotCacheAfterStoredEntryWrite(context, storedEntry, SnapshotEntryBucket.AUDIO)) {
             invalidateSnapshotCache(context)
         }
-        seedMetadataJson?.takeUnless { existingAudio != null && !existingAudio.isPendingAudioWrite }
-            ?.let { retargetAudioMetadata(it, storedEntry.logicalName) }
-            ?.let(::parseDownloadedAudioMetadataJson)
-            ?.let { metadata ->
-                val metadataEntry = findMetadataForAudioBlocking(context, storedEntry)
-                if (metadataEntry == null || !updateSnapshotCacheAfterMetadataWrite(context, metadataEntry, metadata)) {
-                    invalidateSnapshotCache(context)
-                }
+        committedSeedMetadata?.let { written ->
+            // SAF 替换可能改变 URI，缓存必须使用实际写回的引用和保留发布凭据后的内容
+            val metadata = parseDownloadedAudioMetadataJson(written.content)
+            if (written.entry == null || metadata == null ||
+                !updateSnapshotCacheAfterMetadataWrite(context, written.entry, metadata)
+            ) {
+                invalidateSnapshotCache(context)
             }
+        }
         storedEntry
     }
+}
+
+private fun ManagedDownloadStorage.completeSnapshotForAudioCommit(
+    context: Context,
+    root: RootHandle
+): ManagedDownloadStorage.DownloadLibrarySnapshot {
+    val expectedRootKey = rootKeyForResolvedRoot(root)
+    repeat(AUDIO_COMMIT_SNAPSHOT_ATTEMPTS) { attempt ->
+        if (snapshotCacheStore.currentKey(context) != expectedRootKey) {
+            throw IOException("下载目录已变化，暂停提交")
+        }
+        val snapshot = snapshotCacheStore.cachedSnapshot(context, restorePersisted = false)
+            ?.takeIf { it.rootEntriesComplete }
+            ?: buildDownloadLibrarySnapshotBlocking(context, forceRefresh = true)
+        if (snapshotCacheStore.currentKey(context) != expectedRootKey) {
+            throw IOException("下载目录已变化，暂停提交")
+        }
+        if (snapshot.rootEntriesComplete) return snapshot
+        // 并发元信息写回可能让完整扫描落败，只重新扫描，不使用被拒绝的旧视图
+        if (attempt + 1 < AUDIO_COMMIT_SNAPSHOT_ATTEMPTS) {
+            NPLogger.d(TAG, "提交前目录快照不完整，重新核查: attempt=${attempt + 1}")
+        }
+    }
+    throw IOException("无法完整核查下载目录，暂停提交")
+}
+
+private fun ManagedDownloadStorage.inheritPendingPublicationOwner(
+    context: Context,
+    root: RootHandle,
+    audio: StoredEntry,
+    seedMetadataJson: String
+): String {
+    val metadataEntry = findMetadataForAudioBlocking(context, audio, root)
+        ?: throw IOException("复用 pending 音频缺少身份凭据: ${audio.logicalName}")
+    val current = readTextInternal(context, metadataEntry.reference)?.let(::parseDownloadedAudioMetadataJson)
+        ?: throw IOException("复用 pending 音频身份凭据不可读: ${audio.logicalName}")
+    val seed = JSONObject(seedMetadataJson)
+    val owner = current.publicationOwnerId()
+    val expectedOwner = seed.optString("audioPublicationOwnerId").takeIf(String::isNotBlank)
+    if (owner.isNullOrBlank() || current.stableKey != seed.optString("stableKey") ||
+        current.operationId != seed.optString("operationId") || expectedOwner != null && expectedOwner != owner
+    ) {
+        throw IOException("复用 pending 音频身份已变化: ${audio.logicalName}")
+    }
+    return seed.put("audioPublicationOwnerId", owner).toString()
 }
 
 private fun ManagedDownloadStorage.findExistingAudioForCommit(
@@ -1445,14 +1497,14 @@ internal fun ManagedDownloadStorage.treeDocumentIdOrNull(uri: Uri): String? {
     }
 }
 
-internal fun ManagedDownloadStorage.writeSeedMetadataAfterAudioCommit(
+private fun ManagedDownloadStorage.writeSeedMetadataAfterAudioCommit(
     context: Context,
     root: RootHandle,
     audioName: String,
     seedMetadataJson: String?
-) {
+): CommittedSeedMetadata? {
     val incoming = seedMetadataJson?.takeIf(String::isNotBlank)
-        ?.let { retargetAudioMetadata(it, audioName) } ?: return
+        ?.let { retargetAudioMetadata(it, audioName) } ?: return null
     val content = preserveAudioPublicationReceipt(readAudioPublicationMetadata(context, root, audioName)?.toString(), incoming)
     val temporaryRoot = resolveTemporaryRoot(context, root, create = true)
         ?: throw IOException("无法保存 core pending 元信息")
@@ -1465,7 +1517,7 @@ internal fun ManagedDownloadStorage.writeSeedMetadataAfterAudioCommit(
     if (readTextInternal(context, pendingWritten.reference) != content) {
         throw IOException("core pending 元信息读回不一致: $audioName")
     }
-    try {
+    val formalWritten = try {
         writeRootText(
             context = context,
             root = root,
@@ -1479,7 +1531,9 @@ internal fun ManagedDownloadStorage.writeSeedMetadataAfterAudioCommit(
                 "audio=$audioName, error=${error.message}",
             error
         )
+        null
     }
+    return CommittedSeedMetadata(formalWritten, content)
 }
 
 internal fun ManagedDownloadStorage.writeCollisionPendingMetadata(
