@@ -649,7 +649,11 @@ internal fun ManagedDownloadStorage.saveMetadataBlocking(
     }
     val root = resolveRootBlocking(context)
     val content = preserveAudioPublicationReceipt(
-        readAudioPublicationMetadata(context, root, audio.logicalName)?.toString(), json
+        readAudioPublicationMetadata(
+            context, root, audio.logicalName,
+            // 升级中的只创建写入不会覆盖已有文件，其余保存必须确认正式凭据未被缓存漏掉
+            refreshFormalMetadataIfMissing = !expectedAbsent
+        )?.toString(), json
     )
     val expectedMetadata = if (content == json) metadata else parseDownloadedAudioMetadataJson(content)
     if (expectedMetadata == null) {

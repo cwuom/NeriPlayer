@@ -231,18 +231,20 @@ internal fun LocalMediaSupport.selectEditableMetadataWriteFallback(
 }
 
 internal fun LocalMediaSupport.resolveEditableMediaExtension(song: SongItem, sourcePathSegment: String?): String {
+    // 文件名和已解码的文档路径中的 ?/# 都是普通字符，只有原始 URI 需要去掉查询和片段
     return listOf(
         song.localFileName,
         song.localFilePath,
         sourcePathSegment,
-        song.mediaUri
+        song.mediaUri?.substringBefore('?')?.substringBefore('#')
     ).firstNotNullOfOrNull { reference ->
         reference
-            ?.substringBefore('?')
-            ?.substringBefore('#')
+            ?.substringAfterLast('/')
             ?.substringAfterLast('.', "")
             ?.lowercase(Locale.ROOT)
-            ?.takeIf(String::isNotBlank)
+            ?.takeIf { extension ->
+                extension.length in 1..10 && extension.all { it in 'a'..'z' || it in '0'..'9' }
+            }
     }
         ?: "bin"
 }
@@ -574,9 +576,13 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
     val extension = resolveEditableMediaExtension(song, sourceUri)
     val backup = runCatching {
         File.createTempFile("metadata-source-", ".${extension}", stagingDirectory)
+    }.onFailure { error ->
+        logEditableMetadataFailure("staged_backup_create", sourceUri, error)
     }.getOrNull() ?: return EditableMetadataWriteTransaction(fallbackOutcome)
     val updated = runCatching {
         File.createTempFile("metadata-updated-", ".${extension}", stagingDirectory)
+    }.onFailure { error ->
+        logEditableMetadataFailure("staged_update_create", sourceUri, error)
     }.getOrNull() ?: run {
         backup.delete()
         return EditableMetadataWriteTransaction(fallbackOutcome)

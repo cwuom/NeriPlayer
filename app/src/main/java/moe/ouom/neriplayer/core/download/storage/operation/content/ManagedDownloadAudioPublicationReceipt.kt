@@ -39,7 +39,9 @@ internal fun ManagedDownloadStorage.markAudioPublicationPending(
 ) {
     try {
         val temporaryRoot = publicationTemporaryRoot(context, root)
-        val current = readPublicationMetadataFile(context, root, "$finalName$METADATA_SUFFIX")
+        val current = readPublicationMetadataFile(
+            context, root, "$finalName$METADATA_SUFFIX", refreshIfMissing = true
+        )
         val source = temporaryRoot?.let {
             readPublicationMetadataFile(context, it, "${pending.logicalName}$PENDING_METADATA_SUFFIX")
                 ?: readPublicationMetadataFile(context, it, "${pending.logicalName}$METADATA_SUFFIX")
@@ -221,23 +223,34 @@ internal fun ManagedDownloadStorage.sealAudioPublicationReceipt(context: Context
     }
 }
 
-internal fun ManagedDownloadStorage.readAudioPublicationMetadata(context: Context, root: RootHandle, audioName: String): JSONObject? {
+internal fun ManagedDownloadStorage.readAudioPublicationMetadata(
+    context: Context,
+    root: RootHandle,
+    audioName: String,
+    refreshFormalMetadataIfMissing: Boolean = false
+): JSONObject? {
     val temporaryRoot = publicationTemporaryRoot(context, root)
     val roots = listOfNotNull(temporaryRoot, root)
+    val formalName = "$audioName$METADATA_SUFFIX"
     var markerOnly: JSONObject? = null
     for (candidateRoot in roots) {
-        for (name in listOf("$audioName$PENDING_METADATA_SUFFIX", "$audioName$METADATA_SUFFIX")) {
-            val metadata = readPublicationMetadataFile(context, candidateRoot, name) ?: continue
+        for (name in listOf("$audioName$PENDING_METADATA_SUFFIX", formalName)) {
+            val metadata = readPublicationMetadataFile(
+                context, candidateRoot, name,
+                refreshIfMissing = refreshFormalMetadataIfMissing && candidateRoot == root && name == formalName
+            ) ?: continue
             if (metadata.has(PUBLICATION_RECEIPT_KEY) || metadata.has(PUBLICATION_PENDING_KEY)) {
                 if (candidateRoot != root) {
-                    val formal = readPublicationMetadataFile(context, root, "$audioName$METADATA_SUFFIX")
+                    val formal = readPublicationMetadataFile(
+                        context, root, formalName, refreshIfMissing = refreshFormalMetadataIfMissing
+                    )
                     if (formal != null && samePublicationOwner(metadata, formal) && formal.has(PUBLICATION_PENDING_KEY)) {
                         // 正式标记是封存结果，清理失败残留的临时凭据不能重新隐藏成品
                         metadata.put(PUBLICATION_PENDING_KEY, formal.getBoolean(PUBLICATION_PENDING_KEY))
                     }
                 }
                 if (metadata.has(PUBLICATION_RECEIPT_KEY)) return metadata
-                if (markerOnly == null || candidateRoot == root && name == "$audioName$METADATA_SUFFIX") {
+                if (markerOnly == null || candidateRoot == root && name == formalName) {
                     markerOnly = metadata
                 }
             }
@@ -266,13 +279,18 @@ private fun ManagedDownloadStorage.publicationTemporaryRoot(context: Context, ro
         }
     }
 
-private fun ManagedDownloadStorage.readPublicationMetadataFile(context: Context, root: RootHandle, name: String): JSONObject? {
+private fun ManagedDownloadStorage.readPublicationMetadataFile(
+    context: Context,
+    root: RootHandle,
+    name: String,
+    refreshIfMissing: Boolean = false
+): JSONObject? {
     val reference = when (root) {
         is RootHandle.FileRoot -> File(root.dir, name).let { file ->
             if (file.exists() && !file.isFile) throw IOException("发布元信息不是文件: $name")
             file.takeIf(File::isFile)?.absolutePath
         }
-        is RootHandle.TreeRoot -> findPublicationMetadataReference(context, root.tree, name)
+        is RootHandle.TreeRoot -> findPublicationMetadataReference(context, root.tree, name, refreshIfMissing)
     } ?: return null
     val content = readTextInternal(context, reference)
         ?: throw IOException("已找到的发布元信息暂时不可读: $name")
@@ -300,10 +318,18 @@ private fun ManagedDownloadStorage.writePublicationMetadata(context: Context, ro
     }
 }
 
-private fun ManagedDownloadStorage.findPublicationMetadataReference(context: Context, parent: DocumentFile, name: String): String? {
+private fun ManagedDownloadStorage.findPublicationMetadataReference(
+    context: Context,
+    parent: DocumentFile,
+    name: String,
+    refreshIfMissing: Boolean
+): String? {
     val known = treeChildRegistry.peekTreeChildIncludingIncomplete(parent, name)
     val child = known ?: run {
-        val cached = treeChildRegistry.cachedTreeChildrenIfFresh(parent, TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS)
+        // 只读探测可复用负缓存，回退旧凭据覆盖正式元信息前必须确认文件确实不存在
+        val cached = if (refreshIfMissing) null else {
+            treeChildRegistry.cachedTreeChildrenIfFresh(parent, TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS)
+        }
         val refresh = cached?.let { ManagedDownloadTreeChildRegistry.TreeChildrenRefresh(it.toList(), isComplete = true) }
             ?: treeChildRegistry.refreshTreeChildrenWithStatus(context, parent)
         val found = refresh.children.firstOrNull { it.name == name }

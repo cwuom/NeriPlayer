@@ -34,6 +34,15 @@ class DownloadedM4aStagingRegressionTest {
     @Test fun pipeProviderPreservesTagsCoverAndAudio() = verifyDownload(false, pipe = true, seedTags = true)
     @Test fun pendingNamePreservesUnknownTagsAndCover() = verifyDownload(true, seedTags = true)
 
+    @Test fun hashInPendingNamePreservesTagsCoverAndAudio() =
+        verifyDownload(true, seedTags = true, baseName = "Intro - #album")
+
+    @Test fun questionMarkInFormalNamePreservesTagsCoverAndAudio() =
+        verifyDownload(false, seedTags = true, baseName = "Who? - album")
+
+    @Test fun hashInPipeDownloadNamePreservesTagsCoverAndAudio() =
+        verifyDownload(true, pipe = true, seedTags = true, baseName = "Intro - #album")
+
     @Test fun missingCoverFailsWithoutChangingAudio() = verifyCoverFailure(false)
     @Test fun expectedCoverWithoutReferenceFailsWithoutChangingAudio() = verifyCoverFailure(true)
 
@@ -115,7 +124,12 @@ class DownloadedM4aStagingRegressionTest {
         assertEquals(payload, audioPayload(file))
     }
 
-    private fun verifyDownload(pending: Boolean, pipe: Boolean = false, seedTags: Boolean = false) = fixture(pending) { file ->
+    private fun verifyDownload(
+        pending: Boolean,
+        pipe: Boolean = false,
+        seedTags: Boolean = false,
+        baseName: String = "probe"
+    ) = fixture(pending, baseName) { file ->
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         if (seedTags) {
             val seed = File(file.parentFile, "seed.m4a")
@@ -181,10 +195,10 @@ class DownloadedM4aStagingRegressionTest {
         }
     }
 
-    private fun fixture(pending: Boolean, block: (File) -> Unit) {
+    private fun fixture(pending: Boolean, baseName: String = "probe", block: (File) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val directory = File(instrumentation.targetContext.cacheDir, "free8-${System.nanoTime()}").apply { check(mkdir()) }
-        val file = File(directory, if (pending) "probe.m4a.npdl_pending.fixture.pending" else "probe.m4a")
+        val file = File(directory, if (pending) "$baseName.m4a.npdl_pending.fixture.pending" else "$baseName.m4a")
         try {
             instrumentation.context.assets.open("metadata/synthetic-free-first-8.m4a").use { input -> file.outputStream().use(input::copyTo) }
             block(file)

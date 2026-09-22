@@ -58,6 +58,77 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class DownloadCorePublicationInstrumentedTest {
     @Test
+    fun safStaleNegativeMetadataCacheCannotDowngradeFinalizedTags() = runBlocking {
+        withStorage(true) {
+            val pending = commit()
+            prepareTaggedAudio(pending)
+            val root = ManagedDownloadStorage.resolveRootBlocking(context) as ManagedDownloadRootHandle.TreeRoot
+            val metadata = requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, pending))
+            val before = JSONObject(read(metadata.reference).toString(Charsets.UTF_8))
+            assertTrue(before.getBoolean("downloadFinalized"))
+            hideMetadataFromTreeCache(root, metadata.name)
+
+            ManagedDownloadStorage.markAudioPublicationPending(context, root, pending)
+
+            val written = requireNotNull(root.tree.findFile("$fileName.npmeta.json"))
+            val after = JSONObject(read(written.uri.toString()).toString(Charsets.UTF_8))
+            assertTrue("a stale directory listing must not restore core-only metadata", after.getBoolean("downloadFinalized"))
+            assertEquals("EMBEDDED_VERIFIED", after.getString("metadataEmbeddingState"))
+            val promoted = DownloadCorePublicationCoordinator().promoteBeforePublication(context, song, pending)
+            assertFalse(promoted.isPendingAudioWrite)
+            val repeated = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, promoted)).audio
+            assertEquals(referenceIdentity(promoted.reference), referenceIdentity(repeated.reference))
+            assertEquals(listOf(fileName), finalNames().filter { it.endsWith(".mp3") })
+        }
+    }
+
+    @Test
+    fun safStaleNegativeMetadataCacheCannotOverwriteAnotherOwner() = runBlocking {
+        withStorage(true) {
+            val pending = commit()
+            prepareTaggedAudio(pending)
+            val root = ManagedDownloadStorage.resolveRootBlocking(context) as ManagedDownloadRootHandle.TreeRoot
+            val metadata = requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, pending))
+            val otherOwner = JSONObject(read(metadata.reference).toString(Charsets.UTF_8))
+                .put("operationId", "another-operation").put("stableKey", "5678|netease|").toString()
+            requireNotNull(context.contentResolver.openOutputStream(Uri.parse(metadata.reference), "wt"))
+                .use { it.write(otherOwner.toByteArray()) }
+            val audioBefore = read(pending.reference)
+            hideMetadataFromTreeCache(root, metadata.name)
+
+            assertThrows(IOException::class.java) {
+                ManagedDownloadStorage.markAudioPublicationPending(context, root, pending)
+            }
+
+            assertEquals(otherOwner, read(metadata.reference).toString(Charsets.UTF_8))
+            assertArrayEquals(audioBefore, read(pending.reference))
+        }
+    }
+
+    private fun Fixture.hideMetadataFromTreeCache(root: ManagedDownloadRootHandle.TreeRoot, metadataName: String) {
+        val listing = ManagedDownloadStorage.treeChildRegistry.refreshTreeChildrenWithStatus(context, root.tree)
+        assertTrue(listing.isComplete)
+        assertTrue(listing.children.any { it.name == metadataName })
+        ManagedDownloadStorage.treeChildRegistry.rememberTreeChildren(
+            root.tree, listing.children.filterNot { it.name == metadataName }, System.currentTimeMillis(), true
+        )
+        assertNull(ManagedDownloadStorage.treeChildRegistry.peekTreeChildIncludingIncomplete(root.tree, metadataName))
+    }
+
+    @Test
+    fun privateHashInDownloadNameCanBeTaggedAndPublished() = assertHashInDownloadName(false)
+
+    @Test
+    fun safHashInDownloadNameCanBeTaggedAndPublished() = assertHashInDownloadName(true)
+
+    private fun assertHashInDownloadName(saf: Boolean) = runBlocking {
+        withStorage(saf, fileName = "Intro - ラブリーサマーちゃん - #ラブリーミュージック - netease.mp3") {
+            val pending = commit()
+            assertTaggedPublication(pending)
+        }
+    }
+
+    @Test
     fun privateCachedPendingAudioReturnsReferenceForFinalization() = runBlocking {
         withStorage(false) { assertCachedDownloadReturnsAudio(finalized = false) }
     }
@@ -448,7 +519,12 @@ class DownloadCorePublicationInstrumentedTest {
         withStorage(true) { assertSealedPublicationStaysVisibleWithTemporaryReceipt() }
     }
 
-    private suspend fun Fixture.assertSealedPublicationStaysVisibleWithTemporaryReceipt() {
+    @Test
+    fun safSealedPublicationStaysVisibleWhenMetadataSaveMissesTheCache() = runBlocking {
+        withStorage(true) { assertSealedPublicationStaysVisibleWithTemporaryReceipt(staleMetadataCache = true) }
+    }
+
+    private suspend fun Fixture.assertSealedPublicationStaysVisibleWithTemporaryReceipt(staleMetadataCache: Boolean = false) {
         val pending = commit()
         prepareTaggedAudio(pending)
         val root = ManagedDownloadStorage.resolveRootBlocking(context)
@@ -466,6 +542,9 @@ class DownloadCorePublicationInstrumentedTest {
         val metadata = JSONObject(requireNotNull(ManagedDownloadStorage.readText(context, entry.reference)))
         assertFalse(metadata.getBoolean("audioPublicationPending"))
         metadata.remove("audioPublicationPending")
+        if (staleMetadataCache) {
+            hideMetadataFromTreeCache(root as ManagedDownloadRootHandle.TreeRoot, entry.name)
+        }
         assertTrue(ManagedDownloadStorage.saveMetadata(context, promoted, metadata.toString()))
         ManagedDownloadStorage.snapshotCacheStore.invalidate()
         ManagedDownloadStorage.treeChildRegistry.clear()
@@ -650,6 +729,11 @@ class DownloadCorePublicationInstrumentedTest {
     @Test
     fun safPublicationReceiptSurvivesPendingCleanupAndMetadataSave() = runBlocking {
         withStorage(true) { assertPublicationReceiptSurvivesCleanup() }
+    }
+
+    @Test
+    fun safPublicationReceiptSurvivesMetadataSaveWithStaleNegativeCache() = runBlocking {
+        withStorage(true) { assertPublicationReceiptSurvivesCleanup(staleMetadataCache = true) }
     }
 
     @Test
@@ -938,7 +1022,7 @@ class DownloadCorePublicationInstrumentedTest {
         assertFormalRecoveryAfterReceiptReadFault(pending, promoted)
     }
 
-    private suspend fun Fixture.assertPublicationReceiptSurvivesCleanup() {
+    private suspend fun Fixture.assertPublicationReceiptSurvivesCleanup(staleMetadataCache: Boolean = false) {
         val pending = commit()
         prepareTaggedAudio(pending)
         val promoted = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, pending)).audio
@@ -951,6 +1035,10 @@ class DownloadCorePublicationInstrumentedTest {
         val metadata = JSONObject(requireNotNull(ManagedDownloadStorage.readText(context, metadataEntry.reference)))
         assertTrue("publication receipt must be sealed before temporary metadata is removed", metadata.has("audioPublicationReceipt"))
         metadata.remove("audioPublicationReceipt")
+        if (staleMetadataCache) {
+            val root = ManagedDownloadStorage.resolveRootBlocking(context) as ManagedDownloadRootHandle.TreeRoot
+            hideMetadataFromTreeCache(root, metadataEntry.name)
+        }
         assertTrue(ManagedDownloadStorage.saveMetadata(context, promoted, metadata.toString()))
         ManagedDownloadStorage.snapshotCacheStore.invalidate()
         ManagedDownloadStorage.treeChildRegistry.clear()
@@ -1140,6 +1228,7 @@ class DownloadCorePublicationInstrumentedTest {
         saf: Boolean,
         phase: String? = null,
         startupRecoveryLockHeld: Boolean = false,
+        fileName: String = "Memories of Kindness.mp3",
         block: suspend Fixture.() -> Unit
     ) {
         suspend fun runFixture() {
@@ -1200,7 +1289,7 @@ class DownloadCorePublicationInstrumentedTest {
                 } else {
                     UUID.randomUUID().toString()
                 }
-                Fixture(context, if (saf) treeUri else null, owner).block()
+                Fixture(context, if (saf) treeUri else null, owner, fileName).block()
             } finally {
                 ManagedDownloadStorage.primeSettings(previousDirectory, null)
                 ManagedDownloadStorage.snapshotCacheStore.invalidate()
@@ -1227,12 +1316,16 @@ class DownloadCorePublicationInstrumentedTest {
         }
     }
 
-    private class Fixture(val context: Context, private val treeUri: Uri?, val operationId: String) {
+    private class Fixture(
+        val context: Context,
+        private val treeUri: Uri?,
+        val operationId: String,
+        val fileName: String
+    ) {
         val song = SongItem(
             id = 1234L, name = "Memories of Kindness", artist = "鹿乃", album = "Memories of Kindness",
             albumId = 0L, durationMs = 1300L, coverUrl = null, sourceStableKey = "1234|netease|"
         )
-        val fileName = "Memories of Kindness.mp3"
         val payload = ByteArray(417 * 50).apply {
             repeat(50) { frame ->
                 byteArrayOf(0xff.toByte(), 0xfb.toByte(), 0x90.toByte(), 0x64).copyInto(this, frame * 417)
