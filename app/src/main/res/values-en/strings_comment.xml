@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Comments -->
+    <string name="comment_title">Comments</string>
+    <string name="comment_entry">View comments</string>
+    <string name="comment_total_format">%1$s total</string>
+    <string name="comment_loading">Loading comments…</string>
+    <string name="comment_empty">No comments yet</string>
+    <string name="comment_retry">Reload</string>
+    <string name="comment_refresh">Refresh comments</string>
+    <string name="comment_load_more">Load more comments</string>
+    <string name="comment_like_count_format">%1$s likes</string>
+    <string name="comment_reply_count_format">%1$s replies</string>
+    <string name="comment_error_network">Network error. Check your connection and try again</string>
+    <string name="comment_error_permission">Sign-in expired or no permission to view comments</string>
+    <string name="comment_error_not_found">The comment resource does not exist or was deleted</string>
+    <string name="comment_error_closed">Comments are disabled for this video</string>
+    <string name="comment_error_server">Server error. Please try again later</string>
+    <string name="comment_error_unavailable">The comment API is temporarily unavailable</string>
+    <string name="comment_error_unknown">Failed to load comments</string>
+    <string name="comment_anonymous_user">Anonymous</string>
+    <string name="comment_user_level_format">Lv%1$d</string>
+    <string name="comment_no_more">No more comments</string>
+</resources>

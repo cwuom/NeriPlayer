@@ -91,6 +91,13 @@ class BiliClient(
             "https://api.bilibili.com/x/polymer/web-space/seasons_series_list"
         private const val SERIES_ARCHIVES_URL = "https://api.bilibili.com/x/series/archives"
         private const val PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
+        private const val REPLY_URL = "https://api.bilibili.com/x/v2/reply"
+
+        /** 评论区 (x/v2/reply) 的对象类型: 视频 */
+        private const val REPLY_TYPE_VIDEO = 1
+
+        /** 评论区排序: 按热度 (网页端默认) */
+        private const val REPLY_SORT_BY_LIKE = 2
 
         /** 默认 UA (Web) */
         private const val DEFAULT_WEB_UA =
@@ -1758,6 +1765,38 @@ class BiliClient(
         }
 
         return pages
+    }
+
+    /**
+     * 获取视频评论 (评论区, 分页)。
+     *
+     * `x/v2/reply` 不需要 WBI 签名, 因此直接复用 [getJson] (自动附带 UA / Referer / Cookie)。
+     * 这里不抛业务码异常, 交由评论层的 Mapper 统一解析与分类。
+     *
+     * @param aid 视频 av 号 (评论 oid)
+     * @param page 页码, 从 1 开始
+     * @param pageSize 单页数量
+     * @param sort 排序方式, 默认按热度
+     */
+    suspend fun getVideoComments(
+        aid: Long,
+        page: Int = 1,
+        pageSize: Int = 20,
+        sort: Int = REPLY_SORT_BY_LIKE
+    ): JSONObject {
+        require(aid > 0L) { "aid must be positive" }
+        return withContext(Dispatchers.IO) {
+            getJson(
+                REPLY_URL,
+                mapOf(
+                    "type" to REPLY_TYPE_VIDEO.toString(),
+                    "oid" to aid.toString(),
+                    "pn" to page.coerceAtLeast(1).toString(),
+                    "ps" to pageSize.coerceIn(1, 49).toString(),
+                    "sort" to sort.toString()
+                )
+            )
+        }
     }
 
 }

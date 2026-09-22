@@ -1324,4 +1324,37 @@ class NeteaseClient {
         } catch (_: Exception) { }
         return resp
     }
+
+    /**
+     * 获取歌曲评论 (分页)。
+     *
+     * 复用本类已有的请求 / Cookie / 加解密链路, 不新建任何网络层。
+     * 使用明文 [CryptoMode.API] (与 getArtistDetail / getPlaylistDetail 一致)，
+     * 因此未登录时也能读取公开评论。
+     *
+     * @param songId 网易云歌曲 id
+     * @param limit 单页数量
+     * @param offset 偏移量, 从 0 开始
+     * @return 原始 JSON 文本, 由评论层的 Mapper 解析
+     */
+    suspend fun getSongCommentsCancellable(
+        songId: Long,
+        limit: Int = 20,
+        offset: Int = 0,
+    ): String {
+        require(songId > 0L) { "songId 必须为正数" }
+        val url = "https://music.163.com/api/v1/resource/comments/R_SO_4_$songId"
+        val params = mutableMapOf<String, Any>(
+            "offset" to offset.coerceAtLeast(0).toString(),
+            "limit" to limit.coerceIn(1, 100).toString(),
+            "total" to "true",
+        )
+        return requestCancellable(
+            url = url,
+            params = params,
+            mode = CryptoMode.API,
+            method = "POST",
+            usePersistedCookies = true,
+        )
+    }
 }

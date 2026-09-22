@@ -1,0 +1,182 @@
+package moe.ouom.neriplayer.core.comment.mapper
+
+import moe.ouom.neriplayer.core.comment.CommentApiException
+import moe.ouom.neriplayer.core.comment.model.CommentError
+import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+
+/**
+ * 网易云评论 JSON -> 统一评论模型 的单元测试。
+ */
+class NeteaseCommentMapperTest {
+
+    private fun parseError(json: String): CommentApiException {
+        try {
+            parseNeteaseCommentPage(json, page = 1, pageSize = 20)
+        } catch (error: CommentApiException) {
+            return error
+        }
+        fail("expected CommentApiException")
+        error("unreachable")
+    }
+
+    @Test
+    fun `parses comments, total and more flag`() {
+        val page = parseNeteaseCommentPage(
+            rawJson = """
+                {
+                  "code": 200,
+                  "total": 3,
+                  "more": true,
+                  "comments": [
+                    {
+                      "commentId": 111,
+                      "content": "好听",
+                      "likedCount": 12,
+                      "replyCount": 2,
+                      "time": 1700000000000,
+                      "user": {
+                        "userId": 9,
+                        "nickname": "小明",
+                        "avatarUrl": "https://p1.music.126.net/a.jpg",
+                        "level": 6
+                      }
+                    },
+                    {
+                      "commentId": 222,
+                      "content": "second",
+                      "likedCount": 0,
+                      "time": 1700000000001,
+                      "user": { "userId": 0, "nickname": "无名", "avatarUrl": "", "level": 0 }
+                    }
+                  ]
+                }
+            """.trimIndent(),
+            page = 1,
+            pageSize = 20
+        )
+
+        assertEquals(1, page.page)
+        assertEquals(20, page.pageSize)
+        assertEquals(3L, page.total)
+        assertTrue(page.hasMore)
+        assertEquals(2, page.comments.size)
+
+        val first = page.comments[0]
+        assertEquals("111", first.id)
+        assertEquals("9", first.userId)
+        assertEquals("小明", first.username)
+        assertEquals("https://p1.music.126.net/a.jpg", first.avatarUrl)
+        assertEquals("好听", first.content)
+        assertEquals(12L, first.likeCount)
+        assertEquals(2L, first.replyCount)
+        assertEquals(1700000000000L, first.createTime)
+        assertEquals(CommentPlatform.NETEASE, first.platform)
+        assertEquals(6, first.userLevel)
+
+        val second = page.comments[1]
+        assertEquals("222", second.id)
+        assertNull(second.userId)
+        assertNull(second.avatarUrl)
+        assertNull(second.replyCount)
+        assertNull(second.userLevel)
+        assertEquals(0L, second.likeCount)
+        assertEquals(1700000000001L, second.createTime)
+    }
+
+    @Test
+    fun `empty comment array produces an empty page`() {
+        val page = parseNeteaseCommentPage("""{"code":200,"comments":[]}""", page = 1, pageSize = 20)
+
+        assertTrue(page.comments.isEmpty())
+        assertNull(page.total)
+        assertEquals(false, page.hasMore)
+    }
+
+    @Test
+    fun `missing comment array does not crash`() {
+        val page = parseNeteaseCommentPage("""{"code":200}""", page = 1, pageSize = 20)
+
+        assertTrue(page.comments.isEmpty())
+        assertNull(page.total)
+        assertEquals(false, page.hasMore)
+    }
+
+    @Test
+    fun `hasMore falls back to total when the more flag is absent`() {
+        val first = parseNeteaseCommentPage(
+            """{"code":200,"total":100,"comments":[{"commentId":1}]}""",
+            page = 1,
+            pageSize = 20
+        )
+        assertTrue(first.hasMore)
+
+        val last = parseNeteaseCommentPage(
+            """{"code":200,"total":100,"comments":[{"commentId":1}]}""",
+            page = 5,
+            pageSize = 20
+        )
+        assertEquals(false, last.hasMore)
+    }
+
+    @Test
+    fun `hasMore falls back to page size when total is unknown`() {
+        val full = (1..20).joinToString(",") { """{"commentId":$it}""" }
+        val fullPage = parseNeteaseCommentPage(
+            """{"code":200,"comments":[$full]}""",
+            page = 1,
+            pageSize = 20
+        )
+        assertTrue(fullPage.hasMore)
+
+        val partialPage = parseNeteaseCommentPage(
+            """{"code":200,"comments":[{"commentId":1},{"commentId":2}]}""",
+            page = 1,
+            pageSize = 20
+        )
+        assertEquals(false, partialPage.hasMore)
+    }
+
+    @Test
+    fun `explicit more flag wins over total`() {
+        val page = parseNeteaseCommentPage(
+            """{"code":200,"total":1000,"more":false,"comments":[{"commentId":1}]}""",
+            page = 1,
+            pageSize = 20
+        )
+        assertEquals(false, page.hasMore)
+    }
+
+    @Test
+    fun `non 200 code throws with the mapped reason`() {
+        val permission = parseError("""{"code":403,"message":"forbidden"}""")
+        assertEquals(403, permission.code)
+        assertEquals(CommentError.PERMISSION, permission.reason)
+
+        val notFound = parseError("""{"code":404}""")
+        assertEquals(CommentError.NOT_FOUND, notFound.reason)
+
+        val server = parseError("""{"code":503}""")
+        assertEquals(CommentError.SERVER, server.reason)
+
+        val other = parseError("""{"code":250}""")
+        assertEquals(CommentError.API, other.reason)
+    }
+
+    @Test
+    fun `error code mapping table`() {
+        assertEquals(CommentError.PERMISSION, neteaseCommentError(301))
+        assertEquals(CommentError.PERMISSION, neteaseCommentError(401))
+        assertEquals(CommentError.PERMISSION, neteaseCommentError(403))
+        assertEquals(CommentError.PERMISSION, neteaseCommentError(-460))
+        assertEquals(CommentError.NOT_FOUND, neteaseCommentError(404))
+        assertEquals(CommentError.SERVER, neteaseCommentError(500))
+        assertEquals(CommentError.SERVER, neteaseCommentError(599))
+        assertEquals(CommentError.API, neteaseCommentError(0))
+        assertEquals(CommentError.API, neteaseCommentError(-1))
+    }
+}

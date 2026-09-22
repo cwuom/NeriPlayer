@@ -97,6 +97,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Comment
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
@@ -224,6 +225,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
+import moe.ouom.neriplayer.core.comment.resolveCommentSource
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.resolveLocalFirstLyricText
@@ -276,6 +278,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
+import moe.ouom.neriplayer.ui.component.comment.CommentSheet
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.playback.NowPlayingCoverPreviewDialog
@@ -1984,10 +1987,14 @@ fun NowPlayingScreen(
     var previousLyricsScreenState by remember { mutableStateOf(false) }
     var showCoverPreview by remember(playbackSourceSongKey) { mutableStateOf(false) }
     var showMoreOptions by remember { mutableStateOf(false) }
+    var showCommentSheet by remember { mutableStateOf(false) }
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
     var showQualitySwitchDialog by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // 评论来源只由「逻辑音源」决定 (平台 + 原始资源 id), 与最终播放地址无关 (§3/§49.2)
+    val commentSource = remember(currentSong) { resolveCommentSource(currentSong) }
 
     // Snackbar状态
     val snackbarHostState = remember { SnackbarHostState() }
@@ -2950,6 +2957,25 @@ fun NowPlayingScreen(
                                 )
                             }
 
+                            if (commentSource != null) {
+                                HapticIconButton(
+                                    onClick = { showCommentSheet = true },
+                                    modifier = Modifier.size(nowPlayingTopActionButtonSize)
+                                        .sharedBounds(
+                                            rememberSharedContentState(key = "btn_comment"),
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            enter = EnterTransition.None,
+                                            exit = ExitTransition.None,
+                                        ).zIndex(1f)
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.Comment,
+                                        contentDescription = stringResource(R.string.comment_entry),
+                                        modifier = Modifier.size(nowPlayingTopActionIconSize)
+                                    )
+                                }
+                            }
+
                             HapticIconButton(
                                 onClick = { showMoreOptions = true },
                                 modifier = Modifier.size(nowPlayingTopActionButtonSize)
@@ -3636,6 +3662,15 @@ fun NowPlayingScreen(
                     allowQueueReorder = playbackProgressSeekEnabled,
                     onDismissRequest = { showQueueSheet = false },
                     onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
+                )
+            }
+
+            // 评论弹窗 (只新增入口与弹窗, 不改动原有播放 UI)
+            if (showCommentSheet && commentSource != null) {
+                CommentSheet(
+                    source = commentSource,
+                    offlineMode = offlineMode,
+                    onDismissRequest = { showCommentSheet = false }
                 )
             }
 
