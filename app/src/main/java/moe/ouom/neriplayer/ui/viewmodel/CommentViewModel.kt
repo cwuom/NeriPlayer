@@ -182,6 +182,10 @@ internal class CommentViewModel : ViewModel() {
         )
     }
 
+    /**
+     * 按页码发起单次评论请求: 首页取消旧首屏任务并整体替换列表, 后续页取消旧翻页任务并按 id 去重合并, forceRefresh 透传给仓库。
+     * 结果返回时若 source 已不是当前 activeSource 则整体丢弃过期结果; 首页失败置 ERROR, 后续页失败只置 loadMoreError。
+     */
     private fun startLoad(
         source: CommentSource,
         page: Int,

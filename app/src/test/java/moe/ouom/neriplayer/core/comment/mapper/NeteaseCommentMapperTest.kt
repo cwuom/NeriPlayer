@@ -14,6 +14,9 @@ import org.junit.Test
  */
 class NeteaseCommentMapperTest {
 
+    /**
+     * 调用网易云解析器并断言抛出 CommentApiException，返回异常用于核对错误码与原因。
+     */
     private fun parseError(json: String): CommentApiException {
         try {
             parseNeteaseCommentPage(json, page = 1, pageSize = 20)
@@ -24,6 +27,9 @@ class NeteaseCommentMapperTest {
         error("unreachable")
     }
 
+    /**
+     * 正常响应：解析评论与 total/more，毫秒时间戳原样保留，userId/avatarUrl 为 0 或空时置 null。
+     */
     @Test
     fun `parses comments, total and more flag`() {
         val page = parseNeteaseCommentPage(
@@ -88,6 +94,10 @@ class NeteaseCommentMapperTest {
         assertEquals(1700000000001L, second.createTime)
     }
 
+    /**
+     * 回复数取值优先级：顶层 replyCount 优先（0 也算有效值），
+     * 缺失时回退 showFloorComment.replyCount，两处都没有则为 null。
+     */
     @Test
     fun `reply count falls back to showFloorComment`() {
         val page = parseNeteaseCommentPage(
@@ -117,6 +127,9 @@ class NeteaseCommentMapperTest {
         assertNull(page.comments[4].replyCount)
     }
 
+    /**
+     * comments 为空数组时得到空页：total 为 null、hasMore 为 false。
+     */
     @Test
     fun `empty comment array produces an empty page`() {
         val page = parseNeteaseCommentPage("""{"code":200,"comments":[]}""", page = 1, pageSize = 20)
@@ -126,6 +139,9 @@ class NeteaseCommentMapperTest {
         assertEquals(false, page.hasMore)
     }
 
+    /**
+     * 响应缺少 comments 字段时不崩溃，返回空页且 total 为 null、hasMore 为 false。
+     */
     @Test
     fun `missing comment array does not crash`() {
         val page = parseNeteaseCommentPage("""{"code":200}""", page = 1, pageSize = 20)
@@ -135,6 +151,9 @@ class NeteaseCommentMapperTest {
         assertEquals(false, page.hasMore)
     }
 
+    /**
+     * more 字段缺失时按 total 与翻页位置推断 hasMore：第 1 页为 true，第 5 页（已到末尾）为 false。
+     */
     @Test
     fun `hasMore falls back to total when the more flag is absent`() {
         val first = parseNeteaseCommentPage(
@@ -152,6 +171,9 @@ class NeteaseCommentMapperTest {
         assertEquals(false, last.hasMore)
     }
 
+    /**
+     * total 未知且 more 缺失时按本页条数推断 hasMore：满页为 true，不满页为 false。
+     */
     @Test
     fun `hasMore falls back to page size when total is unknown`() {
         val full = (1..20).joinToString(",") { """{"commentId":$it}""" }
@@ -170,6 +192,9 @@ class NeteaseCommentMapperTest {
         assertEquals(false, partialPage.hasMore)
     }
 
+    /**
+     * 显式 more 字段优先于 total（total=1000 但 more=false 时 hasMore 为 false）。
+     */
     @Test
     fun `explicit more flag wins over total`() {
         val page = parseNeteaseCommentPage(
@@ -180,6 +205,9 @@ class NeteaseCommentMapperTest {
         assertEquals(false, page.hasMore)
     }
 
+    /**
+     * code 非 200 时抛异常并映射原因：403→PERMISSION、404→NOT_FOUND、503→SERVER、250→API。
+     */
     @Test
     fun `non 200 code throws with the mapped reason`() {
         val permission = parseError("""{"code":403,"message":"forbidden"}""")
@@ -196,6 +224,9 @@ class NeteaseCommentMapperTest {
         assertEquals(CommentError.API, other.reason)
     }
 
+    /**
+     * 错误码映射表逐项校验，含 301/401/-460 也归为 PERMISSION、599 归为 SERVER。
+     */
     @Test
     fun `error code mapping table`() {
         assertEquals(CommentError.PERMISSION, neteaseCommentError(301))

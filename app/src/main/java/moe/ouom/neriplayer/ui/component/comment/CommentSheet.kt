@@ -81,6 +81,11 @@ internal fun CommentSheet(
     }
 }
 
+/**
+ * 弹层内部内容: 头部展示总数与刷新按钮, 再按 [ui] 的 status 分支渲染加载 / 空 / 错误 / 列表。
+ * 列表项 key 取 "platform:id", 触底且成功态、还有下一页、无进行中请求时自动触发 [onLoadMore],
+ * 页脚按需展示加载更多、翻页失败重试与「没有更多」。
+ */
 @Composable
 private fun CommentSheetContent(
     ui: CommentUiState,

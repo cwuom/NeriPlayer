@@ -47,6 +47,9 @@ class CommentViewModelTest {
         var delayMs: Long = 0L
         var secondaryIds = mutableListOf<String?>()
 
+        /**
+         * 假仓库实现：记录请求页码/强制刷新标志/次生 id，按页码返回预置数据，并可注入延迟与失败。
+         */
         override suspend fun loadComments(
             resourceId: Long,
             secondaryId: String?,
@@ -70,6 +73,9 @@ class CommentViewModelTest {
         }
     }
 
+    /**
+     * 构造测试用 SongComment：内容与用户名由 id 派生，其余可选字段留空。
+     */
     private fun comment(id: String, platform: CommentPlatform) = SongComment(
         id = id,
         userId = null,
@@ -83,6 +89,9 @@ class CommentViewModelTest {
         userLevel = null
     )
 
+    /**
+     * 按 id 列表构造 CommentPage，页大小统一用 COMMENT_PAGE_SIZE。
+     */
     private fun pageOf(
         page: Int,
         ids: List<String>,
@@ -97,9 +106,15 @@ class CommentViewModelTest {
         hasMore = hasMore
     )
 
+    /**
+     * 构造不带 secondaryId 的 CommentSource（平台 + 资源 id）。
+     */
     private fun source(platform: CommentPlatform, resourceId: Long) =
         CommentSource(platform = platform, resourceId = resourceId, secondaryId = null)
 
+    /**
+     * 测试脚手架：在 runTest 中把 Main 调度器替换为 StandardTestDispatcher，结束后恢复。
+     */
     private fun commentTest(body: suspend TestScope.() -> Unit): TestResult = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
@@ -109,6 +124,9 @@ class CommentViewModelTest {
         }
     }
 
+    /**
+     * 切换音源：加载首页后状态为 SUCCESS，评论、页码与来源正确，且只请求第 1 页。
+     */
     @Test
     fun `onSourceChanged loads the first page and exposes the comments`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -127,6 +145,9 @@ class CommentViewModelTest {
         assertEquals(listOf(1), repository.requestedPages)
     }
 
+    /**
+     * 同一首歌重复触发 onSourceChanged（重组 / 重新打开弹窗）时不会重复请求。
+     */
     @Test
     fun `repeated source change for the same song requests only once`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -146,6 +167,9 @@ class CommentViewModelTest {
         assertEquals(listOf(1), repository.requestedPages)
     }
 
+    /**
+     * 切换歌曲：旧请求在飞行途中被切走，最终只展示新歌评论且状态为 SUCCESS。
+     */
     @Test
     fun `switching songs loads the new song and never shows the old comments`() = commentTest {
         val netease = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -172,6 +196,9 @@ class CommentViewModelTest {
         assertEquals(CommentListStatus.SUCCESS, state.status)
     }
 
+    /**
+     * 加载下一页：追加第 2 页并按评论 id 去重，页码推进到 2，hasMore 与 isLoadingMore 复位。
+     */
     @Test
     fun `load more appends the next page and deduplicates by comment id`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -193,6 +220,9 @@ class CommentViewModelTest {
         assertEquals(listOf(1, 2), repository.requestedPages)
     }
 
+    /**
+     * 连续调用 loadMore 时仅第一个请求生效，飞行中的重复请求被忽略（页码只到 2）。
+     */
     @Test
     fun `load more is ignored while another page request is in flight`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -213,6 +243,9 @@ class CommentViewModelTest {
         assertEquals(listOf(1, 2), repository.requestedPages)
     }
 
+    /**
+     * 已到最后一页（hasMore=false）时 loadMore 不再发起请求。
+     */
     @Test
     fun `load more is ignored once the last page was reached`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -228,6 +261,9 @@ class CommentViewModelTest {
         assertEquals(listOf(1), repository.requestedPages)
     }
 
+    /**
+     * 刷新：用新数据替换首页，清除刷新态与 hasMore，且刷新请求带 forceRefresh=true。
+     */
     @Test
     fun `refresh replaces the first page data`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -250,6 +286,9 @@ class CommentViewModelTest {
         assertEquals(listOf(false, true), repository.forceRefreshes)
     }
 
+    /**
+     * 首页加载失败映射为 ERROR / NETWORK，retry 后恢复 SUCCESS 并清空错误。
+     */
     @Test
     fun `first page failure reports an error and retry recovers`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -274,6 +313,9 @@ class CommentViewModelTest {
         assertEquals(listOf("a"), state.comments.map { it.id })
     }
 
+    /**
+     * CommentApiException 保留其语义原因（12061 → CLOSED），不被降级为 UNKNOWN。
+     */
     @Test
     fun `api failure keeps its semantic reason`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.BILIBILI)
@@ -292,6 +334,9 @@ class CommentViewModelTest {
         assertEquals(CommentError.CLOSED, viewModel.uiState.value.error)
     }
 
+    /**
+     * 空结果状态为 EMPTY 且无错误，与失败态明确区分。
+     */
     @Test
     fun `an empty result is distinguished from a failure`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -308,6 +353,9 @@ class CommentViewModelTest {
         assertTrue(state.comments.isEmpty())
     }
 
+    /**
+     * 加载更多失败：保留已有评论与 SUCCESS 状态，仅设置 loadMoreError 页脚错误。
+     */
     @Test
     fun `load more failure keeps existing comments and exposes a footer error`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -329,6 +377,9 @@ class CommentViewModelTest {
         assertNull(state.error)
     }
 
+    /**
+     * 音源置为 null 时状态重置为 IDLE，并清空评论与来源。
+     */
     @Test
     fun `null source resets the state to idle`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.NETEASE)
@@ -347,6 +398,9 @@ class CommentViewModelTest {
         assertNull(state.source)
     }
 
+    /**
+     * Bilibili 来源的 bvid（secondaryId）被原样透传给仓库。
+     */
     @Test
     fun `bilibili source passes the bvid through to the repository`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.BILIBILI)
@@ -366,6 +420,9 @@ class CommentViewModelTest {
         assertEquals(listOf("BV1xx411c7mD"), repository.secondaryIds)
     }
 
+    /**
+     * mergeComments 按 id 去重并保持已有顺序，id 不同而内容相同的两条都保留。
+     */
     @Test
     fun `mergeComments deduplicates by comment id and keeps existing order`() {
         val existing = listOf(
@@ -388,6 +445,9 @@ class CommentViewModelTest {
         )
     }
 
+    /**
+     * isSameCommentSource 只比较平台与资源 id：secondaryId 不同视为同一来源，null 与 null 相等。
+     */
     @Test
     fun `isSameCommentSource compares platform and resource id only`() {
         assertTrue(
@@ -412,6 +472,9 @@ class CommentViewModelTest {
         assertFalse(isSameCommentSource(null, CommentSource(CommentPlatform.NETEASE, 1L)))
     }
 
+    /**
+     * toCommentError 映射语义原因：CommentApiException 用其自带 reason，IOException→NETWORK，其余→UNKNOWN。
+     */
     @Test
     fun `toCommentError maps failures to semantic reasons`() {
         assertEquals(

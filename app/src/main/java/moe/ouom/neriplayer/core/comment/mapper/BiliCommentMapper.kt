@@ -55,6 +55,10 @@ internal fun parseBiliCommentPage(
     )
 }
 
+/**
+ * 单条 B 站评论字段映射: 从 member/content 子对象取昵称、正文与等级, ctime 由秒换算为毫秒,
+ * 回复数优先 rcount、缺失时回退 count, 头像经 [normalizeBiliAvatarUrl] 归一化。
+ */
 private fun parseBiliComment(item: JSONObject): SongComment {
     val member = item.optJSONObject("member") ?: JSONObject()
     val content = item.optJSONObject("content") ?: JSONObject()

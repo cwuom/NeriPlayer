@@ -15,6 +15,9 @@ import org.junit.Test
  */
 class BiliCommentMapperTest {
 
+    /**
+     * 调用解析器并断言其抛出 CommentApiException，返回该异常以便核对错误码与映射原因。
+     */
     private fun parseError(json: String): CommentApiException {
         try {
             parseBiliCommentPage(JSONObject(json), page = 1, pageSize = 20)
@@ -25,6 +28,9 @@ class BiliCommentMapperTest {
         error("unreachable")
     }
 
+    /**
+     * 正常响应：解析回复列表与总数，秒级 ctime 归一化为毫秒，头像补协议头并追加尺寸参数。
+     */
     @Test
     fun `parses replies, total and normalises ctime to milliseconds`() {
         val page = parseBiliCommentPage(
@@ -99,6 +105,9 @@ class BiliCommentMapperTest {
         assertEquals("https://example.com/a.png", second.avatarUrl)
     }
 
+    /**
+     * data 为 null（视频无评论区）时返回空列表、total 为 null 且 hasMore 为 false。
+     */
     @Test
     fun `null data means the video has no comments`() {
         val page = parseBiliCommentPage(
@@ -112,6 +121,9 @@ class BiliCommentMapperTest {
         assertEquals(false, page.hasMore)
     }
 
+    /**
+     * 响应缺少 replies 字段时不崩溃，返回空列表且 total 为 0、hasMore 为 false。
+     */
     @Test
     fun `missing replies does not crash`() {
         val page = parseBiliCommentPage(
@@ -125,6 +137,9 @@ class BiliCommentMapperTest {
         assertEquals(false, page.hasMore)
     }
 
+    /**
+     * total 未知时按本页条数推断 hasMore：满页为 true，不满页为 false。
+     */
     @Test
     fun `hasMore falls back to page size when total is unknown`() {
         val replies = (1..20).joinToString(",") { """{"rpid":$it}""" }
@@ -143,6 +158,9 @@ class BiliCommentMapperTest {
         assertEquals(false, partialPage.hasMore)
     }
 
+    /**
+     * 评论关闭错误码 12061 映射为 CommentError.CLOSED，并保留原始 code。
+     */
     @Test
     fun `reply closed code is reported as closed`() {
         val error = parseError("""{"code":12061,"message":"评论区已关闭"}""")
@@ -151,6 +169,9 @@ class BiliCommentMapperTest {
         assertEquals(CommentError.CLOSED, error.reason)
     }
 
+    /**
+     * 非零 code 抛出异常并按表映射原因：-403→PERMISSION、-404→NOT_FOUND、500→SERVER、-1→API。
+     */
     @Test
     fun `non zero code throws with the mapped reason`() {
         assertEquals(CommentError.PERMISSION, parseError("""{"code":-403}""").reason)
@@ -159,6 +180,9 @@ class BiliCommentMapperTest {
         assertEquals(CommentError.API, parseError("""{"code":-1}""").reason)
     }
 
+    /**
+     * 错误码映射表逐项校验，含 -412 也归为 PERMISSION、0 归为 API。
+     */
     @Test
     fun `error code mapping table`() {
         assertEquals(CommentError.PERMISSION, biliCommentError(-403))

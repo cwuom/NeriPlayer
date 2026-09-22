@@ -52,6 +52,10 @@ internal fun parseNeteaseCommentPage(
     )
 }
 
+/**
+ * 单条网易云评论字段映射: 从 user 子对象取昵称/头像/等级, 正文与点赞数取顶层字段,
+ * 时间戳已是毫秒直接使用, 回复数交给 [resolveNeteaseReplyCount] 做防御性回退。
+ */
 private fun parseNeteaseComment(item: JSONObject): SongComment {
     val user = item.optJSONObject("user") ?: JSONObject()
     val createTime = item.optLong("time", 0L).takeIf { it > 0L }

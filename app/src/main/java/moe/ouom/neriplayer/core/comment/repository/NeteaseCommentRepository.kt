@@ -21,6 +21,10 @@ internal object NeteaseCommentRepository : CommentRepository {
 
     override val platform: CommentPlatform = CommentPlatform.NETEASE
 
+    /**
+     * 加载网易云某页评论: 非强制刷新时先查内存缓存, 未命中则按 `(page - 1) * pageSize`
+     * 换算 offset 调用 [AppContainer.neteaseClient] 的歌曲评论接口, 解析后写入缓存再返回。
+     */
     override suspend fun loadComments(
         resourceId: Long,
         secondaryId: String?,

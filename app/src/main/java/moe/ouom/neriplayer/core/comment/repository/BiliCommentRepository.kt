@@ -21,6 +21,10 @@ internal object BiliCommentRepository : CommentRepository {
 
     override val platform: CommentPlatform = CommentPlatform.BILIBILI
 
+    /**
+     * 加载 Bilibili 某页评论: 非强制刷新时先查内存缓存, 未命中则以 aid 为资源 id
+     * 调用 [AppContainer.biliClient] 的视频评论接口, 解析后写入缓存再返回。
+     */
     override suspend fun loadComments(
         resourceId: Long,
         secondaryId: String?,
