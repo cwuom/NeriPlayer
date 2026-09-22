@@ -6,6 +6,7 @@ import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeMetadataMerger
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -252,6 +253,78 @@ class NeriUserDataDatabaseMigrationTest {
                         "WHERE stable_key = '1|__local_files__|/song.flac'"
                 )
             )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateVersion15SqlCompletionAndCatalogIdentityIntoRestorableMetadata() {
+        helper.createDatabase(TEST_DATABASE_VERSION_15_IDENTITY_NAME, 15).apply {
+            listOf(
+                Triple(7123L, "completed.flac", "1"),
+                Triple(7124L, "unfinished.flac", "0"),
+                Triple(7125L, "unknown.flac", "NULL")
+            ).forEach { (songId, audioName, finalizedSql) ->
+                val stableKey = "$songId|__local_files__|/music/$audioName"
+                execSQL(
+                    """
+                    INSERT INTO downloaded_song_catalog (
+                      catalog_key, root_key, display_position, id, name, artist, album,
+                      file_path, file_size, download_time, stable_key,
+                      source_identity_album, source_channel_id, source_audio_id,
+                      source_sub_audio_id, source_playlist_context_id,
+                      user_lyric_offset_ms, duration_ms
+                    ) VALUES (
+                      ${sqlText("file:/music/$audioName")}, 'root', 0, $songId,
+                      'Song', 'Artist', 'Album', ${sqlText("/music/$audioName")}, 42, 0,
+                      ${sqlText(stableKey)}, '__local_files__', '99', 'BV1', '123', 'ctx',
+                      0, 1000
+                    )
+                    """.trimIndent()
+                )
+                execSQL(
+                    """
+                    INSERT INTO download_snapshot_metadata (
+                      root_key, audio_name, stable_key, user_lyric_offset_ms,
+                      duration_ms, download_finalized
+                    ) VALUES ('root', ${sqlText(audioName)}, ${sqlText(stableKey)}, 0, 1000,
+                      $finalizedSql)
+                    """.trimIndent()
+                )
+            }
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_15_IDENTITY_NAME,
+            16,
+            false,
+            NeriUserDataDatabase.MIGRATION_15_FINAL
+        )
+
+        try {
+            fun merged(songId: Long, audioName: String): JSONObject {
+                val stableKey = "$songId|__local_files__|/music/$audioName"
+                val payload = JSONObject(
+                    migrated.stringFor(
+                        "SELECT payload_json FROM legacy_download_upgrade_payload " +
+                            "WHERE stable_key = ${sqlText(stableKey)}"
+                    )
+                )
+                return LegacyDownloadUpgradeMetadataMerger.merge(payload, null, audioName)
+            }
+
+            val completed = merged(7123L, "completed.flac")
+            assertEquals(7123L, completed.getLong("songId"))
+            assertEquals("__local_files__", completed.getString("identityAlbum"))
+            assertEquals("99", completed.getString("channelId"))
+            assertEquals("BV1", completed.getString("audioId"))
+            assertEquals("123", completed.getString("subAudioId"))
+            assertEquals("ctx", completed.getString("playlistContextId"))
+            assertTrue(completed.getBoolean("downloadFinalized"))
+            assertFalse(merged(7124L, "unfinished.flac").getBoolean("downloadFinalized"))
+            assertFalse(merged(7125L, "unknown.flac").getBoolean("downloadFinalized"))
         } finally {
             migrated.close()
         }
@@ -785,6 +858,21 @@ class NeriUserDataDatabaseMigrationTest {
     }
 
     @Test
+    fun migrateFromVersion17AddsRecoveryCursorIndex() {
+        val name = "migration-v17-to-v18-${System.nanoTime()}"
+        helper.createDatabase(name, 17).close()
+        val migrated = helper.runMigrationsAndValidate(name, 18, true, NeriUserDataDatabase.MIGRATION_17_18)
+        try {
+            assertEquals(1L, migrated.longFor(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' " +
+                    "AND name = 'index_download_operation_recovery_cursor'"
+            ))
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
     fun migrateFromVersion16ToVersion17KeepsExistingOperationAndAddsBatchSchema() {
         val databaseName = "migration-v16-to-v17-${System.nanoTime()}"
         helper.createDatabase(databaseName, 16).apply {
@@ -833,7 +921,7 @@ class NeriUserDataDatabaseMigrationTest {
     }
 
     @Test
-    fun finalVersion17EmbedsBatchTablesWithoutCreatingAThirdDownloadTable() {
+    fun latestVersionEmbedsBatchTablesWithoutCreatingAThirdDownloadTable() {
         helper.createDatabase(TEST_DATABASE_VERSION_15_HOST_ADMISSION_NAME, 15).close()
 
         val migrated = helper.runMigrationsAndValidate(
@@ -841,7 +929,8 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.FINAL_DB_VERSION,
             false,
             NeriUserDataDatabase.MIGRATION_15_FINAL,
-            NeriUserDataDatabase.MIGRATION_16_17
+            NeriUserDataDatabase.MIGRATION_16_17,
+            NeriUserDataDatabase.MIGRATION_17_18
         )
 
         try {
@@ -906,7 +995,8 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.FINAL_DB_VERSION,
             false,
             NeriUserDataDatabase.MIGRATION_15_FINAL,
-            NeriUserDataDatabase.MIGRATION_16_17
+            NeriUserDataDatabase.MIGRATION_16_17,
+            NeriUserDataDatabase.MIGRATION_17_18
         )
 
         try {
@@ -1076,6 +1166,8 @@ class NeriUserDataDatabaseMigrationTest {
         const val TEST_DATABASE_WITH_DATA_NAME = "neri-user-data-migration-with-data-test"
         const val TEST_DATABASE_VERSION_14_NAME = "neri-user-data-migration-v14-test"
         const val TEST_DATABASE_VERSION_15_NAME = "neri-user-data-migration-v15-test"
+        const val TEST_DATABASE_VERSION_15_IDENTITY_NAME =
+            "neri-user-data-migration-v15-identity-test"
         const val TEST_DATABASE_VERSION_15_DROP_NAME = "neri-user-data-migration-v15-drop-test"
         const val TEST_DATABASE_VERSION_15_CONFLICT_NAME =
             "neri-user-data-migration-v15-conflict-test"

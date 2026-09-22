@@ -339,6 +339,15 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             String displayName = requestedDisplayName(extras);
             if (METADATA_NAME.equals(displayName)) {
                 metadataCreateCount.incrementAndGet();
+                try {
+                    // create 返回的 regular document 必须立即可读，已有内容不能被再次创建截断
+                    File file = metadataFile();
+                    if (!file.exists() && !file.createNewFile() && !file.isFile()) {
+                        throw new IOException("Unable to create metadata document");
+                    }
+                } catch (IOException error) {
+                    throw new IllegalStateException("Unable to create metadata fixture", error);
+                }
             }
             if ("Lyrics".equals(displayName)) {
                 lyricsDirectoryCreateCount.incrementAndGet();

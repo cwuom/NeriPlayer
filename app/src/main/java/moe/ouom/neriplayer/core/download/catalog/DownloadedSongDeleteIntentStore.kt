@@ -16,7 +16,8 @@ import org.json.JSONObject
 internal data class DownloadedSongDeleteIntent(
     val rootKey: String,
     val requestedAtMs: Long,
-    val targets: List<DownloadedSongDeleteTarget>
+    val targets: List<DownloadedSongDeleteTarget>,
+    val ownedReferences: Set<String> = emptySet()
 ) {
     fun resolveSongs(catalog: Collection<DownloadedSong>): List<DownloadedSong> {
         if (targets.isEmpty() || catalog.isEmpty()) return emptyList()
@@ -124,7 +125,13 @@ internal object PersistentDownloadedSongDeleteIntentStore {
                 DownloadedSongDeleteIntent(
                     rootKey = rootKey,
                     requestedAtMs = root.optLong("requestedAtMs", 0L),
-                    targets = targets
+                    targets = targets,
+                    ownedReferences = buildSet {
+                        val references = root.optJSONArray("ownedReferences") ?: return@buildSet
+                        for (index in 0 until references.length()) {
+                            references.optString(index).takeIf(String::isNotBlank)?.let(::add)
+                        }
+                    }
                 )
             }.onFailure { error ->
                 NPLogger.w(TAG, "读取全选删除恢复意图失败，保留文件等待下次重试: ${error.message}")
@@ -139,6 +146,24 @@ internal object PersistentDownloadedSongDeleteIntentStore {
                     NPLogger.w(TAG, "检查全选删除恢复意图失败，保守保留栅栏: ${error.message}")
                 }
                 .getOrDefault(true)
+        }
+    }
+
+    fun mergeOwnedReferences(context: Context, expectedRootKey: String, references: Set<String>): Boolean {
+        return synchronized(lock) {
+            runCatching {
+                val intent = read(context) ?: return@runCatching false
+                if (intent.rootKey != expectedRootKey) return@runCatching false
+                val merged = intent.ownedReferences + references
+                if (merged == intent.ownedReferences) return@runCatching true
+                val file = intentFile(context)
+                val payload = JSONObject(file.readText(Charsets.UTF_8))
+                payload.put("ownedReferences", JSONArray(merged.toList()))
+                file.writeTextAtomically(payload.toString())
+                true
+            }.onFailure { error ->
+                NPLogger.w(TAG, "持久化精确删除引用失败，保留文件等待重试: ${error.message}")
+            }.getOrDefault(false)
         }
     }
 

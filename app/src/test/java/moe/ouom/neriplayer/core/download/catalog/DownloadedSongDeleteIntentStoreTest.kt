@@ -102,6 +102,33 @@ class DownloadedSongDeleteIntentStoreTest {
         return context
     }
 
+    @Test
+    fun `optional owned references extend atomically without replacing targets or timestamp`() {
+        val context = testContext()
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.begin(context, "root", listOf(
+            downloadedSong(1L, "/library/a.mp3", "key")
+        )))
+        val before = requireNotNull(PersistentDownloadedSongDeleteIntentStore.read(context))
+        assertTrue(before.ownedReferences.isEmpty())
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, "root", setOf("opaque-cover")))
+        assertFalse(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, "other", setOf("foreign")))
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, "root", setOf("opaque-lyric")))
+        val after = requireNotNull(PersistentDownloadedSongDeleteIntentStore.read(context))
+        assertEquals(before.targets, after.targets)
+        assertEquals(before.requestedAtMs, after.requestedAtMs)
+        assertEquals(setOf("opaque-cover", "opaque-lyric"), after.ownedReferences)
+        val file = File(context.filesDir, "downloaded_song_delete_intent_v1.json")
+        file.writeText(file.readText().replace("\"root\"", "\"other\""))
+        assertFalse(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, "root", setOf("new")))
+    }
+
+    @Test
+    fun `unreadable intent refuses reference expansion`() {
+        val context = testContext()
+        File(context.filesDir, "downloaded_song_delete_intent_v1.json").mkdir()
+        assertFalse(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, "root", setOf("owned")))
+    }
+
     private fun downloadedSong(
         id: Long,
         filePath: String,

@@ -594,6 +594,9 @@ internal suspend fun GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog
         return false
     }
     val requestedReferences = plan.requestedReferences
+    if (!PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
+            appContext, ManagedDownloadStorage.currentSnapshotCacheKey(appContext), requestedReferences
+        )) return false
     val deletedReferences = try {
         if (requestedReferences.isEmpty()) {
             emptySet()

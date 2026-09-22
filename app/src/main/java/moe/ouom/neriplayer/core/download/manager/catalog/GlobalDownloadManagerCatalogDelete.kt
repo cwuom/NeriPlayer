@@ -764,7 +764,11 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
         )
         val fullLibraryDeletePlan = if (deletesEntireCatalog) {
             try {
-                managedDownloadDeletePlanner.buildFullLibraryDeletePlan(appContext)
+                managedDownloadDeletePlanner.buildFullLibraryDeletePlan(appContext, targetSongs).takeIf { plan ->
+                    plan.snapshotComplete && PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
+                        appContext, ManagedDownloadStorage.currentSnapshotCacheKey(appContext), plan.requestedReferences
+                    )
+                }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Throwable) {
@@ -848,7 +852,11 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
             // 收尾协程可能在第一轮快照后刚好写出 pending。只做一次有界复查，
             // 在清空栅栏内把这类尾部引用一并删除，避免留下永久 .pending
             val verificationPlan = try {
-                managedDownloadDeletePlanner.buildFullLibraryDeletePlan(appContext)
+                managedDownloadDeletePlanner.buildFullLibraryDeletePlan(appContext, targetSongs).takeIf { plan ->
+                    plan.snapshotComplete && PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
+                        appContext, ManagedDownloadStorage.currentSnapshotCacheKey(appContext), plan.requestedReferences
+                    )
+                }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Throwable) {

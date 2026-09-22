@@ -1,12 +1,25 @@
 package moe.ouom.neriplayer.data.local.database.store
 
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.isAcceptedDownloadedAudioEmbeddingState
 import org.json.JSONObject
 
 /**
  * 合并 v15 下载投影和托管 root metadata, 让迁移只负责一次性 bootstrap
  */
 internal object LegacyDownloadUpgradeMetadataMerger {
+    private val legacyIdentityAliases = mapOf(
+        "songId" to listOf("id"),
+        "identityAlbum" to listOf("sourceIdentityAlbum", "source_identity_album"),
+        "channelId" to listOf("sourceChannelId", "source_channel_id"),
+        "audioId" to listOf("sourceAudioId", "source_audio_id"),
+        "subAudioId" to listOf("sourceSubAudioId", "source_sub_audio_id"),
+        "playlistContextId" to listOf(
+            "sourcePlaylistContextId",
+            "source_playlist_context_id"
+        )
+    )
+
     private val metadataFields = setOf(
         "stableKey",
         "songId",
@@ -64,6 +77,11 @@ internal object LegacyDownloadUpgradeMetadataMerger {
         val payloadMetadata = payloadMetadata(payload)
         val result = JSONObject()
         copyNonNullValues(
+            source = legacyPayloadFallback(payload),
+            target = result,
+            includeUnknown = false
+        )
+        copyNonNullValues(
             source = payloadMetadata,
             target = result,
             includeUnknown = payloadMetadata !== payload
@@ -105,29 +123,40 @@ internal object LegacyDownloadUpgradeMetadataMerger {
                 result.has("metadataEmbeddingState") && !result.isNull("metadataEmbeddingState")
             }
         )
-        val declaredDownloadFinalized = result.optBoolean("downloadFinalized").takeIf {
-            result.has("downloadFinalized") && !result.isNull("downloadFinalized")
-        }
+        val hasDeclaredDownloadFinalized = result.has("downloadFinalized") &&
+            !result.isNull("downloadFinalized")
+        val declaredDownloadFinalized = exactLegacyBoolean(result, "downloadFinalized")
         val hasLegacyCompletionEvidence = declaredDownloadFinalized == true ||
             downloadTimeMs != null
-        if (
+        when {
             hasLegacyCompletionEvidence &&
-            (embeddingState == null ||
-                embeddingState == DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED)
-        ) {
-            result.put(
-                "metadataEmbeddingState",
-                DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED.name
-            )
-            result.put("downloadFinalized", true)
-        } else if (embeddingState == null) {
-            result.put(
-                "metadataEmbeddingState",
-                DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED.name
-            )
-            result.put("downloadFinalized", false)
-        } else if (!result.has("downloadFinalized") || result.isNull("downloadFinalized")) {
-            result.put("downloadFinalized", true)
+                (embeddingState == null ||
+                    embeddingState == DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED) -> {
+                result.put(
+                    "metadataEmbeddingState",
+                    DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED.name
+                )
+                result.put("downloadFinalized", true)
+            }
+            isAcceptedDownloadedAudioEmbeddingState(embeddingState) -> {
+                result.put(
+                    "downloadFinalized",
+                    if (hasDeclaredDownloadFinalized) {
+                        declaredDownloadFinalized ?: false
+                    } else {
+                        true
+                    }
+                )
+            }
+            else -> {
+                if (embeddingState == null) {
+                    result.put(
+                        "metadataEmbeddingState",
+                        DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED.name
+                    )
+                }
+                result.put("downloadFinalized", false)
+            }
         }
 
         val restorable = mergeRestorableMetadata(
@@ -146,6 +175,41 @@ internal object LegacyDownloadUpgradeMetadataMerger {
                 .takeIf(String::isNotBlank)
                 ?.let { runCatching { JSONObject(it) }.getOrNull() }
         return nested ?: payload
+    }
+
+    private fun legacyPayloadFallback(payload: JSONObject): JSONObject {
+        val fallback = JSONObject()
+        copyNonNullValues(
+            source = payload,
+            target = fallback,
+            includeUnknown = false
+        )
+        val catalog = payload.optJSONObject("downloaded_song_catalog")
+        legacyIdentityAliases.forEach { (metadataKey, legacyKeys) ->
+            val value = legacyKeys.asSequence()
+                .flatMap { legacyKey -> sequenceOf(payload, catalog).map { it to legacyKey } }
+                .mapNotNull { (source, key) ->
+                    source?.takeIf { it.has(key) && !it.isNull(key) }?.get(key)
+                }
+                .firstOrNull()
+            if (value != null && (!fallback.has(metadataKey) || fallback.isNull(metadataKey))) {
+                fallback.put(metadataKey, value)
+            }
+        }
+        return fallback
+    }
+
+    private fun exactLegacyBoolean(source: JSONObject, key: String): Boolean? {
+        if (!source.has(key) || source.isNull(key)) return null
+        return when (val value = source.get(key)) {
+            is Boolean -> value
+            is Byte, is Short, is Int, is Long -> when (value.toLong()) {
+                0L -> false
+                1L -> true
+                else -> null
+            }
+            else -> null
+        }
     }
 
     private fun copyNonNullValues(

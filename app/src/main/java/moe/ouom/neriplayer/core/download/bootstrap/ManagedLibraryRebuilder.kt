@@ -16,6 +16,10 @@ internal object ManagedLibraryRebuilder {
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         allowIncompleteRootPreview: Boolean = false
     ): List<ManagedLibraryRebuildItem> {
+        // 裸 document URI 与 tree URI 可指向同一文档，别名索引每份快照只构建一次
+        val isKnownReference: (String) -> Boolean = { reference ->
+            reference in snapshot.knownReferences || snapshot.referenceIdentityIndex.resolve(reference) != null
+        }
         return snapshot.audioEntries.mapNotNull { audio ->
             val metadata = ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
             if (metadata?.audioPublicationPending == true) {
@@ -31,7 +35,7 @@ internal object ManagedLibraryRebuilder {
             ) {
                 return@mapNotNull null
             }
-            if (!hasKnownFinalizedSidecars(snapshot, metadata)) {
+            if (!hasKnownFinalizedSidecars(snapshot, metadata, isKnownReference)) {
                 return@mapNotNull null
             }
             ManagedLibraryRebuildItem(
@@ -57,13 +61,14 @@ internal object ManagedLibraryRebuilder {
     /** 侧载目录完整时，缺失的受要求资源不能继续作为已下载成品展示 */
     private fun hasKnownFinalizedSidecars(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        isKnownReference: (String) -> Boolean
     ): Boolean {
         if (metadata == null || !snapshot.sidecarEntriesComplete) {
             return true
         }
         return hasRequiredReference(
-            snapshot = snapshot,
+            isKnownReference = isKnownReference,
             reference = metadata.coverPath,
             required = hasText(
                 metadata.coverUrl,
@@ -71,18 +76,18 @@ internal object ManagedLibraryRebuilder {
                 metadata.originalCoverUrl
             )
         ) && hasRequiredReference(
-            snapshot = snapshot,
+            isKnownReference = isKnownReference,
             reference = metadata.lyricPath,
             required = hasText(metadata.matchedLyric, metadata.originalLyric)
         ) && hasRequiredReference(
-            snapshot = snapshot,
+            isKnownReference = isKnownReference,
             reference = metadata.translatedLyricPath,
             required = hasText(
                 metadata.matchedTranslatedLyric,
                 metadata.originalTranslatedLyric
             )
         ) && hasRequiredReference(
-            snapshot = snapshot,
+            isKnownReference = isKnownReference,
             reference = metadata.romanizedLyricPath,
             required = hasText(
                 metadata.matchedRomanizedLyric,
@@ -92,7 +97,7 @@ internal object ManagedLibraryRebuilder {
     }
 
     private fun hasRequiredReference(
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        isKnownReference: (String) -> Boolean,
         reference: String?,
         required: Boolean
     ): Boolean {
@@ -100,12 +105,7 @@ internal object ManagedLibraryRebuilder {
         if (normalizedReference == null) {
             return !required
         }
-        return normalizedReference in snapshot.knownReferences ||
-            snapshot.coverEntriesByName.values.any { entry ->
-                entry.reference == normalizedReference || entry.mediaUri == normalizedReference
-            } || snapshot.lyricEntriesByName.values.any { entry ->
-                entry.reference == normalizedReference || entry.mediaUri == normalizedReference
-            }
+        return isKnownReference(normalizedReference)
     }
 
     private fun hasText(vararg values: String?): Boolean {

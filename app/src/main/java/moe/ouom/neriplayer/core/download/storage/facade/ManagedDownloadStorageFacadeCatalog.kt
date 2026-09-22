@@ -1092,7 +1092,8 @@ private fun ManagedDownloadStorage.rebuildDownloadLibrarySnapshotBlocking(
     }
     parseDownloadedAudioMetadataBatch(
         context = context,
-        entries = metadataEntriesToParse
+        entries = metadataEntriesToParse,
+        requireAvailable = true
     ).forEach { (audioName, metadata) ->
         if (metadata != null) {
             metadataByAudioName[audioName] = metadata
@@ -1136,7 +1137,8 @@ private fun ManagedDownloadStorage.rebuildDownloadLibrarySnapshotBlocking(
         }
         parseDownloadedAudioMetadataBatch(
             context = context,
-            entries = pendingMetadataEntriesToParse
+            entries = pendingMetadataEntriesToParse,
+            requireAvailable = true
         ).forEach { (audioName, metadata) ->
             if (metadata != null) {
                 put(audioName, metadata)

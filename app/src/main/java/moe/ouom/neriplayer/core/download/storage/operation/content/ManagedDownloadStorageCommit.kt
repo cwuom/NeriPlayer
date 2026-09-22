@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALID
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
+import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
@@ -147,7 +148,7 @@ internal fun ManagedDownloadStorage.deletePendingAudioMetadataBlocking(
             if (!refresh.isComplete) {
                 return false
             }
-            refresh.children.map(ManagedDownloadStoredEntryMapper::fromTreeChild)
+            pendingMetadataCleanupRootEntries(refresh.children, audioName)
         }
     }
     val temporary = readTemporaryDirectoryEntries(
@@ -188,6 +189,20 @@ internal fun ManagedDownloadStorage.deletePendingAudioMetadataBlocking(
     }
     return deletedReferences.containsAll(references)
 }
+
+internal fun pendingMetadataCleanupRootEntries(
+    children: Collection<QueriedTreeChild>,
+    audioName: String
+): List<StoredEntry> = children.asSequence()
+    .filter { child ->
+        !child.isDirectory && (
+            ManagedDownloadPendingAudioWriteNames.isArtifactName(child.name) ||
+                (child.name.contains(".pending", ignoreCase = true) &&
+                    ManagedDownloadTreeNaming.isPendingMetadataName(child.name, audioName))
+            )
+    }
+    .map(ManagedDownloadStoredEntryMapper::fromTreeChild)
+    .toList()
 
 internal suspend fun ManagedDownloadStorage.saveAudioFromTempBlocking(
     context: Context,

@@ -1,9 +1,12 @@
 package moe.ouom.neriplayer.core.download.storage.tree.cache
 
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
-internal class ManagedDownloadTreeChildCache {
+internal class ManagedDownloadTreeChildCache(
+    private val maxCachedEntries: Int = MAX_CACHED_CHILDREN_TOTAL
+) {
     private val reservationLeaseMs = 10 * 60 * 1000L
     private val namesByParent = ConcurrentHashMap<String, CachedChildNames>()
     private val childrenByParent = ConcurrentHashMap<String, CachedTreeChildren>()
@@ -105,6 +108,7 @@ internal class ManagedDownloadTreeChildCache {
         isComplete: Boolean
     ): Set<String> {
         synchronized(mutationLock) {
+            reservationsByParent.keys.toList().forEach { pruneExpiredReservationsLocked(it, refreshedAtMs) }
             val refreshedNameSet = children.mapTo(hashSetOf(), QueriedTreeChild::name)
             if (isComplete) {
                 discardMaterializedReservationsLocked(cacheKey, refreshedNameSet)
@@ -156,6 +160,7 @@ internal class ManagedDownloadTreeChildCache {
                 ?: 0
             val totalAfterRefresh = cachedChildrenCount.get() - previousSize + effectiveChildren.size
             if (!canCache(
+                    cacheKey = cacheKey,
                     childCount = effectiveChildren.size,
                     nameCount = effectiveNames.size,
                     totalChildren = totalAfterRefresh
@@ -180,7 +185,6 @@ internal class ManagedDownloadTreeChildCache {
             }
 
             oversizedParents.remove(cacheKey)
-            ensureParentCapacityLocked(cacheKey)
             replaceChildrenLocked(
                 cacheKey = cacheKey,
                 children = effectiveChildren,
@@ -215,15 +219,31 @@ internal class ManagedDownloadTreeChildCache {
         isReservation: Boolean
     ) {
         synchronized(mutationLock) {
-            if (cacheKey in oversizedParents) return
-            namesByParent[cacheKey]?.let { cached ->
-                if (childName !in cached.names &&
-                    cached.names.size >= MAX_CACHED_CHILDREN_PER_PARENT
+            reservationsByParent.keys.toList().forEach { pruneExpiredReservationsLocked(it, refreshedAtMs) }
+            val nextNames = (namesByParent[cacheKey]?.names?.size ?: 0) +
+                if (childName in namesByParent[cacheKey]?.names.orEmpty()) 0 else 1
+            if (!canCache(
+                    cacheKey = cacheKey,
+                    childCount = childrenByParent[cacheKey]?.childrenByName?.size ?: 0,
+                    nameCount = nextNames,
+                    totalChildren = cachedChildrenCount.get()
+                )
+            ) {
+                disableCacheLocked(cacheKey)
+                markOversizedParentLocked(cacheKey)
+                val reservedNames = namesByParent[cacheKey]?.names.orEmpty()
+                if (isReservation && !canCache(
+                        cacheKey = cacheKey,
+                        childCount = 0,
+                        nameCount = reservedNames.size + if (childName in reservedNames) 0 else 1,
+                        totalChildren = cachedChildrenCount.get()
+                    )
                 ) {
-                    disableCacheLocked(cacheKey)
-                    markOversizedParentLocked(cacheKey)
-                    return
+                    throw IOException("SAF name reservation capacity exhausted")
                 }
+            }
+            if (!isReservation && cacheKey in oversizedParents) return
+            namesByParent[cacheKey]?.let { cached ->
                 cached.names += childName
                 cached.refreshedAtMs = refreshedAtMs
                 if (isReservation) {
@@ -235,7 +255,6 @@ internal class ManagedDownloadTreeChildCache {
                 }
                 return
             }
-            ensureParentCapacityLocked(cacheKey)
             if (isReservation) {
                 reservationsByParent
                     .getOrPut(cacheKey) { linkedMapOf() }[childName] = refreshedAtMs
@@ -254,13 +273,16 @@ internal class ManagedDownloadTreeChildCache {
         refreshedAtMs: Long
     ) {
         synchronized(mutationLock) {
-            if (cacheKey in oversizedParents) return
+            reservationsByParent.keys.toList().forEach { pruneExpiredReservationsLocked(it, refreshedAtMs) }
             reservationsByParent[cacheKey]?.remove(child.name)
+            if (cacheKey in oversizedParents) return
             var cached = childrenByParent[cacheKey]
             if (cached == null) {
                 if (!canCache(
+                        cacheKey = cacheKey,
                         childCount = 1,
-                        nameCount = (namesByParent[cacheKey]?.names?.size ?: 0) + 1,
+                        nameCount = (namesByParent[cacheKey]?.names?.size ?: 0) +
+                            if (child.name in namesByParent[cacheKey]?.names.orEmpty()) 0 else 1,
                         totalChildren = cachedChildrenCount.get() + 1
                     )
                 ) {
@@ -268,7 +290,6 @@ internal class ManagedDownloadTreeChildCache {
                     markOversizedParentLocked(cacheKey)
                     return
                 }
-                ensureParentCapacityLocked(cacheKey)
                 val names = namesByParent[cacheKey]
                 if (names == null) {
                     namesByParent[cacheKey] = CachedChildNames(
@@ -301,7 +322,7 @@ internal class ManagedDownloadTreeChildCache {
             val nextChildCount = previousChildCount - replacedReferences.size + 1
             val names = namesByParent[cacheKey]
             val existingNames = names?.names
-            val staleNameCount = existingNames?.count { it in staleNames } ?: 0
+            val staleNameCount = staleNames.count { it in existingNames.orEmpty() }
             val nextNameCount = if (existingNames == null) {
                 0
             } else {
@@ -311,6 +332,7 @@ internal class ManagedDownloadTreeChildCache {
             val nextTotalCount = cachedChildrenCount.get() - cached.childrenByName.size +
                 nextChildCount
             if (!canCache(
+                    cacheKey = cacheKey,
                     childCount = nextChildCount,
                     nameCount = nextNameCount,
                     totalChildren = nextTotalCount
@@ -328,13 +350,6 @@ internal class ManagedDownloadTreeChildCache {
             }
             names?.let {
                 staleNames.forEach(names.names::remove)
-                if (child.name !in names.names &&
-                    names.names.size >= MAX_CACHED_CHILDREN_PER_PARENT
-                ) {
-                    disableCacheLocked(cacheKey)
-                    markOversizedParentLocked(cacheKey)
-                    return
-                }
                 names.names += child.name
             }
             cached.childrenByName[child.name] = child
@@ -392,13 +407,28 @@ internal class ManagedDownloadTreeChildCache {
     }
 
     private fun canCache(
+        cacheKey: String,
         childCount: Int,
         nameCount: Int,
         totalChildren: Int
     ): Boolean {
-        return childCount <= MAX_CACHED_CHILDREN_PER_PARENT &&
-            nameCount <= MAX_CACHED_CHILDREN_PER_PARENT &&
-            totalChildren <= MAX_CACHED_CHILDREN_TOTAL
+        if (childCount > maxCachedEntries || nameCount > maxCachedEntries) return false
+        var projectedChildren = totalChildren
+        while (true) {
+            val keys = namesByParent.keys + childrenByParent.keys
+            val projectedNames = namesByParent.entries.sumOf { (key, names) ->
+                if (key == cacheKey) 0 else names.names.size
+            } + nameCount
+            if (projectedChildren <= maxCachedEntries && projectedNames <= maxCachedEntries &&
+                (cacheKey in keys || keys.size < MAX_CACHED_PARENT_COUNT)) return true
+            // 活跃名称预留不能随可重建快照一起淘汰，否则并发提交可能重用同名
+            val victim = keys.filter { it != cacheKey && reservationsByParent[it].isNullOrEmpty() }
+                .minByOrNull { childrenByParent[it]?.refreshedAtMs ?: namesByParent[it]?.refreshedAtMs ?: 0L }
+                ?: return false
+            projectedChildren -= childrenByParent[victim]?.childrenByName?.size ?: 0
+            disableCacheLocked(victim)
+            oversizedParents.remove(victim)
+        }
     }
 
     private fun replaceChildrenLocked(
@@ -426,7 +456,11 @@ internal class ManagedDownloadTreeChildCache {
             cachedChildrenCount.addAndGet(-removed.childrenByName.size)
         }
         namesByParent.remove(cacheKey)
-        reservationsByParent.remove(cacheKey)
+        reservationsByParent[cacheKey]?.takeIf { it.isNotEmpty() }?.let { reservations ->
+            namesByParent[cacheKey] = CachedChildNames(
+                reservations.keys, reservations.values.maxOrNull() ?: 0L, false
+            )
+        }
     }
 
     private fun pruneExpiredReservationsLocked(cacheKey: String, nowMs: Long) {
@@ -466,22 +500,8 @@ internal class ManagedDownloadTreeChildCache {
         }
     }
 
-    private fun ensureParentCapacityLocked(cacheKey: String) {
-        if (namesByParent.containsKey(cacheKey) || childrenByParent.containsKey(cacheKey)) return
-        while (true) {
-            val keys = HashSet<String>(namesByParent.keys).apply {
-                addAll(childrenByParent.keys)
-            }
-            if (keys.size < MAX_CACHED_PARENT_COUNT) return
-            val victim = keys.firstOrNull { it != cacheKey } ?: return
-            disableCacheLocked(victim)
-            oversizedParents.remove(victim)
-        }
-    }
-
     companion object {
         const val MAX_CACHED_PARENT_COUNT = 256
-        const val MAX_CACHED_CHILDREN_PER_PARENT = 8_192
         const val MAX_CACHED_CHILDREN_TOTAL = 65_536
 
         fun mergeNamesAfterRefresh(

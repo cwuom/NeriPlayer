@@ -147,12 +147,7 @@ class LocalMediaCompanionRollbackTest {
             val transaction = LocalMediaCompanionTransaction(context, audio.absolutePath)
             transaction.initializeSidecarsOnly()
             transaction.beforeWrite(lyric.absolutePath, "new lyric".toByteArray())
-            assertTrue(
-                LocalMediaSupport.writeBytesFileAtomically(
-                    lyric,
-                    "new lyric".toByteArray()
-                )
-            )
+            transaction.publishPreparedFile(lyric.absolutePath)
             val record = requireNotNull(transaction.record)
 
             LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
@@ -218,6 +213,23 @@ class LocalMediaCompanionRollbackTest {
             assertEquals("old first", first.readText())
             assertEquals("external owner", conflicting.readText())
             assertTrue(record.journalFile.exists())
+        }
+    }
+
+    @Test
+    fun partialCompanionWriteRestoresOriginalBeforeAfterWrite() = runBlocking {
+        for (partial in listOf("", "new", "new lyric")) {
+            withFixture { context, directory ->
+                val audio = File(directory, "partial.wav").apply { writeText("audio") }
+                val lyric = File(directory, "partial.lrc").apply { writeText("old lyric") }
+                val transaction = LocalMediaCompanionTransaction(context, audio.absolutePath)
+                transaction.beforeWrite(lyric.absolutePath, "new lyric".toByteArray())
+                lyric.writeText(partial)
+                LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+                assertEquals("partial=$partial", 1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+                assertEquals("old lyric", lyric.readText())
+                assertEquals(0, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+            }
         }
     }
 

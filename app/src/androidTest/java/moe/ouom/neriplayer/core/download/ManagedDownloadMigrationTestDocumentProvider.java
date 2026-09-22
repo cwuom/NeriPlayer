@@ -40,6 +40,13 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     public static final String REFERENCE_QUERY_FAULT = "test:referenceQueryFault";
     public static final String PUBLICATION_READ_FAULT = "test:publicationReadFault";
     public static final String PUBLICATION_MISSING_READ = "test:publicationMissingRead";
+    public static final String METADATA_READ_FAULT = "test:metadataReadFault";
+    public static final String LAST_QUERIED_CHILD = "test:lastQueriedChild";
+    private static volatile String lastQueriedChildId;
+    private static volatile String metadataReadFaultId;
+    private static volatile String metadataReadFaultKind;
+    private static final AtomicInteger metadataReadFaultRemaining = new AtomicInteger();
+    private static final AtomicInteger metadataReadFaultCount = new AtomicInteger();
     public static final String PUBLICATION_CHILDREN_FAULT = "test:publicationChildrenFault";
     public static final String PUBLICATION_WRITE_GATE = "test:publicationWriteGate";
     public static final String AUTO_RENAME_NEXT_COLLISION = "test:autoRenameNextCollision";
@@ -63,6 +70,8 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     private static volatile String queryFault;
     private static volatile CountDownLatch queryGate = new CountDownLatch(0);
     private static final AtomicInteger childQueryCount = new AtomicInteger();
+    private static final AtomicInteger allChildQueryCount = new AtomicInteger();
+    private static final AtomicInteger deleteCallCount = new AtomicInteger();
     private static final AtomicInteger documentQueryCount = new AtomicInteger();
     private static final AtomicInteger rootDocumentQueryCount = new AtomicInteger();
     private static final AtomicInteger documentPathCount = new AtomicInteger();
@@ -102,6 +111,7 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         MatrixCursor cursor = new MatrixCursor(columns);
         String documentId = documentId(uri);
         if (isChildDocumentsUri(uri)) {
+            allChildQueryCount.incrementAndGet();
             synchronized (NODES) {
                 if (documentId.equals(publicationChildrenFaultId)) {
                     publicationChildrenFaultId = null;
@@ -175,6 +185,17 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             }
         }
         synchronized (NODES) {
+            if (!mode.contains("w") && node.id.equals(metadataReadFaultId) &&
+                    metadataReadFaultRemaining.getAndUpdate(value -> Math.max(0, value - 1)) > 0) {
+                metadataReadFaultCount.incrementAndGet();
+                if ("permission".equals(metadataReadFaultKind)) {
+                    throw new SecurityException("fixture exact metadata permission denied");
+                }
+                if ("not-found".equals(metadataReadFaultKind)) {
+                    throw new FileNotFoundException("fixture temporarily cannot open metadata");
+                }
+                throw new IllegalStateException("fixture exact metadata provider failure");
+            }
             if (!mode.contains("w") && node.id.equals(publicationMissingReadId)) {
                 publicationMissingReadId = null;
                 publicationMissingReadCount.incrementAndGet();
@@ -218,6 +239,10 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         if (node == null || values == null) {
             return 0;
         }
+        String displayName = values.getAsString(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+        if (displayName != null) {
+            node.displayName = displayName;
+        }
         Long lastModified = values.getAsLong(
             DocumentsContract.Document.COLUMN_LAST_MODIFIED
         );
@@ -229,6 +254,10 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
+        if (LAST_QUERIED_CHILD.equals(method)) {
+            lastQueriedChildId = documentId(Uri.parse(arg));
+            return Bundle.EMPTY;
+        }
         if (PUBLICATION_WRITE_GATE.equals(method)) {
             Bundle result = new Bundle();
             if ("arm".equals(arg)) {
@@ -262,11 +291,14 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
         if (QUERY_COUNT.equals(method)) {
             Bundle result = new Bundle();
             result.putInt("count", childQueryCount.get());
+            result.putInt("allChildQueries", allChildQueryCount.get());
+            result.putInt("deleteCalls", deleteCallCount.get());
             result.putInt("documentQueries", documentQueryCount.get());
             result.putInt("rootDocumentQueries", rootDocumentQueryCount.get());
             result.putInt("documentPaths", documentPathCount.get());
             result.putInt("referenceQueryFaults", referenceQueryFaultCount.get());
             result.putInt("metadataReads", metadataReadCount.get());
+            result.putInt("metadataReadFaults", metadataReadFaultCount.get());
             result.putInt("publicationReadFaults", publicationReadFaultCount.get());
             result.putInt("publicationMissingReads", publicationMissingReadCount.get());
             result.putInt("publicationChildrenFaults", publicationChildrenFaultCount.get());
@@ -276,6 +308,13 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             referenceQueryFaultId = arg == null ? null : documentId(Uri.parse(arg));
             referenceQueryFaultKind = extras == null ? null : extras.getString("fault");
             referenceQueryFaultCount.set(0);
+            return new Bundle();
+        }
+        if (METADATA_READ_FAULT.equals(method)) {
+            metadataReadFaultId = arg == null ? null : documentId(Uri.parse(arg));
+            metadataReadFaultKind = extras == null ? null : extras.getString("fault");
+            metadataReadFaultRemaining.set(extras == null ? 0 : extras.getInt("remaining", 1));
+            metadataReadFaultCount.set(0);
             return new Bundle();
         }
         if ("android:findDocumentPath".equals(method)) {
@@ -318,6 +357,10 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             return new Bundle();
         }
         if (RESET.equals(method)) {
+            metadataReadFaultId = null;
+            metadataReadFaultKind = null;
+            metadataReadFaultRemaining.set(0);
+            metadataReadFaultCount.set(0);
             reset();
             return new Bundle();
         }
@@ -328,6 +371,7 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             return renameDocument(extras);
         }
         if ("android:deleteDocument".equals(method)) {
+            deleteCallCount.incrementAndGet();
             Uri target = extras == null ? null : uriExtra(extras);
             if (target != null) {
                 deleteDocument(documentId(target));
@@ -452,6 +496,7 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
                 }
             }
             Collections.sort(children, Comparator.comparing(node -> node.displayName));
+            children.sort(Comparator.comparing(node -> node.id.equals(lastQueriedChildId)));
             return children;
         }
     }
@@ -539,10 +584,13 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     private void reset() {
         publicationWriteGateName = null;
         autoRenameNextCollision = false;
+        lastQueriedChildId = null;
         publicationWriteRelease.countDown();
         queryGate.countDown();
         queryFault = null;
         childQueryCount.set(0);
+        allChildQueryCount.set(0);
+        deleteCallCount.set(0);
         documentQueryCount.set(0);
         rootDocumentQueryCount.set(0);
         documentPathCount.set(0);

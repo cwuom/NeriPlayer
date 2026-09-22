@@ -368,9 +368,10 @@ object LocalMediaSupport {
         writeLyrics: Boolean = false,
         embeddedPropertyMapOverride: PropertyMap? = null,
         requiredEmbeddedPropertyKeys: Set<String> = emptySet(),
-        persistCompanionSidecars: Boolean = true
+        persistCompanionSidecars: Boolean = true,
+        embeddedPropertyPlanFactory: ((PropertyMap) -> EmbeddedMetadataPropertyPlan)? = null
     ): LocalMediaMetadataWriteOutcome {
-        return this.writeEditableMetadataImpl(context, song, coverReference, writeCover, writeLyrics, embeddedPropertyMapOverride, requiredEmbeddedPropertyKeys, persistCompanionSidecars)
+        return this.writeEditableMetadataImpl(context, song, coverReference, writeCover, writeLyrics, embeddedPropertyMapOverride, requiredEmbeddedPropertyKeys, persistCompanionSidecars, embeddedPropertyPlanFactory)
     }
 
 
@@ -383,6 +384,7 @@ object LocalMediaSupport {
         embeddedPropertyMapOverride: PropertyMap? = null,
         requiredEmbeddedPropertyKeys: Set<String> = emptySet(),
         persistCompanionSidecars: Boolean = true,
+        embeddedPropertyPlanFactory: ((PropertyMap) -> EmbeddedMetadataPropertyPlan)? = null,
         candidates: List<Uri>
     ): LocalMediaMetadataWriteOutcome = withContext(Dispatchers.IO) {
         val startedAtMs = SystemClock.elapsedRealtime()
@@ -400,7 +402,7 @@ object LocalMediaSupport {
             }
             val persistAvailableSidecars = persistCompanionSidecars &&
                 !isStandaloneContentMetadataTarget(context, sourceUri, localFile)
-            val stagedAttempted = shouldUseTransactionalStagedWrite(sourceUri)
+            val stagedAttempted = embeddedPropertyPlanFactory != null || shouldUseTransactionalStagedWrite(sourceUri)
             val companionTransaction = if (persistAvailableSidecars) {
                 LocalMediaCompanionTransaction(context, sourceUri.toString())
             } else null
@@ -415,7 +417,8 @@ object LocalMediaSupport {
                     fallbackOutcome = LocalMediaMetadataWriteOutcome.FAILED,
                     embeddedPropertyMapOverride = embeddedPropertyMapOverride,
                     requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys,
-                    companionTransaction = companionTransaction
+                    companionTransaction = companionTransaction,
+                    embeddedPropertyPlanFactory = embeddedPropertyPlanFactory
                 )
             } else {
                 writeEditableMetadataDirectTransaction(
@@ -533,7 +536,7 @@ object LocalMediaSupport {
                     directOutcome = outcome,
                     lyricsSidecarWritten = lyricsSidecarWritten && metadataSidecarWritten,
                     coverSidecarWritten = coverSidecarWritten,
-                    allowSidecarAuthoritativeFallback = embeddedPropertyMapOverride == null
+                    allowSidecarAuthoritativeFallback = embeddedPropertyMapOverride == null && embeddedPropertyPlanFactory == null
                 )
                 if (!sidecarsWritten) {
                     companionTransaction?.rollback() ?: writeTransaction.rollback?.invoke()

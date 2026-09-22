@@ -6,6 +6,8 @@ import moe.ouom.neriplayer.core.download.manager.admission.openDownloadAdmission
 import moe.ouom.neriplayer.core.download.manager.batch.forgetPendingDownloadQueueEntriesForOperation
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import android.content.Context
+import moe.ouom.neriplayer.core.download.execution.persistence.PostCoreRecoveryReadStore
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
@@ -108,13 +110,38 @@ internal fun resolvePostCoreRecoveryResult(
 
 internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl(
     context: Context
+): PostCoreDownloadRecoveryResult = try {
+    recoverPostCoreDownloadsWindow(context)
+} catch (cancellation: CancellationException) {
+    throw cancellation
+} catch (error: Throwable) {
+    NPLogger.w(TAG, "读取持久收尾队列失败，保留下一次 Worker 重试: ${error.message}", error)
+    PostCoreDownloadRecoveryResult.BLOCKED
+}
+
+private suspend fun GlobalDownloadManager.recoverPostCoreDownloadsWindow(
+    context: Context
 ): PostCoreDownloadRecoveryResult {
     val appContext = context.applicationContext
     val admissionTicket = openDownloadAdmissionTicketOrNull(appContext)
         ?: return PostCoreDownloadRecoveryResult.BLOCKED
     val attemptedOperationIds = linkedSetOf<String>()
     var completedWindows = 0
-    var initialOperationIds: Set<String>? = null
+    val observedOperationIds = linkedSetOf<String>()
+    val database = NeriUserDataDatabase.getInstance(appContext)
+    suspend fun result(): PostCoreDownloadRecoveryResult {
+        val dao = database.downloadOperationDao()
+        if (!dao.hasPostCoreBacklog(POST_CORE_DOWNLOAD_OPERATION_STATES)) return PostCoreDownloadRecoveryResult.SETTLED
+        val network = appContext.currentDownloadNetworkTypeOrNull()
+        if (network == null || (network != TrafficNetworkType.WIFI &&
+                !mobileDataDownloadOverrideAllowed && !dao.hasMobilePostCoreBacklog(POST_CORE_DOWNLOAD_OPERATION_STATES))) {
+            return PostCoreDownloadRecoveryResult.WAITING_NETWORK
+        }
+        val remaining = DownloadExecutionRoomStore.readOperationHeaders(appContext, observedOperationIds)
+            .values.filter { it.state in POST_CORE_DOWNLOAD_OPERATION_STATES && !it.stopRequestedByUser }
+            .mapTo(linkedSetOf()) { it.operationId }
+        return resolvePostCoreRecoveryResult(PostCoreDownloadRecoveryResult.RETRY, observedOperationIds, remaining)
+    }
 
     while (
         completedWindows < POST_CORE_RECOVERY_MAX_WINDOWS &&
@@ -123,19 +150,13 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl
         if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
             return PostCoreDownloadRecoveryResult.BLOCKED
         }
-        val entries = loadPostCoreDownloadRecoveryEntries(appContext)
-            ?: return PostCoreDownloadRecoveryResult.BLOCKED
-        if (entries.isEmpty()) return PostCoreDownloadRecoveryResult.SETTLED
-
-        val durableOperationIds = entries
-            .mapTo(linkedSetOf()) { entry -> entry.request.operationId }
-        if (initialOperationIds == null) initialOperationIds = durableOperationIds.toSet()
-        val activeEnrichmentIds = assetEnrichmentCoordinator.activeOperationIds()
-            .intersect(durableOperationIds)
+        val activeEnrichmentIds = DownloadExecutionRoomStore.readOperationHeaders(
+            appContext, assetEnrichmentCoordinator.activeOperationIds()
+        ).values.filter { it.state in POST_CORE_DOWNLOAD_OPERATION_STATES && !it.stopRequestedByUser }
+            .mapTo(linkedSetOf()) { it.operationId }
         if (activeEnrichmentIds.isNotEmpty()) {
-            val activeEntries = entries.filter { entry ->
-                entry.request.operationId in activeEnrichmentIds
-            }
+            val activeEntries = PostCoreRecoveryReadStore.entries(appContext, activeEnrichmentIds)
+            observedOperationIds += activeEnrichmentIds
             attemptedOperationIds += activeEnrichmentIds
             val settled = assetEnrichmentCoordinator.awaitCompletion(
                 operationIds = activeEnrichmentIds,
@@ -168,49 +189,35 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl
             continue
         }
 
-        val hostActiveIds = entries
-            .asSequence()
-            .map { entry -> entry.request.operationId }
-            .filter(DownloadExecutionHosts.default::isExecuting)
-            .toSet()
         val currentNetworkType = appContext.currentDownloadNetworkTypeOrNull()
-        val selectedCandidates = selectPostCoreDownloadRecoveryCandidates(
-            candidates = entries.map { entry ->
-                PostCoreDownloadRecoveryCandidate(
-                    operationId = entry.request.operationId,
-                    state = entry.state,
-                    queueOrder = entry.queueOrder,
-                    updatedAtMs = entry.updatedAtMs,
-                    requiresWifiNetwork = entry.request.requiresWifiNetwork,
-                    nextRetryAtMs = entry.nextRetryAtMs,
-                    createdAtMs = entry.createdAtMs
-                )
-            },
+            ?: return result()
+        val selectedHeaders = PostCoreRecoveryReadStore.select(
+            database = database,
             capacity = availableCapacity,
-            activeOperationIds = hostActiveIds,
-            attemptedOperationIds = attemptedOperationIds,
-            currentNetworkType = currentNetworkType,
-            mobileDataOverrideAllowed = mobileDataDownloadOverrideAllowed
+            excluded = attemptedOperationIds + assetEnrichmentCoordinator.activeOperationIds(),
+            allowWifi = currentNetworkType == TrafficNetworkType.WIFI || mobileDataDownloadOverrideAllowed,
+            isExecuting = DownloadExecutionHosts.default::isExecuting
         )
-        if (selectedCandidates.isEmpty()) {
-            return resolvePostCoreRecoveryResult(
-                classified = classifyPostCoreDownloadRecovery(
-                    entries = entries,
-                    currentNetworkType = currentNetworkType,
-                    mobileDataOverrideAllowed = mobileDataDownloadOverrideAllowed
-                ),
-                initialOperationIds = initialOperationIds.orEmpty(),
-                remainingOperationIds = durableOperationIds
-            )
-        }
-
-        val entriesByOperationId = entries.associateBy { entry -> entry.request.operationId }
+        if (selectedHeaders.isEmpty()) return result()
+        val selectedCandidates = selectedHeaders
+        observedOperationIds += selectedHeaders.map { it.operationId }
+        val entriesByOperationId = PostCoreRecoveryReadStore.entries(
+            appContext, selectedHeaders.map { it.operationId }
+        ).associateBy { it.request.operationId }
+        val dispatchedEntries = mutableListOf<DownloadExecutionRoomStore.StateEntry>()
         selectedCandidates.forEach { candidate ->
             attemptedOperationIds += candidate.operationId
             if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
                 return PostCoreDownloadRecoveryResult.BLOCKED
             }
             val entry = entriesByOperationId[candidate.operationId] ?: return@forEach
+            if (entry.updatedAtMs != candidate.updatedAtMs ||
+                !isPostCoreRecoveryNetworkEligible(
+                    entry.request.requiresWifiNetwork,
+                    appContext.currentDownloadNetworkTypeOrNull(),
+                    mobileDataDownloadOverrideAllowed
+                )) return@forEach
+            dispatchedEntries += entry
             try {
                 recoverPostCoreDownloadOperation(
                     context = appContext,
@@ -242,27 +249,13 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl
         }
         settlePostCoreRecoveryAttempts(
             context = appContext,
-            entries = selectedCandidates.mapNotNull { candidate ->
-                entriesByOperationId[candidate.operationId]
-            },
+            entries = dispatchedEntries,
             admissionTicket = admissionTicket
         )
         completedWindows++
     }
 
-    val remainingEntries = loadPostCoreDownloadRecoveryEntries(appContext)
-        ?: return PostCoreDownloadRecoveryResult.BLOCKED
-    val classified = classifyPostCoreDownloadRecovery(
-        entries = remainingEntries,
-        currentNetworkType = appContext.currentDownloadNetworkTypeOrNull(),
-        mobileDataOverrideAllowed = mobileDataDownloadOverrideAllowed
-    )
-    return resolvePostCoreRecoveryResult(
-        classified = classified,
-        initialOperationIds = initialOperationIds.orEmpty(),
-        remainingOperationIds = remainingEntries
-            .mapTo(linkedSetOf()) { entry -> entry.request.operationId }
-    )
+    return result()
 }
 
 private suspend fun GlobalDownloadManager.settlePostCoreRecoveryAttempts(
@@ -270,13 +263,14 @@ private suspend fun GlobalDownloadManager.settlePostCoreRecoveryAttempts(
     entries: Collection<DownloadExecutionRoomStore.StateEntry>,
     admissionTicket: Long
 ) {
-    val currentEntries = loadPostCoreDownloadRecoveryEntries(context)
-        ?.associateBy { entry -> entry.request.operationId }
-        ?: return
+    val currentEntries = PostCoreRecoveryReadStore.entries(context, entries.map { it.request.operationId })
+        .associateBy { entry -> entry.request.operationId }
     entries.forEach { attemptedEntry ->
         if (!isDownloadAdmissionTicketCurrent(context, admissionTicket)) return
         val operationId = attemptedEntry.request.operationId
         val currentEntry = currentEntries[operationId] ?: return@forEach
+        if (currentEntry.request.attemptId != attemptedEntry.request.attemptId ||
+            currentEntry.request.artifactLeaseId != attemptedEntry.request.artifactLeaseId) return@forEach
         if (!isPostCoreRecoveryNetworkEligible(
                 requiresWifiNetwork = currentEntry.request.requiresWifiNetwork,
                 currentNetworkType = context.currentDownloadNetworkTypeOrNull(),
@@ -419,45 +413,4 @@ private suspend fun GlobalDownloadManager.settleExhaustedPostCoreRecovery(
             "song=${song.name}, operationId=${request.operationId}, " +
             "attempts=${retryRecord.retryCount}"
     )
-}
-
-private suspend fun loadPostCoreDownloadRecoveryEntries(
-    context: Context
-): List<DownloadExecutionRoomStore.StateEntry>? {
-    return try {
-        DownloadExecutionRoomStore.listByStatesAnyLibrary(
-            context = context,
-            states = POST_CORE_DOWNLOAD_OPERATION_STATES,
-            excludeUserStoppedOperations = true
-        )
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (error: Throwable) {
-        NPLogger.w(
-            GlobalDownloadManager.TAG,
-            "读取持久收尾队列失败，保留下一次 Worker 重试: ${error.message}",
-            error
-        )
-        null
-    }
-}
-
-private fun classifyPostCoreDownloadRecovery(
-    entries: Collection<DownloadExecutionRoomStore.StateEntry>,
-    currentNetworkType: TrafficNetworkType?,
-    mobileDataOverrideAllowed: Boolean
-): PostCoreDownloadRecoveryResult {
-    if (entries.isEmpty()) return PostCoreDownloadRecoveryResult.SETTLED
-    val hasNetworkEligibleEntry = entries.any { entry ->
-        isPostCoreRecoveryNetworkEligible(
-            requiresWifiNetwork = entry.request.requiresWifiNetwork,
-            currentNetworkType = currentNetworkType,
-            mobileDataOverrideAllowed = mobileDataOverrideAllowed
-        )
-    }
-    return if (hasNetworkEligibleEntry) {
-        PostCoreDownloadRecoveryResult.RETRY
-    } else {
-        PostCoreDownloadRecoveryResult.WAITING_NETWORK
-    }
 }

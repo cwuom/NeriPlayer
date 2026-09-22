@@ -475,15 +475,11 @@ internal object ManagedDownloadArtifactPlanner {
     fun collectArtifactReferences(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         storedAudio: ManagedDownloadStorage.StoredEntry?,
-        songId: Long,
-        candidateBaseNames: List<String>,
         explicitReferences: List<String> = emptyList(),
         deletingAudioNames: Set<String> = emptySet()
     ): Set<String> = ManagedDownloadArtifactPlannerDelegate.collectArtifactReferences(
         snapshot,
         storedAudio,
-        songId,
-        candidateBaseNames,
         explicitReferences,
         deletingAudioNames
     )

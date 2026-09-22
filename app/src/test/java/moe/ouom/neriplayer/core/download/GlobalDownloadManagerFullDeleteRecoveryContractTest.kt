@@ -84,7 +84,7 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
                 "internal suspend fun GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog"
             )
         )
-        assertTrue(replayBody.contains("buildFullLibraryDeletePlan(appContext)"))
+        assertTrue(replayBody.contains("buildFullLibraryDeletePlan(appContext"))
         assertTrue(source.contains("isFullLibraryDeleteCancellationSettled(appContext)"))
     }
 
@@ -95,7 +95,7 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
         ).readText()
         val deleteBody = methodBody(source, "deleteDownloadedSongsOnIo")
 
-        assertTrue(deleteBody.contains("buildFullLibraryDeletePlan(appContext)"))
+        assertTrue(deleteBody.contains("buildFullLibraryDeletePlan(appContext"))
         val remainingIndex = deleteBody.indexOf(
             "val remainingReferences = verifiedRemainingReferences"
         )
@@ -163,22 +163,23 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
     }
 
     @Test
-    fun `full delete uses trusted compacted directory deletion`() {
-        val storageSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
-        ).readText()
-        val deleteSource = locateProjectFile(
+    fun `full delete persists precise references before normal and replay execution`() {
+        val plannerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/cleanup/ManagedDownloadDeletePlanner.kt"
         ).readText()
-        val catalogSource = locateProjectFile(
+        val managerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
-
-        assertTrue(deleteSource.contains("DOWNLOAD_TEMPORARY_DIR_NAME"))
-        assertTrue(deleteSource.contains("COVER_SUBDIRECTORY"))
-        assertTrue(deleteSource.contains("LYRIC_SUBDIRECTORY"))
-        assertTrue(storageSource.contains("deleteFullLibraryReferences("))
-        assertTrue(catalogSource.contains("deleteFullLibraryReferences("))
+        assertTrue(!plannerSource.contains("compactedDirectoryReferences"))
+        for (method in listOf("deleteDownloadedSongsOnIo", "replayFullLibraryDeleteWithoutCatalog")) {
+            val body = methodBody(managerSource, method)
+            val persist = body.indexOf("PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(")
+            val delete = body.indexOf("ManagedDownloadStorage.deleteFullLibraryReferences(")
+            assertTrue("$method must persist before physical deletion", persist >= 0 && persist < delete)
+        }
+        val normal = methodBody(managerSource, "deleteDownloadedSongsOnIo")
+        assertTrue(normal.lastIndexOf("PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(") <
+            normal.lastIndexOf("ManagedDownloadStorage.deleteFullLibraryReferences("))
     }
 
     @Test

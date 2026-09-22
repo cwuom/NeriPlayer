@@ -87,7 +87,8 @@ internal suspend fun LocalMediaSupport.writeEditableMetadataImpl(
     writeLyrics: Boolean = false,
     embeddedPropertyMapOverride: PropertyMap? = null,
     requiredEmbeddedPropertyKeys: Set<String> = emptySet(),
-    persistCompanionSidecars: Boolean = true
+    persistCompanionSidecars: Boolean = true,
+    embeddedPropertyPlanFactory: ((PropertyMap) -> EmbeddedMetadataPropertyPlan)? = null
 ): LocalMediaMetadataWriteOutcome {
     return try {
         val candidates = withContext(Dispatchers.IO) { editableLocalMediaUriCandidates(context, song) }
@@ -106,6 +107,7 @@ internal suspend fun LocalMediaSupport.writeEditableMetadataImpl(
                 embeddedPropertyMapOverride = embeddedPropertyMapOverride,
                 requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys,
                 persistCompanionSidecars = persistCompanionSidecars,
+                embeddedPropertyPlanFactory = embeddedPropertyPlanFactory,
                 candidates = candidates
             )
         }

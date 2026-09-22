@@ -14,6 +14,18 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationNetworkPo
 
 @Dao
 internal interface DownloadOperationDao {
+    @Query("SELECT operation_id, stable_key, library_id, state, queue_order, staging_dir_name, bytes_written, total_bytes, retry_count, next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation FROM download_operation WHERE state = :state AND stop_requested_by_user = 0 ORDER BY queue_order, created_at_ms, operation_id LIMIT :limit")
+    suspend fun postCoreHeadersFirst(state: String, limit: Int): List<DownloadOperationHeaderRow>
+
+    @Query("SELECT operation_id, stable_key, library_id, state, queue_order, staging_dir_name, bytes_written, total_bytes, retry_count, next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation FROM download_operation WHERE state = :state AND stop_requested_by_user = 0 AND (queue_order, created_at_ms, operation_id) > (:queueOrder, :createdAtMs, :operationId) ORDER BY queue_order, created_at_ms, operation_id LIMIT :limit")
+    suspend fun postCoreHeadersAfter(state: String, queueOrder: Int, createdAtMs: Long, operationId: String, limit: Int): List<DownloadOperationHeaderRow>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM download_operation WHERE state IN (:states) AND stop_requested_by_user = 0)")
+    suspend fun hasPostCoreBacklog(states: List<String>): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM download_operation WHERE state IN (:states) AND stop_requested_by_user = 0 AND instr(source_hint_json, ',\"requiresWifiNetwork\":false,') > 0)")
+    suspend fun hasMobilePostCoreBacklog(states: List<String>): Boolean
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(operation: DownloadOperationEntity)
 

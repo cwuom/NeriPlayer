@@ -143,13 +143,20 @@ internal object LocalMediaMetadataRecoveryStore {
     internal fun updatedCompanionAudio(record: LocalMetadataRecoveryRecord): LocalMetadataRecoveryRecord =
         saveCompanionRecord(record.copy(updatedSha256 = sha256(record.updatedFile)))
 
-    fun rollback(context: Context, record: LocalMetadataRecoveryRecord): Boolean {
+    fun rollback(
+        context: Context,
+        record: LocalMetadataRecoveryRecord,
+        onCompanionsUpdated: (LocalMetadataRecoveryRecord) -> Unit = {}
+    ): Boolean {
         if (record.companionCommitted) {
             releaseCompanionRecord(record)
             return false
         }
-        val companionsRestored = !record.companionTransaction ||
-            rollbackLocalMediaCompanions(context, record)
+        val companionResult = if (record.companionTransaction) rollbackLocalMediaCompanions(context, record)
+            else CompanionRollbackResult(record, true)
+        val latestRecord = companionResult.record
+        onCompanionsUpdated(latestRecord)
+        val companionsRestored = companionResult.restored
         val audioRestored = if (record.audioUnchanged) {
             true
         } else if (targetMatches(context, record.targetReference, record.originalSha256)) {
@@ -169,14 +176,14 @@ internal object LocalMediaMetadataRecoveryStore {
         val restored = companionsRestored && audioRestored
         if (restored) {
             val rolledBack = runCatching {
-                updateStage(record, LocalMetadataRecoveryStage.ROLLED_BACK)
+                updateStage(latestRecord, LocalMetadataRecoveryStage.ROLLED_BACK)
             }.onFailure { error ->
                 NPLogger.e(TAG, "记录元信息已回滚状态失败，保留恢复文件", error)
             }.getOrNull() ?: return false
             return cleanup(rolledBack)
         } else {
             runCatching {
-                updateStage(record, LocalMetadataRecoveryStage.ROLLBACK_FAILED)
+                updateStage(latestRecord, LocalMetadataRecoveryStage.ROLLBACK_FAILED)
             }.onFailure { error ->
                 NPLogger.e(TAG, "记录元信息回滚失败状态失败，保留恢复文件", error)
             }
@@ -470,8 +477,12 @@ internal object LocalMediaMetadataRecoveryStore {
 
     private fun cleanup(record: LocalMetadataRecoveryRecord): Boolean {
         activeRecordIds -= record.id
+        if (!record.companions.all(::cleanupCompanionStagedFile)) {
+            recoveryCompleted = false
+            return false
+        }
         val recoveryFilesRemoved = (listOf(record.backupFile, record.updatedFile) +
-            record.companions.mapNotNull { it.backupFile }).all { file ->
+            record.companions.flatMap { listOfNotNull(it.backupFile, it.intendedFile) }).all { file ->
             if (file.exists() && !file.delete()) {
                 NPLogger.w(TAG, "删除已完成的元信息恢复副本失败: ${file.name}")
                 false

@@ -6,12 +6,14 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -30,12 +32,15 @@ internal class AssetEnrichmentCoordinator(
     private val scope: CoroutineScope,
     parallelism: Int = DEFAULT_PARALLELISM,
     maxActiveJobs: Int = Int.MAX_VALUE,
-    private val timeoutMs: Long = DEFAULT_TIMEOUT_MS
+    private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    private val startJob: (Job) -> Unit = { it.start() }
 ) {
     private val normalizedParallelism = parallelism.coerceAtLeast(1)
     private val maxActiveJobs = maxActiveJobs.coerceAtLeast(normalizedParallelism)
     private val semaphore = Semaphore(normalizedParallelism)
-    private val jobsByOperationId = ConcurrentHashMap<String, Job>()
+    private class Entry(val job: Job, val settled: CompletableDeferred<Unit> = CompletableDeferred())
+
+    private val jobsByOperationId = ConcurrentHashMap<String, Entry>()
     private val jobRegistrationLock = Any()
     private var overflowOperationId: String? = null
     private val _hasActiveJobs = MutableStateFlow(false)
@@ -92,12 +97,13 @@ internal class AssetEnrichmentCoordinator(
     ): Job? {
         val normalizedId = operationId.trim().takeIf(String::isNotBlank)
             ?: error("asset enrichment requires operationId")
-        return synchronized(jobRegistrationLock) {
+        var completionHandler: ((Throwable?) -> Unit)? = null
+        val registered = synchronized(jobRegistrationLock) {
             jobsByOperationId[normalizedId]?.let { existing ->
-                if (existing.isActive) return@synchronized existing
+                return existing.job
             }
             val activeOverflowId = activeOverflowOperationIdLocked()
-            val normalActiveCount = jobsByOperationId.values.count(Job::isActive) -
+            val normalActiveCount = jobsByOperationId.size -
                 if (activeOverflowId != null) 1 else 0
             val usesOverflow = normalActiveCount >= maxActiveJobs
             if (usesOverflow && (!allowSingleOverflow || activeOverflowId != null)) {
@@ -105,7 +111,7 @@ internal class AssetEnrichmentCoordinator(
             }
             val terminalError = AtomicReference<Throwable?>(null)
             val completionDelivered = AtomicBoolean(false)
-            val jobReference = AtomicReference<Job?>(null)
+            val entryReference = AtomicReference<Entry?>(null)
             val operationTraceToken = traceToken
                 ?.takeIf { token ->
                     token.operationId == normalizedId && token.attemptId == attemptId
@@ -120,21 +126,25 @@ internal class AssetEnrichmentCoordinator(
             )
             fun deliverCompletion(error: Throwable?) {
                 if (!completionDelivered.compareAndSet(false, true)) return
-                synchronized(jobRegistrationLock) {
-                    val removedCurrentJob = jobReference.get()?.let { registeredJob ->
-                        jobsByOperationId.remove(normalizedId, registeredJob)
-                    } == true
-                    if (removedCurrentJob && overflowOperationId == normalizedId) {
-                        overflowOperationId = null
+                try {
+                    runCatching { onCompletion(error ?: terminalError.get()) }
+                    runCatching {
+                        DownloadOperationTrace.mark(
+                            operationTraceToken,
+                            DownloadOperationTracePhase.TERMINAL
+                        )
                     }
-                    refreshActiveStateLocked()
+                } finally {
+                    val entry = checkNotNull(entryReference.get())
+                    synchronized(jobRegistrationLock) {
+                        val removed = jobsByOperationId.remove(normalizedId, entry)
+                        if (removed && overflowOperationId == normalizedId) overflowOperationId = null
+                        refreshActiveStateLocked()
+                        entry.settled.complete(Unit)
+                    }
                 }
-                runCatching { onCompletion(error ?: terminalError.get()) }
-                DownloadOperationTrace.mark(
-                    operationTraceToken,
-                    DownloadOperationTracePhase.TERMINAL
-                )
             }
+
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     suspend fun runEnrichment() {
@@ -171,24 +181,25 @@ internal class AssetEnrichmentCoordinator(
                     } catch (error: Throwable) {
                         terminalError.compareAndSet(null, error)
                         throw error
-                    } finally {
-                        // join 返回前必须释放 operation 所有权，完成处理器只负责兜底
-                        deliverCompletion(terminalError.get())
                     }
                 }
             }
-            jobReference.set(job)
-            jobsByOperationId[normalizedId] = job
-            if (usesOverflow) {
-                overflowOperationId = normalizedId
-            }
-            job.invokeOnCompletion { error ->
-                deliverCompletion(error)
-            }
-            job.start()
+            val entry = Entry(job)
+            entryReference.set(entry)
+            jobsByOperationId[normalizedId] = entry
+            if (usesOverflow) overflowOperationId = normalizedId
+            completionHandler = ::deliverCompletion
             refreshActiveStateLocked()
-            job
+            entry
+        } ?: return null
+        // 已取消 scope 的完成处理器可能同步执行，不能在登记锁内调用外部回调
+        val deliverCompletion = checkNotNull(completionHandler)
+        registered.job.invokeOnCompletion { error ->
+            // LAZY 取消可能同步触发处理器，外部回调不能阻塞取消调用者的超时边界
+            Dispatchers.IO.dispatch(EmptyCoroutineContext) { deliverCompletion(error) }
         }
+        startJob(registered.job)
+        return registered.job
     }
 
     fun cancel(operationId: String): Boolean {
@@ -196,9 +207,9 @@ internal class AssetEnrichmentCoordinator(
         val job = synchronized(jobRegistrationLock) {
             jobsByOperationId[normalizedId]
         } ?: return false
-        val wasActive = job.isActive
+        val wasActive = !job.job.isCompleted
         if (wasActive) {
-            job.cancel(CancellationException("asset enrichment cancelled"))
+            job.job.cancel(CancellationException("asset enrichment cancelled"))
         }
         synchronized(jobRegistrationLock) {
             refreshActiveStateLocked()
@@ -207,12 +218,12 @@ internal class AssetEnrichmentCoordinator(
     }
 
     fun activeCount(): Int = synchronized(jobRegistrationLock) {
-        jobsByOperationId.values.count(Job::isActive)
+        jobsByOperationId.size
     }
 
     fun availableCapacity(): Int = synchronized(jobRegistrationLock) {
         val activeOverflowId = activeOverflowOperationIdLocked()
-        val normalActiveCount = jobsByOperationId.values.count(Job::isActive) -
+        val normalActiveCount = jobsByOperationId.size -
             if (activeOverflowId != null) 1 else 0
         (maxActiveJobs - normalActiveCount).coerceAtLeast(0)
     }
@@ -220,7 +231,7 @@ internal class AssetEnrichmentCoordinator(
     fun isActive(operationId: String): Boolean {
         val normalizedId = operationId.trim().takeIf(String::isNotBlank) ?: return false
         return synchronized(jobRegistrationLock) {
-            jobsByOperationId[normalizedId]?.isActive == true
+            jobsByOperationId.containsKey(normalizedId)
         }
     }
 
@@ -228,7 +239,6 @@ internal class AssetEnrichmentCoordinator(
     fun activeOperationIds(): Set<String> = synchronized(jobRegistrationLock) {
         jobsByOperationId
             .asSequence()
-            .filter { (_, job) -> job.isActive }
             .mapTo(linkedSetOf()) { (operationId, _) -> operationId }
     }
 
@@ -243,24 +253,22 @@ internal class AssetEnrichmentCoordinator(
             .toSet()
         if (normalizedIds.isEmpty()) return true
         val jobs = synchronized(jobRegistrationLock) {
-            normalizedIds.mapNotNull(jobsByOperationId::get).filter(Job::isActive)
+            normalizedIds.mapNotNull(jobsByOperationId::get)
         }
         val settled = withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
-            jobs.joinAll()
+            jobs.forEach { it.settled.await() }
             true
         } ?: false
-        return settled && normalizedIds.none { operationId ->
-            jobsByOperationId[operationId]?.isActive == true
-        }
+        return settled
     }
 
     /** 取消所有收尾任务但保留完成回调 */
     fun cancelAll(reason: String = "asset enrichment cancelled"): Int {
         val jobs = synchronized(jobRegistrationLock) {
-            jobsByOperationId.values.filter(Job::isActive).toList()
+            jobsByOperationId.values.toList()
         }
         jobs.forEach { job ->
-            job.cancel(CancellationException(reason))
+            job.job.cancel(CancellationException(reason))
         }
         synchronized(jobRegistrationLock) {
             refreshActiveStateLocked()
@@ -280,21 +288,19 @@ internal class AssetEnrichmentCoordinator(
             .toSet()
         if (normalizedIds.isEmpty()) return true
         val jobs = synchronized(jobRegistrationLock) {
-            normalizedIds.mapNotNull(jobsByOperationId::get).filter(Job::isActive)
+            normalizedIds.mapNotNull(jobsByOperationId::get)
         }
         jobs.forEach { job ->
-            job.cancel(CancellationException(reason))
+            job.job.cancel(CancellationException(reason))
         }
         val settled = withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
-            jobs.joinAll()
+            jobs.forEach { it.settled.await() }
             true
         } ?: false
         synchronized(jobRegistrationLock) {
             refreshActiveStateLocked()
         }
-        return settled && normalizedIds.none { operationId ->
-            jobsByOperationId[operationId]?.isActive == true
-        }
+        return settled
     }
 
     /** 取消所有收尾任务并在文件清理前等待一段有界时间 */
@@ -303,28 +309,28 @@ internal class AssetEnrichmentCoordinator(
         timeoutMs: Long = DEFAULT_CANCEL_JOIN_TIMEOUT_MS
     ): Boolean {
         val jobs = synchronized(jobRegistrationLock) {
-            jobsByOperationId.values.filter(Job::isActive).toList()
+            jobsByOperationId.values.toList()
         }
         jobs.forEach { job ->
-            job.cancel(CancellationException(reason))
+            job.job.cancel(CancellationException(reason))
         }
         val settled = withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
-            jobs.joinAll()
+            jobs.forEach { it.settled.await() }
             true
         } ?: false
         synchronized(jobRegistrationLock) {
             refreshActiveStateLocked()
         }
-        return settled && activeOperationIds().isEmpty()
+        return settled
     }
 
     private fun refreshActiveStateLocked() {
-        _hasActiveJobs.value = jobsByOperationId.values.any(Job::isActive)
+        _hasActiveJobs.value = jobsByOperationId.isNotEmpty()
     }
 
     private fun activeOverflowOperationIdLocked(): String? {
         val activeId = overflowOperationId
-            ?.takeIf { operationId -> jobsByOperationId[operationId]?.isActive == true }
+            ?.takeIf { operationId -> jobsByOperationId.containsKey(operationId) }
         if (activeId == null) {
             overflowOperationId = null
         }

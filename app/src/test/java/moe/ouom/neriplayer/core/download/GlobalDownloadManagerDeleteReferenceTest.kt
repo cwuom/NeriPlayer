@@ -20,6 +20,14 @@ import org.junit.Test
 class GlobalDownloadManagerDeleteReferenceTest {
 
     @Test
+    fun `full delete does not infer ownership from enumerated foreign sidecars`() {
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            knownReferences = setOf("/library/Covers/foreign.jpg", "/library/Lyrics/foreign.lrc")
+        )
+        assertTrue(ManagedDownloadArtifactPlanner.collectFullLibraryArtifactReferences(snapshot).isEmpty())
+    }
+
+    @Test
     fun `metadata delete reference must already exist in trusted snapshot`() {
         val trustedReference =
             "content://com.android.externalstorage.documents/tree/primary%3AMusic%2FNeriPlayer/document/primary%3AMusic%2FNeriPlayer%2FCovers%2Fsong.jpg"
@@ -79,11 +87,10 @@ class GlobalDownloadManagerDeleteReferenceTest {
             )
         )
 
-        val references = ManagedDownloadArtifactPlanner.collectArtifactReferences(
+        val references = moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner.collectArtifactReferences(
             snapshot = snapshot,
             storedAudio = currentAudio,
-            songId = 1L,
-            candidateBaseNames = listOf("artist - current"),
+            uniqueAudioReferencesByName = mapOf(currentAudio.logicalName to currentAudio.reference),
             explicitReferences = listOf(sharedCoverReference)
         )
 
@@ -125,11 +132,10 @@ class GlobalDownloadManagerDeleteReferenceTest {
             )
         )
 
-        val references = ManagedDownloadArtifactPlanner.collectArtifactReferences(
+        val references = moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner.collectArtifactReferences(
             snapshot = snapshot,
             storedAudio = currentAudio,
-            songId = 1L,
-            candidateBaseNames = listOf("artist - current"),
+            uniqueAudioReferencesByName = mapOf(currentAudio.logicalName to currentAudio.reference),
             explicitReferences = listOf(sharedRomanizedReference)
         )
 
@@ -174,7 +180,8 @@ class GlobalDownloadManagerDeleteReferenceTest {
             metadataEntriesByAudioName = mapOf(currentAudio.name to currentMetadata),
             metadataByAudioName = mapOf(
                 currentAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
-                    stableKey = stableKey
+                    stableKey = stableKey,
+                    coverPath = stableCover.reference
                 )
             ),
             coverEntriesByName = mapOf(stableCover.name to stableCover),
@@ -185,11 +192,10 @@ class GlobalDownloadManagerDeleteReferenceTest {
             )
         )
 
-        val references = ManagedDownloadArtifactPlanner.collectArtifactReferences(
+        val references = moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner.collectArtifactReferences(
             snapshot = snapshot,
             storedAudio = currentAudio,
-            songId = 42L,
-            candidateBaseNames = listOf(currentAudio.nameWithoutExtension)
+            uniqueAudioReferencesByName = mapOf(currentAudio.logicalName to currentAudio.reference)
         )
 
         assertEquals(
@@ -459,6 +465,14 @@ class GlobalDownloadManagerDeleteReferenceTest {
             metadataEntriesByAudioName = mapOf(
                 catalogAudio.name to catalogMetadata,
                 orphanAudio.name to orphanMetadata
+            ),
+            coverEntriesByName = mapOf(orphanSidecar.name to orphanSidecar),
+            metadataByAudioName = mapOf(
+                catalogAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    stableKey = "catalog", audioFileName = catalogAudio.name, downloadFinalized = true),
+                orphanAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    stableKey = "orphan", audioFileName = orphanAudio.name, downloadFinalized = true,
+                    coverPath = orphanSidecar.reference)
             ),
             knownReferences = setOf(
                 catalogAudio.reference,

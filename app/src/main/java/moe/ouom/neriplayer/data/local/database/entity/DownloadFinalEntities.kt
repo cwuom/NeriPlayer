@@ -8,6 +8,7 @@ import androidx.room.Index
     tableName = "download_operation",
     primaryKeys = ["operation_id"],
     indices = [
+        Index(value = ["state", "stop_requested_by_user", "queue_order", "created_at_ms", "operation_id"], name = "index_download_operation_recovery_cursor"),
         Index(
             value = ["state", "queue_order"],
             name = "index_download_operation_state_queue"

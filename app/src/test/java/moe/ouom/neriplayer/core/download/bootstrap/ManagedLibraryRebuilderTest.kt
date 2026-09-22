@@ -7,6 +7,31 @@ import org.junit.Test
 
 class ManagedLibraryRebuilderTest {
     @Test
+    fun `sidecar aliases resolve only the same authority and entire opaque document id`() {
+        val document = "content://provider/document/folder%2Fopaque+id"
+        val tree = "content://provider/tree/root/document/folder%2Fopaque%2Bid"
+        val cases = listOf(
+            Triple(document, tree, 1),
+            Triple(tree, document, 1),
+            Triple("content://other/document/folder%2Fopaque+id", tree, 0),
+            Triple("content://provider/document/opaque+id", tree, 0),
+            Triple("content://provider/document/folder%2Fopaque%20id", tree, 0),
+            Triple("content://provider/document/broken%zz", "content://provider/tree/root/document/broken%zz", 0)
+        )
+        for ((reference, indexed, expected) in cases) {
+            val audio = audio(77L)
+            val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                stableKey = "stable-song", downloadFinalized = true,
+                metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
+                coverPath = reference, lyricPath = reference,
+                translatedLyricPath = reference, romanizedLyricPath = reference
+            )
+            val snapshot = snapshot(audio, metadata).copy(knownReferences = setOf(audio.reference, indexed))
+            assertEquals(reference, expected, ManagedLibraryRebuilder.plan(snapshot).size)
+        }
+    }
+
+    @Test
     fun `rebuild plan keeps stable identity and durable logical time`() {
         val audio = audio(lastModifiedMs = 99L)
         val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(

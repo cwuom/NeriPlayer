@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.*
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.*
 import moe.ouom.neriplayer.core.download.storage.recovery.*
 import android.content.Context
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadDeleteReferenceIndex
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
@@ -596,6 +597,15 @@ internal object ManagedDownloadStorage {
         /** pending metadata 与正式 metadata 同名时, 为 pending 音频保留独立凭据 */
         val pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap()
     ) {
+        internal val referenceIdentityIndex by lazy {
+            ManagedDownloadDeleteReferenceIndex(buildSet {
+                addAll(knownReferences)
+                (coverEntriesByName.values + lyricEntriesByName.values).forEach { entry ->
+                    add(entry.reference)
+                    add(entry.mediaUri)
+                }
+            })
+        }
         internal val metadataEntriesByCanonicalAudioName: Map<String, StoredEntry> by lazy {
             buildMap {
                 metadataEntriesByAudioName.forEach { (audioName, entry) ->

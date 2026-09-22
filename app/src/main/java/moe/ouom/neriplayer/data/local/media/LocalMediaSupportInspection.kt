@@ -324,14 +324,9 @@ internal fun LocalMediaSupport.writeLocalLyricsMetadataReference(
         )
     }
     val bytes = updatedRaw.toByteArray(Charsets.UTF_8)
-    companionTransaction?.beforeWrite(
-        reference = reference,
-        bytes = bytes,
-        created = existingRaw == null
-    )
-    val written = writeLocalMetadataReference(context, reference, file, updatedRaw)
-    if (written) companionTransaction?.afterWrite(reference)
-    return written
+    return if (companionTransaction != null) {
+        companionTransaction.write(reference, bytes, created = existingRaw == null)
+    } else writeLocalMetadataReference(context, reference, file, updatedRaw)
 }
 
 internal fun LocalMediaSupport.isReadableLocalReference(context: Context, reference: String): Boolean {
@@ -457,27 +452,7 @@ internal fun LocalMediaSupport.writeLocalMetadataReference(
     content: String
 ): Boolean {
     if (file != null && reference.startsWith("/")) {
-        val target = File(reference)
-        val parent = target.parentFile ?: return false
-        if (!parent.exists() && !parent.mkdirs()) return false
-        val temp = runCatching {
-            File.createTempFile(".${target.name}.", ".tmp", parent)
-        }.getOrNull() ?: return false
-        return try {
-            temp.writeText(content, Charsets.UTF_8)
-            if (!temp.renameTo(target)) {
-                temp.copyTo(target, overwrite = true)
-                temp.delete()
-            }
-            target.isFile && readTextFile(target) == content
-        } catch (error: SecurityException) {
-            temp.delete()
-            throw error
-        } catch (error: Exception) {
-            temp.delete()
-            NPLogger.w(TAG, "write local metadata sidecar failed for $reference: ${error.message}")
-            false
-        }
+        return writeTextFileAtomically(File(reference), content)
     }
     return writeTextContent(context, reference, content)
 }

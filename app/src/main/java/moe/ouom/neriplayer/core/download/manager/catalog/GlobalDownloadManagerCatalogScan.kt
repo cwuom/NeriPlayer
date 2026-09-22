@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.download.policy.observeDownloadedSongReferencesF
 import moe.ouom.neriplayer.core.download.policy.partitionForBoundedParallelism
 import moe.ouom.neriplayer.core.download.policy.withDownloadClearRoomTimeout
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.FastIndexPersistenceRequest
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadUnavailableException
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -348,6 +349,10 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
         return refreshOutcome
     } catch (error: CancellationException) {
         throw error
+    } catch (error: ManagedMetadataReadUnavailableException) {
+        NPLogger.w(TAG, "下载 metadata 暂不可读，保留现有 catalog: count=${error.references.size}")
+        if (!forceRefresh) scheduleCatalogReconcile(context, forceRefresh = true)
+        return ManagedLibraryRefreshOutcome.Preserved(ManagedLibraryRefreshPreserveReason.INCOMPLETE_METADATA_READ)
     } catch (error: Exception) {
         NPLogger.e(TAG, "扫描已下载文件失败: ${error.message}", error)
         return ManagedLibraryRefreshOutcome.Failed(
@@ -763,8 +768,6 @@ internal suspend fun GlobalDownloadManager.removeManagedDownloadArtifacts(
     context: Context,
     songName: String,
     storedAudio: ManagedDownloadStorage.StoredEntry?,
-    songId: Long,
-    candidateBaseNames: List<String>,
     explicitReferences: List<String> = emptyList(),
     useCachedSnapshotOnly: Boolean = false
 ): ManagedDownloadArtifactRemovalResult {
@@ -772,8 +775,6 @@ internal suspend fun GlobalDownloadManager.removeManagedDownloadArtifacts(
         context = context,
         songName = songName,
         storedAudio = storedAudio,
-        songId = songId,
-        candidateBaseNames = candidateBaseNames,
         explicitReferences = explicitReferences,
         useCachedSnapshotOnly = useCachedSnapshotOnly,
         logger = { message -> NPLogger.d(TAG, message) }

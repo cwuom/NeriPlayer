@@ -25,7 +25,7 @@ internal class ManagedDownloadTreeChildRegistry(
     private val fileChildNameCache = ManagedDownloadFileChildNameCache(
         writeCacheValidateIntervalMs = writeCacheValidateIntervalMs
     )
-    private val childNameReservationLocks = ConcurrentHashMap<String, Any>()
+    private val childNameReservationLocks = Array(ManagedDownloadTreeChildCache.MAX_CACHED_PARENT_COUNT) { Any() }
     private val consecutiveEmptyRefreshes = ConcurrentHashMap<String, Int>()
 
     fun queryTreeChildren(context: Context, parent: DocumentFile): List<QueriedTreeChild> {
@@ -275,7 +275,7 @@ internal class ManagedDownloadTreeChildRegistry(
         desiredName: String
     ): String {
         val cacheKey = parent.uri.toString()
-        val lock = childNameReservationLocks.computeIfAbsent("tree:$cacheKey") { Any() }
+        val lock = childNameReservationLocks[(cacheKey.hashCode() and Int.MAX_VALUE) % childNameReservationLocks.size]
         return synchronized(lock) {
             ManagedDownloadStorageNaming.createUniqueAudioName(
                 existingNames = peekTreeChildrenNamesForWrite(parent)
@@ -318,7 +318,6 @@ internal class ManagedDownloadTreeChildRegistry(
     fun clear() {
         treeChildCache.clear()
         fileChildNameCache.clear()
-        childNameReservationLocks.clear()
         consecutiveEmptyRefreshes.clear()
     }
 
@@ -434,8 +433,15 @@ internal class ManagedDownloadTreeChildRegistry(
             consecutiveEmptyRefreshes.remove(cacheKey)
             return queried
         }
-        val count = consecutiveEmptyRefreshes.merge(cacheKey, 1) { current, _ -> current + 1 }
-            ?: 1
+        val count = synchronized(consecutiveEmptyRefreshes) {
+            val next = (consecutiveEmptyRefreshes[cacheKey] ?: 0) + 1
+            consecutiveEmptyRefreshes[cacheKey] = next
+            while (consecutiveEmptyRefreshes.size > ManagedDownloadTreeChildCache.MAX_CACHED_PARENT_COUNT) {
+                val victim = consecutiveEmptyRefreshes.keys.firstOrNull { it != cacheKey } ?: break
+                consecutiveEmptyRefreshes.remove(victim)
+            }
+            next
+        }
         if (count < EMPTY_REFRESH_CONFIRMATION_COUNT) {
             return ManagedDownloadTreeChildQuery.QueryResult(
                 children = previous,

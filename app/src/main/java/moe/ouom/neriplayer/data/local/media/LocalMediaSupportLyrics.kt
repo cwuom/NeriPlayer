@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.EditableMetadataWr
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.EditableCoverWritePlan
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.EditableMetadataSnapshot
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.LyricKind
+import android.os.ParcelFileDescriptor
 import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
@@ -549,6 +550,8 @@ internal fun LocalMediaSupport.verifyEditableMetadataReadback(
     return verified
 }
 
+internal data class EmbeddedMetadataPropertyPlan(val properties: PropertyMap, val requiredKeys: Set<String>)
+
 internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
     context: Context,
     song: SongItem,
@@ -559,7 +562,8 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
     fallbackOutcome: LocalMediaMetadataWriteOutcome,
     embeddedPropertyMapOverride: PropertyMap? = null,
     requiredEmbeddedPropertyKeys: Set<String> = emptySet(),
-    companionTransaction: LocalMediaCompanionTransaction? = null
+    companionTransaction: LocalMediaCompanionTransaction? = null,
+    embeddedPropertyPlanFactory: ((PropertyMap) -> EmbeddedMetadataPropertyPlan)? = null
 ): EditableMetadataWriteTransaction {
     val startedAtMs = SystemClock.elapsedRealtime()
     val stagingDirectory = LocalMediaMetadataRecoveryStore.stagingDirectory(context)
@@ -626,6 +630,12 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
             localFilePath = updated.absolutePath,
             localFileName = updated.name
         )
+        val propertyPlan = embeddedPropertyPlanFactory?.let { factory ->
+            val existing = ParcelFileDescriptor.open(updated, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                loadTagLibPropertyMap(descriptor)
+            } ?: throw IOException("staged property plan: TagLib metadata unavailable")
+            factory(existing)
+        }
         val stagedOutcome = writeEditableMetadataDirect(
             context = context,
             song = stagedSong,
@@ -633,8 +643,8 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
             coverReference = coverReference,
             writeCover = writeCover,
             writeLyrics = writeLyrics,
-            embeddedPropertyMapOverride = embeddedPropertyMapOverride,
-            requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys
+            embeddedPropertyMapOverride = propertyPlan?.properties ?: embeddedPropertyMapOverride,
+            requiredEmbeddedPropertyKeys = propertyPlan?.requiredKeys ?: requiredEmbeddedPropertyKeys
         )
         if (stagedOutcome != LocalMediaMetadataWriteOutcome.SUCCESS) {
             NPLogger.w(

@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.IOException
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
@@ -140,7 +141,12 @@ internal suspend fun ManagedDownloadStorage.readTextInternalSuspending(
             // DocumentsProvider 可能把已经删除的 child 包装成
             // IllegalArgumentException。它不是 root 故障，不能让一次陈旧
             // sidecar 读取升级为未捕获异常或阻塞整批扫描
-            if (ManagedDownloadReferenceIo.isMissingDocumentFailure(result.error)) {
+            // 未知 FileNotFound 只能由同一完整引用的精确查询确认缺失，不能猜测暂时不可读的文档
+            val confirmedMissing = ManagedDownloadReferenceIo.isMissingDocumentFailure(result.error) ||
+                (generateSequence(result.error) { it.cause }.any { it is FileNotFoundException } &&
+                    !ManagedDownloadReferenceIo.isPermissionDocumentFailure(result.error) &&
+                    target.backend.stat(target.reference) == StorageLookupResult.Missing)
+            if (confirmedMissing) {
                 NPLogger.d(
                     TAG,
                     "读取托管文本时确认文件已不存在，按缺失处理: reference=$reference"
@@ -277,11 +283,10 @@ internal fun ManagedDownloadStorage.resolveTrustedManagedReferences(
     references: Collection<String?>,
     deletePolicy: ManagedDownloadDeletePolicy
 ): List<TrustedManagedRef> {
+    val trustedByReference = deletePolicy.trustedReferences.associateBy(TrustedManagedRef::externalReference)
     return references.mapNotNull { rawReference ->
         val candidate = trustedManagedRefOrNull(rawReference) ?: return@mapNotNull null
-        deletePolicy.trustedReferences.firstOrNull { trusted ->
-            trusted.externalReference == candidate.externalReference
-        } ?: candidate.takeIf { reference ->
+        trustedByReference[candidate.externalReference] ?: candidate.takeIf { reference ->
             reference.reference is StorageReference.FileRef &&
                 isReferenceAllowedForManagedDelete(
                     reference = reference.externalReference,

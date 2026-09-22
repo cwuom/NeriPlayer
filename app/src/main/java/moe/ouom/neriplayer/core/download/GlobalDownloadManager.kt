@@ -1077,8 +1077,6 @@ object GlobalDownloadManager {
             context = appContext,
             songName = song.name,
             storedAudio = audioForRemoval,
-            songId = song.id,
-            candidateBaseNames = candidateBaseNames,
             explicitReferences = explicitReferences,
             useCachedSnapshotOnly = false
         )

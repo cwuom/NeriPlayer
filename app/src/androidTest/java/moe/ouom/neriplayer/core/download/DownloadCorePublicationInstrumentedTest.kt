@@ -11,6 +11,7 @@ import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import moe.ouom.neriplayer.testing.awaitProcessDeathAtSeedCheckpoint
 import com.kyant.taglib.TagLib
 import java.io.File
 import java.io.IOException
@@ -154,6 +155,7 @@ class DownloadCorePublicationInstrumentedTest {
                 marker.writeText(JSONObject().put("pid", Process.myPid()).put("operationId", operationId)
                     .put("reference", pending.reference).put("partialReference", partial).toString())
             }
+            if (phase == "seed") awaitProcessDeathAtSeedCheckpoint()
             if (phase != "seed") {
                 val state = JSONObject(marker.readText())
                 if (phase == "recover") assertFalse("recovery must use a fresh process", state.getInt("pid") == Process.myPid())
@@ -222,7 +224,7 @@ class DownloadCorePublicationInstrumentedTest {
         GlobalDownloadManager.startupRecoveryMutex.withLock {
             GlobalDownloadManager.pendingDownloadRecoverySlot.withLock {
                 awaitConcurrentCatalogReadersIdle()
-                for (size in listOf(0, 64, 512, 850)) withStorage(
+                for (size in listOf(0, 64, 512, 850, 4096, 8192)) withStorage(
                     saf = true,
                     startupRecoveryLockHeld = true
                 ) {
@@ -783,6 +785,7 @@ class DownloadCorePublicationInstrumentedTest {
                 marker.writeText(JSONObject().put("pid", Process.myPid())
                     .put("operationId", operationId).put("reference", pending.reference).toString())
             }
+            if (phase == "seed") awaitProcessDeathAtSeedCheckpoint()
             if (phase != "seed") {
                 val state = JSONObject(marker.readText())
                 if (phase == "recover") assertFalse("recovery must run in another process", state.getInt("pid") == Process.myPid())

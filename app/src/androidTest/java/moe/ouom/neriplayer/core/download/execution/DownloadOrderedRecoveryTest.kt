@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import moe.ouom.neriplayer.testing.awaitProcessDeathAtSeedCheckpoint
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
@@ -49,7 +50,10 @@ class DownloadOrderedRecoveryTest {
                 )
                 seed(db, "new-after-restart", 6)
             }
-            if (phase == "seed") return@runBlocking
+            if (phase == "seed") {
+                awaitProcessDeathAtSeedCheckpoint()
+                return@runBlocking
+            }
             val before = db.downloadOperationDao().find("in-flight")!!
             val commitBefore = db.downloadOperationDao().find("committing")!!
             val commitPayload = DownloadExecutionRoomStore.read(context, "committing", db)!!

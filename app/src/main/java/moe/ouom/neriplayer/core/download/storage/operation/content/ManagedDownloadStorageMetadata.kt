@@ -49,6 +49,10 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.displayName
 import java.io.File
 import java.io.InputStream
+import java.io.IOException
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadResult
+import moe.ouom.neriplayer.core.download.storage.metadata.classifyManagedMetadataRead
+import moe.ouom.neriplayer.core.download.storage.metadata.requireAvailableMetadata
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
 
@@ -100,7 +104,17 @@ internal suspend fun ManagedDownloadStorage.parseDownloadedAudioMetadataEntriesB
     context: Context,
     entries: Collection<StoredEntry>
 ): List<Pair<StoredEntry, DownloadedAudioMetadata?>> {
-    if (entries.isEmpty()) return emptyList()
+    val results = readDownloadedAudioMetadataEntriesDetailed(context, entries)
+    return entries.map { entry ->
+        entry to (results[entry.reference] as? ManagedMetadataReadResult.Found)?.metadata
+    }
+}
+
+internal suspend fun ManagedDownloadStorage.readDownloadedAudioMetadataEntriesDetailed(
+    context: Context,
+    entries: Collection<StoredEntry>
+): Map<String, ManagedMetadataReadResult> {
+    if (entries.isEmpty()) return emptyMap()
     return coroutineScope {
         entries.toList()
             .chunked(METADATA_SCAN_PARALLELISM)
@@ -108,8 +122,14 @@ internal suspend fun ManagedDownloadStorage.parseDownloadedAudioMetadataEntriesB
                 batch.map { entry ->
                     async(metadataScanDispatcher) {
                         val metadata = try {
-                            val raw = readTextInternalSuspending(context, entry.reference)
-                            raw?.let(::parseDownloadedAudioMetadataJson)
+                            val target = backendReference(context, entry.reference)
+                            if (target == null) {
+                                ManagedMetadataReadResult.Unavailable(IOException("unsupported metadata reference"))
+                            } else {
+                                classifyManagedMetadataRead(target.backend.read(target.reference) { input ->
+                                    input.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                                })
+                            }
                         } catch (error: CancellationException) {
                             throw error
                         } catch (error: Exception) {
@@ -118,48 +138,26 @@ internal suspend fun ManagedDownloadStorage.parseDownloadedAudioMetadataEntriesB
                                 "读取清理 metadata 失败，保留 pending 证据: " +
                                     "name=${entry.name}, error=${error.message}"
                             )
-                            null
+                            ManagedMetadataReadResult.Unavailable(error)
                         }
-                        entry to metadata
+                        entry.reference to metadata
                     }
                 }.awaitAll()
-            }
+            }.toMap()
     }
 }
 
 internal fun ManagedDownloadStorage.parseDownloadedAudioMetadataBatch(
     context: Context,
-    entries: Collection<Pair<String, StoredEntry>>
+    entries: Collection<Pair<String, StoredEntry>>,
+    requireAvailable: Boolean = false
 ): Map<String, DownloadedAudioMetadata?> {
     if (entries.isEmpty()) return emptyMap()
     return runBlocking(Dispatchers.IO) {
-        coroutineScope {
-            val results = linkedMapOf<String, DownloadedAudioMetadata?>()
-            entries.toList()
-                .chunked(METADATA_SCAN_PARALLELISM)
-                .forEach { batch ->
-                    batch.map { (audioName, entry) ->
-                        async(metadataScanDispatcher) {
-                            val metadata = try {
-                                val raw = readTextInternalSuspending(context, entry.reference)
-                                raw?.let(::parseDownloadedAudioMetadataJson)
-                            } catch (error: CancellationException) {
-                                throw error
-                            } catch (error: Exception) {
-                                NPLogger.w(
-                                    TAG,
-                                    "读取下载 metadata 失败，保留音频并等待重试: " +
-                                        "name=$audioName, error=${error.message}"
-                                )
-                                null
-                            }
-                            audioName to metadata
-                        }
-                    }.awaitAll().forEach { (audioName, metadata) ->
-                        results[audioName] = metadata
-                    }
-                }
-            results
+        val results = readDownloadedAudioMetadataEntriesDetailed(context, entries.map { it.second })
+        if (requireAvailable) requireAvailableMetadata(results)
+        entries.associate { (audioName, entry) ->
+            audioName to (results[entry.reference] as? ManagedMetadataReadResult.Found)?.metadata
         }
     }
 }

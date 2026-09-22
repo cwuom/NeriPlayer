@@ -11,6 +11,31 @@ import org.junit.Test
 class ManagedDownloadCoverLookupTest {
 
     @Test
+    fun `explicit opaque cover alias wins over same basename foreign cover`() {
+        val audio = audioEntry("song.mp3")
+        val owned = storedEntry("owned.jpg", "content://provider/tree/root/document/owned%2Fopaque")
+        val foreign = coverEntry("song.jpg")
+        val snapshot = snapshot(listOf(audio), mapOf(audio.name to metadata("stable", "content://provider/document/owned%2Fopaque")),
+            listOf(owned, foreign))
+        assertEquals(owned.reference, ManagedDownloadCoverLookup.findCoverReference(snapshot, audio))
+    }
+
+    @Test
+    fun `trusted metadata alias resolves to enumerated reference`() {
+        val audio = audioEntry("song.mp3")
+        val owned = storedEntry("owned.jpg", "content://provider/tree/root/document/owned%2Fopaque")
+        val snapshot = snapshot(listOf(audio), emptyMap(), listOf(owned))
+        assertEquals(owned.reference,
+            moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner.trustedMetadataReference(
+                "content://provider/document/owned%2Fopaque", snapshot))
+        listOf("content://other/document/owned%2Fopaque", "content://provider/document/opaque",
+            "content://provider/document/owned%2Fother", "provider\u0000owned/opaque").forEach { reference ->
+            assertNull(moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
+                .trustedMetadataReference(reference, snapshot))
+        }
+    }
+
+    @Test
     fun `stable cover candidates prefer short hash and retain legacy digest`() {
         val baseName = "Artist - Song"
         val stableKey = "1|netease|"

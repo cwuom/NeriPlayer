@@ -173,13 +173,9 @@ internal fun LocalMediaSupport.writeLocalFileCoverSidecar(
         coverDirectory,
         localCoverSidecarName(baseName, extension, stableIdentityKey)
     )
-    companionTransaction?.beforeWrite(
-        reference = target.absolutePath,
-        bytes = bytes,
-        created = !target.exists()
-    )
-    if (!writeBytesFileAtomically(target, bytes)) return false
-    companionTransaction?.afterWrite(target.absolutePath)
+    if (companionTransaction != null) {
+        companionTransaction.write(target.absolutePath, bytes, created = !target.exists())
+    } else if (!writeBytesFileAtomically(target, bytes)) return false
     (existingSpecificFiles + existingParentSpecificFiles).filter { it != target }.forEach { old ->
         if (old.exists()) {
             if (companionTransaction != null) {
@@ -312,13 +308,9 @@ internal fun LocalMediaSupport.writeDocumentCoverSidecar(
         if (targetChild.createdByCurrentMutation) {
             companionTransaction?.created(target)
         }
-        companionTransaction?.beforeWrite(
-            reference = target,
-            bytes = bytes,
-            created = targetChild.createdByCurrentMutation
-        )
-        if (!writeBytesContent(context, target, bytes)) return@withDocumentMutationLock false
-        companionTransaction?.afterWrite(target)
+        if (companionTransaction != null) {
+            companionTransaction.write(target, bytes, created = targetChild.createdByCurrentMutation)
+        } else if (!writeBytesContent(context, target, bytes)) return@withDocumentMutationLock false
         (specific + parentSpecific).distinctBy(DocumentChild::uri)
             .filter { it.uri != target }
             .forEach { old ->
@@ -407,16 +399,12 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
         }
         val written = plans.all { (target, content, _) ->
             val bytes = content.toByteArray(Charsets.UTF_8)
-            companionTransaction?.beforeWrite(
-                reference = target.absolutePath,
-                bytes = bytes,
-                created = !target.exists()
-            )
-            val success = writeTextFileAtomically(target, content) && readTextFile(target) == content
-            if (success) companionTransaction?.afterWrite(target.absolutePath)
+            val success = if (companionTransaction != null) {
+                companionTransaction.write(target.absolutePath, bytes, created = !target.exists())
+            } else writeTextFileAtomically(target, content) && readTextFile(target) == content
             success
         }
-        if (!written) {
+        if (!written && companionTransaction == null) {
             plans.asReversed().forEach { (target, _, previous) ->
                 if (previous == null) {
                     if (target.exists() && !target.delete()) {
@@ -497,19 +485,15 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
         var written = true
         plans.forEach { (reference, content, _) ->
             val bytes = content.toByteArray(Charsets.UTF_8)
-            companionTransaction?.beforeWrite(
-                reference = reference,
-                bytes = bytes,
-                created = reference in lyricResolution.createdReferences
-            )
-            if (!writeTextContent(context, reference, content)) {
+            val success = if (companionTransaction != null) {
+                companionTransaction.write(reference, bytes, created = reference in lyricResolution.createdReferences)
+            } else writeTextContent(context, reference, content)
+            if (!success) {
                 written = false
                 NPLogger.w(TAG, "SAF lyric variant write failed: reference=$reference")
-            } else {
-                companionTransaction?.afterWrite(reference)
             }
         }
-        if (!written) {
+        if (!written && companionTransaction == null) {
             plans.asReversed().forEach { (reference, _, previousState) ->
                 val (previous, existedBefore) = previousState
                 if (existedBefore) {
@@ -628,11 +612,9 @@ internal fun LocalMediaSupport.writeTextFileAtomically(target: File, content: St
         File.createTempFile(".${target.name}.", ".tmp", parent)
     }.getOrNull() ?: return false
     return runCatching {
-        temporary.writeText(content, Charsets.UTF_8)
-        if (!temporary.renameTo(target)) {
-            temporary.copyTo(target, overwrite = true)
-            temporary.delete()
-        }
+        java.io.FileOutputStream(temporary).use { it.write(content.toByteArray(Charsets.UTF_8)); it.fd.sync() }
+        java.nio.file.Files.move(temporary.toPath(), target.toPath(),
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         target.isFile && readTextFile(target) == content
     }.onFailure {
         temporary.delete()
@@ -647,11 +629,9 @@ internal fun LocalMediaSupport.writeBytesFileAtomically(target: File, bytes: Byt
         File.createTempFile(".${target.name}.", ".tmp", parent)
     }.getOrNull() ?: return false
     return runCatching {
-        temporary.outputStream().use { output -> output.write(bytes) }
-        if (!temporary.renameTo(target)) {
-            temporary.copyTo(target, overwrite = true)
-            temporary.delete()
-        }
+        java.io.FileOutputStream(temporary).use { output -> output.write(bytes); output.fd.sync() }
+        java.nio.file.Files.move(temporary.toPath(), target.toPath(),
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         target.isFile && target.inputStream().use { input ->
             input.readBytesLimited(MAX_EDITABLE_COVER_BYTES).contentEquals(bytes)
         }

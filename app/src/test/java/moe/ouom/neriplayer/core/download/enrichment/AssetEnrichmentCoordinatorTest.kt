@@ -25,6 +25,166 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 
 class AssetEnrichmentCoordinatorTest {
     @Test
+    fun `before start cancellation never runs blocking completion on cancellation caller`() = runBlocking {
+        for (cancelMode in listOf("targeted-join", "all-join", "targeted", "all")) {
+            val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val coordinator = AssetEnrichmentCoordinator(
+                scope, parallelism = 1, maxActiveJobs = 1, startJob = {}
+            )
+            val callbackEntered = CompletableDeferred<Unit>()
+            val callbackRelease = java.util.concurrent.CountDownLatch(1)
+            val returned = CompletableDeferred<Boolean>()
+            val completions = AtomicInteger()
+            val old = coordinator.enqueue("before-start", onCompletion = {
+                completions.incrementAndGet()
+                callbackEntered.complete(Unit)
+                callbackRelease.await()
+            }) { error("cancelled lazy job must not run") }
+            val caller = launch(Dispatchers.Default) {
+                val result = when (cancelMode) {
+                    "targeted-join" -> coordinator.cancelAndJoin(listOf("before-start"), timeoutMs = 25)
+                    "all-join" -> coordinator.cancelAllAndJoin(timeoutMs = 25)
+                    "targeted" -> coordinator.cancel("before-start")
+                    else -> coordinator.cancelAll() == 1
+                }
+                returned.complete(result)
+            }
+            try {
+                withTimeout(2_000) { callbackEntered.await() }
+                val result = kotlinx.coroutines.withTimeoutOrNull(1_000) { returned.await() }
+                assertEquals("cancel mode=$cancelMode must return while callback remains blocked",
+                    !cancelMode.endsWith("join"), result)
+                assertTrue("before-start" in coordinator.activeOperationIds())
+                assertEquals(0, coordinator.availableCapacity())
+                assertTrue(old === coordinator.tryEnqueue("before-start") {})
+                callbackRelease.countDown()
+                assertTrue(coordinator.awaitCompletion(listOf("before-start"), 2_000))
+                assertEquals(1, completions.get())
+                assertEquals(1, coordinator.availableCapacity())
+            } finally {
+                callbackRelease.countDown()
+                withTimeout(2_000) { caller.join() }
+                coordinator.cancelAllAndJoin()
+                scope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun `cancelled scope and throwing completion release exactly once`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 1, maxActiveJobs = 1)
+        val completions = AtomicInteger()
+        scope.cancel()
+        val job = coordinator.enqueue("cancelled-parent", onCompletion = {
+            completions.incrementAndGet()
+            error("completion failure")
+        }) { error("cancelled parent must not run") }
+        assertTrue(coordinator.awaitCompletion(listOf("cancelled-parent"), 2_000))
+        assertTrue(job.isCompleted)
+        assertEquals(1, completions.get())
+        assertEquals(1, coordinator.availableCapacity())
+        assertFalse(coordinator.hasActiveJobs.value)
+    }
+
+    @Test
+    fun `cancel all retains normal and overflow cleanup owners`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 1, maxActiveJobs = 1)
+        val entered = listOf(CompletableDeferred<Unit>(), CompletableDeferred<Unit>())
+        val cleanup = listOf(CompletableDeferred<Unit>(), CompletableDeferred<Unit>())
+        val release = CompletableDeferred<Unit>()
+        try {
+            repeat(2) { index ->
+                coordinator.tryEnqueue("owner-$index", allowSingleOverflow = true) {
+                    try {
+                        entered[index].complete(Unit)
+                        awaitCancellation()
+                    } finally {
+                        withContext(NonCancellable) {
+                            cleanup[index].complete(Unit)
+                            release.await()
+                        }
+                    }
+                }
+            }
+            entered.forEach { it.await() }
+            coordinator.cancelAll()
+            cleanup.forEach { it.await() }
+            assertFalse(coordinator.cancelAllAndJoin(timeoutMs = 10))
+            assertEquals(2, coordinator.activeCount())
+            assertEquals(null, coordinator.tryEnqueue("extra", allowSingleOverflow = true) {})
+            release.complete(Unit)
+            assertTrue(coordinator.cancelAllAndJoin(timeoutMs = 2_000))
+            assertEquals(0, coordinator.activeCount())
+        } finally {
+            release.complete(Unit)
+            coordinator.cancelAllAndJoin()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `cancelled owner remains registered until non cancellable cleanup settles`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 1, maxActiveJobs = 1)
+        val started = CompletableDeferred<Unit>()
+        val cleanup = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        try {
+            val old = coordinator.enqueue("owner") {
+                try {
+                    started.complete(Unit)
+                    awaitCancellation()
+                } finally {
+                    withContext(NonCancellable) {
+                        cleanup.complete(Unit)
+                        release.await()
+                    }
+                }
+            }
+            started.await()
+            coordinator.cancel("owner")
+            cleanup.await()
+            assertFalse(coordinator.cancelAndJoin(listOf("owner"), timeoutMs = 10))
+            assertTrue("owner" in coordinator.activeOperationIds())
+            assertEquals(0, coordinator.availableCapacity())
+            assertTrue(old === coordinator.tryEnqueue("owner") {})
+            release.complete(Unit)
+            assertTrue(coordinator.awaitCompletion(listOf("owner"), 2_000))
+            assertEquals(0, coordinator.activeCount())
+        } finally {
+            release.complete(Unit)
+            coordinator.cancelAllAndJoin()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `synchronous completion callback is part of ownership settlement`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 1, maxActiveJobs = 1)
+        val callbackStarted = CompletableDeferred<Unit>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        try {
+            val old = coordinator.enqueue("callback", onCompletion = {
+                callbackStarted.complete(Unit)
+                release.await(5, java.util.concurrent.TimeUnit.SECONDS)
+            }) {}
+            withTimeout(2_000) { callbackStarted.await() }
+            assertFalse(coordinator.awaitCompletion(listOf("callback"), 10))
+            assertEquals(0, coordinator.availableCapacity())
+            assertTrue(old === coordinator.tryEnqueue("callback") {})
+            release.countDown()
+            assertTrue(coordinator.awaitCompletion(listOf("callback"), 2_000))
+        } finally {
+            release.countDown()
+            coordinator.cancelAllAndJoin()
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `manager enrichment can finish one full transport wave without a hidden four song limit`() = runBlocking {
         val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val coordinator = AssetEnrichmentCoordinator(
@@ -49,6 +209,7 @@ class AssetEnrichmentCoordinatorTest {
             assertEquals(null, coordinator.tryEnqueue("wave-overflow") {})
             release.complete(Unit)
             jobs.filterNotNull().forEach { it.join() }
+            assertTrue(coordinator.awaitCompletion((0 until waveSize).map { "wave-$it" }, 2_000))
             assertEquals(0, coordinator.activeCount())
         } finally {
             release.complete(Unit)
@@ -85,6 +246,7 @@ class AssetEnrichmentCoordinatorTest {
         assertEquals(1, runs.get())
         release.complete(Unit)
         withTimeout(2_000L) { duplicate.join() }
+        assertTrue(coordinator.awaitCompletion(listOf("operation"), 2_000))
         assertEquals(1, runs.get())
         assertEquals(1, completionCount.get())
         assertEquals(0, duplicateCompletionCount.get())
@@ -158,6 +320,7 @@ class AssetEnrichmentCoordinatorTest {
         withTimeout(2_000L) { job.join() }
         assertTrue(job.isCompleted)
         assertTrue(!job.isCancelled)
+        assertTrue(coordinator.awaitCompletion(listOf("timeout-callback-failure"), 2_000))
         assertEquals(callbackFailure, completionError.get())
         assertEquals(0, unhandledFailures.get())
         scope.cancel()
@@ -202,6 +365,7 @@ class AssetEnrichmentCoordinatorTest {
 
             releasePermit.complete(Unit)
             withTimeout(2_000L) { queuedJob.join() }
+            assertTrue(coordinator.awaitCompletion(listOf("queued-operation"), 2_000))
             assertEquals(null, timeout.get())
             assertFalse(queuedJob.isCancelled)
             assertEquals(1, queuedRuns.get())
@@ -290,6 +454,7 @@ class AssetEnrichmentCoordinatorTest {
                 block = block
             )
             withTimeout(2_000L) { job.join() }
+            assertTrue(coordinator.awaitCompletion(listOf(operationId), 2_000))
             assertEquals("operation=$operationId", 1, releases.get())
         }
 
@@ -309,6 +474,7 @@ class AssetEnrichmentCoordinatorTest {
         withTimeout(2_000L) { cancellationStarted.await() }
         assertTrue(coordinator.cancel("cancelled"))
         withTimeout(2_000L) { cancelledJob.join() }
+        assertTrue(coordinator.awaitCompletion(listOf("cancelled"), 2_000))
         assertEquals(1, cancellationReleases.get())
         assertEquals(1, ignoredFailures.get())
         scope.cancel()
@@ -429,6 +595,7 @@ class AssetEnrichmentCoordinatorTest {
 
         release.complete(Unit)
         withTimeout(2_000L) { first?.join() }
+        assertTrue(coordinator.awaitCompletion(listOf("bounded-first"), 2_000))
         assertEquals(1, coordinator.availableCapacity())
         val resumed = coordinator.tryEnqueue("bounded-resumed") {}
         assertTrue(resumed != null)
@@ -478,6 +645,7 @@ class AssetEnrichmentCoordinatorTest {
 
         regularRelease.complete(Unit)
         withTimeout(2_000L) { regular?.join() }
+        assertTrue(coordinator.awaitCompletion(listOf("regular"), 2_000))
         assertEquals(1, coordinator.availableCapacity())
         val refill = coordinator.tryEnqueue("normal-refill") {
             refillStarted.complete(Unit)
@@ -491,6 +659,7 @@ class AssetEnrichmentCoordinatorTest {
         withTimeout(2_000L) {
             listOfNotNull(refill, overflow).forEach { job -> job.join() }
         }
+        assertTrue(coordinator.awaitCompletion(listOf("normal-refill", "manual-overflow"), 2_000))
         assertFalse(coordinator.isActive("manual-overflow"))
         assertEquals(1, coordinator.availableCapacity())
         scope.cancel()

@@ -60,7 +60,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheEntit
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackArtistEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackEntity
 
-private const val NERI_USER_DATA_FINAL_VERSION = 17
+private const val NERI_USER_DATA_FINAL_VERSION = 18
 
 @Database(
     entities = [
@@ -169,7 +169,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_13_14,
                 MIGRATION_14_15,
                 MIGRATION_15_FINAL,
-                MIGRATION_16_17
+                MIGRATION_16_17,
+                MIGRATION_17_18
             ).build()
         }
 
@@ -1021,6 +1022,16 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 createFinalDownloadTables(db)
                 copyV15DownloadPayload(db)
                 dropLegacyDownloadProjectionTables(db)
+            }
+        }
+
+        val MIGRATION_17_18: Migration = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_download_operation_recovery_cursor` " +
+                        "ON `download_operation` (`state`, `stop_requested_by_user`, " +
+                        "`queue_order`, `created_at_ms`, `operation_id`)"
+                )
             }
         }
 

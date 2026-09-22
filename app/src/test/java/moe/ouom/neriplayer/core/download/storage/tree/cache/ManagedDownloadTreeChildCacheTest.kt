@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.tree.cache
 
 import android.net.Uri
+import moe.ouom.neriplayer.core.download.storage.operation.content.pendingMetadataCleanupRootEntries
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.tree.query.ManagedDownloadTreeChildQuery
 import org.junit.Assert.assertEquals
@@ -13,9 +14,144 @@ import org.mockito.Mockito.doReturn
 
 class ManagedDownloadTreeChildCacheTest {
     @Test
-    fun `oversized directory is returned but not retained in cache`() {
+    fun `pending cleanup maps only owned candidate names and never dereferences unrelated children`() {
+        val unrelatedUri = mock(Uri::class.java)
+        org.mockito.Mockito.doThrow(AssertionError("unrelated root entry converted"))
+            .`when`(unrelatedUri).toString()
+        val children = listOf(
+            child("other.mp3", unrelatedUri),
+            child("other.mp3.npmeta.json", unrelatedUri),
+            child("song.mp3.npmeta.pending.json", uri("content://p/pending")),
+            child("song.mp3.npmeta.pending (1).json", uri("content://p/numbered")),
+            child("song.mp3.npdl_pending.owner.pending", uri("content://p/audio")),
+            child("song.mp3.npmeta.pending.json", unrelatedUri).copy(isDirectory = true)
+        )
+        assertEquals(listOf("content://p/pending", "content://p/numbered", "content://p/audio"),
+            pendingMetadataCleanupRootEntries(children, "song.mp3").map { it.reference })
+    }
+
+    @Test
+    fun `same name replacement keeps the returned opaque reference without charging twice`() {
+        val cache = ManagedDownloadTreeChildCache(maxCachedEntries = 2)
+        cache.rememberChildren("a", listOf(child("same", uri("content://opaque/old"))), 1L, true)
+        repeat(10) {
+            cache.rememberChild("a", child("same", uri("content://opaque/$it")), 2L)
+        }
+        cache.rememberChild("a", child("second", uri("content://opaque/second")), 3L)
+        assertEquals(2, cache.peekChildren("a")?.size)
+        assertNull(cache.peekChildByReference("a", "content://opaque/old", true))
+        assertEquals("content://opaque/9", cache.peekChild("a", "same", true)?.documentUri.toString())
+        cache.forgetChildName("a", "same", 4L)
+        cache.rememberChildName("a", "reserved", 5L, true)
+        cache.rememberChild("a", child("reserved", uri("content://opaque/new")), 6L)
+        assertEquals(2, cache.peekChildren("a")?.size)
+    }
+
+    @Test
+    fun `two large roots share default budget without dropping reserved names`() {
         val cache = ManagedDownloadTreeChildCache()
-        val children = (0..ManagedDownloadTreeChildCache.MAX_CACHED_CHILDREN_PER_PARENT)
+        for (parent in listOf("a", "b")) {
+            cache.rememberChildren(parent, (0 until 32767).map {
+                child("song-$it", uri("content://$parent/$it"))
+            }, 1L, true)
+            cache.rememberChildName(parent, "pending", 2L, true)
+        }
+        for (parent in listOf("a", "b")) {
+            assertEquals(32767, cache.peekChildren(parent)?.size)
+            assertTrue(cache.cachedNames(parent, 2L, 100L, true)?.contains("pending") == true)
+        }
+    }
+
+    @Test
+    fun `parent pressure cannot evict active reservations`() {
+        val cache = ManagedDownloadTreeChildCache()
+        repeat(256) { cache.rememberChildName("p$it", "reserved", 1L, true) }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            cache.rememberChildName("overflow", "reserved", 2L, true)
+        }
+        repeat(256) {
+            assertEquals(setOf("reserved"), cache.rememberChildren("p$it", emptyList(), 3L, true))
+        }
+        cache.forgetChildName("p0", "reserved", 4L)
+        cache.rememberChildName("overflow", "reserved", 5L, true)
+        assertEquals(setOf("reserved"), cache.rememberChildren("overflow", emptyList(), 6L, true))
+    }
+
+    @Test
+    fun `shared budget evicts snapshots but pins reservations and releases deleted names`() {
+        val cache = ManagedDownloadTreeChildCache(maxCachedEntries = 12)
+        fun fill(parent: String, count: Int, time: Long) = cache.rememberChildren(parent,
+            (0 until count).map { child("$parent-$it", uri("content://$parent/$it")) }, time, true)
+        fill("a", 5, 1L)
+        cache.rememberChildName("a", "reserved", 2L, true)
+        fill("b", 6, 3L)
+        cache.rememberChildName("b", "reserved-b", 4L, true)
+        assertEquals(5, cache.peekChildren("a")?.size)
+        assertNull(cache.peekChildren("b"))
+        val names = fill("b", 5, 5L)
+        assertTrue("reserved-b" in names)
+        assertEquals(5, cache.peekChildren("b")?.size)
+        cache.forgetChildName("a", "reserved", 6L)
+        fill("c", 8, 7L)
+        assertNull(cache.peekChildren("a"))
+        assertNull(cache.peekChildren("c"))
+        cache.forgetChildName("b", "reserved-b", 8L)
+        fill("c", 8, 9L)
+        assertEquals(8, cache.peekChildren("c")?.size)
+        assertNull(cache.peekChildren("b"))
+    }
+
+    @Test
+    fun `oversized refresh keeps bounded reservations and expiry releases capacity`() {
+        val cache = ManagedDownloadTreeChildCache(maxCachedEntries = 4)
+        cache.rememberChildren("a", emptyList(), 1L, true)
+        repeat(4) { cache.rememberChildName("a", "r$it", 2L, true) }
+        val oversized = (0..4).map { child("song-$it", uri("content://a/$it")) }
+        val refreshed = cache.rememberChildren("a", oversized, 3L, true)
+        assertTrue(refreshed.containsAll(listOf("r0", "r1", "r2", "r3")))
+        assertNull(cache.peekChildren("a"))
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            cache.rememberChildName("b", "cannot-reserve", 4L, true)
+        }
+        cache.rememberChildName("b", "after-expiry", 600_003L, true)
+        val names = cache.rememberChildren("b", emptyList(), 600_004L, true)
+        assertEquals(setOf("after-expiry"), names)
+        cache.clear()
+        assertEquals(emptySet<String>(), cache.rememberChildren("b", emptyList(), 600_005L, true))
+    }
+
+    @Test
+    fun `complete snapshot ttl and incomplete absence stay conservative after borrowing`() {
+        val cache = ManagedDownloadTreeChildCache()
+        val children = (0 until 8193).map { child("s$it", uri("content://a/$it")) }
+        cache.rememberChildren("a", children, 1L, true)
+        assertEquals(8193, cache.cachedChildren("a", 10L, 10L)?.size)
+        assertNull(cache.cachedChildren("a", 12L, 10L))
+        cache.rememberChildren("a", emptyList(), 13L, false)
+        assertNull(cache.cachedChildren("a", 13L, 10L))
+        assertNull(cache.cachedNames("a", 13L, 10L, true))
+        assertEquals(8193, cache.peekAllChildren("a")?.size)
+    }
+
+    @Test
+    fun `large parent borrows shared budget across the old cliff`() {
+        val cache = ManagedDownloadTreeChildCache()
+        for (size in listOf(8191, 8192, 8193, 16384)) {
+            val children = (0 until size).map { child("song-$it", uri("content://p/$it")) }
+            cache.rememberChildren("large", children, 1L, true)
+            cache.rememberChildName("large", "reserved", 2L, true)
+            assertEquals(size, cache.peekChildren("large")?.size)
+            assertTrue(cache.cachedNames("large", 2L, 100L, true)?.contains("reserved") == true)
+            cache.rememberChild("large", child("reserved", uri("content://p/new")), 3L)
+            assertEquals(size + 1, cache.peekChildren("large")?.size)
+            cache.forgetChildName("large", "reserved", 4L)
+        }
+    }
+
+    @Test
+    fun `oversized directory is returned but not retained in cache`() {
+        val cache = ManagedDownloadTreeChildCache(maxCachedEntries = 32)
+        val children = (0..32)
             .map { index -> child("song-$index.mp3") }
 
         val names = cache.rememberChildren(
@@ -38,10 +174,10 @@ class ManagedDownloadTreeChildCacheTest {
 
     @Test
     fun `oversized incomplete refresh preserves previous snapshot for recovery`() {
-        val cache = ManagedDownloadTreeChildCache()
+        val cache = ManagedDownloadTreeChildCache(maxCachedEntries = 32)
         val previous = child("known.mp3")
         cache.rememberChildren("parent", listOf(previous), 1L, isComplete = true)
-        val partial = (0..ManagedDownloadTreeChildCache.MAX_CACHED_CHILDREN_PER_PARENT)
+        val partial = (0..32)
             .map { index -> child("partial-$index.mp3") }
 
         cache.rememberChildren("parent", partial, 2L, isComplete = false)
@@ -54,8 +190,8 @@ class ManagedDownloadTreeChildCacheTest {
 
     @Test
     fun `small refresh re-enables cache after oversized directory`() {
-        val cache = ManagedDownloadTreeChildCache()
-        val oversized = (0..ManagedDownloadTreeChildCache.MAX_CACHED_CHILDREN_PER_PARENT)
+        val cache = ManagedDownloadTreeChildCache(maxCachedEntries = 32)
+        val oversized = (0..32)
             .map { index -> child("song-$index.mp3") }
         cache.rememberChildren("parent", oversized, 1L, isComplete = true)
 
@@ -200,9 +336,9 @@ class ManagedDownloadTreeChildCacheTest {
     }
 
     @Test
-    fun `same URI rename at per parent limit remains cacheable`() {
-        val cache = ManagedDownloadTreeChildCache()
-        val children = (0 until ManagedDownloadTreeChildCache.MAX_CACHED_CHILDREN_PER_PARENT)
+    fun `same URI rename at shared budget limit remains cacheable`() {
+        val cache = ManagedDownloadTreeChildCache(maxCachedEntries = 32)
+        val children = (0 until 32)
             .map { index ->
                 child(
                     name = "song-$index.mp3",
