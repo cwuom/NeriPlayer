@@ -1011,6 +1011,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "live_update_lyric_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 12,
+            ui = SettingUiType.Switch
+        )
+        val liveUpdateLyricEnabled = autoSetting(
+            titleRes = R.string.settings_live_update_lyric_enabled,
+            descriptionRes = R.string.settings_live_update_lyric_enabled_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
             key = "status_bar_lyrics_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
@@ -1255,6 +1268,21 @@ object AutoSettingsSchema {
             defaultValue = true,
             titleRes = R.string.settings_dynamic_island_lyrics_enabled,
             descriptionRes = R.string.settings_dynamic_island_lyrics_enabled_desc,
+            icon = AutoSettingIcon.AutoAwesome
+        )
+
+        @AutoSetting(
+            key = "xiaomi_super_island_lyric_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 29,
+            ui = SettingUiType.Custom
+        )
+        val xiaomiSuperIslandLyricEnabled = autoSwitchSetting(
+            key = "xiaomi_super_island_lyric_enabled",
+            defaultValue = false,
+            titleRes = R.string.settings_xiaomi_super_island_lyric_enabled,
+            descriptionRes = R.string.settings_xiaomi_super_island_lyric_enabled_desc,
             icon = AutoSettingIcon.AutoAwesome
         )
 
