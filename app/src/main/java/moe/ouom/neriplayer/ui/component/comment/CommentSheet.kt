@@ -97,6 +97,11 @@ private fun CommentSheetContent(
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
+    // 切换评论来源（换歌 / 自动切歌）时把列表位置重置到顶部: 数据已整体替换, 旧的滚动位置会让新来源停在中间 (§23/§24)
+    LaunchedEffect(ui.source?.platform, ui.source?.resourceId) {
+        listState.scrollToItem(0)
+    }
+
     // 触底自动翻页: 仅在成功态、还有下一页、且没有正在进行的请求时触发 (§29/§30)
     val reachedEnd by remember {
         derivedStateOf {
