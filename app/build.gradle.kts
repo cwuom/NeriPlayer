@@ -335,4 +335,11 @@ dependencies {
     implementation(libs.androidx.palette.ktx)
 
     implementation(libs.superlyricapi)
+
+    // Xiaomi HyperOS Super Island lyric delivery.
+    implementation(libs.focus.api)
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
+    implementation(libs.hidden.api.bypass)
+    compileOnly(project(":hidden-api"))
 }

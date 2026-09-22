@@ -40,6 +40,8 @@ import moe.ouom.neriplayer.core.startup.app.AppProcessClassifier
 import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
 import moe.ouom.neriplayer.core.startup.app.WebViewDataDirectorySuffix
 import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
+import moe.ouom.neriplayer.shizuku.AndroidRuntimeCompatibility
+import moe.ouom.neriplayer.shizuku.ShizukuKeepAliveManager
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
@@ -56,6 +58,7 @@ class NeriPlayerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AndroidRuntimeCompatibility.installHiddenApiExemptions()
         AppFeedback.initialize(this)
         // 冷启动首个播放点击可能早于 Compose 的 SideEffect, 先把 Application 绑给播放器
         PlayerManager.bindApplication(this)
@@ -64,6 +67,11 @@ class NeriPlayerApplication : Application() {
             configuredMainProcessName = applicationInfo.processName,
             packageName = packageName
         )
+        if (runningInMainProcess) {
+            // Keep a daemon user-service binding like Halcyon. This never opens a permission
+            // dialog; it only reconnects after the user has already authorized NeriPlayer.
+            ShizukuKeepAliveManager.initialize(this)
+        }
         configureWebViewDataDirectoryIfNeeded(runningInMainProcess)
 
         // 初始化语言设置

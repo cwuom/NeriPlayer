@@ -393,6 +393,8 @@ internal fun PlayerManager.initializeImpl(
         externalBluetoothLyricsEnabled = false
         externalBluetoothTranslationEnabled = false
         dynamicIslandLyricsEnabled = false
+        xiaomiSuperIslandLyricEnabled = false
+        liveUpdateLyricEnabled = false
         amllLyricsEnabled = initialPlaybackPreferences.amllLyricsEnabled
         lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
         LyriconManager.setEnabled(lyriconEnabled)
@@ -1115,6 +1117,13 @@ internal fun PlayerManager.initializeImpl(
             }
         }
         ioScope.launch {
+            settingsRepo.liveUpdateLyricEnabledFlow.collect { enabled ->
+                liveUpdateLyricEnabled = enabled
+                liveLyricNotificationBridge.setEnabled(enabled)
+                syncExternalBluetoothLyrics(_currentSongFlow.value)
+            }
+        }
+        ioScope.launch {
             settingsRepo.statusBarLyricsEnabledFlow.collect { enabled ->
                 statusBarLyricsEnable = enabled
                 syncExternalBluetoothLyrics(_currentSongFlow.value)
@@ -1136,6 +1145,18 @@ internal fun PlayerManager.initializeImpl(
             settingsRepo.dynamicIslandLyricsEnabledFlow.collect { enabled ->
                 dynamicIslandLyricsEnabled = enabled
                 syncExternalBluetoothLyrics(_currentSongFlow.value)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.xiaomiSuperIslandLyricEnabledFlow.collect { enabled ->
+                xiaomiSuperIslandLyricEnabled = enabled
+                xiaomiSuperIslandLyricBridge.setEnabled(enabled)
+                syncExternalBluetoothLyrics(_currentSongFlow.value)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.xiaomiSuperIslandSettingsFlow.collect { settings ->
+                xiaomiSuperIslandLyricBridge.setSettings(settings)
             }
         }
         ioScope.launch {
@@ -1167,6 +1188,16 @@ internal fun PlayerManager.initializeImpl(
         mainScope.launch {
             _isPlayingFlow.collect { isPlaying ->
                 FloatingLyricsOverlayManager.updatePlaybackState(isPlaying)
+                if (xiaomiSuperIslandLyricEnabled) {
+                    if (isPlaying) {
+                        updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                    } else {
+                        xiaomiSuperIslandLyricBridge.onPlaybackPaused()
+                    }
+                }
+                if (liveUpdateLyricEnabled && !isPlaying) {
+                    liveLyricNotificationBridge.clear()
+                }
             }
         }
         mainScope.launch {
@@ -3991,10 +4022,13 @@ internal fun PlayerManager.releaseImpl() {
         externalBluetoothLyricsEnabled = false
         externalBluetoothTranslationEnabled = false
         dynamicIslandLyricsEnabled = false
+        xiaomiSuperIslandLyricEnabled = false
+        liveUpdateLyricEnabled = false
         floatingLyricsEnabled = false
         floatingLyricsShowTranslation = true
         statusBarLyricsEnable = false
         clearExternalBluetoothLyricLine()
+        liveLyricNotificationBridge.clear()
         FloatingLyricsOverlayManager.release()
         LyriconManager.release()
 

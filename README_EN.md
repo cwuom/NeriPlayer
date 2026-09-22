@@ -1217,6 +1217,9 @@ This means:
 - ✍️ An external native contribution is not added to the alternative-license
   scope merely by submitting a PR; the contributor must explicitly record a
   dual-license grant.
+- 📦 The Shizuku/XMSF firewall integration for Xiaomi Super Island lyrics
+  directly ports relevant Capsulyric source, which is released under GPL-3.0;
+  see [THIRD_PARTY_LICENSES.md](./THIRD_PARTY_LICENSES.md) for attribution.
 - 📚 See [LICENSE](./LICENSE) for details.
 
 ---
