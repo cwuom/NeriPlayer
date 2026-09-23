@@ -2,9 +2,11 @@ package moe.ouom.neriplayer.core.comment.repository
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.mapper.parseBiliCommentPage
+import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -33,6 +35,38 @@ internal fun legacyBiliResourceIdOrNull(resourceId: Long): Long? {
 }
 
 /**
+ * 只有「平台明确拒绝了这个 oid」的业务错误才允许尝试解包重试。
+ *
+ * 网络不可用 / 服务端 5xx / 未知异常都只是临时故障, 用猜测出来的另一个 id 去「恢复」,
+ * 只会把**别的视频**的评论展示并缓存给用户; 因此这些分类一律直接抛出原始错误。
+ * [CommentError.API] 表示「HTTP 成功但业务 code != 0」, 属于确定性的业务拒绝,
+ * 旧版打包 id 实测返回的 `-404` 与 `12002` 分别落在 [CommentError.NOT_FOUND] 与 [CommentError.API]。
+ */
+internal fun isLegacyFallbackEligible(reason: CommentError): Boolean = when (reason) {
+    CommentError.NOT_FOUND, CommentError.CLOSED, CommentError.API -> true
+    CommentError.NETWORK, CommentError.PERMISSION, CommentError.SERVER, CommentError.UNKNOWN -> false
+}
+
+/**
+ * 解包候选是否拿到「这确实是同一首歌的视频」的证据。
+ *
+ * 视频信息接口返回的 aid 必须等于候选值, 并且 bvid 必须与歌曲 album 中记录的 bvid
+ * (`Bilibili|<cid>|<bvid>`, 见 [moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum]) 一致:
+ * 只有 `avid * 10000 + 分P序号` 这种打包格式才会解出同一个视频, 从而排除
+ * 「`aid / 10000` 恰好是另一条真实视频」的猜测。album 没记录 bvid 时无从验证, 直接判定失败。
+ */
+internal fun hasVerifiedLegacyVideo(
+    info: BiliClient.VideoBasicInfo?,
+    candidateAvid: Long,
+    bvid: String?
+): Boolean {
+    if (info == null || info.aid != candidateAvid) return false
+    val expectedBvid = bvid?.trim().orEmpty()
+    if (expectedBvid.isEmpty()) return false
+    return info.bvid.equals(expectedBvid, ignoreCase = true)
+}
+
+/**
  * Bilibili 评论仓库。
  *
  * 复用项目已有的 [AppContainer.biliClient] (同一条 HTTP / Cookie 链路)，
@@ -51,8 +85,9 @@ internal object BiliCommentRepository : CommentRepository {
      * 加载 Bilibili 某页评论: 非强制刷新时先查内存缓存, 未命中则以 aid 为资源 id
      * 调用 [AppContainer.biliClient] 的视频评论接口, 解析后写入缓存再返回。
      *
-     * 恢复的旧版歌曲用的是打包播放 id, 直接用它会拿到 `-404` / 评论已关闭;
-     * 因此请求失败时按播放侧同一规则解包重试一次, 只有重试成功才采用结果,
+     * 恢复的旧版歌曲用的是打包播放 id, 直接用它会拿到 `-404` / 业务码 `12002`;
+     * 此时只在「确定性业务拒绝 + 视频信息接口确认解包候选的 aid 与 bvid 都与本歌曲一致」
+     * 两个条件同时成立时, 才按播放侧同一规则解包重试一次, 且只有重试成功才采用结果,
      * 真正「视频不存在 / 评论已关闭」的歌曲仍然保留原始错误。
      */
     override suspend fun loadComments(
@@ -74,7 +109,7 @@ internal object BiliCommentRepository : CommentRepository {
         val result = try {
             loadPage(effectiveId, page, pageSize)
         } catch (apiError: CommentApiException) {
-            resolveWithLegacyId(apiError, resourceId, effectiveId, page, pageSize)
+            resolveWithLegacyId(apiError, resourceId, secondaryId, effectiveId, page, pageSize)
         }
 
         CommentMemoryCache.put(platform.name, resourceId, page, result)
@@ -83,17 +118,21 @@ internal object BiliCommentRepository : CommentRepository {
 
     /**
      * 按解包后的 avid 重试一次; 成功时记住映射并返回该页,
-     * 失败则抛出最初那次请求的错误 (保持「视频不存在 / 评论已关闭」的原判)。
+     * 失败 / 未通过验证则抛出最初那次请求的错误 (保持「视频不存在 / 评论已关闭」的原判)。
      */
     private suspend fun resolveWithLegacyId(
         apiError: CommentApiException,
         resourceId: Long,
+        bvid: String?,
         effectiveId: Long,
         page: Int,
         pageSize: Int
     ): CommentPage {
+        if (!isLegacyFallbackEligible(apiError.reason)) throw apiError
+
         val legacyId = legacyBiliResourceIdOrNull(resourceId) ?: throw apiError
         if (legacyId == effectiveId) throw apiError
+        if (!verifyLegacyVideo(legacyId, bvid)) throw apiError
 
         val pageResult = try {
             loadPage(legacyId, page, pageSize)
@@ -104,6 +143,20 @@ internal object BiliCommentRepository : CommentRepository {
         NPLogger.d(TAG, "legacy packed playback id decoded: $resourceId -> $legacyId")
         rememberLegacyResourceId(resourceId, legacyId)
         return pageResult
+    }
+
+    /**
+     * 用播放侧同一条视频信息接口确认解包候选就是这首歌的视频;
+     * 请求异常或信息不匹配一律视为「未验证」, 不采用该候选。
+     */
+    private suspend fun verifyLegacyVideo(candidateAvid: Long, bvid: String?): Boolean {
+        val info = runCatching {
+            withContext(Dispatchers.IO) {
+                AppContainer.biliClient.getVideoBasicInfoByAvid(candidateAvid)
+            }
+        }.getOrNull()
+
+        return hasVerifiedLegacyVideo(info, candidateAvid, bvid)
     }
 
     private suspend fun loadPage(resourceId: Long, page: Int, pageSize: Int): CommentPage {
