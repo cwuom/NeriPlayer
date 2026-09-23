@@ -24,7 +24,6 @@ import moe.ouom.neriplayer.core.download.manager.catalog.restoreDeferredDownload
 import moe.ouom.neriplayer.core.download.manager.catalog.scheduleDownloadedPlaybackReferenceValidation
 import moe.ouom.neriplayer.core.download.manager.catalog.scheduleDownloadedSongReferenceReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.scheduleFullLibraryDeleteRecoveryIfNeeded
-import moe.ouom.neriplayer.core.download.manager.catalog.updateDownloadedSongDeleteProgress
 import moe.ouom.neriplayer.core.download.manager.runtime.findFastCachedDownloadedSong
 import moe.ouom.neriplayer.core.download.manager.runtime.resolveFinalizedManagedAudioSnapshot
 import moe.ouom.neriplayer.core.download.manager.runtime.resolvePlayableManagedAudioSnapshot
@@ -43,10 +42,10 @@ import moe.ouom.neriplayer.core.download.policy.runDownloadedSongMetadataSyncSaf
 import moe.ouom.neriplayer.core.download.policy.shouldApplyDownloadedPlaybackHydration
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.DownloadedSongMetadataSyncOutcome
 import android.content.Context
-import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
@@ -60,8 +59,6 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-
-private const val FULL_LIBRARY_DELETE_ACK_TARGET_MS = 5_000L
 
 internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
     context: Context,
@@ -187,8 +184,6 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsWithResultImpl(
     if (targetSongs.isEmpty()) {
         return DownloadedSongDeleteResult.empty()
     }
-    val requestStartedAtMs = SystemClock.elapsedRealtime()
-
     val session = try {
         beginDownloadedSongDeleteSession(
             context = appContext,
@@ -210,99 +205,37 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsWithResultImpl(
             failedSongs = targetSongs
         )
     }
-    if (session.fullLibraryDelete && session.deleteIntentDurable) {
-        launchDurableFullLibraryDeleteSession(
-            context = appContext,
-            session = session
-        )
-        val acknowledgementElapsedMs = SystemClock.elapsedRealtime() - requestStartedAtMs
-        NPLogger.i(
-            TAG,
-            "全选删除已持久接受并转入后台物理清理: songs=${targetSongs.size}, " +
-                "elapsedMs=$acknowledgementElapsedMs, " +
-                "targetMs=$FULL_LIBRARY_DELETE_ACK_TARGET_MS, " +
-                "overBudget=${acknowledgementElapsedMs > FULL_LIBRARY_DELETE_ACK_TARGET_MS}"
-        )
-        return DownloadedSongDeleteResult(
-            deletedSongs = targetSongs,
-            failedSongs = emptyList(),
-            physicalCleanupPending = true
-        )
-    }
-    return try {
-        withContext(Dispatchers.IO) {
-            val deleteLease = ManagedDownloadDirectoryMutationFence.acquireDeleteLeaseOrNull(
-                appContext
-            ) ?: return@withContext restoreDeferredDownloadedSongDeleteSession(
-                appContext,
-                session
-            ).also {
-                NPLogger.w(
-                    TAG,
-                    "目录迁移进行中，删除下载稍后重试: songs=${targetSongs.size}"
-                )
-            }
-            try {
-                downloadedSongDeleteMutex.withLock {
-                    deleteDownloadedSongsOnIo(appContext, session)
-                }
-            } finally {
-                deleteLease.close()
-            }
-        }
-    } finally {
-        scheduleFullLibraryDeleteRecoveryIfNeeded(
-            context = appContext,
-            session = session
-        )
-        endDownloadedSongDeletion(session.deletionKeys, appContext)
-    }
-}
-
-private fun GlobalDownloadManager.launchDurableFullLibraryDeleteSession(
-    context: Context,
-    session: GlobalDownloadManager.DownloadedSongDeleteSession
-) {
-    scope.launch {
-        var deleteLease: AutoCloseable? = null
+    // 页面离开后由应用作用域继续清理，调用方只接收真实物理删除结果
+    return scope.async {
         try {
-            deleteLease = ManagedDownloadDirectoryMutationFence.acquireDeleteLeaseOrNull(
-                context
-            )
-            if (deleteLease == null) {
-                updateDownloadedSongDeleteProgress(
-                    session = session,
-                    phase = DownloadedSongDeletePhase.WAITING_FOR_DIRECTORY
-                )
-                NPLogger.w(
-                    TAG,
-                    "目录迁移进行中，全选删除已接受并交给持久恢复: " +
-                        "songs=${session.targetSongs.size}"
-                )
-                return@launch
-            }
             withContext(Dispatchers.IO) {
-                downloadedSongDeleteMutex.withLock {
-                    deleteDownloadedSongsOnIo(context, session)
+                val deleteLease = ManagedDownloadDirectoryMutationFence.acquireDeleteLeaseOrNull(
+                    appContext
+                ) ?: return@withContext restoreDeferredDownloadedSongDeleteSession(
+                    appContext,
+                    session
+                ).also {
+                    NPLogger.w(
+                        TAG,
+                        "目录迁移进行中，删除下载稍后重试: songs=${targetSongs.size}"
+                    )
+                }
+                try {
+                    downloadedSongDeleteMutex.withLock {
+                        deleteDownloadedSongsOnIo(appContext, session)
+                    }
+                } finally {
+                    deleteLease.close()
                 }
             }
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (error: Throwable) {
-            NPLogger.w(
-                TAG,
-                "后台全选删除失败，保留持久意图继续恢复: ${error.message}",
-                error
-            )
         } finally {
-            deleteLease?.close()
             scheduleFullLibraryDeleteRecoveryIfNeeded(
-                context = context,
+                context = appContext,
                 session = session
             )
-            endDownloadedSongDeletion(session.deletionKeys, context)
+            endDownloadedSongDeletion(session.deletionKeys, appContext)
         }
-    }
+    }.await()
 }
 
 internal fun GlobalDownloadManager.playDownloadedSongImpl(context: Context, song: DownloadedSong) {

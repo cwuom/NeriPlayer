@@ -153,6 +153,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -193,6 +194,8 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
+import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCard
+import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedSongs
@@ -246,6 +249,10 @@ internal fun LocalPlaylistDetailModernContent(
     contentScope: LocalPlaylistDetailModernContentScope
 ) {
     with(contentScope) {
+            val deleteProgress by vm.downloadedSongDeleteProgress.collectAsStateWithLifecycle()
+            var deletingSongCount by remember(playlistId) { mutableIntStateOf(0) }
+            val deletionInProgress = deletingSongCount > 0 ||
+                isDownloadedSongDeletionRunning(deleteProgress)
             PlaylistModernVisualColorsProvider(
                 coverUrl = headerCover,
                 offlineMode = offlineMode
@@ -585,7 +592,10 @@ internal fun LocalPlaylistDetailModernContent(
                                             showDeleteMultiConfirm = true
                                         }
                                     },
-                                    enabled = selectedKeysState.value.isNotEmpty()
+                                    enabled = selectedKeysState.value.isNotEmpty() &&
+                                        !(isLocalFilesPlaylist &&
+                                            selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED &&
+                                            deletionInProgress)
                                 ) {
                                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete_selected))
                                 }
@@ -604,6 +614,13 @@ internal fun LocalPlaylistDetailModernContent(
             ) { padding ->
                 val miniPlayerHeight = LocalMiniPlayerHeight.current
                 Column(Modifier.padding(padding).fillMaxSize()) {
+                    if (isLocalFilesPlaylist) {
+                        DownloadedSongDeleteProgressCard(
+                            progress = deleteProgress,
+                            requestedSongCount = deletingSongCount,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
                     if (searchSlotVisible) {
                         PlaylistModernVisualColorsProvider(
                             coverUrl = headerCover,
@@ -1162,14 +1179,25 @@ internal fun LocalPlaylistDetailModernContent(
                             )
                         },
                         confirmButton = {
-                            HapticTextButton(onClick = {
+                            HapticTextButton(
+                                enabled = !deletesDownloadedSongs || !deletionInProgress,
+                                onClick = {
                                 if (deletesDownloadedSongs) {
                                     val songsToDelete = selectedDownloadedSongsForAction
+                                    deletingSongCount = songsToDelete.size
                                     showDeleteMultiConfirm = false
                                     exitSelectionMode()
                                     vm.deleteDownloadedSongs(songsToDelete) { result ->
+                                        deletingSongCount = 0
                                         scope.launch {
                                             val message = when {
+                                                result.physicalCleanupPending -> {
+                                                    context.resources.getQuantityString(
+                                                        R.plurals.local_files_delete_downloaded_cleanup_pending,
+                                                        result.deletedCount + result.notDeletedCount,
+                                                        result.deletedCount + result.notDeletedCount
+                                                    )
+                                                }
                                                 result.deletedCount > 0 && result.notDeletedCount == 0 -> {
                                                     context.resources.getQuantityString(
                                                         R.plurals.local_files_delete_downloaded_success,

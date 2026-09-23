@@ -132,7 +132,7 @@ class ManagedDownloadFullDeleteOwnershipTest {
         assertEquals(setOf(audio.reference, receipt.reference), plan.requestedReferences)
     }
 
-    @Test fun `unavailable read aborts planning while empty json gives no ownership`() {
+    @Test fun `unavailable read retains receipts while selected exact audio can still be deleted`() {
         val audio = entry("song.mp3")
         val receipt = entry("song.mp3.npmeta.json")
         val initial = inventory(listOf(audio, receipt), emptyList(), mapOf(receipt.reference to DownloadedAudioMetadata()))
@@ -141,7 +141,153 @@ class ManagedDownloadFullDeleteOwnershipTest {
             receipt.reference to ManagedMetadataReadResult.Unavailable(IOException("busy"))
         )), targets = listOf(DownloadedSongDeleteTarget(audio.reference, "key")))
         assertFalse(failed.snapshotComplete)
-        assertTrue(failed.requestedReferences.isEmpty())
+        assertEquals(setOf(audio.reference), failed.requestedReferences)
+    }
+
+    @Test fun `conflicting receipt owners do not block unrelated proven songs`() {
+        val conflictingAudio = entry("conflicting.mp3")
+        val formal = entry("conflicting.mp3.npmeta.json")
+        val pending = entry(".tmp/conflicting.mp3.npmeta.pending.json")
+        val conflictCover = entry("Covers/conflict.jpg")
+        val healthyAudio = entry("healthy.mp3")
+        val healthyReceipt = entry("healthy.mp3.npmeta.json")
+        val healthyCover = entry("Covers/healthy.jpg")
+        val state = inventory(
+            listOf(conflictingAudio, formal, healthyAudio, healthyReceipt),
+            listOf(conflictCover, healthyCover),
+            mapOf(
+                formal.reference to metadata(conflictingAudio, conflictCover).copy(operationId = "first-owner"),
+                pending.reference to metadata(conflictingAudio, conflictCover).copy(operationId = "second-owner"),
+                healthyReceipt.reference to metadata(healthyAudio, healthyCover)
+            )
+        ).copy(temporaryEntries = listOf(pending))
+
+        val plan = planOwnedFullLibraryDeletion(state)
+
+        assertFalse(plan.snapshotComplete)
+        assertEquals(setOf(healthyAudio.reference, healthyReceipt.reference, healthyCover.reference), plan.requestedReferences)
+        assertEquals(setOf(pending.reference), plan.unresolvedPendingReferences)
+        assertEquals(1, plan.blockingReasonCounts[ManagedDownloadFullDeleteBlockReason.CONFLICTING_RECEIPT])
+    }
+
+    @Test fun `unreadable receipt preserves unrelated receipts and sidecars for later recovery`() {
+        val unreadableAudio = entry("unreadable.mp3")
+        val unreadableReceipt = entry("unreadable.mp3.npmeta.json")
+        val healthyAudio = entry("healthy.mp3")
+        val healthyReceipt = entry("healthy.mp3.npmeta.json")
+        val sharedCover = entry("Covers/shared.jpg")
+        val state = inventory(
+            listOf(unreadableAudio, unreadableReceipt, healthyAudio, healthyReceipt),
+            listOf(sharedCover),
+            mapOf(healthyReceipt.reference to metadata(healthyAudio, sharedCover))
+        ).copy(metadataByReference = mapOf(
+            unreadableReceipt.reference to ManagedMetadataReadResult.Unavailable(IOException("provider busy")),
+            healthyReceipt.reference to ManagedMetadataReadResult.Found(metadata(healthyAudio, sharedCover))
+        ))
+
+        val plan = planOwnedFullLibraryDeletion(state, targets = listOf(
+            DownloadedSongDeleteTarget(unreadableAudio.reference, "unreadable"),
+            DownloadedSongDeleteTarget(healthyAudio.reference, "healthy")
+        ))
+
+        assertFalse(plan.snapshotComplete)
+        assertEquals(setOf(unreadableAudio.reference, healthyAudio.reference), plan.requestedReferences)
+        assertEquals(1, plan.blockingReasonCounts[ManagedDownloadFullDeleteBlockReason.METADATA_UNAVAILABLE])
+    }
+
+    @Test fun `unresolved temporary core does not erase unrelated owned deletion plan`() {
+        val audio = entry("healthy.mp3")
+        val receipt = entry("healthy.mp3.npmeta.json")
+        val pending = entry(".tmp/unknown.mp3.npdl_pending.unknown-owner.pending")
+        val state = inventory(listOf(audio, receipt), emptyList(), mapOf(receipt.reference to metadata(audio)))
+            .copy(temporaryEntries = listOf(pending))
+
+        val plan = planOwnedFullLibraryDeletion(state)
+
+        assertFalse(plan.snapshotComplete)
+        assertEquals(setOf(audio.reference, receipt.reference), plan.requestedReferences)
+        assertEquals(setOf(pending.reference), plan.unresolvedPendingReferences)
+        assertEquals(1, plan.blockingReasonCounts[ManagedDownloadFullDeleteBlockReason.UNRESOLVED_PENDING])
+    }
+
+    @Test fun `selected song deletes exact receipts from multiple completed download attempts`() {
+        selectedAttemptOwnership(pendingAudioPresent = true)
+    }
+
+    @Test fun `selected song retires previously owned pending receipt after its audio disappeared`() {
+        selectedAttemptOwnership(pendingAudioPresent = false)
+    }
+
+    @Test fun `multiple attempts retain receipts when old library identity is absent`() {
+        selectedAttemptOwnership(pendingAudioPresent = true, oldLibraryId = null)
+        selectedAttemptOwnership(pendingAudioPresent = true, oldLibraryId = "")
+    }
+
+    @Test fun `multiple attempts cannot treat foreign or unknown absent references as deleted audio`() {
+        selectedAttemptOwnership(pendingAudioPresent = false, foreignReference = true)
+        selectedAttemptOwnership(pendingAudioPresent = false, unprovenMissing = true)
+    }
+
+    @Test fun `multiple attempts cannot claim an unrelated same name pending audio`() {
+        selectedAttemptOwnership(pendingAudioPresent = true, extraUnknownAudio = true)
+    }
+
+    @Test fun `selected song cannot combine receipts from different libraries or stable keys`() {
+        selectedAttemptOwnership(pendingAudioPresent = true, conflictingLibrary = true)
+        selectedAttemptOwnership(pendingAudioPresent = true, conflictingStableKey = true)
+    }
+
+    private fun selectedAttemptOwnership(
+        pendingAudioPresent: Boolean,
+        extraUnknownAudio: Boolean = false,
+        conflictingLibrary: Boolean = false,
+        conflictingStableKey: Boolean = false,
+        oldLibraryId: String? = "current-library",
+        foreignReference: Boolean = false,
+        unprovenMissing: Boolean = false
+    ) {
+        val audio = entry("song.mp3")
+        val formal = entry("song.mp3.npmeta.json")
+        val pendingAudio = entry(".tmp/song.mp3.npdl_pending.old.pending")
+        val pendingReceipt = entry(".tmp/song.mp3.npmeta.pending.json")
+        val unknownAudio = entry(".tmp/song.mp3.npdl_pending.unknown.pending")
+        val cover = entry("Covers/current.jpg")
+        val oldCover = entry("Covers/old.jpg")
+        val foreignCover = entry("Covers/foreign.jpg")
+        val current = metadata(audio, cover).copy(
+            operationId = "current-owner", artifactId = "current-artifact", libraryId = "current-library",
+            mediaUri = audio.reference
+        )
+        val old = metadata(audio, oldCover).copy(
+            stableKey = if (conflictingStableKey) "different-song" else current.stableKey,
+            operationId = "old-owner", artifactId = "old-artifact",
+            libraryId = if (conflictingLibrary) "different-library" else oldLibraryId,
+            mediaUri = if (foreignReference) "content://foreign/document/opaque" else pendingAudio.reference
+        )
+        val state = inventory(listOf(audio, formal), listOf(cover, oldCover, foreignCover), mapOf(
+            formal.reference to current, pendingReceipt.reference to old
+        )).copy(temporaryEntries = listOfNotNull(
+            pendingAudio.takeIf { pendingAudioPresent }, pendingReceipt, unknownAudio.takeIf { extraUnknownAudio }
+        ))
+
+        val plan = planOwnedFullLibraryDeletion(state,
+            targets = listOf(DownloadedSongDeleteTarget(audio.reference, current.stableKey)),
+            persistedOwnedReferences = if (!pendingAudioPresent && !foreignReference && !unprovenMissing) {
+                setOf(pendingAudio.reference)
+            } else emptySet())
+
+        if (extraUnknownAudio || conflictingLibrary || conflictingStableKey ||
+            oldLibraryId.isNullOrBlank() || foreignReference || unprovenMissing
+        ) {
+            assertFalse(plan.snapshotComplete)
+            assertEquals(setOf(audio.reference), plan.requestedReferences)
+        } else {
+            assertTrue(plan.blockingReasonCounts.toString(), plan.snapshotComplete)
+            assertEquals(setOfNotNull(audio.reference, formal.reference, pendingReceipt.reference,
+                pendingAudio.reference.takeIf { pendingAudioPresent }, cover.reference, oldCover.reference),
+                plan.requestedReferences)
+        }
+        assertFalse(foreignCover.reference in plan.requestedReferences)
     }
 
     @Test fun `persisted sidecars replay after both audio and metadata disappear`() {

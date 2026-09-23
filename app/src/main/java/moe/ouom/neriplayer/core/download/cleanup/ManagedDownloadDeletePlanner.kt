@@ -10,11 +10,23 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.readTemporaryDirectoryEntries
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
+import moe.ouom.neriplayer.core.logging.NPLogger
+
+internal enum class ManagedDownloadFullDeleteBlockReason {
+    INCOMPLETE_ENUMERATION,
+    ROOT_CHANGED,
+    METADATA_UNAVAILABLE,
+    CONFLICTING_RECEIPT,
+    UNRESOLVED_PENDING,
+    RETAINED_OWNED_REFERENCE
+}
 
 internal data class ManagedDownloadFullDeletePlan(
     val requestedReferences: Set<String>,
     val snapshotComplete: Boolean,
-    val unresolvedPendingReferences: Set<String> = emptySet()
+    val unresolvedPendingReferences: Set<String> = emptySet(),
+    val blockingReasonCounts: Map<ManagedDownloadFullDeleteBlockReason, Int> = emptyMap(),
+    val rootEmptyConfirmationPending: Boolean = false
 )
 
 internal class ManagedDownloadDeletePlanner {
@@ -27,27 +39,48 @@ internal class ManagedDownloadDeletePlanner {
         val rootKey = ManagedDownloadStorage.rootKeyForResolvedRoot(root)
         val intent = PersistentDownloadedSongDeleteIntentStore.read(context)
         if (intent != null && intent.rootKey != rootKey) {
-            return ManagedDownloadFullDeletePlan(emptySet(), false)
+            return ManagedDownloadFullDeletePlan(emptySet(), false,
+                blockingReasonCounts = mapOf(ManagedDownloadFullDeleteBlockReason.ROOT_CHANGED to 1))
         }
         val refresh = ManagedDownloadStorage.treeDirectories.refreshDownloadLibraryEntries(context, root)
         val temporary = ManagedDownloadStorage.readTemporaryDirectoryEntries(
             context, root, forceRefresh = true, rootAlreadyRefreshed = true
         )
+        val enumerationComplete = refresh.rootEntriesComplete && refresh.sidecarEntriesComplete && temporary.isComplete
+        val emptyConfirmationPending = refresh.rootEmptyConfirmationPending && temporary.isComplete
+        if (!enumerationComplete) {
+            return ManagedDownloadFullDeletePlan(
+                requestedReferences = emptySet(),
+                snapshotComplete = false,
+                blockingReasonCounts = mapOf(ManagedDownloadFullDeleteBlockReason.INCOMPLETE_ENUMERATION to 1),
+                rootEmptyConfirmationPending = emptyConfirmationPending
+            )
+        }
         val metadataEntries = (refresh.rootEntries + temporary.entries).filter {
             !it.isDirectory && ManagedDownloadTreeNaming.isMetadataName(it.name)
         }
-        return planOwnedFullLibraryDeletion(
+        val plan = planOwnedFullLibraryDeletion(
             inventory = ManagedFullDeleteInventory(
                 rootEntries = refresh.rootEntries,
                 coverEntries = refresh.coverEntries,
                 lyricEntries = refresh.lyricEntries,
                 temporaryEntries = temporary.entries,
-                metadataByReference = ManagedDownloadStorage.readDownloadedAudioMetadataEntriesDetailed(context, metadataEntries),
-                enumerationComplete = refresh.rootEntriesComplete && refresh.sidecarEntriesComplete && temporary.isComplete
+                metadataByReference = ManagedDownloadStorage.readDownloadedAudioMetadataEntriesDetailed(
+                    context, metadataEntries, fullLibraryDelete = true
+                ),
+                enumerationComplete = true
             ),
             targets = intent?.targets.orEmpty(),
             selectedSongs = selectedSongs,
             persistedOwnedReferences = intent?.ownedReferences.orEmpty()
+        )
+        if (!plan.snapshotComplete) {
+            NPLogger.w("ManagedDownloadDeletePlanner",
+                "全选删除保留未确认引用: planned=${plan.requestedReferences.size}, " +
+                    "blockingReasons=${plan.blockingReasonCounts}")
+        }
+        return plan.copy(
+            rootEmptyConfirmationPending = emptyConfirmationPending
         )
     }
 

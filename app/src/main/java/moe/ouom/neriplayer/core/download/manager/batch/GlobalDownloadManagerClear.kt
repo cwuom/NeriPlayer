@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.download.manager.admission.promoteWaitingStorage
 import moe.ouom.neriplayer.core.download.manager.catalog.cancelScheduledDownloadedSongsCatalogPersist
 import moe.ouom.neriplayer.core.download.manager.catalog.persistConfirmedEmptyDownloadedSongsCatalog
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
+import moe.ouom.neriplayer.core.download.manager.catalog.publishConfirmedDeleteRecoveryCatalog
 import moe.ouom.neriplayer.core.download.manager.catalog.releaseDownloadArtifactAfterExecutionOwnershipLoss
 import moe.ouom.neriplayer.core.download.manager.commit.cleanupCancelledDownloadArtifacts
 import moe.ouom.neriplayer.core.download.manager.commit.cleanupCancelledPendingDownloadArtifacts
@@ -18,6 +19,8 @@ import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPu
 import moe.ouom.neriplayer.core.download.manager.runtime.withSongExecutionLock
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
 import moe.ouom.neriplayer.core.download.model.applyWaitingNetworkStatus
 import moe.ouom.neriplayer.core.download.policy.DOWNLOAD_CLEAR_HARD_DEADLINE_MS
 import moe.ouom.neriplayer.core.download.policy.DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS
@@ -63,6 +66,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 
 internal suspend fun GlobalDownloadManager.captureDownloadClearOwnership(
@@ -484,6 +488,8 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
     deferredFullDeleteProviderCleanupRecoveryPending.set(false)
     val appContext = context.applicationContext
     scope.launch {
+        var recoveryProgressId = downloadedSongDeleteProgressMutable.value
+            ?.takeIf { it.fullLibraryDelete }?.deleteId
         try {
             delay(100L)
             repeat(3) { attempt ->
@@ -545,7 +551,17 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
                 // 正常删除和无 catalog 恢复共用同一把锁。否则恢复线程可能
                 // 先删完引用，正常会话随后把空删除结果误判为失败并复活歌曲
                 val replayed = downloadedSongDeleteMutex.withLock {
-                    replayFullLibraryDeleteWithoutCatalog(appContext)
+                    val lease = ManagedDownloadDirectoryMutationFence.acquireDeleteLeaseOrNull(appContext)
+                        ?: return@withLock false
+                    try {
+                        replayFullLibraryDeleteWithoutCatalog(appContext)
+                    } finally {
+                        lease.close()
+                    }
+                }
+                if (recoveryProgressId == null) {
+                    recoveryProgressId = downloadedSongDeleteProgressMutable.value
+                        ?.takeIf { it.fullLibraryDelete }?.deleteId
                 }
                 if (replayed) {
                     NPLogger.i(TAG, "进程重启后的全选删除已按目录快照收敛")
@@ -570,6 +586,15 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
             )
         } finally {
             deferredFullDeleteRecoveryScheduled.set(false)
+            if (PersistentDownloadedSongDeleteIntentStore.hasPending(appContext) &&
+                downloadClearProviderCleanupCoordinator.activeOrNull() == null
+            ) {
+                downloadedSongDeleteProgressMutable.update { progress ->
+                    progress?.takeIf { it.fullLibraryDelete && it.deleteId == recoveryProgressId }?.copy(
+                        phase = DownloadedSongDeletePhase.FAILED
+                    ) ?: progress
+                }
+            }
             if (
                 deferredFullDeleteProviderCleanupRecoveryPending.compareAndSet(true, false)
             ) {
@@ -581,6 +606,31 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
 
 internal suspend fun GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog(context: Context): Boolean {
     val appContext = context.applicationContext
+    val intent = PersistentDownloadedSongDeleteIntentStore.read(appContext) ?: return false
+    val progress = downloadedSongDeleteProgressMutable.value
+        ?.takeIf { it.fullLibraryDelete }
+        ?: DownloadedSongDeleteProgress(
+            deleteId = downloadedSongDeleteIdGenerator.incrementAndGet(),
+            phase = DownloadedSongDeletePhase.READING_DELETE_PLAN,
+            requestedSongCount = intent.targets.size,
+            fullLibraryDelete = true
+        ).also { downloadedSongDeleteProgressMutable.value = it }
+    fun updateProgress(
+        phase: DownloadedSongDeletePhase,
+        total: Int? = null,
+        completed: Int = 0,
+        failed: Int = 0
+    ) {
+        downloadedSongDeleteProgressMutable.update { current ->
+            if (current?.deleteId != progress.deleteId) current else current.copy(
+                phase = phase,
+                totalReferenceCount = total,
+                completedReferenceCount = completed,
+                failedReferenceCount = failed
+            )
+        }
+    }
+    updateProgress(DownloadedSongDeletePhase.READING_DELETE_PLAN)
     val plan = try {
         managedDownloadDeletePlanner.buildFullLibraryDeletePlan(appContext)
     } catch (cancellation: CancellationException) {
@@ -589,21 +639,27 @@ internal suspend fun GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog
         NPLogger.w(TAG, "无 catalog 全库删除快照失败: ${error.message}", error)
         return false
     }
-    if (!plan.snapshotComplete) {
-        NPLogger.w(TAG, "无 catalog 全库删除快照不完整，保留恢复意图")
-        return false
-    }
     val requestedReferences = plan.requestedReferences
     if (!PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
             appContext, ManagedDownloadStorage.currentSnapshotCacheKey(appContext), requestedReferences
         )) return false
+    updateProgress(DownloadedSongDeletePhase.DELETING_REFERENCES, requestedReferences.size)
+    val completed = AtomicInteger()
+    val failed = AtomicInteger()
     val deletedReferences = try {
         if (requestedReferences.isEmpty()) {
             emptySet()
         } else {
             ManagedDownloadStorage.deleteFullLibraryReferences(
                 context = appContext,
-                references = requestedReferences
+                references = requestedReferences,
+                onDeleteAttemptFinished = { _, deleted ->
+                    if (deleted) completed.incrementAndGet() else failed.incrementAndGet()
+                    updateProgress(
+                        DownloadedSongDeletePhase.DELETING_REFERENCES,
+                        requestedReferences.size, completed.get(), failed.get()
+                    )
+                }
             )
         }
     } catch (cancellation: CancellationException) {
@@ -612,16 +668,22 @@ internal suspend fun GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog
         NPLogger.w(TAG, "无 catalog 全库删除引用失败: ${error.message}", error)
         return false
     }
+    publishConfirmedDeleteRecoveryCatalog(appContext, intent, deletedReferences)
     val remainingReferences = requestedReferences - deletedReferences
-    if (remainingReferences.isNotEmpty()) {
+    if (remainingReferences.isNotEmpty() || !plan.snapshotComplete) {
+        updateProgress(
+            DownloadedSongDeletePhase.FAILED, requestedReferences.size,
+            deletedReferences.size, maxOf(remainingReferences.size, plan.unresolvedPendingReferences.size)
+        )
         NPLogger.w(
             TAG,
             "无 catalog 全库删除仍有未确认引用: " +
                 "requested=${requestedReferences.size}, " +
-                "remaining=${remainingReferences.size}"
+                "remaining=${remainingReferences.size}, snapshotComplete=${plan.snapshotComplete}"
         )
         return false
     }
+    updateProgress(DownloadedSongDeletePhase.FINALIZING, requestedReferences.size, deletedReferences.size)
     val artifactCleanup = runCatching {
         managedDownloadArtifactCoordinator
             .deleteAllAfterCancellationSettled(appContext)
@@ -675,6 +737,7 @@ internal suspend fun GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog
     clearPersistedDownloadClearProgress(appContext)
     finishReleasedTaskClearState(appContext)
     wakeDownloadExecutionPump(appContext, "full_library_delete_released")
+    updateProgress(DownloadedSongDeletePhase.COMPLETED, requestedReferences.size, deletedReferences.size)
     return true
 }
 

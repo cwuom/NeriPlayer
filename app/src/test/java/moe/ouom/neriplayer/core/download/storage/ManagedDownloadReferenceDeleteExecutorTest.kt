@@ -729,6 +729,97 @@ class ManagedDownloadReferenceDeleteExecutorTest {
     }
 
     @Test
+    fun `provider batch cancellation escapes without starting individual deletes`() {
+        val references = listOf("content://documents.test/document/cancel-batch")
+        val individualDeletes = AtomicInteger()
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceBatchDeleteOperation = { _, _ ->
+                throw CancellationException("provider cancelled batch")
+            },
+            contentReferenceDeleteOperation = { _, _, _, _ ->
+                individualDeletes.incrementAndGet()
+                StorageMutationResult.Deleted
+            }
+        )
+        var thrown: CancellationException? = null
+        try {
+            runBlocking {
+                executor.deleteReferencesConcurrently(
+                    context = mock(Context::class.java),
+                    references = trustedReferences(references),
+                    deletePolicy = deletePolicyFor(references)
+                )
+            }
+        } catch (error: CancellationException) {
+            thrown = error
+        }
+        assertEquals("provider cancelled batch", thrown?.message)
+        assertEquals(0, individualDeletes.get())
+    }
+
+    @Test
+    fun `provider batches respect the caller concurrency bound`() = runBlocking {
+        val references = (0 until 512).map { "content://documents.test/document/bounded-$it" }
+        val active = AtomicInteger()
+        val maximumActive = AtomicInteger()
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceBatchDeleteOperation = { _, batch ->
+                val count = active.incrementAndGet()
+                maximumActive.accumulateAndGet(count, ::maxOf)
+                try {
+                    Thread.sleep(20)
+                    List(batch.size) { StorageMutationResult.Deleted }
+                } finally {
+                    active.decrementAndGet()
+                }
+            }
+        )
+
+        val result = executor.deleteReferencesConcurrently(
+            context = mock(Context::class.java),
+            references = trustedReferences(references),
+            deletePolicy = deletePolicyFor(references),
+            parallelism = 2
+        )
+
+        assertEquals(references.toSet(), result.deletedReferences)
+        assertTrue("provider concurrency exceeded caller limit: ${maximumActive.get()}", maximumActive.get() <= 2)
+    }
+
+    @Test
+    fun `provider progress is published before a long batch hides completed deletes`() = runBlocking {
+        val references = (0 until 256).map { "content://documents.test/document/progress-$it" }
+        val physicallyDeleted = AtomicInteger()
+        val physicalCountAtFirstProgress = AtomicInteger()
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceBatchDeleteOperation = { _, batch ->
+                physicallyDeleted.addAndGet(batch.size)
+                List(batch.size) { StorageMutationResult.Deleted }
+            }
+        )
+
+        val result = executor.deleteReferencesConcurrently(
+            context = mock(Context::class.java),
+            references = trustedReferences(references),
+            deletePolicy = deletePolicyFor(references),
+            parallelism = 1,
+            onDeleteAttemptFinished = { _, deleted ->
+                if (deleted) physicalCountAtFirstProgress.compareAndSet(0, physicallyDeleted.get())
+            }
+        )
+
+        assertEquals(references.toSet(), result.deletedReferences)
+        assertTrue("too many files disappeared before first progress: ${physicalCountAtFirstProgress.get()}",
+            physicalCountAtFirstProgress.get() in 1..32)
+    }
+
+    @Test
     fun `failed batch entries alone use compatible per reference fallback`() = runBlocking {
         val references = (0 until 12).map { index ->
             "content://documents.test/document/fallback-$index"

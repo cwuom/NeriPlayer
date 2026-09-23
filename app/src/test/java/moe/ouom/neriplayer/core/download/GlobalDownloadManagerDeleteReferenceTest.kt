@@ -302,6 +302,62 @@ class GlobalDownloadManagerDeleteReferenceTest {
     }
 
     @Test
+    fun `incomplete full delete never restores audio already physically deleted`() {
+        val deleted = downloadedSong(id = 1L, name = "deleted")
+        val retained = downloadedSong(id = 2L, name = "retained")
+        val result = resolveConfirmedFullLibraryDeleteResult(
+            targetSongs = listOf(deleted, retained),
+            snapshotComplete = false,
+            requestedReferences = setOf(deleted.filePath, retained.filePath),
+            deletedReferences = setOf(deleted.filePath),
+            fallback = DownloadedSongDeleteResult(emptyList(), listOf(deleted, retained))
+        )
+
+        assertEquals(listOf(deleted), result.deletedSongs)
+        assertEquals(listOf(retained), result.failedSongs)
+    }
+
+    @Test
+    fun `partial full delete matches complete document identity instead of name`() {
+        val deleted = downloadedSong(id = 1L, name = "same").copy(
+            mediaUri = "content://provider/document/opaque%2Ffirst"
+        )
+        val retained = downloadedSong(id = 2L, name = "same").copy(
+            mediaUri = "content://provider/document/opaque%2Fsecond"
+        )
+        val deletedReference = "content://provider/tree/root/document/opaque%2Ffirst"
+        val result = resolveConfirmedFullLibraryDeleteResult(
+            targetSongs = listOf(deleted, retained),
+            snapshotComplete = false,
+            requestedReferences = setOf(deletedReference),
+            deletedReferences = setOf(deletedReference),
+            fallback = DownloadedSongDeleteResult(emptyList(), listOf(deleted, retained))
+        )
+
+        assertEquals(listOf(deleted), result.deletedSongs)
+        assertEquals(listOf(retained), result.failedSongs)
+    }
+
+    @Test
+    fun `missing audio remains deleted when complete enumeration leaves a failed sidecar`() {
+        val missing = downloadedSong(id = 1L, name = "missing").copy(
+            stableKey = "same-key", mediaUri = "content://provider/document/opaque%2Ffirst"
+        )
+        val retained = missing.copy(id = 2L, mediaUri = "content://provider/document/opaque%2Fsecond")
+        val result = resolveConfirmedFullLibraryDeleteResult(
+            targetSongs = listOf(missing, retained),
+            snapshotComplete = true,
+            requestedReferences = setOf("content://provider/document/receipt"),
+            deletedReferences = emptySet(),
+            remainingReferences = setOf("content://provider/document/receipt"),
+            confirmedMissingAudioReferences = setOf("content://provider/tree/root/document/opaque%2Ffirst"),
+            fallback = DownloadedSongDeleteResult(emptyList(), listOf(missing, retained))
+        )
+        assertEquals(listOf(missing), result.deletedSongs)
+        assertEquals(listOf(retained), result.failedSongs)
+    }
+
+    @Test
     fun `deletion result merge keeps concurrent downloads and restores failed entries`() {
         val deletedSong = downloadedSong(id = 1L, name = "deleted", downloadTime = 1L)
         val failedSong = downloadedSong(id = 2L, name = "failed", downloadTime = 2L)

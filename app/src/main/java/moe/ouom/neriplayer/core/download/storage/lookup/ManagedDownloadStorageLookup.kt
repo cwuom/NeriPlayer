@@ -175,6 +175,7 @@ internal object ManagedDownloadStorageLookup {
             )?.let { return ManagedDownloadAudioLookupResult(it, "legacyLocalEvidence") }
             return null
         }
+        if (snapshot.audioEntriesWithoutMetadata.isEmpty()) return null
         val baseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
         return findAudioEntry(snapshot.audioEntriesWithoutMetadata, baseNames)
             ?.let { ManagedDownloadAudioLookupResult(it, "legacyNameFallback") }
@@ -184,6 +185,7 @@ internal object ManagedDownloadStorageLookup {
         audioEntries: List<ManagedDownloadStorage.StoredEntry>,
         baseNames: List<String>
     ): ManagedDownloadStorage.StoredEntry? {
+        if (audioEntries.isEmpty() || baseNames.isEmpty()) return null
         val exactCandidates = buildSet {
             baseNames.forEach { baseName ->
                 audioExtensions.forEach { ext -> add("$baseName.$ext") }
@@ -304,6 +306,8 @@ internal object ManagedDownloadStorageLookup {
         metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
     ): ManagedDownloadStorage.StoredEntry? {
         if (audioEntries.isEmpty()) return null
+        // 唯一身份候选无需生成历史文件名和正则，调用方继续校验元信息归属
+        if (audioEntries.size == 1) return audioEntries[0]
         val baseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
         return findAudioEntry(audioEntries, baseNames)
             ?: audioEntries

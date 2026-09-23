@@ -48,7 +48,9 @@ internal const val MIGRATION_IO_RETRY_DELAY_MS = 150L
 internal const val SAF_DELETE_MAX_ATTEMPTS = 3
 internal const val SAF_DELETE_RETRY_DELAY_MS = 80L
 internal const val SAF_REFERENCE_DELETE_PARALLELISM = 8
-internal const val SAF_REFERENCE_DELETE_BATCH_SIZE = 128
+internal const val FULL_LIBRARY_REFERENCE_DELETE_PARALLELISM = 16
+// Provider 在批内串行删除，小批次才能及时确认进度并让空闲 worker 接续工作
+internal const val SAF_REFERENCE_DELETE_BATCH_SIZE = 16
 internal const val SAF_REFERENCE_DELETE_BATCH_PARALLELISM = 8
 internal const val STREAM_COPY_BUFFER_SIZE_BYTES = 1 * 1024 * 1024
 internal const val SAF_COMMITTED_SIZE_TOLERANCE_BYTES = 1L

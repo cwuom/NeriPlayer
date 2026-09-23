@@ -180,7 +180,8 @@ internal fun ManagedDownloadStorage.composeSnapshot(
     rootEntriesComplete: Boolean = true,
     sidecarEntriesComplete: Boolean = true,
     pendingAudioEntries: List<StoredEntry> = emptyList(),
-    pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap()
+    pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap(),
+    rootEmptyConfirmationPending: Boolean = false
 ): DownloadLibrarySnapshot {
     return ManagedDownloadSnapshotIndex.compose(
         audioEntries = audioEntries,
@@ -189,6 +190,7 @@ internal fun ManagedDownloadStorage.composeSnapshot(
         coverEntries = coverEntries,
         lyricEntries = lyricEntries,
         rootEntriesComplete = rootEntriesComplete,
+        rootEmptyConfirmationPending = rootEmptyConfirmationPending,
         sidecarEntriesComplete = sidecarEntriesComplete,
         pendingAudioEntries = pendingAudioEntries,
         pendingMetadataByAudioName = pendingMetadataByAudioName

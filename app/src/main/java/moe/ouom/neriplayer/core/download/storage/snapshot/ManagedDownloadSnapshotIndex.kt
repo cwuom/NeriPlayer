@@ -16,7 +16,8 @@ internal object ManagedDownloadSnapshotIndex {
         sidecarEntriesComplete: Boolean = true,
         pendingAudioEntries: List<ManagedDownloadStorage.StoredEntry> = emptyList(),
         pendingMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> =
-            emptyMap()
+            emptyMap(),
+        rootEmptyConfirmationPending: Boolean = false
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
         val normalizedPendingAudioEntries = (pendingAudioEntries + audioEntries.filter {
             it.isPendingAudioWrite
@@ -152,6 +153,7 @@ internal object ManagedDownloadSnapshotIndex {
                 lyricEntries.forEach { add(it.reference) }
             },
             rootEntriesComplete = rootEntriesComplete,
+            rootEmptyConfirmationPending = rootEmptyConfirmationPending,
             sidecarEntriesComplete = sidecarEntriesComplete,
             pendingAudioEntries = normalizedPendingAudioEntries,
             pendingMetadataByAudioName = normalizedPendingMetadataByAudioName
@@ -401,6 +403,7 @@ internal object ManagedDownloadSnapshotIndex {
             coverEntries = snapshot.coverEntriesByName.values.toList(),
             lyricEntries = snapshot.lyricEntriesByName.values.toList(),
             rootEntriesComplete = snapshot.rootEntriesComplete,
+            rootEmptyConfirmationPending = snapshot.rootEmptyConfirmationPending,
             sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
             pendingAudioEntries = snapshot.pendingAudioEntries,
             pendingMetadataByAudioName = pendingMetadataByAudioName
@@ -473,6 +476,7 @@ internal object ManagedDownloadSnapshotIndex {
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
             rootEntriesComplete = snapshot.rootEntriesComplete,
+            rootEmptyConfirmationPending = snapshot.rootEmptyConfirmationPending,
             sidecarEntriesComplete = true,
             pendingAudioEntries = snapshot.pendingAudioEntries,
             pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
@@ -520,6 +524,7 @@ internal object ManagedDownloadSnapshotIndex {
             lyricEntries = snapshot.lyricEntriesByName.values
                 .filterNot { entry -> entry.reference in references },
             rootEntriesComplete = snapshot.rootEntriesComplete,
+            rootEmptyConfirmationPending = snapshot.rootEmptyConfirmationPending,
             sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
             pendingAudioEntries = snapshot.pendingAudioEntries.filterNot {
                 it.matchesDeletedReference()
@@ -572,6 +577,7 @@ internal object ManagedDownloadSnapshotIndex {
                 coverEntries = snapshot.coverEntriesByName.values.toList(),
                 lyricEntries = snapshot.lyricEntriesByName.values.toList(),
                 rootEntriesComplete = snapshot.rootEntriesComplete,
+                rootEmptyConfirmationPending = snapshot.rootEmptyConfirmationPending,
                 sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
                 pendingAudioEntries = snapshot.pendingAudioEntries.filterNot { pending ->
                     pending.logicalName == storedEntry.name || pending.reference == storedEntry.reference

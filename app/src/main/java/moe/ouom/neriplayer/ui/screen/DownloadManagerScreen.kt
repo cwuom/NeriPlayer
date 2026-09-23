@@ -59,8 +59,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
 import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteResult
+import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCard
+import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
@@ -113,6 +114,8 @@ fun DownloadManagerScreen(
     var deleteEntireLibraryPending by remember { mutableStateOf(false) }
     var deletingSongCount by remember { mutableIntStateOf(0) }
     var deleteResult by remember { mutableStateOf<DownloadedSongDeleteResult?>(null) }
+    val deletionInProgress = deletingSongCount > 0 ||
+        isDownloadedSongDeletionRunning(deleteProgress)
 
     val deleteResultMessage = deleteResult?.let { result ->
         val deletedCount = result.deletedSongs.size
@@ -120,8 +123,8 @@ fun DownloadManagerScreen(
         when {
             result.physicalCleanupPending -> pluralStringResource(
                 R.plurals.local_files_delete_downloaded_cleanup_pending,
-                deletedCount,
-                deletedCount
+                deletedCount + failedCount,
+                deletedCount + failedCount
             )
             deletedCount > 0 && failedCount == 0 -> pluralStringResource(
                 R.plurals.local_files_delete_downloaded_success,
@@ -196,7 +199,7 @@ fun DownloadManagerScreen(
                         downloadedSongs = downloadedSongs
                     )
                     IconButton(
-                        enabled = deletingSongCount == 0,
+                        enabled = !deletionInProgress,
                         onClick = {
                             context.performHapticFeedback()
                             selectedSongKeys = if (allSelected) {
@@ -215,7 +218,7 @@ fun DownloadManagerScreen(
                         )
                     }
                     IconButton(
-                        enabled = deletingSongCount == 0,
+                        enabled = !deletionInProgress,
                         onClick = {
                             context.performHapticFeedback()
                             if (selectedSongKeys.isNotEmpty()) {
@@ -271,6 +274,12 @@ fun DownloadManagerScreen(
                     }
                 }
             }
+        )
+
+        DownloadedSongDeleteProgressCard(
+            progress = deleteProgress,
+            requestedSongCount = deletingSongCount,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
         // 下载统计信息
@@ -398,6 +407,7 @@ fun DownloadManagerScreen(
                 songToDelete = song
                 showSingleDeleteDialog = true
             },
+            deletionInProgress = deletionInProgress,
             offlineMode = offlineMode
         )
     }
@@ -413,6 +423,7 @@ fun DownloadManagerScreen(
             text = { Text(stringResource(R.string.download_delete_confirm, songToDelete?.name ?: "")) },
             confirmButton = {
                 TextButton(
+                    enabled = !deletionInProgress,
                     onClick = {
                         songToDelete?.let { song ->
                             deletingSongCount = 1
@@ -460,6 +471,7 @@ fun DownloadManagerScreen(
             },
             confirmButton = {
                 TextButton(
+                    enabled = !deletionInProgress,
                     onClick = {
                         val songsToDelete = songsPendingDelete
                         deletingSongCount = songsToDelete.size
@@ -493,69 +505,6 @@ fun DownloadManagerScreen(
             }
         )
     }
-
-    if (deletingSongCount > 0) {
-        val phase = deleteProgress?.phase ?: DownloadedSongDeletePhase.PREPARING
-        val phaseText = stringResource(
-            when (phase) {
-                DownloadedSongDeletePhase.PREPARING -> R.string.download_delete_phase_preparing
-                DownloadedSongDeletePhase.WAITING_FOR_DIRECTORY ->
-                    R.string.download_delete_phase_waiting_directory
-                DownloadedSongDeletePhase.STOPPING_DOWNLOADS ->
-                    R.string.download_delete_phase_stopping_downloads
-                DownloadedSongDeletePhase.WAITING_FOR_DOWNLOADS ->
-                    R.string.download_delete_phase_waiting_downloads
-                DownloadedSongDeletePhase.READING_DELETE_PLAN ->
-                    R.string.download_delete_phase_reading_plan
-                DownloadedSongDeletePhase.DELETING_REFERENCES ->
-                    R.string.download_delete_phase_deleting_files
-                DownloadedSongDeletePhase.VERIFYING_REFERENCES ->
-                    R.string.download_delete_phase_verifying
-                DownloadedSongDeletePhase.FINALIZING ->
-                    R.string.download_delete_phase_finalizing
-                DownloadedSongDeletePhase.COMPLETED ->
-                    R.string.download_delete_phase_completed
-                DownloadedSongDeletePhase.FAILED -> R.string.download_delete_phase_failed
-            }
-        )
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text(stringResource(R.string.download_delete_in_progress_title)) },
-            text = {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    Column {
-                        Text(phaseText)
-                        val totalReferences = deleteProgress?.totalReferenceCount
-                        if (totalReferences != null) {
-                            Text(
-                                pluralStringResource(
-                                    R.plurals.download_delete_reference_progress,
-                                    totalReferences,
-                                    deleteProgress?.completedReferenceCount ?: 0,
-                                    totalReferences
-                                ),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        } else {
-                            Text(
-                                pluralStringResource(
-                                    R.plurals.download_delete_in_progress_message,
-                                    deletingSongCount,
-                                    deletingSongCount
-                                ),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {}
-        )
-    }
 }
 
 @Composable
@@ -569,6 +518,7 @@ private fun DownloadedSongsList(
     onSelectionToggle: (String, Boolean) -> Unit,
     onSelectionModeChanged: (Boolean) -> Unit,
     onDeleteRequest: (DownloadedSong) -> Unit,
+    deletionInProgress: Boolean,
     offlineMode: Boolean
 ) {
     val downloadedSongs by viewModel.downloadedSongs.collectAsStateWithLifecycle()
@@ -637,6 +587,7 @@ private fun DownloadedSongsList(
                         selectionMode = selectionMode,
                         onPlay = { viewModel.playDownloadedSong(song) },
                         onDelete = { onDeleteRequest(song) },
+                        deletionInProgress = deletionInProgress,
                         onSelectionChanged = { selected ->
                             val selectionKey = song.deletionIdentity()
                             onSelectionToggle(selectionKey, selected)
@@ -676,6 +627,7 @@ private fun DownloadedSongItem(
     onDelete: () -> Unit,
     onSelectionChanged: (Boolean) -> Unit,
     onLongClick: () -> Unit,
+    deletionInProgress: Boolean,
     offlineMode: Boolean
 ) {
     val context = LocalContext.current
@@ -810,7 +762,7 @@ private fun DownloadedSongItem(
                         )
                     }
 
-                    IconButton(onClick = onDelete) {
+                    IconButton(onClick = onDelete, enabled = !deletionInProgress) {
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = stringResource(R.string.download_delete),

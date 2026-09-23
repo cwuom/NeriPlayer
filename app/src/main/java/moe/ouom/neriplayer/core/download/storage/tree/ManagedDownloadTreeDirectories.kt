@@ -225,7 +225,8 @@ internal class ManagedDownloadTreeDirectories(
         val coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         val lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
         val rootEntriesComplete: Boolean,
-        val sidecarEntriesComplete: Boolean
+        val sidecarEntriesComplete: Boolean,
+        val rootEmptyConfirmationPending: Boolean = false
     )
 
     data class ManagedMigrationEntriesRefresh(
@@ -299,6 +300,17 @@ internal class ManagedDownloadTreeDirectories(
                 )
                 val rootEntries = rootRefresh.children
                     .map(ManagedDownloadStoredEntryMapper::fromTreeChild)
+                if (rootRefresh.requiresEmptyConfirmation) {
+                    // 完整空根目录尚待二次确认，不再查询旧缓存中可能已被删除的侧载目录
+                    return DownloadLibraryEntriesRefresh(
+                        rootEntries = rootEntries,
+                        coverEntries = emptyList(),
+                        lyricEntries = emptyList(),
+                        rootEntriesComplete = false,
+                        sidecarEntriesComplete = false,
+                        rootEmptyConfirmationPending = true
+                    )
+                }
                 var sidecarEntriesComplete = rootRefresh.isComplete
                 fun entriesFor(subdirectory: String): List<ManagedDownloadStorage.StoredEntry> {
                     val directories = rootRefresh.children

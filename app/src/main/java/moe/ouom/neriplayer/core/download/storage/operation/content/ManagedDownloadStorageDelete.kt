@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.SnapshotEntryBucket
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.BackendReference
+import moe.ouom.neriplayer.core.download.storage.SAF_REFERENCE_DELETE_PARALLELISM
 import android.content.Context
 import android.provider.DocumentsContract
 import androidx.core.net.toUri
@@ -480,12 +481,15 @@ internal suspend fun ManagedDownloadStorage.deleteReferencesInternalConcurrently
     references: Collection<TrustedManagedRef>,
     deletePolicy: ManagedDownloadDeletePolicy,
     invalidateSnapshot: Boolean,
+    parallelism: Int = SAF_REFERENCE_DELETE_PARALLELISM,
     onDeleteAttemptFinished: (TrustedManagedRef, Boolean) -> Unit = { _, _ -> }
 ): Set<String> {
     val deleteResult = referenceDeleteExecutor.deleteReferencesConcurrently(
         context = context,
         references = references,
         deletePolicy = deletePolicy,
+        parallelism = parallelism,
+        batchParallelism = parallelism,
         onDeleteAttemptFinished = onDeleteAttemptFinished
     )
     applyDeleteResultToSnapshot(context, deleteResult, invalidateSnapshot)

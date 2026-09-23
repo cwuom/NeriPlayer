@@ -82,7 +82,8 @@ data class LocalAudioImportUiResult(
 
 data class LocalFilesDownloadedSongDeleteUiResult(
     val deletedCount: Int,
-    val notDeletedCount: Int
+    val notDeletedCount: Int,
+    val physicalCleanupPending: Boolean = false
 )
 
 internal fun shouldScheduleLocalDurationRefresh(song: SongItem): Boolean {
@@ -355,6 +356,8 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     private val _metadataProcessingState = MutableStateFlow(LocalMetadataProcessingState())
     val metadataProcessingState: StateFlow<LocalMetadataProcessingState> = _metadataProcessingState
+
+    val downloadedSongDeleteProgress = GlobalDownloadManager.downloadedSongDeleteProgress
 
     private var playlistId: Long = 0L
     private var playlistCollectJob: Job? = null
@@ -786,7 +789,8 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 onResult(
                     LocalFilesDownloadedSongDeleteUiResult(
                         deletedCount = deletion.deletedSongs.size,
-                        notDeletedCount = deletion.failedSongs.size
+                        notDeletedCount = deletion.failedSongs.size,
+                        physicalCleanupPending = deletion.physicalCleanupPending
                     )
                 )
             }

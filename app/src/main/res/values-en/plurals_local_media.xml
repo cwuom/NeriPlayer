@@ -6,8 +6,8 @@
         <item quantity="other">Deleted %d downloaded songs and their local files</item>
     </plurals>
     <plurals name="local_files_delete_downloaded_cleanup_pending">
-        <item quantity="one">Removed %d downloaded song; its files are being cleaned up in the background</item>
-        <item quantity="other">Removed %d downloaded songs; their files are being cleaned up in the background</item>
+        <item quantity="one">Deletion was requested for %d song; file cleanup is not yet complete</item>
+        <item quantity="other">Deletion was requested for %d songs; file cleanup is not yet complete</item>
     </plurals>
     <plurals name="local_playlist_import_audio_success">
         <item quantity="one">Imported %d local track</item>

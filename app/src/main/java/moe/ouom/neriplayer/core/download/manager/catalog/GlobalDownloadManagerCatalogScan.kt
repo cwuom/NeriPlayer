@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.core.download.buildDownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.upsertDownloadedSongCatalog
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
+import moe.ouom.neriplayer.core.download.manager.batch.isFullLibraryDeleteCancellationSettled
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
@@ -32,7 +33,11 @@ import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuildItem
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.catalog.downloadedSongNewestFirstComparator
+import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadFullDeleteBlockReason
+import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
+import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
@@ -44,6 +49,7 @@ import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 
+private const val MAX_AUTOMATIC_EMPTY_CONFIRMATIONS = 2
 
 internal fun GlobalDownloadManager.requestLocalScanLocked(
     context: Context,
@@ -65,11 +71,22 @@ internal fun GlobalDownloadManager.requestLocalScanLocked(
             ManagedLibraryRefreshOutcome.Failed("download directory scan did not run")
         try {
             var nextForceRefresh = forceRefresh
+            var automaticEmptyConfirmations = 0
             while (true) {
                 latestOutcome = reloadDownloadedSongs(
                     context,
                     forceRefresh = nextForceRefresh
                 )
+                val preserveReason = (latestOutcome as? ManagedLibraryRefreshOutcome.Preserved)?.reason
+                if (nextForceRefresh && automaticEmptyConfirmations < MAX_AUTOMATIC_EMPTY_CONFIRMATIONS &&
+                    (preserveReason == ManagedLibraryRefreshPreserveReason.EMPTY_ROOT_CONFIRMATION_PENDING ||
+                        preserveReason == ManagedLibraryRefreshPreserveReason.SUSPICIOUS_EMPTY_RESULT)
+                ) {
+                    // 目录缓存与 catalog 各有空结果确认，只补齐这两层有界确认
+                    // Provider 或权限失败不会进入此分支
+                    automaticEmptyConfirmations++
+                    continue
+                }
                 nextForceRefresh = consumePendingRefreshRequest() ?: break
             }
             if (latestOutcome is ManagedLibraryRefreshOutcome.Published) {
@@ -116,7 +133,11 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
     context: Context,
     forceRefresh: Boolean = false
 ): ManagedLibraryRefreshOutcome {
+    val scanId = emptyScanSequence.incrementAndGet()
     if (isDownloadClearFenceActive(context)) {
+        if (forceRefresh && PersistentDownloadClearFenceStore.activePurpose(context) == DownloadClearPurpose.FULL_LIBRARY_DELETE) {
+            return refreshCatalogDuringFullLibraryDelete(context)
+        }
         NPLogger.d(TAG, "下载清空栅栏生效，保留现有 catalog 并延后目录扫描")
         return ManagedLibraryRefreshOutcome.Preserved(
             ManagedLibraryRefreshPreserveReason.DOWNLOAD_CLEAR_IN_PROGRESS
@@ -196,7 +217,11 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
                 scheduleCatalogReconcile(context, forceRefresh = true)
             }
             return ManagedLibraryRefreshOutcome.Preserved(
-                ManagedLibraryRefreshPreserveReason.INCOMPLETE_ROOT_ENUMERATION
+                if (snapshot.rootEmptyConfirmationPending) {
+                    ManagedLibraryRefreshPreserveReason.EMPTY_ROOT_CONFIRMATION_PENDING
+                } else {
+                    ManagedLibraryRefreshPreserveReason.INCOMPLETE_ROOT_ENUMERATION
+                }
             )
         }
         var retryAfterDeletion = false
@@ -245,7 +270,7 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
                             isUncached = forceRefresh,
                             knownReferenceCount = referenceCoverage.knownReferenceCount,
                             missingReferenceCount = referenceCoverage.missingReferenceCount,
-                            scanId = emptyScanSequence.incrementAndGet()
+                            scanId = scanId
                         ),
                         existingCount = existingSongs.size
                     )
@@ -361,6 +386,101 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
         )
     } finally {
         isRefreshingMutable.value = false
+    }
+}
+
+private suspend fun GlobalDownloadManager.refreshCatalogDuringFullLibraryDelete(
+    context: Context
+): ManagedLibraryRefreshOutcome {
+    val preserved = ManagedLibraryRefreshOutcome.Preserved(
+        ManagedLibraryRefreshPreserveReason.DOWNLOAD_CLEAR_IN_PROGRESS
+    )
+    // 后台删除回放没有界面删除会话，必须与它共用物理删除锁
+    if (!downloadedSongDeleteMutex.tryLock()) return preserved
+    isRefreshingMutable.value = true
+    try {
+        if (isDownloadedSongDeletionActive()) return preserved
+        val lease = ManagedDownloadDirectoryMutationFence.acquireDeleteLeaseOrNull(context)
+            ?: return preserved
+        lease.use {
+            val intent = PersistentDownloadedSongDeleteIntentStore.read(context)
+                ?: return preserved
+            val rootKey = ManagedDownloadStorage.currentSnapshotCacheKey(context)
+            if (intent.rootKey != rootKey || !isFullLibraryDeleteCancellationSettled(context)) {
+                return preserved
+            }
+            val fenceEpoch = PersistentDownloadClearFenceStore.currentEpoch(context)
+            val (existingSongs, catalogRevision, metadataRevision) = synchronized(downloadedSongCatalogMutationLock) {
+                if (downloadedSongCatalogRootKey != rootKey) return preserved
+                Triple(
+                    downloadedSongsMutable.value,
+                    downloadedSongCatalogPersistenceRevision.get(),
+                    downloadedSongMetadataRevision.get()
+                )
+            }
+            // 未决侧载不代表音频仍存在，但不完整枚举或不可读 receipt 仍需保留
+            val plan = managedDownloadDeletePlanner.buildFullLibraryDeletePlan(context, existingSongs)
+            val blockingReasons = plan.blockingReasonCounts
+            if (ManagedDownloadFullDeleteBlockReason.INCOMPLETE_ENUMERATION in blockingReasons ||
+                ManagedDownloadFullDeleteBlockReason.ROOT_CHANGED in blockingReasons
+            ) {
+                return ManagedLibraryRefreshOutcome.Preserved(
+                    if (plan.rootEmptyConfirmationPending) {
+                        ManagedLibraryRefreshPreserveReason.EMPTY_ROOT_CONFIRMATION_PENDING
+                    } else {
+                        ManagedLibraryRefreshPreserveReason.INCOMPLETE_ROOT_ENUMERATION
+                    }
+                )
+            }
+            if (ManagedDownloadFullDeleteBlockReason.METADATA_UNAVAILABLE in blockingReasons) {
+                return ManagedLibraryRefreshOutcome.Preserved(
+                    ManagedLibraryRefreshPreserveReason.INCOMPLETE_METADATA_READ
+                )
+            }
+            val missingSongs = findConfirmedMissingDownloadedSongs(context, existingSongs).toHashSet()
+            val visibleSongs = existingSongs.filterNot(missingSongs::contains)
+            return downloadedSongMetadataSyncMutex.withLock {
+                if (!isFullLibraryDeleteCancellationSettled(context)) return@withLock preserved
+                val currentIntent = PersistentDownloadedSongDeleteIntentStore.read(context)
+                synchronized(downloadedSongCatalogMutationLock) {
+                    if (isDownloadedSongDeletionActive() ||
+                        PersistentDownloadClearFenceStore.currentEpoch(context) != fenceEpoch ||
+                        currentIntent == null ||
+                        currentIntent.requestedAtMs != intent.requestedAtMs ||
+                        currentIntent.rootKey != rootKey ||
+                        ManagedDownloadStorage.currentSnapshotCacheKey(context) != rootKey ||
+                        downloadedSongCatalogRootKey != rootKey ||
+                        downloadedSongCatalogPersistenceRevision.get() != catalogRevision ||
+                        downloadedSongMetadataRevision.get() != metadataRevision
+                    ) {
+                        return@synchronized ManagedLibraryRefreshOutcome.Preserved(
+                            ManagedLibraryRefreshPreserveReason.SUPERSEDED_BY_METADATA_CHANGE
+                        )
+                    }
+                    if (visibleSongs != existingSongs) {
+                        // 这里只更新可见目录，未决 core 的 Room 恢复材料和删除意图继续保留
+                        publishDownloadedSongs(context, visibleSongs, persistCatalog = true)
+                    }
+                    NPLogger.d(
+                        TAG,
+                        "全选删除待收敛时强制刷新目录: previous=${existingSongs.size}, " +
+                            "missing=${missingSongs.size}, visible=${visibleSongs.size}"
+                    )
+                    ManagedLibraryRefreshOutcome.Published(rootKey, visibleSongs.size)
+                }
+            }
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: ManagedMetadataReadUnavailableException) {
+        NPLogger.w(TAG, "删除待收敛时 metadata 暂不可读，保留目录: count=${error.references.size}")
+        return ManagedLibraryRefreshOutcome.Preserved(ManagedLibraryRefreshPreserveReason.INCOMPLETE_METADATA_READ)
+    } catch (error: Exception) {
+        NPLogger.w(TAG, "删除待收敛时刷新未能确认物理目录，保留现有 catalog: ${error.message}")
+        return ManagedLibraryRefreshOutcome.Failed(error.message ?: error::class.java.simpleName)
+    } finally {
+        isRefreshingMutable.value = false
+        downloadedSongDeleteMutex.unlock()
     }
 }
 

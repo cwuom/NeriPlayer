@@ -164,18 +164,19 @@ internal fun GlobalDownloadManager.startBatchDownload(
         val preflightProbe = BatchDownloadPreflightProbe { reference ->
             ManagedDownloadReferenceLookup.inspectWithSize(appContext, reference)
         }
-        var initiallyCompletedSongKeys = findStrictlyCompletedBatchSongKeys(
+        val strictlyCompletedSongKeys = findStrictlyCompletedBatchSongKeys(
             songs = requestedSongs,
             snapshot = initialDownloadLibrarySnapshot
         )
+        logStartupPhase("snapshot_preflight_done", strictlyCompletedSongKeys.size)
         // 清单索引通常先于 SAF 全量快照恢复。对索引命中的正式引用做有界
         // Present 校验，避免第二次全选在 snapshot=false 时重新创建整批 operation
         // （完整目录对账仍在后台继续，未知条目绝不乐观跳过）
-        initiallyCompletedSongKeys = initiallyCompletedSongKeys +
+        var initiallyCompletedSongKeys = strictlyCompletedSongKeys +
             findFastCompletedBatchSongKeys(
                 context = appContext,
                 songs = requestedSongs,
-                alreadyCompletedSongKeys = initiallyCompletedSongKeys,
+                alreadyCompletedSongKeys = strictlyCompletedSongKeys,
                 catalogIndex = batchCompletionCatalogIndex,
                 preflightProbe = preflightProbe
             )
@@ -221,7 +222,7 @@ internal fun GlobalDownloadManager.startBatchDownload(
                     context = appContext,
                     batchId = batchPresentationId,
                     songs = requestedSongs,
-                    snapshot = initialDownloadLibrarySnapshot,
+                    // 同一启动已校验这个快照，发布进度无需再次遍历文件名候选
                     knownCompletedSongKeys = initiallyCompletedSongKeys
                 )
             }
@@ -233,6 +234,7 @@ internal fun GlobalDownloadManager.startBatchDownload(
             )
             return@startup
         }
+        logStartupPhase("durable_batch_ready", requestedSongs.size)
         val reusedRequests = checkNotNull(preparedSnapshot).reusedRequests
         resumeOwnedBatchDownloadRequests(
             context = appContext,
@@ -462,13 +464,6 @@ internal fun GlobalDownloadManager.startBatchDownload(
                     buildBatchDownloadLibrarySnapshot(appContext)
                 }
             }
-            seedInitialBatchDownloadPresentation(
-                context = appContext,
-                batchId = batchPresentationId,
-                songs = requestedSongs,
-                snapshot = initialDownloadLibrarySnapshot,
-                knownCompletedSongKeys = initiallyCompletedSongKeys
-            )
             val fastCompletedSongKeys = findFastCompletedBatchSongKeys(
                 context = appContext,
                 songs = stageCandidateSongs,
@@ -482,13 +477,11 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 context = appContext,
                 batchId = batchPresentationId,
                 songs = requestedSongs,
-                snapshot = initialDownloadLibrarySnapshot,
                 knownCompletedSongKeys = initiallyCompletedSongKeys
             )
             val preflightCompletedSongKeys = (
-                findStrictlyCompletedBatchSongKeys(
-                    songs = stageCandidateSongs,
-                    snapshot = initialDownloadLibrarySnapshot
+                strictlyCompletedSongKeys.intersect(
+                    stageCandidateSongs.mapTo(hashSetOf(), SongItem::stableKey)
                 ) + fastCompletedSongKeys
                 ).filterNot { songKey -> songKey in existingOperationSongKeys }
             if (preflightCompletedSongKeys.isNotEmpty()) {

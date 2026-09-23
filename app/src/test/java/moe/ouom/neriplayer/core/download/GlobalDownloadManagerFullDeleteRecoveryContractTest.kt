@@ -183,21 +183,16 @@ class GlobalDownloadManagerFullDeleteRecoveryContractTest {
     }
 
     @Test
-    fun `durable full delete returns after background cleanup is accepted`() {
+    fun `durable full delete awaits physical cleanup instead of returning accepted songs`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val deleteBody = methodBody(source, "deleteDownloadedSongsWithResultImpl")
-        val launchIndex = deleteBody.indexOf("launchDurableFullLibraryDeleteSession(")
-        val pendingResultIndex = deleteBody.indexOf("physicalCleanupPending = true")
-
-        assertTrue(deleteBody.contains("session.fullLibraryDelete && session.deleteIntentDurable"))
-        assertTrue(launchIndex >= 0)
-        assertTrue(pendingResultIndex > launchIndex)
-        assertTrue(source.contains("FULL_LIBRARY_DELETE_ACK_TARGET_MS = 5_000L"))
-        assertTrue(source.contains("overBudget="))
-        assertTrue(source.contains("deleteDownloadedSongsOnIo(context, session)"))
-        assertTrue(source.contains("scheduleFullLibraryDeleteRecoveryIfNeeded("))
+        assertTrue(!deleteBody.contains("physicalCleanupPending = true"))
+        assertTrue(!deleteBody.contains("deletedSongs = targetSongs"))
+        assertTrue(deleteBody.contains("deleteDownloadedSongsOnIo(appContext, session)"))
+        assertTrue(deleteBody.contains(".await()"))
+        assertTrue(!source.contains("FULL_LIBRARY_DELETE_ACK_TARGET_MS"))
     }
 
     private fun locateProjectFile(path: String): File {

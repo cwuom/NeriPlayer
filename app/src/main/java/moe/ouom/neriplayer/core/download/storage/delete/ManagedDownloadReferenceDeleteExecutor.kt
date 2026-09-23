@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -96,15 +97,18 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         references: Collection<TrustedManagedRef>,
         deletePolicy: ManagedDownloadDeletePolicy,
         parallelism: Int = referenceDeleteParallelism,
+        batchParallelism: Int = minOf(parallelism, SAF_REFERENCE_DELETE_BATCH_PARALLELISM),
         onDeleteStarted: (TrustedManagedRef) -> Unit = {},
         onDeleteAttemptFinished: (TrustedManagedRef, Boolean) -> Unit = { _, _ -> }
     ): ManagedDownloadReferenceDeleteResult {
         require(parallelism > 0)
+        require(batchParallelism in 1..parallelism)
         val normalizedReferences = normalizeReferences(references)
         if (normalizedReferences.isEmpty()) {
             return ManagedDownloadReferenceDeleteResult.empty()
         }
-        val startedAtMs = System.currentTimeMillis()
+        val startedAtNanos = System.nanoTime()
+        fun elapsedMs(): Long = (System.nanoTime() - startedAtNanos) / 1_000_000
         val allowedReferences = filterAllowedReferences(
             normalizedReferences,
             deletePolicy
@@ -113,17 +117,24 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         val deletedReferences = linkedSetOf<String>()
         val startedReferences = ConcurrentHashMap.newKeySet<TrustedManagedRef>()
         val finishedReferences = ConcurrentHashMap.newKeySet<TrustedManagedRef>()
+        val firstProgressMs = AtomicLong(-1)
+        val individualAttempts = AtomicInteger()
+        var attemptRounds = 0
+        var finalProbeCount = 0
+        val batchOutcome: SafBatchDeleteOutcome
         fun finishReference(reference: TrustedManagedRef, deleted: Boolean) {
             if (finishedReferences.add(reference)) {
+                firstProgressMs.compareAndSet(-1, elapsedMs())
                 onDeleteAttemptFinished(reference, deleted)
             }
         }
         try {
-            val batchDeletedReferences = deleteSafReferencesInBatches(
+            batchOutcome = deleteSafReferencesInBatches(
                 context = context,
                 references = unresolvedReferences.filter { reference ->
                     reference.reference is StorageReference.SafRef
                 },
+                parallelism = batchParallelism,
                 beforeOperation = { reference ->
                     if (startedReferences.add(reference)) {
                         onDeleteStarted(reference)
@@ -133,13 +144,14 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                     finishReference(reference, deleted = true)
                 }
             )
-            deletedReferences += batchDeletedReferences
+            deletedReferences += batchOutcome.deletedReferences
                 .map(TrustedManagedRef::externalReference)
-            unresolvedReferences.removeAll(batchDeletedReferences)
+            unresolvedReferences.removeAll(batchOutcome.deletedReferences)
             repeat(SAF_DELETE_MAX_ATTEMPTS) { attempt ->
                 if (unresolvedReferences.isEmpty()) {
                     return@repeat
                 }
+                attemptRounds++
                 val deletedInAttempt = runReferencesWithFixedWorkers(
                     references = unresolvedReferences,
                     parallelism = parallelism,
@@ -152,6 +164,7 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                         finishReference(reference, deleted = true)
                     }
                 ) { reference ->
+                    individualAttempts.incrementAndGet()
                     deleteReferenceOnce(context, reference)
                 }
                 deletedReferences += deletedInAttempt.map(TrustedManagedRef::externalReference)
@@ -164,6 +177,7 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                 }
             }
             if (unresolvedReferences.isNotEmpty()) {
+                finalProbeCount = unresolvedReferences.size
                 deletedReferences += runReferencesWithFixedWorkers(
                     references = unresolvedReferences,
                     parallelism = parallelism,
@@ -185,7 +199,12 @@ internal class ManagedDownloadReferenceDeleteExecutor(
             tag,
             "批量删除引用完成: requested=${normalizedReferences.size}, " +
                 "deleted=${deletedReferences.size}, " +
-                "costMs=${System.currentTimeMillis() - startedAtMs}"
+                "costMs=${elapsedMs()}, parallelism=$parallelism, batchParallelism=$batchParallelism, " +
+                "batchCount=${batchOutcome.batchCount}, batchDeleted=${batchOutcome.deletedReferences.size}, " +
+                "batchUnconfirmed=${batchOutcome.unconfirmedCount}, unsupportedBatches=${batchOutcome.unsupportedCount}, " +
+                "batchCostMs=${batchOutcome.costMs}, maxBatchMs=${batchOutcome.maxBatchMs}, " +
+                "individualAttempts=${individualAttempts.get()}, attemptRounds=$attemptRounds, " +
+                "finalProbeCount=$finalProbeCount, firstProgressMs=${firstProgressMs.get()}"
         )
         return ManagedDownloadReferenceDeleteResult(
             requestedReferences = normalizedReferences.map(TrustedManagedRef::externalReference),
@@ -449,50 +468,83 @@ internal class ManagedDownloadReferenceDeleteExecutor(
     private suspend fun deleteSafReferencesInBatches(
         context: Context,
         references: List<TrustedManagedRef>,
+        parallelism: Int,
         beforeOperation: (TrustedManagedRef) -> Unit,
         afterOperationSucceeded: (TrustedManagedRef) -> Unit
-    ): Set<TrustedManagedRef> {
-        val batchDelete = contentReferenceBatchDeleteOperation ?: return emptySet()
-        if (references.isEmpty()) return emptySet()
+    ): SafBatchDeleteOutcome {
+        val batchDelete = contentReferenceBatchDeleteOperation ?: return SafBatchDeleteOutcome()
+        if (references.isEmpty()) return SafBatchDeleteOutcome()
+        val startedAtNanos = System.nanoTime()
         val batches = references.chunked(SAF_REFERENCE_DELETE_BATCH_SIZE)
         val successfulReferences = ConcurrentHashMap.newKeySet<TrustedManagedRef>()
         val nextBatchIndex = AtomicInteger(0)
-        val workerCount = minOf(
-            SAF_REFERENCE_DELETE_BATCH_PARALLELISM,
-            batches.size
-        )
+        val unsupportedCount = AtomicInteger()
+        val unconfirmedCount = AtomicInteger()
+        val maximumBatchMs = AtomicLong()
+        val cancellation = AtomicReference<CancellationException?>()
+        val workerCount = minOf(parallelism, batches.size)
         coroutineScope {
             repeat(workerCount) {
                 launch(workerDispatcher) {
-                    while (isActive) {
-                        val batchIndex = nextBatchIndex.getAndIncrement()
-                        if (batchIndex >= batches.size) return@launch
-                        val batch = batches[batchIndex]
-                        batch.forEach(beforeOperation)
-                        val results = try {
-                            batchDelete(context, batch)
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: SecurityException) {
-                            throw error
-                        } catch (_: Throwable) {
-                            null
-                        }
-                        if (results == null || results.size != batch.size) {
-                            continue
-                        }
-                        batch.zip(results).forEach { (reference, result) ->
-                            if (result.isConfirmedMutation()) {
-                                successfulReferences += reference
-                                afterOperationSucceeded(reference)
+                    try {
+                        while (isActive && cancellation.get() == null) {
+                            val batchIndex = nextBatchIndex.getAndIncrement()
+                            if (batchIndex >= batches.size) return@launch
+                            val batch = batches[batchIndex]
+                            batch.forEach(beforeOperation)
+                            val batchStartedAtNanos = System.nanoTime()
+                            val results = try {
+                                batchDelete(context, batch)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: SecurityException) {
+                                throw error
+                            } catch (_: Throwable) {
+                                null
+                            }
+                            maximumBatchMs.accumulateAndGet(
+                                (System.nanoTime() - batchStartedAtNanos) / 1_000_000,
+                                ::maxOf
+                            )
+                            if (results == null || results.size != batch.size) {
+                                unsupportedCount.incrementAndGet()
+                                unconfirmedCount.addAndGet(batch.size)
+                                continue
+                            }
+                            batch.zip(results).forEach { (reference, result) ->
+                                if (result.isConfirmedMutation()) {
+                                    successfulReferences += reference
+                                    afterOperationSucceeded(reference)
+                                } else {
+                                    unconfirmedCount.incrementAndGet()
+                                }
                             }
                         }
+                    } catch (error: CancellationException) {
+                        cancellation.compareAndSet(null, error)
                     }
                 }
             }
         }
-        return successfulReferences
+        cancellation.get()?.let { error -> throw error }
+        return SafBatchDeleteOutcome(
+            deletedReferences = successfulReferences,
+            batchCount = batches.size,
+            unsupportedCount = unsupportedCount.get(),
+            unconfirmedCount = unconfirmedCount.get(),
+            costMs = (System.nanoTime() - startedAtNanos) / 1_000_000,
+            maxBatchMs = maximumBatchMs.get()
+        )
     }
+
+    private data class SafBatchDeleteOutcome(
+        val deletedReferences: Set<TrustedManagedRef> = emptySet(),
+        val batchCount: Int = 0,
+        val unsupportedCount: Int = 0,
+        val unconfirmedCount: Int = 0,
+        val costMs: Long = 0,
+        val maxBatchMs: Long = 0
+    )
 
     private fun isReferenceGone(context: Context, reference: TrustedManagedRef): Boolean {
         return when (val storageReference = reference.reference) {

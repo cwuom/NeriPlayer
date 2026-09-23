@@ -60,6 +60,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadDeleteReferenceIndex
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
@@ -83,6 +84,7 @@ import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
 
 
 internal fun GlobalDownloadManager.scheduleFullLibraryDeleteRecoveryIfNeeded(
@@ -114,7 +116,8 @@ internal fun GlobalDownloadManager.restoreDeferredDownloadedSongDeleteSession(
     scheduleCatalogReconcile(context, forceRefresh = true)
     return DownloadedSongDeleteResult(
         deletedSongs = emptyList(),
-        failedSongs = session.targetSongs
+        failedSongs = session.targetSongs,
+        physicalCleanupPending = session.fullLibraryDelete && session.deleteIntentDurable
     )
 }
 
@@ -675,6 +678,17 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
     val startedAtMs = SystemClock.elapsedRealtime()
     val targetSongs = session.targetSongs
     val deletesEntireCatalog = session.fullLibraryDelete
+    val confirmedDeletedReferences = ConcurrentHashMap.newKeySet<String>()
+    fun interruptedResult() = resolveConfirmedFullLibraryDeleteResult(
+        targetSongs = targetSongs,
+        snapshotComplete = false,
+        requestedReferences = confirmedDeletedReferences,
+        deletedReferences = confirmedDeletedReferences,
+        fallback = DownloadedSongDeleteResult(
+            emptyList(), targetSongs,
+            physicalCleanupPending = deletesEntireCatalog && session.deleteIntentDurable
+        )
+    )
     try {
         if (deletesEntireCatalog && !session.deleteIntentDurable) {
             updateDownloadedSongDeleteProgress(
@@ -711,7 +725,10 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
                 DOWNLOAD_CLEAR_FENCE_WAIT_TIMEOUT_MS
             ) {
                 session.clearJob?.join() ?: cancelAllDownloadTasksAndWait()
-                isFullLibraryDeleteCancellationSettled(appContext)
+                while (!isFullLibraryDeleteCancellationSettled(appContext)) {
+                    delay(DOWNLOAD_CLEAR_FENCE_WAIT_POLL_MS)
+                }
+                true
             } == true
             if (!cancellationSettled) {
                 updateDownloadedSongDeleteProgress(
@@ -733,7 +750,8 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
                 )
                 return DownloadedSongDeleteResult(
                     deletedSongs = emptyList(),
-                    failedSongs = targetSongs
+                    failedSongs = targetSongs,
+                    physicalCleanupPending = true
                 )
             }
         } else {
@@ -765,7 +783,7 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
         val fullLibraryDeletePlan = if (deletesEntireCatalog) {
             try {
                 managedDownloadDeletePlanner.buildFullLibraryDeletePlan(appContext, targetSongs).takeIf { plan ->
-                    plan.snapshotComplete && PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
+                    PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
                         appContext, ManagedDownloadStorage.currentSnapshotCacheKey(appContext), plan.requestedReferences
                     )
                 }
@@ -806,8 +824,9 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
         )
         val completedReferenceCount = AtomicInteger(0)
         val failedReferenceCount = AtomicInteger(0)
-        val onDeleteAttemptFinished: (String, Boolean) -> Unit = { _, deleted ->
+        val onDeleteAttemptFinished: (String, Boolean) -> Unit = { reference, deleted ->
             if (deleted) {
+                confirmedDeletedReferences += reference
                 completedReferenceCount.incrementAndGet()
             } else {
                 failedReferenceCount.incrementAndGet()
@@ -848,12 +867,12 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
         var fullLibrarySnapshotComplete = deletesEntireCatalog &&
             fullLibraryDeletePlan?.snapshotComplete == true
         var verifiedRemainingReferences: Set<String>? = null
-        if (deletesEntireCatalog && fullLibrarySnapshotComplete) {
+        if (deletesEntireCatalog && fullLibraryDeletePlan != null) {
             // 收尾协程可能在第一轮快照后刚好写出 pending。只做一次有界复查，
             // 在清空栅栏内把这类尾部引用一并删除，避免留下永久 .pending
             val verificationPlan = try {
                 managedDownloadDeletePlanner.buildFullLibraryDeletePlan(appContext, targetSongs).takeIf { plan ->
-                    plan.snapshotComplete && PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
+                    PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
                         appContext, ManagedDownloadStorage.currentSnapshotCacheKey(appContext), plan.requestedReferences
                     )
                 }
@@ -868,6 +887,7 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
                 null
             }
             if (verificationPlan?.snapshotComplete == true) {
+                fullLibrarySnapshotComplete = true
                 val verificationReferences = verificationPlan.requestedReferences
                 val residualReferences = verificationReferences - deletedReferences
                 requestedReferences = mergeManagedRequestedReferences(
@@ -944,13 +964,25 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
                 deletedReferences = deletedReferences
             )
         }
+        val confirmedMissingAudioReferences = if (
+            deletesEntireCatalog && (!fullLibrarySnapshotComplete || remainingReferences.isNotEmpty())
+        ) {
+            val deletedIndex = ManagedDownloadDeleteReferenceIndex(deletedReferences)
+            findConfirmedMissingDownloadedSongs(
+                appContext,
+                targetSongs.filter { deletedIndex.resolve(it.deletionIdentity()) == null }
+            ).mapTo(linkedSetOf(), DownloadedSong::deletionIdentity)
+        } else {
+            emptySet()
+        }
         val deletionResult = resolveConfirmedFullLibraryDeleteResult(
             targetSongs = targetSongs,
             snapshotComplete = fullLibrarySnapshotComplete,
             requestedReferences = requestedReferences,
             deletedReferences = deletedReferences,
             remainingReferences = remainingReferences,
-            fallback = perSongDeletionResult
+            fallback = perSongDeletionResult,
+            confirmedMissingAudioReferences = confirmedMissingAudioReferences
         )
         val fullLibrarySnapshotIncomplete = deletesEntireCatalog &&
             !fullLibrarySnapshotComplete
@@ -1134,25 +1166,33 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
                 fullLibrarySnapshotIncomplete ||
                 fastIndexFailureCount > 0
         )
-        NPLogger.d(
+        val cleanupPending = deletesEntireCatalog &&
+            PersistentDownloadedSongDeleteIntentStore.hasPending(appContext)
+        val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
+        NPLogger.i(
             TAG,
             "批量删除下载结束: songs=${targetSongs.size}, requested=${requestedReferences.size}, " +
                 "deleted=${deletedReferences.size}, failed=${deletionResult.failedSongs.size}, " +
-                "costMs=${SystemClock.elapsedRealtime() - startedAtMs}"
+                "physicalCleanupPending=$cleanupPending, elapsedMs=$elapsedMs, " +
+                "targetMs=5000, overBudget=${elapsedMs > 5_000L}"
         )
         updateDownloadedSongDeleteProgress(
             session = session,
-            phase = if (deletionResult.failedSongs.isEmpty()) {
+            phase = if (deletionResult.failedSongs.isEmpty() && !cleanupPending) {
                 DownloadedSongDeletePhase.COMPLETED
             } else {
                 DownloadedSongDeletePhase.FAILED
             },
             totalReferenceCount = requestedReferences.size,
             completedReferenceCount = deletedReferences.size,
-            failedReferenceCount = remainingReferences.size
+            failedReferenceCount = maxOf(
+                remainingReferences.size,
+                fullLibraryDeletePlan?.unresolvedPendingReferences?.size ?: 0
+            )
         )
-        return deletionResult
+        return deletionResult.copy(physicalCleanupPending = cleanupPending)
     } catch (error: CancellationException) {
+        val result = interruptedResult()
         updateDownloadedSongDeleteProgress(
             session = session,
             phase = DownloadedSongDeletePhase.FAILED,
@@ -1161,12 +1201,13 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
         settleDownloadedSongDeleteSession(
             context = appContext,
             session = session,
-            deletedSongs = emptyList(),
-            restoredSongs = targetSongs
+            deletedSongs = result.deletedSongs,
+            restoredSongs = result.failedSongs
         )
         scheduleCatalogReconcile(appContext, forceRefresh = true)
         throw error
     } catch (error: Exception) {
+        val result = interruptedResult()
         updateDownloadedSongDeleteProgress(
             session = session,
             phase = DownloadedSongDeletePhase.FAILED,
@@ -1175,15 +1216,12 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
         settleDownloadedSongDeleteSession(
             context = appContext,
             session = session,
-            deletedSongs = emptyList(),
-            restoredSongs = targetSongs
+            deletedSongs = result.deletedSongs,
+            restoredSongs = result.failedSongs
         )
         scheduleCatalogReconcile(appContext, forceRefresh = true)
         NPLogger.e(TAG, "删除下载文件失败: ${error.message}", error)
-        return DownloadedSongDeleteResult(
-            deletedSongs = emptyList(),
-            failedSongs = targetSongs
-        )
+        return result
     }
 }
 
@@ -1533,11 +1571,12 @@ internal fun GlobalDownloadManager.isOptimisticPlaybackCatalogEntryAllowed(
 }
 
 internal suspend fun GlobalDownloadManager.restorePersistedDownloadedSongs(context: Context): Boolean {
-    val restoredSongs = downloadedSongCatalogStore.restore(context)
-    if (restoredSongs == null) {
+    val persistedSongs = downloadedSongCatalogStore.restore(context)
+    if (persistedSongs == null) {
         restoreFastIndexPreview(context)
         return false
     }
+    val restoredSongs = filterMissingDeleteRecoveryPreview(context, persistedSongs)
     publishDownloadedSongs(context, restoredSongs, persistCatalog = false)
     runCatching {
         managedDownloadArtifactCoordinator.reconcileCatalog(context, restoredSongs)
@@ -1555,13 +1594,13 @@ internal suspend fun GlobalDownloadManager.restoreFastIndexPreview(context: Cont
         snapshot = snapshot,
         allowIncompleteRootPreview = true
     )
-    val songs = rebuildDownloadedSongs(
+    val songs = filterMissingDeleteRecoveryPreview(context, rebuildDownloadedSongs(
         context = context,
         snapshot = snapshot,
         rebuildPlan = rebuildPlan,
         failureLogPrefix = "解析 Managed fast index 预览失败",
         verifySnapshotReferences = false
-    )
+    ))
     if (songs.isEmpty()) return false
     publishDownloadedSongs(context, songs, persistCatalog = false)
     downloadedSongCatalogRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)

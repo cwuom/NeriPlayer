@@ -13,10 +13,13 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
@@ -50,10 +53,15 @@ import moe.ouom.neriplayer.data.model.displayName
 import java.io.File
 import java.io.InputStream
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadResult
 import moe.ouom.neriplayer.core.download.storage.metadata.classifyManagedMetadataRead
 import moe.ouom.neriplayer.core.download.storage.metadata.requireAvailableMetadata
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
+
+private const val FULL_LIBRARY_DELETE_METADATA_READ_PARALLELISM = 16
+private val fullLibraryDeleteMetadataDispatcher =
+    Dispatchers.IO.limitedParallelism(FULL_LIBRARY_DELETE_METADATA_READ_PARALLELISM)
 
 
 internal fun ManagedDownloadStorage.parseDownloadedAudioMetadata(
@@ -112,38 +120,69 @@ internal suspend fun ManagedDownloadStorage.parseDownloadedAudioMetadataEntriesB
 
 internal suspend fun ManagedDownloadStorage.readDownloadedAudioMetadataEntriesDetailed(
     context: Context,
-    entries: Collection<StoredEntry>
+    entries: Collection<StoredEntry>,
+    fullLibraryDelete: Boolean = false
 ): Map<String, ManagedMetadataReadResult> {
-    if (entries.isEmpty()) return emptyMap()
-    return coroutineScope {
-        entries.toList()
-            .chunked(METADATA_SCAN_PARALLELISM)
-            .flatMap { batch ->
-                batch.map { entry ->
-                    async(metadataScanDispatcher) {
-                        val metadata = try {
-                            val target = backendReference(context, entry.reference)
-                            if (target == null) {
-                                ManagedMetadataReadResult.Unavailable(IOException("unsupported metadata reference"))
-                            } else {
-                                classifyManagedMetadataRead(target.backend.read(target.reference) { input ->
-                                    input.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                                })
-                            }
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: Exception) {
-                            NPLogger.w(
-                                TAG,
-                                "读取清理 metadata 失败，保留 pending 证据: " +
-                                    "name=${entry.name}, error=${error.message}"
-                            )
-                            ManagedMetadataReadResult.Unavailable(error)
-                        }
-                        entry.reference to metadata
-                    }
-                }.awaitAll()
-            }.toMap()
+    return readDownloadedAudioMetadataWithWorkers(
+        entries = entries,
+        fullLibraryDelete = fullLibraryDelete,
+        workerDispatcher = if (fullLibraryDelete) {
+            fullLibraryDeleteMetadataDispatcher
+        } else {
+            metadataScanDispatcher
+        }
+    ) { entry ->
+        try {
+            val target = backendReference(context, entry.reference)
+            if (target == null) {
+                ManagedMetadataReadResult.Unavailable(IOException("unsupported metadata reference"))
+            } else {
+                classifyManagedMetadataRead(target.backend.read(target.reference) { input ->
+                    input.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                })
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "读取清理 metadata 失败，保留 pending 证据: " +
+                    "name=${entry.name}, error=${error.message}"
+            )
+            ManagedMetadataReadResult.Unavailable(error)
+        }
+    }
+}
+
+internal suspend fun readDownloadedAudioMetadataWithWorkers(
+    entries: Collection<StoredEntry>,
+    fullLibraryDelete: Boolean = false,
+    workerDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    readEntry: suspend (StoredEntry) -> ManagedMetadataReadResult
+): Map<String, ManagedMetadataReadResult> = coroutineScope {
+    val snapshot = entries.toList()
+    if (snapshot.isEmpty()) return@coroutineScope emptyMap()
+    val parallelism = if (fullLibraryDelete) {
+        FULL_LIBRARY_DELETE_METADATA_READ_PARALLELISM
+    } else {
+        ManagedDownloadStorage.METADATA_SCAN_PARALLELISM
+    }
+    val nextIndex = AtomicInteger()
+    val results = arrayOfNulls<ManagedMetadataReadResult>(snapshot.size)
+    // 固定 worker 接续领取下一项，慢 receipt 不阻塞其它 worker，也不为每项创建协程
+    List(minOf(parallelism, snapshot.size)) {
+        async(workerDispatcher) {
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val index = nextIndex.getAndIncrement()
+                if (index >= snapshot.size) break
+                results[index] = readEntry(snapshot[index])
+            }
+        }
+    }.awaitAll()
+    currentCoroutineContext().ensureActive()
+    snapshot.indices.associate { index ->
+        snapshot[index].reference to requireNotNull(results[index])
     }
 }
 

@@ -63,6 +63,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadParsedMetadataEntry
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadUnfinalizedCleanupPlanner
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.FULL_LIBRARY_REFERENCE_DELETE_PARALLELISM
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeleteGuard
@@ -176,6 +177,7 @@ internal suspend fun ManagedDownloadStorage.deleteFullLibraryReferencesImpl(
             references = resolveTrustedManagedReferences(normalizedReferences, deletePolicy),
             deletePolicy = deletePolicy,
             invalidateSnapshot = true,
+            parallelism = FULL_LIBRARY_REFERENCE_DELETE_PARALLELISM,
             onDeleteAttemptFinished = { reference, deleted ->
                 onDeleteAttemptFinished(reference.externalReference, deleted)
             }

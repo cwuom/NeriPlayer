@@ -595,7 +595,9 @@ internal object ManagedDownloadStorage {
         /** 已完成核心写入但尚未提升为正式文件名的音频 */
         val pendingAudioEntries: List<StoredEntry> = emptyList(),
         /** pending metadata 与正式 metadata 同名时, 为 pending 音频保留独立凭据 */
-        val pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap()
+        val pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap(),
+        /** 本轮根目录已完整返回空，仅等待防瞬时空结果的第二次确认 */
+        val rootEmptyConfirmationPending: Boolean = false
     ) {
         internal val referenceIdentityIndex by lazy {
             ManagedDownloadDeleteReferenceIndex(buildSet {

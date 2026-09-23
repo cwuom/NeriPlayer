@@ -79,13 +79,14 @@ internal class ManagedDownloadTreeChildRegistry(
         parent: DocumentFile
     ): TreeChildrenRefresh {
         val refreshedAtMs = System.currentTimeMillis()
+        val queried = ManagedDownloadTreeChildQuery.queryChildrenWithStatus(
+            context = context,
+            parent = parent,
+            onQueryFailure = onTreeQueryFailed
+        )
         val result = stabilizeEmptyRefresh(
             parent = parent,
-            queried = ManagedDownloadTreeChildQuery.queryChildrenWithStatus(
-                context = context,
-                parent = parent,
-                onQueryFailure = onTreeQueryFailed
-            )
+            queried = queried
         )
         rememberTreeChildren(
             parent = parent,
@@ -95,7 +96,8 @@ internal class ManagedDownloadTreeChildRegistry(
         )
         return TreeChildrenRefresh(
             children = result.children,
-            isComplete = result.isComplete
+            isComplete = result.isComplete,
+            requiresEmptyConfirmation = queried.isComplete && queried.children.isEmpty() && !result.isComplete
         )
     }
 
@@ -108,7 +110,8 @@ internal class ManagedDownloadTreeChildRegistry(
 
     data class TreeChildrenRefresh(
         val children: List<QueriedTreeChild>,
-        val isComplete: Boolean
+        val isComplete: Boolean,
+        val requiresEmptyConfirmation: Boolean = false
     )
 
     fun cachedTreeChildren(

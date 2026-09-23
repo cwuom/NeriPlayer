@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.model
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadSongDeletePlan
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadDeleteReferenceIndex
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
@@ -337,12 +338,25 @@ internal fun resolveConfirmedFullLibraryDeleteResult(
     requestedReferences: Set<String>,
     deletedReferences: Set<String>,
     remainingReferences: Set<String>? = null,
-    fallback: DownloadedSongDeleteResult
+    fallback: DownloadedSongDeleteResult,
+    confirmedMissingAudioReferences: Set<String> = emptySet()
 ): DownloadedSongDeleteResult {
     val unresolvedReferences = remainingReferences
         ?: requestedReferences.minus(deletedReferences)
     if (!snapshotComplete || unresolvedReferences.isNotEmpty()) {
-        return fallback
+        // 未决侧载不能让已经确认删除的音频重新出现在 catalog
+        val deletedIndex = ManagedDownloadDeleteReferenceIndex(deletedReferences + confirmedMissingAudioReferences)
+        val confirmedSongs = targetSongs.filter { song ->
+            deletedIndex.resolve(song.deletionIdentity()) != null
+        }
+        if (confirmedSongs.isEmpty()) return fallback
+        val deletedSongs = (fallback.deletedSongs + confirmedSongs)
+            .distinctBy(DownloadedSong::deletionIdentity)
+        val deletedIdentities = deletedSongs.mapTo(hashSetOf(), DownloadedSong::deletionIdentity)
+        return fallback.copy(
+            deletedSongs = deletedSongs,
+            failedSongs = targetSongs.filterNot { it.deletionIdentity() in deletedIdentities }
+        )
     }
     return DownloadedSongDeleteResult(
         deletedSongs = targetSongs.distinctBy(DownloadedSong::deletionIdentity),

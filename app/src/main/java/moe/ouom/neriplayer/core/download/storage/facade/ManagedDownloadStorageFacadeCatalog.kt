@@ -583,11 +583,12 @@ internal fun ManagedDownloadStorage.findDownloadedAudioIncludingMetadataLessImpl
     snapshot: DownloadLibrarySnapshot,
     song: SongItem
 ): StoredEntry? {
-    return findAudioEntry(snapshot, song)
-        ?: ManagedDownloadStorageLookup.findAudioEntry(
-            audioEntries = snapshot.audioEntriesWithoutMetadata,
-            baseNames = candidateManagedDownloadBaseNames(song, settings.fileNameTemplate)
-        )
+    findAudioEntry(snapshot, song)?.let { return it }
+    if (snapshot.audioEntriesWithoutMetadata.isEmpty()) return null
+    return ManagedDownloadStorageLookup.findAudioEntry(
+        audioEntries = snapshot.audioEntriesWithoutMetadata,
+        baseNames = candidateManagedDownloadBaseNames(song, settings.fileNameTemplate)
+    )
 }
 
 internal fun ManagedDownloadStorage.findPendingDownloadedAudioImpl(
@@ -1197,6 +1198,7 @@ private fun ManagedDownloadStorage.rebuildDownloadLibrarySnapshotBlocking(
         coverEntries = coverEntries,
         lyricEntries = lyricEntries,
         rootEntriesComplete = libraryRefresh.rootEntriesComplete && temporaryEntries.isComplete,
+        rootEmptyConfirmationPending = libraryRefresh.rootEmptyConfirmationPending && temporaryEntries.isComplete,
         sidecarEntriesComplete = libraryRefresh.sidecarEntriesComplete,
         pendingAudioEntries = pendingAudioEntries,
         pendingMetadataByAudioName = pendingMetadataByAudioName
