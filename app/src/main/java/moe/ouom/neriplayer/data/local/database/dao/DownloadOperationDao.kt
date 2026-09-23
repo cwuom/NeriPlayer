@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.local.database.entity.DownloadCancellationIdentityRow
@@ -14,6 +15,12 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationNetworkPo
 
 @Dao
 internal interface DownloadOperationDao {
+    @Query(
+        "SELECT operation_id, stable_key FROM download_operation " +
+            "WHERE state IN (:states) AND stop_requested_by_user = 0 ORDER BY operation_id"
+    )
+    fun observePendingIdentities(states: List<String>): Flow<List<DownloadOperationIdentityRow>>
+
     @Query("SELECT operation_id, stable_key, library_id, state, queue_order, staging_dir_name, bytes_written, total_bytes, retry_count, next_retry_at_ms, last_error_code, stop_requested_by_user, created_at_ms, updated_at_ms, host_process_token, host_admitted_at_ms, batch_id, batch_generation FROM download_operation WHERE state = :state AND stop_requested_by_user = 0 ORDER BY queue_order, created_at_ms, operation_id LIMIT :limit")
     suspend fun postCoreHeadersFirst(state: String, limit: Int): List<DownloadOperationHeaderRow>
 

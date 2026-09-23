@@ -8,6 +8,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationIdentityRow
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
@@ -21,6 +27,37 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DownloadProgressPendingSourcesTest {
+    @Test
+    fun finalizationNotifiesPendingCountWithoutAnyTaskCardChange() = runBlocking {
+        withFixture { context, database ->
+            coroutineScope {
+                val request = request("finalizing")
+                DownloadExecutionRoomStore.upsert(context, request, "ASSETS_ENRICHING", database = database)
+                val changes = Channel<List<DownloadOperationIdentityRow>>(Channel.UNLIMITED)
+                val observer = launch {
+                    database.downloadOperationDao()
+                        .observePendingIdentities(DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES)
+                        .distinctUntilChanged().collect { changes.send(it) }
+                }
+                try {
+                    assertEquals(listOf(request.operationId), withTimeout(5_000) {
+                        changes.receive().map { it.operationId }
+                    })
+                    DownloadExecutionRoomStore.updateState(context, request.operationId, "FINALIZED", database = database)
+                    assertTrue(withTimeout(5_000) { changes.receive() }.isEmpty())
+                    assertTrue(readDurablePendingDownloadSongKeys(context, database).isEmpty())
+                    DownloadExecutionRoomStore.upsert(context, request.copy(operationId = "replacement"), "QUEUED", database = database)
+                    assertEquals(listOf("replacement"), withTimeout(5_000) {
+                        changes.receive().map { it.operationId }
+                    })
+                } finally {
+                    observer.cancel()
+                    changes.close()
+                }
+            }
+        }
+    }
+
     @Test
     fun cancellationReceiptDoesNotCountAsPendingWhileCleanupIsOutstanding() = runBlocking {
         withFixture { context, database ->

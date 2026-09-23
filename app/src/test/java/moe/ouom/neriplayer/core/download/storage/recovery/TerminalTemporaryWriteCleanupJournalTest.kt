@@ -7,6 +7,42 @@ import org.junit.Test
 
 class TerminalTemporaryWriteCleanupJournalTest {
     @Test
+    fun `publication completion accepts preparation already completed by recovery`() {
+        val journal = TerminalTemporaryWriteCleanupJournal(InMemoryJournalStore())
+        val preparation = requireNotNull(journal.prepareFinalization(
+            root = fileRoot("/downloads"),
+            pendingAudioName = "song.pending",
+            finalAudioName = "song.mp3",
+            expectedOperationId = "operation",
+            targetNames = listOf("song.mp3")
+        ))
+        assertTrue(journal.completeFinalization(preparation))
+        val terminal = journal.availableEntries().single()
+        assertTrue(journal.completeFinalization(preparation))
+        assertEquals(terminal, journal.availableEntries().single())
+        assertTrue(journal.consume(terminal))
+        assertTrue(journal.completeFinalization(preparation))
+        assertTrue(journal.availableEntries().isEmpty())
+    }
+
+    @Test
+    fun `obsolete completion cannot consume a newer preparation`() {
+        val journal = TerminalTemporaryWriteCleanupJournal(InMemoryJournalStore())
+        fun prepare(operation: String) = requireNotNull(journal.prepareFinalization(
+            root = fileRoot("/downloads"),
+            pendingAudioName = "song.pending",
+            finalAudioName = "song.mp3",
+            expectedOperationId = operation,
+            targetNames = listOf("song.mp3")
+        ))
+        val old = prepare("old")
+        val current = prepare("new")
+        assertFalse(journal.completeFinalization(old))
+        assertEquals(listOf(current), journal.availablePreparations())
+        assertTrue(journal.availableEntries().isEmpty())
+    }
+
+    @Test
     fun `journal preserves terminal targets for each captured root`() {
         val store = InMemoryJournalStore()
         val journal = TerminalTemporaryWriteCleanupJournal(store)

@@ -4,6 +4,7 @@ import android.content.Context
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
@@ -669,6 +670,7 @@ internal class ManagedDownloadTreeDirectories(
                         lastModifiedMs = System.currentTimeMillis(),
                         isDirectory = false
                     )
+                    cleanupEmptyNumberedNoMediaMarkers(context, directory)
                 }
             )
         } catch (error: SecurityException) {
@@ -745,21 +747,49 @@ internal class ManagedDownloadTreeDirectories(
         if (cached != null) {
             treeChildRegistry.toDocumentFile(context, directory, cached)
                 ?.takeIf { isAccessibleMarker(context, it) }
-                ?.let { return true }
+                ?.let {
+                    cleanupEmptyNumberedNoMediaMarkers(context, directory)
+                    return true
+                }
         }
-        val refreshed = treeChildRegistry.refreshTreeChildren(context, directory)
-            .firstOrNull { child ->
-                child.name == childName && !child.isDirectory
-            }
+        val refresh = treeChildRegistry.refreshTreeChildrenWithStatus(context, directory)
+        if (!refresh.isComplete) {
+            throw IOException("无法确认 .nomedia 是否存在: ${directory.uri}")
+        }
+        val refreshed = refresh.children.firstOrNull { child ->
+            child.name == childName && !child.isDirectory
+        }
         val marker = refreshed?.let { child ->
             treeChildRegistry.toDocumentFile(context, directory, child)
         }
-        return marker?.let { isAccessibleMarker(context, it) } == true
+        if (marker == null || !isAccessibleMarker(context, marker)) return false
+        cleanupEmptyNumberedNoMediaMarkers(context, directory)
+        return true
+    }
+
+    private fun cleanupEmptyNumberedNoMediaMarkers(context: Context, directory: DocumentFile) {
+        val refresh = treeChildRegistry.refreshTreeChildrenWithStatus(context, directory)
+        if (!refresh.isComplete) throw IOException("无法完整读取 .nomedia 标记目录: ${directory.uri}")
+        val numberedMarker = Regex("^ ?\\([1-9][0-9]*\\)\\.nomedia$")
+        refresh.children.filter { child ->
+            !child.isDirectory && child.sizeBytes == 0L && numberedMarker.matches(child.name)
+        }.forEach { child ->
+            val marker = markerDocument(context, directory, child.documentUri)
+            // 只收敛空的编号标记，名称相似但有内容的文件和目录必须保留
+            if (marker.name != child.name || !marker.isFile || marker.length() != 0L) return@forEach
+            val empty = context.contentResolver.openInputStream(marker.uri)?.use { it.read() == -1 }
+            if (empty == true) {
+                discardCreatedMarker(context, marker)
+                treeChildRegistry.forgetTreeChildName(directory, child.name)
+            }
+        }
     }
 
     private fun createNoMediaMarker(context: Context, parent: DocumentFile): DocumentFile? {
         val mimeTypes = listOf("application/octet-stream", "text/plain")
         mimeTypes.forEach { mimeType ->
+            // 创建失败也可能已经留下文件，换名称重试前必须重新确认
+            if (hasExistingNoMediaMarker(context, parent, NO_MEDIA_FILE_NAME)) return null
             createNoMediaMarkerWithName(
                 context = context,
                 parent = parent,
@@ -769,6 +799,7 @@ internal class ManagedDownloadTreeDirectories(
         }
         val temporaryName = NO_MEDIA_FILE_NAME.removePrefix(".")
         mimeTypes.forEach { mimeType ->
+            if (hasExistingNoMediaMarker(context, parent, NO_MEDIA_FILE_NAME)) return null
             createNoMediaMarkerWithName(
                 context = context,
                 parent = parent,
@@ -787,8 +818,7 @@ internal class ManagedDownloadTreeDirectories(
                     null
                 }
                 if (renamedUri != null) {
-                    val renamedMarker = DocumentFile.fromSingleUri(context, renamedUri)
-                        ?: marker
+                    val renamedMarker = markerDocument(context, parent, renamedUri)
                     val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
                         renamedMarker.name,
                         NO_MEDIA_FILE_NAME
@@ -796,8 +826,11 @@ internal class ManagedDownloadTreeDirectories(
                     if (storedName == NO_MEDIA_FILE_NAME && isAccessibleMarker(context, renamedMarker)) {
                         return renamedMarker
                     }
+                    // 改名后旧 URI 可能已经失效，只回收本次创建文件的最新引用
+                    discardCreatedMarker(context, renamedMarker)
+                } else {
+                    discardCreatedMarker(context, marker)
                 }
-                deleteDocument(context, marker)
             }
         }
         return null
@@ -821,24 +854,42 @@ internal class ManagedDownloadTreeDirectories(
         } catch (_: Exception) {
             null
         } ?: return null
-        val marker = DocumentFile.fromSingleUri(context, createdUri) ?: return null
+        val marker = markerDocument(context, parent, createdUri)
         val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
             marker.name,
             requestedName
         )
         if (storedName != requestedName) {
-            deleteDocument(context, marker)
+            discardCreatedMarker(context, marker)
             return null
         }
         if (!materializeNoMediaMarker(context, marker)) {
-            deleteDocument(context, marker)
+            discardCreatedMarker(context, marker)
             return null
         }
         return marker.takeIf { isAccessibleMarker(context, it) }
             ?: run {
-                deleteDocument(context, marker)
+                discardCreatedMarker(context, marker)
                 null
             }
+    }
+
+    private fun discardCreatedMarker(context: Context, marker: DocumentFile) {
+        if (!deleteDocument(context, marker)) {
+            throw IOException("无法确认本次创建的 .nomedia 候选已回收: ${marker.uri}")
+        }
+    }
+
+    private fun markerDocument(
+        context: Context,
+        parent: DocumentFile,
+        documentUri: android.net.Uri
+    ): DocumentFile {
+        val scopedUri = DocumentsContract.buildDocumentUriUsingTree(
+            parent.uri,
+            DocumentsContract.getDocumentId(documentUri)
+        )
+        return requireNotNull(DocumentFile.fromSingleUri(context, scopedUri))
     }
 
     private fun materializeNoMediaMarker(context: Context, marker: DocumentFile): Boolean {

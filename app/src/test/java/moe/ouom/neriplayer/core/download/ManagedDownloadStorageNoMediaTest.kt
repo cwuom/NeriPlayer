@@ -2,14 +2,73 @@ package moe.ouom.neriplayer.core.download
 
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadMediaScanIsolation
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class ManagedDownloadStorageNoMediaTest {
+
+    @Test
+    fun `concurrent SAF initialization creates exactly one marker`() {
+        val context = mock(Context::class.java)
+        val directory = mock(DocumentFile::class.java)
+        val uri = mock(Uri::class.java)
+        `when`(uri.toString()).thenReturn("content://test/tree/root/document/tmp")
+        `when`(directory.uri).thenReturn(uri)
+        val marker = mock(DocumentFile::class.java)
+        `when`(marker.name).thenReturn(".nomedia")
+        val ensured = ConcurrentHashMap<String, Boolean>()
+        val firstCreate = CountDownLatch(1)
+        val releaseCreate = CountDownLatch(1)
+        val secondStarted = CountDownLatch(1)
+        val duplicateCreate = CountDownLatch(1)
+        val creates = AtomicInteger()
+        val executor = Executors.newFixedThreadPool(2)
+        fun ensure() = ManagedDownloadMediaScanIsolation.ensureTreeDirectory(
+            context, ".tmp", directory, ensured,
+            hasCachedChild = { _, _, _ -> false },
+            createMarker = {
+                if (creates.incrementAndGet() == 1) {
+                    firstCreate.countDown()
+                    check(releaseCreate.await(5, TimeUnit.SECONDS))
+                } else {
+                    duplicateCreate.countDown()
+                }
+                marker
+            },
+            isMarkerAccessible = { _, _ -> ManagedDownloadReferenceIo.AccessResult.Accessible },
+            rememberMarker = { _, _ -> }
+        )
+        try {
+            val first = executor.submit { ensure() }
+            assertTrue(firstCreate.await(5, TimeUnit.SECONDS))
+            val second = executor.submit { secondStarted.countDown(); ensure() }
+            assertTrue(secondStarted.await(5, TimeUnit.SECONDS))
+            val duplicated = duplicateCreate.await(250, TimeUnit.MILLISECONDS)
+            releaseCreate.countDown()
+            first.get(5, TimeUnit.SECONDS)
+            second.get(5, TimeUnit.SECONDS)
+            assertFalse("same directory must serialize marker creation", duplicated)
+            assertEquals(1, creates.get())
+        } finally {
+            releaseCreate.countDown()
+            executor.shutdownNow()
+        }
+    }
 
     @get:Rule
     val tempFolder = TemporaryFolder()

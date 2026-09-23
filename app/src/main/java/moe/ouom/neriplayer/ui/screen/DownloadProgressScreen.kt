@@ -51,6 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -258,17 +260,22 @@ private sealed interface DownloadProgressBootstrapProbeResult {
 }
 
 private suspend fun loadDownloadProgressBootstrapState(
-    context: android.content.Context
+    context: android.content.Context,
+    retryEmptyResult: Boolean = true
 ): DownloadProgressBootstrapProbeResult {
     var lastSuccessfulState: DownloadProgressBootstrapState? = null
     repeat(INITIAL_DOWNLOAD_PROGRESS_PROBE_ATTEMPTS) { attempt ->
-        val state = runCatching {
+        val state = try {
             readDownloadProgressBootstrapState(context)
-        }.getOrNull()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
         if (state != null) {
             lastSuccessfulState = state
             if (
-                state.clearFenceActive ||
+                !retryEmptyResult || state.clearFenceActive ||
                     state.durablePendingSongKeys.isNotEmpty() ||
                     state.explicitResumeCandidates.isNotEmpty()
             ) {
@@ -349,6 +356,13 @@ fun DownloadProgressScreen(
     val batchDownloadProgress by GlobalDownloadManager.batchDownloadProgressFlow
         .collectAsStateWithLifecycle()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsStateWithLifecycle()
+    // 终态可能晚于卡片状态写入，直接观察持久队列，避免空页面仍显示旧计数
+    val durablePendingOperations by remember(context) {
+        NeriUserDataDatabase.getInstance(context.applicationContext)
+            .downloadOperationDao()
+            .observePendingIdentities(DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES)
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
     val isClearingDownloadTasks by GlobalDownloadManager.isClearingDownloadTasks
         .collectAsStateWithLifecycle()
     val isDownloadTaskClearPresentationActive by
@@ -381,6 +395,7 @@ fun DownloadProgressScreen(
     LaunchedEffect(
         context,
         taskPresenceKey,
+        durablePendingOperations,
         isClearingDownloadTasks,
         isDownloadTaskClearPresentationActive,
         isDownloadTaskClearPresentationCleared
@@ -396,7 +411,10 @@ fun DownloadProgressScreen(
             explicitResumeCandidates = emptyList()
             return@LaunchedEffect
         }
-        val nextBootstrapProbeResult = loadDownloadProgressBootstrapState(context)
+        val nextBootstrapProbeResult = loadDownloadProgressBootstrapState(
+            context,
+            retryEmptyResult = bootstrapProbeResult == null
+        )
         bootstrapProbeResult = nextBootstrapProbeResult
         val nextBootstrapState = (nextBootstrapProbeResult as?
             DownloadProgressBootstrapProbeResult.Resolved)?.state
@@ -495,6 +513,7 @@ fun DownloadProgressScreen(
     LaunchedEffect(
         context,
         taskPresenceKey,
+        durablePendingOperations,
         shouldRecheckBootstrap,
         effectivePresentationCleared,
         isDownloadTaskClearPresentationActive
@@ -503,7 +522,10 @@ fun DownloadProgressScreen(
         var delayMs = DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_INITIAL_DELAY_MS
         while (true) {
             kotlinx.coroutines.delay(delayMs)
-            val nextBootstrapProbeResult = loadDownloadProgressBootstrapState(context)
+            val nextBootstrapProbeResult = loadDownloadProgressBootstrapState(
+                context,
+                retryEmptyResult = false
+            )
             bootstrapProbeResult = nextBootstrapProbeResult
             val nextBootstrapState = (nextBootstrapProbeResult as?
                 DownloadProgressBootstrapProbeResult.Resolved)?.state

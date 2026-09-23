@@ -50,6 +50,8 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     public static final String PUBLICATION_CHILDREN_FAULT = "test:publicationChildrenFault";
     public static final String PUBLICATION_WRITE_GATE = "test:publicationWriteGate";
     public static final String AUTO_RENAME_NEXT_COLLISION = "test:autoRenameNextCollision";
+    public static final String NO_MEDIA_RENAME = "test:noMediaRename";
+    private static volatile String noMediaRenameMode;
     private static volatile String publicationWriteGateName;
     private static volatile boolean autoRenameNextCollision;
     private static volatile CountDownLatch publicationWriteEntered = new CountDownLatch(0);
@@ -254,6 +256,10 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
+        if (NO_MEDIA_RENAME.equals(method)) {
+            noMediaRenameMode = arg;
+            return Bundle.EMPTY;
+        }
         if (LAST_QUERIED_CHILD.equals(method)) {
             lastQueriedChildId = documentId(Uri.parse(arg));
             return Bundle.EMPTY;
@@ -397,6 +403,9 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             return new Bundle();
         }
         synchronized (NODES) {
+            if (noMediaRenameMode != null && ".nomedia".equals(displayName)) {
+                return new Bundle();
+            }
             if (hasChildNamed(parent.id, displayName)) {
                 if (!autoRenameNextCollision) {
                     return new Bundle();
@@ -427,6 +436,20 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             return new Bundle();
         }
         synchronized (NODES) {
+            if (noMediaRenameMode != null && ".nomedia".equals(displayName)) {
+                String renamedName = "collision".equals(noMediaRenameMode) ? " (1).nomedia" : ".nomedia";
+                String renamedId = "migration-node-" + UUID.randomUUID();
+                Node renamed = new Node(renamedId, node.parentId, renamedName, node.mimeType, false);
+                try {
+                    Files.move(backingFile(node.id).toPath(), backingFile(renamedId).toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException error) {
+                    throw new IllegalStateException(error);
+                }
+                NODES.remove(node.id);
+                NODES.put(renamedId, renamed);
+                return documentResult(renamedId);
+            }
             if (hasChildNamed(node.parentId, displayName, node.id)) {
                 return new Bundle();
             }
@@ -582,6 +605,7 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     }
 
     private void reset() {
+        noMediaRenameMode = null;
         publicationWriteGateName = null;
         autoRenameNextCollision = false;
         lastQueriedChildId = null;

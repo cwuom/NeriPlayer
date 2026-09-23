@@ -45,27 +45,21 @@ internal object ManagedDownloadMediaScanIsolation {
         createMarker: (DocumentFile) -> DocumentFile?,
         isMarkerAccessible: (Context, DocumentFile) -> ManagedDownloadReferenceIo.AccessResult,
         rememberMarker: (DocumentFile, String) -> Unit
-    ) {
-        if (!ManagedDownloadTreeNaming.shouldCreateNoMediaMarker(subdirectory)) return
+    ) = ManagedDownloadTreeMutationLocks.withLock(directory.uri) {
+        if (!ManagedDownloadTreeNaming.shouldCreateNoMediaMarker(subdirectory)) return@withLock
         val cacheKey = directory.uri.toString()
-        if (ensuredMarkers[cacheKey] == true) return
+        if (ensuredMarkers[cacheKey] == true) return@withLock
         if (hasCachedChild(context, directory, NO_MEDIA_FILE_NAME)) {
             ensuredMarkers[cacheKey] = true
-            return
+            return@withLock
         }
 
         repeat(MARKER_CREATION_ATTEMPTS) {
             if (hasCachedChild(context, directory, NO_MEDIA_FILE_NAME)) {
                 ensuredMarkers[cacheKey] = true
-                return
+                return@withLock
             }
-            val marker = try {
-                createMarker(directory)
-            } catch (error: SecurityException) {
-                throw error
-            } catch (_: Exception) {
-                null
-            }
+            val marker = createMarker(directory)
             if (marker != null && isUsableNoMediaMarker(isMarkerAccessible(context, marker))) {
                 val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
                     marker.name,
@@ -74,7 +68,7 @@ internal object ManagedDownloadMediaScanIsolation {
                 if (storedName == NO_MEDIA_FILE_NAME) {
                     rememberMarker(marker, storedName)
                     ensuredMarkers[cacheKey] = true
-                    return
+                    return@withLock
                 }
                 runCatching { marker.delete() }
             }

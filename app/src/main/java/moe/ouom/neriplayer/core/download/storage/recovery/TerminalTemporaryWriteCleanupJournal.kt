@@ -291,10 +291,11 @@ internal class TerminalTemporaryWriteCleanupJournal(
         val normalizedPreparation = preparation.normalizedOrNull() ?: return@synchronized false
         val current = readStateLocked()
             ?: return@synchronized false
+        // 恢复线程可能已完成并消费清理记录，重复确认不能重新入队或报失败
         val currentPreparation = current.preparations.firstOrNull { candidate ->
             candidate.root == normalizedPreparation.root &&
                 candidate.pendingAudioName == normalizedPreparation.pendingAudioName
-        } ?: return@synchronized false
+        } ?: return@synchronized true
         if (currentPreparation.generationId != normalizedPreparation.generationId) {
             return@synchronized false
         }
