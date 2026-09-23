@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import android.content.Intent
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -7,10 +8,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.UUID
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
+import moe.ouom.neriplayer.testing.DocumentsFixture
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -34,16 +35,11 @@ class ManagedDownloadNoMediaInstrumentedTest {
 
     @Test
     fun platformExternalStorageProviderKeepsOneMarkerDuringParallelPreparation() {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        automation.adoptShellPermissionIdentity("android.permission.MANAGE_DOCUMENTS")
+        val tree = DocumentsFixture.createExternalTree()
         var fixture: DocumentFile? = null
         val executor = Executors.newFixedThreadPool(8)
         try {
-            val platformTree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Download")
-            val root = requireNotNull(DocumentFile.fromTreeUri(context, platformTree))
-            val fixtureName = "neriplayer-marker-test-${UUID.randomUUID()}"
-            requireNotNull(root.createDirectory(fixtureName))
-            fixture = root.listFiles().single { it.name == fixtureName }
+            fixture = requireNotNull(DocumentFile.fromTreeUri(context, tree))
             requireNotNull(fixture.createDirectory(".tmp"))
             val directory = fixture.listFiles().single { it.name == ".tmp" }
             val futures = List(16) {
@@ -59,7 +55,11 @@ class ManagedDownloadNoMediaInstrumentedTest {
                 check(executor.awaitTermination(5, TimeUnit.SECONDS))
                 fixture?.let { assertTrue("remove this test's public directory", it.delete()) }
             } finally {
-                automation.dropShellPermissionIdentity()
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                if (context.contentResolver.persistedUriPermissions.any { it.uri == tree }) {
+                    context.contentResolver.releasePersistableUriPermission(tree, flags)
+                }
+                context.revokeUriPermission(tree, flags)
             }
         }
     }

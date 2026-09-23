@@ -25,6 +25,8 @@ import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger
 
+private const val MEDIA_STORE_DELETE_BATCH_SIZE = 128
+
 internal class ManagedDownloadReferenceDeleteExecutor(
     private val tag: String,
     private val isReferenceAllowed: (
@@ -475,7 +477,17 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         val batchDelete = contentReferenceBatchDeleteOperation ?: return SafBatchDeleteOutcome()
         if (references.isEmpty()) return SafBatchDeleteOutcome()
         val startedAtNanos = System.nanoTime()
-        val batches = references.chunked(SAF_REFERENCE_DELETE_BATCH_SIZE)
+        val batches = references.groupBy { (it.reference as StorageReference.SafRef).uri.authority }
+            .flatMap { (authority, providerReferences) ->
+                // MediaStore 有真实批量事务，系统存储使用较大批次减少逐批提交和通知
+                if (authority == "com.android.externalstorage.documents") {
+                    // 首批仍保持较小，尽早反馈物理删除进度
+                    listOf(providerReferences.take(SAF_REFERENCE_DELETE_BATCH_SIZE)) +
+                        providerReferences.drop(SAF_REFERENCE_DELETE_BATCH_SIZE).chunked(MEDIA_STORE_DELETE_BATCH_SIZE)
+                } else {
+                    providerReferences.chunked(SAF_REFERENCE_DELETE_BATCH_SIZE)
+                }
+            }
         val successfulReferences = ConcurrentHashMap.newKeySet<TrustedManagedRef>()
         val nextBatchIndex = AtomicInteger(0)
         val unsupportedCount = AtomicInteger()

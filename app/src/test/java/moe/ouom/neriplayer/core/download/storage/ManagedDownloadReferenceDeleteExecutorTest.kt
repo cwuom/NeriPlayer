@@ -878,6 +878,49 @@ class ManagedDownloadReferenceDeleteExecutorTest {
         }
     }
 
+    @Test
+    fun `system storage batches report early progress and never mix providers`() = runBlocking {
+        val references = (0 until 300).map { index ->
+            val authority = if (index % 10 == 0) "documents.test" else "com.android.externalstorage.documents"
+            val uri = mock(Uri::class.java)
+            `when`(uri.authority).thenReturn(authority)
+            TrustedManagedRef(StorageReference.SafRef(uri), "content://$authority/document/$index")
+        }
+        val batches = mutableListOf<List<TrustedManagedRef>>()
+        val reported = mutableListOf<String>()
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceBatchDeleteOperation = { _, batch ->
+                val authorities = batch.map { (it.reference as StorageReference.SafRef).uri.authority }.toSet()
+                assertEquals(1, authorities.size)
+                val limit = if (authorities.single() == "documents.test") SAF_REFERENCE_DELETE_BATCH_SIZE else 128
+                assertTrue(batch.size <= limit)
+                batches += batch
+                List(batch.size) { StorageMutationResult.Deleted }
+            }
+        )
+
+        val result = executor.deleteReferencesConcurrently(
+            mock(Context::class.java), references,
+            ManagedDownloadDeletePolicy(emptyList(), emptyList(), references.toSet()),
+            parallelism = 1,
+            onDeleteAttemptFinished = { reference, deleted ->
+                assertTrue(deleted)
+                reported += reference.externalReference
+            }
+        )
+
+        val systemBatches = batches.filter {
+            (it.first().reference as StorageReference.SafRef).uri.authority == "com.android.externalstorage.documents"
+        }
+        assertEquals(SAF_REFERENCE_DELETE_BATCH_SIZE, systemBatches.first().size)
+        assertTrue(systemBatches.drop(1).any { it.size == 128 })
+        assertEquals(references.map { it.externalReference }.toSet(), result.deletedReferences)
+        assertEquals(references.size, reported.size)
+        assertEquals(references.size, reported.toSet().size)
+    }
+
     private fun deletePolicyFor(references: List<String>): ManagedDownloadDeletePolicy {
         return ManagedDownloadDeletePolicy(
             managedFileRoots = emptyList(),

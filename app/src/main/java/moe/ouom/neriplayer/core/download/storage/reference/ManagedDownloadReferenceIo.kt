@@ -12,6 +12,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.net.URI
 import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.core.download.storage.SAF_REFERENCE_DELETE_BATCH_SIZE
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLocks
 
 internal object ManagedDownloadReferenceIo {
@@ -163,9 +164,29 @@ internal object ManagedDownloadReferenceIo {
         if (uris.any { uri -> uri.authority != authority }) {
             return BatchDeleteResult(emptyList(), supported = false)
         }
+        val confirmedByMediaStore = ManagedMediaStoreDelete.deleteConfirmed(context, uris)
+        if (confirmedByMediaStore.size == uris.distinct().size) {
+            return BatchDeleteResult(List(uris.size) { DeleteResult.Deleted }, supported = true)
+        }
+        val pendingUris = uris.filterNot { it in confirmedByMediaStore }
+        fun fallback(error: Throwable): BatchDeleteResult {
+            if (confirmedByMediaStore.isEmpty()) return BatchDeleteResult(emptyList(), supported = false)
+            return BatchDeleteResult(
+                uris.map { uri ->
+                    if (uri in confirmedByMediaStore) DeleteResult.Deleted else DeleteResult.ProviderFailure(error)
+                },
+                supported = true
+            )
+        }
+        if (pendingUris.size > SAF_REFERENCE_DELETE_BATCH_SIZE) {
+            // 系统 URI 未必能映射，较大批次的剩余项交给固定 worker 逐项回退
+            return fallback(
+                UnsupportedOperationException("DocumentsProvider fallback batch exceeds $SAF_REFERENCE_DELETE_BATCH_SIZE")
+            )
+        }
         return try {
-            val operations = ArrayList<ContentProviderOperation>(uris.size)
-            uris.forEach { uri ->
+            val operations = ArrayList<ContentProviderOperation>(pendingUris.size)
+            pendingUris.forEach { uri ->
                 operations += ContentProviderOperation.newCall(
                     uri,
                     DOCUMENT_DELETE_METHOD,
@@ -176,26 +197,31 @@ internal object ManagedDownloadReferenceIo {
                     .build()
             }
             val providerResults = context.contentResolver.applyBatch(authority, operations)
-            if (providerResults.size != uris.size) {
-                BatchDeleteResult(emptyList(), supported = false)
+            if (providerResults.size != pendingUris.size) {
+                fallback(IllegalStateException("DocumentsProvider returned an incomplete batch result"))
             } else {
+                val remainingResults = providerResults.iterator()
                 BatchDeleteResult(
-                    results = providerResults.map { result ->
-                        result.exception?.let(::classifyDeleteFailure) ?: DeleteResult.Deleted
+                    results = uris.map { uri ->
+                        if (uri in confirmedByMediaStore) DeleteResult.Deleted else {
+                            remainingResults.next().exception?.let(::classifyDeleteFailure) ?: DeleteResult.Deleted
+                        }
                     },
                     supported = true
                 )
             }
         } catch (_: SecurityException) {
             BatchDeleteResult(
-                results = List(uris.size) { DeleteResult.PermissionLost },
+                results = uris.map { uri ->
+                    if (uri in confirmedByMediaStore) DeleteResult.Deleted else DeleteResult.PermissionLost
+                },
                 supported = true
             )
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
             // Provider 可能覆写 applyBatch 且不接受 call operation，交给逐项路径兼容
-            BatchDeleteResult(emptyList(), supported = false)
+            fallback(error)
         }
     }
 

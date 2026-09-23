@@ -1,15 +1,16 @@
 package moe.ouom.neriplayer.core.download
 
+import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
-import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.joinAll
@@ -23,10 +24,15 @@ import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
 import moe.ouom.neriplayer.core.download.manager.catalog.findConfirmedMissingDownloadedSongs
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedMediaStoreDelete
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
+import moe.ouom.neriplayer.testing.DocumentsFixture
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -53,20 +59,12 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
             "recover the existing delete intent before starting the benchmark"
         }
         previousRoot = ManagedDownloadStorage.configuredDirectoryUri()
-        instrumentation.uiAutomation.adoptShellPermissionIdentity("android.permission.MANAGE_DOCUMENTS")
-        val primary = DocumentsContract.buildDocumentUri(AUTHORITY, "primary:")
-        val created = requireNotNull(DocumentsContract.createDocument(context.contentResolver, primary,
-            DocumentsContract.Document.MIME_TYPE_DIR, "NeriPlayer-delete-benchmark-${UUID.randomUUID()}"))
-        fixtureDocument = created
-        val tree = DocumentsContract.buildTreeDocumentUri(AUTHORITY, DocumentsContract.getDocumentId(created))
+        val tree = DocumentsFixture.createExternalTree()
         fixtureTree = tree
-        context.grantUriPermission(context.packageName, tree, READ_WRITE or
-            Intent.FLAG_GRANT_PREFIX_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-        context.contentResolver.takePersistableUriPermission(tree, READ_WRITE)
+        fixtureDocument = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         check(context.contentResolver.persistedUriPermissions.any {
             it.uri == tree && it.isReadPermission && it.isWritePermission
         }) { "real persisted SAF grant is required for benchmark tree $tree" }
-        instrumentation.uiAutomation.dropShellPermissionIdentity()
         val rootDocument = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         assertTrue(childNames(rootDocument).isEmpty())
         report("fixture=$tree provider=$AUTHORITY hardware=${Build.HARDWARE} sdk=${Build.VERSION.SDK_INT}")
@@ -74,23 +72,89 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
 
     @After
     fun removeOnlyThisBenchmarkFixture() {
-        try {
-            if (configuredFixture && PersistentDownloadedSongDeleteIntentStore.hasPending(context)) {
-                report("retained recovery fixture=$fixtureTree because durable delete intent is still pending")
-                return
-            }
-            if (configuredFixture) ManagedDownloadStorage.updateCustomDirectoryUri(previousRoot)
-            instrumentation.uiAutomation.adoptShellPermissionIdentity("android.permission.MANAGE_DOCUMENTS")
-            fixtureDocument?.let { check(DocumentsContract.deleteDocument(context.contentResolver, it)) }
-            fixtureTree?.let { tree ->
-                if (context.contentResolver.persistedUriPermissions.any { it.uri == tree }) {
-                    context.contentResolver.releasePersistableUriPermission(tree, READ_WRITE)
-                }
-                context.revokeUriPermission(tree, READ_WRITE)
-            }
-        } finally {
-            instrumentation.uiAutomation.dropShellPermissionIdentity()
+        if (configuredFixture && PersistentDownloadedSongDeleteIntentStore.hasPending(context)) {
+            report("retained recovery fixture=$fixtureTree because durable delete intent is still pending")
+            return
         }
+        if (configuredFixture) ManagedDownloadStorage.updateCustomDirectoryUri(previousRoot)
+        fixtureDocument?.let { check(DocumentsContract.deleteDocument(context.contentResolver, it)) }
+        fixtureTree?.let { tree ->
+            if (context.contentResolver.persistedUriPermissions.any { it.uri == tree }) {
+                context.contentResolver.releasePersistableUriPermission(tree, READ_WRITE)
+            }
+            context.revokeUriPermission(tree, READ_WRITE)
+        }
+    }
+
+    @Test
+    fun mediaStoreMappedBatchConfirmsFilesAndPreservesDirectoriesAndForeignFiles() {
+        val root = requireNotNull(fixtureDocument)
+        val covers = create(root, DocumentsContract.Document.MIME_TYPE_DIR, "Covers")
+        write(create(covers, "image/jpeg", "foreign.jpg"), "foreign")
+        val targets = buildList {
+            repeat(16) { index ->
+                add(create(root, "audio/mpeg", "mapped-$index.mp3"))
+                add(create(root, "application/json", "mapped-$index.npmeta.json"))
+                add(create(covers, "image/jpeg", "mapped-$index.jpg"))
+            }
+        }
+        targets.forEach { write(it, "fixture") }
+
+        val confirmed = ManagedMediaStoreDelete.deleteConfirmed(context, targets + covers)
+
+        assertEquals(targets.toSet(), confirmed)
+        assertEquals(listOf("Covers"), childNames(root))
+        assertEquals(listOf("foreign.jpg"), childNames(covers))
+    }
+
+    @Test
+    fun mappedFileMovedWithinTheTreeIsNotRetargetedForDeletion() {
+        val root = requireNotNull(fixtureDocument)
+        val destination = create(root, DocumentsContract.Document.MIME_TYPE_DIR, "destination")
+        val name = "moved.json"
+        val original = create(root, "application/json", name)
+        write(original, "fixture")
+        val media = requireNotNull(MediaStore.getMediaUri(context, original))
+        assertNotNull(ManagedMediaStoreDelete.resolveMappedTarget(context, original, media, name))
+
+        val relativePath = requireNotNull(context.contentResolver.query(media,
+            arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)).use { cursor ->
+            check(cursor.moveToFirst())
+            cursor.getString(0)
+        }
+        // 直接移动同一 MediaStore 行，避免 DocumentsProvider 的重建索引改变行 ID
+        assertEquals(1, context.contentResolver.update(media, ContentValues().apply {
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${relativePath}destination/")
+        }, null, null))
+        val moved = requireNotNull(MediaStore.getDocumentUri(context, media))
+
+        assertEquals("move must retain the mapped MediaStore row to cover the race", media, MediaStore.getMediaUri(context, moved))
+        assertNull(ManagedMediaStoreDelete.resolveMappedTarget(context, original, media, name))
+        assertEquals(listOf(name), childNames(destination))
+    }
+
+    @Test
+    fun largeMixedBatchKeepsConfirmedFilesAndBoundsDocumentsProviderFallback() {
+        val root = requireNotNull(fixtureDocument)
+        val foreign = create(root, "application/json", "foreign.json")
+        write(foreign, "foreign")
+        val targets = List(32) { create(root, "application/json", "mapped-$it.json") }
+        targets.forEach { write(it, "fixture") }
+        val directories = List(17) { create(root, DocumentsContract.Document.MIME_TYPE_DIR, "directory-$it") }
+
+        val result = ManagedDownloadReferenceIo.deleteContentReferencesBatch(context, targets + directories)
+
+        assertTrue(result.supported)
+        assertEquals(List(targets.size) { ManagedDownloadReferenceIo.DeleteResult.Deleted }, result.results.take(targets.size))
+        assertTrue(result.results.drop(targets.size).all { it is ManagedDownloadReferenceIo.DeleteResult.ProviderFailure })
+        assertEquals((directories.indices.map { "directory-$it" } + "foreign.json").toSet(), childNames(root).toSet())
+        // 小批次仍可以使用原 DocumentsProvider，不能把未执行的目录提前报告为成功
+        directories.chunked(16).forEach { batch ->
+            val fallback = ManagedDownloadReferenceIo.deleteContentReferencesBatch(context, batch)
+            assertTrue(fallback.supported)
+            assertEquals(List(batch.size) { ManagedDownloadReferenceIo.DeleteResult.Deleted }, fallback.results)
+        }
+        assertEquals(listOf("foreign.json"), childNames(root))
     }
 
     @Test

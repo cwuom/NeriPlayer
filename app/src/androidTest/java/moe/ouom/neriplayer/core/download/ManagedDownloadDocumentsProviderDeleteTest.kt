@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteExecutor
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
+import moe.ouom.neriplayer.testing.DocumentsFixture
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,12 +34,8 @@ class ManagedDownloadDocumentsProviderDeleteTest {
 
     @After
     fun cleanupFixture() {
-        try {
-            if (fixtureStarted) context.contentResolver.call(providerUri,
-                ManagedDownloadDelayedDocumentsProvider.CLEANUP, null, null)
-        } finally {
-            instrumentation.uiAutomation.dropShellPermissionIdentity()
-        }
+        if (fixtureStarted) context.contentResolver.call(providerUri,
+            ManagedDownloadDelayedDocumentsProvider.CLEANUP, null, null)
     }
 
     @Test
@@ -78,18 +75,15 @@ class ManagedDownloadDocumentsProviderDeleteTest {
     }
 
     private fun setup(count: Int, delayMs: Long, rejectBatch: Boolean = false, deniedName: String? = null): List<TrustedManagedRef> {
-        instrumentation.uiAutomation.adoptShellPermissionIdentity("android.permission.MANAGE_DOCUMENTS")
-        val fixture = requireNotNull(context.contentResolver.call(providerUri,
-            ManagedDownloadDelayedDocumentsProvider.SETUP, null, Bundle().apply {
-                putInt("count", count)
-                putLong("delayMs", delayMs)
-                putBoolean("rejectBatch", rejectBatch)
-                putString("deniedName", deniedName)
-                putString("packageName", context.packageName)
-            }))
+        val fixture = DocumentsFixture.setupDelayedProvider(Bundle().apply {
+            putInt("count", count)
+            putLong("delayMs", delayMs)
+            putBoolean("rejectBatch", rejectBatch)
+            putString("deniedName", deniedName)
+            putString("packageName", context.packageName)
+        })
         fixtureStarted = true
         val treeUri = Uri.parse(requireNotNull(fixture.getString("treeUri")))
-        instrumentation.uiAutomation.dropShellPermissionIdentity()
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
         return requireNotNull(context.contentResolver.query(childrenUri,
             arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)).use { cursor ->
