@@ -1996,6 +1996,14 @@ fun NowPlayingScreen(
     // 评论来源只由「逻辑音源」决定 (平台 + 原始资源 id), 与最终播放地址无关 (§3/§49.2)
     val commentSource = remember(currentSong) { resolveCommentSource(currentSong) }
 
+    // 歌曲切到不支持评论的音源时一并收起面板标记, 否则后续歌曲又能取到评论时,
+    // 面板会在没有任何点击的情况下自己重新弹出来 (§8/§48)
+    LaunchedEffect(commentSource) {
+        if (commentSource == null) {
+            showCommentSheet = false
+        }
+    }
+
     // Snackbar状态
     val snackbarHostState = remember { SnackbarHostState() }
     var detailSong by remember { mutableStateOf<SongItem?>(null) }

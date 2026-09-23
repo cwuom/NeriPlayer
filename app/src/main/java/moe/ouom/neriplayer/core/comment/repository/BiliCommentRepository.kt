@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.comment.repository
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.bili.BiliClient
@@ -150,11 +151,17 @@ internal object BiliCommentRepository : CommentRepository {
      * 请求异常或信息不匹配一律视为「未验证」, 不采用该候选。
      */
     private suspend fun verifyLegacyVideo(candidateAvid: Long, bvid: String?): Boolean {
-        val info = runCatching {
+        // 这里不能用 runCatching: 它会连 CancellationException 一起吞掉, 把一次正常的取消
+        // 变成「验证失败」再抛出业务错误, 最终在界面上渲染成「加载失败」
+        val info = try {
             withContext(Dispatchers.IO) {
                 AppContainer.biliClient.getVideoBasicInfoByAvid(candidateAvid)
             }
-        }.getOrNull()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
 
         return hasVerifiedLegacyVideo(info, candidateAvid, bvid)
     }

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -45,6 +46,9 @@ class CommentViewModelTest {
         var failPages: Set<Int> = emptySet()
         var failure: Throwable? = null
         var delayMs: Long = 0L
+
+        /** 模拟「仓库层把取消吞成业务错误」的形态 (曾经的 runCatching 就是如此) */
+        var swallowCancellation: Boolean = false
         var secondaryIds = mutableListOf<String?>()
 
         /**
@@ -60,7 +64,17 @@ class CommentViewModelTest {
             requestedPages += page
             forceRefreshes += forceRefresh
             secondaryIds += secondaryId
-            if (delayMs > 0L) delay(delayMs)
+            if (delayMs > 0L) {
+                if (swallowCancellation) {
+                    try {
+                        delay(delayMs)
+                    } catch (cancellation: CancellationException) {
+                        throw IOException("cancelled but reported as failure", cancellation)
+                    }
+                } else {
+                    delay(delayMs)
+                }
+            }
             failure?.let { throw it }
             if (page in failPages) throw IOException("boom page $page")
             return pages[page] ?: CommentPage(
@@ -483,5 +497,62 @@ class CommentViewModelTest {
         )
         assertEquals(CommentError.NETWORK, toCommentError(IOException("network down")))
         assertEquals(CommentError.UNKNOWN, toCommentError(IllegalStateException("boom")))
+    }
+
+    /**
+     * 取消不能变成错误：即使仓库层把 CancellationException 吞成业务异常，
+     * 被取消的那次请求也不得把状态写成 ERROR / loadMoreError。
+     */
+    @Test
+    fun `a cancelled load never publishes an error`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            delayMs = 1_000L
+            swallowCancellation = true
+            pages[1] = pageOf(1, listOf("1"), CommentPlatform.NETEASE)
+        }
+        val viewModel = CommentViewModel().apply { repositoryFactory = { repository } }
+
+        viewModel.onSourceChanged(source(CommentPlatform.NETEASE, 11L))
+        advanceTimeBy(100L)
+
+        // 刷新会取消上一次首屏请求, 此时新请求还在途中
+        viewModel.refresh()
+        advanceTimeBy(50L)
+
+        assertEquals(CommentListStatus.LOADING, viewModel.uiState.value.status)
+        assertNull(viewModel.uiState.value.error)
+
+        advanceUntilIdle()
+        assertEquals(CommentListStatus.SUCCESS, viewModel.uiState.value.status)
+        assertNull(viewModel.uiState.value.error)
+    }
+
+    /**
+     * 面板隐藏时取消在途请求并把「加载中」回落到 IDLE，重新打开会重新请求一次，
+     * 而不是因为没有取消而把结果留给已关闭的面板，也不是卡在 LOADING。
+     */
+    @Test
+    fun `hiding the sheet cancels the in-flight load and returns to idle`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.BILIBILI).apply {
+            delayMs = 1_000L
+            pages[1] = pageOf(1, listOf("1"), CommentPlatform.BILIBILI)
+        }
+        val viewModel = CommentViewModel().apply { repositoryFactory = { repository } }
+
+        viewModel.onSourceChanged(source(CommentPlatform.BILIBILI, 22L))
+        advanceTimeBy(100L)
+        viewModel.onSheetHidden()
+        advanceUntilIdle()
+
+        assertEquals(CommentListStatus.IDLE, viewModel.uiState.value.status)
+        assertTrue(viewModel.uiState.value.comments.isEmpty())
+        assertNull(viewModel.uiState.value.error)
+
+        // 重新打开面板: 同一个音源也要重新请求一次 (§51 打开面板 = 一次请求)
+        viewModel.onSourceChanged(source(CommentPlatform.BILIBILI, 22L))
+        advanceUntilIdle()
+
+        assertEquals(CommentListStatus.SUCCESS, viewModel.uiState.value.status)
+        assertEquals(listOf(1, 1), repository.requestedPages)
     }
 }

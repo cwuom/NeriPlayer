@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.model.COMMENT_PAGE_SIZE
@@ -183,6 +184,38 @@ internal class CommentViewModel : ViewModel() {
     }
 
     /**
+     * 评论面板不再显示 (关闭面板 / 歌曲切到不支持评论的音源)。
+     *
+     * 取消所有在途请求, 别让请求在界面不再需要它之后继续占用结果状态;
+     * 已完成的列表数据保留 (重新打开可直接复用), 只有「还在加载中」的状态回落到 IDLE,
+     * 这样下次打开面板会重新请求一次, 而不会被 [onSourceChanged] 的早退条件卡在 LOADING。
+     */
+    fun onSheetHidden() {
+        loadJob?.cancel()
+        loadMoreJob?.cancel()
+        _uiState.update { current ->
+            when {
+                current.status == CommentListStatus.LOADING -> current.copy(
+                    status = if (current.comments.isEmpty()) {
+                        CommentListStatus.IDLE
+                    } else {
+                        CommentListStatus.SUCCESS
+                    },
+                    isRefreshing = false,
+                    isLoadingMore = false
+                )
+
+                current.isRefreshing || current.isLoadingMore -> current.copy(
+                    isRefreshing = false,
+                    isLoadingMore = false
+                )
+
+                else -> current
+            }
+        }
+    }
+
+    /**
      * 按页码发起单次评论请求: 首页取消旧首屏任务并整体替换列表, 后续页取消旧翻页任务并按 id 去重合并, forceRefresh 透传给仓库。
      * 结果返回时若 source 已不是当前 activeSource 则整体丢弃过期结果; 首页失败置 ERROR, 后续页失败只置 loadMoreError。
      */
@@ -237,6 +270,9 @@ internal class CommentViewModel : ViewModel() {
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
+                // 协程已被取消 (切歌 / 刷新 / 面板关闭) 时绝不发布错误:
+                // 一次正常的取消不能被渲染成「加载失败」
+                if (!isActive) return@launch
                 if (!isSameCommentSource(source, activeSource)) return@launch
                 val reason = toCommentError(error)
                 // 只记录非敏感上下文 (§36)

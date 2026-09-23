@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -65,6 +66,12 @@ internal fun CommentSheet(
     // 只在「平台 + 资源 id」真正变化时请求一次; 重组不会重复请求 (§25)
     LaunchedEffect(source?.platform, source?.resourceId) {
         viewModel.onSourceChanged(source)
+    }
+
+    // 面板离开组合 (关闭面板 / 歌曲切到不支持评论的音源) 时取消在途请求,
+    // 界面已经不需要的结果不该继续占用请求与状态
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.onSheetHidden() }
     }
 
     ModalBottomSheet(
