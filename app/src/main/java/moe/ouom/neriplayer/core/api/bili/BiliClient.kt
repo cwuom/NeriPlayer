@@ -96,8 +96,12 @@ class BiliClient(
         /** 评论区 (x/v2/reply) 的对象类型: 视频 */
         private const val REPLY_TYPE_VIDEO = 1
 
-        /** 评论区排序: 按热度 (网页端默认) */
-        private const val REPLY_SORT_BY_LIKE = 2
+        /**
+         * 评论区排序参数 (x/v2/reply 的 `sort`): 接口定义 0 = 按时间, 1 = 按点赞数, 2 = 按回复数。
+         * 匿名实测 (2026-09, 视频 aid 115483835630912 / 117318021548752) `sort=1` 与 `sort=2`
+         * 返回同一份列表、`sort=0` 返回空, 故取语义明确的 1 (按点赞数)。
+         */
+        private const val REPLY_SORT_BY_LIKE = 1
 
         /** 默认 UA (Web) */
         private const val DEFAULT_WEB_UA =
