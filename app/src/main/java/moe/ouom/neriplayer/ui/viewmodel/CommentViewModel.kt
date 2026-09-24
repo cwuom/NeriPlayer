@@ -260,7 +260,9 @@ internal class CommentViewModel : ViewModel() {
                         comments = comments,
                         page = result.page,
                         hasMore = result.hasMore,
-                        total = result.total,
+                        // 后续页可能拿到服务端的降级空载荷 (例如 B 站匿名请求第 2 页返回 page.count=0),
+                        // 不能让它把首页拿到的总数覆盖成 0, 否则头部会从「共 N 条」掉到「共 0 条」(§32/§33)
+                        total = if (isFirstPage) result.total else current.total ?: result.total,
                         isRefreshing = false,
                         isLoadingMore = false,
                         error = null,

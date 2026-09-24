@@ -392,6 +392,43 @@ class CommentViewModelTest {
     }
 
     /**
+     * 后续页拿到服务端降级空载荷 (B 站匿名请求第 2 页返回 page.count=0) 时,
+     * 不能把首页得到的总数覆盖成 0 (否则头部从「共 29 条」掉到「共 0 条」)。
+     */
+    @Test
+    fun `a degraded empty later page never resets the first page total`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.BILIBILI)
+        repository.pages[1] = pageOf(
+            1,
+            listOf("a", "b", "c"),
+            CommentPlatform.BILIBILI,
+            hasMore = true,
+            total = 29L
+        )
+        repository.pages[2] = pageOf(
+            2,
+            emptyList(),
+            CommentPlatform.BILIBILI,
+            hasMore = false,
+            total = 0L
+        )
+        val viewModel = CommentViewModel()
+        viewModel.repositoryFactory = { repository }
+
+        viewModel.onSourceChanged(source(CommentPlatform.BILIBILI, 1L))
+        advanceUntilIdle()
+        viewModel.loadMore()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(CommentListStatus.SUCCESS, state.status)
+        assertEquals(listOf("a", "b", "c"), state.comments.map { it.id })
+        assertEquals(29L, state.total ?: -1L)
+        assertFalse(state.hasMore)
+        assertNull(state.loadMoreError)
+    }
+
+    /**
      * 音源置为 null 时状态重置为 IDLE，并清空评论与来源。
      */
     @Test
