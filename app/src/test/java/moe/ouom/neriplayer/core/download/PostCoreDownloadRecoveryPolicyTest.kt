@@ -15,8 +15,97 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 
 class PostCoreDownloadRecoveryPolicyTest {
+    @Test
+    fun `immediate recovery drains a large backlog despite an old delayed worker`() = runBlocking {
+        val coordinator = PostCoreDownloadRecoveryWorker.scheduleCoordinator
+        coordinator.invalidate()
+        try {
+            val generation = requireNotNull(coordinator.request(initialDelayMs = 86_400_000L))
+            assertTrue(coordinator.markWorkEnqueueStarted(generation))
+            assertEquals(generation, coordinator.reserveImmediate())
+            var remaining = 850
+            var windows = 0
+            val delays = mutableListOf<Long>()
+            val result = PostCoreDownloadRecoveryWorker.runImmediateRecovery(
+                isCurrent = { coordinator.isImmediateOwner(generation) },
+                awaitNextWindow = { delays += it },
+                recover = {
+                    windows++
+                    remaining = (remaining - 32).coerceAtLeast(0)
+                    if (remaining == 0) PostCoreDownloadRecoveryResult.SETTLED
+                    else PostCoreDownloadRecoveryResult.CONTINUE_SOON
+                }
+            )
+            assertEquals(PostCoreDownloadRecoveryResult.SETTLED, result)
+            assertEquals(0, remaining)
+            assertEquals(27, windows)
+            assertEquals(26, delays.size)
+            assertTrue(delays.all { it in 1L..1_000L })
+            assertFalse(coordinator.claimWorker(generation))
+        } finally {
+            coordinator.invalidate()
+        }
+    }
+
+    @Test
+    fun `immediate recovery backs off transient failures and stops on network loss`() = runBlocking {
+        val results = ArrayDeque(listOf(
+            PostCoreDownloadRecoveryResult.RETRY,
+            PostCoreDownloadRecoveryResult.CONTINUE_SOON,
+            PostCoreDownloadRecoveryResult.WAITING_NETWORK
+        ))
+        val delays = mutableListOf<Long>()
+        val result = PostCoreDownloadRecoveryWorker.runImmediateRecovery(
+            isCurrent = { true },
+            awaitNextWindow = { delays += it },
+            recover = { results.removeFirst() }
+        )
+        assertEquals(PostCoreDownloadRecoveryResult.WAITING_NETWORK, result)
+        assertTrue(results.isEmpty())
+        assertEquals(2, delays.size)
+        assertTrue(delays[0] >= 10_000L)
+        assertTrue(delays[1] in 1L..1_000L)
+    }
+
+    @Test
+    fun `cancelling immediate recovery prevents another attempt`() = runBlocking {
+        var attempts = 0
+        try {
+            PostCoreDownloadRecoveryWorker.runImmediateRecovery(
+                isCurrent = { true },
+                awaitNextWindow = { throw CancellationException("stopped") },
+                recover = { attempts++; PostCoreDownloadRecoveryResult.RETRY }
+            )
+            org.junit.Assert.fail("cancellation must escape the recovery loop")
+        } catch (_: CancellationException) {
+            assertEquals(1, attempts)
+        }
+    }
+
+    @Test
+    fun `invalidated immediate owner cannot restart after a newer recovery begins`() = runBlocking {
+        val coordinator = moe.ouom.neriplayer.core.download.execution.worker.DownloadPumpScheduleCoordinator()
+        val old = requireNotNull(coordinator.reserveImmediate())
+        var newer = 0L
+        var attempts = 0
+        val result = PostCoreDownloadRecoveryWorker.runImmediateRecovery(
+            isCurrent = { coordinator.isImmediateOwner(old) },
+            awaitNextWindow = {
+                coordinator.invalidate()
+                newer = requireNotNull(coordinator.reserveImmediate())
+            },
+            recover = { attempts++; PostCoreDownloadRecoveryResult.RETRY }
+        )
+        assertEquals(PostCoreDownloadRecoveryResult.BLOCKED, result)
+        assertEquals(1, attempts)
+        assertFalse(coordinator.isImmediateOwner(old))
+        assertTrue(coordinator.isImmediateOwner(newer))
+    }
+
     @Test
     fun `late core commits coalesce into one successor instead of being lost at worker completion`() {
         val coordinator = PostCoreDownloadRecoveryWorker.scheduleCoordinator

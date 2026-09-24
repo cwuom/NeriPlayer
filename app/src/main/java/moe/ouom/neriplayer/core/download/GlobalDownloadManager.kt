@@ -728,9 +728,10 @@ object GlobalDownloadManager {
     }
 
     internal suspend fun recoverPostCoreDownloadsForWorker(
-        context: Context
+        context: Context,
+        expectedAdmissionTicket: Long? = null
     ): PostCoreDownloadRecoveryResult {
-        return this.recoverPostCoreDownloadsForWorkerImpl(context)
+        return this.recoverPostCoreDownloadsForWorkerImpl(context, expectedAdmissionTicket)
     }
 
     internal suspend fun reconcileMaterializedLegacyDownloads(context: Context) {

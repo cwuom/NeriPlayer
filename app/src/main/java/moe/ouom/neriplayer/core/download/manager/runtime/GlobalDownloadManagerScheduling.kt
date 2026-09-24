@@ -220,9 +220,9 @@ internal fun GlobalDownloadManager.resumePostCoreDownloadsAfterProgressRestore(
     if (!isDownloadAdmissionTicketCurrent(appContext, capturedAdmissionTicket)) {
         return
     }
-    val scheduled = PostCoreDownloadRecoveryWorker.schedule(appContext)
+    val scheduled = PostCoreDownloadRecoveryWorker.wake(appContext)
     if (scheduled) {
-        NPLogger.d(TAG, "启动已交给唯一持久 Worker 分批恢复 core 收尾任务")
+        NPLogger.d(TAG, "启动已唤醒 core 收尾，进程内恢复与持久 Worker 共用同一代次")
     } else {
         NPLogger.w(TAG, "启动调度 core 收尾 Worker 失败，保留下次恢复入口")
     }

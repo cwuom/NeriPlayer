@@ -205,7 +205,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     }
 
     @Test
-    fun `restart hands all post core rows to one bounded persistent worker`() {
+    fun `restart wakes shared post core recovery without loading all payloads`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -219,7 +219,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         ).readText()
         val cancelLegacyBody = methodBody(workerSource, "cancelLegacyPerOperationWork")
 
-        assertTrue(resumeBody.contains("PostCoreDownloadRecoveryWorker.schedule(appContext)"))
+        assertTrue(resumeBody.contains("PostCoreDownloadRecoveryWorker.wake(appContext)"))
         assertFalse(resumeBody.contains("listByStatesAnyLibrary("))
         assertFalse(resumeBody.contains("schedulePostCoreEnrichmentRetry("))
         assertTrue(repairBody.contains("cancelLegacyPerOperationWork("))

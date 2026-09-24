@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download.manager.runtime
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
+import moe.ouom.neriplayer.core.download.execution.recovery.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.shouldDeferDownloadExecutionForNetwork
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.awaitDownloadAdmissionTicket
@@ -467,6 +469,35 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
             )
             return@withSongExecutionLock
         }
+        val pendingRequest = DownloadExecutionRoomStore.read(context, operationId)
+            ?.takeIf { request ->
+                request.song.stableKey() == song.stableKey() &&
+                    (expectedAttemptId == null || request.attemptId == expectedAttemptId)
+            } ?: return@withSongExecutionLock
+        if (!DownloadExecutionRoomStore.isArtifactRecoveryAllowed(context, operationId)) {
+            return@withSongExecutionLock
+        }
+        // 收尾不再经过传输入口，必须独立解除旧网络暂停，且不能覆盖新的断网或取消
+        val networkReady = synchronized(wifiBoundNetworkPolicyMutationLock) {
+            if (!isDownloadAdmissionTicketCurrent(
+                    context, admissionTicket,
+                    stableKey = song.stableKey(), operationId = operationId
+                ) ||
+                isSongCancelled(song.stableKey()) ||
+                !isPostCoreRecoveryNetworkEligible(
+                    pendingRequest.requiresWifiNetwork,
+                    context.currentDownloadNetworkTypeOrNull(),
+                    mobileDataDownloadOverrideAllowed
+                )
+            ) {
+                false
+            } else {
+                AudioDownloadManager.clearNetworkPolicyPause(setOf(song.stableKey()))
+                AudioDownloadManager.clearOperationPauseForExecutionHost(operationId)
+                true
+            }
+        }
+        if (!networkReady) return@withSongExecutionLock
         val recoveryClaim = claimArtifactForRecovery(
             context = context,
             song = song,

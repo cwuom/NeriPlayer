@@ -574,6 +574,7 @@ internal fun shouldRouteFallbackToSharedPump(sdkInt: Int): Boolean {
 
 internal enum class DownloadPumpCompletion {
     IGNORED,
+    CONTINUING_IMMEDIATE,
     RETRYING,
     COMPLETED,
     COMPLETED_WITH_SUCCESSOR
@@ -636,6 +637,11 @@ internal class DownloadPumpScheduleCoordinator(
         claimedGeneration = generation
         immediateGeneration = generation
         generation
+    }
+
+    fun isImmediateOwner(generation: Long): Boolean = synchronized(lock) {
+        activeGeneration == generation && claimedGeneration == generation &&
+            immediateGeneration == generation
     }
 
     fun claimWorker(generation: Long): Boolean = synchronized(lock) {
@@ -738,11 +744,18 @@ internal class DownloadPumpScheduleCoordinator(
     fun completeImmediate(
         generation: Long,
         result: DownloadExecutionPumpResult,
-        initialDelayMs: Long = 0L
+        initialDelayMs: Long = 0L,
+        keepImmediateForSuccessor: Boolean = false
     ): DownloadPumpCompletion {
         return synchronized(lock) {
             if (activeGeneration != generation) {
                 return@synchronized DownloadPumpCompletion.IGNORED
+            }
+            if (keepImmediateForSuccessor && isImmediateOwner(generation) &&
+                successorRequestedAtMs != null
+            ) {
+                successorRequestedAtMs = null
+                return@synchronized DownloadPumpCompletion.CONTINUING_IMMEDIATE
             }
             // 同一代次已经有持久 Worker 兜底时，不能在进程内泵结束时再追加
             // successor。Worker 会接管这一代，随后按 successorRequested 决定是否续跑。

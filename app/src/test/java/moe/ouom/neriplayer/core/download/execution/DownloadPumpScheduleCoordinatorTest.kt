@@ -17,6 +17,69 @@ import java.util.concurrent.atomic.AtomicReference
 
 class DownloadPumpScheduleCoordinatorTest {
     @Test
+    fun `late recovery request keeps immediate owner ahead of delayed worker`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = requireNotNull(coordinator.request(initialDelayMs = 86_400_000L))
+        assertTrue(coordinator.markWorkEnqueueStarted(generation))
+        assertEquals(generation, coordinator.reserveImmediate())
+
+        // 模拟当前窗口已经读到空队列，但完成交接前又有歌曲提交
+        repeat(10) { assertNull(coordinator.reserveImmediate()) }
+        assertEquals(
+            DownloadPumpCompletion.CONTINUING_IMMEDIATE,
+            coordinator.completeImmediate(
+                generation, DownloadExecutionPumpResult.Completed, keepImmediateForSuccessor = true
+            )
+        )
+        assertTrue(coordinator.isImmediateOwner(generation))
+        assertFalse(coordinator.markWorkEnqueueStarted(generation))
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED,
+            coordinator.completeImmediate(
+                generation, DownloadExecutionPumpResult.Completed, keepImmediateForSuccessor = true
+            )
+        )
+        assertFalse(coordinator.isImmediateOwner(generation))
+        assertTrue(coordinator.claimWorker(generation))
+    }
+
+    @Test
+    fun `unfinished immediate successor retains fallback after worker has observed owner`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val generation = requireNotNull(coordinator.reserveImmediate())
+        assertTrue(coordinator.markWorkEnqueueStarted(generation))
+        assertFalse(coordinator.claimWorker(generation))
+        assertNull(coordinator.reserveImmediate())
+        assertEquals(
+            DownloadPumpCompletion.CONTINUING_IMMEDIATE,
+            coordinator.completeImmediate(
+                generation, DownloadExecutionPumpResult.Completed, keepImmediateForSuccessor = true
+            )
+        )
+        assertEquals(
+            DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR,
+            coordinator.completeImmediate(generation, DownloadExecutionPumpResult.Retry, 30_000L)
+        )
+        assertTrue(requireNotNull(coordinator.request()) > generation)
+    }
+
+    @Test
+    fun `late completion cannot keep an invalidated immediate generation alive`() {
+        val coordinator = DownloadPumpScheduleCoordinator()
+        val old = requireNotNull(coordinator.reserveImmediate())
+        assertNull(coordinator.reserveImmediate())
+        coordinator.invalidate()
+        val newer = requireNotNull(coordinator.reserveImmediate())
+        assertEquals(
+            DownloadPumpCompletion.IGNORED,
+            coordinator.completeImmediate(
+                old, DownloadExecutionPumpResult.Completed, keepImmediateForSuccessor = true
+            )
+        )
+        assertTrue(coordinator.isImmediateOwner(newer))
+    }
+
+    @Test
     fun `cancellation submission cannot remove a newer queued fallback before worker entry`() {
         assertCancellationKeepsNewFallback(coordinatorIndex = 0)
     }

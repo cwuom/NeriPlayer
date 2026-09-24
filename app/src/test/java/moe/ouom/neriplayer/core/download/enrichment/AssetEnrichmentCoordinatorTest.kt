@@ -25,6 +25,24 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 
 class AssetEnrichmentCoordinatorTest {
     @Test
+    fun `recovery waits for one free slot without waiting for the slowest song`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 2, maxActiveJobs = 2)
+        val release = CompletableDeferred<Unit>()
+        try {
+            coordinator.enqueue("slow") { release.await() }
+            coordinator.enqueue("fast") { }
+            assertEquals(setOf("fast"), coordinator.awaitAnyCompletion(setOf("slow", "fast"), 2_000L))
+            assertTrue(coordinator.isActive("slow"))
+            assertEquals(1, coordinator.availableCapacity())
+        } finally {
+            release.complete(Unit)
+            coordinator.cancelAllAndJoin()
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `before start cancellation never runs blocking completion on cancellation caller`() = runBlocking {
         for (cancelMode in listOf("targeted-join", "all-join", "targeted", "all")) {
             val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)

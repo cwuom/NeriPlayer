@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.execution.worker
 
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
+import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
 import android.content.Context
 import android.os.Build
@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.runtime.PostCoreDownloadRecoveryResult
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
@@ -117,13 +119,129 @@ class PostCoreDownloadRecoveryWorker(
         private val enqueueCallbackExecutor = Executor { it.run() }
 
         /** 同一时间只保留一个系统任务，避免歌曲数直接放大 WorkManager 队列 */
-        fun schedule(context: Context, initialDelayMs: Long = 0L): Boolean =
-            enqueue(context, initialDelayMs, retryEnqueue = true)
+        fun schedule(context: Context, initialDelayMs: Long = 0L): Boolean {
+            if (initialDelayMs == 0L && wake(context)) return true
+            return enqueue(context, initialDelayMs, retryEnqueue = true)
+        }
 
-        private fun enqueue(context: Context, initialDelayMs: Long, retryEnqueue: Boolean): Boolean {
+        /** 网络恢复和前台重启可接管尚未启动的 Worker，持久任务仍保留同代兜底 */
+        fun wake(context: Context): Boolean {
+            val appContext = context.applicationContext
+            if (ForegroundDownloadWorker.isPumpBlocked(appContext)) return false
+            val admissionTicket = GlobalDownloadManager.downloadAdmissionGate.openTicketOrNull()
+                ?: return false
+            val generation = scheduleCoordinator.reserveImmediate() ?: return true
+            enqueue(appContext, initialDelayMs = 0L, retryEnqueue = true, reservedGeneration = generation)
+            GlobalDownloadManager.scope.launch {
+                var result = PostCoreDownloadRecoveryResult.BLOCKED
+                var completed = false
+                try {
+                    GlobalDownloadManager.initialize(appContext)
+                    val ready = withTimeoutOrNull(STARTUP_RESTORE_WAIT_MS) {
+                        GlobalDownloadManager.startupProgressRestoreReady.await()
+                        true
+                    } == true
+                    if (ready && !ForegroundDownloadWorker.isPumpBlocked(appContext)) {
+                        while (true) {
+                            result = runImmediateRecovery(isCurrent = {
+                                scheduleCoordinator.isImmediateOwner(generation) &&
+                                    GlobalDownloadManager.isDownloadAdmissionTicketCurrent(
+                                        appContext, admissionTicket
+                                    )
+                            }) {
+                                if (ForegroundDownloadWorker.isPumpBlocked(appContext)) {
+                                    PostCoreDownloadRecoveryResult.BLOCKED
+                                } else {
+                                    GlobalDownloadManager.recoverPostCoreDownloadsForWorker(
+                                        appContext, expectedAdmissionTicket = admissionTicket
+                                    )
+                                }
+                            }
+                            val completion = completeImmediateRecovery(
+                                appContext, generation, result,
+                                keepImmediateForSuccessor = result != PostCoreDownloadRecoveryResult.BLOCKED
+                            )
+                            if (completion != DownloadPumpCompletion.CONTINUING_IMMEDIATE) {
+                                completed = true
+                                break
+                            }
+                            // 新请求已被当前 owner 接下，等待中取消仍必须保留持久接班任务
+                            result = PostCoreDownloadRecoveryResult.RETRY
+                            delay(SUCCESSOR_DELAY_MS)
+                        }
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Throwable) {
+                    NPLogger.w("NERI-PostCoreRecovery", "进程内收尾恢复失败，保留持久 Worker", error)
+                } finally {
+                    if (!completed) completeImmediateRecovery(appContext, generation, result)
+                }
+            }
+            return true
+        }
+
+        private fun completeImmediateRecovery(
+            context: Context,
+            generation: Long,
+            result: PostCoreDownloadRecoveryResult,
+            keepImmediateForSuccessor: Boolean = false
+        ): DownloadPumpCompletion {
+            val pumpResult = when (result) {
+                PostCoreDownloadRecoveryResult.SETTLED -> DownloadExecutionPumpResult.Completed
+                PostCoreDownloadRecoveryResult.CONTINUE_SOON -> DownloadExecutionPumpResult.ContinueSoon
+                PostCoreDownloadRecoveryResult.WAITING_NETWORK -> {
+                    if (context.currentDownloadNetworkTypeOrNull() != null) {
+                        WifiBoundDownloadWakeWorker.scheduleAll(context)
+                        DownloadExecutionPumpResult.Completed
+                    } else {
+                        DownloadExecutionPumpResult.Retry
+                    }
+                }
+                PostCoreDownloadRecoveryResult.RETRY,
+                PostCoreDownloadRecoveryResult.BLOCKED -> DownloadExecutionPumpResult.Retry
+            }
+            val completion = scheduleCoordinator.completeImmediate(
+                generation, pumpResult,
+                if (result == PostCoreDownloadRecoveryResult.CONTINUE_SOON) {
+                    SUCCESSOR_DELAY_MS
+                } else {
+                    RETRY_BACKOFF_MS
+                },
+                keepImmediateForSuccessor = keepImmediateForSuccessor
+            )
+            if (completion == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR) {
+                schedule(context, scheduleCoordinator.takeSuccessorDelayMs(generation))
+            }
+            return completion
+        }
+
+        internal suspend fun runImmediateRecovery(
+            isCurrent: () -> Boolean,
+            awaitNextWindow: suspend (Long) -> Unit = { delay(it) },
+            recover: suspend () -> PostCoreDownloadRecoveryResult
+        ): PostCoreDownloadRecoveryResult {
+            // 旧 Worker 可能还在长退避中，保留当前 owner 续跑，不能只接管第一窗口
+            while (true) {
+                if (!isCurrent()) return PostCoreDownloadRecoveryResult.BLOCKED
+                when (val result = recover()) {
+                    PostCoreDownloadRecoveryResult.CONTINUE_SOON -> awaitNextWindow(SUCCESSOR_DELAY_MS)
+                    PostCoreDownloadRecoveryResult.RETRY -> awaitNextWindow(RETRY_BACKOFF_MS)
+                    else -> return result
+                }
+            }
+        }
+
+        private fun enqueue(
+            context: Context,
+            initialDelayMs: Long,
+            retryEnqueue: Boolean,
+            reservedGeneration: Long? = null
+        ): Boolean {
             val appContext = context.applicationContext
             if (PersistentDownloadClearFenceStore.isActive(appContext)) return false
-            val generation = scheduleCoordinator.request(initialDelayMs = initialDelayMs) ?: return true
+            val generation = reservedGeneration
+                ?: scheduleCoordinator.request(initialDelayMs = initialDelayMs) ?: return true
             return runCatching {
                 val workManager = WorkManager.getInstance(appContext)
                 val request = buildRequest(initialDelayMs = initialDelayMs, generation = generation)

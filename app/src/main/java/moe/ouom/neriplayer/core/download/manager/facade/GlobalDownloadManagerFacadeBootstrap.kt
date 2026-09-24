@@ -133,7 +133,7 @@ internal fun GlobalDownloadManager.onWifiBoundDownloadNetworkRestoredImpl(
             context = appContext,
             reason = "wifi_network_fence_released_$reason"
         )
-        val postCoreScheduled = PostCoreDownloadRecoveryWorker.schedule(appContext)
+        val postCoreScheduled = PostCoreDownloadRecoveryWorker.wake(appContext)
         if (clearResult.isFailure || !pumpScheduled) {
             WifiBoundDownloadWakeWorker.scheduleAll(appContext)
         }
@@ -923,6 +923,7 @@ internal fun GlobalDownloadManager.recoverPendingDownloadsForNetworkRestoredImpl
                     context = appContext,
                     reason = "confirmed_network_recovered_$reason"
                 )
+                PostCoreDownloadRecoveryWorker.wake(appContext)
                 NPLogger.d(
                     TAG,
                     "已在确认可用的移动网络上立即恢复可运行下载: " +

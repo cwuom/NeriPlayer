@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
@@ -243,6 +244,27 @@ internal class AssetEnrichmentCoordinator(
     }
 
     /** 等待指定收尾任务释放活动位，不取消仍在进行的工作 */
+    suspend fun awaitAnyCompletion(
+        operationIds: Collection<String>,
+        timeoutMs: Long
+    ): Set<String> {
+        val entries = synchronized(jobRegistrationLock) {
+            operationIds.distinct().associateWith(jobsByOperationId::get)
+        }
+        if (entries.isEmpty()) return emptySet()
+        fun completedIds() = entries.filterValues { it == null || it.settled.isCompleted }.keys
+        completedIds().takeIf { it.isNotEmpty() }?.let { return it }
+        withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+            select {
+                entries.values.filterNotNull().forEach { entry ->
+                    entry.settled.onAwait { }
+                }
+            }
+        }
+        return completedIds()
+    }
+
+    /** 等待指定窗口全部释放，包含完成回调仍在收尾的任务 */
     suspend fun awaitCompletion(
         operationIds: Collection<String>,
         timeoutMs: Long

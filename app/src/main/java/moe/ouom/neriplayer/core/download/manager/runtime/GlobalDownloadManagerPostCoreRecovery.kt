@@ -109,9 +109,10 @@ internal fun resolvePostCoreRecoveryResult(
 }
 
 internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl(
-    context: Context
+    context: Context,
+    expectedAdmissionTicket: Long? = null
 ): PostCoreDownloadRecoveryResult = try {
-    recoverPostCoreDownloadsWindow(context)
+    recoverPostCoreDownloadsWindow(context, expectedAdmissionTicket)
 } catch (cancellation: CancellationException) {
     throw cancellation
 } catch (error: Throwable) {
@@ -120,11 +121,15 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl
 }
 
 private suspend fun GlobalDownloadManager.recoverPostCoreDownloadsWindow(
-    context: Context
+    context: Context,
+    expectedAdmissionTicket: Long?
 ): PostCoreDownloadRecoveryResult {
     val appContext = context.applicationContext
-    val admissionTicket = openDownloadAdmissionTicketOrNull(appContext)
+    val admissionTicket = expectedAdmissionTicket ?: openDownloadAdmissionTicketOrNull(appContext)
         ?: return PostCoreDownloadRecoveryResult.BLOCKED
+    if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
+        return PostCoreDownloadRecoveryResult.BLOCKED
+    }
     val attemptedOperationIds = linkedSetOf<String>()
     var completedWindows = 0
     val observedOperationIds = linkedSetOf<String>()
@@ -143,6 +148,26 @@ private suspend fun GlobalDownloadManager.recoverPostCoreDownloadsWindow(
         return resolvePostCoreRecoveryResult(PostCoreDownloadRecoveryResult.RETRY, observedOperationIds, remaining)
     }
 
+    suspend fun awaitActiveEnrichment(): Boolean {
+        val activeIds = assetEnrichmentCoordinator.activeOperationIds()
+        if (activeIds.isEmpty()) return false
+        val activeEntries = PostCoreRecoveryReadStore.entries(appContext, activeIds)
+        observedOperationIds += activeEntries.map { it.request.operationId }
+        val settledIds = assetEnrichmentCoordinator.awaitAnyCompletion(
+            operationIds = activeIds,
+            timeoutMs = POST_CORE_RECOVERY_WINDOW_WAIT_MS
+        )
+        if (settledIds.isEmpty()) return false
+        attemptedOperationIds += settledIds
+        settlePostCoreRecoveryAttempts(
+            context = appContext,
+            entries = activeEntries.filter { it.request.operationId in settledIds },
+            admissionTicket = admissionTicket
+        )
+        completedWindows++
+        return true
+    }
+
     while (
         completedWindows < POST_CORE_RECOVERY_MAX_WINDOWS &&
             attemptedOperationIds.size < POST_CORE_RECOVERY_MAX_OPERATIONS
@@ -150,42 +175,13 @@ private suspend fun GlobalDownloadManager.recoverPostCoreDownloadsWindow(
         if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
             return PostCoreDownloadRecoveryResult.BLOCKED
         }
-        val activeEnrichmentIds = DownloadExecutionRoomStore.readOperationHeaders(
-            appContext, assetEnrichmentCoordinator.activeOperationIds()
-        ).values.filter { it.state in POST_CORE_DOWNLOAD_OPERATION_STATES && !it.stopRequestedByUser }
-            .mapTo(linkedSetOf()) { it.operationId }
-        if (activeEnrichmentIds.isNotEmpty()) {
-            val activeEntries = PostCoreRecoveryReadStore.entries(appContext, activeEnrichmentIds)
-            observedOperationIds += activeEnrichmentIds
-            attemptedOperationIds += activeEnrichmentIds
-            val settled = assetEnrichmentCoordinator.awaitCompletion(
-                operationIds = activeEnrichmentIds,
-                timeoutMs = POST_CORE_RECOVERY_WINDOW_WAIT_MS
-            )
-            completedWindows++
-            if (!settled) return PostCoreDownloadRecoveryResult.RETRY
-            settlePostCoreRecoveryAttempts(
-                context = appContext,
-                entries = activeEntries,
-                admissionTicket = admissionTicket
-            )
-            continue
-        }
-
+        // 先让旧恢复任务使用空位，持续进入的新歌不能成为整个恢复窗口的屏障
         val availableCapacity = minOf(
             assetEnrichmentCoordinator.availableCapacity(),
             POST_CORE_RECOVERY_MAX_OPERATIONS - attemptedOperationIds.size
         )
         if (availableCapacity <= 0) {
-            val allActiveIds = assetEnrichmentCoordinator.activeOperationIds()
-            if (allActiveIds.isEmpty()) return PostCoreDownloadRecoveryResult.RETRY
-            attemptedOperationIds += allActiveIds
-            val settled = assetEnrichmentCoordinator.awaitCompletion(
-                operationIds = allActiveIds,
-                timeoutMs = POST_CORE_RECOVERY_WINDOW_WAIT_MS
-            )
-            completedWindows++
-            if (!settled) return PostCoreDownloadRecoveryResult.RETRY
+            if (!awaitActiveEnrichment()) return PostCoreDownloadRecoveryResult.RETRY
             continue
         }
 
@@ -198,7 +194,10 @@ private suspend fun GlobalDownloadManager.recoverPostCoreDownloadsWindow(
             allowWifi = currentNetworkType == TrafficNetworkType.WIFI || mobileDataDownloadOverrideAllowed,
             isExecuting = DownloadExecutionHosts.default::isExecuting
         )
-        if (selectedHeaders.isEmpty()) return result()
+        if (selectedHeaders.isEmpty()) {
+            if (awaitActiveEnrichment()) continue
+            return result()
+        }
         val selectedCandidates = selectedHeaders
         observedOperationIds += selectedHeaders.map { it.operationId }
         val entriesByOperationId = PostCoreRecoveryReadStore.entries(
