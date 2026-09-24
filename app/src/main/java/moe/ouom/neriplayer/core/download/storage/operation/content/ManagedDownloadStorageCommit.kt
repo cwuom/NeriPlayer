@@ -647,6 +647,9 @@ internal fun ManagedDownloadStorage.promoteFileTargetWithoutReplacement(
     onTargetCreated: ((FileDescriptor) -> Unit)? = null,
     verifyCommittedTarget: ((File) -> Boolean)? = null
 ) {
+    if (!pending.isFile || pending.length() <= 0L) {
+        throw IOException("pending 音频为空或不存在，保留待发布文件: $displayName")
+    }
     if (target.exists()) throw IOException("下载目标已存在，保留 pending 文件: $displayName")
     try {
         // CREATE_NEW/O_EXCL 把占位和打开文件合成一个动作，不能用 ATOMIC_MOVE 覆盖后到的文件
@@ -789,6 +792,9 @@ internal suspend fun ManagedDownloadStorage.promotePendingAudio(
     return when (root) {
         is RootHandle.FileRoot -> {
             val pendingFile = File(audio.reference)
+            if (pendingFile.isFile && pendingFile.length() <= 0L) {
+                throw IOException("pending 音频为空，停止发布: ${audio.name}")
+            }
             val pendingRoot = pendingFile.parentFile
                 ?.takeIf { it.isDirectory }
                 ?: root.dir
