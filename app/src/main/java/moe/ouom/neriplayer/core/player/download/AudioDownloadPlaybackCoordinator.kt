@@ -23,6 +23,7 @@ import java.net.URI
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.resolveDownloadedSongPlaybackReference
+import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
@@ -83,6 +84,24 @@ internal class AudioDownloadPlaybackCoordinator(
         return runCatching {
             ManagedDownloadStorage.toPlayableUri(reference)
         }.getOrNull()
+    }
+
+    private fun isPlaybackReferenceCancelled(
+        context: Context,
+        song: SongItem,
+        reference: String?
+    ): Boolean {
+        val cancelled = GlobalDownloadManager.isSongCancelled(song.stableKey())
+        if (!cancelled) return false
+        val publishedReferences = GlobalDownloadManager.findDownloadedSongCached(song)
+            ?.let(::downloadedSongPlaybackReferenceCandidates)
+            .orEmpty()
+        return !shouldAllowPublishedAudioDuringTaskClear(
+            cancelled = cancelled,
+            taskProgressClearActive = PersistentDownloadClearFenceStore.isTaskProgressActive(context),
+            reference = reference,
+            publishedReferences = publishedReferences
+        )
     }
 
 
@@ -259,7 +278,7 @@ internal class AudioDownloadPlaybackCoordinator(
                 reference = reference,
                 isManagedDownload = isManagedDownload,
                 evidence = rawEvidence,
-                downloadCancelled = GlobalDownloadManager.isSongCancelled(song.stableKey())
+                downloadCancelled = isPlaybackReferenceCancelled(appContext, song, reference)
             )
         ) {
             if (isManagedDownload && managedReferenceIsExplicitlyIncomplete) {
@@ -794,7 +813,7 @@ internal class AudioDownloadPlaybackCoordinator(
                 isManagedDownload = true,
                 evidence = indexedEvidence
                     ?: ManagedDownloadReferenceLookup.Result.OutOfScope,
-                downloadCancelled = GlobalDownloadManager.isSongCancelled(song.stableKey())
+                downloadCancelled = isPlaybackReferenceCancelled(context, song, indexedReference)
             )
         ) {
             NPLogger.d(

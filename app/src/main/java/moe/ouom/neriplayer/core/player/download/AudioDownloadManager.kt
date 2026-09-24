@@ -1273,11 +1273,28 @@ object AudioDownloadManager {
         songKey: String,
         operationId: String? = null
     ): DownloadedSidecarReferences? = operationRegistry.withMutationLock {
-        if (!operationRegistry.allowsReference(songKey, operationId)) {
+        if (!operationOwnsSongForCleanup(songKey, operationId) &&
+            !operationRegistry.allowsReference(songKey, operationId)
+        ) {
             return@withMutationLock null
         }
         completedAudioReferenceRegistry.consumePartialSidecarReferences(songKey)
     }
+
+    internal fun peekPartialSidecarReferences(
+        songKey: String,
+        operationId: String? = null
+    ): DownloadedSidecarReferences? = operationRegistry.withMutationLock {
+        if (!operationOwnsSongForCleanup(songKey, operationId) &&
+            !operationRegistry.allowsReference(songKey, operationId)
+        ) {
+            return@withMutationLock null
+        }
+        completedAudioReferenceRegistry.peekPartialSidecarReferences(songKey)
+    }
+
+    private fun operationOwnsSongForCleanup(songKey: String, operationId: String?): Boolean =
+        operationId?.let { operationRegistry.songKeyForOperation(it) == songKey } == true
 
     internal fun rememberCompletedAudioReference(
         songKey: String,
@@ -1309,7 +1326,12 @@ object AudioDownloadManager {
         sidecarReferences: DownloadedSidecarReferences,
         operationId: String? = null
     ) = operationRegistry.withMutationLock {
-        if (!operationRegistry.allowsReference(songKey, operationId)) {
+        val cancelledOperationOwnsCreatedSidecar =
+            operationOwnsSongForCleanup(songKey, operationId) &&
+                !sidecarReferences.retainCreatedOnly().isEmpty
+        if (!cancelledOperationOwnsCreatedSidecar &&
+            !operationRegistry.allowsReference(songKey, operationId)
+        ) {
             return@withMutationLock
         }
         completedAudioReferenceRegistry.rememberPartialSidecarReferences(
@@ -1940,3 +1962,15 @@ object AudioDownloadManager {
 
 
 }
+
+internal fun createdSidecarReferencesForDelete(
+    vararg stages: AudioDownloadManager.DownloadedSidecarReferences?
+): Set<String> = stages.mapNotNull { it?.retainCreatedOnly() }
+    .flatMap { stage ->
+        listOfNotNull(
+            stage.coverReference,
+            stage.lyricReference,
+            stage.translatedLyricReference,
+            stage.romanizedLyricReference
+        )
+    }.toSet()

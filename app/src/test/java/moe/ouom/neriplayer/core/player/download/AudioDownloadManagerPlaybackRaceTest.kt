@@ -13,6 +13,35 @@ import org.junit.Test
 /** 锁定刚提交音频的别名替换和精确引用优先级 */
 class AudioDownloadManagerPlaybackRaceTest {
     @Test
+    fun `task clear keeps a published formal reference playable while an orphan blocks cleanup`() {
+        val published = "content://downloads/tree/music/document/music%2FSong.mp3"
+        assertTrue(shouldAllowPublishedAudioDuringTaskClear(
+            cancelled = true,
+            taskProgressClearActive = true,
+            reference = published,
+            publishedReferences = listOf(published)
+        ))
+        assertFalse(shouldAllowPublishedAudioDuringTaskClear(
+            cancelled = true,
+            taskProgressClearActive = false,
+            reference = published,
+            publishedReferences = listOf(published)
+        ))
+        assertFalse(shouldAllowPublishedAudioDuringTaskClear(
+            cancelled = true,
+            taskProgressClearActive = true,
+            reference = "content://downloads/tree/music/document/music%2F.tmp%2FSong.mp3.npdl_pending.op.pending",
+            publishedReferences = listOf(published)
+        ))
+        assertFalse(shouldAllowPublishedAudioDuringTaskClear(
+            cancelled = true,
+            taskProgressClearActive = true,
+            reference = "content://downloads/tree/music/document/music%2FOther.mp3",
+            publishedReferences = listOf(published)
+        ))
+    }
+
+    @Test
     fun `replacing a completed reference removes aliases from the previous audio`() {
         val suffix = System.nanoTime().toString()
         val oldPath = "/downloads/old-$suffix.mp3"

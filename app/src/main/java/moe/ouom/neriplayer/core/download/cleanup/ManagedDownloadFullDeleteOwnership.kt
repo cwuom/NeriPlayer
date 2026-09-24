@@ -58,21 +58,21 @@ internal fun planOwnedFullLibraryDeletion(
         // catalog 可能保存历史猜测封面，侧载归属只能由下方 receipt 或持久删除凭据证明
     }
     val selectedAudioReferences = requested.toSet()
+    persistedOwnedReferences.forEach(::addKnown)
     val unavailableMetadataCount = inventory.metadataByReference.values.count {
         it is ManagedMetadataReadResult.Unavailable
     }
     if (unavailableMetadataCount > 0) {
-        // 不可读 receipt 可能仍引用共享侧载，先保留所有 receipt 和侧载等待下一轮
-        // 用户明确选中的完整文档身份可以独立删除，不受其它文件读取失败阻塞
+        // 不可读 receipt 可能仍引用共享侧载，保留没有精确归属凭据的文件
+        // 已持久化的精确引用不受其它文件读取失败阻塞
         return ManagedDownloadFullDeletePlan(
-            requestedReferences = selectedAudioReferences,
+            requestedReferences = requested,
             snapshotComplete = false,
             blockingReasonCounts = mapOf(
                 ManagedDownloadFullDeleteBlockReason.METADATA_UNAVAILABLE to unavailableMetadataCount
             )
         )
     }
-    persistedOwnedReferences.forEach(::addKnown)
     val parsed = metadataEntries.mapNotNull { entry ->
         (inventory.metadataByReference[entry.reference] as? ManagedMetadataReadResult.Found)
             ?.let { ManagedDownloadParsedMetadataEntry(entry, it.metadata) }

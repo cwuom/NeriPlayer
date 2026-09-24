@@ -93,6 +93,15 @@ class DownloadedSongDeleteIntentStoreTest {
                 schedule = { false }
             )
         )
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.archiveUnconfirmed(context, 1L))
+        assertFalse(PersistentDownloadClearFenceStore.isActive(context))
+        assertFalse(
+            PersistentDownloadClearFenceStore.withSchedulingPermit(
+                context = context,
+                onFenceActive = { true },
+                schedule = { false }
+            )
+        )
     }
 
     private fun testContext(): Context {
@@ -128,6 +137,37 @@ class DownloadedSongDeleteIntentStoreTest {
         File(context.filesDir, "downloaded_song_delete_intent_v1.json").mkdir()
         assertFalse(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, "root", setOf("owned")))
     }
+
+    @Test
+    fun `unconfirmed deletion keeps its evidence without blocking a later download`() {
+        val context = testContext()
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.begin(context, "root", listOf(
+            downloadedSong(1L, "/library/a.mp3", "key")
+        )))
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
+            context, "root", setOf("/library/Lyrics/a.lrc")
+        ))
+
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.archiveUnconfirmed(context, 1L))
+
+        assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.hasUnconfirmedForEpoch(context, 1L))
+        assertFalse(PersistentDownloadedSongDeleteIntentStore.hasUnconfirmedForEpoch(context, 2L))
+        assertEquals(null, PersistentDownloadedSongDeleteIntentStore.read(context))
+        assertTrue(unconfirmedReports(context).single()
+            .readText().contains("/library/Lyrics/a.lrc"))
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.begin(context, "root", listOf(
+            downloadedSong(2L, "/library/b.mp3", "other")
+        )))
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.archiveUnconfirmed(context, 2L))
+        assertTrue(PersistentDownloadedSongDeleteIntentStore.hasUnconfirmedForEpoch(context, 2L))
+        assertEquals(2, unconfirmedReports(context).size)
+    }
+
+    private fun unconfirmedReports(context: Context): List<File> =
+        context.filesDir.listFiles { _, name ->
+            name.startsWith("downloaded_song_delete_unconfirmed_v1_") && name.endsWith(".json")
+        }?.toList().orEmpty()
 
     private fun downloadedSong(
         id: Long,

@@ -596,6 +596,10 @@ internal class DownloadClearProviderCleanupCoordinator<K, T : Any>(
         activeCleanup?.takeUnless { handle -> handle.operation.isCancelled }
     }
 
+    fun hasUnfinishedCleanup(): Boolean = synchronized(lock) {
+        activeCleanup?.operation?.isCompleted == false
+    }
+
     fun acknowledge(handle: Handle<K, T>) = synchronized(lock) {
         if (activeCleanup === handle && handle.operation.isCompleted) {
             activeCleanup = null

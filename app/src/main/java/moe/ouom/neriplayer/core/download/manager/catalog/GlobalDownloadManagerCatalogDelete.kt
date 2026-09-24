@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.download.manager.batch.clearPersistedDownloadCle
 import moe.ouom.neriplayer.core.download.manager.batch.clearSongCancellationForFreshStart
 import moe.ouom.neriplayer.core.download.manager.batch.finishReleasedTaskClearState
 import moe.ouom.neriplayer.core.download.manager.batch.isFullLibraryDeleteCancellationSettled
+import moe.ouom.neriplayer.core.download.manager.batch.finishUnconfirmedFullLibraryDelete
 import moe.ouom.neriplayer.core.download.manager.batch.requestAllDownloadTaskCancellation
 import moe.ouom.neriplayer.core.download.manager.batch.requestDownloadTaskCancellation
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
@@ -1149,6 +1150,15 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
                     "fastIndexComplete=$fastIndexCleanupComplete"
             )
         }
+        if (deletesEntireCatalog &&
+            PersistentDownloadedSongDeleteIntentStore.hasPending(appContext) &&
+            (deletionResult.failedSongs.isNotEmpty() || remainingReferences.isNotEmpty() ||
+                fullLibrarySnapshotIncomplete || !artifactCleanupComplete || !fastIndexCleanupComplete)
+        ) {
+            if (finishUnconfirmedFullLibraryDelete(appContext)) {
+                NPLogger.w(TAG, "全选删除仍有未确认文件，已归档引用并释放下载栅栏")
+            }
+        }
         if (
             !artifactCleanupComplete ||
                 fastIndexFailureCount > 0
@@ -1178,7 +1188,10 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
         )
         updateDownloadedSongDeleteProgress(
             session = session,
-            phase = if (deletionResult.failedSongs.isEmpty() && !cleanupPending) {
+            phase = if (deletionResult.failedSongs.isEmpty() &&
+                remainingReferences.isEmpty() && !fullLibrarySnapshotIncomplete &&
+                artifactCleanupComplete && fastIndexCleanupComplete && !cleanupPending
+            ) {
                 DownloadedSongDeletePhase.COMPLETED
             } else {
                 DownloadedSongDeletePhase.FAILED

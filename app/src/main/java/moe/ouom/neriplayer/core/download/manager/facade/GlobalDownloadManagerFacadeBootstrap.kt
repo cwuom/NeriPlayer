@@ -388,6 +388,17 @@ internal fun GlobalDownloadManager.initializeImpl(context: Context) {
             // 先重建 FULL 栅栏，再进入统一回放路径
             val pendingFullDeleteIntent =
                 PersistentDownloadedSongDeleteIntentStore.hasPending(appContext)
+            if (!pendingFullDeleteIntent &&
+                PersistentDownloadedSongDeleteIntentStore.hasUnconfirmedForEpoch(
+                    appContext, PersistentDownloadClearFenceStore.currentEpoch(appContext)
+                ) &&
+                PersistentDownloadClearFenceStore.hasPersistedFence(appContext) &&
+                PersistentDownloadClearFenceStore.activePurpose(appContext) ==
+                    DownloadClearPurpose.FULL_LIBRARY_DELETE
+            ) {
+                // 崩溃可能发生在归档未确认引用之后、释放下载栅栏之前
+                PersistentDownloadClearFenceStore.clear(appContext)
+            }
             if (!PersistentDownloadClearFenceStore.isActive(appContext) &&
                 pendingFullDeleteIntent
             ) {

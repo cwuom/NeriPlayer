@@ -144,6 +144,27 @@ class ManagedDownloadFullDeleteOwnershipTest {
         assertEquals(setOf(audio.reference), failed.requestedReferences)
     }
 
+    @Test fun `unavailable receipt still permits deletion of an exact persisted lyric reference`() {
+        val audio = entry("song.mp3")
+        val receipt = entry("song.mp3.npmeta.json")
+        val lyric = entry("Lyrics/song.lrc")
+        val state = inventory(listOf(audio, receipt), listOf(lyric), emptyMap()).copy(
+            metadataByReference = mapOf(
+                receipt.reference to ManagedMetadataReadResult.Unavailable(IOException("provider busy"))
+            )
+        )
+
+        val plan = planOwnedFullLibraryDeletion(
+            state,
+            targets = listOf(DownloadedSongDeleteTarget(audio.reference, "key")),
+            persistedOwnedReferences = setOf(lyric.reference)
+        )
+
+        assertFalse(plan.snapshotComplete)
+        assertEquals(setOf(audio.reference, lyric.reference), plan.requestedReferences)
+        assertFalse(receipt.reference in plan.requestedReferences)
+    }
+
     @Test fun `conflicting receipt owners do not block unrelated proven songs`() {
         val conflictingAudio = entry("conflicting.mp3")
         val formal = entry("conflicting.mp3.npmeta.json")

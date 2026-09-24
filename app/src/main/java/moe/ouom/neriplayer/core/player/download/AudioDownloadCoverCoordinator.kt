@@ -109,14 +109,6 @@ internal class AudioDownloadCoverCoordinator(
             )
         }
         if (cachedCover != null) {
-            ensureNotCancelled(
-                songKey,
-                "cover_reused",
-                batchSessionId,
-                attemptId,
-                requireActiveAttempt,
-                operationId
-            )
             rememberPartial(
                 songKey,
                 operationId,
@@ -124,6 +116,14 @@ internal class AudioDownloadCoverCoordinator(
                     coverReference = cachedCover.reference,
                     createdCover = cachedCover.created
                 )
+            )
+            ensureNotCancelled(
+                songKey,
+                "cover_reused",
+                batchSessionId,
+                attemptId,
+                requireActiveAttempt,
+                operationId
             )
         }
         return cachedCover

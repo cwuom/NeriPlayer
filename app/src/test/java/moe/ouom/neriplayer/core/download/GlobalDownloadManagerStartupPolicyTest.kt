@@ -430,6 +430,27 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
     }
 
     @Test
+    fun `completed provider cleanup no longer blocks full library delete recovery`() = runBlocking {
+        val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val release = CompletableDeferred<Unit>()
+        try {
+            val coordinator = DownloadClearProviderCleanupCoordinator<Long, String>(cleanupScope)
+            val handle = coordinator.getOrStart(key = 1L) {
+                release.await()
+                "settled"
+            }
+
+            assertTrue(coordinator.hasUnfinishedCleanup())
+            release.complete(Unit)
+            assertEquals("settled", handle.operation.await())
+            assertFalse(coordinator.hasUnfinishedCleanup())
+            assertTrue(coordinator.activeOrNull() === handle)
+        } finally {
+            cleanupScope.cancel()
+        }
+    }
+
+    @Test
     fun `provider cleanup serializes a later recovery until the current cleanup completes`() = runBlocking {
         val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val started = CompletableDeferred<Unit>()

@@ -93,6 +93,17 @@ internal fun shouldUseDirectPresentLocalPlayback(
     return isFormalManagedAudioReference(reference)
 }
 
+internal fun shouldAllowPublishedAudioDuringTaskClear(
+    cancelled: Boolean,
+    taskProgressClearActive: Boolean,
+    reference: String?,
+    publishedReferences: Collection<String>
+): Boolean {
+    return cancelled && taskProgressClearActive &&
+        isFormalManagedAudioReference(reference) &&
+        reference in publishedReferences
+}
+
 /**
  * core 提交桥只跳过瞬时 Provider 查询, 不跳过取消和 staging 安全边界
  * pending 引用在桥接存在时可以播放, 因为登记前已经完成完整性校验

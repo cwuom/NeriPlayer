@@ -17,6 +17,54 @@ import org.junit.Test
 class AudioDownloadManagerSidecarReferenceTest {
 
     @Test
+    fun `full delete can inspect created sidecars after cancellation revokes write ownership`() {
+        val songKey = "full-delete-revoked-sidecar-test"
+        val operationId = "full-delete-revoked-sidecar-operation"
+        AudioDownloadManager.beginSongDownloadOperation(songKey, operationId, null)
+        try {
+            val created = AudioDownloadManager.DownloadedSidecarReferences(
+                coverReference = "content://covers/new.jpg",
+                createdCover = true
+            )
+            AudioDownloadManager.operationRegistry.revokeReference(songKey, setOf(operationId))
+            AudioDownloadManager.rememberPartialSidecarReferences(songKey, created, operationId)
+
+            assertEquals(created,
+                AudioDownloadManager.peekPartialSidecarReferences(songKey, operationId))
+            assertNull(AudioDownloadManager.peekPartialSidecarReferences(songKey, "other-operation"))
+            assertEquals(created,
+                AudioDownloadManager.consumePartialSidecarReferences(songKey, operationId))
+        } finally {
+            AudioDownloadManager.completedAudioReferenceRegistry.clearPartialSidecarReferences(songKey)
+            AudioDownloadManager.endSongDownloadOperation(songKey, operationId)
+        }
+    }
+
+    @Test
+    fun `full delete records only newly created sidecars across completed and partial stages`() {
+        val completed = AudioDownloadManager.DownloadedSidecarReferences(
+            coverReference = "content://covers/reused.jpg",
+            lyricReference = "content://lyrics/original.lrc",
+            createdLyric = true
+        )
+        val partial = AudioDownloadManager.DownloadedSidecarReferences(
+            translatedLyricReference = "content://lyrics/translated.lrc",
+            romanizedLyricReference = "content://lyrics/romanized.lrc",
+            createdTranslatedLyric = true,
+            createdRomanizedLyric = true
+        )
+
+        assertEquals(
+            setOf(
+                "content://lyrics/original.lrc",
+                "content://lyrics/translated.lrc",
+                "content://lyrics/romanized.lrc"
+            ),
+            createdSidecarReferencesForDelete(completed, partial)
+        )
+    }
+
+    @Test
     fun `cover single flight key separates changed candidate urls`() {
         val original = CoverDownloadFlightKey(
             songKey = "song-key",

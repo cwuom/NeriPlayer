@@ -69,6 +69,8 @@ import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.createdSidecarReferencesForDelete
+import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadedSidecarStage
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -571,6 +573,13 @@ internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
             admissionTicket = admissionTicket
         )
     } finally {
+        runCatching {
+            recordCreatedSidecarsForFullDelete(
+                context, song, operationId, sidecarReferences
+            )
+        }.onFailure { recordError ->
+            NPLogger.w(TAG, "全选删除侧载引用记录失败: ${recordError.message}", recordError)
+        }
         directoryCommitLease?.close()
     }
 }
@@ -1380,6 +1389,30 @@ internal suspend fun GlobalDownloadManager.ensureCoreRecoveryOperation(
         )
     }
     return recoveryOperationId
+}
+
+internal fun GlobalDownloadManager.recordCreatedSidecarsForFullDelete(
+    context: Context,
+    song: SongItem,
+    operationId: String,
+    completed: AudioDownloadManager.DownloadedSidecarReferences?
+) {
+    if (!PersistentDownloadedSongDeleteIntentStore.hasPending(context)) return
+    val references = createdSidecarReferencesForDelete(
+        completed,
+        AudioDownloadManager.peekPartialSidecarReferences(song.stableKey(), operationId)
+    )
+    if (references.isEmpty()) return
+    val recorded = runCatching {
+        PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(
+            context,
+            ManagedDownloadStorage.currentSnapshotCacheKey(context),
+            references
+        )
+    }.getOrDefault(false)
+    if (!recorded) {
+        NPLogger.w(TAG, "全选删除未能记录刚写出的侧载引用: count=${references.size}")
+    }
 }
 
 internal suspend fun GlobalDownloadManager.cleanupOrphanedCompletedSidecars(

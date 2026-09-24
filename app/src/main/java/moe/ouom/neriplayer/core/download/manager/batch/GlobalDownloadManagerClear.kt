@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.core.download.manager.admission.mutateWifiBoundNetwor
 import moe.ouom.neriplayer.core.download.manager.admission.promoteWaitingStorageMutationsForRecovery
 import moe.ouom.neriplayer.core.download.manager.catalog.cancelScheduledDownloadedSongsCatalogPersist
 import moe.ouom.neriplayer.core.download.manager.catalog.persistConfirmedEmptyDownloadedSongsCatalog
+import moe.ouom.neriplayer.core.download.manager.catalog.persistDownloadedSongsCatalog
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
 import moe.ouom.neriplayer.core.download.manager.catalog.publishConfirmedDeleteRecoveryCatalog
 import moe.ouom.neriplayer.core.download.manager.catalog.releaseDownloadArtifactAfterExecutionOwnershipLoss
@@ -230,7 +231,9 @@ internal fun GlobalDownloadManager.scheduleDeferredTaskClearRecovery(
     context: Context,
     purpose: DownloadClearPurpose = DownloadClearPurpose.TASK_PROGRESS
 ) {
-    if (purpose == DownloadClearPurpose.FULL_LIBRARY_DELETE) {
+    if (purpose == DownloadClearPurpose.FULL_LIBRARY_DELETE ||
+        PersistentDownloadedSongDeleteIntentStore.hasPending(context)
+    ) {
         scheduleDeferredFullLibraryDeleteRecovery(context)
         return
     }
@@ -249,6 +252,10 @@ internal fun GlobalDownloadManager.scheduleDeferredTaskClearRecovery(
             }
             var attempt = 0
             while (PersistentDownloadClearFenceStore.isActive(appContext)) {
+                if (PersistentDownloadedSongDeleteIntentStore.hasPending(appContext)) {
+                    scheduleDeferredFullLibraryDeleteRecovery(appContext)
+                    return@launch
+                }
                 attempt++
                 NPLogger.d(
                     TAG,
@@ -424,7 +431,8 @@ internal suspend fun GlobalDownloadManager.awaitDownloadClearFenceRelease(contex
 }
 
 internal fun GlobalDownloadManager.scheduleFullLibraryDeleteRecoveryAfterProviderCleanup(context: Context): Boolean {
-    val cleanup = downloadClearProviderCleanupCoordinator.activeOrNull() ?: return false
+    val cleanup = downloadClearProviderCleanupCoordinator.activeOrNull()
+        ?.takeUnless { it.operation.isCompleted } ?: return false
     val shouldObserve = synchronized(deferredFullDeleteProviderCleanupRecoveryLock) {
         if (deferredFullDeleteProviderCleanup === cleanup.operation) {
             false
@@ -459,7 +467,7 @@ internal fun GlobalDownloadManager.scheduleFullLibraryDeleteRecoveryAfterProvide
 }
 
 internal suspend fun GlobalDownloadManager.isFullLibraryDeleteCancellationSettled(context: Context): Boolean {
-    if (downloadClearProviderCleanupCoordinator.activeOrNull() != null) {
+    if (downloadClearProviderCleanupCoordinator.hasUnfinishedCleanup()) {
         return false
     }
     if (assetEnrichmentCoordinator.activeOperationIds().isNotEmpty()) {
@@ -575,6 +583,27 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
                     delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
                 }
             }
+            if (PersistentDownloadedSongDeleteIntentStore.hasPending(appContext) &&
+                PersistentDownloadedSongDeleteIntentStore.read(appContext) != null
+            ) {
+                val archived = downloadedSongDeleteMutex.withLock {
+                    val lease = ManagedDownloadDirectoryMutationFence.acquireDeleteLeaseOrNull(appContext)
+                        ?: return@withLock false
+                    try {
+                        finishUnconfirmedFullLibraryDelete(appContext)
+                    } finally {
+                        lease.close()
+                    }
+                }
+                if (archived) {
+                    downloadedSongDeleteProgressMutable.update { progress ->
+                        progress?.takeIf { it.fullLibraryDelete && it.deleteId == recoveryProgressId }
+                            ?.copy(phase = DownloadedSongDeletePhase.FAILED) ?: progress
+                    }
+                    NPLogger.w(TAG, "全选删除复查仍有未确认引用，已归档并释放下载栅栏")
+                    return@launch
+                }
+            }
             NPLogger.w(TAG, "全选删除恢复达到本轮重试上限，保留持久意图")
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -587,7 +616,7 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
         } finally {
             deferredFullDeleteRecoveryScheduled.set(false)
             if (PersistentDownloadedSongDeleteIntentStore.hasPending(appContext) &&
-                downloadClearProviderCleanupCoordinator.activeOrNull() == null
+                !downloadClearProviderCleanupCoordinator.hasUnfinishedCleanup()
             ) {
                 downloadedSongDeleteProgressMutable.update { progress ->
                     progress?.takeIf { it.fullLibraryDelete && it.deleteId == recoveryProgressId }?.copy(
@@ -738,6 +767,41 @@ internal suspend fun GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog
     finishReleasedTaskClearState(appContext)
     wakeDownloadExecutionPump(appContext, "full_library_delete_released")
     updateProgress(DownloadedSongDeletePhase.COMPLETED, requestedReferences.size, deletedReferences.size)
+    return true
+}
+
+internal suspend fun GlobalDownloadManager.finishUnconfirmedFullLibraryDelete(context: Context): Boolean {
+    val appContext = context.applicationContext
+    if (!isFullLibraryDeleteCancellationSettled(appContext)) return false
+    val clearEpoch = PersistentDownloadClearFenceStore.currentEpoch(appContext)
+    cancelScheduledDownloadedSongsCatalogPersist()
+    val catalogPersisted = catalogPersistenceMutex.withLock {
+        persistDownloadedSongsCatalog(appContext, downloadedSongsMutable.value)
+    }
+    if (!catalogPersisted ||
+        !PersistentDownloadedSongDeleteIntentStore.archiveUnconfirmed(appContext, clearEpoch)
+    ) {
+        return false
+    }
+    var fenceReleased = false
+    for (attempt in 1..DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS) {
+        when (PersistentDownloadClearFenceStore.clearIfCurrent(appContext, clearEpoch)) {
+            DownloadClearFenceReleaseResult.RELEASED -> {
+                fenceReleased = true
+                break
+            }
+            DownloadClearFenceReleaseResult.SUPERSEDED -> return false
+            DownloadClearFenceReleaseResult.FAILED -> {
+                if (attempt < DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS) {
+                    delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+                }
+            }
+        }
+    }
+    if (!fenceReleased) return false
+    clearPersistedDownloadClearProgress(appContext)
+    finishReleasedTaskClearState(appContext)
+    wakeDownloadExecutionPump(appContext, "full_library_delete_unconfirmed")
     return true
 }
 

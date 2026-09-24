@@ -581,18 +581,20 @@ class ManagedDownloadScanDeleteSafetyTest {
                 }
                 assertEquals(listOf(fixture.song), result.deletedSongs)
                 assertTrue(result.failedSongs.isEmpty())
-                assertTrue(result.physicalCleanupPending)
+                assertFalse(result.physicalCleanupPending)
                 assertFalse(fixture.audio.exists())
                 assertFalse(fixture.metadata.exists())
                 assertFalse(fixture.cover.exists())
                 assertTrue(unknownPending.exists())
-                assertTrue(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
+                assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
+                assertFalse(GlobalDownloadManager.isDownloadClearFenceActive(context))
+                assertEquals(DownloadedSongDeletePhase.FAILED,
+                    GlobalDownloadManager.downloadedSongDeleteProgressMutable.value?.phase)
                 assertTrue(GlobalDownloadManager.downloadedSongsMutable.value.isEmpty())
                 withTimeout(20_000) { GlobalDownloadManager.reloadDownloadedSongs(context, forceRefresh = true) }
                 assertTrue("refresh cannot resurrect the physically deleted song", GlobalDownloadManager.downloadedSongsMutable.value.isEmpty())
                 fixture.foreign.forEach { assertTrue("foreign must survive: ${it.uri}", it.exists()) }
                 assertTrue(unknownPending.delete())
-                assertTrue(GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog(context))
                 assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
             } finally {
                 if (PersistentDownloadedSongDeleteIntentStore.hasPending(context)) {

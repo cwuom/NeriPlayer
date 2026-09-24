@@ -2,6 +2,10 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import android.content.Context
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.UUID
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
@@ -37,12 +41,12 @@ internal data class DownloadedSongDeleteTarget(
 )
 
 /**
- * 原子文件是全选删除的 crash recovery intent。文件删除失败时保留它，
- * 下次启动会再次尝试，绝不把未确认的物理删除当作成功
+ * 原子文件保存全选删除的恢复意图，未确认的引用归档后不再阻断新下载
  */
 internal object PersistentDownloadedSongDeleteIntentStore {
     private const val TAG = "DownloadedSongDeleteIntent"
     private const val FILE_NAME = "downloaded_song_delete_intent_v1.json"
+    private const val UNCONFIRMED_FILE_PREFIX = "downloaded_song_delete_unconfirmed_v1_"
     private const val VERSION = 1
 
     private val lock = Any()
@@ -147,6 +151,34 @@ internal object PersistentDownloadedSongDeleteIntentStore {
                 }
                 .getOrDefault(true)
         }
+    }
+
+    fun hasUnconfirmedForEpoch(context: Context, epoch: Long): Boolean = synchronized(lock) {
+        context.applicationContext.filesDir.listFiles { _, name ->
+            name.startsWith("${UNCONFIRMED_FILE_PREFIX}${epoch}_") && name.endsWith(".json")
+        }?.any(File::isFile) == true
+    }
+
+    fun archiveUnconfirmed(context: Context, epoch: Long): Boolean = synchronized(lock) {
+        runCatching {
+            val source = intentFile(context)
+            if (!source.isFile) return@runCatching false
+            val target = File(
+                context.applicationContext.filesDir,
+                "$UNCONFIRMED_FILE_PREFIX${epoch}_${UUID.randomUUID()}.json"
+            )
+            try {
+                Files.move(
+                    source.toPath(), target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(source.toPath(), target.toPath())
+            }
+            true
+        }.onFailure { error ->
+            NPLogger.w(TAG, "归档未确认删除引用失败，保留恢复意图: ${error.message}", error)
+        }.getOrDefault(false)
     }
 
     fun mergeOwnedReferences(context: Context, expectedRootKey: String, references: Set<String>): Boolean {
