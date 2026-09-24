@@ -90,8 +90,8 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
         )
     }
 
-    private fun playbackError(errorCode: Int): PlaybackException {
-        return PlaybackException("test", null, errorCode)
+    private fun playbackError(errorCode: Int, cause: Throwable? = null): PlaybackException {
+        return PlaybackException("test", cause, errorCode)
     }
 
     private fun song(mediaUri: String?): SongItem {
@@ -167,6 +167,89 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
         assertFalse(
             shouldAttemptCachedPlaybackRepair(
                 error = playbackError(PlaybackException.ERROR_CODE_TIMEOUT),
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = true
+            )
+        )
+    }
+
+    @Test
+    fun `local missing file retries local reference after migration`() {
+        assertTrue(
+            shouldAttemptCachedPlaybackRepair(
+                error = playbackError(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND),
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = true
+            )
+        )
+    }
+
+    @Test
+    fun `saf missing document wrapped as unspecified io retries local reference`() {
+        val missingDocument = IllegalArgumentException(
+            "Failed to determine if primary:Downloads/song.flac is child of " +
+                "primary:Downloads: java.io.FileNotFoundException: Missing file for " +
+                "primary:Downloads/song.flac"
+        )
+        val error = playbackError(
+            errorCode = PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+            cause = RuntimeException("loader failed", missingDocument)
+        )
+
+        assertTrue(
+            shouldAttemptCachedPlaybackRepair(
+                error = error,
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = true
+            )
+        )
+        assertTrue(
+            shouldAttemptCachedPlaybackRepair(
+                error = error,
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = false
+            )
+        )
+        assertTrue(
+            shouldRecoverMissingLocalPlayback(
+                error = error,
+                isLocalSong = true,
+                currentUrl = null
+            )
+        )
+        assertTrue(
+            shouldRecoverMissingLocalPlayback(
+                error = error,
+                isLocalSong = false,
+                currentUrl = "content://com.android.externalstorage.documents/document/song"
+            )
+        )
+        assertFalse(
+            shouldRecoverMissingLocalPlayback(
+                error = error,
+                isLocalSong = false,
+                currentUrl = "https://example.com/song.flac"
+            )
+        )
+    }
+
+    @Test
+    fun `local network or decoder failure does not trigger local rebind`() {
+        assertFalse(
+            shouldAttemptCachedPlaybackRepair(
+                error = playbackError(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED),
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = true
+            )
+        )
+        assertFalse(
+            shouldAttemptCachedPlaybackRepair(
+                error = playbackError(PlaybackException.ERROR_CODE_DECODING_FAILED),
                 isOfflineCache = false,
                 isYouTubeTrack = false,
                 isLocalSong = true

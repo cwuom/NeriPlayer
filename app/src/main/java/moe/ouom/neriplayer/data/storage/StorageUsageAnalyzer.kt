@@ -35,6 +35,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.NO_MEDIA_FILE_NAME
+import moe.ouom.neriplayer.core.download.storage.snapshot.CURRENT_SNAPSHOT_CACHE_FILE_NAME
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.DownloadIndexRoomStore
@@ -921,6 +922,7 @@ private fun downloadStagingDirs(filesDir: File, cacheDir: File): List<File> {
 private fun downloadMetadataFiles(filesDir: File): List<File> {
     return listOf(
         File(filesDir, FILE_MANAGED_DOWNLOAD_SNAPSHOT),
+        File(filesDir, CURRENT_SNAPSHOT_CACHE_FILE_NAME),
         File(filesDir, FILE_PENDING_DOWNLOAD_QUEUE),
         File(filesDir, FILE_CANCELLED_DOWNLOAD_KEYS),
         File(filesDir, FILE_DOWNLOADED_SONG_CATALOG_V3),

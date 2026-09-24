@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.component.lyrics
 
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LyricEntryTransformsTest {
@@ -98,6 +99,85 @@ class LyricEntryTransformsTest {
         )
 
         assertEquals("[00:00.15]The sky blue archive!", resolved)
+    }
+
+    @Test
+    fun `local editor seed keeps sidecar original translation and romanized lyrics together`() {
+        val seed = resolveLocalLyricsEditorSeed(
+            song = demoSong(
+                matchedLyric = "embedded original",
+                matchedTranslatedLyric = "embedded translation",
+                originalLyric = null,
+                originalTranslatedLyric = null
+            ),
+            sidecarLyrics = "sidecar original",
+            sidecarTranslatedLyrics = "sidecar translation",
+            sidecarRomanizedLyrics = "sidecar romanized",
+            embeddedLyrics = "embedded original",
+            embeddedTranslatedLyrics = "embedded translation",
+            embeddedRomanizedLyrics = "embedded romanized",
+            hasOriginalSidecar = true,
+            hasTranslatedSidecar = true,
+            hasRomanizedSidecar = true
+        )
+
+        assertEquals("sidecar original", seed.lyrics)
+        assertEquals("sidecar translation", seed.translatedLyrics)
+        assertEquals("sidecar romanized", seed.romanizedLyrics)
+        assertEquals(LyricsEditorSource.SIDECAR, seed.source)
+        assertTrue(seed.hasSidecar)
+    }
+
+    @Test
+    fun `local editor seed uses embedded lyrics when every sidecar was deleted`() {
+        val seed = resolveLocalLyricsEditorSeed(
+            song = demoSong(
+                matchedLyric = "embedded original",
+                matchedTranslatedLyric = "embedded translation",
+                originalLyric = null,
+                originalTranslatedLyric = null
+            ),
+            sidecarLyrics = null,
+            sidecarTranslatedLyrics = null,
+            sidecarRomanizedLyrics = null,
+            embeddedLyrics = "embedded original",
+            embeddedTranslatedLyrics = "embedded translation",
+            embeddedRomanizedLyrics = "embedded romanized",
+            hasOriginalSidecar = false,
+            hasTranslatedSidecar = false,
+            hasRomanizedSidecar = false
+        )
+
+        assertEquals("embedded original", seed.lyrics)
+        assertEquals("embedded translation", seed.translatedLyrics)
+        assertEquals("embedded romanized", seed.romanizedLyrics)
+        assertEquals(LyricsEditorSource.EMBEDDED, seed.source)
+        assertTrue(!seed.hasSidecar)
+    }
+
+    @Test
+    fun `local editor seed keeps source choice when sidecar content arrives before flags`() {
+        val seed = resolveLocalLyricsEditorSeed(
+            song = demoSong(
+                matchedLyric = "embedded original",
+                matchedTranslatedLyric = "embedded translation",
+                originalLyric = null,
+                originalTranslatedLyric = null
+            ),
+            sidecarLyrics = null,
+            sidecarTranslatedLyrics = "sidecar translation",
+            sidecarRomanizedLyrics = null,
+            embeddedLyrics = "embedded original",
+            embeddedTranslatedLyrics = "embedded translation",
+            embeddedRomanizedLyrics = "embedded romanized",
+            hasOriginalSidecar = false,
+            hasTranslatedSidecar = false,
+            hasRomanizedSidecar = false
+        )
+
+        assertTrue(seed.hasSidecar)
+        assertEquals(LyricsEditorSource.SIDECAR, seed.source)
+        assertEquals("sidecar translation", seed.sidecarTranslatedLyrics)
     }
 
     private fun demoSong(

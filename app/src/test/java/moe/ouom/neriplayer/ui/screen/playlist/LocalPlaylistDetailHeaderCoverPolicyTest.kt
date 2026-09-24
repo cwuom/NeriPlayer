@@ -10,6 +10,12 @@ import org.junit.Test
 class LocalPlaylistDetailHeaderCoverPolicyTest {
 
     @Test
+    fun `local playlist header cover fallback waits for artwork idle window`() {
+        assertFalse(shouldResolveLocalPlaylistHeaderCoverFallback(isListArtworkIdle = false))
+        assertTrue(shouldResolveLocalPlaylistHeaderCoverFallback(isListArtworkIdle = true))
+    }
+
+    @Test
     fun `normalizeLocalPlaylistHeaderCoverModel uses blank model for null cover`() {
         assertEquals("about:blank", normalizeLocalPlaylistHeaderCoverModel(null))
     }

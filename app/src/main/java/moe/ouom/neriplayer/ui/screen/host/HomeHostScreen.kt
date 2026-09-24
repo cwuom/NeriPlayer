@@ -122,6 +122,7 @@ class HomeHostRuntimeState {
     var pendingRadarPlaylistRestoreIndex by mutableStateOf<Int?>(null)
     var pendingRadarPlaylistRestoreOffset by mutableIntStateOf(0)
     var homeScrollAnchorIndexes by mutableStateOf<Map<String, Int>>(emptyMap())
+    var continuePagerPage by mutableIntStateOf(0)
 }
 
 @Composable
@@ -386,6 +387,10 @@ fun HomeHostScreen(
                                 usageEntries = homeUsageEntries,
                                 usageLoaded = homeUsageLoaded,
                                 offlineMode = offlineMode,
+                                continuePagerPage = runtimeState.continuePagerPage,
+                                onContinuePagerPageChanged = { page ->
+                                    runtimeState.continuePagerPage = page
+                                },
                                 gridState = gridState,
                                 radarPlaylistListState = runtimeState.radarPlaylistListState,
                                 topAppBarState = runtimeState.topAppBarState,
@@ -441,7 +446,8 @@ fun HomeHostScreen(
                                             browseId = entry.browseId,
                                             playlistId = entry.playlistId,
                                             subtype = entry.subtype,
-                                            subtitle = entry.subtitle
+                                            subtitle = entry.subtitle,
+                                            updateLastOpened = false
                                         )
                                     }
                                     openRecent(entry, ::openHomeSelectedItem)

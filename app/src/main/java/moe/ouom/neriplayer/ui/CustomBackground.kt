@@ -129,6 +129,13 @@ class BlurTransformation(
      */
     override val cacheKey: String = "${this::class.java.name}-$radius"
 
+    override fun equals(other: Any?): Boolean {
+        return other is BlurTransformation &&
+            radius.toBits() == other.radius.toBits()
+    }
+
+    override fun hashCode(): Int = radius.toBits()
+
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
         var rs: RenderScript? = null
         var inputAllocation: Allocation? = null

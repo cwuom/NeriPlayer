@@ -121,7 +121,29 @@ class SystemPlaylistIdentityTest {
     }
 
     @Test
-    fun `local files merge skips metadata fallback duplicates`() {
+    fun `local files merge enriches the retained copy with a cover`() {
+        val remoteSong = remoteNeteaseSong()
+        val firstCopy = downloadedLocalCopy(remoteSong)
+        val secondCopy = downloadedLocalCopy(remoteSong).copy(
+            coverUrl = "content://downloads/Covers/song.jpg",
+            mediaUri = "/storage/emulated/0/Music/song-copy.mp3",
+            localFilePath = "/storage/emulated/0/Music/song-copy.mp3"
+        )
+        val legacyLocalFiles = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(firstCopy, secondCopy)
+        )
+
+        val merged = LocalFilesPlaylist.merge(listOf(legacyLocalFiles), inertContext)
+
+        assertEquals(1, merged.songs.size)
+        assertEquals(firstCopy.mediaUri, merged.songs.single().mediaUri)
+        assertEquals(secondCopy.coverUrl, merged.songs.single().coverUrl)
+    }
+
+    @Test
+    fun `local files merge keeps distinct source references`() {
         val firstLocalSong = localFileSong(
             id = 1L,
             mediaUri = "content://media/external/audio/media/1"
@@ -138,8 +160,75 @@ class SystemPlaylistIdentityTest {
 
         val merged = LocalFilesPlaylist.merge(listOf(legacyLocalFiles), inertContext)
 
-        assertEquals(1, merged.songs.size)
-        assertEquals(firstLocalSong, merged.songs.single())
+        assertEquals(2, merged.songs.size)
+        assertEquals(
+            setOf(firstLocalSong.mediaUri, secondLocalSong.mediaUri),
+            merged.songs.map { it.mediaUri }.toSet()
+        )
+    }
+
+    @Test
+    fun `empty local files merge does not retain a stale custom cover`() {
+        val legacyLocalFiles = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(),
+            customCoverUrl = "file:///covers/stale-local.jpg"
+        )
+
+        val merged = LocalFilesPlaylist.merge(listOf(legacyLocalFiles), inertContext)
+
+        assertEquals(0, merged.songs.size)
+        assertEquals(null, merged.customCoverUrl)
+    }
+
+    @Test
+    fun `local files merge drops legacy playlist cover in favor of song covers`() {
+        val song = localFileSong(
+            id = 1L,
+            mediaUri = "content://media/external/audio/media/1"
+        )
+        val current = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(song),
+            customCoverUrl = "file:///covers/current.jpg"
+        )
+        val staleEmpty = LocalPlaylist(
+            id = -13L,
+            name = "Local Files",
+            songs = mutableListOf(),
+            customCoverUrl = "file:///covers/stale.jpg"
+        )
+
+        val merged = LocalFilesPlaylist.merge(listOf(current, staleEmpty), inertContext)
+
+        assertNull(merged.customCoverUrl)
+    }
+
+    @Test
+    fun `local files merge replaces blank duplicate cover metadata`() {
+        val remoteSong = remoteNeteaseSong()
+        val firstCopy = downloadedLocalCopy(remoteSong).copy(
+            customCoverUrl = "",
+            originalCoverUrl = ""
+        )
+        val secondCopy = firstCopy.copy(
+            customCoverUrl = "file:///covers/current.jpg",
+            originalCoverUrl = "https://example.com/original.jpg",
+            mediaUri = "/storage/emulated/0/Music/song-copy.mp3",
+            localFilePath = "/storage/emulated/0/Music/song-copy.mp3"
+        )
+        val legacyLocalFiles = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(firstCopy, secondCopy)
+        )
+
+        val merged = LocalFilesPlaylist.merge(listOf(legacyLocalFiles), inertContext)
+
+        assertEquals("file:///covers/current.jpg", merged.songs.single().customCoverUrl)
+        assertEquals("https://example.com/original.jpg", merged.songs.single().originalCoverUrl)
     }
 
     private fun remoteNeteaseSong(): SongItem {

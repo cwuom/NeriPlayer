@@ -5,6 +5,10 @@
         <item quantity="one">Deleted %d downloaded song and its local files</item>
         <item quantity="other">Deleted %d downloaded songs and their local files</item>
     </plurals>
+    <plurals name="local_files_delete_downloaded_cleanup_pending">
+        <item quantity="one">Deletion was requested for %d song; file cleanup is not yet complete</item>
+        <item quantity="other">Deletion was requested for %d songs; file cleanup is not yet complete</item>
+    </plurals>
     <plurals name="local_playlist_import_audio_success">
         <item quantity="one">Imported %d local track</item>
         <item quantity="other">Imported %d local tracks</item>
@@ -44,5 +48,21 @@
     <plurals name="local_playlist_delete_undone">
         <item quantity="one">Restored playlist "%2$s"</item>
         <item quantity="other">Restored %1$d playlists</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_preparing">
+        <item quantity="one">Preparing the scan, waiting for %d second</item>
+        <item quantity="other">Preparing the scan, waiting for %d seconds</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_download_index">
+        <item quantity="one">Reading the download directory index, waiting for %d second</item>
+        <item quantity="other">Reading the download directory index, waiting for %d seconds</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_media_store">
+        <item quantity="one">Reading the system media library, waiting for %d second</item>
+        <item quantity="other">Reading the system media library, waiting for %d seconds</item>
+    </plurals>
+    <plurals name="local_playlist_scan_progress_completed">
+        <item quantity="one">Scan complete, found %d song</item>
+        <item quantity="other">Scan complete, found %d songs</item>
     </plurals>
 </resources>

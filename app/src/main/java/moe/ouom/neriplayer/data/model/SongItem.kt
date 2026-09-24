@@ -38,5 +38,15 @@ data class SongItem(
     val streamUrl: String? = null,
     val neteaseArtists: List<NeteaseArtistSummary>? = emptyList(),
     val addedAt: Long = 0L,
-    val syncMembershipTokens: List<SyncCausalToken>? = emptyList()
+    val syncMembershipTokens: List<SyncCausalToken>? = emptyList(),
+    val matchedRomanizedLyric: String? = null,
+    val originalRomanizedLyric: String? = null,
+    // logical creation time survives directory migration and provider renames
+    val logicalCreatedAtMs: Long? = null,
+    val createdAtSource: String? = null,
+    val createdAtConfidence: String? = null,
+    // playlist membership time is separate from the source file creation time
+    val membershipAddedAtMs: Long? = null,
+    // 保留迁移前的文件修改时间，复制后的 Provider 时间不能重排原有歌曲
+    val sourceModifiedAtMs: Long? = null
 ) : Parcelable
