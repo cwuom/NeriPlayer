@@ -196,6 +196,7 @@ import moe.ouom.neriplayer.ui.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCard
 import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
+import moe.ouom.neriplayer.ui.component.download.shouldShowDownloadedSongDeleteProgress
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedSongs
@@ -250,6 +251,8 @@ internal fun LocalPlaylistDetailModernContent(
 ) {
     with(contentScope) {
             val deleteProgress by vm.downloadedSongDeleteProgress.collectAsStateWithLifecycle()
+            val deleteFailureDismissed by
+                vm.downloadedSongDeleteFailureDismissed.collectAsStateWithLifecycle()
             var deletingSongCount by remember(playlistId) { mutableIntStateOf(0) }
             val deletionInProgress = deletingSongCount > 0 ||
                 isDownloadedSongDeletionRunning(deleteProgress)
@@ -614,12 +617,19 @@ internal fun LocalPlaylistDetailModernContent(
             ) { padding ->
                 val miniPlayerHeight = LocalMiniPlayerHeight.current
                 Column(Modifier.padding(padding).fillMaxSize()) {
-                    if (isLocalFilesPlaylist) {
-                        DownloadedSongDeleteProgressCard(
-                            progress = deleteProgress,
-                            requestedSongCount = deletingSongCount,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    if (isLocalFilesPlaylist && shouldShowDownloadedSongDeleteProgress(
+                            deleteProgress, deletingSongCount, deleteFailureDismissed
                         )
+                    ) {
+                        Box(Modifier.fillMaxWidth().background(playlistChromeColor)) {
+                            DownloadedSongDeleteProgressCard(
+                                progress = deleteProgress,
+                                failureDismissed = deleteFailureDismissed,
+                                onDismissFailure = vm::dismissDownloadedSongDeleteFailure,
+                                requestedSongCount = deletingSongCount,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
                     }
                     if (searchSlotVisible) {
                         PlaylistModernVisualColorsProvider(

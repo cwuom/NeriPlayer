@@ -184,6 +184,7 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsWithResultImpl(
     if (targetSongs.isEmpty()) {
         return DownloadedSongDeleteResult.empty()
     }
+    resetDownloadedSongDeleteFailureDismissal(appContext)
     val session = try {
         beginDownloadedSongDeleteSession(
             context = appContext,

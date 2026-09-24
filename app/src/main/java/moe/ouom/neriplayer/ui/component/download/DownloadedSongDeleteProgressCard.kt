@@ -14,10 +14,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
@@ -30,13 +26,13 @@ import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
 @Composable
 internal fun DownloadedSongDeleteProgressCard(
     progress: DownloadedSongDeleteProgress?,
+    failureDismissed: Boolean,
+    onDismissFailure: (Long) -> Unit,
     modifier: Modifier = Modifier,
     requestedSongCount: Int = 0
 ) {
     val phase = progress?.phase ?: DownloadedSongDeletePhase.PREPARING
-    var failureDismissed by remember(progress?.deleteId, phase) { mutableStateOf(false) }
-    if (!shouldShowDownloadedSongDeleteProgress(progress, requestedSongCount)) return
-    if (phase == DownloadedSongDeletePhase.FAILED && failureDismissed) return
+    if (!shouldShowDownloadedSongDeleteProgress(progress, requestedSongCount, failureDismissed)) return
 
     val phaseText = stringResource(
         when (phase) {
@@ -72,7 +68,7 @@ internal fun DownloadedSongDeleteProgressCard(
                     style = MaterialTheme.typography.titleSmall
                 )
                 if (phase == DownloadedSongDeletePhase.FAILED) {
-                    IconButton(onClick = { failureDismissed = true }) {
+                    IconButton(onClick = { progress?.let { onDismissFailure(it.deleteId) } }) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = stringResource(R.string.action_close)

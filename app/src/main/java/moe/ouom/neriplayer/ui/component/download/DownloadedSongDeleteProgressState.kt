@@ -11,8 +11,10 @@ internal fun isDownloadedSongDeletionRunning(progress: DownloadedSongDeleteProgr
 
 internal fun shouldShowDownloadedSongDeleteProgress(
     progress: DownloadedSongDeleteProgress?,
-    requestedSongCount: Int
+    requestedSongCount: Int,
+    failureDismissed: Boolean = false
 ): Boolean {
+    if (failureDismissed) return false
     return requestedSongCount > 0 ||
         isDownloadedSongDeletionRunning(progress) ||
         progress?.phase == DownloadedSongDeletePhase.FAILED

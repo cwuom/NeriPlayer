@@ -94,6 +94,8 @@ fun DownloadManagerScreen(
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val downloadedSongs by viewModel.downloadedSongs.collectAsStateWithLifecycle()
     val deleteProgress by viewModel.downloadedSongDeleteProgress.collectAsStateWithLifecycle()
+    val deleteFailureDismissed by
+        viewModel.downloadedSongDeleteFailureDismissed.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         if (viewModel.downloadedSongs.value.isEmpty() && !viewModel.isRefreshing.value) {
@@ -278,6 +280,8 @@ fun DownloadManagerScreen(
 
         DownloadedSongDeleteProgressCard(
             progress = deleteProgress,
+            failureDismissed = deleteFailureDismissed,
+            onDismissFailure = viewModel::dismissDownloadedSongDeleteFailure,
             requestedSongCount = deletingSongCount,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )

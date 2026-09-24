@@ -39,6 +39,14 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
     val downloadedSongs = GlobalDownloadManager.downloadedSongs
     val isRefreshing = GlobalDownloadManager.isRefreshing
     val downloadedSongDeleteProgress = GlobalDownloadManager.downloadedSongDeleteProgress
+    val downloadedSongDeleteFailureDismissed =
+        GlobalDownloadManager.downloadedSongDeleteFailureDismissed
+
+    fun dismissDownloadedSongDeleteFailure(deleteId: Long) {
+        GlobalDownloadManager.dismissDownloadedSongDeleteFailure(
+            getApplication<Application>(), deleteId
+        )
+    }
 
     fun refreshDownloadedSongs(forceRefresh: Boolean = false) {
         val appContext = getApplication<Application>()

@@ -352,6 +352,7 @@ internal fun GlobalDownloadManager.wakeDownloadExecutionPumpAfterParallelismChan
 internal fun GlobalDownloadManager.initializeImpl(context: Context) {
     if (!initializationStarted.compareAndSet(false, true)) return
     val appContext = context.applicationContext
+    restoreDownloadedSongDeleteFailureDismissal(appContext)
     val previousStartup = DownloadStartupRecoveryJournal.read(appContext)
     DownloadStartupRecoveryJournal.install(appContext)
     // 先记录启动恢复起点，后续轻量泵和首个真实传输共享同一代次

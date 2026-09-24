@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactCoordinator
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
+import moe.ouom.neriplayer.core.download.catalog.DownloadedSongDeleteFailureDismissalStore
 import moe.ouom.neriplayer.core.download.enrichment.AssetEnrichmentCoordinator
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
@@ -545,6 +546,35 @@ object GlobalDownloadManager {
         MutableStateFlow<DownloadedSongDeleteProgress?>(null)
     val downloadedSongDeleteProgress: StateFlow<DownloadedSongDeleteProgress?> =
         downloadedSongDeleteProgressMutable.asStateFlow()
+    private val downloadedSongDeleteFailureDismissedMutable = MutableStateFlow(false)
+    val downloadedSongDeleteFailureDismissed: StateFlow<Boolean> =
+        downloadedSongDeleteFailureDismissedMutable.asStateFlow()
+
+    fun dismissDownloadedSongDeleteFailure(context: Context, deleteId: Long) {
+        synchronized(downloadedSongCatalogMutationLock) {
+            val progress = downloadedSongDeleteProgressMutable.value
+            if (progress == null || progress.deleteId != deleteId ||
+                progress.phase != DownloadedSongDeletePhase.FAILED
+            ) {
+                return
+            }
+            downloadedSongDeleteFailureDismissedMutable.value = true
+            DownloadedSongDeleteFailureDismissalStore.write(context, true)
+        }
+    }
+
+    internal fun restoreDownloadedSongDeleteFailureDismissal(context: Context) {
+        downloadedSongDeleteFailureDismissedMutable.value =
+            DownloadedSongDeleteFailureDismissalStore.read(context)
+    }
+
+    internal fun resetDownloadedSongDeleteFailureDismissal(context: Context) {
+        synchronized(downloadedSongCatalogMutationLock) {
+            downloadedSongDeleteFailureDismissedMutable.value = false
+            DownloadedSongDeleteFailureDismissalStore.write(context, false)
+        }
+    }
+
     internal val downloadedSongCatalogPersistenceRevision = AtomicLong(0L)
     internal val downloadedSongMetadataRevision = AtomicLong(0L)
     internal val emptyScanSequence = AtomicLong(0L)

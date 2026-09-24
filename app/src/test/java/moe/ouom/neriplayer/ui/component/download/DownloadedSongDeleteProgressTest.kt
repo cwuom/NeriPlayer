@@ -55,6 +55,24 @@ class DownloadedSongDeleteProgressTest {
     }
 
     @Test
+    fun `dismissed failure stays hidden while a new deletion can be shown`() {
+        val failed = progress(DownloadedSongDeletePhase.FAILED)
+        val nextDeletion = failed.copy(deleteId = 2L, phase = DownloadedSongDeletePhase.PREPARING)
+
+        assertFalse(shouldShowDownloadedSongDeleteProgress(
+            failed, requestedSongCount = 0, failureDismissed = true
+        ))
+        assertFalse(shouldShowDownloadedSongDeleteProgress(
+            failed.copy(phase = DownloadedSongDeletePhase.DELETING_REFERENCES),
+            requestedSongCount = 1,
+            failureDismissed = true
+        ))
+        assertTrue(shouldShowDownloadedSongDeleteProgress(
+            nextDeletion, requestedSongCount = 1, failureDismissed = false
+        ))
+    }
+
+    @Test
     fun `file progress uses confirmed references and never counts failures as deleted`() {
         val progress = progress(DownloadedSongDeletePhase.DELETING_REFERENCES).copy(
             totalReferenceCount = 2000,

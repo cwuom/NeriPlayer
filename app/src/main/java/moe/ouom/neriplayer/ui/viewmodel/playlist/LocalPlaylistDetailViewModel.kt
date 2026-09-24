@@ -358,6 +358,14 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     val metadataProcessingState: StateFlow<LocalMetadataProcessingState> = _metadataProcessingState
 
     val downloadedSongDeleteProgress = GlobalDownloadManager.downloadedSongDeleteProgress
+    val downloadedSongDeleteFailureDismissed =
+        GlobalDownloadManager.downloadedSongDeleteFailureDismissed
+
+    fun dismissDownloadedSongDeleteFailure(deleteId: Long) {
+        GlobalDownloadManager.dismissDownloadedSongDeleteFailure(
+            getApplication<Application>(), deleteId
+        )
+    }
 
     private var playlistId: Long = 0L
     private var playlistCollectJob: Job? = null
