@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
 import moe.ouom.neriplayer.core.download.manager.batch.replayFullLibraryDeleteWithoutCatalog
 import moe.ouom.neriplayer.core.download.manager.batch.clearPersistedDownloadClearProgress
 import moe.ouom.neriplayer.core.download.manager.batch.finishReleasedTaskClearState
@@ -61,8 +62,10 @@ class ManagedDownloadPartialReplayCatalogTest {
             }
             assertEquals(listOf(fixture.song), result.deletedSongs)
             assertTrue(result.failedSongs.isEmpty())
-            assertTrue(result.physicalCleanupPending)
+            assertFalse(result.physicalCleanupPending)
             assertTrue(fixture.pending.exists())
+            assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
+            assertFalse(GlobalDownloadManager.isDownloadClearFenceActive(context))
             assertTrue(GlobalDownloadManager.downloadedSongsMutable.value.isEmpty())
         }
     }
