@@ -75,6 +75,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     public static final String QUERY_METADATA_CREATE_COUNT = "test:queryMetadataCreateCount";
     public static final String QUERY_LYRICS_DIRECTORY_CREATE_COUNT =
         "test:queryLyricsDirectoryCreateCount";
+    public static final String QUERY_MUSIC_CHILD_COUNT = "test:queryMusicChildCount";
     public static final String FAIL_CHILD_DOCUMENT_QUERIES = "test:failChildDocumentQueries";
     public static final String RESET_CHILD_DOCUMENT_QUERY_FAILURE =
         "test:resetChildDocumentQueryFailure";
@@ -101,6 +102,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     private static final AtomicInteger largeAudioDocumentQueryCount = new AtomicInteger();
     private static final AtomicInteger metadataCreateCount = new AtomicInteger();
     private static final AtomicInteger lyricsDirectoryCreateCount = new AtomicInteger();
+    private static final AtomicInteger musicChildQueryCount = new AtomicInteger();
     private static final Set<String> lyricDocuments =
         Collections.synchronizedSet(new HashSet<>(Arrays.asList(
             ORIGINAL_ID,
@@ -148,6 +150,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             return cursor;
         }
         if (isChildDocumentsUri(uri)) {
+            if (MUSIC_ID.equals(documentId(uri))) musicChildQueryCount.incrementAndGet();
             for (String childId : childrenFor(documentId(uri))) {
                 cursor.addRow(documentRow(columns, childId));
             }
@@ -245,6 +248,11 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             result.putInt(RESULT_EXTRA, largeAudioDocumentQueryCount.get());
             return result;
         }
+        if (QUERY_MUSIC_CHILD_COUNT.equals(method)) {
+            Bundle result = new Bundle();
+            result.putInt(RESULT_EXTRA, musicChildQueryCount.get());
+            return result;
+        }
         if (RESET_LARGE_SCAN.equals(method)) {
             configuredAudioCount = 1;
             largeAudioDocumentQueryCount.set(0);
@@ -252,6 +260,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         }
         if (RESET_LYRICS.equals(method)) {
             resetLyricsFixtures();
+            musicChildQueryCount.set(0);
             failChildDocumentQueries = false;
             failWithSecurityException = false;
             emptyChildDocumentQueries = false;

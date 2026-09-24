@@ -825,7 +825,8 @@ internal fun LocalMediaSupport.resolveContentSidecarReferences(
     context: Context,
     sourceUri: Uri,
     displayName: String,
-    file: File? = null
+    file: File? = null,
+    forMutation: Boolean = false
 ): ContentSidecarReferences {
     val localFile = file.takeUnless {
         shouldUseDocumentSidecarMutation(sourceUri)
@@ -854,7 +855,10 @@ internal fun LocalMediaSupport.resolveContentSidecarReferences(
             lyricReferences = localReferences
         )
     val baseUri = navigation.treeUri ?: navigation.baseUri
-    val parentChildren = queryDocumentChildren(
+    val mutationParentChildren = if (forMutation) {
+        queryDocumentChildrenForMutation(context, baseUri, parentDocumentId)
+    } else null
+    val parentChildren = mutationParentChildren ?: queryDocumentChildren(
         context = context,
         baseUri = baseUri,
         parentDocumentId = parentDocumentId
@@ -887,7 +891,8 @@ internal fun LocalMediaSupport.resolveContentSidecarReferences(
                 ?: localFiles.translated?.absolutePath,
             romanized = nestedReferences.romanized ?: directReferences.romanized
                 ?: localFiles.romanized?.absolutePath
-        )
+        ),
+        mutationParentChildren = mutationParentChildren
     )
 }
 
@@ -903,7 +908,8 @@ internal fun LocalMediaSupport.findNearbyCoverReference(
     context: Context,
     uri: Uri,
     file: File?,
-    displayName: String
+    displayName: String,
+    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null
 ): String? {
     fun usable(reference: String?): String? {
         return reference?.takeIf { isUsableCoverReference(context, it) }
@@ -914,7 +920,7 @@ internal fun LocalMediaSupport.findNearbyCoverReference(
         val parentId = navigation?.parentDocumentId
         if (navigation != null && parentId != null) {
             val baseUri = navigation.treeUri ?: navigation.baseUri
-    val parentChildren = queryDocumentChildren(context, baseUri, parentId)
+    val parentChildren = parentChildrenForMutation ?: queryDocumentChildren(context, baseUri, parentId)
     val baseName = displayName.substringBeforeLast('.', displayName)
     fun specific(children: Collection<DocumentChild>): String? {
         return imageExtensions.asSequence()

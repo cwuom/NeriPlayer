@@ -642,13 +642,15 @@ class LocalMediaSupportSafLyricsTest {
             val outcome = LocalMediaSupport.writeEditableMetadata(
                 context = targetContext,
                 song = song,
-                writeCover = false,
+                coverReference = null,
+                writeCover = true,
                 writeLyrics = true
             )
 
             assertEquals(LocalMediaMetadataWriteOutcome.SIDECAR_ONLY, outcome)
             assertEquals(0, metadataCreateCount())
             assertEquals(0, lyricsDirectoryCreateCount())
+            assertEquals(1, musicChildQueryCount())
             val raw = LocalMediaSupport.readTextContent(targetContext, metadataUri.toString())
             val parsed = LocalMediaSupport.parseLocalMetadataSidecar(metadataUri.toString(), raw.orEmpty())
             assertEquals("[00:01.00]numbered original", parsed?.lyric)
@@ -663,6 +665,15 @@ class LocalMediaSupportSafLyricsTest {
         return targetContext.contentResolver.call(
             providerUri,
             Issue339LyricsTestDocumentProvider.QUERY_METADATA_CREATE_COUNT,
+            null,
+            null
+        )?.getInt("result") ?: -1
+    }
+
+    private fun musicChildQueryCount(): Int {
+        return targetContext.contentResolver.call(
+            providerUri,
+            Issue339LyricsTestDocumentProvider.QUERY_MUSIC_CHILD_COUNT,
             null,
             null
         )?.getInt("result") ?: -1

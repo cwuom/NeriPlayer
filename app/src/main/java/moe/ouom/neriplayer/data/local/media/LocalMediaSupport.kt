@@ -477,6 +477,7 @@ object LocalMediaSupport {
                     sourceUri = sourceUri,
                     file = localFile,
                     displayName = displayName,
+                    forMutation = true,
                 )
                 companionTransaction?.initializeSidecarsOnly()
                 val lyricsSidecarWritten = if (writeLyrics) {
@@ -488,7 +489,8 @@ object LocalMediaSupport {
                         displayName = displayName,
                         song = song,
                         knownReferences = knownSidecarReferences.lyricReferences,
-                        companionTransaction = companionTransaction
+                        companionTransaction = companionTransaction,
+                        parentChildrenForMutation = knownSidecarReferences.mutationParentChildren
                     )
                 } else {
                     true
@@ -502,7 +504,8 @@ object LocalMediaSupport {
                         displayName = displayName,
                         coverReference = coverReference,
                         stableIdentityKey = editableMetadataSourceStableKey(song),
-                        companionTransaction = companionTransaction
+                        companionTransaction = companionTransaction,
+                        parentChildrenForMutation = knownSidecarReferences.mutationParentChildren
                     )
                 } else {
                     true
@@ -512,7 +515,8 @@ object LocalMediaSupport {
                         context = context,
                         uri = sourceUri,
                         file = localFile,
-                        displayName = displayName
+                        displayName = displayName,
+                        parentChildrenForMutation = knownSidecarReferences.mutationParentChildren
                     ) ?: coverReference
                 } else {
                     null
@@ -528,7 +532,8 @@ object LocalMediaSupport {
                     writeLyricFields = writeLyrics,
                     coverReference = metadataCoverReference,
                     clearCoverReference = writeCover && coverReference.isNullOrBlank(),
-                    companionTransaction = companionTransaction
+                    companionTransaction = companionTransaction,
+                    parentChildrenForMutation = knownSidecarReferences.mutationParentChildren
                 )
                 val sidecarsWritten = lyricsSidecarWritten && coverSidecarWritten &&
                     metadataSidecarWritten
@@ -1533,7 +1538,8 @@ object LocalMediaSupport {
 
     internal data class ContentSidecarReferences(
         val metadataReference: String?,
-        val lyricReferences: NearbyLyricReferences
+        val lyricReferences: NearbyLyricReferences,
+        val mutationParentChildren: List<DocumentChild>? = null
     )
 
 

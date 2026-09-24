@@ -90,7 +90,8 @@ internal fun LocalMediaSupport.writeLocalCoverSidecar(
     displayName: String,
     coverReference: String?,
     stableIdentityKey: String?,
-    companionTransaction: LocalMediaCompanionTransaction? = null
+    companionTransaction: LocalMediaCompanionTransaction? = null,
+    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null
 ): Boolean {
     val mutation = resolveEditableCoverMutation(
         writeCover = true,
@@ -131,7 +132,8 @@ internal fun LocalMediaSupport.writeLocalCoverSidecar(
         coverReference = coverReference,
         mutation = mutation,
         stableIdentityKey = stableIdentityKey,
-        companionTransaction = companionTransaction
+        companionTransaction = companionTransaction,
+        parentChildrenForMutation = parentChildrenForMutation
     )
 }
 
@@ -195,7 +197,8 @@ internal fun LocalMediaSupport.writeDocumentCoverSidecar(
     coverReference: String?,
     mutation: EditableCoverMutation,
     stableIdentityKey: String?,
-    companionTransaction: LocalMediaCompanionTransaction? = null
+    companionTransaction: LocalMediaCompanionTransaction? = null,
+    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null
 ): Boolean {
     val navigation = resolveLocalDocumentNavigation(context, sourceUri) ?: return false
     val parentId = navigation.parentDocumentId ?: return false
@@ -208,7 +211,7 @@ internal fun LocalMediaSupport.writeDocumentCoverSidecar(
     )
     if (mutation == EditableCoverMutation.CLEAR) {
         return withDocumentMutationLock(baseUri, parentId) {
-            val parentChildren = queryDocumentChildrenForMutation(
+            val parentChildren = parentChildrenForMutation ?: queryDocumentChildrenForMutation(
                 context = context,
                 baseUri = baseUri,
                 parentDocumentId = parentId
@@ -260,7 +263,7 @@ internal fun LocalMediaSupport.writeDocumentCoverSidecar(
     val mimeType = resolveEditableCoverMimeType(context, reference, bytes)
     val extension = coverExtensionForMimeType(mimeType)
     return withDocumentMutationLock(baseUri, parentId) {
-        val parentChildren = queryDocumentChildrenForMutation(
+        val parentChildren = parentChildrenForMutation ?: queryDocumentChildrenForMutation(
             context = context,
             baseUri = baseUri,
             parentDocumentId = parentId
@@ -334,7 +337,8 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
     displayName: String,
     song: SongItem,
     knownReferences: NearbyLyricReferences? = null,
-    companionTransaction: LocalMediaCompanionTransaction? = null
+    companionTransaction: LocalMediaCompanionTransaction? = null,
+    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null
 ): Boolean {
     val contents = listOf(
         LyricKind.ORIGINAL to (song.matchedLyric ?: song.originalLyric),
@@ -451,7 +455,8 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
                 }
                 kind.takeIf { content != null || existing != null }
             },
-            existing = existingReferences
+            existing = existingReferences,
+            parentChildrenForMutation = parentChildrenForMutation
         )
         lyricResolution.createdReferences.keys.forEach { reference ->
             companionTransaction?.created(reference)
@@ -527,7 +532,8 @@ internal fun LocalMediaSupport.ensureDocumentLyricReferences(
     uri: Uri,
     displayName: String,
     requiredKinds: Set<LyricKind>,
-    existing: NearbyLyricReferences
+    existing: NearbyLyricReferences,
+    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null
 ): DocumentLyricReferenceResolution {
     if (!uri.scheme.equals("content", ignoreCase = true) || requiredKinds.isEmpty()) {
         return DocumentLyricReferenceResolution(existing, emptyMap())
@@ -539,7 +545,7 @@ internal fun LocalMediaSupport.ensureDocumentLyricReferences(
     val baseUri = navigation.treeUri ?: navigation.baseUri
     val audioBaseName = displayName.substringBeforeLast('.', displayName)
     return withDocumentMutationLock(baseUri, parentId) {
-        val parentChildren = queryDocumentChildrenForMutation(
+        val parentChildren = parentChildrenForMutation ?: queryDocumentChildrenForMutation(
             context = context,
             baseUri = baseUri,
             parentDocumentId = parentId

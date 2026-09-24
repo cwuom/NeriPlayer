@@ -195,7 +195,8 @@ internal fun LocalMediaSupport.writeLocalLyricsMetadata(
     writeLyricFields: Boolean = true,
     coverReference: String? = null,
     clearCoverReference: Boolean = false,
-    companionTransaction: LocalMediaCompanionTransaction? = null
+    companionTransaction: LocalMediaCompanionTransaction? = null,
+    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null
 ): Boolean {
     val localFile = file.takeUnless {
         shouldUseDocumentSidecarMutation(sourceUri)
@@ -216,7 +217,7 @@ internal fun LocalMediaSupport.writeLocalLyricsMetadata(
         val baseUri = navigation.treeUri ?: navigation.baseUri
         val metadataName = displayName + LOCAL_METADATA_SUFFIX
         val written = withDocumentMutationLock(baseUri, parentId) {
-            val parentChildren = queryDocumentChildrenForMutation(
+            val parentChildren = parentChildrenForMutation ?: queryDocumentChildrenForMutation(
                 context = context,
                 baseUri = baseUri,
                 parentDocumentId = parentId
