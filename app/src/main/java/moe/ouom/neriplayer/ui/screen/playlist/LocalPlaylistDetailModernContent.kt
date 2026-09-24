@@ -621,7 +621,7 @@ internal fun LocalPlaylistDetailModernContent(
                             deleteProgress, deletingSongCount, deleteFailureDismissed
                         )
                     ) {
-                        Box(Modifier.fillMaxWidth().background(playlistChromeColor)) {
+                        Box(Modifier.fillMaxWidth().background(playlistTopBarColor)) {
                             DownloadedSongDeleteProgressCard(
                                 progress = deleteProgress,
                                 failureDismissed = deleteFailureDismissed,
