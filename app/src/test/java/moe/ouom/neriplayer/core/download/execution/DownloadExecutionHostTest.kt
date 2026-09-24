@@ -364,6 +364,9 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
             ).also { store.save(context, it) }
         }
         val firstFailed = CompletableDeferred<Unit>()
+        val window = resolveDownloadDispatchWindow(1)
+        val admittedWindow = CompletableDeferred<Unit>()
+        val admittedCount = java.util.concurrent.atomic.AtomicInteger()
         journal.afterStateUpdate = { operationId, state ->
             if (operationId == requests.first().operationId && state == "RETRYABLE") {
                 firstFailed.complete(Unit)
@@ -374,7 +377,9 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
             operationStore = store,
             entryPoint = DownloadOperationEntryPoint { _, request ->
                 executed.add(request.operationId)
+                if (admittedCount.incrementAndGet() == window) admittedWindow.complete(Unit)
                 if (request.operationId == requests.first().operationId) {
+                    withTimeout(5_000) { admittedWindow.await() }
                     DownloadExecutionResult.Retry
                 } else {
                     firstFailed.await()
@@ -386,7 +391,6 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         )
 
         assertEquals(DownloadExecutionPumpResult.ContinueAfterRetry, host.pump(context))
-        val window = resolveDownloadDispatchWindow(1)
         assertEquals(requests.take(window).map { it.operationId }.toSet(), executed.toSet())
         requests.drop(window).forEach { request ->
             assertEquals("QUEUED", store.currentState(context, request.operationId))

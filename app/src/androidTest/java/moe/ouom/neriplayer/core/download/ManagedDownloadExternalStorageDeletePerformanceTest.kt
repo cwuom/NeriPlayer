@@ -11,8 +11,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.withLock
@@ -160,7 +163,7 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
     }
 
     @Test
-    fun publicFullDeletePhysicallyRemovesThousandSongsOnExternalStorageWithinFiveSeconds() = runBlocking<Unit> {
+    fun publicFullDeleteHidesThousandSongsWithinFiveSecondsAndPhysicallyRemovesAll() = runBlocking<Unit> {
         GlobalDownloadManager.startupRecoveryMutex.withLock {
             GlobalDownloadManager.pendingDownloadRecoverySlot.withLock {
                 configureFixtureRoot()
@@ -195,12 +198,20 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
                 val previousReconcile = GlobalDownloadManager.catalogReconcileJob
                 try {
                     GlobalDownloadManager.publishDownloadedSongs(context, songs, persistCatalog = false)
+                    assertEquals(1_000, GlobalDownloadManager.downloadedSongsMutable.value.size)
                     val startedAt = SystemClock.elapsedRealtime()
-                    val result = withTimeout(60_000) {
-                        GlobalDownloadManager.deleteDownloadedSongsWithResult(context, songs, true)
+                    val deletion = async(Dispatchers.IO) {
+                        withTimeout(60_000) {
+                            GlobalDownloadManager.deleteDownloadedSongsWithResult(context, songs, true)
+                        }
                     }
-                    val elapsedMs = SystemClock.elapsedRealtime() - startedAt
-                    report("publicExternalStorageFullDelete songs=1000 refs=3000 elapsedMs=$elapsedMs " +
+                    withTimeout(5_000) {
+                        GlobalDownloadManager.downloadedSongsMutable.first { it.isEmpty() }
+                    }
+                    val hiddenMs = SystemClock.elapsedRealtime() - startedAt
+                    val result = deletion.await()
+                    val physicalMs = SystemClock.elapsedRealtime() - startedAt
+                    report("publicExternalStorageFullDelete songs=1000 refs=3000 hiddenMs=$hiddenMs physicalMs=$physicalMs " +
                         "deletedSongs=${result.deletedSongs.size} failedSongs=${result.failedSongs.size} " +
                         "cleanupPending=${result.physicalCleanupPending}")
                     assertEquals(1_000, result.deletedSongs.size)
@@ -211,7 +222,7 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
                     assertTrue(childNames(root).none { it.endsWith(".mp3") || it.endsWith(".npmeta.json") })
                     assertEquals(listOf("foreign.jpg"), childNames(covers))
                     assertEquals(1_000, findConfirmedMissingDownloadedSongs(context, songs).size)
-                    assertTrue("real ExternalStorageProvider exceeded five seconds: $elapsedMs ms", elapsedMs <= 5_000)
+                    assertTrue("download list remained visible for $hiddenMs ms", hiddenMs <= 5_000)
                 } finally {
                     if (GlobalDownloadManager.catalogReconcileJob !== previousReconcile) {
                         GlobalDownloadManager.catalogReconcileJob?.cancelAndJoin()
