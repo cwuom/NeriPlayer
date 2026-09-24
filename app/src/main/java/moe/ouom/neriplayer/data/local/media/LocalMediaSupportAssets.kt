@@ -126,7 +126,7 @@ internal fun LocalMediaSupport.ensureDocumentSidecarDirectoryForMutation(
     NPLogger.d(
         TAG,
         "create local SAF sidecar directory: name=$directoryName, parent=$parentDocumentId, " +
-            "known=${refreshedKnownChildren.joinToString { child -> child.displayName }}"
+            "knownCount=${refreshedKnownChildren.size}"
     )
     val createdUri = try {
         DocumentsContract.createDocument(
@@ -199,7 +199,7 @@ internal fun LocalMediaSupport.createDocumentSidecarForMutation(
     NPLogger.d(
         TAG,
         "create local SAF sidecar file: name=$displayName, parent=$parentDocumentId, " +
-            "known=${refreshedKnownChildren.joinToString { child -> child.displayName }}"
+            "knownCount=${refreshedKnownChildren.size}"
     )
     val createdUri = try {
         DocumentsContract.createDocument(
@@ -486,14 +486,13 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
                     val childName = cursor.getString(nameIndex)
                     if (childName.isNullOrBlank()) continue
                     val mimeType = cursor.getString(mimeIndex).orEmpty()
-                    add(
-                        DocumentChild(
-                            documentId = childId,
-                            displayName = childName,
-                            isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR,
-                            uri = buildDocumentReferenceUri(baseUri, childId).toString()
-                        )
+                    val child = DocumentChild(
+                        documentId = childId,
+                        displayName = childName,
+                        isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR,
+                        uri = buildDocumentReferenceUri(baseUri, childId).toString()
                     )
+                    add(child)
                 }
             }
             val extras = cursor.extras

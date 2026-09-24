@@ -2101,16 +2101,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 matchedSongId = if (clearMatchedMetadata) null else currentSong.matchedSongId
             )
 
-            val missingLyricsSidecar = LocalSongSupport.isLocalSong(currentSong, application) &&
-                writeLyrics &&
-                LocalMediaSupport.needsLyricSidecarRepair(
-                    context = application,
-                    song = updatedSong
-                )
-            if (
-                shouldSkipSongMetadataMutation(currentSong, updatedSong, writeLyrics) &&
-                    !missingLyricsSidecar
-            ) {
+            if (shouldSkipSongMetadataMutation(currentSong, updatedSong, writeLyrics)) {
                 NPLogger.d("PlayerManager", "skip unchanged song metadata mutation")
                 return@runSongMetadataMutation true
             }
@@ -2155,7 +2146,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     context = application,
                     song = sidecarSong,
                     writeLyrics = writeLyrics,
-                    coverReference = coverWriteReference,
+                    coverReference = coverWriteReference.takeIf { shouldWriteCoverToAudio },
                     clearCoverReference = shouldWriteCoverToAudio &&
                         coverWriteReference.isNullOrBlank()
                 )

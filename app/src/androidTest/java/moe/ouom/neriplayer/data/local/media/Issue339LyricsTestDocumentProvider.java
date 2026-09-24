@@ -337,10 +337,22 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             return new Bundle();
         }
         if ("android:findDocumentPath".equals(method)) {
+            Uri requested = extras == null ? null : uriExtra(extras);
+            String requestedId = requested == null ? AUDIO_ID : documentId(requested);
+            List<String> path = new ArrayList<>(Collections.singletonList(ROOT_ID));
+            if (!ROOT_ID.equals(requestedId)) {
+                path.add(MUSIC_ID);
+                if (isLyricDocument(requestedId)) {
+                    path.add(LYRICS_ID);
+                }
+                if (!MUSIC_ID.equals(requestedId)) {
+                    path.add(requestedId);
+                }
+            }
             Bundle result = new Bundle();
             result.putParcelable(
                 "result",
-                new DocumentsContract.Path(null, Arrays.asList(ROOT_ID, MUSIC_ID, AUDIO_ID))
+                new DocumentsContract.Path(null, path)
             );
             return result;
         }

@@ -32,6 +32,7 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -4914,6 +4915,7 @@ fun MoreOptionsSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var page by remember { mutableStateOf(MoreOptionsPage.MAIN) }
     var isDismissing by remember { mutableStateOf(false) }
+    var isEditSongSaving by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
@@ -4926,7 +4928,7 @@ fun MoreOptionsSheet(
     val currentTranslationFontScale = lyricFontScales.scaleFor(translationFontScaleTarget)
 
     fun dismissSheet(afterHidden: () -> Unit = {}) {
-        if (isDismissing) return
+        if (isDismissing || isEditSongSaving) return
         isDismissing = true
         coroutineScope.launch {
             try {
@@ -4945,13 +4947,13 @@ fun MoreOptionsSheet(
     ModalBottomSheet(
         onDismissRequest = { dismissSheet() },
         sheetState = sheetState,
-        sheetGesturesEnabled = page != MoreOptionsPage.LISTEN_TOGETHER,
+        sheetGesturesEnabled = page != MoreOptionsPage.LISTEN_TOGETHER && !isEditSongSaving,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         BackHandler(
             enabled = page != MoreOptionsPage.MAIN
         ) {
-            page = MoreOptionsPage.MAIN
+            if (!isEditSongSaving) page = MoreOptionsPage.MAIN
         }
 
         BackHandler(
@@ -5099,7 +5101,10 @@ fun MoreOptionsSheet(
                         displayedLyrics = displayedLyrics,
                         displayedTranslatedLyrics = displayedTranslatedLyrics,
                         displayedRomanizedLyrics = displayedRomanizedLyrics,
-                        onDismiss = { page = MoreOptionsPage.MAIN },
+                        onDismiss = {
+                            if (!isEditSongSaving) page = MoreOptionsPage.MAIN
+                        },
+                        onSavingChanged = { isEditSongSaving = it },
                         snackbarHostState = snackbarHostState,
                         offlineMode = offlineMode
                     )
@@ -5864,6 +5869,7 @@ fun EditSongInfoSheet(
     displayedTranslatedLyrics: List<LyricEntry>,
     displayedRomanizedLyrics: List<LyricEntry> = emptyList(),
     onDismiss: () -> Unit,
+    onSavingChanged: (Boolean) -> Unit = {},
     snackbarHostState: SnackbarHostState,
     offlineMode: Boolean = false
 ) {
@@ -5939,6 +5945,15 @@ fun EditSongInfoSheet(
     var userHasEdited by remember { mutableStateOf(false) }
     var isCoverImporting by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
+
+    fun setSaving(saving: Boolean) {
+        isSaving = saving
+        onSavingChanged(saving)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { onSavingChanged(false) }
+    }
 
     val coverPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -6165,7 +6180,8 @@ fun EditSongInfoSheet(
 
     fun saveEditedSongInfo(writeLocalMetadata: Boolean) {
         if (isSaving || isOriginalInfoRestoring) return
-        isSaving = true
+        val startedAtMs = SystemClock.elapsedRealtime()
+        setSaving(true)
         originalInfoRequestId += 1
         coroutineScope.launch {
             var dismissed = false
@@ -6300,7 +6316,7 @@ fun EditSongInfoSheet(
                 pendingLyricsDraft = null
                 clearEditSongInfoFocus()
                 dismissed = true
-                isSaving = false
+                setSaving(false)
                 onDismiss()
             } catch (e: Exception) {
                 NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
@@ -6313,8 +6329,17 @@ fun EditSongInfoSheet(
                     duration = SnackbarDuration.Long
                 )
             } finally {
+                val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
+                val budgetMs = if (writeLocalMetadata) 2_000L else 1_000L
+                val timing = "edit song save finished: localWrite=$writeLocalMetadata, " +
+                    "success=$dismissed, elapsedMs=$elapsedMs, overBudget=${elapsedMs >= budgetMs}"
+                if (elapsedMs >= budgetMs) {
+                    NPLogger.w("NowPlayingScreen", timing)
+                } else {
+                    NPLogger.d("NowPlayingScreen", timing)
+                }
                 if (!dismissed) {
-                    isSaving = false
+                    setSaving(false)
                 }
             }
         }
@@ -6322,7 +6347,7 @@ fun EditSongInfoSheet(
 
     fun writeFetchedLyricsToLocalMetadata() {
         if (isSaving) return
-        isSaving = true
+        setSaving(true)
         coroutineScope.launch {
             try {
                 val latestSong = PlayerManager.currentSongFlow.value
@@ -6356,7 +6381,7 @@ fun EditSongInfoSheet(
                     duration = SnackbarDuration.Long
                 )
             } finally {
-                isSaving = false
+                setSaving(false)
             }
         }
     }
@@ -6390,7 +6415,8 @@ fun EditSongInfoSheet(
                 onClick = {
                     clearEditSongInfoFocus()
                     onDismiss()
-                }
+                },
+                enabled = !isSaving
             ) {
                 Text(stringResource(R.string.action_cancel))
             }
@@ -6921,7 +6947,7 @@ fun EditSongInfoSheet(
                         }
                     }
                 },
-                enabled = !isLyricsEditorOpening && !isOriginalInfoRestoring,
+                enabled = !isLyricsEditorOpening && !isOriginalInfoRestoring && !isSaving,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (isLyricsEditorOpening || isOriginalInfoRestoring) {

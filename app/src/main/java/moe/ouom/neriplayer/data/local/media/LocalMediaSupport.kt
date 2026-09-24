@@ -472,13 +472,32 @@ object LocalMediaSupport {
                 val displayName = song.localFileName
                     ?.takeIf(String::isNotBlank)
                     ?: sourceUri.lastPathSegment.orEmpty()
-                val knownSidecarReferences = resolveContentSidecarReferences(
-                    context = context,
-                    sourceUri = sourceUri,
-                    file = localFile,
-                    displayName = displayName,
-                    forMutation = true,
-                )
+                val fastLyricsReferences = if (
+                    writeLyrics && !writeCover && localFile == null
+                ) {
+                    resolveCachedEditableLyricsReferences(context, sourceUri, displayName)
+                } else null
+                val fastMetadataReference = fastLyricsReferences?.metadataReference ?: if (
+                    !writeLyrics && !writeCover && localFile == null
+                ) {
+                    resolveCachedEditableMetadataReference(context, sourceUri, displayName)
+                } else null
+                val knownSidecarReferences = if (fastLyricsReferences != null) {
+                    fastLyricsReferences
+                } else if (fastMetadataReference != null) {
+                    ContentSidecarReferences(
+                        metadataReference = fastMetadataReference,
+                        lyricReferences = NearbyLyricReferences(null, null, null)
+                    )
+                } else {
+                    resolveContentSidecarReferences(
+                        context = context,
+                        sourceUri = sourceUri,
+                        file = localFile,
+                        displayName = displayName,
+                        forMutation = true,
+                    )
+                }
                 companionTransaction?.initializeSidecarsOnly()
                 val lyricsSidecarWritten = if (writeLyrics) {
                     currentCoroutineContext().ensureActive()
@@ -533,7 +552,8 @@ object LocalMediaSupport {
                     coverReference = metadataCoverReference,
                     clearCoverReference = writeCover && coverReference.isNullOrBlank(),
                     companionTransaction = companionTransaction,
-                    parentChildrenForMutation = knownSidecarReferences.mutationParentChildren
+                    parentChildrenForMutation = knownSidecarReferences.mutationParentChildren,
+                    useVerifiedExistingReference = fastMetadataReference != null
                 )
                 val sidecarsWritten = lyricsSidecarWritten && coverSidecarWritten &&
                     metadataSidecarWritten
@@ -567,7 +587,11 @@ object LocalMediaSupport {
                     sourceUri = sourceUri,
                     startedAtMs = startedAtMs,
                     outcome = finalOutcome,
-                    mode = if (stagedAttempted) "staged" else "direct"
+                    mode = when {
+                        fastMetadataReference != null -> "cached_metadata_sidecar"
+                        stagedAttempted -> "staged"
+                        else -> "direct"
+                    }
                 )
                 if (finalOutcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
                     return@withContext finalOutcome
@@ -646,12 +670,24 @@ object LocalMediaSupport {
             val displayName = song.localFileName
                 ?.takeIf(String::isNotBlank)
                 ?: sourceUri.lastPathSegment.orEmpty()
-            val references = resolveContentSidecarReferences(
-                context = context,
-                sourceUri = sourceUri,
-                file = file,
-                displayName = displayName
-            )
+            val fastMetadataReference = if (!writeLyrics &&
+                coverReference.isNullOrBlank() && !clearCoverReference && file == null
+            ) {
+                resolveCachedEditableMetadataReference(context, sourceUri, displayName)
+            } else null
+            val references = if (fastMetadataReference != null) {
+                ContentSidecarReferences(
+                    metadataReference = fastMetadataReference,
+                    lyricReferences = NearbyLyricReferences(null, null, null)
+                )
+            } else {
+                resolveContentSidecarReferences(
+                    context = context,
+                    sourceUri = sourceUri,
+                    file = file,
+                    displayName = displayName
+                )
+            }
             val knownReference = references.metadataReference
             val effectiveCoverReference = if (
                 !coverReference.isNullOrBlank() && !clearCoverReference
@@ -675,7 +711,8 @@ object LocalMediaSupport {
                 writeFullMetadata = true,
                 writeLyricFields = writeLyrics,
                 coverReference = effectiveCoverReference,
-                clearCoverReference = clearCoverReference
+                clearCoverReference = clearCoverReference,
+                useVerifiedExistingReference = fastMetadataReference != null
             )
         }
         if (written) {

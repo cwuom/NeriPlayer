@@ -405,6 +405,284 @@ class LocalMediaSupportSafLyricsTest {
     }
 
     @Test
+    fun verifiedExistingMetadataReferenceWritesWithoutChildEnumeration() {
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        targetContext.contentResolver.call(
+            providerUri, Issue339LyricsTestDocumentProvider.CREATE_EMPTY_METADATA, null, null
+        )
+        val audioUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val metadataUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.METADATA_ID
+        )
+        val song = SongItem(
+            id = 339L,
+            name = "Edited title",
+            artist = "Edited artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioUri.toString(),
+            localFileName = Issue339LyricsTestDocumentProvider.AUDIO_NAME
+        )
+        targetContext.contentResolver.call(
+            providerUri, Issue339LyricsTestDocumentProvider.FAIL_CHILD_DOCUMENT_QUERIES, null, null
+        )
+
+        assertTrue(LocalMediaSupport.writeLocalLyricsMetadata(
+            context = targetContext,
+            sourceUri = audioUri,
+            file = null,
+            displayName = Issue339LyricsTestDocumentProvider.AUDIO_NAME,
+            song = song,
+            knownReference = metadataUri.toString(),
+            writeFullMetadata = true,
+            writeLyricFields = false,
+            useVerifiedExistingReference = true
+        ))
+        val raw = LocalMediaSupport.readTextContent(targetContext, metadataUri.toString())
+        assertTrue(raw?.contains("Edited title") == true)
+        val childQueries = targetContext.contentResolver.call(
+            providerUri, Issue339LyricsTestDocumentProvider.QUERY_MUSIC_CHILD_COUNT, null, null
+        )?.getInt("result")
+        assertEquals(0, childQueries)
+    }
+
+    @Test
+    fun cachedManagedMetadataSidecarUpdatesWithoutChildEnumeration() = runBlocking {
+        val previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+        val treeUri = DocumentsContract.buildTreeDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val audioUri = DocumentsContract.buildDocumentUriUsingTree(
+            treeUri, Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val metadataUri = DocumentsContract.buildDocumentUriUsingTree(
+            treeUri, Issue339LyricsTestDocumentProvider.METADATA_ID
+        )
+        val audioName = Issue339LyricsTestDocumentProvider.AUDIO_NAME
+        val audio = ManagedDownloadStorage.StoredEntry(
+            name = audioName,
+            reference = audioUri.toString(),
+            mediaUri = audioUri.toString(),
+            localFilePath = null,
+            sizeBytes = 100,
+            lastModifiedMs = 1
+        )
+        val metadata = audio.copy(
+            name = "$audioName.npmeta.json",
+            reference = metadataUri.toString(),
+            mediaUri = metadataUri.toString()
+        )
+        val song = SongItem(
+            id = 339L,
+            name = "Edited title",
+            artist = "Edited artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioUri.toString(),
+            localFileName = audioName
+        )
+        try {
+            targetContext.contentResolver.call(
+                providerUri, Issue339LyricsTestDocumentProvider.CREATE_EMPTY_METADATA, null, null
+            )
+            ManagedDownloadStorage.primeSettings(treeUri.toString(), "Issue 339")
+            ManagedDownloadStorage.snapshotCacheStore.putSnapshot(
+                context = targetContext,
+                cacheKey = ManagedDownloadStorage.currentSnapshotCacheKey(targetContext),
+                snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+                    audioEntries = listOf(audio),
+                    audioEntriesByLookupKey = mapOf(audio.reference to audio),
+                    metadataEntriesByAudioName = mapOf(audioName to metadata)
+                )
+            )
+            assertEquals(
+                metadataUri.toString(),
+                LocalMediaSupport.selectCachedEditableMetadataReference(
+                    ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+                        targetContext, restorePersisted = false
+                    ),
+                    audioUri.toString(),
+                    audioName
+                )
+            )
+            assertEquals(
+                metadataUri.toString(),
+                LocalMediaSupport.resolveCachedEditableMetadataReference(
+                    targetContext, audioUri, audioName
+                )
+            )
+            targetContext.contentResolver.call(
+                providerUri, Issue339LyricsTestDocumentProvider.FAIL_CHILD_DOCUMENT_QUERIES,
+                null, null
+            )
+
+            assertTrue(LocalMediaSupport.writeLocalMetadataSidecar(targetContext, song))
+            val raw = LocalMediaSupport.readTextContent(targetContext, metadataUri.toString())
+            assertTrue(raw?.contains("Edited title") == true)
+            val childQueries = targetContext.contentResolver.call(
+                providerUri, Issue339LyricsTestDocumentProvider.QUERY_MUSIC_CHILD_COUNT,
+                null, null
+            )?.getInt("result")
+            assertEquals(0, childQueries)
+        } finally {
+            ManagedDownloadStorage.primeSettings(previousDirectoryUri, null)
+        }
+    }
+
+    @Test
+    fun cachedManagedLyricsCreationDoesNotRescanAudioDirectory() = runBlocking {
+        val previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+        val treeUri = DocumentsContract.buildTreeDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val audioUri = DocumentsContract.buildDocumentUriUsingTree(
+            treeUri, Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val metadataUri = DocumentsContract.buildDocumentUriUsingTree(
+            treeUri, Issue339LyricsTestDocumentProvider.METADATA_ID
+        )
+        val audioName = Issue339LyricsTestDocumentProvider.AUDIO_NAME
+        val audio = ManagedDownloadStorage.StoredEntry(
+            name = audioName,
+            reference = audioUri.toString(),
+            mediaUri = audioUri.toString(),
+            localFilePath = null,
+            sizeBytes = 100,
+            lastModifiedMs = 1
+        )
+        val metadata = audio.copy(
+            name = "$audioName.npmeta.json",
+            reference = metadataUri.toString(),
+            mediaUri = metadataUri.toString()
+        )
+        val song = SongItem(
+            id = 339L,
+            name = "Edited lyrics",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioUri.toString(),
+            matchedRomanizedLyric = "[00:01.00]new romanized lyric",
+            localFileName = audioName
+        )
+        try {
+            targetContext.contentResolver.call(
+                providerUri, Issue339LyricsTestDocumentProvider.CREATE_EMPTY_METADATA, null, null
+            )
+            targetContext.contentResolver.call(
+                providerUri, Issue339LyricsTestDocumentProvider.CLEAR_LYRICS, null, null
+            )
+            ManagedDownloadStorage.primeSettings(treeUri.toString(), "Issue 339")
+            ManagedDownloadStorage.snapshotCacheStore.putSnapshot(
+                context = targetContext,
+                cacheKey = ManagedDownloadStorage.currentSnapshotCacheKey(targetContext),
+                snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+                    audioEntries = listOf(audio),
+                    audioEntriesByLookupKey = mapOf(audio.reference to audio),
+                    metadataEntriesByAudioName = mapOf(audioName to metadata)
+                )
+            )
+            val navigation = LocalMediaSupport.resolveLocalDocumentNavigation(
+                targetContext, audioUri
+            )!!
+            val parentId = requireNotNull(navigation.parentDocumentId)
+            LocalMediaSupport.queryDocumentChildrenForMutation(
+                targetContext, navigation.treeUri ?: navigation.baseUri,
+                parentId
+            )!!
+            val cacheKey = LocalMediaSupport.documentParentCacheKey(
+                navigation.treeUri ?: navigation.baseUri,
+                parentId
+            )
+            synchronized(LocalMediaSupport.documentChildrenCache) {
+                val cached = LocalMediaSupport.documentChildrenCache[cacheKey]!!
+                LocalMediaSupport.documentChildrenCache[cacheKey] = cached.copy(cachedAtMs = 0L)
+            }
+            val before = musicChildQueryCount()
+
+            val outcome = LocalMediaSupport.writeEditableMetadata(
+                context = targetContext,
+                song = song,
+                writeCover = false,
+                writeLyrics = true
+            )
+
+            assertEquals(LocalMediaMetadataWriteOutcome.SIDECAR_ONLY, outcome)
+            assertEquals(before, musicChildQueryCount())
+            assertEquals(
+                "[00:01.00]new romanized lyric",
+                LocalMediaSupport.inspect(targetContext, audioUri).romanizedLyricContent
+            )
+
+            val romanizedUri = DocumentsContract.buildDocumentUriUsingTree(
+                treeUri, Issue339LyricsTestDocumentProvider.ROMANIZED_ID
+            )
+            val romanized = audio.copy(
+                name = Issue339LyricsTestDocumentProvider.ROMANIZED_NAME,
+                reference = romanizedUri.toString(),
+                mediaUri = romanizedUri.toString()
+            )
+            ManagedDownloadStorage.snapshotCacheStore.putSnapshot(
+                context = targetContext,
+                cacheKey = ManagedDownloadStorage.currentSnapshotCacheKey(targetContext),
+                snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+                    audioEntries = listOf(audio),
+                    audioEntriesByLookupKey = mapOf(audio.reference to audio),
+                    metadataEntriesByAudioName = mapOf(audioName to metadata),
+                    lyricEntriesByName = mapOf(romanized.name to romanized)
+                )
+            )
+            LocalMediaSupport.invalidateDocumentChildrenCache(
+                navigation.treeUri ?: navigation.baseUri, parentId
+            )
+            val beforeIndexed = musicChildQueryCount()
+            val translatedSong = song.copy(
+                matchedTranslatedLyric = "[00:01.00]new translated lyric"
+            )
+
+            assertEquals(
+                LocalMediaMetadataWriteOutcome.SIDECAR_ONLY,
+                LocalMediaSupport.writeEditableMetadata(
+                    context = targetContext,
+                    song = translatedSong,
+                    writeCover = false,
+                    writeLyrics = true
+                )
+            )
+            assertEquals(beforeIndexed, musicChildQueryCount())
+            assertEquals(
+                "[00:01.00]new translated lyric",
+                LocalMediaSupport.inspect(targetContext, audioUri).translatedLyricContent
+            )
+        } finally {
+            ManagedDownloadStorage.primeSettings(previousDirectoryUri, null)
+        }
+    }
+
+    @Test
     fun writeAllLyricVariantsToSafRecreatesDeletedSidecars() = runBlocking {
         val providerUri = DocumentsContract.buildDocumentUri(
             Issue339LyricsTestDocumentProvider.AUTHORITY,

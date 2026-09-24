@@ -314,7 +314,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
     }
 
     @Test
-    fun `pump continues with later operations when an earlier operation fails`() = runTest {
+    fun `pump completes an admitted sibling when an earlier operation fails`() = runTest {
         val context = mockContext()
         val journal = InMemoryDownloadExecutionOperationJournal()
         val store = DownloadExecutionOperationStore { journal }
@@ -328,16 +328,20 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         )
         store.save(context, failed)
         store.save(context, later)
-        val executed = mutableListOf<String>()
+        val executed = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val laterStarted = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
             entryPoint = DownloadOperationEntryPoint { _, request ->
-                executed += request.operationId
-                if (request.operationId == failed.operationId) {
+                val result = if (request.operationId == failed.operationId) {
+                    laterStarted.await()
                     DownloadExecutionResult.Failed(IllegalStateException("transient"))
                 } else {
+                    laterStarted.complete(Unit)
                     DownloadExecutionResult.Accepted
                 }
+                executed += request.operationId
+                result
             },
             sdkInt = 28,
             downloadParallelismProvider = { 1 }

@@ -14,10 +14,12 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
 import com.kyant.taglib.TagLib
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
@@ -893,6 +895,108 @@ internal fun LocalMediaSupport.resolveContentSidecarReferences(
                 ?: localFiles.romanized?.absolutePath
         ),
         mutationParentChildren = mutationParentChildren
+    )
+}
+
+internal fun LocalMediaSupport.selectCachedEditableMetadataReference(
+    snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
+    sourceReference: String,
+    displayName: String
+): String? {
+    if (snapshot?.rootEntriesComplete != true) return null
+    val audio = snapshot.audioEntriesByLookupKey[sourceReference] ?: return null
+    if (audio.isPendingAudioWrite || audio.name != displayName ||
+        sourceReference != audio.reference && sourceReference != audio.mediaUri
+    ) return null
+    val metadata = snapshot.metadataEntriesByAudioName[displayName] ?: return null
+    if (metadata.name != displayName + LOCAL_METADATA_SUFFIX) return null
+    return metadata.reference.takeIf { it.startsWith("content://", ignoreCase = true) }
+}
+
+internal fun LocalMediaSupport.resolveCachedEditableMetadataReference(
+    context: Context,
+    sourceUri: Uri,
+    displayName: String
+): String? {
+    if (!sourceUri.scheme.equals("content", ignoreCase = true) ||
+        !shouldUseDocumentSidecarMutation(sourceUri) &&
+        !DocumentsContract.isDocumentUri(context, sourceUri) &&
+        !DocumentsContract.isTreeUri(sourceUri)
+    ) return null
+    val reference = selectCachedEditableMetadataReference(
+        snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+            context, restorePersisted = false
+        ),
+        sourceReference = sourceUri.toString(),
+        displayName = displayName
+    ) ?: return null
+    val metadataUri = reference.toUri()
+    if (metadataUri.authority != sourceUri.authority) return null
+    val sourceParentId = findDocumentParentId(context, sourceUri) ?: return null
+    if (sourceParentId != findDocumentParentId(context, metadataUri)) return null
+    fun actualName(uri: Uri): String? = try {
+        context.contentResolver.query(
+            uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    } catch (error: SecurityException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
+    if (actualName(sourceUri) != displayName ||
+        actualName(metadataUri) != displayName + LOCAL_METADATA_SUFFIX
+    ) return null
+    return reference
+}
+
+internal fun LocalMediaSupport.resolveCachedEditableLyricsReferences(
+    context: Context,
+    sourceUri: Uri,
+    displayName: String
+): ContentSidecarReferences? {
+    val metadataReference = resolveCachedEditableMetadataReference(
+        context, sourceUri, displayName
+    ) ?: return null
+    val navigation = resolveLocalDocumentNavigation(context, sourceUri) ?: return null
+    val parentId = navigation.parentDocumentId ?: return null
+    val baseUri = navigation.treeUri ?: navigation.baseUri
+    val cachedDirectoryUri = synchronized(documentChildrenCache) {
+        documentChildrenCache[documentParentCacheKey(baseUri, parentId)]
+            ?.children
+            ?.let { children -> findManagedSidecarDirectory(children, "Lyrics") }
+            ?.uri
+    }?.toUri()
+    val indexedDirectoryUri = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+        context, restorePersisted = false
+    )?.lyricEntriesByName?.values
+        ?.firstOrNull { entry ->
+            entry.reference.startsWith("content://", ignoreCase = true) &&
+                entry.reference.toUri().authority == sourceUri.authority
+        }?.reference?.toUri()
+        ?.let { lyricUri -> findDocumentParentId(context, lyricUri) }
+        ?.let { directoryId -> buildDocumentReferenceUri(baseUri, directoryId) }
+    val sourceId = runCatching { DocumentsContract.getDocumentId(sourceUri) }
+        .getOrNull() ?: return null
+    val source = documentChildFromUri(context, sourceUri, false)
+        ?.takeIf { child ->
+            !child.isDirectory && child.documentId == sourceId &&
+                child.displayName == displayName
+        } ?: return null
+    if (findDocumentParentId(context, sourceUri) != parentId) return null
+    val lyricsDirectory = listOfNotNull(cachedDirectoryUri, indexedDirectoryUri)
+        .distinct()
+        .firstNotNullOfOrNull { candidate ->
+            documentChildFromUri(context, candidate, true)?.takeIf { child ->
+                child.isDirectory && isManagedSidecarDirectoryName(child.displayName, "Lyrics") &&
+                    findDocumentParentId(context, candidate) == parentId
+            }
+        } ?: return null
+    return ContentSidecarReferences(
+        metadataReference = metadataReference,
+        lyricReferences = NearbyLyricReferences(null, null, null),
+        mutationParentChildren = listOf(source, lyricsDirectory)
     )
 }
 

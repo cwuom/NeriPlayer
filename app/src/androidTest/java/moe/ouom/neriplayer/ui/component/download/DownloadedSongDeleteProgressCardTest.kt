@@ -36,9 +36,14 @@ class DownloadedSongDeleteProgressCardTest {
     fun progressRemainsVisibleThroughPhysicalDeletionAndFinalizationThenDisappears() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val progress = mutableStateOf(newProgress())
+        val failureDismissed = mutableStateOf(false)
         composeRule.setContent {
             MaterialTheme {
-                DownloadedSongDeleteProgressCard(progress = progress.value)
+                DownloadedSongDeleteProgressCard(
+                    progress = progress.value,
+                    failureDismissed = failureDismissed.value,
+                    onDismissFailure = { failureDismissed.value = true }
+                )
             }
         }
 
@@ -93,9 +98,16 @@ class DownloadedSongDeleteProgressCardTest {
             totalReferenceCount = 4000,
             completedReferenceCount = 3998
         ))
+        val failureDismissed = mutableStateOf(false)
         composeRule.setContent {
             MaterialTheme {
-                DownloadedSongDeleteProgressCard(progress = progress.value)
+                DownloadedSongDeleteProgressCard(
+                    progress = progress.value,
+                    failureDismissed = failureDismissed.value,
+                    onDismissFailure = { deleteId ->
+                        if (deleteId == progress.value.deleteId) failureDismissed.value = true
+                    }
+                )
             }
         }
         composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
@@ -131,6 +143,7 @@ class DownloadedSongDeleteProgressCardTest {
                 phase = DownloadedSongDeletePhase.VERIFYING_REFERENCES,
                 failedReferenceCount = 0
             )
+            failureDismissed.value = false
         }
         composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_verifying))
             .assertIsDisplayed()

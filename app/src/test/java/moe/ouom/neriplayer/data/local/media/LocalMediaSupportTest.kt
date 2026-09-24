@@ -1370,6 +1370,32 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `metadata-only edit retains the existing cover sidecar reference`() {
+        val updated = LocalMediaSupport.buildEditableLocalMetadataJson(
+            existingRaw = """{"coverPath":"existing-cover","custom":"keep"}""",
+            song = SongItem(
+                id = 8L,
+                name = "Renamed",
+                artist = "Artist",
+                album = "Album",
+                albumId = 0L,
+                durationMs = 1_000L,
+                coverUrl = null
+            ),
+            writeLyrics = false,
+            coverReference = null,
+            clearCoverReference = false
+        )
+
+        val parsed = LocalMediaSupport.parseLocalMetadataSidecar(
+            "/tmp/song.mp3.npmeta.json", updated
+        )
+        assertEquals("existing-cover", parsed?.coverPath)
+        assertEquals("Renamed", parsed?.name)
+        assertEquals("keep", org.json.JSONObject(updated).getString("custom"))
+    }
+
+    @Test
     fun `download metadata sidecar preserves identity fields for local scans`() {
         val parsed = LocalMediaSupport.parseLocalMetadataSidecar(
             "/tmp/song.mp3.npmeta.json",

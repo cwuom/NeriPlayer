@@ -48,7 +48,8 @@ class DownloadTaskBatchCancellationPolicyTest {
         val durableBatchBody = methodBody(source, "cancelDownloadTasksDurably")
 
         assertFalse(deletionBody.contains("deletionKeys.forEach(::cancelDownloadTask)"))
-        assertTrue(deletionBody.contains("requestDownloadTaskCancellation(session.deletionKeys)"))
+        assertTrue(deletionBody.contains("requestDownloadTaskCancellation(cancellationKeys)?.join()"))
+        assertTrue(deletionBody.contains("selectDeletionCancellationKeys("))
         assertTrue(
             deletionBody.indexOf("activeCancellationKeys.isNotEmpty()") <
                 deletionBody.indexOf("buildManagedDownloadDeletePlans(")
