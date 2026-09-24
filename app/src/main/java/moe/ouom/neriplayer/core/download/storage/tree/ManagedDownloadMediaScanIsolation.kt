@@ -18,13 +18,12 @@ internal object ManagedDownloadMediaScanIsolation {
     ) {
         if (!ManagedDownloadTreeNaming.shouldCreateNoMediaMarker(subdirectory)) return
         val cacheKey = directory.absolutePath
-        if (ensuredMarkers[cacheKey] == true) return
-
         val marker = File(directory, NO_MEDIA_FILE_NAME)
         if (marker.isFile) {
             ensuredMarkers[cacheKey] = true
             return
         }
+        ensuredMarkers.remove(cacheKey)
 
         repeat(MARKER_CREATION_ATTEMPTS) {
             runCatching { marker.createNewFile() }
@@ -48,11 +47,11 @@ internal object ManagedDownloadMediaScanIsolation {
     ) = ManagedDownloadTreeMutationLocks.withLock(directory.uri) {
         if (!ManagedDownloadTreeNaming.shouldCreateNoMediaMarker(subdirectory)) return@withLock
         val cacheKey = directory.uri.toString()
-        if (ensuredMarkers[cacheKey] == true) return@withLock
         if (hasCachedChild(context, directory, NO_MEDIA_FILE_NAME)) {
             ensuredMarkers[cacheKey] = true
             return@withLock
         }
+        ensuredMarkers.remove(cacheKey)
 
         repeat(MARKER_CREATION_ATTEMPTS) {
             if (hasCachedChild(context, directory, NO_MEDIA_FILE_NAME)) {

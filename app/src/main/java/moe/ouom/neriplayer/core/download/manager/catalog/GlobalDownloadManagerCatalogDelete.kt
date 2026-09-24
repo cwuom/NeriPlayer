@@ -255,6 +255,11 @@ internal fun GlobalDownloadManager.endDownloadedSongDeletion(
     }
     if (context != null) {
         scheduleDeleteCleanupRetry(context, songKeys, downloadAdmissionGate.openTicketOrNull())
+        if (downloadedSongDeletionCounts.isEmpty() &&
+            !PersistentDownloadClearFenceStore.isActive(context)
+        ) {
+            wakeDownloadExecutionPump(context, "download_deletion_settled")
+        }
     }
 }
 

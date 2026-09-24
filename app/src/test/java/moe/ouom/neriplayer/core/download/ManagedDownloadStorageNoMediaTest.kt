@@ -40,7 +40,7 @@ class ManagedDownloadStorageNoMediaTest {
         val executor = Executors.newFixedThreadPool(2)
         fun ensure() = ManagedDownloadMediaScanIsolation.ensureTreeDirectory(
             context, ".tmp", directory, ensured,
-            hasCachedChild = { _, _, _ -> false },
+            hasCachedChild = { _, _, _ -> creates.get() > 0 && releaseCreate.count == 0L },
             createMarker = {
                 if (creates.incrementAndGet() == 1) {
                     firstCreate.countDown()
@@ -88,6 +88,71 @@ class ManagedDownloadStorageNoMediaTest {
         ensureManagedMediaScanIsolation("Covers", coverDirectory)
 
         assertTrue(File(coverDirectory, ".nomedia").exists())
+    }
+
+    @Test
+    fun `file directory isolation restores a removed cover marker`() {
+        val coverDirectory = tempFolder.newFolder("Covers")
+        val ensured = ConcurrentHashMap<String, Boolean>()
+        val marker = File(coverDirectory, ".nomedia")
+
+        ManagedDownloadMediaScanIsolation.ensureFileDirectory("Covers", coverDirectory, ensured)
+        assertTrue(marker.delete())
+        ManagedDownloadMediaScanIsolation.ensureFileDirectory("Covers", coverDirectory, ensured)
+
+        assertTrue(marker.isFile)
+    }
+
+    @Test
+    fun `SAF directory isolation rechecks a cached marker before the next cover write`() {
+        val context = mock(Context::class.java)
+        val directory = mock(DocumentFile::class.java)
+        val uri = mock(Uri::class.java)
+        `when`(uri.toString()).thenReturn("content://test/tree/root/document/Covers")
+        `when`(directory.uri).thenReturn(uri)
+        val marker = mock(DocumentFile::class.java)
+        `when`(marker.name).thenReturn(".nomedia")
+        val ensured = ConcurrentHashMap<String, Boolean>()
+        var exists = false
+        var creations = 0
+        fun ensure() = ManagedDownloadMediaScanIsolation.ensureTreeDirectory(
+            context, "Covers", directory, ensured,
+            hasCachedChild = { _, _, _ -> exists },
+            createMarker = {
+                creations++
+                exists = true
+                marker
+            },
+            isMarkerAccessible = { _, _ -> ManagedDownloadReferenceIo.AccessResult.Accessible },
+            rememberMarker = { _, _ -> }
+        )
+
+        ensure()
+        exists = false
+        ensure()
+
+        assertEquals(2, creations)
+    }
+
+    @Test
+    fun `SAF directory isolation leaves an existing marker alone`() {
+        val context = mock(Context::class.java)
+        val directory = mock(DocumentFile::class.java)
+        val uri = mock(Uri::class.java)
+        `when`(uri.toString()).thenReturn("content://test/tree/root/document/Covers")
+        `when`(directory.uri).thenReturn(uri)
+        val ensured = ConcurrentHashMap<String, Boolean>()
+        var creations = 0
+
+        ManagedDownloadMediaScanIsolation.ensureTreeDirectory(
+            context, "Covers", directory, ensured,
+            hasCachedChild = { _, _, _ -> true },
+            createMarker = { creations++; null },
+            isMarkerAccessible = { _, _ -> ManagedDownloadReferenceIo.AccessResult.Accessible },
+            rememberMarker = { _, _ -> }
+        )
+
+        assertEquals(0, creations)
     }
 
     @Test

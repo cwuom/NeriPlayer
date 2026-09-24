@@ -743,12 +743,16 @@ internal class ManagedDownloadTreeDirectories(
         childName: String
     ): Boolean {
         if (childName != NO_MEDIA_FILE_NAME) return false
+        val shouldCleanupNumberedMarkers =
+            ensuredNoMediaMarkers[directory.uri.toString()] != true
         val cached = treeChildRegistry.cachedTreeChild(context, directory, childName)
         if (cached != null) {
             treeChildRegistry.toDocumentFile(context, directory, cached)
                 ?.takeIf { isAccessibleMarker(context, it) }
                 ?.let {
-                    cleanupEmptyNumberedNoMediaMarkers(context, directory)
+                    if (shouldCleanupNumberedMarkers) {
+                        cleanupEmptyNumberedNoMediaMarkers(context, directory)
+                    }
                     return true
                 }
         }
@@ -763,7 +767,9 @@ internal class ManagedDownloadTreeDirectories(
             treeChildRegistry.toDocumentFile(context, directory, child)
         }
         if (marker == null || !isAccessibleMarker(context, marker)) return false
-        cleanupEmptyNumberedNoMediaMarkers(context, directory)
+        if (shouldCleanupNumberedMarkers) {
+            cleanupEmptyNumberedNoMediaMarkers(context, directory)
+        }
         return true
     }
 

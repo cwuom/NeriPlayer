@@ -517,14 +517,9 @@ internal suspend fun GlobalDownloadManager.runCancellationConvergence(
         }
         if (settled && isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
             val operationRequests = runCatching {
-                DownloadExecutionRoomStore.listCancellationCandidatesAnyLibrary(context)
-                    .map(DownloadExecutionRoomStore.StateEntry::request)
-                    .filter { request ->
-                        request.song.stableKey() == songKey &&
-                            (targetOperationIds.isNotEmpty() &&
-                                request.operationId in targetOperationIds)
-                    }
-                    .distinctBy(DownloadExecutionRequest::operationId)
+                loadCancellationConvergenceRequests(songKey, targetOperationIds) { ids ->
+                    DownloadExecutionRoomStore.readOperationSnapshots(context, ids)
+                }
             }.getOrElse { error ->
                 NPLogger.w(
                     TAG,
@@ -581,7 +576,9 @@ internal suspend fun GlobalDownloadManager.runCancellationConvergence(
                     )
                 }
                 clearSongCancelled(songKey)
-                wakeDownloadExecutionPump(context, "single_cancel_converged")
+                if (!downloadedSongDeletionCounts.containsKey(songKey)) {
+                    wakeDownloadExecutionPump(context, "single_cancel_converged")
+                }
                 NPLogger.d(TAG, "取消收敛完成: songKey=$songKey")
                 clearCancellationTracking(songKey, targetOperationIds)
                 return
@@ -609,6 +606,24 @@ internal suspend fun GlobalDownloadManager.runCancellationConvergence(
         requestOperationCancellation(setOf(songKey))
     }
     runCatching { ForegroundDownloadWorker.schedulePump(context) }
+}
+
+internal suspend fun loadCancellationConvergenceRequests(
+    songKey: String,
+    operationIds: Set<String>,
+    readSnapshots: suspend (Collection<String>) -> Map<String, DownloadExecutionRoomStore.OperationSnapshot>
+): List<DownloadExecutionRequest> {
+    if (operationIds.isEmpty()) return emptyList()
+    return readSnapshots(operationIds).asSequence()
+        .filter { (operationId, snapshot) ->
+            operationId in operationIds &&
+                snapshot.request.operationId == operationId &&
+                snapshot.state in DownloadExecutionRoomStore.CANCELLATION_CANDIDATE_OPERATION_STATES &&
+                snapshot.request.song.stableKey() == songKey
+        }
+        .map { (_, snapshot) -> snapshot.request }
+        .distinctBy(DownloadExecutionRequest::operationId)
+        .toList()
 }
 
 internal fun GlobalDownloadManager.requestAllDownloadTaskCancellation(
