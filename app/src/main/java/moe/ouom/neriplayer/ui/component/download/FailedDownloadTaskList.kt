@@ -33,11 +33,13 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
 @Composable
 internal fun FailedDownloadTaskList(
     tasks: List<DownloadTask>,
     onRetry: (String) -> Unit,
+    onClearFailed: () -> Unit,
     modifier: Modifier = Modifier,
     maxHeight: Dp = 240.dp
 ) {
@@ -48,15 +50,24 @@ internal fun FailedDownloadTaskList(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(
-            text = pluralStringResource(
-                R.plurals.download_failed_songs_count,
-                failedTasks.size,
-                failedTasks.size
-            ),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.error
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = pluralStringResource(
+                    R.plurals.download_failed_songs_count,
+                    failedTasks.size,
+                    failedTasks.size
+                ),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.error
+            )
+            HapticTextButton(onClick = onClearFailed) {
+                Text(stringResource(R.string.download_clear_failed_tasks))
+            }
+        }
         Text(
             text = stringResource(R.string.download_failed_tasks_summary),
             style = MaterialTheme.typography.bodySmall,

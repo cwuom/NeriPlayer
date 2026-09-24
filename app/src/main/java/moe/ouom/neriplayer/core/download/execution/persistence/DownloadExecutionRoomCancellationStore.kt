@@ -427,6 +427,33 @@ internal object DownloadExecutionRoomCancellationStore {
         }
     }
 
+    suspend fun dismissFailedProgressOperations(
+        context: Context,
+        stableKeys: Collection<String>,
+        updatedBeforeMs: Long = System.currentTimeMillis(),
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ) {
+        val states = listOf("INVALID", METADATA_ACTION_REQUIRED_OPERATION_STATE)
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
+        val dao = database.downloadOperationDao()
+        keys.chunked(DownloadExecutionRoomStore.Access.SQLITE_IN_QUERY_CHUNK_SIZE).forEach { chunk ->
+            database.withTransaction {
+                val operationIds = dao.findAllHeadersByStableKeysAnyLibrary(chunk, states)
+                    .filter { header -> header.updatedAtMs <= updatedBeforeMs }
+                    .map(DownloadOperationHeaderRow::operationId)
+                operationIds.chunked(DownloadExecutionRoomStore.Access.SQLITE_IN_QUERY_CHUNK_SIZE)
+                    .forEach { operationIdsChunk ->
+                        dao.dismissFailedProgressOperations(
+                            operationIds = operationIdsChunk,
+                            states = states,
+                            updatedBeforeMs = updatedBeforeMs,
+                            updatedAtMs = System.currentTimeMillis()
+                        )
+                    }
+            }
+        }
+    }
+
     suspend fun deleteByState(
         context: Context,
         state: String,

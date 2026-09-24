@@ -26,6 +26,44 @@ class DownloadTaskClearHistoryTest {
     private val context get() = ApplicationProvider.getApplicationContext<Context>()
 
     @Test
+    fun dismissingFailedHistoryKeepsActiveOperationsAndPreservesFailedPayload() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(
+            context, NeriUserDataDatabase::class.java
+        ).build()
+        try {
+            val failedSong = SongItem(
+                id = 8_230L, name = "failed", artist = "artist",
+                album = "Netease", albumId = 1L, durationMs = 1_000L, coverUrl = null
+            )
+            val activeSong = failedSong.copy(id = 8_231L, name = "active")
+            val failed = DownloadExecutionRequest(
+                operationId = "failed-to-dismiss", song = failedSong, attemptId = 1L
+            )
+            val active = DownloadExecutionRequest(
+                operationId = "active-to-keep", song = activeSong, attemptId = 2L
+            )
+            DownloadExecutionRoomStore.upsert(context, failed, "INVALID", database = database)
+            DownloadExecutionRoomStore.upsert(context, active, "QUEUED", database = database)
+
+            DownloadExecutionRoomStore.dismissFailedProgressOperations(
+                context = context,
+                stableKeys = setOf(failedSong.stableKey(), activeSong.stableKey()),
+                database = database
+            )
+
+            assertEquals(listOf("active-to-keep"), restoredTaskOperationIds(database))
+            assertTrue(requireNotNull(database.downloadOperationDao().findHeader(failed.operationId))
+                .stopRequestedByUser)
+            assertFalse(requireNotNull(database.downloadOperationDao().findHeader(active.operationId))
+                .stopRequestedByUser)
+            assertEquals("INVALID", database.downloadOperationDao().findHeader(failed.operationId)?.state)
+            assertTrue(DownloadExecutionRoomStore.read(context, failed.operationId, database) != null)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun invalidFailureDoesNotReturnAfterTaskClearAndDatabaseReopen() = runBlocking {
         verifyFailureClear("INVALID", completedBatch = false)
     }

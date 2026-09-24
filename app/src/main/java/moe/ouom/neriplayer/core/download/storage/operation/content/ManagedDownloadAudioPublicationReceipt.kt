@@ -20,6 +20,8 @@ import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_TEMPORARY_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
+import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.findExistingTemporaryTreeDirectory
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.findMetadataForAudioBlocking
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.resolveTemporaryRoot
@@ -350,6 +352,31 @@ private fun publicationOwner(metadata: JSONObject): String = metadata.optString(
 private fun samePublicationOwner(first: JSONObject, second: JSONObject): Boolean =
     first.optString("stableKey").isNotBlank() && first.optString("stableKey") == second.optString("stableKey") &&
         publicationOwner(first).isNotBlank() && publicationOwner(first) == publicationOwner(second)
+
+internal fun canReclaimEmptyPublicationTarget(
+    formal: JSONObject,
+    publication: JSONObject,
+    expectedStableKey: String,
+    targetName: String,
+    targetReference: String
+): Boolean {
+    val receipt = publication.optJSONObject(PUBLICATION_RECEIPT_KEY) ?: return false
+    val owner = formal.optString("audioPublicationOwnerId")
+        .ifBlank { formal.optString("operationId") }
+    val publicationOwner = publication.optString("audioPublicationOwnerId")
+        .ifBlank { publication.optString("operationId") }
+    return formal.optBoolean(PUBLICATION_PENDING_KEY) &&
+        formal.optString("stableKey") == expectedStableKey &&
+        owner.isNotBlank() && owner == publicationOwner &&
+        samePublicationOwner(formal, publication) &&
+        formal.optString("audioFileName").let { it.isBlank() || it == targetName } &&
+        ManagedDownloadPendingAudioWriteNames.isArtifactName(receipt.optString("sourceName")) &&
+        ManagedDownloadTreeNaming.logicalAudioName(receipt.optString("sourceName")) == targetName &&
+        receipt.optString("sourceReference").isNotBlank() &&
+        receipt.optString("targetName") == targetName &&
+        samePublicationReference(receipt.optString("targetReference"), targetReference) &&
+        receipt.optString("sha256").length == 64
+}
 
 internal fun samePublicationReference(first: String, second: String): Boolean {
     if (first == second) return first.isNotBlank()

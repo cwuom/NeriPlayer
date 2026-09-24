@@ -48,31 +48,66 @@ internal object AudioDownloadSourceResolver {
     internal suspend fun resolveNetease(
         songId: Long,
         preferredQuality: String
-    ): AudioDownloadManager.ResolvedDownloadSource? {
-        val primary = parseNeteaseDownloadLookup(
-            AppContainer.neteaseClient.getSongDownloadUrl(
-                songId,
-                level = preferredQuality
-            ),
-            expectedSongId = songId
-        )
-        if (primary is NeteaseDownloadLookup.Resolved) {
-            return primary.source
+    ): AudioDownloadManager.ResolvedDownloadSource? = resolveNeteaseWithLookups(
+        songId = songId,
+        preferredQuality = preferredQuality,
+        eapiLookup = { id, level ->
+            parseNeteaseDownloadLookup(
+                AppContainer.neteaseClient.getSongDownloadUrl(id, level = level),
+                expectedSongId = id
+            )
+        },
+        weapiLookup = { id, bitrate ->
+            parseNeteaseDownloadLookup(
+                AppContainer.neteaseClient.getSongUrl(id, bitrate = bitrate),
+                expectedSongId = id
+            )
         }
+    )
 
-        val fallback = resolveWeapiFallback(songId, preferredQuality)
-        if (fallback is NeteaseDownloadLookup.Resolved) {
-            return fallback.source
-        }
-        if (
-            primary == NeteaseDownloadLookup.ExplicitlyUnavailable ||
+    internal suspend fun resolveNeteaseWithLookups(
+        songId: Long,
+        preferredQuality: String,
+        eapiLookup: suspend (Long, String) -> NeteaseDownloadLookup,
+        weapiLookup: (Long, Int) -> NeteaseDownloadLookup
+    ): AudioDownloadManager.ResolvedDownloadSource? {
+        var explicitlyUnavailable = false
+        for (level in downloadQualityFallbacks(preferredQuality)) {
+            val primary = eapiLookup(songId, level)
+            if (primary is NeteaseDownloadLookup.Resolved) {
+                logNeteaseQualityFallback(songId, preferredQuality, level)
+                return primary.source
+            }
+            val fallback = weapiLookup(songId, bitrateForQuality(level))
+            if (fallback is NeteaseDownloadLookup.Resolved) {
+                logNeteaseQualityFallback(songId, preferredQuality, level)
+                return fallback.source
+            }
+            explicitlyUnavailable = explicitlyUnavailable ||
+                primary == NeteaseDownloadLookup.ExplicitlyUnavailable ||
                 fallback == NeteaseDownloadLookup.ExplicitlyUnavailable
-        ) {
+        }
+        if (explicitlyUnavailable) {
             throw DownloadSourceUnavailableException(
                 "netease download source is explicitly unavailable: songId=$songId"
             )
         }
         return null
+    }
+
+    private fun logNeteaseQualityFallback(songId: Long, preferred: String, resolved: String) {
+        if (!preferred.equals(resolved, ignoreCase = true)) {
+            NPLogger.w(TAG, "网易云下载音质降级: songId=$songId, preferred=$preferred, resolved=$resolved")
+        }
+    }
+
+    private fun downloadQualityFallbacks(preferredQuality: String): List<String> {
+        val preferred = preferredQuality.lowercase()
+        val levels = listOf("lossless", "exhigh", "standard")
+        if (preferred == "higher") return listOf(preferred, "standard")
+        val position = levels.indexOf(preferred)
+        return if (position >= 0) levels.drop(position) else
+            (listOf(preferred, "lossless") + levels.drop(1)).distinct()
     }
 
     private fun bitrateForQuality(level: String): Int = when (level.lowercase()) {
@@ -81,19 +116,6 @@ internal object AudioDownloadSourceResolver {
         "exhigh" -> 320000
         "lossless", "hires", "jyeffect", "sky", "jymaster" -> 1411200
         else -> 320000
-    }
-
-    private fun resolveWeapiFallback(
-        songId: Long,
-        level: String
-    ): NeteaseDownloadLookup {
-        return parseNeteaseDownloadLookup(
-            AppContainer.neteaseClient.getSongUrl(
-                songId,
-                bitrate = bitrateForQuality(level)
-            ),
-            expectedSongId = songId
-        )
     }
 
     internal fun parseNeteaseDownloadLookup(

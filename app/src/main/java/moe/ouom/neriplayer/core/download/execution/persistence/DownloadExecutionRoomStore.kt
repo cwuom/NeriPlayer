@@ -249,6 +249,8 @@ internal object DownloadExecutionRoomStore {
         DownloadExecutionRoomCancellationStore.listCancellationIdentitiesAnyLibrary(context, database)
     suspend fun listOperationIdentitiesForStableKeys(context: Context, stableKeys: Collection<String>, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
         DownloadExecutionRoomCancellationStore.listOperationIdentitiesForStableKeys(context, stableKeys, database)
+    suspend fun dismissFailedProgressOperations(context: Context, stableKeys: Collection<String>, updatedBeforeMs: Long = System.currentTimeMillis(), database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
+        DownloadExecutionRoomCancellationStore.dismissFailedProgressOperations(context, stableKeys, updatedBeforeMs, database)
     suspend fun requestCancelAll(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =
         DownloadExecutionRoomCancellationStore.requestCancelAll(context, database)
     suspend fun requestCancelAllFast(context: Context, database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)) =

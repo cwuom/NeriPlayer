@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.isPendingAu
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.readTemporaryDirectoryEntries
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.resolveTemporaryRoot
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.SnapshotEntryBucket
 import moe.ouom.neriplayer.core.download.model.publicationOwnerId
@@ -54,6 +55,7 @@ import java.nio.file.FileAlreadyExistsException
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.StandardOpenOption
+import java.nio.file.Files
 import java.util.UUID
 import org.json.JSONObject
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
@@ -448,7 +450,8 @@ private fun ManagedDownloadStorage.findExistingAudioForCommit(
         .distinctBy(StoredEntry::reference)
         .filter { entry ->
             val metadata = metadataForAudioEntry(snapshot, entry)
-            metadata?.stableKey == stableKey && metadata.operationId == operationId
+            metadata?.stableKey == stableKey && metadata.operationId == operationId &&
+                !(!entry.isPendingAudioWrite && entry.sizeKnown && entry.sizeBytes == 0L)
         }
     candidates.forEach { entry ->
         val sameBytes = openCommittedAudioInput(context, entry).use { committed ->
@@ -510,8 +513,12 @@ private fun ManagedDownloadStorage.prepareAudioNameAndMetadata(
             writeCollisionPendingMetadata(context, root, ownedReservation, pendingMetadataJson)
             return@synchronized ownedReservation
         }
+        val reclaimedReferences = reclaimEmptyPublicationTargetForRetry(
+            context, root, snapshot, temporaryEntries, desiredName, expectedOwner?.stableKey
+        )
         val reservedNames = snapshot.pendingAudioEntries.map(StoredEntry::logicalName) +
-            snapshot.metadataEntriesByAudioName.keys + temporaryEntries.mapNotNull { entry ->
+            snapshot.metadataEntriesByAudioName.filterValues { it.reference !in reclaimedReferences }.keys +
+            temporaryEntries.filterNot { it.reference in reclaimedReferences }.mapNotNull { entry ->
                 if (entry.isPendingAudioWrite) entry.logicalName
                 else ManagedDownloadTreeNaming.metadataAudioName(entry.name)
             }
@@ -523,6 +530,74 @@ private fun ManagedDownloadStorage.prepareAudioNameAndMetadata(
         writeCollisionPendingMetadata(context, root, finalName, pendingMetadataJson)
         finalName
     }
+}
+
+private fun ManagedDownloadStorage.reclaimEmptyPublicationTargetForRetry(
+    context: Context,
+    root: RootHandle,
+    snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+    temporaryEntries: List<StoredEntry>,
+    desiredName: String,
+    stableKey: String?
+): Set<String> {
+    if (stableKey.isNullOrBlank()) return emptySet()
+    val matchingAudio = snapshot.audioEntries.filter { entry ->
+        ManagedDownloadTreeNaming.isExactTreeStoredName(entry.name, desiredName)
+    }
+    if (matchingAudio.size != 1) return emptySet()
+    val audio = matchingAudio.single()
+    if (!audio.sizeKnown || audio.sizeBytes != 0L || audio.isDirectory ||
+        snapshot.pendingAudioEntries.any { entry ->
+            ManagedDownloadTreeNaming.isExactTreeStoredName(entry.logicalName, desiredName)
+        }
+    ) return emptySet()
+    val formalEntry = snapshot.metadataEntriesByAudioName[desiredName]
+        ?.takeIf { it.name == "$desiredName$METADATA_SUFFIX" }
+        ?: return emptySet()
+    val formal = readTextInternal(context, formalEntry.reference)
+        ?.let { runCatching { JSONObject(it) }.getOrNull() }
+        ?: return emptySet()
+    val publication = readAudioPublicationMetadata(context, root, desiredName) ?: return emptySet()
+    if (!canReclaimEmptyPublicationTarget(formal, publication, stableKey, desiredName, audio.reference)) {
+        return emptySet()
+    }
+    val receipt = publication.getJSONObject("audioPublicationReceipt")
+    if (ManagedDownloadReferenceIo.inspect(context, receipt.getString("sourceReference")) !=
+        ManagedDownloadReferenceIo.AccessResult.Missing
+    ) return emptySet()
+    if (audio.reference.startsWith("/")) {
+        if (Files.isSymbolicLink(File(audio.reference).toPath()) ||
+            receipt.optString("fileIdentity") != publicationFileIdentity(audio.reference)
+        ) return emptySet()
+    }
+    val empty = openCommittedAudioInput(context, audio).use { it.read() < 0 }
+    if (!empty) return emptySet()
+    val oldOwner = publication.optString("audioPublicationOwnerId")
+        .ifBlank { publication.optString("operationId") }
+    val oldTemporaryMetadata = temporaryEntries.filter { entry ->
+        ManagedDownloadTreeNaming.isPendingMetadataName(entry.name, desiredName) &&
+            readTextInternal(context, entry.reference)?.let { content ->
+                runCatching { JSONObject(content) }.getOrNull()?.let { metadata ->
+                    metadata.optString("stableKey") == stableKey &&
+                        metadata.optString("audioPublicationOwnerId")
+                            .ifBlank { metadata.optString("operationId") } == oldOwner
+                }
+            } == true
+    }
+    val references = (listOf(audio, formalEntry) + oldTemporaryMetadata)
+        .mapTo(linkedSetOf(), StoredEntry::reference)
+    val deleted = deleteReferencesInternal(
+        context = context,
+        references = references,
+        allowedRoot = root,
+        trustedReferences = references,
+        invalidateSnapshot = false
+    )
+    if (!deleted.containsAll(references)) {
+        throw IOException("旧的空发布目标清理未确认，保留下载等待恢复: $desiredName")
+    }
+    NPLogger.d(TAG, "已回收同歌曲的空发布目标: $desiredName")
+    return deleted
 }
 
 private fun openCommittedAudioInput(context: Context, entry: StoredEntry): InputStream {
@@ -1452,8 +1527,9 @@ internal fun ManagedDownloadStorage.discardNewTreePromotionTarget(
     ).isConfirmedStorageMutation()
     if (!deleted) {
         NPLogger.w(TAG, "SAF 提升临时目标清理失败: $childName")
+    } else {
+        treeChildRegistry.forgetTreeChildName(parent, childName)
     }
-    treeChildRegistry.forgetTreeChildName(parent, childName)
     invalidateSnapshotCache(context)
 }
 

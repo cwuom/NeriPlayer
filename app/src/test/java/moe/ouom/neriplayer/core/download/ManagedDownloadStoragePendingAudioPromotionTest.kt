@@ -14,8 +14,39 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.storage.operation.content.canReclaimEmptyPublicationTarget
 
 class ManagedDownloadStoragePendingAudioPromotionTest {
+    @Test
+    fun `empty publication target is reclaimable only with matching durable identity`() {
+        val target = "content://provider/document/song.mp3"
+        val formal = JSONObject().put("stableKey", "song:42")
+            .put("operationId", "old-operation")
+            .put("audioPublicationPending", true)
+        val publication = JSONObject(formal.toString()).put("audioPublicationReceipt", JSONObject()
+            .put("sourceName", "song.mp3.npdl_pending.old.pending")
+            .put("sourceReference", "content://provider/document/pending")
+            .put("targetName", "song.mp3")
+            .put("targetReference", target)
+            .put("sha256", "a".repeat(64)))
+
+        assertTrue(canReclaimEmptyPublicationTarget(formal, publication, "song:42", "song.mp3", target))
+        assertFalse(canReclaimEmptyPublicationTarget(formal, publication, "song:other", "song.mp3", target))
+        assertFalse(canReclaimEmptyPublicationTarget(formal, publication, "song:42", "song.mp3", "$target-changed"))
+        assertFalse(canReclaimEmptyPublicationTarget(
+            formal, JSONObject(publication.toString()).put("operationId", "another-operation"),
+            "song:42", "song.mp3", target
+        ))
+        assertFalse(canReclaimEmptyPublicationTarget(
+            JSONObject(formal.toString()).apply { remove("operationId") },
+            JSONObject(publication.toString()).apply { remove("operationId") },
+            "song:42", "song.mp3", target
+        ))
+        assertFalse(canReclaimEmptyPublicationTarget(formal.put("audioPublicationPending", false), publication, "song:42", "song.mp3", target))
+        assertFalse(canReclaimEmptyPublicationTarget(JSONObject(formal.toString()).put("audioPublicationPending", true),
+            JSONObject(formal.toString()), "song:42", "song.mp3", target))
+    }
+
     @Test
     fun `tree promotion uses the counted tagged pending size instead of stale provider data`() {
         assertEquals(

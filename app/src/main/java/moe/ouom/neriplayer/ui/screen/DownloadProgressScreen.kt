@@ -825,7 +825,14 @@ fun DownloadProgressScreen(
                     }
                     if (failedTasks.isNotEmpty()) {
                         item(key = "failed-download-summary") {
-                            FailedDownloadSummaryCard(count = failedTaskCount)
+                            FailedDownloadSummaryCard(
+                                count = failedTaskCount,
+                                enabled = !effectiveIsClearing,
+                                onClearFailed = {
+                                    context.performHapticFeedback()
+                                    GlobalDownloadManager.clearFailedDownloadTasks()
+                                }
+                            )
                         }
                         items(
                             items = failedTasks,
@@ -1179,7 +1186,11 @@ private fun PendingDownloadSummaryCard(count: Int) {
 }
 
 @Composable
-private fun FailedDownloadSummaryCard(count: Int) {
+private fun FailedDownloadSummaryCard(
+    count: Int,
+    enabled: Boolean,
+    onClearFailed: () -> Unit
+) {
     val shape = RoundedCornerShape(12.dp)
     val baseColor = MaterialTheme.colorScheme.errorContainer
     AdvancedGlassSurface(
@@ -1195,16 +1206,22 @@ private fun FailedDownloadSummaryCard(count: Int) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(
-                text = pluralStringResource(
-                    R.plurals.download_failed_songs_count,
-                    count,
-                    count
-                ),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.download_failed_songs_count,
+                        count,
+                        count
+                    ),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                TextButton(onClick = onClearFailed, enabled = enabled) {
+                    Text(stringResource(R.string.download_clear_failed_tasks))
+                }
+            }
             Text(
                 text = stringResource(R.string.download_failed_tasks_summary),
                 style = MaterialTheme.typography.bodySmall,

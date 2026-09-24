@@ -699,23 +699,7 @@ internal suspend fun ManagedDownloadStorage.cleanupCancelledPendingDownloadArtif
             .filter(isPendingArtifact)
             .count { entry -> entry.reference in protectedPendingReferences }
         if (referencesToDelete.isEmpty()) {
-            val unresolvedPendingEntries = rootEntries
-                .filter(isPendingArtifact)
-                .filterNot { entry -> entry.reference in protectedPendingReferences }
-            if (unresolvedPendingEntries.isNotEmpty()) {
-                NPLogger.w(
-                    TAG,
-                    "取消清理发现无法证明归属的 pending，保留证据并等待恢复: " +
-                        "operations=${normalizedOperations.size}, " +
-                        "entries=${unresolvedPendingEntries.size}"
-                )
-                reportProgress(0, unresolvedPendingEntries.size)
-                return@withContext StartupRecoveryResult(
-                    failedCount = unresolvedPendingEntries.size,
-                    protectedCount = protectedPendingEntryCount,
-                    protectedReferences = protectedPendingReferences
-                )
-            }
+            // 单个 operation 不能把目录中其他任务的 pending 当成自己的清理失败
             reportProgress(0, 0)
             return@withContext StartupRecoveryResult(
                 protectedCount = protectedPendingEntryCount,

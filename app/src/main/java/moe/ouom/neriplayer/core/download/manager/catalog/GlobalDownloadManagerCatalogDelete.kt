@@ -222,6 +222,20 @@ internal fun GlobalDownloadManager.downloadedSongDeletionKeys(songs: Collection<
     }
 }
 
+internal fun selectDeletionCancellationKeys(
+    requestedKeys: Set<String>,
+    taskStatuses: Map<String, DownloadStatus>,
+    durableKeys: Set<String>,
+    activeKeys: Set<String>
+): Set<String> {
+    return requestedKeys.filterTo(linkedSetOf()) { songKey ->
+        songKey in durableKeys || songKey in activeKeys ||
+            taskStatuses[songKey] == DownloadStatus.QUEUED ||
+            taskStatuses[songKey] == DownloadStatus.DOWNLOADING ||
+            taskStatuses[songKey] == DownloadStatus.WAITING_NETWORK
+    }
+}
+
 internal fun GlobalDownloadManager.beginDownloadedSongDeletion(songKeys: Collection<String>) {
     songKeys.forEach { songKey ->
         downloadedSongDeletionCounts.compute(songKey) { _, current ->
@@ -756,9 +770,31 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
                 )
             }
         } else {
-            requestDownloadTaskCancellation(session.deletionKeys)?.join()
+            val cancellationKeys = try {
+                val durableKeys = DownloadExecutionRoomStore
+                    .listOperationIdentitiesForStableKeys(appContext, session.deletionKeys)
+                    .mapTo(linkedSetOf()) { identity -> identity.stableKey }
+                val taskStatuses = taskStore.currentTasks().associate { task ->
+                    task.song.stableKey() to task.status
+                }
+                val activeKeys = session.deletionKeys.filterTo(linkedSetOf()) { songKey ->
+                    AudioDownloadManager.isSongDownloadActive(songKey)
+                }
+                selectDeletionCancellationKeys(
+                    requestedKeys = session.deletionKeys,
+                    taskStatuses = taskStatuses,
+                    durableKeys = durableKeys,
+                    activeKeys = activeKeys
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "删除前读取下载 owner 失败，保守取消目标任务: ${error.message}", error)
+                session.deletionKeys
+            }
+            requestDownloadTaskCancellation(cancellationKeys)?.join()
             val activeCancellationKeys =
-                awaitDownloadCancellationsSettled(session.deletionKeys)
+                awaitDownloadCancellationsSettled(cancellationKeys)
             if (activeCancellationKeys.isNotEmpty()) {
                 updateDownloadedSongDeleteProgress(
                     session = session,

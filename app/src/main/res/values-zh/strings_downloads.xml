@@ -34,6 +34,7 @@
     <string name="downloaded_songs">已下载歌曲</string>
     <string name="download_songs_display">下载的歌曲会显示在这里</string>
     <string name="download_clear_completed">清空任务</string>
+    <string name="download_clear_failed_tasks">清空失败任务</string>
     <string name="download_clear_confirm_title">清除下载任务</string>
     <string name="download_clear_confirm_message">确定要清空所有下载任务吗？排队和下载中的任务会被取消，已下载文件不会删除。</string>
     <string name="download_confirm">确定</string>

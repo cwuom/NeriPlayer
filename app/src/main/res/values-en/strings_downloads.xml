@@ -34,6 +34,7 @@
     <string name="downloaded_songs">Downloaded Songs</string>
     <string name="download_songs_display">Downloaded songs will appear here</string>
     <string name="download_clear_completed">Clear Tasks</string>
+    <string name="download_clear_failed_tasks">Clear Failed Tasks</string>
     <string name="download_clear_confirm_title">Clear Download Tasks</string>
     <string name="download_clear_confirm_message">Are you sure you want to clear all download tasks? Queued and active downloads will be canceled, and downloaded files will not be deleted.</string>
     <string name="download_confirm">Confirm</string>

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.manager.catalog.selectDeletionCancellationKeys
+import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteResult
 import moe.ouom.neriplayer.core.download.model.isCompleteDownloadedSongSelection
@@ -18,6 +20,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlobalDownloadManagerDeleteReferenceTest {
+
+    @Test
+    fun `terminal failures without an active owner do not hold song deletion`() {
+        val requested = setOf("failed", "queued", "durable", "host")
+        val statuses = mapOf(
+            "failed" to DownloadStatus.FAILED,
+            "queued" to DownloadStatus.QUEUED
+        )
+
+        assertEquals(
+            setOf("queued", "durable", "host"),
+            selectDeletionCancellationKeys(
+                requestedKeys = requested,
+                taskStatuses = statuses,
+                durableKeys = setOf("durable"),
+                activeKeys = setOf("host")
+            )
+        )
+    }
 
     @Test
     fun `full delete does not infer ownership from enumerated foreign sidecars`() {

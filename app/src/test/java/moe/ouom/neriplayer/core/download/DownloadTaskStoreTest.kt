@@ -815,6 +815,35 @@ class DownloadTaskStoreTest {
     }
 
     @Test
+    fun `failed task dismissal keeps active and newer attempts`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(scope, progressEmitIntervalNs = 0L)
+            val failedSong = song(94L)
+            val activeSong = song(95L)
+            val attempts = store.ensureDownloadTasks(
+                songs = listOf(failedSong, activeSong),
+                statusesBySongKey = mapOf(
+                    failedSong.stableKey() to DownloadStatus.FAILED,
+                    activeSong.stableKey() to DownloadStatus.DOWNLOADING
+                )
+            )
+            store.removeFailedDownloadTasks(
+                mapOf(
+                    failedSong.stableKey() to attempts.getValue(failedSong.stableKey()) + 1L,
+                    activeSong.stableKey() to attempts.getValue(activeSong.stableKey())
+                )
+            )
+            assertEquals(2, store.currentTasks().size)
+
+            store.removeFailedDownloadTasks(attempts)
+            assertEquals(listOf(activeSong), store.currentTasks().map { it.song })
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `same attempt retains its progress across a retry and worker reactivation`() {
         val scope = CoroutineScope(SupervisorJob())
         try {

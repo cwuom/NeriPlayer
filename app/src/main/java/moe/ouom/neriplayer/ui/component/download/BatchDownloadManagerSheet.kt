@@ -198,7 +198,8 @@ fun BatchDownloadManagerSheet(
                             tasks = downloadTasks,
                             onRetry = { songKey ->
                                 GlobalDownloadManager.resumeDownloadTask(context, songKey)
-                            }
+                            },
+                            onClearFailed = GlobalDownloadManager::clearFailedDownloadTasks
                         )
 
                     }

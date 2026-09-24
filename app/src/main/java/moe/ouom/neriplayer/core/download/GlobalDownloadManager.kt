@@ -34,10 +34,12 @@ import moe.ouom.neriplayer.core.download.policy.*
 import moe.ouom.neriplayer.core.download.storage.facade.*
 import android.content.Context
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
@@ -68,6 +70,7 @@ import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.DownloadProgressProjectionStore
@@ -1349,6 +1352,44 @@ object GlobalDownloadManager {
 
     fun cancelDownloadTask(songKey: String) {
         requestDownloadTaskCancellation(setOf(songKey))
+    }
+
+    fun clearFailedDownloadTasks() {
+        val failedAttempts = taskStore.currentTasks()
+            .filter { task -> task.status == DownloadStatus.FAILED }
+            .associate { task -> task.song.stableKey() to task.attemptId }
+        if (failedAttempts.isEmpty()) return
+        val requestedAtMs = System.currentTimeMillis()
+        scope.launch {
+            try {
+                val appContext = AppContainer.applicationContext
+                val durableKeys = DownloadExecutionRoomStore
+                    .listOperationIdentitiesForStableKeys(appContext, failedAttempts.keys)
+                    .mapTo(linkedSetOf()) { identity -> identity.stableKey }
+                val currentFailedAttempts = failedAttempts.filter { (songKey, attemptId) ->
+                    taskStore.findTask(songKey)?.let { task ->
+                        task.status == DownloadStatus.FAILED && task.attemptId == attemptId
+                    } == true
+                }
+                val activeKeys = currentFailedAttempts.keys.filterTo(linkedSetOf()) { songKey ->
+                    songKey in durableKeys || AudioDownloadManager.isSongDownloadActive(songKey)
+                }
+                val terminalAttempts = currentFailedAttempts.filterKeys { songKey ->
+                    songKey !in activeKeys
+                }
+                DownloadExecutionRoomStore.dismissFailedProgressOperations(
+                    appContext,
+                    currentFailedAttempts.keys,
+                    updatedBeforeMs = requestedAtMs
+                )
+                taskStore.removeFailedDownloadTasks(terminalAttempts)
+                requestDownloadTaskCancellation(activeKeys)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "清空失败任务未完成，保留任务供重试: ${error.message}", error)
+            }
+        }
     }
 
     fun clearAllDownloadTasks() {

@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -102,7 +103,9 @@ private data class LocalMetadataWritePlaybackSnapshot(
     val song: SongItem,
     val index: Int,
     val positionMs: Long,
-    val commandSource: PlaybackCommandSource
+    val commandSource: PlaybackCommandSource,
+    val requestToken: Long,
+    val resumePlayback: Boolean
 )
 
 internal enum class EditableMetadataWriteMode {
@@ -1754,33 +1757,38 @@ private suspend fun PlayerManager.parkCurrentPlaybackForLocalMetadataWrite(
     if (!isPlayerInitialized() || currentIndex !in currentPlaylist.indices) {
         return@withContext null
     }
-    val action = resolveLocalMetadataWritePlaybackAction()
+    val action = resolveLocalMetadataWritePlaybackAction(
+        isCurrentSong = isCurrentSong(targetSong),
+        hasActiveMedia = player.mediaItemCount > 0 ||
+            pendingMediaLoadActive || playJob?.isActive == true,
+        shouldResumePlayback = player.playWhenReady || player.isPlaying ||
+            resumePlaybackRequested
+    )
     if (action == LocalMetadataWritePlaybackAction.NONE) {
         return@withContext null
     }
 
-    val snapshot = if (action == LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME) {
-        LocalMetadataWritePlaybackSnapshot(
-            song = _currentSongFlow.value ?: targetSong,
-            index = currentIndex,
-            positionMs = player.currentPosition.coerceAtLeast(0L),
-            commandSource = activePlaybackCommandSource
-        )
-    } else {
-        null
-    }
+    val snapshot = LocalMetadataWritePlaybackSnapshot(
+        song = _currentSongFlow.value ?: targetSong,
+        index = currentIndex,
+        positionMs = player.currentPosition.coerceAtLeast(0L),
+        commandSource = activePlaybackCommandSource,
+        requestToken = playbackRequestToken,
+        resumePlayback = action == LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME
+    )
     stopPlaybackPreservingQueue(clearMediaUrl = true)
-    snapshot
+    snapshot.copy(requestToken = playbackRequestToken)
 }
 
 private suspend fun PlayerManager.resumePlaybackAfterLocalMetadataWrite(
     snapshot: LocalMetadataWritePlaybackSnapshot?
 ) {
     if (snapshot == null) return
-    withContext(Dispatchers.Main.immediate) {
+    withContext(NonCancellable + Dispatchers.Main.immediate) {
         val resumeIndex = currentPlaylist.indexOfFirst { it.sameIdentityAs(snapshot.song) }
         if (
             !isPlayerInitialized() ||
+                playbackRequestToken != snapshot.requestToken ||
                 resumeIndex != currentIndex ||
                 !isCurrentSong(snapshot.song)
         ) {
@@ -1790,6 +1798,7 @@ private suspend fun PlayerManager.resumePlaybackAfterLocalMetadataWrite(
             index = resumeIndex,
             resumePositionMs = snapshot.positionMs,
             commandSource = snapshot.commandSource,
+            startPaused = !snapshot.resumePlayback,
             allowRememberedLongFormPosition = false
         )
     }
@@ -2488,8 +2497,7 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
             false
         } else {
             runCatching {
-                LocalMediaSupport.writeEditableMetadata(
-                    context = application,
+                writeLocalEditableMetadata(
                     song = sidecarSong,
                     coverReference = sidecarSong.customCoverUrl,
                     writeCover = false,

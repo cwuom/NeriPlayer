@@ -590,6 +590,20 @@ internal class DownloadTaskStore(
         removedSongKeys.forEach(::clearProgressPublishState)
     }
 
+    fun removeFailedDownloadTasks(expectedAttemptIdsBySongKey: Map<String, Long>) {
+        if (expectedAttemptIdsBySongKey.isEmpty()) return
+        val removedSongKeys = mutableSetOf<String>()
+        mutate(allowDuringClear = true) { tasks ->
+            tasks.filterNot { task ->
+                val shouldRemove = task.status == DownloadStatus.FAILED &&
+                    expectedAttemptIdsBySongKey[task.song.stableKey()] == task.attemptId
+                if (shouldRemove) removedSongKeys += task.song.stableKey()
+                shouldRemove
+            }
+        }
+        removedSongKeys.forEach(::clearProgressPublishState)
+    }
+
     fun applyWaitingNetworkStatus(activeTasks: List<DownloadTask>) {
         activeTasks.forEach { task ->
             clearProgressPublishState(task.song.stableKey())

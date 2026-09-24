@@ -272,10 +272,14 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
-    fun `current loaded song keeps playing during metadata writes`() {
+    fun `playing current song is released and resumed during embedded metadata writes`() {
         assertEquals(
-            LocalMetadataWritePlaybackAction.NONE,
-            resolveLocalMetadataWritePlaybackAction()
+            LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME,
+            resolveLocalMetadataWritePlaybackAction(
+                isCurrentSong = true,
+                hasActiveMedia = true,
+                shouldResumePlayback = true
+            )
         )
     }
 
@@ -296,14 +300,38 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
-    fun `paused metadata writes also keep playback untouched`() {
+    fun `paused current song releases its open audio source during embedded metadata writes`() {
         assertEquals(
-            LocalMetadataWritePlaybackAction.NONE,
-            resolveLocalMetadataWritePlaybackAction()
+            LocalMetadataWritePlaybackAction.RELEASE_ONLY,
+            resolveLocalMetadataWritePlaybackAction(
+                isCurrentSong = true,
+                hasActiveMedia = true,
+                shouldResumePlayback = false
+            )
         )
+    }
+
+    @Test
+    fun `editing another song does not interrupt the current playback`() {
         assertEquals(
             LocalMetadataWritePlaybackAction.NONE,
-            resolveLocalMetadataWritePlaybackAction()
+            resolveLocalMetadataWritePlaybackAction(
+                isCurrentSong = false,
+                hasActiveMedia = true,
+                shouldResumePlayback = true
+            )
+        )
+    }
+
+    @Test
+    fun `editing an unloaded song does not start playback`() {
+        assertEquals(
+            LocalMetadataWritePlaybackAction.NONE,
+            resolveLocalMetadataWritePlaybackAction(
+                isCurrentSong = true,
+                hasActiveMedia = false,
+                shouldResumePlayback = false
+            )
         )
     }
 

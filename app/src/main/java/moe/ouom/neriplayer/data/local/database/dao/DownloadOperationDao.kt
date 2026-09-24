@@ -858,6 +858,19 @@ internal interface DownloadOperationDao {
     )
     suspend fun requestUserStop(operationId: String, updatedAtMs: Long): Int
 
+    @Query(
+        "UPDATE download_operation SET stop_requested_by_user = 1, " +
+            "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
+            "WHERE operation_id IN (:operationIds) AND state IN (:states) " +
+            "AND updated_at_ms <= :updatedBeforeMs"
+    )
+    suspend fun dismissFailedProgressOperations(
+        operationIds: List<String>,
+        states: List<String>,
+        updatedBeforeMs: Long,
+        updatedAtMs: Long
+    ): Int
+
     /** 进程被系统用户结束后，把尚未提交的 operation 重新交给共享下载泵 */
     @Query(
         "UPDATE download_operation SET state = 'RETRYABLE', " +

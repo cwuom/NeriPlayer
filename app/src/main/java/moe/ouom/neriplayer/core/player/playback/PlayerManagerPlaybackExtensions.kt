@@ -814,6 +814,7 @@ internal fun PlayerManager.playAtIndex(
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
     forceStartupProtectionFade: Boolean = false,
     startPlanOverride: PlaybackStartPlan? = null,
+    startPaused: Boolean = false,
     allowRememberedLongFormPosition: Boolean =
         commandSource == PlaybackCommandSource.LOCAL
 ) {
@@ -871,13 +872,13 @@ internal fun PlayerManager.playAtIndex(
         _currentPlaybackAudioInfo.value = null
     }
     currentMediaUrlResolvedAtMs = 0L
-    updateResumePlaybackRequested(true)
+    updateResumePlaybackRequested(!startPaused)
     clearUsbExclusiveInterruptedPlaybackIntent("play_at_index")
     restoredShouldResumePlayback = false
     restoredResumePositionMs = 0L
     scheduleStatePersist(
         positionMs = resolvedResumePositionMs,
-        shouldResumePlayback = true
+        shouldResumePlayback = !startPaused
     )
     bumpCurrentQueueDisplayRevision()
 
@@ -1051,7 +1052,7 @@ internal fun PlayerManager.playAtIndex(
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
                     scheduleStatePersist(
                         positionMs = resolvedResumePositionMs,
-                        shouldResumePlayback = true
+                        shouldResumePlayback = !startPaused
                     )
                     val startPlan = startPlanOverride ?: resolveCurrentPlaybackStartPlan(
                         useTrackTransitionFade = useTrackTransitionFade,
