@@ -159,6 +159,9 @@ Current positioning:
   timestamps), plus YRC/TTML highlighting, translated lyrics, phonetic display,
   lyric offset, click-to-seek,
   long-press sharing, depth blur, edge fade, and a full-screen Lyrics page.
+  The Lyrics page shows only available translation or phonetic options, fades
+  them in after lyric resolution on song changes, and cycles through them and
+  off on tap.
   `LyricShareSheet` can select lyric lines, copy text, share the song, or render
   a 1080px lyric card. The Now Playing cover lyric view and bottom Dock can be
   disabled independently; narrow or heavily scaled portrait layouts switch to a
