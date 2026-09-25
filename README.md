@@ -132,6 +132,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   `SyncedLyricsView` 与 `AdvancedLyricsView` 支持逐行、逐词/逐字 LRC（含行尾
   时间和方括号逐字时间戳）以及 YRC/TTML 歌词的高亮、翻译歌词、
   音译显示、歌词偏移、点击跳转、长按分享、景深模糊、边缘渐隐和全屏歌词；
+  歌词页只显示当前歌曲可用的译/音选项，切歌后待歌词判定完成再渐入；
+  点击可在翻译、音译和关闭之间循环；
   `LyricShareSheet` 可选择歌词行，复制文本、分享歌曲或生成 1080px 歌词卡片；
   歌词页遇到含假名的日语原文时，会为翻译行额外留出间距，避免日文字形和译文挤在一起；
   悬浮歌词、状态栏歌词、SuperLyric、Lyricon、蓝牙歌词和歌词编辑

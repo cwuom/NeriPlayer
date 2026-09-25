@@ -2827,6 +2827,7 @@ fun NowPlayingScreen(
     val volumeSheetState = rememberModalBottomSheetState()
 
     val currentLyricSourceKey = currentSong?.stableKey()
+    var secondaryLyricsResolved by remember(currentLyricSourceKey) { mutableStateOf(false) }
     val immediateLyricsState = remember(
         currentLyricSourceKey,
         currentSong?.matchedLyric,
@@ -3439,14 +3440,23 @@ fun NowPlayingScreen(
             )
             }
             publishLoadedLyricsState(loadedLyricsState, stage = "background")
+            secondaryLyricsResolved = true
         }
     }
     val phoneticLyrics = remember(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics) {
         remotePhoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
     }
-    val usePhoneticTranslation = showLyricTranslation &&
-        lyricTranslationUsePhonetic &&
-        phoneticLyrics.isNotEmpty()
+    val hasTranslation = remember(rawTranslatedLyricsText, translatedLyrics, lyrics) {
+        hasDisplayableLyricTranslation(rawTranslatedLyricsText, translatedLyrics, lyrics)
+    }
+    val secondaryMode = resolveLyricsSecondaryLineMode(
+        showSecondaryLine = showLyricTranslation,
+        preferPhonetic = lyricTranslationUsePhonetic,
+        hasTranslation = hasTranslation,
+        hasPhonetic = phoneticLyrics.any { it.text.isNotBlank() }
+    )
+    val showSecondaryLyrics = secondaryMode != LyricsSecondaryLineMode.NONE
+    val usePhoneticTranslation = secondaryMode == LyricsSecondaryLineMode.PHONETIC
     val secondaryPlainLyrics = if (usePhoneticTranslation) phoneticLyrics else plainTranslatedLyrics
     var previewPositionOverrideMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
     var lyricShareInitialLine by remember(currentSong?.stableKey()) {
@@ -3664,6 +3674,8 @@ fun NowPlayingScreen(
                             advancedLyricsEnabled = advancedLyricsEnabled,
                             translatedLyrics = translatedLyrics,
                             phoneticLyrics = phoneticLyrics,
+                            lyricSourceKey = currentLyricSourceKey,
+                            secondaryLyricsResolved = secondaryLyricsResolved,
                             lyricOffsetMs = totalOffset,
                             showLyricTranslation = showLyricTranslation,
                             lyricTranslationUsePhonetic = lyricTranslationUsePhonetic,
@@ -3945,7 +3957,8 @@ fun NowPlayingScreen(
                                     displayedLyrics = lyrics,
                                     displayedTranslatedLyrics = translatedLyrics,
                                     displayedRomanizedLyrics = phoneticLyrics,
-                                    hasPhoneticLyrics = phoneticLyrics.isNotEmpty(),
+                                    hasTranslationLyrics = hasTranslation,
+                                    hasPhoneticLyrics = phoneticLyrics.any { it.text.isNotBlank() },
                                     onDismiss = { showMoreOptions = false },
                                     onShowSongDetails = { detailSong = it },
                                     onEnterAlbum = onEnterAlbum,
@@ -4226,9 +4239,9 @@ fun NowPlayingScreen(
                                 )
                             },
                             onLyricLongClick = { entry -> lyricShareInitialLine = entry },
-                            showEmbeddedTranslations = showLyricTranslation &&
+                            showEmbeddedTranslations = showSecondaryLyrics &&
                                 !usePhoneticTranslation,
-                            translatedLyrics = if (showLyricTranslation) secondaryPlainLyrics else null
+                            translatedLyrics = if (showSecondaryLyrics) secondaryPlainLyrics else null
                         )
                     }
 
@@ -4473,12 +4486,12 @@ fun NowPlayingScreen(
                                         rawTranslatedLyrics = rawTranslatedLyricsText.takeUnless {
                                             usePhoneticTranslation
                                         },
-                                        translatedLyrics = if (showLyricTranslation) {
+                                        translatedLyrics = if (showSecondaryLyrics) {
                                             if (usePhoneticTranslation) phoneticLyrics else translatedLyrics
                                         } else {
                                             null
                                         },
-                                        showLyricTranslation = showLyricTranslation,
+                                        showLyricTranslation = showSecondaryLyrics,
                                         showPhoneticAsTranslation = usePhoneticTranslation,
                                         lyricBlurEnabled = lyricBlurEnabled,
                                         lyricBlurAmount = lyricBlurAmount,
@@ -4528,9 +4541,9 @@ fun NowPlayingScreen(
                                         onLyricLongClick = { entry ->
                                             lyricShareInitialLine = entry
                                         },
-                                        showEmbeddedTranslations = showLyricTranslation &&
+                                        showEmbeddedTranslations = showSecondaryLyrics &&
                                             !usePhoneticTranslation,
-                                        translatedLyrics = if (showLyricTranslation) {
+                                        translatedLyrics = if (showSecondaryLyrics) {
                                             secondaryPlainLyrics
                                         } else {
                                             null
@@ -4899,6 +4912,7 @@ fun MoreOptionsSheet(
     displayedLyrics: List<LyricEntry>,
     displayedTranslatedLyrics: List<LyricEntry>,
     displayedRomanizedLyrics: List<LyricEntry> = emptyList(),
+    hasTranslationLyrics: Boolean = true,
     hasPhoneticLyrics: Boolean = false,
     onDismiss: () -> Unit,
     onShowSongDetails: (SongItem) -> Unit = {},
@@ -5075,6 +5089,7 @@ fun MoreOptionsSheet(
                 MoreOptionsPage.LYRIC_BEHAVIOR -> {
                     LyricBehaviorSheet(
                         song = originalSong,
+                        hasTranslationLyrics = hasTranslationLyrics,
                         hasPhoneticLyrics = hasPhoneticLyrics,
                         onDismiss = { page = MoreOptionsPage.MAIN }
                     )
@@ -5319,6 +5334,7 @@ fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
 @Composable
 fun LyricBehaviorSheet(
     song: SongItem,
+    hasTranslationLyrics: Boolean = true,
     hasPhoneticLyrics: Boolean,
     onDismiss: () -> Unit
 ) {
@@ -5348,8 +5364,22 @@ fun LyricBehaviorSheet(
         Spacer(Modifier.height(8.dp))
 
         ListItem(
-            headlineContent = { Text(stringResource(R.string.settings_show_lyric_translation)) },
-            supportingContent = { Text(stringResource(R.string.settings_show_lyric_translation_desc)) },
+            headlineContent = {
+                Text(
+                    stringResource(
+                        if (!hasTranslationLyrics && hasPhoneticLyrics) R.string.lyrics_secondary_mode_phonetic
+                        else R.string.settings_show_lyric_translation
+                    )
+                )
+            },
+            supportingContent = {
+                Text(
+                    stringResource(
+                        if (!hasTranslationLyrics && hasPhoneticLyrics) R.string.lyrics_phonetic_only_desc
+                        else R.string.settings_show_lyric_translation_desc
+                    )
+                )
+            },
             trailingContent = {
                 Switch(
                     checked = showLyricTranslation,
@@ -5366,7 +5396,7 @@ fun LyricBehaviorSheet(
                 }
         )
 
-        ListItem(
+        if (hasTranslationLyrics) ListItem(
             headlineContent = { Text(stringResource(R.string.lyrics_translation_use_phonetic)) },
             supportingContent = {
                 Text(

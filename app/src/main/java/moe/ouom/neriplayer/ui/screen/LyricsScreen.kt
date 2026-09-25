@@ -29,10 +29,13 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.PowerManager
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -89,7 +92,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -108,6 +113,9 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -117,6 +125,7 @@ import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -162,7 +171,10 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
@@ -184,6 +196,8 @@ fun LyricsScreen(
     advancedLyricsEnabled: Boolean = true,
     translatedLyrics: List<LyricEntry>? = null,
     phoneticLyrics: List<LyricEntry> = emptyList(),
+    lyricSourceKey: String?,
+    secondaryLyricsResolved: Boolean,
     lyricOffsetMs: Long,
     showLyricTranslation: Boolean = true,
     lyricTranslationUsePhonetic: Boolean = false,
@@ -234,6 +248,27 @@ fun LyricsScreen(
     }
     val effectivePhoneticLyrics = remember(phoneticLyrics, embeddedPhoneticLyrics) {
         phoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
+    }
+    val hasTranslation = remember(rawTranslatedLyrics, translatedLyrics, lyrics) {
+        hasDisplayableLyricTranslation(rawTranslatedLyrics, translatedLyrics.orEmpty(), lyrics)
+    }
+    val hasPhonetic = effectivePhoneticLyrics.any { it.text.isNotBlank() }
+    val persistedSecondaryMode = resolveLyricsSecondaryLineMode(
+        showSecondaryLine = showLyricTranslation,
+        preferPhonetic = lyricTranslationUsePhonetic,
+        hasTranslation = hasTranslation,
+        hasPhonetic = hasPhonetic
+    )
+    var requestedSecondaryMode by remember(currentSong?.stableKey(), hasTranslation, hasPhonetic) {
+        mutableStateOf<LyricsSecondaryLineMode?>(null)
+    }
+    var pendingModeUpdates by remember(currentSong?.stableKey()) { mutableIntStateOf(0) }
+    val modeWriteMutex = remember { Mutex() }
+    val secondaryMode = requestedSecondaryMode ?: persistedSecondaryMode
+    LaunchedEffect(persistedSecondaryMode, requestedSecondaryMode, pendingModeUpdates) {
+        if (pendingModeUpdates == 0 && requestedSecondaryMode == persistedSecondaryMode) {
+            requestedSecondaryMode = null
+        }
     }
     val durationMs = currentSong?.durationMs ?: 0L
     val favoriteActionLabel = stringResource(R.string.favorite_add)
@@ -604,8 +639,12 @@ fun LyricsScreen(
                     queue = displayedQueue,
                     displayedLyrics = lyrics,
                     displayedTranslatedLyrics = translatedLyrics.orEmpty(),
-                    hasPhoneticLyrics = effectivePhoneticLyrics.isNotEmpty(),
-                    onDismiss = { showMoreOptions = false },
+                    hasTranslationLyrics = hasTranslation,
+                    hasPhoneticLyrics = hasPhonetic,
+                    onDismiss = {
+                        showMoreOptions = false
+                        requestedSecondaryMode = null
+                    },
                     onShowSongDetails = { detailSong = it },
                     onEnterAlbum = onEnterAlbum,
                     onNavigateUp = onExitNowPlaying,
@@ -635,8 +674,8 @@ fun LyricsScreen(
                 playbackSessionKey = currentSong?.stableKey(),
                 previewPositionOverrideMs = previewPositionOverrideMs,
                 advancedLyricsEnabled = advancedLyricsEnabled,
-                showLyricTranslation = showLyricTranslation,
-                lyricTranslationUsePhonetic = lyricTranslationUsePhonetic,
+                showLyricTranslation = secondaryMode != LyricsSecondaryLineMode.NONE,
+                lyricTranslationUsePhonetic = secondaryMode == LyricsSecondaryLineMode.PHONETIC,
                 lyricFontScale = lyricFontScale,
                 translationFontScale = translationFontScale,
                 lyricOffsetMs = lyricOffsetMs,
@@ -665,6 +704,126 @@ fun LyricsScreen(
                     vertical = if (isTabletLandscape) 6.dp else 10.dp
                 )
         ) {
+            val showSecondaryCapsule = secondaryLyricsResolved &&
+                lyricSourceKey != null &&
+                currentSong?.stableKey() == lyricSourceKey &&
+                (hasTranslation || hasPhonetic)
+            val modeDescription = stringResource(
+                when (secondaryMode) {
+                    LyricsSecondaryLineMode.TRANSLATION -> R.string.lyrics_secondary_mode_translation
+                    LyricsSecondaryLineMode.PHONETIC -> R.string.lyrics_secondary_mode_phonetic
+                    LyricsSecondaryLineMode.NONE -> R.string.lyrics_secondary_mode_none
+                }
+            )
+            key(lyricSourceKey) {
+                val capsuleVisibility = remember { MutableTransitionState(false) }
+                LaunchedEffect(capsuleVisibility, showSecondaryCapsule) {
+                    capsuleVisibility.targetState = showSecondaryCapsule
+                }
+                AnimatedVisibility(
+                    visibleState = capsuleVisibility,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 700)),
+                    exit = ExitTransition.None
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    if (secondaryMode == LyricsSecondaryLineMode.NONE) {
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                                    } else {
+                                        LocalNeriTargetColorScheme.current.primary.copy(alpha = 0.15f)
+                                    }
+                                )
+                                .clickable(role = Role.Button) {
+                                    val nextMode = nextLyricsSecondaryLineMode(
+                                        current = secondaryMode,
+                                        hasTranslation = hasTranslation,
+                                        hasPhonetic = hasPhonetic
+                                    )
+                                    requestedSecondaryMode = nextMode
+                                    pendingModeUpdates++
+                                    scope.launch {
+                                        try {
+                                            modeWriteMutex.withLock {
+                                                if (requestedSecondaryMode != nextMode) return@withLock
+                                                when (nextMode) {
+                                                    LyricsSecondaryLineMode.TRANSLATION -> {
+                                                        settingsRepo.setLyricTranslationUsePhonetic(false)
+                                                        settingsRepo.setShowLyricTranslation(true)
+                                                    }
+                                                    LyricsSecondaryLineMode.PHONETIC -> {
+                                                        settingsRepo.setLyricTranslationUsePhonetic(true)
+                                                        settingsRepo.setShowLyricTranslation(true)
+                                                    }
+                                                    LyricsSecondaryLineMode.NONE -> {
+                                                        settingsRepo.setShowLyricTranslation(false)
+                                                    }
+                                                }
+                                            }
+                                        } catch (error: CancellationException) {
+                                            throw error
+                                        } catch (error: Exception) {
+                                            if (requestedSecondaryMode == nextMode) {
+                                                requestedSecondaryMode = null
+                                            }
+                                            NPLogger.w("LyricsScreen", "secondary lyric mode update failed: ${error.message}")
+                                        } finally {
+                                            pendingModeUpdates--
+                                        }
+                                    }
+                                }
+                                .semantics { stateDescription = modeDescription }
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                if (hasTranslation) {
+                                    Text(
+                                        text = stringResource(R.string.lyrics_translation_short),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (secondaryMode == LyricsSecondaryLineMode.TRANSLATION) {
+                                            LocalNeriTargetColorScheme.current.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        }
+                                    )
+                                }
+                                if (hasTranslation && hasPhonetic) {
+                                    Text(
+                                        text = "/",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                    )
+                                }
+                                if (hasPhonetic) {
+                                    Text(
+                                        text = stringResource(R.string.lyrics_phonetic_short),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (secondaryMode == LyricsSecondaryLineMode.PHONETIC) {
+                                            LocalNeriTargetColorScheme.current.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (showSecondaryCapsule) {
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+
             // 进度条
             LyricsProgressSection(
                 songKey = currentSong?.stableKey(),
@@ -693,7 +852,7 @@ fun LyricsScreen(
                     )
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // 播放控制按钮
             Row(
