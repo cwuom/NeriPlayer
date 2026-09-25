@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -4081,8 +4082,7 @@ internal fun PlayerManager.releaseImpl() {
  * 当前歌曲会继续沿用旧来源的歌词, 表现为"设置没生效"。
  */
 private fun PlayerManager.evictLyricCachesForSourcePreferenceChange() {
-    ytMusicLyricsCache.evictAll()
-    neteaseLyricsCache.evictAll()
-    PlayerLyricsProvider.clearAmllLyricsCache()
+    PlayerLyricsProvider.clearLyricsCaches(neteaseLyricsCache, ytMusicLyricsCache)
+    _lyricsPreferenceRevisionFlow.update { it + 1L }
     syncExternalBluetoothLyrics(_currentSongFlow.value)
 }

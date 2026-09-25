@@ -132,6 +132,22 @@ internal fun SettingsLyricsSection(
                 highlightPulse = highlightPulse,
             ) {
                 MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_lyric_source),
+                    description = stringResource(R.string.settings_lyric_source_desc)
+                )
+                SettingsLyricSourceSection(
+                    repository = settingsRepository,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+            }
+            if (cardIndex == null) LyricsDetailGap(showHeader)
+            if (shouldShowCard(2)) LyricsDetailCard(
+                showCard = !showHeader,
+                highlightPulse = highlightPulse,
+            ) {
+                MiuixSettingsSectionIntro(
                     title = stringResource(R.string.settings_lyrics_source_section),
                     description = stringResource(R.string.settings_lyrics_source_section_desc)
                 )
@@ -151,7 +167,7 @@ internal fun SettingsLyricsSection(
                 )
             }
             if (cardIndex == null) LyricsDetailGap(showHeader)
-            if (shouldShowCard(2)) LyricsDetailCard(
+            if (shouldShowCard(3)) LyricsDetailCard(
                 showCard = !showHeader,
                 highlightPulse = highlightPulse,
             ) {
@@ -182,7 +198,7 @@ internal fun SettingsLyricsSection(
                 )
             }
             if (cardIndex == null) LyricsDetailGap(showHeader)
-            if (shouldShowCard(3)) LyricsDetailCard(
+            if (shouldShowCard(4)) LyricsDetailCard(
                 showCard = !showHeader,
                 highlightPulse = highlightPulse,
             ) {

@@ -112,7 +112,7 @@ internal fun settingsPageForSection(section: String): SettingsPage? {
         AutoSettingsSections.display -> SettingsPage.Personalization
         AutoSettingsSections.motion -> SettingsPage.Motion
         AutoSettingsSections.lyrics -> SettingsPage.Lyrics
-        AutoSettingsSections.lyricSource -> SettingsPage.LyricSource
+        AutoSettingsSections.lyricSource -> SettingsPage.Lyrics
         AutoSettingsSections.network -> SettingsPage.Network
         AutoSettingsSections.download -> SettingsPage.Downloads
         AutoSettingsSections.trafficManagement -> SettingsPage.TrafficManagement
@@ -220,10 +220,12 @@ internal fun settingsSearchScrollAnchor(
 private fun lyricsCardIndex(targetId: String): Int {
     return when (targetId) {
         "setting:floating_lyrics_enabled" -> 0
+        "setting:prefer_word_timed_lyrics",
+        "setting:default_lyric_source" -> 1
         "setting:cloud_music_lyric_default_offset_ms",
-        "setting:qq_music_lyric_default_offset_ms" -> 2
-        in LyricAppearanceSearchTargets -> 3
-        else -> 1
+        "setting:qq_music_lyric_default_offset_ms" -> 3
+        in LyricAppearanceSearchTargets -> 4
+        else -> 2
     }
 }
 
@@ -787,27 +789,15 @@ private val PageSearchAliases = mapOf(
     ),
     SettingsPage.Personalization to listOf("display", "home", "font", "dpi", "background", "tab", "xianshi"),
     SettingsPage.Motion to listOf("motion", "animation", "glass", "blur", "dynamic", "dongxiao", "mohu"),
-    SettingsPage.Lyrics to listOf("lyrics", "lrc", "amll", "lyricon", "floating", "bluetooth", "geci"),
+    SettingsPage.Lyrics to listOf(
+        "lyrics", "lrc", "amll", "lyricon", "floating", "bluetooth", "geci",
+        "lyric source", "lyrics source", "lyric provider", "word timed", "word by word",
+        "kugou", "netease", "qq music", "lrclib", "ttml", "geciyuan", "zhuci"
+    ),
     SettingsPage.Network to listOf("network", "proxy", "bypass", "daili", "wangluo"),
     SettingsPage.Playback to listOf("playback", "audio", "queue", "volume", "fade", "crossfade", "bofang"),
     SettingsPage.UsbExclusive to listOf("usb", "dac", "pcm", "uac", "exclusive", "bit perfect", "dizhan"),
     SettingsPage.PlaybackSource to listOf("source", "fallback", "bili", "netease", "yinyuan", "huanyuan"),
-    SettingsPage.LyricSource to listOf(
-        "lyric source",
-        "lyrics source",
-        "lyric provider",
-        "word timed",
-        "word by word",
-        "kugou",
-        "netease",
-        "qq music",
-        "lrclib",
-        "amll",
-        "ttml",
-        "geciyuan",
-        "geci",
-        "zhuci"
-    ),
     SettingsPage.AudioQuality to listOf("quality", "lossless", "hires", "dolby", "bitrate", "yinzhi"),
     SettingsPage.Storage to listOf(
         "storage",

@@ -1866,6 +1866,8 @@ fun NowPlayingScreen(
     )
     val preferWordTimedLyrics by settingsRepo.preferWordTimedLyricsFlow
         .collectAsStateWithLifecycle(initialValue = true)
+    val lyricsPreferenceRevision by PlayerManager.lyricsPreferenceRevisionFlow
+        .collectAsStateWithLifecycle()
     val targetNowPlayingColorScheme = LocalNeriTargetColorScheme.current
     val targetNowPlayingActiveIconColor = resolveNowPlayingActiveIconColor(
         accentColor = targetNowPlayingColorScheme.primary,
@@ -2246,7 +2248,8 @@ fun NowPlayingScreen(
         currentSong?.localFilePath,
         downloadPresenceVersion,
         currentMediaUrl,
-        preferWordTimedLyrics
+        preferWordTimedLyrics,
+        lyricsPreferenceRevision
     ) {
         val song = currentSong
         val loadedLyricsState = withContext(Dispatchers.IO) {

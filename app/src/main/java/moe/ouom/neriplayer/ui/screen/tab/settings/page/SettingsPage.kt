@@ -71,10 +71,6 @@ internal enum class SettingsPage(
         descriptionRes = R.string.settings_playback_source_desc,
         icon = Icons.Outlined.LibraryMusic
     ),
-    LyricSource(
-        AutoSettingsSchema.lyricSource.metadata,
-        Icons.Outlined.Subtitles
-    ),
     AudioQuality(
         AutoSettingsSchema.audioQuality.metadata,
         Icons.Filled.Audiotrack
@@ -132,7 +128,6 @@ internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
         SettingsPage.Playback,
         SettingsPage.AudioQuality,
         SettingsPage.PlaybackSource,
-        SettingsPage.LyricSource,
         SettingsPage.Lyrics
     ),
     listOf(

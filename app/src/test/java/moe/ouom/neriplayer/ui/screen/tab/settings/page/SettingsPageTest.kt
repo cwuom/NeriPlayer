@@ -45,6 +45,26 @@ class SettingsPageTest {
     }
 
     @Test
+    fun lyricSourceSettingsOpenPreferenceCardWithinLyricsPage() {
+        assertEquals(SettingsPage.Lyrics, settingsPageForSection(AutoSettingsSections.lyricSource))
+        assertEquals(
+            2,
+            settingsSearchScrollAnchor(SettingsPage.Lyrics, "setting:prefer_word_timed_lyrics").itemIndex
+        )
+        assertEquals(
+            2,
+            settingsSearchScrollAnchor(SettingsPage.Lyrics, "setting:default_lyric_source").itemIndex
+        )
+        assertEquals(
+            4,
+            settingsSearchScrollAnchor(
+                SettingsPage.Lyrics,
+                "setting:cloud_music_lyric_default_offset_ms"
+            ).itemIndex
+        )
+    }
+
+    @Test
     fun lyricAppearanceSettingsOpenLyricsPage() {
         listOf(
             "show_lyric_translation",
@@ -322,7 +342,7 @@ class SettingsPageTest {
             "setting:lyrics_page_translation_font_scale"
         ).forEach { targetId ->
             assertEquals(
-                4,
+                5,
                 settingsSearchScrollAnchor(
                     page = SettingsPage.Lyrics,
                     targetId = targetId
@@ -629,7 +649,7 @@ class SettingsPageTest {
             ).itemIndex
         )
         assertEquals(
-            3,
+            4,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Lyrics,
                 targetId = "setting:cloud_music_lyric_default_offset_ms"

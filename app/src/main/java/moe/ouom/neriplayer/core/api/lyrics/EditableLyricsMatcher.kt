@@ -94,14 +94,17 @@ class EditableLyricsMatcher(
                     hasWordTiming = hasEditableLyricWordTiming(candidate.lyrics)
                 )
             }
-            .sortedWith(
-                compareByDescending<RankedEditableLyricMatch> { it.score }
-                    .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
-            )
         return (rankedMatches + lowConfidenceMatches)
             .distinctBy { result ->
                 result.candidate.matchIdentityKey()
             }
+            .sortedWith(
+                editableLyricMatchResultComparator(
+                    sourceRank = ::editableLyricMatchSourcePriority,
+                    sourceFallbackRank = { it.ordinal },
+                    preferWordTimed = normalizedRequest.preferWordTimed
+                )
+            )
             .take(MAX_RESULTS)
     }
 

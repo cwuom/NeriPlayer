@@ -84,7 +84,7 @@
     <string name="settings_playback_section_transitions">Transitions</string>
     <string name="settings_lyrics_floating_section">Floating Lyrics</string>
     <string name="settings_lyrics_floating_section_desc">Manage floating lyric appearance and behavior.</string>
-    <string name="settings_lyrics_source_section">Lyric Sources</string>
+    <string name="settings_lyrics_source_section">Lyric Services</string>
     <string name="settings_lyrics_source_section_desc">Choose lyric services and system lyric entry points.</string>
     <string name="settings_lyrics_offset_section">Lyric Offset</string>
     <string name="settings_lyrics_offset_section_desc">Calibrate timing differences between lyrics and audio.</string>
@@ -110,7 +110,7 @@
     <string name="settings_playback_volume_balance_right">Current: Right %d%%</string>
     <string name="settings_playback_source">Playback Source</string>
     <string name="settings_playback_source_desc">Configure automatic source switching and fallback sources</string>
-    <string name="settings_lyric_source">Lyric Source</string>
+    <string name="settings_lyric_source">Source Preference</string>
     <string name="settings_lyric_source_desc">Configure lyric sources and word-timing preference</string>
     <string name="settings_prefer_word_timed_lyrics">Prefer Word-Timed Lyrics</string>
     <string name="settings_prefer_word_timed_lyrics_desc">Use word-timed results when available; turning this off also stops AMLL from filling word timing</string>

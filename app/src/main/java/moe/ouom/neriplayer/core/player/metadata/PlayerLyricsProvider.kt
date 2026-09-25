@@ -220,6 +220,7 @@ internal object PlayerLyricsProvider {
     }
 
     private val amllLyricsCache = LruCache<String, List<LyricEntry>>(40)
+    private val preferredLyricSourceCache = LruCache<String, List<LyricEntry>>(40)
     private val neteaseRefreshInFlight = ConcurrentHashMap.newKeySet<Long>()
     private val neteaseColdLoadLocks = ConcurrentHashMap<Long, Mutex>()
     private val lyricsCacheGeneration = AtomicLong(0L)
@@ -237,6 +238,7 @@ internal object PlayerLyricsProvider {
         withLyricsCacheWriteLock {
             lyricsCacheGeneration.incrementAndGet()
             amllLyricsCache.evictAll()
+            preferredLyricSourceCache.evictAll()
             LocalMediaSupport.clearLyricsLookupCache()
         }
     }
@@ -248,6 +250,7 @@ internal object PlayerLyricsProvider {
         withLyricsCacheWriteLock {
             lyricsCacheGeneration.incrementAndGet()
             amllLyricsCache.evictAll()
+            preferredLyricSourceCache.evictAll()
             LocalMediaSupport.clearLyricsLookupCache()
             neteaseLyricsCache.evictAll()
             ytMusicLyricsCache.evictAll()
@@ -1013,18 +1016,6 @@ internal object PlayerLyricsProvider {
             if (song.isLocalSong()) {
                 return@withContext emptyList()
             }
-            if (isYouTubeMusicTrack) {
-                return@withContext getYouTubeMusicLyrics(
-                    song = song,
-                    youtubeMusicClient = youtubeMusicClient,
-                    lrcLibClient = lrcLibClient,
-                    editableLyricsMatcher = editableLyricsMatcher,
-                    preferWordTimedLyrics = preferWordTimedLyrics,
-                    ytMusicLyricsCache = ytMusicLyricsCache,
-                    fallbackPlainLyrics = deferredCollapsedLyrics
-                )
-            }
-
             // 本地/已存/已下载歌词都在上面提前返回了, 到这里说明这首歌还没有用户指定的歌词。
             // 只有此时才允许"默认歌词源"接管; 指定来源找不到时静默回落到原有逻辑。
             if (defaultLyricSource != LyricSourcePreference.Automatic) {
@@ -1038,6 +1029,17 @@ internal object PlayerLyricsProvider {
                 )?.let { entries ->
                     return@withContext entries
                 }
+            }
+            if (isYouTubeMusicTrack) {
+                return@withContext getYouTubeMusicLyrics(
+                    song = song,
+                    youtubeMusicClient = youtubeMusicClient,
+                    lrcLibClient = lrcLibClient,
+                    editableLyricsMatcher = editableLyricsMatcher,
+                    preferWordTimedLyrics = preferWordTimedLyrics,
+                    ytMusicLyricsCache = ytMusicLyricsCache,
+                    fallbackPlainLyrics = deferredCollapsedLyrics
+                )
             }
 
             val platformLyrics = when {
@@ -1079,13 +1081,41 @@ internal object PlayerLyricsProvider {
         neteaseClient: NeteaseClient,
         neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>
     ): List<LyricEntry>? {
+        val cacheKey = buildString {
+            append(song.stableKey())
+            append('|')
+            append(song.name.trim())
+            append('|')
+            append(song.artist.trim())
+            append('|')
+            append(song.album.trim())
+            append('|')
+            append(song.durationMs)
+            append('|')
+            append(song.matchedLyricSource)
+            append('|')
+            append(song.matchedSongId)
+            append('|')
+            append(preference.storageValue)
+            append('|')
+            append(preferWordTimed)
+        }
+        preferredLyricSourceCache.get(cacheKey)?.let { return it }
+        val cacheGeneration = currentLyricsCacheGeneration()
         if (preference == LyricSourcePreference.CloudMusic &&
             song.matchedLyricSource == MusicPlatform.CLOUD_MUSIC
         ) {
             // 网易云曲目按 ID 精确取词, 比文本搜索更准, 优先走这条路
             val matchedId = song.matchedSongId?.toLongOrNull() ?: song.id
-            return getNeteaseLyrics(matchedId, neteaseClient, neteaseLyricsCache)
-                .takeIf { it.isNotEmpty() }
+            return getNeteaseLyrics(matchedId, neteaseClient, neteaseLyricsCache).takeIf {
+                it.isNotEmpty()
+            }?.also { entries ->
+                withLyricsCacheWriteLock {
+                    if (lyricsCacheGeneration.get() == cacheGeneration) {
+                        preferredLyricSourceCache.put(cacheKey, entries)
+                    }
+                }
+            }
         }
         val matchSource = preference.matchSource ?: return null
         val request = EditableLyricMatchRequest(
@@ -1099,12 +1129,15 @@ internal object PlayerLyricsProvider {
             preferWordTimed = preferWordTimed,
             sources = setOf(matchSource)
         )
-        val candidate = runCatching {
+        val matches = try {
             editableLyricsMatcher.matchHighConfidenceLyricsForSource(request, matchSource)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.d("NERI-PlayerManager", "默认歌词源匹配失败: ${error.message}")
+            emptyList()
         }
-            .getOrDefault(emptyList())
-            .sortedWith(automaticExternalLyricMatchComparator())
-            .firstOrNull()
+        val candidate = matches.firstOrNull()
             ?.candidate
             ?: return null
         NPLogger.d(
@@ -1116,7 +1149,13 @@ internal object PlayerLyricsProvider {
             rawLyric = candidate.lyrics,
             durationMs = song.durationMs,
             logPrefix = "默认歌词源解析失败"
-        )?.takeIf { it.isNotEmpty() }
+        )?.takeIf { it.isNotEmpty() }?.also { entries ->
+            withLyricsCacheWriteLock {
+                if (lyricsCacheGeneration.get() == cacheGeneration) {
+                    preferredLyricSourceCache.put(cacheKey, entries)
+                }
+            }
+        }
     }
 
     private suspend fun getYouTubeMusicLyrics(

@@ -84,7 +84,7 @@
     <string name="settings_playback_section_transitions">过渡效果</string>
     <string name="settings_lyrics_floating_section">悬浮词幕</string>
     <string name="settings_lyrics_floating_section_desc">管理悬浮歌词的显示方式和外观</string>
-    <string name="settings_lyrics_source_section">歌词来源</string>
+    <string name="settings_lyrics_source_section">歌词服务</string>
     <string name="settings_lyrics_source_section_desc">选择歌词服务并控制系统歌词入口</string>
     <string name="settings_lyrics_offset_section">歌词偏移</string>
     <string name="settings_lyrics_offset_section_desc">校准不同来源歌词与歌曲的时间差</string>
@@ -110,7 +110,7 @@
     <string name="settings_playback_volume_balance_right">当前：偏右 %d%%</string>
     <string name="settings_playback_source">播放源</string>
     <string name="settings_playback_source_desc">配置自动换源与音源兜底策略</string>
-    <string name="settings_lyric_source">歌词源</string>
+    <string name="settings_lyric_source">来源偏好</string>
     <string name="settings_lyric_source_desc">配置歌词来源与逐词优先策略</string>
     <string name="settings_prefer_word_timed_lyrics">优先使用逐词歌词</string>
     <string name="settings_prefer_word_timed_lyrics_desc">有逐词结果时优先使用；关闭后只按歌名歌手匹配，且不再用 AMLL 补逐词</string>

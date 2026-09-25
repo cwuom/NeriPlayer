@@ -181,7 +181,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.PlaybackServiceIdleS
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsBackupRestoreSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadSection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricSourceSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsMotionSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsPlaybackSection
@@ -1654,7 +1653,7 @@ fun SettingsScreen(
                 }
 
                 SettingsPage.Lyrics -> {
-                    for (cardIndex in 0..3) {
+                    for (cardIndex in 0..4) {
                         item(key = "${selectedPage.name}:card:$cardIndex") {
                             SettingsLyricsSection(
                                 expanded = true,
@@ -1916,17 +1915,6 @@ fun SettingsScreen(
                             onClick = {
                                 onNeteaseAutoSourceSwitchChange(!neteaseAutoSourceSwitch)
                             }
-                        )
-                    }
-                }
-
-                SettingsPage.LyricSource -> {
-                    miuixSettingsSectionCardItem(key = "${selectedPage.name}:content") {
-                        SettingsLyricSourceSection(
-                            repository = AppContainer.settingsRepo,
-                            highlightTargetId = settingsHighlightTargetId,
-                            highlightPulse = settingsHighlightPulse,
-                            onHighlightFinished = onSettingsHighlightFinished
                         )
                     }
                 }

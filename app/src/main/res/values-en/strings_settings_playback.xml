@@ -65,7 +65,7 @@
     <string name="settings_dynamic_island_lyrics_dependency_title">Bluetooth lyrics required</string>
     <string name="settings_dynamic_island_lyrics_dependency_message">Dynamic Island Lyrics requires Bluetooth original lyrics. Turn them on automatically?</string>
     <string name="settings_lyrics_offset">Lyrics Settings</string>
-    <string name="settings_lyrics_offset_expand">Lyric appearance, external lyrics, Lyricon integration, and default offsets</string>
+    <string name="settings_lyrics_offset_expand">Lyric appearance, source preferences, lyric services, Lyricon integration, and default offsets</string>
     <string name="settings_lyrics_offset_cloud_music">Cloud Music default offset</string>
     <string name="settings_lyrics_offset_cloud_music_desc">Default offset applied when loading Cloud Music lyrics</string>
     <string name="settings_lyrics_offset_qq_music">QQ Music default offset</string>

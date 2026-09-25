@@ -46,12 +46,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
-/**
- * 歌词源设置页内容。
- *
- * 自包含: 只依赖 [SettingsRepository], 由调用方直接传 `AppContainer.settingsRepo`,
- * 这样设置页宿主不需要为此新增参数。
- */
+/** 来源偏好卡片的设置项 */
 @Composable
 internal fun SettingsLyricSourceSection(
     repository: SettingsRepository,
