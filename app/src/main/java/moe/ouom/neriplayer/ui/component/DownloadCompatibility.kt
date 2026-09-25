@@ -4,14 +4,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.core.download.DownloadTask
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.download.model.DownloadTask
 
 @Composable
 fun ActiveDownloadTaskList(
     tasks: List<DownloadTask>,
     modifier: Modifier = Modifier,
-    maxVisibleTasks: Int = AudioDownloadManager.DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+    maxVisibleTasks: Int = Int.MAX_VALUE,
     maxHeight: Dp = 320.dp
 ) {
     moe.ouom.neriplayer.ui.component.download.ActiveDownloadTaskList(
@@ -24,15 +23,11 @@ fun ActiveDownloadTaskList(
 
 @Composable
 fun BatchDownloadManagerSheet(
-    batchDownloadProgress: AudioDownloadManager.BatchDownloadProgress?,
     downloadTasks: List<DownloadTask>,
-    progressSummaryText: String,
     onDismiss: () -> Unit
 ) {
     moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet(
-        batchDownloadProgress = batchDownloadProgress,
         downloadTasks = downloadTasks,
-        progressSummaryText = progressSummaryText,
         onDismiss = onDismiss
     )
 }

@@ -45,7 +45,7 @@ object SearchTextMatcher {
             if (queryTokens.isEmpty()) return items
 
             return items.mapIndexedNotNull { index, item ->
-                val score = scoreCandidates(queryTokens, candidates[index])
+                val score = SearchTextMatcher.scoreCandidates(queryTokens, candidates[index])
                     ?: return@mapIndexedNotNull null
                 RankedSearchItem(item = item, score = score, index = index)
             }

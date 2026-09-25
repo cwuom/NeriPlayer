@@ -50,6 +50,35 @@ class SyncPlaylistUsageStatsMergePolicyTest {
     }
 
     @Test
+    fun `playlist usage order does not derive from counter shard time`() {
+        val local = SyncPlaylistUsageStat(
+            playlistKey = "local:42",
+            source = "local",
+            id = 42L,
+            name = "Local",
+            trackCount = 3,
+            openCount = 2,
+            firstOpenedAt = 100L,
+            lastOpenedAt = 200L,
+            counterShards = listOf(counterShard("phone", 2, 100L, 400L))
+        )
+        val remote = local.copy(
+            openCount = 3,
+            firstOpenedAt = 150L,
+            lastOpenedAt = 300L,
+            counterShards = listOf(counterShard("tablet", 3, 150L, 500L))
+        )
+
+        val merged = SyncPlaylistUsageStatsMergePolicy
+            .mergePlaylistUsageStats(listOf(local), listOf(remote))
+            .single()
+
+        assertEquals(100L, merged.firstOpenedAt)
+        assertEquals(300L, merged.lastOpenedAt)
+        assertEquals(500L, merged.counterShards.maxOf(SyncPlaybackCounterShard::lastPlayedAt))
+    }
+
+    @Test
     fun `local playlist totals and daily buckets merge offline device counts`() {
         val localStats = SyncLocalPlaylistPlaybackStat(
             playlistId = 7L,

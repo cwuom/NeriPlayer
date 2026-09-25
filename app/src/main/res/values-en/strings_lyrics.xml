@@ -17,6 +17,12 @@
     <string name="lyrics_translation_use_phonetic_desc">Replace translated lyrics with phonetics on the second line</string>
     <string name="lyrics_translation_use_phonetic_unavailable">This lyric has no phonetics, so it cannot be enabled</string>
     <string name="lyrics_translation_use_phonetic_requires_translation">Turn on lyric translation first</string>
+    <string name="lyrics_translation_short">Trans</string>
+    <string name="lyrics_phonetic_short">Phon</string>
+    <string name="lyrics_secondary_mode_translation">Show translation</string>
+    <string name="lyrics_secondary_mode_phonetic">Show phonetics</string>
+    <string name="lyrics_secondary_mode_none">Hide translation and phonetics</string>
+    <string name="lyrics_phonetic_only_desc">Only phonetics are available for this song; show or hide them here</string>
     <string name="lyrics_offset_hint">Swipe right to advance lyrics, swipe left to delay</string>
     <string name="lyrics_unknown_song">Unknown Song</string>
     <string name="lyrics_unknown_artist">Unknown Artist</string>
@@ -44,6 +50,7 @@
     <string name="lyrics_phone_speaker">Phone Speaker</string>
     <string name="lyrics_original">Original</string>
     <string name="lyrics_translation">Translation</string>
+    <string name="lyrics_romanized">Romanized</string>
     <string name="music_restore_original">Restore</string>
     <string name="music_restore_cover">Restore cover</string>
     <string name="music_restore_title">Restore title</string>
@@ -55,6 +62,7 @@
     <string name="music_lyrics_fill_failed">Failed to fill lyrics</string>
     <string name="lyrics_editor_hint_original">[00:00.00]Enter lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Lyrics content</string>
     <string name="lyrics_editor_hint_translation">[00:00.00]Enter translated lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Translation content</string>
+    <string name="lyrics_editor_hint_romanized">[00:00.00]Enter romanized lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Romanized content</string>
     <string name="lyrics_match_action">Match</string>
     <string name="lyrics_match_title">Match Lyrics</string>
     <string name="lyrics_match_keyword">Match keyword</string>

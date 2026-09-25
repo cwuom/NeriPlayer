@@ -1,10 +1,11 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
 import android.content.Context
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadResult
 import android.net.Uri
 import androidx.core.net.toUri
 import java.io.File
-import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
@@ -12,76 +13,62 @@ import moe.ouom.neriplayer.core.download.naming.sanitizeManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 
 internal object ManagedDownloadArtifactPlanner {
+    /**
+     * builds a complete reference set for an explicit full-library delete
+     * using only entries already proven to be managed by the current snapshot
+     */
+    fun collectFullLibraryArtifactReferences(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): Set<String> {
+        return planOwnedFullLibraryDeletion(
+            ManagedFullDeleteInventory(
+                rootEntries = snapshot.audioEntries + snapshot.metadataEntriesByAudioName.values,
+                coverEntries = snapshot.coverEntriesByName.values.toList(),
+                lyricEntries = snapshot.lyricEntriesByName.values.toList(),
+                temporaryEntries = emptyList(),
+                metadataByReference = snapshot.metadataEntriesByAudioName.mapValues { (name, _) ->
+                    snapshot.metadataByAudioName[name]?.let(ManagedMetadataReadResult::Found)
+                        ?: ManagedMetadataReadResult.Malformed
+                }.mapKeys { (name, _) -> snapshot.metadataEntriesByAudioName.getValue(name).reference },
+                enumerationComplete = snapshot.rootEntriesComplete && snapshot.sidecarEntriesComplete
+            )
+        ).requestedReferences
+    }
+
     fun collectArtifactReferences(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         storedAudio: ManagedDownloadStorage.StoredEntry?,
-        songId: Long,
-        candidateBaseNames: List<String>,
         explicitReferences: List<String> = emptyList(),
-        deletingAudioNames: Set<String> = emptySet()
+        deletingAudioNames: Set<String> = emptySet(),
+        referenceIndex: ManagedDownloadDeleteReferenceIndex = ManagedDownloadDeleteReferenceIndex(
+            snapshot.knownReferences, snapshot.artifactOwnerAudioNamesByReference
+        ),
+        uniqueAudioReferencesByName: Map<String, String> = emptyMap()
     ): Set<String> {
-        val metadataReference = storedAudio?.let { snapshot.metadataEntriesByAudioName[it.name]?.reference }
-        val metadata = storedAudio?.let { snapshot.metadataByAudioName[it.name] }
-        val resolvedSongId = metadata?.songId ?: songId.takeIf { it > 0L }
-        val currentAudioName = storedAudio?.name
-        val lyricReferences = buildList {
-            trustedMetadataReference(metadata?.lyricPath, snapshot)?.let(::add)
-            trustedMetadataReference(metadata?.translatedLyricPath, snapshot)?.let(::add)
-            trustedMetadataReference(metadata?.romanizedLyricPath, snapshot)?.let(::add)
-            addAll(
-                allIndexedLyricReferences(
-                    candidateBaseNames = candidateBaseNames,
-                    songId = resolvedSongId,
-                    translated = false,
-                    snapshot = snapshot
-                )
-            )
-            addAll(
-                allIndexedLyricReferences(
-                    candidateBaseNames = candidateBaseNames,
-                    songId = resolvedSongId,
-                    translated = true,
-                    snapshot = snapshot
-                )
-            )
-            addAll(
-                allIndexedLyricReferences(
-                    candidateBaseNames = candidateBaseNames,
-                    songId = resolvedSongId,
-                    kind = ManagedDownloadStorageNaming.LyricKind.ROMANIZED,
-                    snapshot = snapshot
-                )
-            )
+        val metadataEntry = storedAudio?.let {
+            snapshot.metadataEntriesByAudioName[it.logicalName] ?: snapshot.metadataEntriesByAudioName[it.name]
         }
-        val coverReferences = buildList {
-            trustedMetadataReference(metadata?.coverPath, snapshot)?.let(::add)
-            val indexedCoverBaseNames = storedAudio
-                ?.let { candidateManagedDownloadBaseNames(it.nameWithoutExtension) }
-                ?: candidateBaseNames
-            addAll(allIndexedCoverReferences(indexedCoverBaseNames, snapshot))
-        }
-
+        val metadata = storedAudio?.let { ManagedDownloadStorage.metadataForAudioEntry(snapshot, it) }
+        val audioReference = storedAudio?.reference?.let(referenceIndex::resolve)
+        val declaredAudio = metadata?.mediaUri?.takeIf(String::isNotBlank)
+        val uniqueAudio = audioReference != null && uniqueAudioReferencesByName[storedAudio.logicalName]
+            ?.let(referenceIndex::resolve) == audioReference
+        // owner 索引只存名称，同名多文档时不能证明侧载没有被另一文档共享
+        val ownsMetadata = uniqueAudio && (declaredAudio == null ||
+            referenceIndex.resolve(declaredAudio) == audioReference)
+        val metadataReferences = listOfNotNull(metadataEntry?.reference, metadata?.coverPath,
+            metadata?.lyricPath, metadata?.translatedLyricPath, metadata?.romanizedLyricPath)
+            .mapNotNull(referenceIndex::resolve).toSet()
         return linkedSetOf<String>().apply {
             storedAudio?.reference?.let(::add)
-            explicitReferences
-                .plus(listOfNotNull(metadataReference))
-                .plus(coverReferences)
-                .plus(lyricReferences)
-                .distinct()
-                .forEach { reference ->
-                    if (
-                        metadataReference == null ||
-                        reference == metadataReference ||
-                        !isReferenceOwnedByOtherDownload(
-                            snapshot = snapshot,
-                            currentAudioName = currentAudioName,
-                            reference = reference,
-                            deletingAudioNames = deletingAudioNames
-                        )
-                    ) {
-                        add(reference)
-                    }
-                }
+            (explicitReferences + if (ownsMetadata) metadataReferences else emptySet())
+                .mapNotNull(referenceIndex::resolve)
+                .filter { uniqueAudio || it == audioReference }
+                .filterNot { !ownsMetadata && it in metadataReferences }
+                .filterNot { reference -> referenceIndex.ownersByReference[reference].orEmpty().any { owner ->
+                    owner != storedAudio?.name && owner !in deletingAudioNames
+                } }
+                .forEach(::add)
         }
     }
 
@@ -91,7 +78,7 @@ internal object ManagedDownloadArtifactPlanner {
     ): String? {
         return reference
             ?.takeIf(String::isNotBlank)
-            ?.takeIf(snapshot.knownReferences::contains)
+            ?.let { it.takeIf(snapshot.knownReferences::contains) ?: snapshot.referenceIdentityIndex.resolve(it) }
     }
 
     fun indexedLyricReference(
@@ -137,6 +124,20 @@ internal object ManagedDownloadArtifactPlanner {
         return ManagedDownloadStorage.readText(context, reference)
     }
 
+    suspend fun indexedRomanizedLyricText(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        songId: Long?,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
+        val reference = indexedRomanizedLyricReference(
+            audio = audio,
+            songId = songId,
+            snapshot = snapshot
+        ) ?: return null
+        return ManagedDownloadStorage.readText(context, reference)
+    }
+
     fun indexedCoverReference(
         audio: ManagedDownloadStorage.StoredEntry,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
@@ -159,20 +160,6 @@ internal object ManagedDownloadArtifactPlanner {
             }
     }
 
-    private fun allIndexedCoverReferences(
-        candidateBaseNames: List<String>,
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
-    ): List<String> {
-        return candidateBaseNames
-            .flatMap { baseName ->
-                sequenceOf("jpg", "jpeg", "png", "webp")
-                    .mapNotNull { extension ->
-                        snapshot.coverEntriesByName["$baseName.$extension"]?.reference
-                    }
-            }
-            .distinct()
-    }
-
     private fun indexedLyricReference(
         candidateBaseNames: List<String>,
         songId: Long?,
@@ -187,24 +174,6 @@ internal object ManagedDownloadArtifactPlanner {
         return candidates.firstNotNullOfOrNull { candidate ->
             snapshot.lyricEntriesByName[candidate]?.reference
         }
-    }
-
-    private fun allIndexedLyricReferences(
-        candidateBaseNames: List<String>,
-        songId: Long?,
-        translated: Boolean,
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
-    ): List<String> {
-        return allIndexedLyricReferences(
-            candidateBaseNames = candidateBaseNames,
-            songId = songId,
-            kind = if (translated) {
-                ManagedDownloadStorageNaming.LyricKind.TRANSLATED
-            } else {
-                ManagedDownloadStorageNaming.LyricKind.ORIGINAL
-            },
-            snapshot = snapshot
-        )
     }
 
     private fun allIndexedLyricReferences(
@@ -234,7 +203,6 @@ internal object ManagedDownloadArtifactPlanner {
         val locationReference = resolveDeleteReference(resolveDownloadedSongPlaybackReference(song))
         val snapshotStoredAudio = locationReference?.let(snapshot.audioEntriesByLookupKey::get)
         val storedAudio = snapshotStoredAudio ?: buildFastStoredAudioForDelete(song, locationReference)
-        val metadataReference = storedAudio?.let(ManagedDownloadStorage::metadataReferenceForAudio)
         val requiredReferences = listOfNotNull(
             snapshotStoredAudio?.reference ?: locationReference
         )
@@ -244,9 +212,8 @@ internal object ManagedDownloadArtifactPlanner {
             song = song,
             storedAudio = storedAudio,
             candidateBaseNames = candidateBaseNames(song, storedAudio?.nameWithoutExtension),
+            // catalog 封面只是显示缓存，不能绕过当前 metadata 授权删除另一个文档
             explicitReferences = listOfNotNull(
-                metadataReference,
-                song.coverPath,
                 locationReference.takeIf { storedAudio == null }
             ),
             requiredReferences = requiredReferences
@@ -320,21 +287,4 @@ internal object ManagedDownloadArtifactPlanner {
         return baseNames.toList()
     }
 
-    private fun isReferenceOwnedByOtherDownload(
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
-        currentAudioName: String?,
-        reference: String,
-        deletingAudioNames: Set<String> = emptySet()
-    ): Boolean {
-        return snapshot.metadataByAudioName.any { (audioName, metadata) ->
-            audioName != currentAudioName &&
-                audioName !in deletingAudioNames &&
-                listOfNotNull(
-                    metadata.coverPath,
-                    metadata.lyricPath,
-                    metadata.translatedLyricPath,
-                    metadata.romanizedLyricPath
-                ).contains(reference)
-        }
-    }
 }

@@ -2573,7 +2573,8 @@ object PlayerManager {
         resumePlaybackAfterRefresh: Boolean = true,
         resumedPlaybackCommandSource: PlaybackCommandSource? = null,
         youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
-        cacheKeyToInvalidateBeforeResolve: String? = null
+        cacheKeyToInvalidateBeforeResolve: String? = null,
+        allowLocalSongRecovery: Boolean = false
     ) = refreshCurrentSongUrlImpl(
         resumePositionMs = resumePositionMs,
         allowFallback = allowFallback,
@@ -2583,7 +2584,8 @@ object PlayerManager {
         resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
         resumedPlaybackCommandSource = resumedPlaybackCommandSource,
         youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve
+        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve,
+        allowLocalSongRecovery = allowLocalSongRecovery
     )
 
     internal fun handleTrackEndedIfNeeded(source: String) =
@@ -2763,7 +2765,9 @@ object PlayerManager {
         restoreBaseArtist: Boolean = false,
         clearMatchedMetadata: Boolean = false,
         writeLocalMetadata: Boolean = false,
-        writeLyrics: Boolean = false
+        writeLyrics: Boolean = false,
+        persistManualRemoteCover: Boolean = false,
+        restoreBaseLyrics: Boolean = false
     ) = updateSongCustomInfoImpl(
         originalSong,
         customCoverUrl,
@@ -2774,7 +2778,9 @@ object PlayerManager {
         restoreBaseArtist,
         clearMatchedMetadata,
         writeLocalMetadata,
-        writeLyrics
+        writeLyrics,
+        persistManualRemoteCover,
+        restoreBaseLyrics
     )
 
     fun hydrateSongMetadata(originalSong: SongItem, updatedSong: SongItem) =
@@ -2807,11 +2813,17 @@ object PlayerManager {
         songToUpdate: SongItem,
         newLyrics: String?,
         newTranslatedLyrics: String?,
-        writeLocalMetadata: Boolean = false
-    ) = updateSongLyricsAndTranslationImpl(
+        newRomanizedLyrics: String? = null,
+        writeLocalMetadata: Boolean = false,
+        persistLocalSidecars: Boolean = true,
+        syncDownloadedMetadata: Boolean = true
+    ): Boolean = updateSongLyricsAndTranslationImpl(
         songToUpdate = songToUpdate,
         newLyrics = newLyrics,
         newTranslatedLyrics = newTranslatedLyrics,
-        writeLocalMetadata = writeLocalMetadata
+        newRomanizedLyrics = newRomanizedLyrics,
+        writeLocalMetadata = writeLocalMetadata,
+        persistLocalSidecars = persistLocalSidecars,
+        syncDownloadedMetadata = syncDownloadedMetadata
     )
 }

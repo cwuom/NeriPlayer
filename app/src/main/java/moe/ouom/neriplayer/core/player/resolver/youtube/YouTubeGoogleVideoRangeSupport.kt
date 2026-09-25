@@ -25,9 +25,17 @@ package moe.ouom.neriplayer.core.player.resolver.youtube
 
 
 import android.net.Uri
+import moe.ouom.neriplayer.core.player.engine.datasource.ResumableHttpRangeSupport
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import okhttp3.Request
+import java.io.IOException
 import java.util.Locale
+
+internal typealias ChunkLengthFallbackResult<T> =
+    moe.ouom.neriplayer.core.player.engine.datasource.ChunkLengthFallbackResult<T>
+
+internal typealias ChunkRequestIOException =
+    moe.ouom.neriplayer.core.player.engine.datasource.ChunkRequestIOException
 
 internal object YouTubeGoogleVideoRangeSupport {
     fun supportsSeekingWithoutUrlRefresh(url: String): Boolean {
@@ -87,6 +95,77 @@ internal object YouTubeGoogleVideoRangeSupport {
         }
         val rawUrl = url.lowercase(Locale.US)
         return rawUrl.contains("source=youtube") || rawUrl.contains("/videoplayback")
+    }
+
+    fun resolveQueryContentLength(url: String): Long? {
+        return ResumableHttpRangeSupport.resolveQueryContentLength(url)
+    }
+
+    fun hasExplicitRangeHeader(headers: Map<String, String>): Boolean {
+        return ResumableHttpRangeSupport.hasExplicitRangeHeader(headers)
+    }
+
+    fun candidateChunkLengths(
+        requestLength: Long,
+        preferredChunkSize: Long = 1024L * 1024L
+    ): List<Long> {
+        return ResumableHttpRangeSupport.candidateChunkLengths(
+            requestLength = requestLength,
+            preferredChunkSize = preferredChunkSize
+        )
+    }
+
+    fun shouldRetryChunkError(error: IOException): Boolean {
+        return ResumableHttpRangeSupport.shouldRetryChunkError(error)
+    }
+
+    inline fun <T> executeChunkLengthFallback(
+        requestLength: Long,
+        preferredChunkSize: Long = 1024L * 1024L,
+        execute: (Long) -> T
+    ): ChunkLengthFallbackResult<T> {
+        return ResumableHttpRangeSupport.executeChunkLengthFallback(
+            requestLength = requestLength,
+            preferredChunkSize = preferredChunkSize,
+            execute = execute
+        )
+    }
+
+    fun resolveTotalContentLength(uri: Uri, headers: Map<String, List<String>>): Long? {
+        return ResumableHttpRangeSupport.resolveTotalContentLength(uri, headers)
+    }
+
+    fun resolveTotalContentLength(url: String, headers: Map<String, List<String>>): Long? {
+        return ResumableHttpRangeSupport.resolveTotalContentLength(url, headers)
+    }
+
+    fun resolveContentRangeTotal(headers: Map<String, List<String>>): Long? {
+        val contentRange = headers.entries.firstOrNull { (key, _) ->
+            key.equals("Content-Range", ignoreCase = true)
+        }?.value?.firstOrNull() ?: return null
+        return contentRange.substringAfter('/', "").trim()
+            .toLongOrNull()
+            ?.takeIf { it > 0L }
+    }
+
+    fun resolveChunkResponseLength(
+        requestedLength: Long,
+        headers: Map<String, List<String>>,
+        delegateOpenLength: Long
+    ): Long {
+        return ResumableHttpRangeSupport.resolveChunkResponseLength(
+            requestedLength = requestedLength,
+            headers = headers,
+            delegateOpenLength = delegateOpenLength
+        )
+    }
+
+    fun buildChunkedRequest(request: Request, start: Long, length: Long): Request {
+        return ResumableHttpRangeSupport.buildChunkedRequest(
+            request = request,
+            start = start,
+            length = length
+        )
     }
 
     private fun parseQueryParameters(rawQuery: String?): Map<String, String> {

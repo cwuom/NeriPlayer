@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
@@ -124,6 +125,7 @@ import moe.ouom.neriplayer.core.player.url.shouldAdvanceAfterStuckTrackEnd
 import moe.ouom.neriplayer.core.player.url.shouldAttemptUrlRefresh
 import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheForPlaybackRecovery
+import moe.ouom.neriplayer.core.player.url.shouldRecoverMissingLocalPlayback
 import moe.ouom.neriplayer.core.player.url.shouldTreatPlaybackFailureAsTrackEnd
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForError
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
@@ -647,12 +649,23 @@ internal fun PlayerManager.initializeImpl(
                 val currentSong = _currentSongFlow.value
                 val currentUrl = _currentMediaUrl.value
                 val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
+                val isLocalFileMissingRecovery = shouldRecoverMissingLocalPlayback(
+                    error = error,
+                    isLocalSong = currentSong?.let { song -> isLocalSong(song) } == true,
+                    currentUrl = currentUrl
+                )
+                if (isLocalFileMissingRecovery) {
+                    // 迁移完成后旧 file URI 可能在 Media3 打开前才失效，先丢弃桥接
+                    // 让下一次解析从当前 SAF 快照按文件名重绑定
+                    currentSong?.let(AudioDownloadManager::invalidateCompletedAudioReference)
+                }
                 val shouldInvalidateCache =
                     shouldInvalidateCacheForPlaybackRecovery(error, isOfflineCache)
 
                 val cause = error.cause
                 val shouldResumeAfterRecovery = resumePlaybackRequested || player.playWhenReady || player.isPlaying
                 if (
+                    !isLocalFileMissingRecovery &&
                     shouldResumeAfterRecovery &&
                     trySwitchToNextPlaybackCandidateForRecovery(
                         reason = "player_error_${error.errorCodeName}",
@@ -680,7 +693,8 @@ internal fun PlayerManager.initializeImpl(
                                 currentSong,
                                 currentUrl
                             )
-                        ) || cacheKeyToInvalidateBeforeResolve != null
+                        ) || cacheKeyToInvalidateBeforeResolve != null ||
+                        isLocalFileMissingRecovery
                     val resumePositionMs = pendingSeekPositionOrNull()
                         ?: maxOf(
                             player.currentPosition.coerceAtLeast(0L),
@@ -696,7 +710,8 @@ internal fun PlayerManager.initializeImpl(
                         resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
                         resumedPlaybackCommandSource = activePlaybackCommandSource,
                         youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-                        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve
+                        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve,
+                        allowLocalSongRecovery = isLocalFileMissingRecovery
                     )
                     return
                 }

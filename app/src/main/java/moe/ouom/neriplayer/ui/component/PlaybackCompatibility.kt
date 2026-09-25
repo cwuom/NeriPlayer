@@ -22,7 +22,11 @@ fun NeriMiniPlayer(
     enableBlur: Boolean = true,
     offlineMode: Boolean = false,
     isPlaybackWaiting: Boolean = false,
-    isAudioRouteMuted: Boolean = false
+    isAudioRouteMuted: Boolean = false,
+    visualCoverUrl: String? = null,
+    coverIdentityKey: String? = null,
+    visualCoverIdentityKey: String? = null,
+    hasCurrentSong: Boolean = true
 ) {
     moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer(
         title = title,
@@ -38,7 +42,11 @@ fun NeriMiniPlayer(
         enableBlur = enableBlur,
         offlineMode = offlineMode,
         isPlaybackWaiting = isPlaybackWaiting,
-        isAudioRouteMuted = isAudioRouteMuted
+        isAudioRouteMuted = isAudioRouteMuted,
+        visualCoverUrl = visualCoverUrl,
+        coverIdentityKey = coverIdentityKey,
+        visualCoverIdentityKey = visualCoverIdentityKey,
+        hasCurrentSong = hasCurrentSong
     )
 }
 
