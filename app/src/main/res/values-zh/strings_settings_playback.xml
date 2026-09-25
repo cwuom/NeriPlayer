@@ -70,6 +70,14 @@
     <string name="settings_lyrics_offset_cloud_music_desc">设置加载网易云歌词时的基础偏移</string>
     <string name="settings_lyrics_offset_qq_music">QQ 音乐默认歌词偏移</string>
     <string name="settings_lyrics_offset_qq_music_desc">设置加载 QQ 音乐歌词时的基础偏移</string>
+    <string name="settings_lyrics_offset_kugou">酷狗默认歌词偏移</string>
+    <string name="settings_lyrics_offset_kugou_desc">设置加载酷狗歌词时的基础偏移</string>
+    <string name="settings_lyrics_offset_lrclib">LRCLIB 默认歌词偏移</string>
+    <string name="settings_lyrics_offset_lrclib_desc">设置加载 LRCLIB 歌词时的基础偏移</string>
+    <string name="settings_lyrics_offset_amll_ttml">AMLL TTML 默认歌词偏移</string>
+    <string name="settings_lyrics_offset_amll_ttml_desc">设置加载 AMLL TTML 歌词时的基础偏移</string>
+    <string name="settings_lyrics_offset_reset">重置</string>
+    <string name="settings_lyrics_offset_reset_all">全部重置</string>
     <string name="settings_lyrics_offset_value">当前偏移：%1$s ms</string>
     <string name="settings_status_bar_lyrics_title">状态栏歌词</string>
     <string name="settings_status_bar_lyrics_summary">启用魅族状态栏歌词（仅适用于部分设备）</string>

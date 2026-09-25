@@ -226,7 +226,10 @@ private fun lyricsCardIndex(targetId: String): Int {
         "setting:prefer_word_timed_lyrics",
         "setting:default_lyric_source" -> 1
         "setting:cloud_music_lyric_default_offset_ms",
-        "setting:qq_music_lyric_default_offset_ms" -> 3
+        "setting:qq_music_lyric_default_offset_ms",
+        "setting:kugou_lyric_default_offset_ms",
+        "setting:lrclib_lyric_default_offset_ms",
+        "setting:amll_ttml_lyric_default_offset_ms" -> 3
         in LyricAppearanceSearchTargets -> 4
         else -> 2
     }
@@ -926,6 +929,9 @@ private val SettingSearchAliases = mapOf(
     ),
     "cloud_music_lyric_default_offset_ms" to listOf("netease lyrics offset", "wy geci pianyi"),
     "qq_music_lyric_default_offset_ms" to listOf("qq lyrics offset", "qq geci pianyi"),
+    "kugou_lyric_default_offset_ms" to listOf("kugou lyrics offset", "kugou geci pianyi"),
+    "lrclib_lyric_default_offset_ms" to listOf("lrclib lyrics offset"),
+    "amll_ttml_lyric_default_offset_ms" to listOf("amll ttml lyrics offset"),
     "bypass_proxy" to listOf("proxy", "vpn", "direct", "daili"),
     "download_directory_uri" to listOf("folder", "path", "saf", "xiazai mulu"),
     "download_file_name_template" to listOf("filename", "template", "mingming"),

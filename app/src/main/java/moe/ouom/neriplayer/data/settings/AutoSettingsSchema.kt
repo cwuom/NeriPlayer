@@ -1301,6 +1301,45 @@ object AutoSettingsSchema {
             titleRes = R.string.settings_lyrics_offset_qq_music,
             descriptionRes = R.string.settings_lyrics_offset_qq_music_desc
         )
+
+        @AutoSetting(
+            key = "kugou_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+            order = 40,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val kugouLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_kugou,
+            descriptionRes = R.string.settings_lyrics_offset_kugou_desc
+        )
+
+        @AutoSetting(
+            key = "lrclib_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+            order = 50,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val lrclibLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_lrclib,
+            descriptionRes = R.string.settings_lyrics_offset_lrclib_desc
+        )
+
+        @AutoSetting(
+            key = "amll_ttml_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
+            order = 60,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val amllTtmlLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_amll_ttml,
+            descriptionRes = R.string.settings_lyrics_offset_amll_ttml_desc
+        )
     }
 
     /*

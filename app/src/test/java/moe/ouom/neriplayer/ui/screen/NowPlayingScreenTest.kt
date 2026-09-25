@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
@@ -281,7 +282,8 @@ class NowPlayingScreenTest {
         val state = buildPreferredLyricSourceState(
             PreferredLyricSourceResult(
                 lyrics = listOf(LyricEntry("Kugou original", 1_000L, 2_000L)),
-                translatedLyrics = listOf(LyricEntry("Kugou translation", 1_000L, 2_000L))
+                translatedLyrics = listOf(LyricEntry("Kugou translation", 1_000L, 2_000L)),
+                source = LyricSourcePreference.Kugou
             )
         )
 
@@ -291,6 +293,7 @@ class NowPlayingScreenTest {
         assertEquals("Kugou original", state.lyrics.single().text)
         assertEquals("Kugou translation", state.translatedLyrics.single().text)
         assertTrue(state.phoneticLyrics.isEmpty())
+        assertEquals(LyricSourcePreference.Kugou, state.preferredSource)
     }
 
     @Test

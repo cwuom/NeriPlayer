@@ -241,6 +241,30 @@ class SettingsRepository(private val context: Context) {
             )
         }
 
+    val kugouLyricDefaultOffsetMsFlow: Flow<Long> =
+        dataStoreSettingFlow {
+            normalizeLyricDefaultOffsetMs(
+                it[SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS]
+                    ?: DEFAULT_KUGOU_LYRIC_OFFSET_MS
+            )
+        }
+
+    val lrclibLyricDefaultOffsetMsFlow: Flow<Long> =
+        dataStoreSettingFlow {
+            normalizeLyricDefaultOffsetMs(
+                it[SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS]
+                    ?: DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+            )
+        }
+
+    val amllTtmlLyricDefaultOffsetMsFlow: Flow<Long> =
+        dataStoreSettingFlow {
+            normalizeLyricDefaultOffsetMs(
+                it[SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS]
+                    ?: DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+            )
+        }
+
     val advancedLyricsEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.advancedLyricsEnabledFlow
 
@@ -837,6 +861,55 @@ class SettingsRepository(private val context: Context) {
         }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(qqMusicLyricDefaultOffsetMs = normalized)
+        }
+    }
+
+    suspend fun setKugouLyricDefaultOffsetMs(offsetMs: Long) {
+        val normalized = normalizeLyricDefaultOffsetMs(offsetMs)
+        context.dataStore.edit {
+            it[SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(kugouLyricDefaultOffsetMs = normalized)
+        }
+    }
+
+    suspend fun setLrclibLyricDefaultOffsetMs(offsetMs: Long) {
+        val normalized = normalizeLyricDefaultOffsetMs(offsetMs)
+        context.dataStore.edit {
+            it[SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(lrclibLyricDefaultOffsetMs = normalized)
+        }
+    }
+
+    suspend fun setAmllTtmlLyricDefaultOffsetMs(offsetMs: Long) {
+        val normalized = normalizeLyricDefaultOffsetMs(offsetMs)
+        context.dataStore.edit {
+            it[SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(amllTtmlLyricDefaultOffsetMs = normalized)
+        }
+    }
+
+    suspend fun resetLyricDefaultOffsets() {
+        context.dataStore.edit {
+            it[SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+            it[SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+            it[SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_KUGOU_LYRIC_OFFSET_MS
+            it[SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+            it[SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(
+                cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
+                qqMusicLyricDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
+                kugouLyricDefaultOffsetMs = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+                lrclibLyricDefaultOffsetMs = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+                amllTtmlLyricDefaultOffsetMs = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+            )
         }
     }
 

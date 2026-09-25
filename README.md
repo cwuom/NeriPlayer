@@ -611,6 +611,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   在线来源歌曲即使已有下载或缓存歌词，也会先尝试指定来源；找不到时继续使用原有歌词。
   修改后会清理已缓存的歌词结果，
   让新偏好立即生效。
+  “歌词偏移”卡片可分别调整网易云、QQ 音乐、酷狗、LRCLIB 和 AMLL TTML
+  歌词的默认偏移，并可单独或全部一键重置；后三者默认均为 0 ms。
 - **词幕适配**：
   `LyriconManager` 向 Lyricon 与 SuperLyric 输出当前歌曲、播放状态、进度、
   逐字歌词与翻译歌词；进度通过独立的 200 ms feed loop 推送并使用时间锚点校准，

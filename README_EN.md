@@ -400,6 +400,9 @@ For release build and signing details, see
   Remote tracks try the preferred source before saved or downloaded lyrics, then fall back
   to those lyrics when no preferred match is available.
   Changing either setting clears cached lyrics so the new preference applies immediately.
+  The **Lyric Offset** card has separate defaults for NetEase, QQ Music, Kugou,
+  LRCLIB, and AMLL TTML, with individual and all-source reset buttons. The last
+  three default to 0 ms.
 - 🧠 **Media3 playback core**:
   `PlayerManager` handles playback resolution, queue state, shuffle/repeat,
   persistence, failure retry, playback URL refresh, YouTube prefetching, and

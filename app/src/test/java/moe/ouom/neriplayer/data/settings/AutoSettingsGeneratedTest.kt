@@ -333,6 +333,9 @@ class AutoSettingsGeneratedTest {
             "lyrics metadata should include source offset sliders",
             lyricsSettings.any { it.keyName == "cloud_music_lyric_default_offset_ms" && it.ui == SettingUiType.Custom }
         )
+        assertTrue(lyricsSettings.any { it.keyName == "kugou_lyric_default_offset_ms" && it.ui == SettingUiType.Custom })
+        assertTrue(lyricsSettings.any { it.keyName == "lrclib_lyric_default_offset_ms" && it.ui == SettingUiType.Custom })
+        assertTrue(lyricsSettings.any { it.keyName == "amll_ttml_lyric_default_offset_ms" && it.ui == SettingUiType.Custom })
     }
 
     @Test

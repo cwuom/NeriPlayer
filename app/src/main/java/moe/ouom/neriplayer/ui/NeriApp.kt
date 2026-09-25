@@ -199,6 +199,8 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
 import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
@@ -1818,6 +1820,12 @@ private fun NeriAppContent(
         .collectAsStateWithLifecycle(initialValue = startupPlaybackPreferences.cloudMusicLyricDefaultOffsetMs)
     val qqMusicLyricDefaultOffsetMs by repo.qqMusicLyricDefaultOffsetMsFlow
         .collectAsStateWithLifecycle(initialValue = startupPlaybackPreferences.qqMusicLyricDefaultOffsetMs)
+    val kugouLyricDefaultOffsetMs by repo.kugouLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = startupPlaybackPreferences.kugouLyricDefaultOffsetMs)
+    val lrclibLyricDefaultOffsetMs by repo.lrclibLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = startupPlaybackPreferences.lrclibLyricDefaultOffsetMs)
+    val amllTtmlLyricDefaultOffsetMs by repo.amllTtmlLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = startupPlaybackPreferences.amllTtmlLyricDefaultOffsetMs)
     val floatingLyricsPreferences by repo.floatingLyricsPreferencesFlow.collectAsStateWithLifecycle(
         initialValue = FloatingLyricsPreferences()
     )
@@ -3373,6 +3381,55 @@ private fun NeriAppContent(
                                         newDefaultOffsetMs = previousOffset
                                     )
                                 }.getOrThrow()
+                            }
+                        },
+                        kugouLyricDefaultOffsetMs = kugouLyricDefaultOffsetMs,
+                        onKugouLyricDefaultOffsetMsChange = { offsetMs ->
+                            scope.launch { repo.setKugouLyricDefaultOffsetMs(offsetMs) }
+                        },
+                        lrclibLyricDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
+                        onLrclibLyricDefaultOffsetMsChange = { offsetMs ->
+                            scope.launch { repo.setLrclibLyricDefaultOffsetMs(offsetMs) }
+                        },
+                        amllTtmlLyricDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
+                        onAmllTtmlLyricDefaultOffsetMsChange = { offsetMs ->
+                            scope.launch { repo.setAmllTtmlLyricDefaultOffsetMs(offsetMs) }
+                        },
+                        onResetAllLyricDefaultOffsets = {
+                            scope.launch {
+                                var cloudRebased = false
+                                var qqRebased = false
+                                try {
+                                    PlayerManager.rebaseUserLyricOffsetsForSource(
+                                        targetSource = MusicPlatform.CLOUD_MUSIC,
+                                        previousDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
+                                        newDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+                                    )
+                                    cloudRebased = true
+                                    PlayerManager.rebaseUserLyricOffsetsForSource(
+                                        targetSource = MusicPlatform.QQ_MUSIC,
+                                        previousDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
+                                        newDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+                                    )
+                                    qqRebased = true
+                                    repo.resetLyricDefaultOffsets()
+                                } catch (error: Throwable) {
+                                    if (qqRebased) {
+                                        PlayerManager.rebaseUserLyricOffsetsForSource(
+                                            targetSource = MusicPlatform.QQ_MUSIC,
+                                            previousDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
+                                            newDefaultOffsetMs = qqMusicLyricDefaultOffsetMs
+                                        )
+                                    }
+                                    if (cloudRebased) {
+                                        PlayerManager.rebaseUserLyricOffsetsForSource(
+                                            targetSource = MusicPlatform.CLOUD_MUSIC,
+                                            previousDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
+                                            newDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs
+                                        )
+                                    }
+                                    throw error
+                                }
                             }
                         },
                         floatingLyricsPreferences = floatingLyricsPreferences,

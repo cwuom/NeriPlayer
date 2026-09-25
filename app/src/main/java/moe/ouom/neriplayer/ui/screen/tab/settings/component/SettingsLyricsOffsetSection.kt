@@ -34,6 +34,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +48,11 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_KUGOU_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
@@ -81,6 +87,13 @@ internal fun SettingsLyricsSection(
     onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     qqMusicLyricDefaultOffsetMs: Long,
     onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
+    kugouLyricDefaultOffsetMs: Long,
+    onKugouLyricDefaultOffsetMsChange: (Long) -> Unit,
+    lrclibLyricDefaultOffsetMs: Long,
+    onLrclibLyricDefaultOffsetMsChange: (Long) -> Unit,
+    amllTtmlLyricDefaultOffsetMs: Long,
+    onAmllTtmlLyricDefaultOffsetMsChange: (Long) -> Unit,
+    onResetAllLyricDefaultOffsets: () -> Unit,
     cardIndex: Int? = null,
     highlightTargetId: String? = null,
     highlightPulse: Int = 0,
@@ -175,11 +188,15 @@ internal fun SettingsLyricsSection(
                     title = stringResource(R.string.settings_lyrics_offset_section),
                     description = stringResource(R.string.settings_lyrics_offset_section_desc)
                 )
+                TextButton(onClick = onResetAllLyricDefaultOffsets) {
+                    Text(stringResource(R.string.settings_lyrics_offset_reset_all))
+                }
                 LyricsOffsetSliderListItem(
                     targetId = "setting:cloud_music_lyric_default_offset_ms",
                     title = stringResource(R.string.settings_lyrics_offset_cloud_music),
                     description = stringResource(R.string.settings_lyrics_offset_cloud_music_desc),
                     offsetMs = cloudMusicLyricDefaultOffsetMs,
+                    defaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
                     onOffsetChange = onCloudMusicLyricDefaultOffsetMsChange,
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
@@ -191,7 +208,44 @@ internal fun SettingsLyricsSection(
                     title = stringResource(R.string.settings_lyrics_offset_qq_music),
                     description = stringResource(R.string.settings_lyrics_offset_qq_music_desc),
                     offsetMs = qqMusicLyricDefaultOffsetMs,
+                    defaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
                     onOffsetChange = onQqMusicLyricDefaultOffsetMsChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+                Spacer(Modifier.height(4.dp))
+                LyricsOffsetSliderListItem(
+                    targetId = "setting:kugou_lyric_default_offset_ms",
+                    title = stringResource(R.string.settings_lyrics_offset_kugou),
+                    description = stringResource(R.string.settings_lyrics_offset_kugou_desc),
+                    offsetMs = kugouLyricDefaultOffsetMs,
+                    defaultOffsetMs = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+                    onOffsetChange = onKugouLyricDefaultOffsetMsChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+                Spacer(Modifier.height(4.dp))
+                LyricsOffsetSliderListItem(
+                    targetId = "setting:lrclib_lyric_default_offset_ms",
+                    title = stringResource(R.string.settings_lyrics_offset_lrclib),
+                    description = stringResource(R.string.settings_lyrics_offset_lrclib_desc),
+                    offsetMs = lrclibLyricDefaultOffsetMs,
+                    defaultOffsetMs = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+                    onOffsetChange = onLrclibLyricDefaultOffsetMsChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+                Spacer(Modifier.height(4.dp))
+                LyricsOffsetSliderListItem(
+                    targetId = "setting:amll_ttml_lyric_default_offset_ms",
+                    title = stringResource(R.string.settings_lyrics_offset_amll_ttml),
+                    description = stringResource(R.string.settings_lyrics_offset_amll_ttml_desc),
+                    offsetMs = amllTtmlLyricDefaultOffsetMs,
+                    defaultOffsetMs = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
+                    onOffsetChange = onAmllTtmlLyricDefaultOffsetMsChange,
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
@@ -239,6 +293,7 @@ private fun LyricsOffsetSliderListItem(
     title: String,
     description: String,
     offsetMs: Long,
+    defaultOffsetMs: Long,
     onOffsetChange: (Long) -> Unit,
     highlightTargetId: String?,
     highlightPulse: Int,
@@ -276,6 +331,15 @@ private fun LyricsOffsetSliderListItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                TextButton(
+                    enabled = pendingOffset != defaultOffsetMs,
+                    onClick = {
+                        pendingOffset = defaultOffsetMs
+                        onOffsetChange(defaultOffsetMs)
+                    }
+                ) {
+                    Text(stringResource(R.string.settings_lyrics_offset_reset))
+                }
                 Spacer(Modifier.height(4.dp))
                 MiuixSettingsSlider(
                     value = pendingOffset.toFloat(),

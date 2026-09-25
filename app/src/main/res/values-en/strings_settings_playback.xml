@@ -70,6 +70,14 @@
     <string name="settings_lyrics_offset_cloud_music_desc">Default offset applied when loading Cloud Music lyrics</string>
     <string name="settings_lyrics_offset_qq_music">QQ Music default offset</string>
     <string name="settings_lyrics_offset_qq_music_desc">Default offset applied when loading QQ Music lyrics</string>
+    <string name="settings_lyrics_offset_kugou">Kugou default lyric offset</string>
+    <string name="settings_lyrics_offset_kugou_desc">Default offset applied when loading Kugou lyrics</string>
+    <string name="settings_lyrics_offset_lrclib">LRCLIB default lyric offset</string>
+    <string name="settings_lyrics_offset_lrclib_desc">Default offset applied when loading LRCLIB lyrics</string>
+    <string name="settings_lyrics_offset_amll_ttml">AMLL TTML default lyric offset</string>
+    <string name="settings_lyrics_offset_amll_ttml_desc">Default offset applied when loading AMLL TTML lyrics</string>
+    <string name="settings_lyrics_offset_reset">Reset</string>
+    <string name="settings_lyrics_offset_reset_all">Reset all</string>
     <string name="settings_lyrics_offset_value">Current offset: %1$s ms</string>
     <string name="settings_status_bar_lyrics_title">Status Bar Lyrics</string>
     <string name="settings_status_bar_lyrics_summary">Enable Meizu status bar lyrics (for select devices only)</string>

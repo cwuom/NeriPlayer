@@ -82,6 +82,23 @@ class PlaybackPreferenceSnapshotTest {
     }
 
     @Test
+    fun `preferences preserve external lyric offsets and default them to zero`() {
+        val defaults = preferencesOf().toPlaybackPreferenceSnapshot()
+        assertEquals(0L, defaults.kugouLyricDefaultOffsetMs)
+        assertEquals(0L, defaults.lrclibLyricDefaultOffsetMs)
+        assertEquals(0L, defaults.amllTtmlLyricDefaultOffsetMs)
+
+        val snapshot = preferencesOf(
+            SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS to 150L,
+            SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS to -200L,
+            SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS to 300L
+        ).toPlaybackPreferenceSnapshot()
+        assertEquals(150L, snapshot.kugouLyricDefaultOffsetMs)
+        assertEquals(-200L, snapshot.lrclibLyricDefaultOffsetMs)
+        assertEquals(300L, snapshot.amllTtmlLyricDefaultOffsetMs)
+    }
+
+    @Test
     fun `sanitized normalizes playback runtime values`() {
         val snapshot = PlaybackPreferenceSnapshot(
             playbackFadeInDurationMs = -100L,

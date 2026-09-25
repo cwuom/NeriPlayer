@@ -394,6 +394,12 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.cloudMusicLyricDefaultOffsetMs
         qqMusicLyricDefaultOffsetMs =
             initialPlaybackPreferences.qqMusicLyricDefaultOffsetMs
+        kugouLyricDefaultOffsetMs =
+            initialPlaybackPreferences.kugouLyricDefaultOffsetMs
+        lrclibLyricDefaultOffsetMs =
+            initialPlaybackPreferences.lrclibLyricDefaultOffsetMs
+        amllTtmlLyricDefaultOffsetMs =
+            initialPlaybackPreferences.amllTtmlLyricDefaultOffsetMs
         externalBluetoothLyricsEnabled = false
         externalBluetoothTranslationEnabled = false
         dynamicIslandLyricsEnabled = false
@@ -1152,6 +1158,8 @@ internal fun PlayerManager.initializeImpl(
                         "默认歌词源设置更新: ${source.storageValue}"
                     )
                     evictLyricCachesForSourcePreferenceChange()
+                    syncLyriconSong(_currentSongFlow.value)
+                    syncExternalBluetoothLyrics(_currentSongFlow.value)
                 }
             }
         }
@@ -1234,6 +1242,27 @@ internal fun PlayerManager.initializeImpl(
         ioScope.launch {
             settingsRepo.qqMusicLyricDefaultOffsetMsFlow.collect { offsetMs ->
                 qqMusicLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
+            }
+        }
+        ioScope.launch {
+            settingsRepo.kugouLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                kugouLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
+            }
+        }
+        ioScope.launch {
+            settingsRepo.lrclibLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                lrclibLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
+            }
+        }
+        ioScope.launch {
+            settingsRepo.amllTtmlLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                amllTtmlLyricDefaultOffsetMs = offsetMs
                 updateExternalBluetoothLyricLine(_playbackPositionMs.value)
                 updateLyriconLyricOffset()
             }
@@ -4026,6 +4055,7 @@ internal fun PlayerManager.releaseImpl() {
         externalBluetoothTranslationLoadJob?.cancel()
         externalBluetoothTranslationLoadJob = null
         externalBluetoothLyrics = emptyList()
+        externalBluetoothPreferredLyricSource = null
         floatingTranslatedLyrics = emptyList()
         floatingTranslationMatchesByIndex = emptyMap()
         externalBluetoothLyricsSongKey = null

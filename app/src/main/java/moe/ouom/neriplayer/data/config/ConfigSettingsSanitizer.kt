@@ -169,7 +169,10 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
             }
             val normalized = when (name) {
                 SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS.name,
-                SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS.name ->
+                SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS.name,
+                SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS.name,
+                SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS.name,
+                SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS.name ->
                     normalizeLyricDefaultOffsetMs(value)
                 SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS.name,
                 SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS.name,

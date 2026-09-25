@@ -271,6 +271,10 @@ import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_KUGOU_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.data.settings.LyricFontScalePage
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
@@ -2378,7 +2382,8 @@ internal data class LoadedLyricsState(
     val phoneticLyrics: List<LyricEntry>,
     val plainLyrics: List<LyricEntry>,
     val plainTranslatedLyrics: List<LyricEntry>,
-    val embeddedPhoneticLyrics: List<LyricEntry>
+    val embeddedPhoneticLyrics: List<LyricEntry>,
+    val preferredSource: LyricSourcePreference? = null
 )
 
 internal enum class ManagedLyricVariant {
@@ -2504,7 +2509,8 @@ internal fun buildPreferredLyricSourceState(
     phoneticLyrics = result.romanizedLyrics,
     plainLyrics = result.lyrics.flattenWordTimedEntries(),
     plainTranslatedLyrics = result.translatedLyrics.flattenWordTimedEntries(),
-    embeddedPhoneticLyrics = emptyList()
+    embeddedPhoneticLyrics = emptyList(),
+    preferredSource = result.source
 )
 
 /**
@@ -2669,6 +2675,15 @@ fun NowPlayingScreen(
     val qqMusicLyricDefaultOffsetMs by settingsRepo
         .qqMusicLyricDefaultOffsetMsFlow
         .collectAsStateWithLifecycle(initialValue = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS)
+    val kugouLyricDefaultOffsetMs by settingsRepo
+        .kugouLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_KUGOU_LYRIC_OFFSET_MS)
+    val lrclibLyricDefaultOffsetMs by settingsRepo
+        .lrclibLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_LRCLIB_LYRIC_OFFSET_MS)
+    val amllTtmlLyricDefaultOffsetMs by settingsRepo
+        .amllTtmlLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS)
     val lyricTranslationUsePhonetic by settingsRepo
         .lyricTranslationUsePhoneticFlow
         .collectAsStateWithLifecycle(initialValue = false)
@@ -2901,6 +2916,9 @@ fun NowPlayingScreen(
     var embeddedPhoneticLyrics by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.embeddedPhoneticLyrics)
     }
+    var loadedPreferredLyricSource by remember(currentLyricSourceKey, defaultLyricSource) {
+        mutableStateOf<LyricSourcePreference?>(null)
+    }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
     var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
     var youtubeCreatorPickerCandidates by remember {
@@ -3110,6 +3128,7 @@ fun NowPlayingScreen(
                 plainLyrics = loadedLyricsState.plainLyrics
                 plainTranslatedLyrics = loadedLyricsState.plainTranslatedLyrics
                 embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
+                loadedPreferredLyricSource = loadedLyricsState.preferredSource
             }
             NPLogger.d(
                 "NowPlayingLyrics",
@@ -3646,6 +3665,10 @@ fun NowPlayingScreen(
         cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
         qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
         userLyricOffsetMs = currentSong?.userLyricOffsetMs ?: 0L,
+        kugouDefaultOffsetMs = kugouLyricDefaultOffsetMs,
+        lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
+        amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
+        preferredLyricSource = loadedPreferredLyricSource,
     )
     val progressInfoSegments = remember(
         currentPlaybackAudioInfo,

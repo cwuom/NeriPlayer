@@ -93,6 +93,9 @@ private const val PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY = "preempt_audio_focus"
 private const val PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY = "max_cache_size_bytes"
 private const val PLAYBACK_CLOUD_MUSIC_LYRIC_OFFSET_KEY = "cloud_music_lyric_default_offset_ms"
 private const val PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY = "qq_music_lyric_default_offset_ms"
+private const val PLAYBACK_KUGOU_LYRIC_OFFSET_KEY = "kugou_lyric_default_offset_ms"
+private const val PLAYBACK_LRCLIB_LYRIC_OFFSET_KEY = "lrclib_lyric_default_offset_ms"
+private const val PLAYBACK_AMLL_TTML_LYRIC_OFFSET_KEY = "amll_ttml_lyric_default_offset_ms"
 private const val PLAYBACK_LYRICON_ENABLED_KEY = "lyricon_enabled"
 private const val PLAYBACK_AMLL_LYRICS_ENABLED_KEY = "amll_lyrics_enabled"
 private const val PLAYBACK_PREFER_WORD_TIMED_LYRICS_KEY = "prefer_word_timed_lyrics"
@@ -156,6 +159,9 @@ data class PlaybackPreferenceSnapshot(
     val preemptAudioFocus: Boolean = false,
     val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
     val qqMusicLyricDefaultOffsetMs: Long = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
+    val kugouLyricDefaultOffsetMs: Long = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+    val lrclibLyricDefaultOffsetMs: Long = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+    val amllTtmlLyricDefaultOffsetMs: Long = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
     val lyriconEnabled: Boolean = false,
     val amllLyricsEnabled: Boolean = true,
     val preferWordTimedLyrics: Boolean = true,
@@ -208,6 +214,9 @@ data class PlaybackPreferenceSnapshot(
             ),
             cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
             qqMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(qqMusicLyricDefaultOffsetMs),
+            kugouLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(kugouLyricDefaultOffsetMs),
+            lrclibLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(lrclibLyricDefaultOffsetMs),
+            amllTtmlLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(amllTtmlLyricDefaultOffsetMs),
             defaultLyricSource = LyricSourcePreferencePolicy.normalize(defaultLyricSource),
             maxCacheSizeBytes = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSizeBytes)
         )
@@ -401,6 +410,18 @@ internal fun persistPlaybackPreferenceSnapshot(
                     PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY,
                     normalizedSnapshot.qqMusicLyricDefaultOffsetMs
                 )
+                .putLong(
+                    PLAYBACK_KUGOU_LYRIC_OFFSET_KEY,
+                    normalizedSnapshot.kugouLyricDefaultOffsetMs
+                )
+                .putLong(
+                    PLAYBACK_LRCLIB_LYRIC_OFFSET_KEY,
+                    normalizedSnapshot.lrclibLyricDefaultOffsetMs
+                )
+                .putLong(
+                    PLAYBACK_AMLL_TTML_LYRIC_OFFSET_KEY,
+                    normalizedSnapshot.amllTtmlLyricDefaultOffsetMs
+                )
                 .putBoolean(PLAYBACK_LYRICON_ENABLED_KEY, normalizedSnapshot.lyriconEnabled)
                 .putBoolean(
                     PLAYBACK_AMLL_LYRICS_ENABLED_KEY,
@@ -518,6 +539,15 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         qqMusicLyricDefaultOffsetMs =
             this[SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
                 ?: DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
+        kugouLyricDefaultOffsetMs =
+            this[SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS]
+                ?: DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+        lrclibLyricDefaultOffsetMs =
+            this[SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS]
+                ?: DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+        amllTtmlLyricDefaultOffsetMs =
+            this[SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS]
+                ?: DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
         lyriconEnabled = this[SettingsKeys.LYRICON_ENABLED] ?: false,
         amllLyricsEnabled = this[SettingsKeys.AMLL_LYRICS_ENABLED] ?: true,
         preferWordTimedLyrics = this[SettingsKeys.PREFER_WORD_TIMED_LYRICS] ?: true,
@@ -666,6 +696,18 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         qqMusicLyricDefaultOffsetMs = prefs.getLong(
             PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY,
             DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+        ),
+        kugouLyricDefaultOffsetMs = prefs.getLong(
+            PLAYBACK_KUGOU_LYRIC_OFFSET_KEY,
+            DEFAULT_KUGOU_LYRIC_OFFSET_MS
+        ),
+        lrclibLyricDefaultOffsetMs = prefs.getLong(
+            PLAYBACK_LRCLIB_LYRIC_OFFSET_KEY,
+            DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+        ),
+        amllTtmlLyricDefaultOffsetMs = prefs.getLong(
+            PLAYBACK_AMLL_TTML_LYRIC_OFFSET_KEY,
+            DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
         ),
         lyriconEnabled = prefs.getBoolean(PLAYBACK_LYRICON_ENABLED_KEY, false),
         amllLyricsEnabled = prefs.getBoolean(PLAYBACK_AMLL_LYRICS_ENABLED_KEY, true),

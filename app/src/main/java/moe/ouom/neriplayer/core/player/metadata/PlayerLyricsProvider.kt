@@ -210,7 +210,8 @@ internal data class DurationMatchedExternalLyrics(
 internal data class PreferredLyricSourceResult(
     val lyrics: List<LyricEntry>,
     val translatedLyrics: List<LyricEntry> = emptyList(),
-    val romanizedLyrics: List<LyricEntry> = emptyList()
+    val romanizedLyrics: List<LyricEntry> = emptyList(),
+    val source: LyricSourcePreference
 )
 
 internal fun shouldTryPreferredLyricSource(
@@ -1257,7 +1258,8 @@ internal object PlayerLyricsProvider {
                     ),
                     romanizedLyrics = getNeteaseRomanizedLyrics(
                         matchedId, neteaseClient, neteaseLyricsCache
-                    )
+                    ),
+                    source = preference
                 )
             }?.also { result ->
                 withLyricsCacheWriteLock {
@@ -1307,7 +1309,8 @@ internal object PlayerLyricsProvider {
         )
         return PreferredLyricSourceResult(
             lyrics = selected.lyrics,
-            translatedLyrics = selected.translatedLyrics
+            translatedLyrics = selected.translatedLyrics,
+            source = preference
         ).also { result ->
             withLyricsCacheWriteLock {
                 if (lyricsCacheGeneration.get() == cacheGeneration) {

@@ -987,7 +987,10 @@ internal suspend fun PlayerManager.getPreferredNeteaseRomanizedLyricContentImpl(
     )
 }
 
-internal suspend fun PlayerManager.getTranslatedLyricsImpl(song: SongItem): List<LyricEntry> {
+internal suspend fun PlayerManager.getTranslatedLyricsImpl(
+    song: SongItem,
+    skipPreferredSource: Boolean = false
+): List<LyricEntry> {
     return PlayerLyricsProvider.getTranslatedLyrics(
         song = song,
         application = application,
@@ -995,7 +998,11 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(song: SongItem): List
         neteaseLyricsCache = neteaseLyricsCache,
         editableLyricsMatcher = AppContainer.editableLyricsMatcher,
         preferWordTimedLyrics = preferWordTimedLyrics,
-        defaultLyricSource = defaultLyricSource,
+        defaultLyricSource = if (skipPreferredSource) {
+            LyricSourcePreference.Automatic
+        } else {
+            defaultLyricSource
+        },
         ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
     )
@@ -1014,7 +1021,10 @@ internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<
     )
 }
 
-internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntry> {
+internal suspend fun PlayerManager.getLyricsImpl(
+    song: SongItem,
+    skipPreferredSource: Boolean = false
+): List<LyricEntry> {
     return PlayerLyricsProvider.getLyrics(
         song = song,
         application = application,
@@ -1026,7 +1036,11 @@ internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntr
         amllTtmlClient = amllTtmlClient,
         amllLyricsEnabled = amllLyricsEnabled,
         preferWordTimedLyrics = preferWordTimedLyrics,
-        defaultLyricSource = defaultLyricSource,
+        defaultLyricSource = if (skipPreferredSource) {
+            LyricSourcePreference.Automatic
+        } else {
+            defaultLyricSource
+        },
         ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
     )

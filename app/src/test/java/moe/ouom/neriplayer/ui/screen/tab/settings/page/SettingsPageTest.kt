@@ -656,6 +656,13 @@ class SettingsPageTest {
             ).itemIndex
         )
         assertEquals(
+            4,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.Lyrics,
+                targetId = "setting:amll_ttml_lyric_default_offset_ms"
+            ).itemIndex
+        )
+        assertEquals(
             1,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Storage,
