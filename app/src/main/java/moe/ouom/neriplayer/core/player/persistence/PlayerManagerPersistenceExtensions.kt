@@ -31,6 +31,8 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.core.player.metadata.SongMetadataRequestCoordinator
 import moe.ouom.neriplayer.core.player.metadata.hasUsableLyrics
 import moe.ouom.neriplayer.core.player.metadata.LocalMetadataWritePlaybackAction
@@ -992,6 +994,8 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(song: SongItem): List
         neteaseClient = neteaseClient,
         neteaseLyricsCache = neteaseLyricsCache,
         editableLyricsMatcher = AppContainer.editableLyricsMatcher,
+        preferWordTimedLyrics = preferWordTimedLyrics,
+        defaultLyricSource = defaultLyricSource,
         ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
     )
@@ -1003,6 +1007,9 @@ internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<
         application = application,
         neteaseClient = neteaseClient,
         neteaseLyricsCache = neteaseLyricsCache,
+        editableLyricsMatcher = AppContainer.editableLyricsMatcher,
+        preferWordTimedLyrics = preferWordTimedLyrics,
+        defaultLyricSource = defaultLyricSource,
         biliSourceTag = BILI_SOURCE_TAG
     )
 }
@@ -1024,6 +1031,18 @@ internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntr
         biliSourceTag = BILI_SOURCE_TAG
     )
 }
+
+internal suspend fun PlayerManager.getPreferredLyricSourceResultImpl(
+    song: SongItem,
+    preference: LyricSourcePreference
+): PreferredLyricSourceResult? = PlayerLyricsProvider.tryGetPreferredLyricSourceResult(
+    song = song,
+    preference = preference,
+    preferWordTimed = preferWordTimedLyrics,
+    editableLyricsMatcher = AppContainer.editableLyricsMatcher,
+    neteaseClient = neteaseClient,
+    neteaseLyricsCache = neteaseLyricsCache
+)
 
 internal fun PlayerManager.playFromQueueImpl(
     index: Int,

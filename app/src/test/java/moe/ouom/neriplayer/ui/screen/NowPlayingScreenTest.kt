@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,10 +15,12 @@ import moe.ouom.neriplayer.core.download.model.DownloadTask
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import kotlin.math.pow
 
 class NowPlayingScreenTest {
@@ -264,6 +267,30 @@ class NowPlayingScreenTest {
                 loadedHasLyrics = false
             )
         )
+        assertTrue(
+            shouldReplaceLyricsAfterRefresh(
+                sameSong = true,
+                loadedHasLyrics = false,
+                clearForPreferredSource = true
+            )
+        )
+    }
+
+    @Test
+    fun `preferred source state does not mix downloaded lyrics with selected source`() {
+        val state = buildPreferredLyricSourceState(
+            PreferredLyricSourceResult(
+                lyrics = listOf(LyricEntry("Kugou original", 1_000L, 2_000L)),
+                translatedLyrics = listOf(LyricEntry("Kugou translation", 1_000L, 2_000L))
+            )
+        )
+
+        assertNull(state.rawLyrics)
+        assertNull(state.rawTranslatedLyrics)
+        assertNull(state.rawPhoneticLyrics)
+        assertEquals("Kugou original", state.lyrics.single().text)
+        assertEquals("Kugou translation", state.translatedLyrics.single().text)
+        assertTrue(state.phoneticLyrics.isEmpty())
     }
 
     @Test

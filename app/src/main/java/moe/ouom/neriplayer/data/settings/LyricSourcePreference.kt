@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
  * 播放时优先使用的歌词来源。
  *
  * [Automatic] 保持改造前的既有行为: 平台自带歌词优先, 缺少逐词时再补 AMLL TTML。
- * 其余取值会让播放期主动去对应平台按歌名/歌手匹配歌词, 匹配失败时静默回落到 [Automatic]。
+ * 其余取值会让播放期主动去对应平台按歌名、歌手和时长匹配歌词, 匹配失败时沿用原有歌词路径
  */
 enum class LyricSourcePreference(
     val storageValue: String

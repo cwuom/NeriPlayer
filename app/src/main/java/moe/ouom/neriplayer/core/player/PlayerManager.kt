@@ -107,6 +107,7 @@ import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackPo
 import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackResumePosition
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.core.player.metadata.YouTubeMusicLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
@@ -172,6 +173,7 @@ import moe.ouom.neriplayer.core.player.persistence.addToQueueEndImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueNextImpl
 import moe.ouom.neriplayer.core.player.persistence.applyRemoteQueueUpdateImpl
 import moe.ouom.neriplayer.core.player.persistence.getLyricsImpl
+import moe.ouom.neriplayer.core.player.persistence.getPreferredLyricSourceResultImpl
 import moe.ouom.neriplayer.core.player.persistence.getNeteaseLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.getNeteaseRomanizedLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.getNeteaseTranslatedLyricsImpl
@@ -2718,6 +2720,11 @@ object PlayerManager {
         getRomanizedLyricsImpl(song)
 
     suspend fun getLyrics(song: SongItem): List<LyricEntry> = getLyricsImpl(song)
+
+    internal suspend fun getPreferredLyricSourceResult(
+        song: SongItem,
+        preference: LyricSourcePreference
+    ): PreferredLyricSourceResult? = getPreferredLyricSourceResultImpl(song, preference)
 
     fun playFromQueue(
         index: Int,

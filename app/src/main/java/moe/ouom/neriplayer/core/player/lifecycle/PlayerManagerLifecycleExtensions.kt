@@ -1147,6 +1147,10 @@ internal fun PlayerManager.initializeImpl(
                 val changed = defaultLyricSource != source
                 defaultLyricSource = source
                 if (changed) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "默认歌词源设置更新: ${source.storageValue}"
+                    )
                     evictLyricCachesForSourcePreferenceChange()
                 }
             }
