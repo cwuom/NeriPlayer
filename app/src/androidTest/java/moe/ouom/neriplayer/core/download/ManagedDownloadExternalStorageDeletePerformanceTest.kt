@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.download
 
-import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -120,19 +119,8 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
         val media = requireNotNull(MediaStore.getMediaUri(context, original))
         assertNotNull(ManagedMediaStoreDelete.resolveMappedTarget(context, original, media, name))
 
-        val relativePath = requireNotNull(context.contentResolver.query(media,
-            arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)).use { cursor ->
-            check(cursor.moveToFirst())
-            cursor.getString(0)
-        }
-        // MediaStore 在部分系统版本会重建移动后文件的行 ID，仍需验证原引用不会删除新位置
-        assertEquals(1, context.contentResolver.update(media, ContentValues().apply {
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "${relativePath}destination/")
-        }, null, null))
-        val moved = runCatching { MediaStore.getDocumentUri(context, media) }.getOrNull()
-        if (moved != null) {
-            assertEquals(media, MediaStore.getMediaUri(context, moved))
-        }
+        // 通过原文档提供者移动文件，避免 MediaStore 对 JSON 文件的更新结果因系统版本而异
+        requireNotNull(DocumentsContract.moveDocument(context.contentResolver, original, root, destination))
 
         assertNull(ManagedMediaStoreDelete.resolveMappedTarget(context, original, media, name))
         assertEquals(listOf(name), childNames(destination))
