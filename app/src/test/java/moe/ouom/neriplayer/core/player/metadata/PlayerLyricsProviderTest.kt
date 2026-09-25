@@ -503,6 +503,47 @@ class PlayerLyricsProviderTest {
     }
 
     @Test
+    fun selectFirstUsableAutomaticExternalLyricsRequiresKnownCompatibleDuration() {
+        val matches = listOf(
+            rankedCandidate(
+                id = "unknown",
+                source = EditableLyricMatchSource.KUGOU,
+                durationMs = 0L,
+                lyrics = "[00:01.00]Unknown duration"
+            ),
+            rankedCandidate(
+                id = "different-version",
+                source = EditableLyricMatchSource.KUGOU,
+                durationMs = 300_000L,
+                lyrics = "[00:01.00]Different version"
+            ),
+            rankedCandidate(
+                id = "compatible",
+                source = EditableLyricMatchSource.KUGOU,
+                durationMs = 242_000L,
+                lyrics = "[00:01.00]Compatible version"
+            )
+        )
+
+        val selected = PlayerLyricsProvider.selectFirstUsableAutomaticExternalLyrics(
+            expectedDurationMs = 240_000L,
+            expectedTitle = "Signal",
+            expectedArtist = "Artist One",
+            matches = matches
+        )
+
+        assertEquals("Compatible version", selected?.lyrics?.single()?.text)
+        assertNull(
+            PlayerLyricsProvider.selectFirstUsableAutomaticExternalLyrics(
+                expectedDurationMs = 0L,
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                matches = matches
+            )
+        )
+    }
+
+    @Test
     fun loadFirstUsableAutomaticExternalLyricsStopsAtFirstUsableSource() = runTest {
         val visitedSources = mutableListOf<EditableLyricMatchSource>()
 

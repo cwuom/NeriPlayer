@@ -1137,19 +1137,18 @@ internal object PlayerLyricsProvider {
             NPLogger.d("NERI-PlayerManager", "默认歌词源匹配失败: ${error.message}")
             emptyList()
         }
-        val candidate = matches.firstOrNull()
-            ?.candidate
-            ?: return null
+        val selected = selectFirstUsableAutomaticExternalLyrics(
+            expectedDurationMs = song.durationMs,
+            expectedTitle = song.name,
+            expectedArtist = song.artist,
+            matches = matches
+        ) ?: return null
         NPLogger.d(
             "NERI-PlayerManager",
             "默认歌词源 " + preference.storageValue + " 命中 '" + song.name +
-                "': " + candidate.title + " / " + candidate.artist
+                "', durationDeltaMs=" + selected.durationDeltaMs
         )
-        return parseLocalLyricOverride(
-            rawLyric = candidate.lyrics,
-            durationMs = song.durationMs,
-            logPrefix = "默认歌词源解析失败"
-        )?.takeIf { it.isNotEmpty() }?.also { entries ->
+        return selected.lyrics.also { entries ->
             withLyricsCacheWriteLock {
                 if (lyricsCacheGeneration.get() == cacheGeneration) {
                     preferredLyricSourceCache.put(cacheKey, entries)
