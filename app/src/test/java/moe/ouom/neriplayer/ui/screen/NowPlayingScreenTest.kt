@@ -268,13 +268,33 @@ class NowPlayingScreenTest {
                 loadedHasLyrics = false
             )
         )
-        assertTrue(
-            shouldReplaceLyricsAfterRefresh(
-                sameSong = true,
-                loadedHasLyrics = false,
-                clearForPreferredSource = true
+    }
+
+    @Test
+    fun `reopening now playing shows cached lyrics before preferred lookup`() {
+        val song = SongItem(
+            id = 51L,
+            name = "Cached song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            matchedLyric = "[00:01.00]Stored line"
+        )
+        val stored = buildNowPlayingInitialLyricsState(song, cachedPreferredLyrics = null)
+        assertEquals("Stored line", stored.lyrics.single().text)
+        assertNull(stored.preferredSource)
+
+        val preferred = buildNowPlayingInitialLyricsState(
+            song,
+            cachedPreferredLyrics = PreferredLyricSourceResult(
+                lyrics = listOf(LyricEntry("Kugou line", 1_000L, 2_000L)),
+                source = LyricSourcePreference.Kugou
             )
         )
+        assertEquals("Kugou line", preferred.lyrics.single().text)
+        assertEquals(LyricSourcePreference.Kugou, preferred.preferredSource)
     }
 
     @Test

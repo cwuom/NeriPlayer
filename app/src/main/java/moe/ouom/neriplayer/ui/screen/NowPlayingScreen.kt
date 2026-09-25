@@ -2533,11 +2533,16 @@ internal fun buildNowPlayingImmediateLyricsState(song: SongItem?): LoadedLyricsS
     )
 }
 
+internal fun buildNowPlayingInitialLyricsState(
+    song: SongItem?,
+    cachedPreferredLyrics: PreferredLyricSourceResult?
+): LoadedLyricsState = cachedPreferredLyrics?.let(::buildPreferredLyricSourceState)
+    ?: buildNowPlayingImmediateLyricsState(song)
+
 internal fun shouldReplaceLyricsAfterRefresh(
     sameSong: Boolean,
-    loadedHasLyrics: Boolean,
-    clearForPreferredSource: Boolean = false
-): Boolean = !sameSong || loadedHasLyrics || clearForPreferredSource
+    loadedHasLyrics: Boolean
+): Boolean = !sameSong || loadedHasLyrics
 
 internal fun shouldBackfillDownloadedLyricsAfterFastMiss(
     isManagedLocalDownload: Boolean,
@@ -2869,24 +2874,25 @@ fun NowPlayingScreen(
     val shouldLoadPreferredLyrics = currentSong?.let { song ->
         shouldTryPreferredLyricSource(song, defaultLyricSource)
     } == true
+    val cachedPreferredLyrics = remember(
+        currentSong,
+        defaultLyricSource,
+        preferWordTimedLyrics,
+        lyricsPreferenceRevision
+    ) {
+        currentSong?.let { song ->
+            PlayerManager.getCachedPreferredLyricSourceResult(
+                song,
+                defaultLyricSource,
+                preferWordTimedLyrics
+            )
+        }
+    }
     var secondaryLyricsResolved by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(false)
     }
-    val immediateLyricsState = remember(
-        currentLyricSourceKey,
-        currentSong?.matchedLyric,
-        currentSong?.matchedTranslatedLyric,
-        currentSong?.matchedRomanizedLyric,
-        currentSong?.originalLyric,
-        currentSong?.originalTranslatedLyric,
-        currentSong?.originalRomanizedLyric,
-        shouldLoadPreferredLyrics
-    ) {
-        if (shouldLoadPreferredLyrics) {
-            buildNowPlayingFastLyricsState(null, null, null)
-        } else {
-            buildNowPlayingImmediateLyricsState(currentSong)
-        }
+    val immediateLyricsState = remember(currentSong, cachedPreferredLyrics) {
+        buildNowPlayingInitialLyricsState(currentSong, cachedPreferredLyrics)
     }
     // 切歌时直接以歌曲对象已有文本建立首帧，侧载快读完成后再覆盖，避免歌曲和歌词错帧
     var lyrics by remember(currentLyricSourceKey, defaultLyricSource) {
@@ -2917,7 +2923,7 @@ fun NowPlayingScreen(
         mutableStateOf(immediateLyricsState.embeddedPhoneticLyrics)
     }
     var loadedPreferredLyricSource by remember(currentLyricSourceKey, defaultLyricSource) {
-        mutableStateOf<LyricSourcePreference?>(null)
+        mutableStateOf(immediateLyricsState.preferredSource)
     }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
     var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
@@ -3115,8 +3121,7 @@ fun NowPlayingScreen(
             val sameSong = song != null
             if (shouldReplaceLyricsAfterRefresh(
                     sameSong = sameSong,
-                    loadedHasLyrics = loadedHasLyrics,
-                    clearForPreferredSource = shouldLoadPreferredLyrics && stage == "fast"
+                    loadedHasLyrics = loadedHasLyrics
                 )
             ) {
                 rawLyricsText = loadedLyricsState.rawLyrics
@@ -3203,10 +3208,8 @@ fun NowPlayingScreen(
                 currentLyric = song?.matchedRomanizedLyric,
                 legacyLyric = song?.originalRomanizedLyric
             )
-            if (shouldLoadPreferredLyrics) {
-                buildNowPlayingFastLyricsState(null, null, null)
-            } else {
-                buildNowPlayingFastLyricsState(
+            cachedPreferredLyrics?.let(::buildPreferredLyricSourceState)
+                ?: buildNowPlayingFastLyricsState(
                     rawLyrics = resolveNowPlayingLyricText(
                         isManagedLocalDownload = isManagedLocalDownload,
                         localLyrics = localLyrics,
@@ -3235,7 +3238,6 @@ fun NowPlayingScreen(
                         variant = ManagedLyricVariant.ROMANIZED
                     )
                 )
-            }
         }
         publishLoadedLyricsState(fastLoadedLyricsState, stage = "fast")
         // 快读结果已经发布, 完整侧载校验必须在独立后台阶段执行, 不能阻塞切歌首帧

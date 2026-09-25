@@ -108,6 +108,7 @@ import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackRe
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
+import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.metadata.YouTubeMusicLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
@@ -2762,6 +2763,16 @@ object PlayerManager {
         song: SongItem,
         preference: LyricSourcePreference
     ): PreferredLyricSourceResult? = getPreferredLyricSourceResultImpl(song, preference)
+
+    internal fun getCachedPreferredLyricSourceResult(
+        song: SongItem,
+        preference: LyricSourcePreference,
+        preferWordTimed: Boolean
+    ): PreferredLyricSourceResult? = PlayerLyricsProvider.peekPreferredLyricSourceResult(
+        song = song,
+        preference = preference,
+        preferWordTimed = preferWordTimed
+    )
 
     fun playFromQueue(
         index: Int,

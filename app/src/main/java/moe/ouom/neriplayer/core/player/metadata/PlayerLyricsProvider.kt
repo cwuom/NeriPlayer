@@ -1210,6 +1210,40 @@ internal object PlayerLyricsProvider {
         }
     }
 
+    private fun preferredLyricSourceCacheKey(
+        song: SongItem,
+        preference: LyricSourcePreference,
+        preferWordTimed: Boolean
+    ): String = buildString {
+        append(song.stableKey())
+        append('|')
+        append(song.name.trim())
+        append('|')
+        append(song.artist.trim())
+        append('|')
+        append(song.album.trim())
+        append('|')
+        append(song.durationMs)
+        append('|')
+        append(song.matchedLyricSource)
+        append('|')
+        append(song.matchedSongId)
+        append('|')
+        append(preference.storageValue)
+        append('|')
+        append(preferWordTimed)
+    }
+
+    internal fun peekPreferredLyricSourceResult(
+        song: SongItem,
+        preference: LyricSourcePreference,
+        preferWordTimed: Boolean
+    ): PreferredLyricSourceResult? {
+        if (!shouldTryPreferredLyricSource(song, preference)) return null
+        val cacheKey = preferredLyricSourceCacheKey(song, preference, preferWordTimed)
+        return withLyricsCacheReadLock { preferredLyricSourceCache.get(cacheKey) }
+    }
+
     /**
      * 非本地曲目先尝试用户指定的歌词源，失败后保留原有歌词回退路径
      */
@@ -1222,26 +1256,8 @@ internal object PlayerLyricsProvider {
         neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>
     ): PreferredLyricSourceResult? {
         if (!shouldTryPreferredLyricSource(song, preference)) return null
-        val cacheKey = buildString {
-            append(song.stableKey())
-            append('|')
-            append(song.name.trim())
-            append('|')
-            append(song.artist.trim())
-            append('|')
-            append(song.album.trim())
-            append('|')
-            append(song.durationMs)
-            append('|')
-            append(song.matchedLyricSource)
-            append('|')
-            append(song.matchedSongId)
-            append('|')
-            append(preference.storageValue)
-            append('|')
-            append(preferWordTimed)
-        }
-        preferredLyricSourceCache.get(cacheKey)?.let { return it }
+        val cacheKey = preferredLyricSourceCacheKey(song, preference, preferWordTimed)
+        peekPreferredLyricSourceResult(song, preference, preferWordTimed)?.let { return it }
         val cacheGeneration = currentLyricsCacheGeneration()
         if (preference == LyricSourcePreference.CloudMusic &&
             song.matchedLyricSource == MusicPlatform.CLOUD_MUSIC

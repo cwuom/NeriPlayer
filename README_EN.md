@@ -397,8 +397,8 @@ For release build and signing details, see
   are enabled by default; candidate ranking may differ from earlier versions.
   Text matches from a preferred source also require compatible song durations; missing or
   mismatched durations fall back to automatic lyrics.
-  Remote tracks try the preferred source before saved or downloaded lyrics, then fall back
-  to those lyrics when no preferred match is available.
+  Remote tracks display cached lyrics first, then try the preferred source in the background.
+  A successful match replaces the displayed lyrics; otherwise the cached lyrics remain.
   Changing either setting clears cached lyrics so the new preference applies immediately.
   The **Lyric Offset** card has separate defaults for NetEase, QQ Music, Kugou,
   LRCLIB, and AMLL TTML, with individual and all-source reset buttons. The last
