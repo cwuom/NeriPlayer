@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.comment.repository
 
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import moe.ouom.neriplayer.core.comment.model.CommentSource
 
 /**
  * 评论数据源统一接口。
@@ -15,18 +16,19 @@ internal interface CommentRepository {
     /**
      * 加载指定页的评论。
      *
-     * @param resourceId 网易云为歌曲 id, Bilibili 为 aid
-     * @param secondaryId Bilibili 的 bvid (可能为 null)
+     * @param source 包含平台资源及历史身份解析所需的信息
      * @param forceRefresh true 时跳过缓存 (用于下拉刷新)
      */
     suspend fun loadComments(
-        resourceId: Long,
-        secondaryId: String?,
+        source: CommentSource,
         page: Int,
         pageSize: Int,
         forceRefresh: Boolean = false
     ): CommentPage
 }
+
+private val neteaseCommentRepository = NeteaseCommentRepository()
+private val biliCommentRepository = BiliCommentRepository()
 
 /**
  * 按平台取对应的评论仓库。
@@ -34,6 +36,6 @@ internal interface CommentRepository {
  * 后续接入 QQ 音乐 / 酷狗等平台时, 只需在此处增加分支 (任务书 §47)。
  */
 internal fun commentRepositoryFor(platform: CommentPlatform): CommentRepository = when (platform) {
-    CommentPlatform.NETEASE -> NeteaseCommentRepository
-    CommentPlatform.BILIBILI -> BiliCommentRepository
+    CommentPlatform.NETEASE -> neteaseCommentRepository
+    CommentPlatform.BILIBILI -> biliCommentRepository
 }

@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.comment
 
 import java.util.Locale
+import moe.ouom.neriplayer.core.api.bili.biliBvidOrNull
+import moe.ouom.neriplayer.core.api.bili.biliCidOrNull
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -37,23 +39,21 @@ internal fun resolveCommentSource(song: SongItem?): CommentSource? {
         else -> null
     } ?: return null
 
-    // 网易云: id / audioId 都是歌曲 id; Bilibili: id / audioId 都是 aid (av 号)
-    val resourceId = song.audioId?.trim()?.toLongOrNull()?.takeIf { it > 0L }
+    val explicitResourceId = song.audioId?.trim()?.toLongOrNull()?.takeIf { it > 0L }
+    val resourceId = explicitResourceId
         ?: song.id.takeIf { it > 0L }
         ?: return null
+    val isBili = platform == CommentPlatform.BILIBILI
+    val normalizedSong = if (isBili) song.copy(channelId = BILIBILI_CHANNEL_ID) else song
+    val bvid = normalizedSong.biliBvidOrNull().takeIf { isBili }
+    val cid = normalizedSong.biliCidOrNull().takeIf { isBili }
 
     return CommentSource(
         platform = platform,
         resourceId = resourceId,
-        secondaryId = if (platform == CommentPlatform.BILIBILI) biliBvidOrNull(song) else null
+        secondaryId = bvid,
+        subResourceId = cid,
+        resourceTitle = song.name.takeIf { isBili && bvid == null && cid == null },
+        hasExplicitResourceId = isBili && explicitResourceId != null
     )
-}
-
-/**
- * 从 Bilibili 歌曲的 album 标记中取出 bvid。
- *
- * album 形如 `Bilibili|<cid>|<bvid>` (见 BiliSongResolver.buildBiliSongAlbum)。
- */
-private fun biliBvidOrNull(song: SongItem): String? {
-    return song.album.split('|').getOrNull(2)?.trim()?.takeIf { it.isNotEmpty() }
 }

@@ -15,6 +15,49 @@ import org.junit.Test
  */
 class BiliCommentMapperTest {
 
+    @Test
+    fun `truncated first page remains pageable even when total is below page size`() {
+        val page = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20,"count":10},"replies":[{"rpid":1},{"rpid":2},{"rpid":3}]}}"""),
+            page = 1,
+            pageSize = 20
+        )
+        assertEquals(3, page.comments.size)
+        assertTrue(page.hasMore)
+    }
+
+    @Test
+    fun `empty response with known remaining comments is unavailable`() {
+        val error = parseError(
+            """{"code":0,"data":{"page":{"num":1,"size":20,"count":10},"replies":null}}"""
+        )
+        assertEquals(CommentError.API, error.reason)
+    }
+
+    @Test
+    fun `degraded and mismatched pagination is unavailable`() {
+        for (pagination in listOf(
+            """{"num":0,"size":0,"count":0}""",
+            """{"num":2,"size":20,"count":40}""",
+            """{"num":1,"size":0,"count":0}"""
+        )) {
+            val error = parseError("""{"code":0,"data":{"page":$pagination,"replies":null}}""")
+            assertEquals(CommentError.API, error.reason)
+        }
+    }
+
+    @Test
+    fun `valid empty last page is still a successful end`() {
+        val page = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":2,"size":20,"count":20},"replies":null}}"""),
+            page = 2,
+            pageSize = 20
+        )
+        assertTrue(page.comments.isEmpty())
+        assertEquals(false, page.hasMore)
+        assertEquals(20L, page.total)
+    }
+
     /**
      * 调用解析器并断言其抛出 CommentApiException，返回该异常以便核对错误码与映射原因。
      */
@@ -39,7 +82,7 @@ class BiliCommentMapperTest {
                 {
                   "code": 0,
                   "data": {
-                    "page": { "count": 42 },
+                    "page": { "num": 1, "size": 20, "count": 42 },
                     "replies": [
                       {
                         "rpid": 555,
@@ -106,19 +149,11 @@ class BiliCommentMapperTest {
     }
 
     /**
-     * data 为 null（视频无评论区）时返回空列表、total 为 null 且 hasMore 为 false。
+     * 缺少分页载荷不能证明没有评论
      */
     @Test
-    fun `null data means the video has no comments`() {
-        val page = parseBiliCommentPage(
-            JSONObject("""{"code":0,"data":null}"""),
-            page = 1,
-            pageSize = 20
-        )
-
-        assertTrue(page.comments.isEmpty())
-        assertNull(page.total)
-        assertEquals(false, page.hasMore)
+    fun `null data is reported as unavailable`() {
+        assertEquals(CommentError.API, parseError("""{"code":0,"data":null}""").reason)
     }
 
     /**
@@ -127,7 +162,7 @@ class BiliCommentMapperTest {
     @Test
     fun `missing replies does not crash`() {
         val page = parseBiliCommentPage(
-            JSONObject("""{"code":0,"data":{"page":{"count":0}}}"""),
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20,"count":0}}}"""),
             page = 1,
             pageSize = 20
         )
@@ -144,14 +179,14 @@ class BiliCommentMapperTest {
     fun `hasMore falls back to page size when total is unknown`() {
         val replies = (1..20).joinToString(",") { """{"rpid":$it}""" }
         val fullPage = parseBiliCommentPage(
-            JSONObject("""{"code":0,"data":{"replies":[$replies]}}"""),
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20},"replies":[$replies]}}"""),
             page = 1,
             pageSize = 20
         )
         assertTrue(fullPage.hasMore)
 
         val partialPage = parseBiliCommentPage(
-            JSONObject("""{"code":0,"data":{"replies":[{"rpid":1},{"rpid":2}]}}"""),
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20},"replies":[{"rpid":1},{"rpid":2}]}}"""),
             page = 1,
             pageSize = 20
         )

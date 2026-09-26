@@ -61,14 +61,10 @@ internal data class CommentUiState(
 )
 
 /**
- * 判断两个评论来源是否指向同一份评论 (平台 + 资源 id)。
- *
- * 刻意只比较平台与资源 id, 忽略 secondaryId (bvid), 避免同一首歌因为
- * album 标记差异而被判定为「换了歌」从而重复请求。
+ * 身份线索补全后需要重新解析，避免继续使用历史打包 id 的旧结果
  */
 internal fun isSameCommentSource(a: CommentSource?, b: CommentSource?): Boolean {
-    if (a == null || b == null) return a == null && b == null
-    return a.platform == b.platform && a.resourceId == b.resourceId
+    return a == b
 }
 
 /**
@@ -236,14 +232,13 @@ internal class CommentViewModel : ViewModel() {
         val job = viewModelScope.launch {
             try {
                 val result = repository.loadComments(
-                    resourceId = source.resourceId,
-                    secondaryId = source.secondaryId,
+                    source = source,
                     page = page,
                     pageSize = COMMENT_PAGE_SIZE,
                     forceRefresh = forceRefresh
                 )
                 // 歌曲已经切换, 丢弃过期结果 (§23/§24)
-                if (!isSameCommentSource(source, activeSource)) return@launch
+                if (!isActive || !isSameCommentSource(source, activeSource)) return@launch
 
                 _uiState.update { current ->
                     val comments = if (isFirstPage) {

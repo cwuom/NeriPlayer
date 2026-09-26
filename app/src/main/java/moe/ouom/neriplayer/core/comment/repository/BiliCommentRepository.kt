@@ -1,195 +1,101 @@
 package moe.ouom.neriplayer.core.comment.repository
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
+import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.mapper.parseBiliCommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.model.SongItem
 
-/** 旧版 Bilibili 歌曲把 avid 与分P序号打包进播放 id 时使用的进制 (见 `BiliSongResolver.resolveLegacy`) */
-private const val BILI_LEGACY_ID_PACK_FACTOR = 10_000L
-
-/** 每个资源 id 最多缓存多少个 legacy 解包结果, 避免长期运行后无界增长 */
-private const val BILI_LEGACY_ID_CACHE_MAX = 32
-
-/**
- * 把旧版 Bilibili 歌曲的「打包播放 id」还原为视频 avid。
- *
- * 旧版本把 `avid * 10000 + 分P序号` 直接存进播放 id, 项目播放侧在
- * `BiliSongResolver.resolveLegacy` 中同样用 `id / 10_000L` 反解;
- * 这里沿用同一规则, 使恢复的旧歌曲也能取到正确的评论 oid。
- *
- * 不像打包值时返回 null (负数 / 小于 10000 / 余数为 0)。
- */
-internal fun legacyBiliResourceIdOrNull(resourceId: Long): Long? {
-    if (resourceId < BILI_LEGACY_ID_PACK_FACTOR) return null
-    val page = resourceId % BILI_LEGACY_ID_PACK_FACTOR
-    if (page <= 0L) return null
-    return (resourceId / BILI_LEGACY_ID_PACK_FACTOR).takeIf { it > 0L }
-}
-
-/**
- * 只有「平台明确拒绝了这个 oid」的业务错误才允许尝试解包重试。
- *
- * 网络不可用 / 服务端 5xx / 未知异常都只是临时故障, 用猜测出来的另一个 id 去「恢复」,
- * 只会把**别的视频**的评论展示并缓存给用户; 因此这些分类一律直接抛出原始错误。
- * [CommentError.API] 表示「HTTP 成功但业务 code != 0」, 属于确定性的业务拒绝,
- * 旧版打包 id 实测返回的 `-404` 与 `12002` 分别落在 [CommentError.NOT_FOUND] 与 [CommentError.API]。
- */
-internal fun isLegacyFallbackEligible(reason: CommentError): Boolean = when (reason) {
-    CommentError.NOT_FOUND, CommentError.CLOSED, CommentError.API -> true
-    CommentError.NETWORK, CommentError.PERMISSION, CommentError.SERVER, CommentError.UNKNOWN -> false
-}
-
-/**
- * 解包候选是否拿到「这确实是同一首歌的视频」的证据。
- *
- * 视频信息接口返回的 aid 必须等于候选值, 并且 bvid 必须与歌曲 album 中记录的 bvid
- * (`Bilibili|<cid>|<bvid>`, 见 [moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum]) 一致:
- * 只有 `avid * 10000 + 分P序号` 这种打包格式才会解出同一个视频, 从而排除
- * 「`aid / 10000` 恰好是另一条真实视频」的猜测。album 没记录 bvid 时无从验证, 直接判定失败。
- */
-internal fun hasVerifiedLegacyVideo(
-    info: BiliClient.VideoBasicInfo?,
-    candidateAvid: Long,
-    bvid: String?
-): Boolean {
-    if (info == null || info.aid != candidateAvid) return false
-    val expectedBvid = bvid?.trim().orEmpty()
-    if (expectedBvid.isEmpty()) return false
-    return info.bvid.equals(expectedBvid, ignoreCase = true)
-}
-
-/**
- * Bilibili 评论仓库。
- *
- * 复用项目已有的 [AppContainer.biliClient] (同一条 HTTP / Cookie 链路)，
- * 不新建任何 Bilibili 网络层 (§16/§20/§35)。
- */
-internal object BiliCommentRepository : CommentRepository {
-
-    private const val TAG = "NERI-BiliComment"
-
-    /** 打包播放 id -> 真实 avid, 记住解包结果后翻页 / 刷新不必再试错 */
-    private val legacyResourceIds = LinkedHashMap<Long, Long>()
+internal class BiliCommentRepository(
+    private val clientProvider: () -> BiliClient = { AppContainer.biliClient }
+) : CommentRepository {
 
     override val platform: CommentPlatform = CommentPlatform.BILIBILI
 
-    /**
-     * 加载 Bilibili 某页评论: 非强制刷新时先查内存缓存, 未命中则以 aid 为资源 id
-     * 调用 [AppContainer.biliClient] 的视频评论接口, 解析后写入缓存再返回。
-     *
-     * 恢复的旧版歌曲用的是打包播放 id, 直接用它会拿到 `-404` / 业务码 `12002`;
-     * 此时只在「确定性业务拒绝 + 视频信息接口确认解包候选的 aid 与 bvid 都与本歌曲一致」
-     * 两个条件同时成立时, 才按播放侧同一规则解包重试一次, 且只有重试成功才采用结果,
-     * 真正「视频不存在 / 评论已关闭」的歌曲仍然保留原始错误。
-     */
+    private val resolvedResourceIds = LinkedHashMap<CommentSource, Long>(16, 0.75f, true)
+
     override suspend fun loadComments(
-        resourceId: Long,
-        secondaryId: String?,
+        source: CommentSource,
         page: Int,
         pageSize: Int,
         forceRefresh: Boolean
     ): CommentPage {
+        require(source.platform == platform)
+        val resourceId = resolveResourceId(source)
+        if (forceRefresh && page == 1) {
+            CommentMemoryCache.invalidate(platform.name, resourceId)
+        }
         if (!forceRefresh) {
             CommentMemoryCache.get(platform.name, resourceId, page)?.let { return it }
         }
 
-        val effectiveId = knownLegacyResourceId(resourceId) ?: resourceId
-
-        // 只记录非敏感上下文, 不打印评论正文 / Cookie (§36)
-        NPLogger.d(TAG, "load comments: platform=BILIBILI, resourceId=$effectiveId, page=$page")
-
-        val result = try {
-            loadPage(effectiveId, page, pageSize)
-        } catch (apiError: CommentApiException) {
-            resolveWithLegacyId(apiError, resourceId, secondaryId, effectiveId, page, pageSize)
+        NPLogger.d(TAG, "load comments: platform=BILIBILI, resourceId=$resourceId, page=$page")
+        val root = withContext(Dispatchers.IO) {
+            clientProvider().getVideoComments(resourceId, page, pageSize)
         }
-
+        val result = parseBiliCommentPage(root, page, pageSize)
         CommentMemoryCache.put(platform.name, resourceId, page, result)
         return result
     }
 
-    /**
-     * 按解包后的 avid 重试一次; 成功时记住映射并返回该页,
-     * 失败 / 未通过验证则抛出最初那次请求的错误 (保持「视频不存在 / 评论已关闭」的原判)。
-     */
-    private suspend fun resolveWithLegacyId(
-        apiError: CommentApiException,
-        resourceId: Long,
-        bvid: String?,
-        effectiveId: Long,
-        page: Int,
-        pageSize: Int
-    ): CommentPage {
-        if (!isLegacyFallbackEligible(apiError.reason)) throw apiError
-
-        val legacyId = legacyBiliResourceIdOrNull(resourceId) ?: throw apiError
-        if (legacyId == effectiveId) throw apiError
-        if (!verifyLegacyVideo(legacyId, bvid)) throw apiError
-
-        val pageResult = try {
-            loadPage(legacyId, page, pageSize)
-        } catch (_: CommentApiException) {
-            throw apiError
+    private suspend fun resolveResourceId(source: CommentSource): Long {
+        synchronized(resolvedResourceIds) {
+            resolvedResourceIds[source]?.let { return it }
         }
 
-        NPLogger.d(TAG, "legacy packed playback id decoded: $resourceId -> $legacyId")
-        rememberLegacyResourceId(resourceId, legacyId)
-        return pageResult
-    }
-
-    /**
-     * 用播放侧同一条视频信息接口确认解包候选就是这首歌的视频;
-     * 请求异常或信息不匹配一律视为「未验证」, 不采用该候选。
-     */
-    private suspend fun verifyLegacyVideo(candidateAvid: Long, bvid: String?): Boolean {
-        // 这里不能用 runCatching: 它会连 CancellationException 一起吞掉, 把一次正常的取消
-        // 变成「验证失败」再抛出业务错误, 最终在界面上渲染成「加载失败」
-        val info = try {
-            withContext(Dispatchers.IO) {
-                AppContainer.biliClient.getVideoBasicInfoByAvid(candidateAvid)
-            }
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Exception) {
-            null
+        // 打包 id 也可能命中另一条视频，成功的评论响应不能作为身份依据
+        val song = SongItem(
+            id = source.resourceId,
+            name = source.resourceTitle.orEmpty(),
+            artist = "",
+            album = buildBiliSongAlbum(source.subResourceId, source.secondaryId),
+            albumId = 0L,
+            durationMs = 0L,
+            coverUrl = null,
+            channelId = "bilibili",
+            audioId = source.resourceId.toString().takeIf { source.hasExplicitResourceId },
+            subAudioId = source.subResourceId?.toString()
+        )
+        val resolved = withContext(Dispatchers.IO) {
+            resolveBiliSong(song, clientProvider())
         }
-
-        return hasVerifiedLegacyVideo(info, candidateAvid, bvid)
-    }
-
-    private suspend fun loadPage(resourceId: Long, page: Int, pageSize: Int): CommentPage {
-        val root = withContext(Dispatchers.IO) {
-            AppContainer.biliClient.getVideoComments(
-                aid = resourceId,
-                page = page,
-                pageSize = pageSize
+        val requiresDirectId = source.hasExplicitResourceId &&
+            source.secondaryId == null && source.subResourceId == null
+        if (resolved == null || resolved.avid <= 0L ||
+            (requiresDirectId && resolved.avid != source.resourceId) ||
+            (source.secondaryId != null && resolved.videoInfo.bvid != source.secondaryId) ||
+            (source.subResourceId != null && resolved.cid != source.subResourceId)
+        ) {
+            throw CommentApiException(
+                code = -1,
+                reason = CommentError.API,
+                message = "Unable to verify Bili comment resource: ${source.resourceId}"
             )
         }
 
-        return parseBiliCommentPage(root, page = page, pageSize = pageSize)
-    }
-
-    private fun knownLegacyResourceId(resourceId: Long): Long? = synchronized(legacyResourceIds) {
-        legacyResourceIds[resourceId]
-    }
-
-    private fun rememberLegacyResourceId(resourceId: Long, legacyId: Long) {
-        synchronized(legacyResourceIds) {
-            if (legacyResourceIds[resourceId] == null &&
-                legacyResourceIds.size >= BILI_LEGACY_ID_CACHE_MAX
-            ) {
-                legacyResourceIds.clear()
+        synchronized(resolvedResourceIds) {
+            resolvedResourceIds[source] = resolved.avid
+            if (resolvedResourceIds.size > MAX_RESOLVED_RESOURCES) {
+                val iterator = resolvedResourceIds.entries.iterator()
+                iterator.next()
+                iterator.remove()
             }
-            legacyResourceIds[resourceId] = legacyId
         }
+        return resolved.avid
+    }
+
+    private companion object {
+        const val TAG = "NERI-BiliComment"
+        const val MAX_RESOLVED_RESOURCES = 32
     }
 }

@@ -63,8 +63,8 @@ internal fun CommentSheet(
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // 只在「平台 + 资源 id」真正变化时请求一次; 重组不会重复请求 (§25)
-    LaunchedEffect(source?.platform, source?.resourceId) {
+    // 身份线索变化时重新解析，普通重组不会重复请求
+    LaunchedEffect(source) {
         viewModel.onSourceChanged(source)
     }
 
@@ -105,7 +105,7 @@ private fun CommentSheetContent(
     val listState = rememberLazyListState()
 
     // 切换评论来源（换歌 / 自动切歌）时把列表位置重置到顶部: 数据已整体替换, 旧的滚动位置会让新来源停在中间 (§23/§24)
-    LaunchedEffect(ui.source?.platform, ui.source?.resourceId) {
+    LaunchedEffect(ui.source) {
         listState.scrollToItem(0)
     }
 

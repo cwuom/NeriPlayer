@@ -30,12 +30,21 @@ internal fun parseBiliCommentPage(
         )
     }
 
-    // data 为 null 表示该视频没有任何评论
     val data = root.optJSONObject("data")
     val pageObject = data?.optJSONObject("page")
-    val total = pageObject?.optLong("count", -1L)?.takeIf { it >= 0L }
+    // 匿名访问可能返回全零分页信息，不能把受限响应当作评论已读完
+    if (pageObject == null || pageObject.optInt("num", 0) != page ||
+        pageObject.optInt("size", 0) <= 0
+    ) {
+        throw CommentApiException(
+            code = 0,
+            reason = CommentError.API,
+            message = "Bili comment API returned invalid pagination: requested page=$page"
+        )
+    }
+    val total = pageObject.optLong("count", -1L).takeIf { it >= 0L }
 
-    val array = data?.optJSONArray("replies")
+    val array = data.optJSONArray("replies")
     val comments = ArrayList<SongComment>(array?.length() ?: 0)
     if (array != null) {
         for (index in 0 until array.length()) {
@@ -44,7 +53,16 @@ internal fun parseBiliCommentPage(
         }
     }
 
-    val hasMore = total?.let { page.toLong() * pageSize < it } ?: (comments.size >= pageSize)
+    val loadedThrough = (page.toLong() - 1L) * pageSize + comments.size
+    if (comments.isEmpty() && total != null && loadedThrough < total) {
+        throw CommentApiException(
+            code = 0,
+            reason = CommentError.API,
+            message = "Bili comment API returned an incomplete empty page: page=$page"
+        )
+    }
+    // 按实际返回条数判断，避免总数不足一页时把匿名截断误当作结束
+    val hasMore = total?.let { loadedThrough < it } ?: (comments.size >= pageSize)
 
     return CommentPage(
         comments = comments,

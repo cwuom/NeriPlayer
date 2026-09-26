@@ -13,6 +13,25 @@ import org.junit.Test
  */
 class CommentSourceResolverTest {
 
+    @Test
+    fun `legacy identity retains cid even when bvid is absent`() {
+        val source = resolveCommentSource(
+            song(id = 1700010003L, album = "Bilibili|279787", subAudioId = "279787")
+        )
+        assertEquals(1700010003L, source?.resourceId)
+        assertEquals(279787L, source?.subResourceId)
+        assertEquals(false, source?.hasExplicitResourceId)
+        assertNull(source?.secondaryId)
+    }
+
+    @Test
+    fun `identity hints ignore presentation changes but retain title when needed`() {
+        val canonical = song(id = 7L, album = "Bilibili|8|BV1test", audioId = "7")
+        assertEquals(resolveCommentSource(canonical), resolveCommentSource(canonical.copy(name = "edited")))
+        val legacy = song(id = 1700010003L, album = "Bilibili")
+        assertEquals("song", resolveCommentSource(legacy)?.resourceTitle)
+    }
+
     private companion object {
         const val BILI_AUDIO_URL =
             "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/12/34/5678/5678-1-30280.m4s"

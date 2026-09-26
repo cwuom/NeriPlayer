@@ -2,10 +2,12 @@ package moe.ouom.neriplayer.core.comment.repository
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.mapper.parseNeteaseCommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 
@@ -15,9 +17,9 @@ import moe.ouom.neriplayer.core.logging.NPLogger
  * 复用项目已有的 [AppContainer.neteaseClient] (同一条 HTTP / Cookie / 加密链路)，
  * 不新建任何网易云网络层 (§16/§20/§35)。
  */
-internal object NeteaseCommentRepository : CommentRepository {
-
-    private const val TAG = "NERI-NeteaseComment"
+internal class NeteaseCommentRepository(
+    private val clientProvider: () -> NeteaseClient = { AppContainer.neteaseClient }
+) : CommentRepository {
 
     override val platform: CommentPlatform = CommentPlatform.NETEASE
 
@@ -26,12 +28,16 @@ internal object NeteaseCommentRepository : CommentRepository {
      * 换算 offset 调用 [AppContainer.neteaseClient] 的歌曲评论接口, 解析后写入缓存再返回。
      */
     override suspend fun loadComments(
-        resourceId: Long,
-        secondaryId: String?,
+        source: CommentSource,
         page: Int,
         pageSize: Int,
         forceRefresh: Boolean
     ): CommentPage {
+        require(source.platform == platform)
+        val resourceId = source.resourceId
+        if (forceRefresh && page == 1) {
+            CommentMemoryCache.invalidate(platform.name, resourceId)
+        }
         if (!forceRefresh) {
             CommentMemoryCache.get(platform.name, resourceId, page)?.let { return it }
         }
@@ -41,7 +47,7 @@ internal object NeteaseCommentRepository : CommentRepository {
 
         val offset = (page - 1).coerceAtLeast(0) * pageSize
         val raw = withContext(Dispatchers.IO) {
-            AppContainer.neteaseClient.getSongCommentsCancellable(
+            clientProvider().getSongCommentsCancellable(
                 songId = resourceId,
                 limit = pageSize,
                 offset = offset
@@ -51,5 +57,9 @@ internal object NeteaseCommentRepository : CommentRepository {
         val result = parseNeteaseCommentPage(raw, page = page, pageSize = pageSize)
         CommentMemoryCache.put(platform.name, resourceId, page, result)
         return result
+    }
+
+    private companion object {
+        const val TAG = "NERI-NeteaseComment"
     }
 }

@@ -36,6 +36,20 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class CommentViewModelTest {
 
+    @Test
+    fun `completed source reloads when video identity evidence changes`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.BILIBILI)
+        repository.pages[1] = pageOf(1, listOf("old"), CommentPlatform.BILIBILI)
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(CommentSource(CommentPlatform.BILIBILI, 1700010003L))
+        advanceUntilIdle()
+        repository.pages[1] = pageOf(1, listOf("verified"), CommentPlatform.BILIBILI)
+        vm.onSourceChanged(CommentSource(CommentPlatform.BILIBILI, 1700010003L, "BV17x411w7KC", 279787L))
+        advanceUntilIdle()
+        assertEquals(listOf("verified"), vm.uiState.value.comments.map { it.id })
+        assertEquals(listOf(null, "BV17x411w7KC"), repository.secondaryIds)
+    }
+
     private class FakeCommentRepository(
         override val platform: CommentPlatform
     ) : CommentRepository {
@@ -55,15 +69,14 @@ class CommentViewModelTest {
          * 假仓库实现：记录请求页码/强制刷新标志/次生 id，按页码返回预置数据，并可注入延迟与失败。
          */
         override suspend fun loadComments(
-            resourceId: Long,
-            secondaryId: String?,
+            source: CommentSource,
             page: Int,
             pageSize: Int,
             forceRefresh: Boolean
         ): CommentPage {
             requestedPages += page
             forceRefreshes += forceRefresh
-            secondaryIds += secondaryId
+            secondaryIds += source.secondaryId
             if (delayMs > 0L) {
                 if (swallowCancellation) {
                     try {
@@ -391,32 +404,17 @@ class CommentViewModelTest {
         assertNull(state.error)
     }
 
-    /**
-     * 后续页拿到服务端降级空载荷 (B 站匿名请求第 2 页返回 page.count=0) 时,
-     * 不能把首页得到的总数覆盖成 0 (否则头部从「共 29 条」掉到「共 0 条」)。
-     */
     @Test
-    fun `a degraded empty later page never resets the first page total`() = commentTest {
+    fun `an unavailable later page keeps the total and remains retryable`() = commentTest {
         val repository = FakeCommentRepository(CommentPlatform.BILIBILI)
         repository.pages[1] = pageOf(
-            1,
-            listOf("a", "b", "c"),
-            CommentPlatform.BILIBILI,
-            hasMore = true,
-            total = 29L
-        )
-        repository.pages[2] = pageOf(
-            2,
-            emptyList(),
-            CommentPlatform.BILIBILI,
-            hasMore = false,
-            total = 0L
+            1, listOf("a", "b", "c"), CommentPlatform.BILIBILI, hasMore = true, total = 29L
         )
         val viewModel = CommentViewModel()
         viewModel.repositoryFactory = { repository }
-
         viewModel.onSourceChanged(source(CommentPlatform.BILIBILI, 1L))
         advanceUntilIdle()
+        repository.failure = CommentApiException(0, CommentError.API, "invalid pagination")
         viewModel.loadMore()
         advanceUntilIdle()
 
@@ -424,8 +422,16 @@ class CommentViewModelTest {
         assertEquals(CommentListStatus.SUCCESS, state.status)
         assertEquals(listOf("a", "b", "c"), state.comments.map { it.id })
         assertEquals(29L, state.total ?: -1L)
-        assertFalse(state.hasMore)
-        assertNull(state.loadMoreError)
+        assertEquals(1, state.page)
+        assertTrue(state.hasMore)
+        assertEquals(CommentError.API, state.loadMoreError)
+
+        repository.failure = null
+        repository.pages[2] = pageOf(2, listOf("d"), CommentPlatform.BILIBILI)
+        viewModel.loadMore()
+        advanceUntilIdle()
+        assertEquals(listOf("a", "b", "c", "d"), viewModel.uiState.value.comments.map { it.id })
+        assertNull(viewModel.uiState.value.loadMoreError)
     }
 
     /**
@@ -497,11 +503,11 @@ class CommentViewModelTest {
     }
 
     /**
-     * isSameCommentSource 只比较平台与资源 id：secondaryId 不同视为同一来源，null 与 null 相等。
+     * 身份线索变化必须重新解析，避免相同数值的历史 id 和真实 aid 串用结果
      */
     @Test
-    fun `isSameCommentSource compares platform and resource id only`() {
-        assertTrue(
+    fun `isSameCommentSource includes video identity evidence`() {
+        assertFalse(
             isSameCommentSource(
                 CommentSource(CommentPlatform.BILIBILI, 1L, "BV1xx411c7mD"),
                 CommentSource(CommentPlatform.BILIBILI, 1L, null)

@@ -61,6 +61,13 @@ internal object CommentMemoryCache {
         }
     }
 
+    fun invalidate(platform: String, resourceId: Long) {
+        val prefix = "$platform:$resourceId:"
+        synchronized(lock) {
+            entries.keys.removeAll { it.startsWith(prefix) }
+        }
+    }
+
     /**
      * 清空全部评论分页缓存。
      */
