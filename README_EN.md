@@ -631,13 +631,17 @@ For release build and signing details, see
   playback, downloads, lyrics, playback metadata completion, playback fallback
   for restricted playback, syncing local favorites to NetEase Liked Songs,
   artist pages, paged artist songs/albums, and artist follow support.
+  Now Playing comments offer Popular (default), Newest, and Recommended sorting,
+  plus like/unlike actions when signed in.
 - **Bilibili**:
   web login, QR login, video search, created favorites, subscribed favorites,
   collections, favorite/collection list search, multi-part video-to-audio
   playback, and downloads.
   Link recognition keeps the selected part and can recover collection context
   from `season_id` or video details.
-  It is not a full video discovery or comments client.
+  Now Playing comments offer Popular (default) and Newest sorting, plus signed-in
+  like/unlike actions. Newest and later pages may require sign-in. Comment numbers
+  follow the displayed list order; posting and expanded reply threads are not supported.
 - **YouTube Music**:
   login, home/library playlist browsing, playlist details, search, playback compatibility,
   PoToken, and JS Challenge support. Content access remains bound by platform rules
@@ -989,7 +993,7 @@ These directions can change with maintainer bandwidth, platform availability,
 and community feedback. They are not fixed-date commitments.
 
 - [ ] Video playback
-- [ ] Comment section
+- [x] Comment reading, sorting, and likes (NetEase / Bilibili)
 - [ ] More third-party playback, library, and account capabilities
 - [ ] Fuller QQ Music account support, library data, and a more stable auth path
 

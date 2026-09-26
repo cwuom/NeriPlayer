@@ -18,5 +18,6 @@ data class SongComment(
     val createTime: Long?,
     val platform: CommentPlatform,
     /** 用户等级, 平台未提供时为 null */
-    val userLevel: Int?
+    val userLevel: Int?,
+    val isLiked: Boolean = false
 )

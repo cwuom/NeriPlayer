@@ -1,11 +1,13 @@
 package moe.ouom.neriplayer.core.comment
 
 import moe.ouom.neriplayer.core.comment.model.CommentPage
+import moe.ouom.neriplayer.core.comment.model.COMMENT_PAGE_SIZE
+import moe.ouom.neriplayer.core.comment.model.CommentSort
 
 /**
  * 评论分页的内存缓存 (MVP 级别, 不引入数据库)。
  *
- * - 键为 `平台:资源id:页码`
+ * - 按平台、资源、排序和分页参数隔离
  * - 默认 TTL 5 分钟
  * - LRU 上限约束内存占用
  */
@@ -28,17 +30,14 @@ internal object CommentMemoryCache {
     }
 
     /**
-     * 拼装缓存键, 规则为 `平台:资源id:页码`。
-     */
-    private fun pageKey(platform: String, resourceId: Long, page: Int): String {
-        return "$platform:$resourceId:$page"
-    }
-
-    /**
      * 读取指定页缓存; 条目已超过 [DEFAULT_TTL_MS] 时顺手删除并返回 null。
      */
-    fun get(platform: String, resourceId: Long, page: Int): CommentPage? {
-        val key = pageKey(platform, resourceId, page)
+    fun get(
+        platform: String, resourceId: Long, page: Int,
+        sort: CommentSort = CommentSort.HOT, pageSize: Int = COMMENT_PAGE_SIZE,
+        cursor: String? = null
+    ): CommentPage? {
+        val key = "$platform:$resourceId:$sort:$pageSize:$page:${cursor.orEmpty()}"
         val now = System.currentTimeMillis()
         synchronized(lock) {
             val entry = entries[key] ?: return null
@@ -53,8 +52,12 @@ internal object CommentMemoryCache {
     /**
      * 写入指定页缓存, 记录当前时间作为 TTL 起点, 同键覆盖。
      */
-    fun put(platform: String, resourceId: Long, page: Int, pageData: CommentPage) {
-        val key = pageKey(platform, resourceId, page)
+    fun put(
+        platform: String, resourceId: Long, page: Int, pageData: CommentPage,
+        sort: CommentSort = CommentSort.HOT, pageSize: Int = COMMENT_PAGE_SIZE,
+        cursor: String? = null
+    ) {
+        val key = "$platform:$resourceId:$sort:$pageSize:$page:${cursor.orEmpty()}"
         val now = System.currentTimeMillis()
         synchronized(lock) {
             entries[key] = Entry(pageData, now)

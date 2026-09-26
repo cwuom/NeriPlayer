@@ -27,7 +27,13 @@ internal fun parseNeteaseCommentPage(
         )
     }
 
-    val array = root.optJSONArray("comments")
+    val data = if (root.has("data")) {
+        root.optJSONObject("data")?.takeIf { it.optJSONArray("comments") != null }
+            ?: throw CommentApiException(200, CommentError.API, "Invalid NetEase comment data")
+    } else {
+        root
+    }
+    val array = data.optJSONArray("comments")
     val comments = ArrayList<SongComment>(array?.length() ?: 0)
     if (array != null) {
         for (index in 0 until array.length()) {
@@ -36,9 +42,11 @@ internal fun parseNeteaseCommentPage(
         }
     }
 
-    val total = root.optLong("total", -1L).takeIf { it >= 0L }
-    val hasMore = if (root.has("more")) {
-        root.optBoolean("more", false)
+    val total = data.optLong("totalCount", data.optLong("total", -1L)).takeIf { it >= 0L }
+    val hasMore = if (data.has("hasMore")) {
+        data.optBoolean("hasMore", false)
+    } else if (data.has("more")) {
+        data.optBoolean("more", false)
     } else {
         total?.let { page.toLong() * pageSize < it } ?: (comments.size >= pageSize)
     }
@@ -48,7 +56,8 @@ internal fun parseNeteaseCommentPage(
         page = page,
         pageSize = pageSize,
         total = total,
-        hasMore = hasMore
+        hasMore = hasMore,
+        nextCursor = data.optString("cursor").takeIf { it.isNotBlank() && it != "null" }
     )
 }
 
@@ -71,7 +80,8 @@ private fun parseNeteaseComment(item: JSONObject): SongComment {
         // 网易云的时间戳已经是毫秒
         createTime = createTime,
         platform = CommentPlatform.NETEASE,
-        userLevel = user.optInt("level", 0).takeIf { it > 0 }
+        userLevel = user.optInt("level", 0).takeIf { it > 0 },
+        isLiked = item.optBoolean("liked", false)
     )
 }
 
@@ -92,7 +102,7 @@ private fun resolveNeteaseReplyCount(item: JSONObject): Long? {
  * 网易云业务错误码 -> 统一错误分类。
  */
 internal fun neteaseCommentError(code: Int): CommentError = when (code) {
-    301, 401, 403, -460 -> CommentError.PERMISSION
+    301, 315, 401, 403, -460 -> CommentError.PERMISSION
     404 -> CommentError.NOT_FOUND
     in 500..599 -> CommentError.SERVER
     else -> CommentError.API

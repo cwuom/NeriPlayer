@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +17,7 @@ import moe.ouom.neriplayer.core.comment.model.COMMENT_PAGE_SIZE
 import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
+import moe.ouom.neriplayer.core.comment.model.CommentSort
 import moe.ouom.neriplayer.core.comment.model.SongComment
 import moe.ouom.neriplayer.core.comment.repository.CommentRepository
 import moe.ouom.neriplayer.core.comment.repository.commentRepositoryFor
@@ -57,7 +59,13 @@ internal data class CommentUiState(
     val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
     val error: CommentError? = null,
-    val loadMoreError: CommentError? = null
+    val loadMoreError: CommentError? = null,
+    val sort: CommentSort = CommentSort.HOT,
+    val pendingSort: CommentSort? = null,
+    val nextCursor: String? = null,
+    val likingIds: Set<String> = emptySet(),
+    val likeError: CommentError? = null,
+    val likeErrorCode: Int? = null
 )
 
 /**
@@ -112,6 +120,8 @@ internal class CommentViewModel : ViewModel() {
 
     private var loadJob: Job? = null
     private var loadMoreJob: Job? = null
+    private var generation = 0L
+    private val likeJobs = mutableMapOf<String, Job>()
 
     /** 仓库工厂, 单元测试可替换 (生产环境即按平台分发) */
     internal var repositoryFactory: (CommentPlatform) -> CommentRepository = ::commentRepositoryFor
@@ -129,8 +139,10 @@ internal class CommentViewModel : ViewModel() {
         }
 
         activeSource = source
+        generation++
         loadJob?.cancel()
         loadMoreJob?.cancel()
+        cancelLikes()
 
         if (source == null) {
             _uiState.value = CommentUiState()
@@ -141,23 +153,97 @@ internal class CommentViewModel : ViewModel() {
             source = source,
             status = CommentListStatus.LOADING
         )
-        startLoad(source = source, page = 1, forceRefresh = false, isRefresh = false)
+        startLoad(source = source, page = 1, forceRefresh = false)
+    }
+
+    fun selectSort(sort: CommentSort) {
+        val source = activeSource ?: return
+        val current = _uiState.value
+        if (sort == (current.pendingSort ?: current.sort) || sort !in CommentSort.supportedBy(source.platform)) return
+        if (current.likingIds.isNotEmpty()) return
+        generation++
+        loadJob?.cancel()
+        loadMoreJob?.cancel()
+        // 新排序成功前保留旧列表、游标和排序，失败时仍可继续浏览
+        _uiState.value = current.copy(
+            pendingSort = sort,
+            isLoadingMore = false,
+            isRefreshing = false,
+            error = null,
+            loadMoreError = null
+        )
+        startLoad(source, 1, forceRefresh = true)
+    }
+
+    fun toggleLike(commentId: String) {
+        val source = activeSource ?: return
+        val current = _uiState.value
+        if (current.status != CommentListStatus.SUCCESS || current.isRefreshing ||
+            current.isLoadingMore || current.pendingSort != null) return
+        if (commentId in current.likingIds) return
+        val comment = current.comments.find { it.id == commentId } ?: return
+        val requestGeneration = generation
+        val liked = !comment.isLiked
+        _uiState.update { it.copy(likingIds = it.likingIds + commentId, likeError = null, likeErrorCode = null) }
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                repositoryFactory(source.platform).setLiked(source, commentId, liked)
+                if (!isActive || requestGeneration != generation) return@launch
+                _uiState.update { state ->
+                    state.copy(comments = state.comments.map { item ->
+                        if (item.id != commentId) item else item.copy(
+                            isLiked = liked,
+                            likeCount = (item.likeCount + if (liked) 1L else -1L).coerceAtLeast(0L)
+                        )
+                    })
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                if (isActive && requestGeneration == generation) {
+                    val code = (error as? CommentApiException)?.code
+                    NPLogger.w(TAG, "Comment like failed: platform=${source.platform}, code=$code, type=${error.javaClass.simpleName}")
+                    _uiState.update { it.copy(likeError = toCommentError(error), likeErrorCode = code) }
+                }
+            } finally {
+                if (requestGeneration == generation) {
+                    likeJobs.remove(commentId)
+                    _uiState.update { it.copy(likingIds = it.likingIds - commentId) }
+                }
+            }
+        }
+        likeJobs[commentId] = job
+        job.start()
+    }
+
+    private fun cancelLikes() {
+        likeJobs.values.forEach { it.cancel() }
+        likeJobs.clear()
+    }
+
+    fun dismissLikeError() {
+        _uiState.update { it.copy(likeError = null, likeErrorCode = null) }
+    }
+
+    fun dismissLoadError() {
+        _uiState.update { it.copy(error = null) }
     }
 
     /** 首屏加载失败后重试 */
     fun retry() {
         val source = activeSource ?: return
         _uiState.update { it.copy(status = CommentListStatus.LOADING, error = null) }
-        startLoad(source = source, page = 1, forceRefresh = true, isRefresh = false)
+        startLoad(source = source, page = 1, forceRefresh = true)
     }
 
     /** 下拉刷新: 重新拉取第 1 页并替换旧数据 */
     fun refresh() {
         val source = activeSource ?: return
         val current = _uiState.value
-        if (current.isRefreshing || current.isLoadingMore) return
+        if (current.isRefreshing || current.isLoadingMore || current.likingIds.isNotEmpty() ||
+            current.pendingSort != null) return
         _uiState.update { it.copy(isRefreshing = true, error = null) }
-        startLoad(source = source, page = 1, forceRefresh = true, isRefresh = true)
+        startLoad(source = source, page = 1, forceRefresh = true)
     }
 
     /** 触底加载下一页 */
@@ -165,7 +251,8 @@ internal class CommentViewModel : ViewModel() {
         val source = activeSource ?: return
         val current = _uiState.value
         // 同一时刻只允许一个翻页请求 (§30/§67)
-        if (current.isLoadingMore || current.isRefreshing) return
+        if (current.isLoadingMore || current.isRefreshing || current.likingIds.isNotEmpty() ||
+            current.pendingSort != null) return
         if (!current.hasMore) return
         if (current.status != CommentListStatus.SUCCESS) return
         if (current.page <= 0) return
@@ -174,40 +261,26 @@ internal class CommentViewModel : ViewModel() {
         startLoad(
             source = source,
             page = current.page + 1,
-            forceRefresh = false,
-            isRefresh = false
+            forceRefresh = false
         )
     }
 
-    /**
-     * 评论面板不再显示 (关闭面板 / 歌曲切到不支持评论的音源)。
-     *
-     * 取消所有在途请求, 别让请求在界面不再需要它之后继续占用结果状态;
-     * 已完成的列表数据保留 (重新打开可直接复用), 只有「还在加载中」的状态回落到 IDLE,
-     * 这样下次打开面板会重新请求一次, 而不会被 [onSourceChanged] 的早退条件卡在 LOADING。
-     */
     fun onSheetHidden() {
+        generation++
         loadJob?.cancel()
         loadMoreJob?.cancel()
-        _uiState.update { current ->
-            when {
-                current.status == CommentListStatus.LOADING -> current.copy(
-                    status = if (current.comments.isEmpty()) {
-                        CommentListStatus.IDLE
-                    } else {
-                        CommentListStatus.SUCCESS
-                    },
-                    isRefreshing = false,
-                    isLoadingMore = false
-                )
-
-                current.isRefreshing || current.isLoadingMore -> current.copy(
-                    isRefreshing = false,
-                    isLoadingMore = false
-                )
-
-                else -> current
-            }
+        cancelLikes()
+        // 重新打开时读取当前账号的点赞状态，匿名内容仍可复用仓库缓存
+        _uiState.update {
+            it.copy(
+                status = CommentListStatus.IDLE,
+                isRefreshing = false,
+                isLoadingMore = false,
+                likingIds = emptySet(),
+                pendingSort = null,
+                likeError = null,
+                likeErrorCode = null
+            )
         }
     }
 
@@ -218,11 +291,13 @@ internal class CommentViewModel : ViewModel() {
     private fun startLoad(
         source: CommentSource,
         page: Int,
-        forceRefresh: Boolean,
-        isRefresh: Boolean
+        forceRefresh: Boolean
     ) {
         val repository = repositoryFactory(source.platform)
         val isFirstPage = page <= 1
+        val sort = _uiState.value.pendingSort ?: _uiState.value.sort
+        val cursor = if (isFirstPage) null else _uiState.value.nextCursor
+        val requestGeneration = generation
         if (isFirstPage) {
             loadJob?.cancel()
         } else {
@@ -235,14 +310,16 @@ internal class CommentViewModel : ViewModel() {
                     source = source,
                     page = page,
                     pageSize = COMMENT_PAGE_SIZE,
-                    forceRefresh = forceRefresh
+                    forceRefresh = forceRefresh,
+                    sort = sort,
+                    cursor = cursor
                 )
                 // 歌曲已经切换, 丢弃过期结果 (§23/§24)
-                if (!isActive || !isSameCommentSource(source, activeSource)) return@launch
+                if (!isActive || requestGeneration != generation) return@launch
 
                 _uiState.update { current ->
                     val comments = if (isFirstPage) {
-                        result.comments
+                        result.comments.distinctBy { it.id }
                     } else {
                         mergeComments(current.comments, result.comments)
                     }
@@ -253,8 +330,11 @@ internal class CommentViewModel : ViewModel() {
                             CommentListStatus.SUCCESS
                         },
                         comments = comments,
+                        sort = sort,
+                        pendingSort = null,
                         page = result.page,
                         hasMore = result.hasMore,
+                        nextCursor = result.nextCursor,
                         // 后续页可能拿到服务端的降级空载荷 (例如 B 站匿名请求第 2 页返回 page.count=0),
                         // 不能让它把首页拿到的总数覆盖成 0, 否则头部会从「共 N 条」掉到「共 0 条」(§32/§33)
                         total = if (isFirstPage) result.total else current.total ?: result.total,
@@ -270,7 +350,7 @@ internal class CommentViewModel : ViewModel() {
                 // 协程已被取消 (切歌 / 刷新 / 面板关闭) 时绝不发布错误:
                 // 一次正常的取消不能被渲染成「加载失败」
                 if (!isActive) return@launch
-                if (!isSameCommentSource(source, activeSource)) return@launch
+                if (requestGeneration != generation) return@launch
                 val reason = toCommentError(error)
                 // 只记录非敏感上下文 (§36)
                 NPLogger.e(
@@ -282,7 +362,9 @@ internal class CommentViewModel : ViewModel() {
                 _uiState.update { current ->
                     if (isFirstPage) {
                         current.copy(
-                            status = CommentListStatus.ERROR,
+                            status = if (current.comments.isNotEmpty()) CommentListStatus.SUCCESS
+                                else CommentListStatus.ERROR,
+                            pendingSort = null,
                             isRefreshing = false,
                             isLoadingMore = false,
                             error = reason

@@ -13,5 +13,6 @@ data class CommentPage(
     val pageSize: Int,
     /** 评论总数, 平台未提供时为 null */
     val total: Long?,
-    val hasMore: Boolean
+    val hasMore: Boolean,
+    val nextCursor: String? = null
 )

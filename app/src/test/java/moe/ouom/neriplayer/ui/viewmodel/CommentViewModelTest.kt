@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
+import moe.ouom.neriplayer.core.comment.model.CommentSort
 import moe.ouom.neriplayer.core.comment.model.SongComment
 import moe.ouom.neriplayer.core.comment.repository.CommentRepository
 import org.junit.Assert.assertEquals
@@ -57,6 +58,11 @@ class CommentViewModelTest {
         val requestedPages = mutableListOf<Int>()
         val forceRefreshes = mutableListOf<Boolean>()
         val pages = mutableMapOf<Int, CommentPage>()
+        val sorts = mutableListOf<CommentSort>()
+        val cursors = mutableListOf<String?>()
+        val likes = mutableListOf<Pair<String, Boolean>>()
+        var likeFailure: Throwable? = null
+        var likeDelayMs: Long = 0L
         var failPages: Set<Int> = emptySet()
         var failure: Throwable? = null
         var delayMs: Long = 0L
@@ -72,8 +78,12 @@ class CommentViewModelTest {
             source: CommentSource,
             page: Int,
             pageSize: Int,
-            forceRefresh: Boolean
+            forceRefresh: Boolean,
+            sort: CommentSort,
+            cursor: String?
         ): CommentPage {
+            sorts += sort
+            cursors += cursor
             requestedPages += page
             forceRefreshes += forceRefresh
             secondaryIds += source.secondaryId
@@ -98,6 +108,163 @@ class CommentViewModelTest {
                 hasMore = false
             )
         }
+
+        override suspend fun setLiked(source: CommentSource, commentId: String, liked: Boolean) {
+            likes += commentId to liked
+            delay(likeDelayMs)
+            likeFailure?.let { throw it }
+        }
+    }
+
+    @Test
+    fun `sort defaults to hot and switching cancels old paging and resets cursor`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE)
+        repository.pages[1] = pageOf(1, listOf("hot"), CommentPlatform.NETEASE, hasMore = true)
+        repository.pages[2] = pageOf(2, listOf("old-page"), CommentPlatform.NETEASE)
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(CommentPlatform.NETEASE, 1L))
+        advanceUntilIdle()
+        assertEquals(CommentSort.HOT, vm.uiState.value.sort)
+        repository.delayMs = 1_000L
+        vm.loadMore()
+        advanceTimeBy(100L)
+        repository.pages[1] = pageOf(1, listOf("newest"), CommentPlatform.NETEASE, hasMore = true)
+            .copy(nextCursor = "1700000000000")
+        vm.selectSort(CommentSort.NEWEST)
+        assertEquals(listOf("hot"), vm.uiState.value.comments.map { it.id })
+        assertEquals(CommentSort.HOT, vm.uiState.value.sort)
+        assertEquals(CommentSort.NEWEST, vm.uiState.value.pendingSort)
+        assertEquals(CommentListStatus.SUCCESS, vm.uiState.value.status)
+        advanceUntilIdle()
+        assertEquals(listOf("newest"), vm.uiState.value.comments.map { it.id })
+        assertEquals(1, vm.uiState.value.page)
+        assertNull(vm.uiState.value.pendingSort)
+        vm.loadMore()
+        advanceUntilIdle()
+        assertEquals(listOf(CommentSort.HOT, CommentSort.HOT, CommentSort.NEWEST, CommentSort.NEWEST), repository.sorts)
+        assertEquals(listOf(null, null, null, "1700000000000"), repository.cursors)
+    }
+
+    @Test
+    fun `selecting the same or unsupported sort makes no request`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.BILIBILI)
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(CommentPlatform.BILIBILI, 1L))
+        advanceUntilIdle()
+        vm.selectSort(CommentSort.HOT)
+        vm.selectSort(CommentSort.RECOMMENDED)
+        advanceUntilIdle()
+        assertEquals(listOf(CommentSort.HOT), repository.sorts)
+    }
+
+    @Test
+    fun `failed sort retains original comments order and paging cursor`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            pages[1] = pageOf(1, listOf("hot"), platform, hasMore = true).copy(nextCursor = "original")
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(CommentPlatform.NETEASE, 1L))
+        advanceUntilIdle()
+        repository.failure = IOException("unavailable")
+        vm.selectSort(CommentSort.NEWEST)
+        vm.loadMore()
+        vm.toggleLike("hot")
+        advanceUntilIdle()
+        assertEquals(listOf("hot"), vm.uiState.value.comments.map { it.id })
+        assertEquals(CommentSort.HOT, vm.uiState.value.sort)
+        assertEquals("original", vm.uiState.value.nextCursor)
+        assertEquals(1, vm.uiState.value.page)
+        assertEquals(CommentListStatus.SUCCESS, vm.uiState.value.status)
+        assertEquals(CommentError.NETWORK, vm.uiState.value.error)
+        assertNull(vm.uiState.value.pendingSort)
+        assertEquals(listOf(1, 1), repository.requestedPages)
+        assertTrue(repository.likes.isEmpty())
+        vm.dismissLoadError()
+        assertNull(vm.uiState.value.error)
+    }
+
+    @Test
+    fun `rapid sort changes apply only the last requested sort`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            pages[1] = pageOf(1, listOf("initial"), platform)
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(CommentPlatform.NETEASE, 1L))
+        advanceUntilIdle()
+        repository.delayMs = 1_000L
+        vm.selectSort(CommentSort.NEWEST)
+        advanceTimeBy(100)
+        vm.selectSort(CommentSort.RECOMMENDED)
+        repository.pages[1] = pageOf(1, listOf("recommended"), CommentPlatform.NETEASE)
+        advanceUntilIdle()
+        assertEquals(CommentSort.RECOMMENDED, vm.uiState.value.sort)
+        assertEquals(listOf("recommended"), vm.uiState.value.comments.map { it.id })
+        assertNull(vm.uiState.value.pendingSort)
+    }
+
+    @Test
+    fun `likes wait for success ignore duplicate taps and support unlike`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            pages[1] = pageOf(1, listOf("1"), platform)
+            likeDelayMs = 1_000L
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(CommentPlatform.NETEASE, 1L))
+        advanceUntilIdle()
+        vm.toggleLike("1")
+        vm.toggleLike("1")
+        advanceTimeBy(100L)
+        assertFalse(vm.uiState.value.comments.single().isLiked)
+        assertEquals(setOf("1"), vm.uiState.value.likingIds)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.comments.single().isLiked)
+        assertEquals(1L, vm.uiState.value.comments.single().likeCount)
+        vm.toggleLike("1")
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.comments.single().isLiked)
+        assertEquals(0L, vm.uiState.value.comments.single().likeCount)
+        assertEquals(listOf("1" to true, "1" to false), repository.likes)
+        assertTrue(vm.uiState.value.likingIds.isEmpty())
+    }
+
+    @Test
+    fun `like failure preserves content and provides dismissible permission error`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            pages[1] = pageOf(1, listOf("1"), platform)
+            likeFailure = CommentApiException(301, CommentError.PERMISSION, "login required")
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(CommentPlatform.NETEASE, 1L))
+        advanceUntilIdle()
+        vm.toggleLike("1")
+        advanceUntilIdle()
+        assertEquals(CommentListStatus.SUCCESS, vm.uiState.value.status)
+        assertFalse(vm.uiState.value.comments.single().isLiked)
+        assertEquals(0L, vm.uiState.value.comments.single().likeCount)
+        assertEquals(CommentError.PERMISSION, vm.uiState.value.likeError)
+        assertEquals(301, vm.uiState.value.likeErrorCode)
+        assertTrue(vm.uiState.value.likingIds.isEmpty())
+        vm.dismissLikeError()
+        assertNull(vm.uiState.value.likeError)
+        assertNull(vm.uiState.value.likeErrorCode)
+    }
+
+    @Test
+    fun `changing source cannot apply an old like to the same comment id`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            pages[1] = pageOf(1, listOf("1"), platform)
+            likeDelayMs = 1_000L
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(CommentPlatform.NETEASE, 1L))
+        advanceUntilIdle()
+        vm.toggleLike("1")
+        advanceTimeBy(100L)
+        vm.onSourceChanged(source(CommentPlatform.NETEASE, 2L))
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.comments.single().isLiked)
+        assertTrue(vm.uiState.value.likingIds.isEmpty())
+        assertNull(vm.uiState.value.likeError)
     }
 
     /**

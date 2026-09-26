@@ -96,7 +96,8 @@ private fun parseBiliComment(item: JSONObject): SongComment {
             ?: item.optLong("count", -1L).takeIf { it >= 0L },
         createTime = createTime,
         platform = CommentPlatform.BILIBILI,
-        userLevel = levelInfo?.optInt("current_level", 0)?.takeIf { it > 0 }
+        userLevel = levelInfo?.optInt("current_level", 0)?.takeIf { it > 0 },
+        isLiked = item.optInt("action", 0) == 1
     )
 }
 
@@ -115,9 +116,9 @@ private fun normalizeBiliAvatarUrl(raw: String?): String? {
  * Bilibili 业务错误码 -> 统一错误分类。
  */
 internal fun biliCommentError(code: Int): CommentError = when (code) {
-    -403, -412 -> CommentError.PERMISSION
-    -404 -> CommentError.NOT_FOUND
-    BILI_CODE_REPLY_CLOSED -> CommentError.CLOSED
+    -101, -102, -111, -403, -412, 12004 -> CommentError.PERMISSION
+    -404, 12006 -> CommentError.NOT_FOUND
+    BILI_CODE_REPLY_CLOSED, 12002 -> CommentError.CLOSED
     in 500..599 -> CommentError.SERVER
     else -> CommentError.API
 }

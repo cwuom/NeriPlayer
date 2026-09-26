@@ -8,10 +8,12 @@ import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.mapper.parseBiliCommentPage
+import moe.ouom.neriplayer.core.comment.mapper.biliCommentError
 import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
+import moe.ouom.neriplayer.core.comment.model.CommentSort
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
@@ -28,24 +30,47 @@ internal class BiliCommentRepository(
         source: CommentSource,
         page: Int,
         pageSize: Int,
-        forceRefresh: Boolean
+        forceRefresh: Boolean,
+        sort: CommentSort,
+        cursor: String?
     ): CommentPage {
         require(source.platform == platform)
+        require(sort in CommentSort.supportedBy(platform))
         val resourceId = resolveResourceId(source)
-        if (forceRefresh && page == 1) {
+        val client = clientProvider()
+        val authenticated = client.hasCommentLogin()
+        if ((forceRefresh && page == 1) || authenticated) {
             CommentMemoryCache.invalidate(platform.name, resourceId)
         }
-        if (!forceRefresh) {
-            CommentMemoryCache.get(platform.name, resourceId, page)?.let { return it }
+        if (!forceRefresh && !authenticated) {
+            CommentMemoryCache.get(platform.name, resourceId, page, sort, pageSize, cursor)?.let { return it }
         }
 
         NPLogger.d(TAG, "load comments: platform=BILIBILI, resourceId=$resourceId, page=$page")
         val root = withContext(Dispatchers.IO) {
-            clientProvider().getVideoComments(resourceId, page, pageSize)
+            client.getVideoComments(resourceId, page, pageSize, if (sort == CommentSort.NEWEST) 0 else 1)
         }
         val result = parseBiliCommentPage(root, page, pageSize)
-        CommentMemoryCache.put(platform.name, resourceId, page, result)
+        if (!authenticated && !client.hasCommentLogin()) {
+            CommentMemoryCache.put(platform.name, resourceId, page, result, sort, pageSize, cursor)
+        }
         return result
+    }
+
+    override suspend fun setLiked(source: CommentSource, commentId: String, liked: Boolean) {
+        require(source.platform == platform)
+        val resourceId = resolveResourceId(source)
+        try {
+            val root = withContext(Dispatchers.IO) {
+                clientProvider().setVideoCommentLiked(resourceId, commentId, liked)
+            }
+            val code = root.optInt("code", -1)
+            if (code != 0) {
+                throw CommentApiException(code, biliCommentError(code), "Bili comment like failed: $code")
+            }
+        } finally {
+            CommentMemoryCache.invalidate(platform.name, resourceId)
+        }
     }
 
     private suspend fun resolveResourceId(source: CommentSource): Long {

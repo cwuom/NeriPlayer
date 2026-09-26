@@ -1,24 +1,36 @@
 package moe.ouom.neriplayer.ui.component.comment
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -26,19 +38,28 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentSource
+import moe.ouom.neriplayer.core.comment.model.CommentSort
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
 import moe.ouom.neriplayer.ui.viewmodel.CommentViewModel
@@ -83,29 +104,36 @@ internal fun CommentSheet(
             offlineMode = offlineMode,
             onRefresh = viewModel::refresh,
             onRetry = viewModel::retry,
-            onLoadMore = viewModel::loadMore
+            onLoadMore = viewModel::loadMore,
+            onSort = viewModel::selectSort,
+            onLike = viewModel::toggleLike,
+            onDismissLikeError = viewModel::dismissLikeError,
+            onDismissLoadError = viewModel::dismissLoadError
         )
     }
 }
 
-/**
- * 弹层内部内容: 头部展示总数与刷新按钮, 再按 [ui] 的 status 分支渲染加载 / 空 / 错误 / 列表。
- * 列表项 key 取 "platform:id", 触底且成功态、还有下一页、无进行中请求时自动触发 [onLoadMore],
- * 页脚按需展示加载更多、翻页失败重试与「没有更多」。
- */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CommentSheetContent(
+internal fun CommentSheetContent(
     ui: CommentUiState,
     offlineMode: Boolean,
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
-    onLoadMore: () -> Unit
+    onLoadMore: () -> Unit,
+    onSort: (CommentSort) -> Unit,
+    onLike: (String) -> Unit,
+    onDismissLikeError: () -> Unit,
+    onDismissLoadError: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val sortLoadingDescription = stringResource(R.string.comment_sort_loading)
     val listState = rememberLazyListState()
+    val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+    val panelHeight = (windowHeight * 0.72f).coerceAtMost(620.dp)
 
     // 切换评论来源（换歌 / 自动切歌）时把列表位置重置到顶部: 数据已整体替换, 旧的滚动位置会让新来源停在中间 (§23/§24)
-    LaunchedEffect(ui.source) {
+    LaunchedEffect(ui.source, ui.sort) {
         listState.scrollToItem(0)
     }
 
@@ -118,10 +146,12 @@ private fun CommentSheetContent(
             lastVisible >= info.totalItemsCount - 2
         }
     }
-    LaunchedEffect(reachedEnd, ui.hasMore, ui.isLoadingMore, ui.loadMoreError, ui.status) {
+    LaunchedEffect(reachedEnd, ui.hasMore, ui.isLoadingMore, ui.loadMoreError, ui.status, ui.likingIds, ui.pendingSort) {
         if (reachedEnd &&
             ui.hasMore &&
             !ui.isLoadingMore &&
+            ui.pendingSort == null &&
+            ui.likingIds.isEmpty() &&
             ui.loadMoreError == null &&
             ui.status == CommentListStatus.SUCCESS
         ) {
@@ -132,49 +162,47 @@ private fun CommentSheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .height(panelHeight)
+            .testTag("comment-sheet-content")
             .bottomSheetScrollGuard()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 8.dp),
+                .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = stringResource(R.string.comment_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            ui.total?.takeIf { it > 0L }?.let { total ->
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(
-                        R.string.comment_total_format,
-                        formatPlayCount(context, total)
-                    ),
+                    text = stringResource(R.string.comment_title),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    text = ui.total?.let { stringResource(R.string.comment_total_format, formatPlayCount(context, it)) }
+                        ?: stringResource(R.string.comment_loading),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.width(4.dp))
             }
-            HapticIconButton(
-                onClick = onRefresh,
-                enabled = !ui.isRefreshing && ui.status != CommentListStatus.LOADING
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Refresh,
-                    contentDescription = stringResource(R.string.comment_refresh)
+            CommentSortMenu(ui, onSort)
+        }
+
+        Box(Modifier.fillMaxWidth().height(4.dp)) {
+            if (ui.pendingSort != null) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().semantics {
+                        contentDescription = sortLoadingDescription
+                    }
                 )
             }
         }
 
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-        )
-
-        Box(
+        PullToRefreshBox(
+            isRefreshing = ui.isRefreshing,
+            onRefresh = onRefresh,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 520.dp)
+                .weight(1f)
         ) {
             when (ui.status) {
                 CommentListStatus.IDLE, CommentListStatus.LOADING -> CommentLoadingBlock()
@@ -189,18 +217,23 @@ private fun CommentSheetContent(
                 CommentListStatus.SUCCESS -> LazyColumn(
                     state = listState,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .bottomSheetScrollGuard { !listState.canScrollBackward }
+                        .fillMaxSize()
+                        .bottomSheetScrollGuard { !listState.canScrollBackward },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(
+                    itemsIndexed(
                         items = ui.comments,
-                        key = { comment -> "${comment.platform.name}:${comment.id}" },
-                        contentType = { "comment" }
-                    ) { comment ->
-                        CommentItem(comment = comment, offlineMode = offlineMode)
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 68.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        key = { _, comment -> "${comment.platform.name}:${comment.id}" },
+                        contentType = { _, _ -> "comment" }
+                    ) { index, comment ->
+                        CommentItem(
+                            comment = comment,
+                            floor = index + 1,
+                            offlineMode = offlineMode,
+                            isLiking = comment.id in ui.likingIds,
+                            likeEnabled = !ui.isRefreshing && !ui.isLoadingMore && ui.pendingSort == null,
+                            onLike = { onLike(comment.id) }
                         )
                     }
 
@@ -234,8 +267,85 @@ private fun CommentSheetContent(
                     }
                 }
             }
+            val failureText = when {
+                ui.likeError != null -> {
+                    val message = stringResource(
+                        when {
+                            ui.likeError == CommentError.PERMISSION -> R.string.comment_like_login_required
+                            ui.source?.platform == moe.ouom.neriplayer.core.comment.model.CommentPlatform.NETEASE &&
+                                ui.likeErrorCode == 250 -> R.string.comment_like_verification
+                            else -> R.string.comment_like_failed
+                        }
+                    )
+                    ui.likeErrorCode?.let { stringResource(R.string.comment_error_code_format, message, it) } ?: message
+                }
+                ui.error != null && ui.comments.isNotEmpty() -> stringResource(R.string.comment_reload_failed)
+                else -> null
+            }
+            if (failureText != null) {
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Row(modifier = Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(failureText, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        HapticIconButton(onClick = if (ui.likeError != null) onDismissLikeError else onDismissLoadError) {
+                            Icon(Icons.Outlined.Close, stringResource(R.string.comment_dismiss_error))
+                        }
+                    }
+                }
+            }
         }
 
         Spacer(Modifier.height(12.dp))
     }
+}
+
+@Composable
+private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
+    var expanded by remember(ui.source) { mutableStateOf(false) }
+    val description = stringResource(R.string.comment_sort)
+    Box {
+        HapticTextButton(
+            onClick = { expanded = true },
+            enabled = ui.source != null && ui.likingIds.isEmpty(),
+            modifier = Modifier.semantics { contentDescription = description },
+            colors = ButtonDefaults.textButtonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        ) {
+            if (ui.pendingSort != null) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(commentSortTextRes(ui.pendingSort ?: ui.sort)))
+            Icon(Icons.Outlined.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            ui.source?.platform?.let { platform ->
+                CommentSort.supportedBy(platform).forEach { sort ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(commentSortTextRes(sort))) },
+                        trailingIcon = {
+                            if (sort == ui.sort) Icon(Icons.Filled.Check, contentDescription = null)
+                        },
+                        onClick = {
+                            expanded = false
+                            onSort(sort)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun commentSortTextRes(sort: CommentSort): Int = when (sort) {
+    CommentSort.HOT -> R.string.comment_sort_hot
+    CommentSort.NEWEST -> R.string.comment_sort_newest
+    CommentSort.RECOMMENDED -> R.string.comment_sort_recommended
 }

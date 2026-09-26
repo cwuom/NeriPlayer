@@ -1,16 +1,25 @@
 package moe.ouom.neriplayer.ui.component.comment
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.outlined.ThumbUp
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -20,118 +29,128 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.comment.model.SongComment
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatDate
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
-/**
- * 单条评论。
- *
- * 展示: 头像 / 用户名 / 用户等级(可选) / 正文 / 发布时间 / 点赞数 / 回复数(可选)。
- * 图片加载复用项目既有的 Coil 与离线缓存请求 (§27/§28), 不引入任何新的图片库。
- */
 @Composable
 internal fun CommentItem(
     comment: SongComment,
+    floor: Int,
     offlineMode: Boolean,
+    isLiking: Boolean,
+    likeEnabled: Boolean,
+    onLike: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val anonymous = stringResource(R.string.comment_anonymous_user)
     val username = comment.username.trim().ifBlank { anonymous }
-    val timeText = comment.createTime
-        ?.takeIf { it > 0L }
-        ?.let { formatDate(it) }
+    val timeText = comment.createTime?.takeIf { it > 0L }?.let { formatDate(it) }
+    val likeAction = stringResource(if (comment.isLiked) R.string.comment_unlike else R.string.comment_like)
+    val likeState = stringResource(if (comment.isLiked) R.string.comment_liked else R.string.comment_not_liked)
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.Top
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainer
     ) {
-        AsyncImage(
-            model = remember(context, comment.avatarUrl, offlineMode) {
-                offlineCachedImageRequest(
-                    context = context,
-                    data = comment.avatarUrl,
-                    sizePx = 96,
-                    offlineMode = offlineMode
-                )
-            },
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        )
-
-        Spacer(Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = username,
-                    style = MaterialTheme.typography.titleSmall
-                        .copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
+                AsyncImage(
+                    model = remember(context, comment.avatarUrl, offlineMode) {
+                        offlineCachedImageRequest(context, comment.avatarUrl, sizePx = 96, offlineMode = offlineMode)
+                    },
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(40.dp).clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                 )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = username,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (timeText != null) {
+                        Text(
+                            text = timeText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 comment.userLevel?.let { level ->
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.comment_user_level_format, level),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Text(
+                            text = stringResource(R.string.comment_user_level_format, level),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
                 }
-            }
-
-            Spacer(Modifier.height(4.dp))
-
-            Text(
-                text = comment.content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(Modifier.height(6.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                timeText?.let { text ->
-                    Text(
-                        text = text,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(Modifier.weight(1f))
                 Text(
-                    text = stringResource(
-                        R.string.comment_like_count_format,
-                        formatPlayCount(context, comment.likeCount)
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
+                    text = stringResource(R.string.comment_floor_format, floor),
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            Text(
+                text = comment.content,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 comment.replyCount?.takeIf { it > 0L }?.let { replies ->
-                    Spacer(Modifier.width(12.dp))
                     Text(
-                        text = stringResource(
-                            R.string.comment_reply_count_format,
-                            formatPlayCount(context, replies)
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
+                        text = stringResource(R.string.comment_reply_count_format, formatPlayCount(context, replies)),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                } ?: Spacer(Modifier.weight(1f))
+                HapticTextButton(
+                    onClick = onLike,
+                    enabled = likeEnabled && !isLiking && !offlineMode,
+                    modifier = Modifier.heightIn(min = 48.dp).semantics {
+                        contentDescription = likeAction
+                        stateDescription = likeState
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        containerColor = if (comment.isLiked) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = if (comment.isLiked) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    if (isLiking) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(
+                            imageVector = if (comment.isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text(formatPlayCount(context, comment.likeCount), style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

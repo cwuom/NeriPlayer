@@ -87,6 +87,7 @@ class BiliCommentMapperTest {
                       {
                         "rpid": 555,
                         "like": 7,
+                        "action": 1,
                         "rcount": 2,
                         "ctime": 1700000000,
                         "content": { "message": "前排" },
@@ -130,6 +131,7 @@ class BiliCommentMapperTest {
         assertEquals("UP主", first.username)
         assertEquals("前排", first.content)
         assertEquals(7L, first.likeCount)
+        assertTrue(first.isLiked)
         assertEquals(2L, first.replyCount)
         // ctime 是秒, 归一化为毫秒
         assertEquals(1700000000000L, first.createTime)

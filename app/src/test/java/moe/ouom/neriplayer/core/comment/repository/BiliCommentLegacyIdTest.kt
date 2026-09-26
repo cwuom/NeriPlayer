@@ -22,6 +22,23 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
 class BiliCommentLegacyIdTest {
+    @Test
+    fun `liking legacy song comments uses verified aid and checks errors`(): Unit = runBlocking {
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
+        `when`(client.getVideoBasicInfoByBvid(BVID)).thenReturn(video())
+        `when`(client.setVideoCommentLiked(AID, "101", true)).thenReturn(JSONObject("""{"code":0}"""))
+        `when`(client.setVideoCommentLiked(AID, "101", false)).thenReturn(JSONObject("""{"code":-111}"""))
+        val repository = BiliCommentRepository { client }
+        repository.setLiked(source(song()), "101", true)
+        verify(client).setVideoCommentLiked(AID, "101", true)
+        verify(client, never()).setVideoCommentLiked(PACKED_ID, "101", true)
+        val failure = runCatching { repository.setLiked(source(song()), "101", false) }.exceptionOrNull()
+        assertTrue(failure is CommentApiException)
+        assertEquals(CommentError.PERMISSION, (failure as CommentApiException).reason)
+    }
+
     @Before
     fun clearCacheBefore() = CommentMemoryCache.clear()
 
@@ -30,7 +47,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `packed id never requests comments from a colliding real video`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         `when`(client.getVideoBasicInfoByBvid(BVID)).thenReturn(video())
         `when`(client.getVideoComments(PACKED_ID, 1, 20)).thenReturn(comments(901))
         `when`(client.getVideoComments(AID, 1, 20)).thenReturn(comments(101))
@@ -44,7 +63,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `legacy records without bvid resolve by their exact cid`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         `when`(client.getVideoBasicInfoByAvid(PACKED_ID)).thenReturn(
             video(aid = PACKED_ID, bvid = "BV1BK421y7Z1", cid = 1425003104L, part = 1)
         )
@@ -62,7 +83,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `legacy records with only packed id retain playback part resolution`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         `when`(client.getVideoBasicInfoByAvid(PACKED_ID)).thenReturn(
             video(aid = PACKED_ID, bvid = "BV1BK421y7Z1", cid = 1425003104L, part = 1)
         )
@@ -76,7 +99,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `canonical aid is not decoded as a packed id`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         val aid = 123001L
         `when`(client.getVideoBasicInfoByAvid(aid)).thenReturn(video(aid = aid))
         `when`(client.getVideoComments(aid, 1, 20)).thenReturn(comments(101))
@@ -88,7 +113,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `unverified part does not request any guessed comments`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         `when`(client.getVideoBasicInfoByAvid(PACKED_ID)).thenReturn(video(aid = PACKED_ID, cid = 99L))
         `when`(client.getVideoBasicInfoByAvid(AID)).thenReturn(video(cid = 98L))
         val failure = runCatching {
@@ -104,7 +131,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `canonical id lookup failure cannot switch to a guessed video`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         `when`(client.getVideoBasicInfoByAvid(PACKED_ID)).thenAnswer { throw IOException("unavailable") }
         `when`(client.getVideoBasicInfoByAvid(AID)).thenReturn(video())
         val canonical = song().copy(album = "Bilibili", audioId = PACKED_ID.toString(), subAudioId = null)
@@ -117,7 +146,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `bvid evidence must still match after playback resolver fallback`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         `when`(client.getVideoBasicInfoByBvid(BVID)).thenAnswer { throw IOException("unavailable") }
         `when`(client.getVideoBasicInfoByAvid(PACKED_ID)).thenReturn(
             video(aid = PACKED_ID, bvid = "BV1different")
@@ -131,7 +162,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `resolved identity is reused across pages and refresh`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         `when`(client.getVideoBasicInfoByBvid(BVID)).thenReturn(video())
         `when`(client.getVideoComments(AID, 1, 20)).thenReturn(comments(101))
         `when`(client.getVideoComments(AID, 2, 20)).thenReturn(comments(102, page = 2))
@@ -145,7 +178,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `colliding logical ids do not share a comment cache entry`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         `when`(client.getVideoBasicInfoByBvid(BVID)).thenReturn(video())
         `when`(client.getVideoBasicInfoByAvid(PACKED_ID)).thenReturn(
             video(aid = PACKED_ID, bvid = "BV1BK421y7Z1", cid = 1425003104L, part = 1)
@@ -163,7 +198,9 @@ class BiliCommentLegacyIdTest {
 
     @Test
     fun `identity verification propagates cancellation`(): Unit = runBlocking {
-        val client = mock(BiliClient::class.java)
+        val client = mock(BiliClient::class.java).also {
+            `when`(it.hasCommentLogin()).thenReturn(false)
+        }
         val cancelled = CancellationException("cancelled")
         `when`(client.getVideoBasicInfoByBvid(BVID)).thenThrow(cancelled)
         val result = runCatching {

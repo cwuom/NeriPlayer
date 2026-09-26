@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.comment.repository
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
+import moe.ouom.neriplayer.core.comment.model.CommentSort
 
 /**
  * 评论数据源统一接口。
@@ -23,8 +24,12 @@ internal interface CommentRepository {
         source: CommentSource,
         page: Int,
         pageSize: Int,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        sort: CommentSort = CommentSort.HOT,
+        cursor: String? = null
     ): CommentPage
+
+    suspend fun setLiked(source: CommentSource, commentId: String, liked: Boolean)
 }
 
 private val neteaseCommentRepository = NeteaseCommentRepository()

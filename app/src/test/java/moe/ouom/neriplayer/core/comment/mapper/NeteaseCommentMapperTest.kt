@@ -13,6 +13,24 @@ import org.junit.Test
  * 网易云评论 JSON -> 统一评论模型 的单元测试。
  */
 class NeteaseCommentMapperTest {
+    @Test
+    fun `v2 parses account like state and cursor from nested data`() {
+        val page = parseNeteaseCommentPage(
+            """{"code":200,"data":{"comments":[{"commentId":42,"liked":true,"likedCount":7}],"totalCount":120,"hasMore":true,"cursor":"normalHot#20"}}""",
+            1, 20
+        )
+        assertEquals(120L, page.total)
+        assertEquals("normalHot#20", page.nextCursor)
+        assertTrue(page.hasMore)
+        assertTrue(page.comments.single().isLiked)
+        assertEquals(7L, page.comments.single().likeCount)
+    }
+
+    @Test
+    fun `malformed v2 data is not reported as empty comments`() {
+        assertEquals(CommentError.API, parseError("""{"code":200,"data":{}}""").reason)
+    }
+
 
     /**
      * 调用网易云解析器并断言抛出 CommentApiException，返回异常用于核对错误码与原因。

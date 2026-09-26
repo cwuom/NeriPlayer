@@ -36,6 +36,7 @@ import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.platform.bili.prioritizeBiliStreamUrls
 import okhttp3.HttpUrl
+import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -49,6 +50,7 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
+import moe.ouom.neriplayer.util.network.awaitResponse
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
@@ -1800,6 +1802,37 @@ class BiliClient(
                     "sort" to sort.toString()
                 )
             )
+        }
+    }
+
+    suspend fun hasCommentLogin(): Boolean =
+        !cookieRepo.getCookiesOnce()["SESSDATA"].isNullOrBlank()
+
+    suspend fun setVideoCommentLiked(aid: Long, commentId: String, liked: Boolean): JSONObject {
+        require(aid > 0L && (commentId.toLongOrNull() ?: 0L) > 0L)
+        val cookies = cookieRepo.getCookiesOnce()
+        val csrf = cookies["bili_jct"].orEmpty()
+        if (cookies["SESSDATA"].isNullOrBlank() || csrf.isBlank()) {
+            return JSONObject().put("code", -101)
+        }
+        val request = Request.Builder()
+            .url("https://api.bilibili.com/x/v2/reply/action")
+            .header("User-Agent", DEFAULT_WEB_UA)
+            .header("Referer", REFERER)
+            .apply { headerCookieIfPresent(cookies.toCookieHeader()) }
+            .post(
+                FormBody.Builder()
+                    .add("type", REPLY_TYPE_VIDEO.toString())
+                    .add("oid", aid.toString())
+                    .add("rpid", commentId)
+                    .add("action", if (liked) "1" else "0")
+                    .add("csrf", csrf)
+                    .build()
+            )
+            .build()
+        return http.newCall(request).awaitResponse { response ->
+            if (!response.isSuccessful) throw IOException("Bili comment HTTP ${response.code}")
+            JSONObject(response.body.string())
         }
     }
 

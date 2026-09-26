@@ -48,6 +48,7 @@ import java.security.SecureRandom
 import java.util.Locale
 import java.util.zip.GZIPInputStream
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
+import moe.ouom.neriplayer.core.di.AppContainer
 
 internal fun mergeNeteaseRequestCookies(
     persistedCookies: Map<String, String>,
@@ -369,7 +370,11 @@ internal class NeteaseRequestSessionStore {
     }
 }
 
-class NeteaseClient {
+class NeteaseClient(
+    private val commentCheckToken: suspend () -> String = {
+        NeteaseYdDeviceTokenProvider(AppContainer.applicationContext).getCommentToken()
+    }
+) {
     private companion object {
         const val MAX_RESPONSE_BYTES = 4L * 1024L * 1024L
     }
@@ -495,9 +500,9 @@ class NeteaseClient {
         mode: CryptoMode = CryptoMode.WEAPI,
         method: String = "POST",
         usePersistedCookies: Boolean = true,
-        retryHttp1OnStreamReset: Boolean = false
+        retryHttp1OnStreamReset: Boolean = false,
+        session: NeteaseRequestSession = sessionStore.currentSession()
     ): String {
-        val session = sessionStore.currentSession()
         if (mode == CryptoMode.WEAPI) {
             withContext(Dispatchers.IO) {
                 ensureWeapiSessionIfNeeded(session, mode, usePersistedCookies)
@@ -1325,36 +1330,60 @@ class NeteaseClient {
         return resp
     }
 
-    /**
-     * 获取歌曲评论 (分页)。
-     *
-     * 复用本类已有的请求 / Cookie / 加解密链路, 不新建任何网络层。
-     * 使用明文 [CryptoMode.API] (与 getArtistDetail / getPlaylistDetail 一致)，
-     * 因此未登录时也能读取公开评论。
-     *
-     * @param songId 网易云歌曲 id
-     * @param limit 单页数量
-     * @param offset 偏移量, 从 0 开始
-     * @return 原始 JSON 文本, 由评论层的 Mapper 解析
-     */
+    // 最新排序必须使用上一页的游标，不能用 offset 替代时间边界
     suspend fun getSongCommentsCancellable(
         songId: Long,
-        limit: Int = 20,
-        offset: Int = 0,
+        page: Int = 1,
+        pageSize: Int = 20,
+        sortType: Int = 2,
+        cursor: String? = null,
     ): String {
         require(songId > 0L) { "songId 必须为正数" }
-        val url = "https://music.163.com/api/v1/resource/comments/R_SO_4_$songId"
-        val params = mutableMapOf<String, Any>(
-            "offset" to offset.coerceAtLeast(0).toString(),
-            "limit" to limit.coerceIn(1, 100).toString(),
-            "total" to "true",
-        )
+        require(page > 0 && pageSize in 1..100)
+        require(sortType in setOf(2, 3, 99))
+        require(sortType != 3 || page == 1 || !cursor.isNullOrBlank())
+        val offset = (page.toLong() - 1L) * pageSize
+        val nextCursor = when (sortType) {
+            2 -> "normalHot#$offset"
+            3 -> if (page == 1) "0" else requireNotNull(cursor)
+            else -> offset.toString()
+        }
         return requestCancellable(
-            url = url,
-            params = params,
+            url = "https://music.163.com/api/v2/resource/comments",
+            params = mapOf(
+                "threadId" to "R_SO_4_$songId",
+                "pageNo" to page,
+                "pageSize" to pageSize,
+                "sortType" to sortType,
+                "cursor" to nextCursor,
+                "showInner" to true
+            ),
             mode = CryptoMode.API,
-            method = "POST",
-            usePersistedCookies = true,
+        )
+    }
+
+    suspend fun setSongCommentLiked(songId: Long, commentId: String, liked: Boolean): String {
+        require(songId > 0L && (commentId.toLongOrNull() ?: 0L) > 0L)
+        val session = sessionStore.currentSession()
+        if (!session.hasLogin()) return "{\"code\":301}"
+        withContext(Dispatchers.IO) {
+            ensureWeapiSessionIfNeeded(session, CryptoMode.WEAPI, usePersistedCookies = true)
+        }
+        val checkToken = commentCheckToken()
+        if (sessionStore.currentSession() !== session) return "{\"code\":301}"
+        check(checkToken.isNotBlank()) { "NetEase comment verification unavailable" }
+        val action = if (liked) "like" else "unlike"
+        return requestCancellable(
+            url = "https://music.163.com/weapi/v1/comment/$action",
+            params = mapOf(
+                "threadId" to "R_SO_4_$songId",
+                "commentId" to commentId,
+                "like" to liked,
+                "checkToken" to checkToken,
+                "csrf_token" to session.requestCookiesForUrl(neteaseMainUrl)["__csrf"].orEmpty()
+            ),
+            mode = CryptoMode.WEAPI,
+            session = session
         )
     }
 }
