@@ -632,7 +632,9 @@ For release build and signing details, see
   for restricted playback, syncing local favorites to NetEase Liked Songs,
   artist pages, paged artist songs/albums, and artist follow support.
   Now Playing comments offer Popular (default), Newest, and Recommended sorting,
-  plus like/unlike actions when signed in.
+  quoted comments, expandable reply threads, and long-press copying, plus like/unlike,
+  posting, and replying when signed in. Failed submissions retain the draft; uncertain
+  network results are never automatically resent.
 - **Bilibili**:
   web login, QR login, video search, created favorites, subscribed favorites,
   collections, favorite/collection list search, multi-part video-to-audio
@@ -641,7 +643,8 @@ For release build and signing details, see
   from `season_id` or video details.
   Now Playing comments offer Popular (default) and Newest sorting, plus signed-in
   like/unlike actions. Newest and later pages may require sign-in. Comment numbers
-  follow the displayed list order; posting and expanded reply threads are not supported.
+  follow the displayed list order. Reply pagination, long-press copying, and signed-in
+  posting and replying are supported.
 - **YouTube Music**:
   login, home/library playlist browsing, playlist details, search, playback compatibility,
   PoToken, and JS Challenge support. Content access remains bound by platform rules

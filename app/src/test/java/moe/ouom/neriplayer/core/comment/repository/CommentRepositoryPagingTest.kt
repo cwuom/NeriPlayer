@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.CommentSort
+import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentViewModel
@@ -33,6 +34,55 @@ import org.mockito.Mockito.`when`
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CommentRepositoryPagingTest {
+    @Test
+    fun `netease floor passes time cursor and rejects a stalled response`(): Unit = runBlocking {
+        val client = mock(NeteaseClient::class.java)
+        val repository = NeteaseCommentRepository { client }
+        val source = CommentSource(CommentPlatform.NETEASE, AID)
+        `when`(client.getSongCommentReplies(AID, "42", 20, null)).thenReturn(
+            """{"code":200,"data":{"comments":[{"commentId":43}],"hasMore":true,"time":100}}"""
+        )
+        `when`(client.getSongCommentReplies(AID, "42", 20, "100")).thenReturn(
+            """{"code":200,"data":{"comments":[{"commentId":43}],"hasMore":true,"time":100}}"""
+        )
+        val first = repository.loadReplies(source, "42", 1, 20)
+        assertEquals("100", first.nextCursor)
+        val failure = runCatching { repository.loadReplies(source, "42", 2, 20, first.nextCursor) }.exceptionOrNull()
+        assertTrue(failure is CommentApiException)
+        verify(client).getSongCommentReplies(AID, "42", 20, "100")
+    }
+
+    @Test
+    fun `netease send invalidates anonymous cache and preserves platform rejection`(): Unit = runBlocking {
+        val client = mock(NeteaseClient::class.java)
+        val repository = NeteaseCommentRepository { client }
+        val source = CommentSource(CommentPlatform.NETEASE, AID)
+        `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenReturn(neteasePage(1..1, false))
+        repository.loadComments(source, 1, 20)
+        `when`(client.sendSongComment(AID, "text", "42")).thenReturn("""{"code":200}""")
+        repository.sendComment(source, "text", CommentReplyTarget("42", "40", "user"))
+        assertNull(CommentMemoryCache.get("NETEASE", AID, 1))
+        `when`(client.sendSongComment(AID, "text", null)).thenReturn("""{"code":250}""")
+        val failure = runCatching { repository.sendComment(source, "text") }.exceptionOrNull()
+        assertTrue(failure is CommentApiException)
+        assertEquals(250, (failure as CommentApiException).code)
+    }
+
+    @Test
+    fun `bilibili replies and writes use verified video identity and propagate closed comments`(): Unit = runBlocking {
+        val client = biliClient()
+        val repository = BiliCommentRepository { client }
+        `when`(client.getVideoCommentReplies(AID, "42", 1, 20)).thenReturn(biliPage(43..44, 1, 2))
+        assertEquals(listOf("43", "44"), repository.loadReplies(biliSource(), "42", 1, 20).comments.map { it.id })
+        `when`(client.sendVideoComment(AID, "text", "42", "43")).thenReturn(JSONObject("""{"code":0}"""))
+        repository.sendComment(biliSource(), "text", CommentReplyTarget("43", "42", "user"))
+        verify(client).sendVideoComment(AID, "text", "42", "43")
+        `when`(client.sendVideoComment(AID, "text", null, null)).thenReturn(JSONObject("""{"code":12002}"""))
+        val failure = runCatching { repository.sendComment(biliSource(), "text") }.exceptionOrNull()
+        assertTrue(failure is CommentApiException)
+        assertEquals(CommentError.CLOSED, (failure as CommentApiException).reason)
+    }
+
     @Test
     fun `netease passes newest cursor and isolates cached sorts`(): Unit = runBlocking {
         val client = mock(NeteaseClient::class.java)

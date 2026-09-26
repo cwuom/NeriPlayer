@@ -11,6 +11,7 @@ class NeteaseCommentActionTest {
     fun `missing login rejects before requesting verification`(): Unit = runBlocking {
         val client = NeteaseClient { error("Verification must not start without login") }
         assertEquals(301, JSONObject(client.setSongCommentLiked(1L, "42", true)).getInt("code"))
+        assertEquals(301, JSONObject(client.sendSongComment(1L, "text")).getInt("code"))
     }
 
     @Test
@@ -22,6 +23,8 @@ class NeteaseCommentActionTest {
         }
         client.setPersistedCookies(mapOf("MUSIC_U" to "test-account", "__csrf" to "test-csrf"))
         assertEquals(301, JSONObject(client.setSongCommentLiked(1L, "42", true)).getInt("code"))
+        client.setPersistedCookies(mapOf("MUSIC_U" to "test-account", "__csrf" to "test-csrf"))
+        assertEquals(301, JSONObject(client.sendSongComment(1L, "text", "42")).getInt("code"))
     }
 
     @Test
@@ -31,5 +34,6 @@ class NeteaseCommentActionTest {
         val failure = runCatching { client.setSongCommentLiked(1L, "42", true) }.exceptionOrNull()
         assertTrue(failure is IllegalStateException)
         assertEquals("NetEase comment verification unavailable", failure?.message)
+        assertTrue(runCatching { client.sendSongComment(1L, "text") }.exceptionOrNull() is IllegalStateException)
     }
 }

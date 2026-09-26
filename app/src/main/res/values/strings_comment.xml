@@ -34,4 +34,20 @@
     <string name="comment_reload_failed">加载失败，已保留原评论</string>
     <string name="comment_like_verification">平台校验未通过，请稍后重试</string>
     <string name="comment_error_code_format">%1$s (%2$d)</string>
+    <string name="comment_reply">回复</string>
+    <string name="comment_actions">评论操作</string>
+    <string name="comment_copy">复制评论</string>
+    <string name="comment_reply_to">回复 %1$s</string>
+    <string name="comment_deleted">原评论已删除</string>
+    <string name="comment_collapse_replies">收起回复</string>
+    <string name="comment_more_replies">加载更多回复</string>
+    <string name="comment_empty_replies">暂无可见回复</string>
+    <string name="comment_cancel_reply">取消回复</string>
+    <string name="comment_write_hint">写下你的评论…</string>
+    <string name="comment_send">发送</string>
+    <string name="comment_length_format">%1$d / %2$d</string>
+    <string name="comment_send_login_required">请先在设置中登录对应平台，或检查评论权限，草稿已保留</string>
+    <string name="comment_send_uncertain">网络异常，发送结果未知，草稿已保留。请先刷新确认是否已发出，再决定是否重试</string>
+    <string name="comment_send_failed">发送失败，草稿已保留，请检查内容或平台限制后重试</string>
+    <string name="comment_send_success">已发送，评论可能需要审核后才会显示</string>
 </resources>

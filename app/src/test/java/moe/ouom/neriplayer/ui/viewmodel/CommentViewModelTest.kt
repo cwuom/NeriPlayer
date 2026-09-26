@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.CommentSort
+import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
 import moe.ouom.neriplayer.core.comment.model.SongComment
 import moe.ouom.neriplayer.core.comment.repository.CommentRepository
 import org.junit.Assert.assertEquals
@@ -66,6 +67,12 @@ class CommentViewModelTest {
         var failPages: Set<Int> = emptySet()
         var failure: Throwable? = null
         var delayMs: Long = 0L
+        val sends = mutableListOf<Pair<String, CommentReplyTarget?>>()
+        var sendDelayMs = 0L
+        var sendFailure: Throwable? = null
+        val replyPages = mutableMapOf<Int, CommentPage>()
+        val replyRequests = mutableListOf<Pair<String, String?>>()
+        var replyFailure: Throwable? = null
 
         /** 模拟「仓库层把取消吞成业务错误」的形态 (曾经的 runCatching 就是如此) */
         var swallowCancellation: Boolean = false
@@ -113,6 +120,176 @@ class CommentViewModelTest {
             likes += commentId to liked
             delay(likeDelayMs)
             likeFailure?.let { throw it }
+        }
+
+        override suspend fun sendComment(source: CommentSource, content: String, target: CommentReplyTarget?) {
+            sends += content to target
+            delay(sendDelayMs)
+            sendFailure?.let { throw it }
+        }
+
+        override suspend fun loadReplies(source: CommentSource, rootId: String, page: Int, pageSize: Int, cursor: String?): CommentPage {
+            replyRequests += rootId to cursor
+            delay(delayMs)
+            replyFailure?.let { throw it }
+            return replyPages[page] ?: CommentPage(emptyList(), page, pageSize, 0L, false)
+        }
+    }
+
+    @Test
+    fun `send keeps draft on failure and blocks duplicate submissions and edits`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            sendDelayMs = 1000L
+            sendFailure = IOException("offline")
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(repository.platform, 1L))
+        advanceUntilIdle()
+        vm.updateDraft("draft")
+        vm.sendComment()
+        vm.sendComment()
+        vm.updateDraft("replacement")
+        vm.selectSort(CommentSort.NEWEST)
+        assertTrue(vm.uiState.value.isSending)
+        advanceUntilIdle()
+        assertEquals(listOf("draft" to null), repository.sends)
+        assertEquals("draft", vm.uiState.value.draft)
+        assertEquals(CommentError.NETWORK, vm.uiState.value.sendError)
+        assertEquals(CommentSort.HOT, vm.uiState.value.sort)
+        assertFalse(vm.uiState.value.isSending)
+        repository.sendFailure = null
+        vm.sendComment()
+        advanceUntilIdle()
+        assertEquals("", vm.uiState.value.draft)
+        assertTrue(vm.uiState.value.sendSucceeded)
+        assertEquals(CommentSort.NEWEST, vm.uiState.value.sort)
+    }
+
+    @Test
+    fun `blank and oversized drafts are never sent`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE)
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(repository.platform, 1L))
+        advanceUntilIdle()
+        for (draft in listOf(" \n ", "x".repeat(141))) {
+            vm.updateDraft(draft)
+            vm.sendComment()
+            advanceUntilIdle()
+        }
+        assertTrue(repository.sends.isEmpty())
+    }
+
+    @Test
+    fun `reply sends exact parent and root then reloads that thread`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.BILIBILI).apply {
+            pages[1] = pageOf(1, listOf("1"), platform)
+            replyPages[1] = pageOf(1, listOf("2"), platform)
+                .copy(total = 1L)
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(repository.platform, 1L))
+        advanceUntilIdle()
+        val target = CommentReplyTarget("2", "1", "listener")
+        vm.replyTo(target)
+        vm.updateDraft("reply")
+        vm.sendComment()
+        advanceUntilIdle()
+        assertEquals(listOf("reply" to target), repository.sends)
+        assertEquals(listOf("1" to null), repository.replyRequests)
+        assertNull(vm.uiState.value.replyTarget)
+        assertEquals(listOf("2"), vm.uiState.value.replyThreads["1"]?.comments?.map { it.id })
+        assertEquals(1L, vm.uiState.value.comments.single().replyCount)
+    }
+
+    @Test
+    fun `reply pagination deduplicates preserves failed page and resumes cursor`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            pages[1] = pageOf(1, listOf("1"), platform)
+            replyPages[1] = pageOf(1, listOf("2", "3"), platform, hasMore = true).copy(nextCursor = "100")
+            replyPages[2] = pageOf(2, listOf("3", "4"), platform)
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(repository.platform, 1L))
+        advanceUntilIdle()
+        vm.toggleReplies("1")
+        vm.loadReplies("1")
+        advanceUntilIdle()
+        assertEquals(1, repository.replyRequests.size)
+        repository.replyFailure = IOException("offline")
+        vm.loadReplies("1")
+        advanceUntilIdle()
+        assertEquals(1, vm.uiState.value.replyThreads["1"]?.page)
+        assertEquals(CommentError.NETWORK, vm.uiState.value.replyThreads["1"]?.error)
+        repository.replyFailure = null
+        vm.loadReplies("1")
+        advanceUntilIdle()
+        assertEquals(listOf("2", "3", "4"), vm.uiState.value.replyThreads["1"]?.comments?.map { it.id })
+        assertEquals(listOf(null, "100", "100"), repository.replyRequests.map { it.second })
+        vm.toggleReplies("1")
+        assertFalse(vm.uiState.value.replyThreads.getValue("1").expanded)
+    }
+
+    @Test
+    fun `switching songs discards pending reply and send results`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            pages[1] = pageOf(1, listOf("1"), platform)
+            replyPages[1] = pageOf(1, listOf("old reply"), platform)
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        vm.onSourceChanged(source(repository.platform, 1L))
+        advanceUntilIdle()
+        repository.delayMs = 1000L
+        repository.sendDelayMs = 1000L
+        vm.toggleReplies("1")
+        vm.updateDraft("old draft")
+        vm.sendComment()
+        advanceTimeBy(100L)
+        vm.onSourceChanged(source(repository.platform, 2L))
+        vm.updateDraft("new draft")
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.replyThreads.isEmpty())
+        assertEquals("new draft", vm.uiState.value.draft)
+        assertFalse(vm.uiState.value.sendSucceeded)
+        assertFalse(vm.uiState.value.isSending)
+    }
+
+    @Test
+    fun `closing a pending send preserves the draft and uncertain delivery on reopen`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply { sendDelayMs = 1000L }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        val source = source(repository.platform, 1L)
+        vm.onSourceChanged(source)
+        advanceUntilIdle()
+        vm.updateDraft("draft")
+        vm.sendComment()
+        advanceTimeBy(100L)
+        vm.onSheetHidden()
+        vm.onSourceChanged(source)
+        advanceUntilIdle()
+        assertEquals("draft", vm.uiState.value.draft)
+        assertEquals(CommentError.NETWORK, vm.uiState.value.sendError)
+        assertEquals(1, repository.sends.size)
+    }
+
+    @Test
+    fun `refresh safely cancels multiple reply jobs that finish cancellation immediately`() {
+        Dispatchers.setMain(Dispatchers.Unconfined)
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            pages[1] = pageOf(1, listOf("1", "2"), platform)
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        try {
+            vm.onSourceChanged(source(repository.platform, 1L))
+            repository.delayMs = 1000L
+            vm.toggleReplies("1")
+            vm.toggleReplies("2")
+            assertEquals(2, repository.replyRequests.size)
+            repository.delayMs = 0L
+            vm.refresh()
+            assertTrue(vm.uiState.value.replyThreads.isEmpty())
+        } finally {
+            vm.onSheetHidden()
+            Dispatchers.resetMain()
         }
     }
 

@@ -19,5 +19,24 @@ data class SongComment(
     val platform: CommentPlatform,
     /** 用户等级, 平台未提供时为 null */
     val userLevel: Int?,
-    val isLiked: Boolean = false
+    val isLiked: Boolean = false,
+    val quotedComments: List<CommentQuote> = emptyList(),
+    val previewReplies: List<SongComment> = emptyList(),
+    val rootId: String? = null
 )
+
+data class CommentQuote(
+    val username: String,
+    val content: String?
+)
+
+data class CommentReplyTarget(
+    val commentId: String,
+    val rootId: String,
+    val username: String
+)
+
+internal fun CommentPlatform.commentLengthLimit(): Int = when (this) {
+    CommentPlatform.NETEASE -> 140
+    CommentPlatform.BILIBILI -> 1000
+}

@@ -1,7 +1,12 @@
 package moe.ouom.neriplayer.ui.component.comment
 
 import android.graphics.Bitmap
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -11,6 +16,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
@@ -27,6 +33,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -38,15 +46,18 @@ import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentSort
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.SongComment
+import moe.ouom.neriplayer.core.comment.model.CommentQuote
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
+import moe.ouom.neriplayer.ui.viewmodel.CommentReplyState
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalMaterial3Api::class)
 @RunWith(AndroidJUnit4::class)
@@ -81,6 +92,120 @@ class CommentSheetTest {
 
     @Test fun lightLayoutAndScrolledList() = renderPreview(dark = false, fontScale = 1f)
     @Test fun darkLayoutAtLargeFont() = renderPreview(dark = true, fontScale = 1.3f)
+
+    @Test
+    fun longPressCopiesExactContentAndCanReplyToNestedComment() {
+        val original = sampleState().comments.single()
+        val child = original.copy(id = "2", content = "楼中楼正文\nSecond line", username = "回复者", rootId = "1")
+        val state = mutableStateOf(sampleState().copy(comments = listOf(original.copy(
+            quotedComments = listOf(CommentQuote("原作者", "被回复的内容")),
+            previewReplies = listOf(child)
+        ))))
+        composeRule.setContent {
+            MaterialTheme {
+                CommentSheetContent(
+                    ui = state.value, offlineMode = false, onRefresh = {}, onRetry = {}, onLoadMore = {},
+                    onSort = {}, onLike = {}, onDismissLikeError = {},
+                    onReply = { state.value = state.value.copy(replyTarget = it) }
+                )
+            }
+        }
+        composeRule.onNodeWithText("被回复的内容", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText(child.content, useUnmergedTree = true).performTouchInput { longClick() }
+        composeRule.onNodeWithText(context.getString(R.string.comment_copy)).performClick()
+        composeRule.runOnIdle {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            assertEquals(child.content, clipboard.primaryClip?.getItemAt(0)?.text?.toString())
+        }
+        composeRule.onNodeWithText(child.content, useUnmergedTree = true).performTouchInput { longClick() }
+        composeRule.onNodeWithText(context.getString(R.string.comment_reply)).performClick()
+        composeRule.runOnIdle {
+            assertEquals("2", state.value.replyTarget?.commentId)
+            assertEquals("1", state.value.replyTarget?.rootId)
+        }
+        composeRule.onNodeWithText(context.getString(R.string.comment_reply_to, child.username)).assertIsDisplayed()
+    }
+
+    @Test
+    fun replyThreadExpandsAndCollapsesWithoutLosingRoot() {
+        val original = sampleState().comments.single()
+        val state = mutableStateOf(sampleState())
+        composeRule.setContent {
+            MaterialTheme {
+                CommentSheetContent(
+                    ui = state.value, offlineMode = false, onRefresh = {}, onRetry = {}, onLoadMore = {},
+                    onSort = {}, onLike = {}, onDismissLikeError = {},
+                    onToggleReplies = {
+                        val thread = state.value.replyThreads[it]
+                        state.value = state.value.copy(replyThreads = mapOf(it to (thread?.copy(expanded = !thread.expanded)
+                            ?: CommentReplyState(comments = listOf(original.copy(id = "2", content = "完整回复")), hasMore = false))))
+                    }
+                )
+            }
+        }
+        composeRule.onNodeWithText(context.getString(R.string.comment_reply_count_format, "6")).performClick()
+        composeRule.onNodeWithText("完整回复", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.comment_collapse_replies)).performClick()
+        composeRule.onNodeWithText("完整回复").assertDoesNotExist()
+        composeRule.onNodeWithText("#1").assertIsDisplayed()
+        composeRule.runOnIdle {
+            state.value = state.value.copy(
+                comments = listOf(original.copy(replyCount = 0L)),
+                replyThreads = mapOf("1" to CommentReplyState(expanded = false, hasMore = false))
+            )
+        }
+        composeRule.onNodeWithText(context.getString(R.string.comment_reply_count_format, "0")).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.comment_empty_replies)).assertExists()
+    }
+
+    @Test
+    fun composerKeepsSendVisibleWithKeyboardAndDisablesItWhileSending() = withSoftwareKeyboard {
+        val state = mutableStateOf(sampleState())
+        val imeBottom = AtomicInteger()
+        composeRule.setContent {
+            MaterialTheme {
+                ModalBottomSheet(onDismissRequest = {}, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+                    val bottom = WindowInsets.ime.getBottom(LocalDensity.current)
+                    SideEffect { imeBottom.set(bottom) }
+                    Box(Modifier.testTag("comment-preview")) {
+                        CommentSheetContent(
+                            ui = state.value, offlineMode = false, onRefresh = {}, onRetry = {}, onLoadMore = {},
+                            onSort = {}, onLike = {}, onDismissLikeError = {},
+                            onDraft = { state.value = state.value.copy(draft = it) },
+                            onSend = { state.value = state.value.copy(isSending = true) }
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.onNodeWithTag("comment-send").assertIsNotEnabled()
+        composeRule.onNodeWithTag("comment-draft").performClick().performTextInput("准备发送的评论")
+        composeRule.waitUntil(timeoutMillis = 5_000L) { imeBottom.get() > 0 }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("comment-send").assertIsDisplayed().assertIsEnabled()
+        savePreview("comment-keyboard")
+        val screenshot = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        File(context.cacheDir, "comment-keyboard-screen.png").outputStream().use {
+            screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+        composeRule.onNodeWithTag("comment-send").performClick().assertIsNotEnabled()
+        composeRule.onNodeWithTag("comment-draft").assertIsNotEnabled()
+    }
+
+    private fun withSoftwareKeyboard(test: () -> Unit) {
+        fun shell(command: String): String = InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand(command).use { descriptor ->
+                ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText().trim() }
+            }
+        val previous = shell("settings get secure show_ime_with_hard_keyboard")
+        try {
+            shell("settings put secure show_ime_with_hard_keyboard 1")
+            test()
+        } finally {
+            if (previous == "null") shell("settings delete secure show_ime_with_hard_keyboard")
+            else shell("settings put secure show_ime_with_hard_keyboard $previous")
+        }
+    }
 
     @Test
     fun switchingSortKeepsCommentsAndSheetBoundsThroughLoadingFailureAndEmptyResult() {
@@ -158,7 +283,8 @@ class CommentSheetTest {
                     else "Some songs feel like a letter from an old friend. 音乐把很远的回忆带到了眼前。",
                 likeCount = if (index == 1) 1234L else 28L, replyCount = 6L,
                 createTime = 1758800000000L, platform = CommentPlatform.NETEASE,
-                userLevel = 7, isLiked = index == 2
+                userLevel = 7, isLiked = index == 2,
+                quotedComments = if (many && index == 1) listOf(CommentQuote("昨天的听众", "每次听到这里，都会想起那段日子。")) else emptyList()
             )
         }
     )

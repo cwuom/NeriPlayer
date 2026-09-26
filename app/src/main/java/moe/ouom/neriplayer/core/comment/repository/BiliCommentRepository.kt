@@ -14,6 +14,8 @@ import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.CommentSort
+import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
+import moe.ouom.neriplayer.core.comment.model.commentLengthLimit
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
@@ -117,6 +119,33 @@ internal class BiliCommentRepository(
             }
         }
         return resolved.avid
+    }
+
+    override suspend fun loadReplies(
+        source: CommentSource, rootId: String, page: Int, pageSize: Int, cursor: String?
+    ): CommentPage {
+        require(source.platform == platform)
+        val resourceId = resolveResourceId(source)
+        val root = withContext(Dispatchers.IO) {
+            clientProvider().getVideoCommentReplies(resourceId, rootId, page, pageSize)
+        }
+        return parseBiliCommentPage(root, page, pageSize)
+    }
+
+    override suspend fun sendComment(source: CommentSource, content: String, target: CommentReplyTarget?) {
+        require(source.platform == platform && content.isNotBlank() && content.length <= platform.commentLengthLimit())
+        val resourceId = resolveResourceId(source)
+        try {
+            val root = withContext(Dispatchers.IO) {
+                clientProvider().sendVideoComment(resourceId, content, target?.rootId, target?.commentId)
+            }
+            val code = root.optInt("code", -1)
+            if (code != 0) {
+                throw CommentApiException(code, biliCommentError(code), "Bili comment send failed: $code")
+            }
+        } finally {
+            CommentMemoryCache.invalidate(platform.name, resourceId)
+        }
     }
 
     private companion object {

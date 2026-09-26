@@ -6,6 +6,9 @@ import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.mapper.parseNeteaseCommentPage
+import moe.ouom.neriplayer.core.comment.mapper.parseNeteaseReplyPage
+import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
+import moe.ouom.neriplayer.core.comment.model.commentLengthLimit
 import moe.ouom.neriplayer.core.comment.mapper.neteaseCommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentError
@@ -86,6 +89,36 @@ internal class NeteaseCommentRepository(
             val code = root.optInt("code", -1)
             if (code != 200) {
                 throw CommentApiException(code, neteaseCommentError(code), "NetEase comment like failed: $code")
+            }
+        } finally {
+            CommentMemoryCache.invalidate(platform.name, source.resourceId)
+        }
+    }
+
+    override suspend fun loadReplies(
+        source: CommentSource, rootId: String, page: Int, pageSize: Int, cursor: String?
+    ): CommentPage {
+        require(source.platform == platform && page > 0)
+        require(page == 1 || !cursor.isNullOrBlank())
+        val raw = withContext(Dispatchers.IO) {
+            clientProvider().getSongCommentReplies(source.resourceId, rootId, pageSize, cursor)
+        }
+        val result = parseNeteaseReplyPage(raw, page, pageSize)
+        if (result.hasMore && (result.comments.isEmpty() || result.nextCursor == null || result.nextCursor == cursor)) {
+            throw CommentApiException(200, CommentError.API, "NetEase replies did not advance")
+        }
+        return result
+    }
+
+    override suspend fun sendComment(source: CommentSource, content: String, target: CommentReplyTarget?) {
+        require(source.platform == platform && content.isNotBlank() && content.length <= platform.commentLengthLimit())
+        try {
+            val root = JSONObject(withContext(Dispatchers.IO) {
+                clientProvider().sendSongComment(source.resourceId, content, target?.commentId)
+            })
+            val code = root.optInt("code", -1)
+            if (code != 200) {
+                throw CommentApiException(code, neteaseCommentError(code), "NetEase comment send failed: $code")
             }
         } finally {
             CommentMemoryCache.invalidate(platform.name, source.resourceId)

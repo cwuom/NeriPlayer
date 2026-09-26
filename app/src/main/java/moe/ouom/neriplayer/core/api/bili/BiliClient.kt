@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.nonReplayable
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
@@ -1807,6 +1808,59 @@ class BiliClient(
 
     suspend fun hasCommentLogin(): Boolean =
         !cookieRepo.getCookiesOnce()["SESSDATA"].isNullOrBlank()
+
+    suspend fun getVideoCommentReplies(aid: Long, rootId: String, page: Int, pageSize: Int): JSONObject {
+        require(aid > 0L && (rootId.toLongOrNull() ?: 0L) > 0L)
+        require(page > 0 && pageSize in 1..20)
+        return withContext(Dispatchers.IO) {
+            getJson(
+                "https://api.bilibili.com/x/v2/reply/reply",
+                mapOf(
+                    "type" to REPLY_TYPE_VIDEO.toString(), "oid" to aid.toString(),
+                    "root" to rootId, "pn" to page.toString(), "ps" to pageSize.toString()
+                )
+            )
+        }
+    }
+
+    suspend fun sendVideoComment(
+        aid: Long,
+        content: String,
+        rootId: String? = null,
+        parentId: String? = null
+    ): JSONObject {
+        require(aid > 0L && content.isNotBlank())
+        require((rootId == null && parentId == null) ||
+            ((rootId?.toLongOrNull() ?: 0L) > 0L && (parentId?.toLongOrNull() ?: 0L) > 0L))
+        val cookies = cookieRepo.getCookiesOnce()
+        val csrf = cookies["bili_jct"].orEmpty()
+        if (cookies["SESSDATA"].isNullOrBlank() || csrf.isBlank()) {
+            return JSONObject().put("code", -101)
+        }
+        val request = Request.Builder()
+            .url("https://api.bilibili.com/x/v2/reply/add")
+            .header("User-Agent", DEFAULT_WEB_UA)
+            .header("Referer", REFERER)
+            .apply { headerCookieIfPresent(cookies.toCookieHeader()) }
+            .post(FormBody.Builder()
+                .add("type", REPLY_TYPE_VIDEO.toString())
+                .add("oid", aid.toString())
+                .add("message", content)
+                .add("root", rootId ?: "0")
+                .add("parent", parentId ?: "0")
+                .add("plat", "1")
+                .add("statistics", "{\"appId\":100,\"platform\":5}")
+                .add("gaia_source", "main_web")
+                .add("csrf", csrf)
+                .build().nonReplayable())
+            .build()
+        // 网络结果不确定时保留草稿，避免自动重试发出重复评论
+        val client = http.newBuilder().retryOnConnectionFailure(false).followRedirects(false).build()
+        return client.newCall(request).awaitResponse { response ->
+            if (!response.isSuccessful) throw IOException("Bili comment HTTP ${response.code}")
+            JSONObject(response.body.string())
+        }
+    }
 
     suspend fun setVideoCommentLiked(aid: Long, commentId: String, liked: Boolean): JSONObject {
         require(aid > 0L && (commentId.toLongOrNull() ?: 0L) > 0L)

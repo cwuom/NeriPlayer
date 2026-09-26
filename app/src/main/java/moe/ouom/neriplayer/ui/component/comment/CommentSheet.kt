@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.CommentSort
+import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -108,7 +109,12 @@ internal fun CommentSheet(
             onSort = viewModel::selectSort,
             onLike = viewModel::toggleLike,
             onDismissLikeError = viewModel::dismissLikeError,
-            onDismissLoadError = viewModel::dismissLoadError
+            onDismissLoadError = viewModel::dismissLoadError,
+            onDraft = viewModel::updateDraft,
+            onReply = viewModel::replyTo,
+            onSend = viewModel::sendComment,
+            onToggleReplies = viewModel::toggleReplies,
+            onLoadReplies = viewModel::loadReplies
         )
     }
 }
@@ -124,7 +130,12 @@ internal fun CommentSheetContent(
     onSort: (CommentSort) -> Unit,
     onLike: (String) -> Unit,
     onDismissLikeError: () -> Unit,
-    onDismissLoadError: () -> Unit = {}
+    onDismissLoadError: () -> Unit = {},
+    onDraft: (String) -> Unit = {},
+    onReply: (CommentReplyTarget?) -> Unit = {},
+    onSend: () -> Unit = {},
+    onToggleReplies: (String) -> Unit = {},
+    onLoadReplies: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val sortLoadingDescription = stringResource(R.string.comment_sort_loading)
@@ -146,10 +157,11 @@ internal fun CommentSheetContent(
             lastVisible >= info.totalItemsCount - 2
         }
     }
-    LaunchedEffect(reachedEnd, ui.hasMore, ui.isLoadingMore, ui.loadMoreError, ui.status, ui.likingIds, ui.pendingSort) {
+    LaunchedEffect(reachedEnd, ui.hasMore, ui.isLoadingMore, ui.loadMoreError, ui.status, ui.likingIds, ui.pendingSort, ui.isSending) {
         if (reachedEnd &&
             ui.hasMore &&
             !ui.isLoadingMore &&
+            !ui.isSending &&
             ui.pendingSort == null &&
             ui.likingIds.isEmpty() &&
             ui.loadMoreError == null &&
@@ -222,19 +234,43 @@ internal fun CommentSheetContent(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    itemsIndexed(
-                        items = ui.comments,
-                        key = { _, comment -> "${comment.platform.name}:${comment.id}" },
-                        contentType = { _, _ -> "comment" }
-                    ) { index, comment ->
-                        CommentItem(
-                            comment = comment,
-                            floor = index + 1,
-                            offlineMode = offlineMode,
-                            isLiking = comment.id in ui.likingIds,
-                            likeEnabled = !ui.isRefreshing && !ui.isLoadingMore && ui.pendingSort == null,
-                            onLike = { onLike(comment.id) }
-                        )
+                    ui.comments.forEachIndexed { index, comment ->
+                        val thread = ui.replyThreads[comment.id]
+                        val replyEnabled = !offlineMode && !ui.isSending
+                        item(key = "${comment.platform.name}:${comment.id}", contentType = "comment") {
+                            CommentItem(
+                                comment = comment,
+                                floor = index + 1,
+                                offlineMode = offlineMode,
+                                isLiking = comment.id in ui.likingIds,
+                                likeEnabled = !ui.isRefreshing && !ui.isLoadingMore && !ui.isSending && ui.pendingSort == null,
+                                onLike = { onLike(comment.id) },
+                                onReply = onReply,
+                                onToggleReplies = { onToggleReplies(comment.id) },
+                                repliesExpanded = thread?.expanded == true,
+                                hasReplyThread = thread != null,
+                                replyEnabled = replyEnabled
+                            )
+                        }
+                        if (thread?.expanded == true) {
+                            items(thread.comments, key = { "reply:${comment.id}:${it.id}" }, contentType = { "reply" }) { reply ->
+                                CommentReplyItem(reply, comment.id, replyEnabled, onReply, Modifier.padding(start = 24.dp))
+                            }
+                            item(key = "reply-footer:${comment.id}", contentType = "reply-footer") {
+                                when {
+                                    thread.loading -> CommentLoadingMoreRow()
+                                    thread.error != null -> CommentLoadMoreErrorRow(thread.error) { onLoadReplies(comment.id) }
+                                    thread.hasMore -> HapticTextButton(
+                                        onClick = { onLoadReplies(comment.id) }, enabled = !offlineMode,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) { Text(stringResource(R.string.comment_more_replies)) }
+                                    thread.comments.isEmpty() -> Text(
+                                        stringResource(R.string.comment_empty_replies), Modifier.padding(16.dp),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     if (ui.isLoadingMore) {
@@ -298,7 +334,7 @@ internal fun CommentSheetContent(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        CommentComposer(ui, offlineMode, onDraft, onReply, onSend)
     }
 }
 
@@ -309,7 +345,7 @@ private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
     Box {
         HapticTextButton(
             onClick = { expanded = true },
-            enabled = ui.source != null && ui.likingIds.isEmpty(),
+            enabled = ui.source != null && ui.likingIds.isEmpty() && !ui.isSending,
             modifier = Modifier.semantics { contentDescription = description },
             colors = ButtonDefaults.textButtonColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,

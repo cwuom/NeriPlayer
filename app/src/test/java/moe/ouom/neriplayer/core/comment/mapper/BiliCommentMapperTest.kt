@@ -14,6 +14,19 @@ import org.junit.Test
  * Bilibili 评论 JSON -> 统一评论模型 的单元测试。
  */
 class BiliCommentMapperTest {
+    @Test
+    fun `nested previews preserve root and stop recursive preview parsing`() {
+        val page = parseBiliCommentPage(JSONObject("""{"code":0,"data":{
+            "page":{"num":1,"size":20,"count":1},"replies":[{
+                "rpid":10,"replies":[{"rpid":11,"root":10,"content":{"message":"reply @someone : hello"},
+                "replies":[{"rpid":12}]}]
+            }]}}"""), 1, 20)
+        val reply = page.comments.single().previewReplies.single()
+        assertEquals("11", reply.id)
+        assertEquals("10", reply.rootId)
+        assertEquals("reply @someone : hello", reply.content)
+        assertTrue(reply.previewReplies.isEmpty())
+    }
 
     @Test
     fun `truncated first page remains pageable even when total is below page size`() {

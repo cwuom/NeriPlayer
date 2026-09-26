@@ -77,7 +77,7 @@ internal fun parseBiliCommentPage(
  * 单条 B 站评论字段映射: 从 member/content 子对象取昵称、正文与等级, ctime 由秒换算为毫秒,
  * 回复数优先 rcount、缺失时回退 count, 头像经 [normalizeBiliAvatarUrl] 归一化。
  */
-private fun parseBiliComment(item: JSONObject): SongComment {
+private fun parseBiliComment(item: JSONObject, includePreview: Boolean = true): SongComment {
     val member = item.optJSONObject("member") ?: JSONObject()
     val content = item.optJSONObject("content") ?: JSONObject()
     val levelInfo = member.optJSONObject("level_info")
@@ -97,7 +97,15 @@ private fun parseBiliComment(item: JSONObject): SongComment {
         createTime = createTime,
         platform = CommentPlatform.BILIBILI,
         userLevel = levelInfo?.optInt("current_level", 0)?.takeIf { it > 0 },
-        isLiked = item.optInt("action", 0) == 1
+        isLiked = item.optInt("action", 0) == 1,
+        previewReplies = if (includePreview) {
+            item.optJSONArray("replies")?.let { replies ->
+                (0 until replies.length()).mapNotNull { index ->
+                    replies.optJSONObject(index)?.let { parseBiliComment(it, false) }
+                }
+            }.orEmpty()
+        } else emptyList(),
+        rootId = item.optLong("root", 0L).takeIf { it > 0L }?.toString()
     )
 }
 

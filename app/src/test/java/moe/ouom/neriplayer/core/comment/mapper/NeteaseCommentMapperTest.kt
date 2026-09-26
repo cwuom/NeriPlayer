@@ -14,6 +14,28 @@ import org.junit.Test
  */
 class NeteaseCommentMapperTest {
     @Test
+    fun `quotes keep author and deleted content separate from reply previews`() {
+        val page = parseNeteaseCommentPage("""{"code":200,"comments":[{
+            "commentId":10,"content":"reply",
+            "beReplied":[{"user":{"nickname":"author"},"content":"original"},
+                         {"user":{"nickname":"deleted author"},"content":null,"status":-5}],
+            "showFloorComment":{"replyCount":1,"comments":[{"commentId":11,"content":"child"}]}
+        }]}""", 1, 20)
+        val comment = page.comments.single()
+        assertEquals("original", comment.quotedComments.first().content)
+        assertEquals("author", comment.quotedComments.first().username)
+        assertNull(comment.quotedComments.last().content)
+        assertEquals("child", comment.previewReplies.single().content)
+    }
+
+    @Test
+    fun `floor page uses server time then falls back to the last comment timestamp`() {
+        val raw = """{"code":200,"data":{"comments":[{"commentId":2,"time":1700000000000}],"hasMore":true,"time":1700000000100}}"""
+        assertEquals("1700000000100", parseNeteaseReplyPage(raw, 1, 20).nextCursor)
+        assertEquals("1700000000000", parseNeteaseReplyPage(raw.replace(",\"time\":1700000000100", ""), 1, 20).nextCursor)
+    }
+
+    @Test
     fun `v2 parses account like state and cursor from nested data`() {
         val page = parseNeteaseCommentPage(
             """{"code":200,"data":{"comments":[{"commentId":42,"liked":true,"likedCount":7}],"totalCount":120,"hasMore":true,"cursor":"normalHot#20"}}""",

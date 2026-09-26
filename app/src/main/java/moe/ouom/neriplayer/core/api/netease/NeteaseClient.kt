@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.nonReplayable
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
@@ -1385,5 +1386,55 @@ class NeteaseClient(
             mode = CryptoMode.WEAPI,
             session = session
         )
+    }
+
+    suspend fun getSongCommentReplies(
+        songId: Long,
+        rootId: String,
+        pageSize: Int,
+        cursor: String?
+    ): String {
+        require(songId > 0L && (rootId.toLongOrNull() ?: 0L) > 0L)
+        require(pageSize in 1..100)
+        return requestCancellable(
+            url = "https://music.163.com/weapi/resource/comment/floor/get",
+            params = mapOf(
+                "threadId" to "R_SO_4_$songId",
+                "parentCommentId" to rootId,
+                "limit" to pageSize,
+                "time" to (cursor ?: "-1")
+            )
+        )
+    }
+
+    suspend fun sendSongComment(songId: Long, content: String, replyToId: String? = null): String {
+        require(songId > 0L && content.isNotBlank())
+        require(replyToId == null || (replyToId.toLongOrNull() ?: 0L) > 0L)
+        val session = sessionStore.currentSession()
+        if (!session.hasLogin()) return "{\"code\":301}"
+        withContext(Dispatchers.IO) {
+            ensureWeapiSessionIfNeeded(session, CryptoMode.WEAPI, usePersistedCookies = true)
+        }
+        val checkToken = commentCheckToken()
+        if (sessionStore.currentSession() !== session) return "{\"code\":301}"
+        check(checkToken.isNotBlank()) { "NetEase comment verification unavailable" }
+        val path = if (replyToId == null) "resource/comments/add" else "v1/resource/comments/reply"
+        val params = mutableMapOf<String, Any>(
+            "threadId" to "R_SO_4_$songId",
+            "content" to content,
+            "checkToken" to checkToken,
+            "csrf_token" to session.requestCookiesForUrl(neteaseMainUrl)["__csrf"].orEmpty()
+        )
+        replyToId?.let { params["commentId"] = it }
+        val request = buildRequest(
+            "https://music.163.com/weapi/$path",
+            params, CryptoMode.WEAPI, "POST", true, session
+        ).let { it.newBuilder().post(requireNotNull(it.body).nonReplayable()).build() }
+        // 发评没有幂等键，连接失败时交给用户核对，不能自动重发
+        val client = session.okHttpClient.newBuilder()
+            .retryOnConnectionFailure(false)
+            .followRedirects(false)
+            .build()
+        return executeRequestCancellable(client, request)
     }
 }

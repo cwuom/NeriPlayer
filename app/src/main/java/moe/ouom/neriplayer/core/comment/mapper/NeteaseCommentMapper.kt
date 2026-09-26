@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import moe.ouom.neriplayer.core.comment.model.CommentQuote
 import moe.ouom.neriplayer.core.comment.model.SongComment
 import org.json.JSONObject
 
@@ -65,7 +66,7 @@ internal fun parseNeteaseCommentPage(
  * 单条网易云评论字段映射: 从 user 子对象取昵称/头像/等级, 正文与点赞数取顶层字段,
  * 时间戳已是毫秒直接使用, 回复数交给 [resolveNeteaseReplyCount] 做防御性回退。
  */
-private fun parseNeteaseComment(item: JSONObject): SongComment {
+private fun parseNeteaseComment(item: JSONObject, includePreview: Boolean = true): SongComment {
     val user = item.optJSONObject("user") ?: JSONObject()
     val createTime = item.optLong("time", 0L).takeIf { it > 0L }
 
@@ -81,8 +82,35 @@ private fun parseNeteaseComment(item: JSONObject): SongComment {
         createTime = createTime,
         platform = CommentPlatform.NETEASE,
         userLevel = user.optInt("level", 0).takeIf { it > 0 },
-        isLiked = item.optBoolean("liked", false)
+        isLiked = item.optBoolean("liked", false),
+        quotedComments = item.optJSONArray("beReplied")?.let { quotes ->
+            (0 until quotes.length()).mapNotNull { index ->
+                val quote = quotes.optJSONObject(index) ?: return@mapNotNull null
+                CommentQuote(
+                    username = quote.optJSONObject("user")?.optString("nickname").orEmpty(),
+                    content = if (quote.optInt("status", 0) == -5 || quote.isNull("content")) null
+                        else quote.optString("content")
+                )
+            }
+        }.orEmpty(),
+        previewReplies = if (includePreview) {
+            item.optJSONObject("showFloorComment")?.optJSONArray("comments")?.let { replies ->
+                (0 until replies.length()).mapNotNull { index ->
+                    replies.optJSONObject(index)?.let { parseNeteaseComment(it, false) }
+                }
+            }.orEmpty()
+        } else emptyList(),
+        rootId = item.optLong("parentCommentId", 0L).takeIf { it > 0L }?.toString()
     )
+}
+
+internal fun parseNeteaseReplyPage(rawJson: String, page: Int, pageSize: Int): CommentPage {
+    val result = parseNeteaseCommentPage(rawJson, page, pageSize)
+    val data = JSONObject(rawJson).optJSONObject("data")
+        ?: throw CommentApiException(200, CommentError.API, "Missing NetEase reply data")
+    val cursor = data.optLong("time", 0L).takeIf { it > 0L }?.toString()
+        ?: result.comments.lastOrNull()?.createTime?.toString()
+    return result.copy(nextCursor = cursor)
 }
 
 /**
