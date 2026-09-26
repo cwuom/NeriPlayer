@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.sync.model.compactedSyncCausalTokens
 
 internal object SyncDataChangeDetector {
     fun hasDataChanged(remote: SyncData, merged: SyncData): Boolean {
@@ -139,8 +140,10 @@ internal object SyncDataChangeDetector {
             if (remotePlaylistDeletions[i].deletedAt != mergedPlaylistDeletions[i].deletedAt) return true
             if (remotePlaylistDeletions[i].deviceId != mergedPlaylistDeletions[i].deviceId) return true
             if (
-                remotePlaylistDeletions[i].removedMembershipTokens.orEmpty().toSet() !=
-                mergedPlaylistDeletions[i].removedMembershipTokens.orEmpty().toSet()
+                remotePlaylistDeletions[i].removedMembershipTokens.orEmpty()
+                    .compactedSyncCausalTokens() !=
+                mergedPlaylistDeletions[i].removedMembershipTokens.orEmpty()
+                    .compactedSyncCausalTokens()
             ) return true
         }
         return false
@@ -173,6 +176,7 @@ internal object SyncDataChangeDetector {
             a.subAudioId == b.subAudioId &&
             a.playlistContextId == b.playlistContextId &&
             a.syncMetadataVersion == b.syncMetadataVersion &&
-            a.syncMembershipTokens.toSet() == b.syncMembershipTokens.toSet()
+            a.syncMembershipTokens.compactedSyncCausalTokens() ==
+                b.syncMembershipTokens.compactedSyncCausalTokens()
     }
 }

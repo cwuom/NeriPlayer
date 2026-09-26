@@ -1232,7 +1232,7 @@ class GitHubSyncManager private constructor(context: Context) {
         val content = SyncDataSerializer.serialize(data, useDataSaver)
         NPLogger.d(
             TAG,
-            "Upload data size: ${SyncDataSerializer.getDataSize(data, useDataSaver)} bytes (DataSaver: $useDataSaver, File: $fileName)"
+            "Upload data size: ${content.size} bytes (DataSaver: $useDataSaver, File: $fileName)"
         )
 
         val uploadResult = apiClient.updateFileContent(owner, repo, content, sha, fileName)

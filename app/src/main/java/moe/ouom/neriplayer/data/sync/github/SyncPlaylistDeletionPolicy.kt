@@ -8,7 +8,9 @@ import moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.sync.model.compactedSyncCausalTokens
 import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
+import moe.ouom.neriplayer.data.sync.model.requireCausalTokenRangeCapacity
 
 internal object SyncPlaylistDeletionPolicy {
     internal const val MAX_PLAYLIST_SONG_DELETIONS = 5_000
@@ -33,43 +35,45 @@ internal object SyncPlaylistDeletionPolicy {
             .sortedWith(deletionOrderComparator)
     }
 
-    /** 在有限容量内保留两类墓碑，避免 causal 墓碑无限增长或挤掉全部 legacy 墓碑 */
+    /** 压缩可合并的因果墓碑, 超出容量时拒绝而不是静默丢弃 */
     fun limitDeletions(
         deletions: List<SyncPlaylistSongDeletion>,
         maxCount: Int = MAX_PLAYLIST_SONG_DELETIONS
     ): List<SyncPlaylistSongDeletion> {
         require(maxCount >= 0) { "Deletion capacity must not be negative" }
-        if (deletions.isEmpty() || maxCount == 0) {
+        if (deletions.isEmpty()) {
             return emptyList()
         }
 
         val merged = mergeDeletions(deletions, emptyList())
-        if (merged.size <= maxCount) {
-            return merged
+        val compacted = compactCausalDeletions(merged)
+        require(compacted.size <= maxCount) {
+            "Playlist deletion capacity exceeded: ${compacted.size} > $maxCount"
         }
+        return compacted.sortedWith(deletionOrderComparator)
+    }
 
-        val causal = merged.filter { it.removedMembershipTokens.orEmpty().isNotEmpty() }
-        val legacy = merged.filter { it.removedMembershipTokens.orEmpty().isEmpty() }
-        val preferredLegacyCapacity = when {
-            causal.isEmpty() -> maxCount
-            legacy.isEmpty() -> 0
-            else -> maxCount / 2
-        }
-        var legacyCapacity = minOf(legacy.size, preferredLegacyCapacity)
-        var causalCapacity = minOf(causal.size, maxCount - legacyCapacity)
-
-        var remainingCapacity = maxCount - legacyCapacity - causalCapacity
-        if (remainingCapacity > 0) {
-            val extraLegacy = minOf(legacy.size - legacyCapacity, remainingCapacity)
-            legacyCapacity += extraLegacy
-            remainingCapacity -= extraLegacy
-        }
-        if (remainingCapacity > 0) {
-            causalCapacity += minOf(causal.size - causalCapacity, remainingCapacity)
-        }
-
-        return (causal.take(causalCapacity) + legacy.take(legacyCapacity))
-            .sortedWith(deletionOrderComparator)
+    private fun compactCausalDeletions(
+        deletions: List<SyncPlaylistSongDeletion>
+    ): List<SyncPlaylistSongDeletion> {
+        val legacy = deletions.filter { it.removedMembershipTokens.orEmpty().isEmpty() }
+        val causal = deletions
+            .filter { it.removedMembershipTokens.orEmpty().isNotEmpty() }
+            .groupBy(SyncPlaylistSongDeletion::playlistId)
+            .values
+            .map { snapshots ->
+                val mirror = snapshots.maxWithOrNull(
+                    compareBy<SyncPlaylistSongDeletion> { it.deletedAt }
+                        .thenBy { it.deviceId }
+                        .thenBy(SyncPlaylistSongDeletion::stableKey)
+                ) ?: error("Causal deletion snapshot must exist")
+                val tokens = snapshots
+                    .flatMap { it.removedMembershipTokens.orEmpty() }
+                    .compactedSyncCausalTokens()
+                requireCausalTokenRangeCapacity(tokens)
+                mirror.copy(removedMembershipTokens = tokens)
+            }
+        return legacy + causal
     }
 
     fun applyDeletions(
@@ -92,7 +96,8 @@ internal object SyncPlaylistDeletionPolicy {
         val causalRemovedTokens = relevantDeletions
             .asSequence()
             .flatMap { deletion -> deletion.removedMembershipTokens.orEmpty().asSequence() }
-            .toHashSet()
+            .toList()
+            .compactedSyncCausalTokens()
         val deletionsByIdentity = relevantDeletions.groupBy { deletion ->
             deletion.identity().stableKey()
         }
@@ -233,8 +238,9 @@ internal object SyncPlaylistDeletionPolicy {
         val causalMirror = causalSnapshots.maxWithOrNull(deletionMirrorComparator)
         val removedTokens = causalSnapshots
             .flatMap { it.removedMembershipTokens.orEmpty() }
-            .normalizedSyncCausalTokens()
+            .compactedSyncCausalTokens()
         val mergedCausal = causalMirror?.let { mirror ->
+            requireCausalTokenRangeCapacity(removedTokens)
             if (removedTokens == mirror.removedMembershipTokens) {
                 mirror
             } else {
@@ -251,7 +257,7 @@ internal object SyncPlaylistDeletionPolicy {
 
     private fun applyDeletionsToSong(
         song: SyncSong,
-        causalRemovedTokens: Set<SyncCausalToken>,
+        causalRemovedTokens: List<SyncCausalToken>,
         identityDeletions: List<SyncPlaylistSongDeletion>
     ): SyncSong? {
         val songTokens = song.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens()
@@ -265,7 +271,9 @@ internal object SyncPlaylistDeletionPolicy {
         }
 
         val remainingTokens = songTokens
-            .filterNot(causalRemovedTokens::contains)
+            .filterNot { songToken ->
+                causalRemovedTokens.any { removedToken -> removedToken.overlaps(songToken) }
+            }
             .normalizedSyncCausalTokens()
         if (remainingTokens.isEmpty()) return null
         val survivingSong = if (remainingTokens == song.syncMembershipTokens.orEmpty()) {

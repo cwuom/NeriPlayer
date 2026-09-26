@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.data.sync.github
 
 import moe.ouom.neriplayer.data.sync.model.SyncData
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertArrayEquals
@@ -98,6 +100,260 @@ class SyncDataSerializerBinaryStreamTest {
         }
     }
 
+    @Test
+    fun `legacy safe serialization expands ranges for old clients`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    name = "playlist",
+                    songs = listOf(
+                        SyncSong(
+                            id = 1L,
+                            name = "song",
+                            syncMembershipTokens = listOf(
+                                SyncCausalToken("device", 1L),
+                                SyncCausalToken("device", 2L),
+                                SyncCausalToken("device", 3L)
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            val decoded = SyncDataSerializer.deserialize(
+                SyncDataSerializer.serialize(data, useDataSaver)
+            )
+            assertEquals(
+                listOf(
+                    SyncCausalToken("device", 1L),
+                    SyncCausalToken("device", 2L),
+                    SyncCausalToken("device", 3L)
+                ),
+                decoded.playlists.single().songs.single().syncMembershipTokens
+            )
+        }
+    }
+
+    @Test
+    fun `range capable serialization keeps compact range explicitly`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    songs = listOf(
+                        SyncSong(
+                            id = 1L,
+                            syncMembershipTokens = listOf(
+                                SyncCausalToken("device", 1L),
+                                SyncCausalToken("device", 2L),
+                                SyncCausalToken("device", 3L)
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        val decoded = SyncDataSerializer.deserialize(
+            SyncDataSerializer.serialize(
+                data,
+                useDataSaver = true,
+                compatibility = SyncSerializationCompatibility.RANGE_V1
+            )
+        )
+
+        assertEquals(
+            listOf(SyncCausalToken("device", 1L, counterEnd = 3L)),
+            decoded.playlists.single().songs.single().syncMembershipTokens
+        )
+    }
+
+    @Test
+    fun `legacy expansion rejects a snapshot over the global point budget`() {
+        val data = largeContiguousTokenSnapshot()
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `range mode bypasses the legacy point budget without expansion`() {
+        val body = SyncDataSerializer.serialize(
+            largeContiguousTokenSnapshot(),
+            useDataSaver = true,
+            compatibility = SyncSerializationCompatibility.RANGE_V1
+        )
+
+        assertEquals(
+            33,
+            SyncDataSerializer.deserialize(body).playlists.single().songs.size
+        )
+    }
+
+    @Test
+    fun `explicit range size audit reports compact output`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    songs = listOf(
+                        SyncSong(
+                            id = 1L,
+                            syncMembershipTokens = (1L..256L).map { counter ->
+                                SyncCausalToken("device", counter)
+                            }
+                        )
+                    )
+                )
+            )
+        )
+
+        val legacySize = SyncDataSerializer.getDataSize(
+            data,
+            useDataSaver = true,
+            compatibility = SyncSerializationCompatibility.LEGACY_SAFE
+        )
+        val compactSize = SyncDataSerializer.getDataSize(
+            data,
+            useDataSaver = true,
+            compatibility = SyncSerializationCompatibility.RANGE_V1
+        )
+
+        assertTrue("explicit range output should be smaller", compactSize < legacySize)
+    }
+
+    @Test
+    fun `fragmented causal ranges fail before either upload format`() {
+        val tokens = (1L..65L).map { counter ->
+            SyncCausalToken("device", counter * 2L)
+        }
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    songs = listOf(SyncSong(id = 1L, syncMembershipTokens = tokens))
+                )
+            )
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `fragmented recent play causal ranges fail before either upload format`() {
+        val tokens = (1L..65L).map { counter ->
+            SyncCausalToken("device", counter * 2L)
+        }
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            recentPlays = listOf(
+                SyncRecentPlay(
+                    songId = 1L,
+                    song = SyncSong(id = 1L, syncMembershipTokens = tokens),
+                    playedAt = 1L,
+                    deviceId = "device"
+                )
+            )
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `legacy expansion rejects an unbounded range before either upload format`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    songs = listOf(
+                        SyncSong(
+                            id = 1L,
+                            syncMembershipTokens = listOf(
+                                SyncCausalToken(
+                                    deviceId = "device",
+                                    counter = 1L,
+                                    counterEnd = 8_193L
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `too many playlist deletion records fail before either upload format`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlistSongDeletions = (0L..5_000L).map { songId ->
+                SyncPlaylistSongDeletion(
+                    playlistId = 1L,
+                    songId = songId,
+                    album = "netease",
+                    deletedAt = songId,
+                    deviceId = "device"
+                )
+            }
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `oversized remote body fails before parsing`() {
+        val oversizedJson = ("{" + "x".repeat(8 * 1024 * 1024) + "}")
+            .toByteArray(Charsets.UTF_8)
+
+        assertThrowsAny {
+            SyncDataSerializer.deserialize(oversizedJson)
+        }
+    }
+
+    @Test
+    fun `json with utf8 bom is decoded after format detection`() {
+        val json = SyncDataSerializer.serialize(sampleData(), useDataSaver = false)
+        val withBom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + json
+
+        assertMatchesSample(SyncDataSerializer.deserialize(withBom))
+    }
+
     // 二进制通道必须保留原始 GZIP 字节, 不能将其转成 UTF-8 文本
     @Test
     fun `binary transport body stays raw gzip`() {
@@ -141,6 +397,28 @@ class SyncDataSerializerBinaryStreamTest {
 
     private fun isGzip(bytes: ByteArray): Boolean =
         bytes.size >= 2 && bytes[0] == gzipMagic0 && bytes[1] == gzipMagic1
+
+    private fun largeContiguousTokenSnapshot(): SyncData = SyncData(
+        deviceId = "device",
+        deviceName = "test",
+        playlists = listOf(
+            SyncPlaylist(
+                id = 1L,
+                songs = (1..33).map { songId ->
+                    SyncSong(
+                        id = songId.toLong(),
+                        syncMembershipTokens = listOf(
+                            SyncCausalToken(
+                                deviceId = "device",
+                                counter = 1L,
+                                counterEnd = 8_192L
+                            )
+                        )
+                    )
+                }
+            )
+        )
+    )
 
     private fun assertThrowsAny(block: () -> Unit) {
         var threw = false
