@@ -16,12 +16,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,11 +50,20 @@ internal fun CommentComposer(
     val limit = source.platform.commentLengthLimit()
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
+    val windowInfo = LocalWindowInfo.current
+    val windowFocused = windowInfo.isWindowFocused
+    val handledFocusRequest = remember(ui.source) { mutableIntStateOf(0) }
     LaunchedEffect(ui.source) {
         focusManager.clearFocus(force = true)
     }
-    LaunchedEffect(focusRequest) {
-        if (focusRequest > 0 && ui.replyTarget != null) focusRequester.requestFocus()
+    LaunchedEffect(focusRequest, ui.replyTarget, windowFocused) {
+        if (focusRequest > handledFocusRequest.intValue && ui.replyTarget != null && windowFocused) {
+            withFrameNanos { }
+            if (windowInfo.isWindowFocused) {
+                focusRequester.requestFocus()
+                handledFocusRequest.intValue = focusRequest
+            }
+        }
     }
     LaunchedEffect(ui.sendSucceeded) {
         if (ui.sendSucceeded) focusManager.clearFocus()

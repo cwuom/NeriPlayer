@@ -5,6 +5,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.testing.ManualInstrumentedTest
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -15,6 +16,7 @@ import org.junit.runner.RunWith
 
 @Ignore("仅用于本地排查 Compose instrumentation 宿主问题")
 @RunWith(AndroidJUnit4::class)
+@ManualInstrumentedTest
 class ComposeRuleSanityTest {
 
     @get:Rule

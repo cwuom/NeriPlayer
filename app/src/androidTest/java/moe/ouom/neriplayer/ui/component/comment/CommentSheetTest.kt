@@ -1,13 +1,13 @@
 package moe.ouom.neriplayer.ui.component.comment
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.graphics.Bitmap
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.ParcelFileDescriptor
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -63,7 +64,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 @OptIn(ExperimentalMaterial3Api::class)
 @RunWith(AndroidJUnit4::class)
@@ -130,13 +131,13 @@ class CommentSheetTest {
             replyTarget = CommentReplyTarget("1", "1", "海边的风"), draft = "未发出的回复"
         ))
         val visible = mutableStateOf(true)
-        val imeBottom = AtomicInteger()
+        val sheetFocused = AtomicBoolean(false)
         composeRule.setContent {
             MaterialTheme {
                 if (visible.value) {
                     ModalBottomSheet(onDismissRequest = {}, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-                        val bottom = WindowInsets.ime.getBottom(LocalDensity.current)
-                        SideEffect { imeBottom.set(bottom) }
+                        val focused = LocalWindowInfo.current.isWindowFocused
+                        SideEffect { sheetFocused.set(focused) }
                         CommentSheetContent(
                             ui = state.value, offlineMode = false, onRefresh = {}, onRetry = {}, onLoadMore = {},
                             onSort = {}, onLike = {}, onDismissLikeError = {},
@@ -146,20 +147,23 @@ class CommentSheetTest {
                 }
             }
         }
+        composeRule.waitUntil(timeoutMillis = 5_000L) { sheetFocused.get() }
         composeRule.onNodeWithTag("comment-draft").assertIsNotFocused()
-        composeRule.runOnIdle { assertEquals(0, imeBottom.get()) }
+        waitForKeyboardVisibility(false)
         composeRule.onNodeWithText(state.value.comments.single().content).performClick()
         composeRule.onNodeWithTag("comment-draft").assertIsNotFocused()
         composeRule.onNodeWithText(context.getString(R.string.comment_copy)).performClick()
         composeRule.onNodeWithText(state.value.comments.single().content).performTouchInput { longClick() }
         composeRule.onNodeWithText(context.getString(R.string.comment_reply)).performClick()
         composeRule.onNodeWithTag("comment-draft").assertIsFocused()
-        composeRule.waitUntil(timeoutMillis = 5_000L) { imeBottom.get() > 0 }
-        composeRule.runOnIdle { visible.value = false }
+        waitForKeyboardVisibility(true)
+        composeRule.runOnIdle { visible.value = false; sheetFocused.set(false) }
         composeRule.waitForIdle()
+        waitForKeyboardVisibility(false)
         composeRule.runOnIdle { visible.value = true }
+        composeRule.waitUntil(timeoutMillis = 5_000L) { sheetFocused.get() }
         composeRule.onNodeWithTag("comment-draft").assertIsNotFocused()
-        composeRule.waitUntil(timeoutMillis = 5_000L) { imeBottom.get() == 0 }
+        waitForKeyboardVisibility(false)
     }
 
     @Test
@@ -182,9 +186,9 @@ class CommentSheetTest {
         composeRule.onNodeWithText("被回复的内容", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText(child.content, useUnmergedTree = true).performTouchInput { longClick() }
         composeRule.onNodeWithText(context.getString(R.string.comment_copy)).performClick()
-        composeRule.runOnIdle {
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            assertEquals(child.content, clipboard.primaryClip?.getItemAt(0)?.text?.toString())
+            clipboard.primaryClip?.getItemAt(0)?.text?.toString() == child.content
         }
         composeRule.onNodeWithText(child.content, useUnmergedTree = true).performTouchInput { longClick() }
         composeRule.onNodeWithText(context.getString(R.string.comment_reply)).performClick()
@@ -230,12 +234,12 @@ class CommentSheetTest {
     @Test
     fun composerKeepsSendVisibleWithKeyboardAndDisablesItWhileSending() = withSoftwareKeyboard {
         val state = mutableStateOf(sampleState())
-        val imeBottom = AtomicInteger()
+        val sheetFocused = AtomicBoolean(false)
         composeRule.setContent {
             MaterialTheme {
                 ModalBottomSheet(onDismissRequest = {}, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-                    val bottom = WindowInsets.ime.getBottom(LocalDensity.current)
-                    SideEffect { imeBottom.set(bottom) }
+                    val focused = LocalWindowInfo.current.isWindowFocused
+                    SideEffect { sheetFocused.set(focused) }
                     Box(Modifier.testTag("comment-preview")) {
                         CommentSheetContent(
                             ui = state.value, offlineMode = false, onRefresh = {}, onRetry = {}, onLoadMore = {},
@@ -247,9 +251,10 @@ class CommentSheetTest {
                 }
             }
         }
+        composeRule.waitUntil(timeoutMillis = 5_000L) { sheetFocused.get() }
         composeRule.onNodeWithTag("comment-send").assertIsNotEnabled()
         composeRule.onNodeWithTag("comment-draft").performClick().performTextInput("准备发送的评论")
-        composeRule.waitUntil(timeoutMillis = 5_000L) { imeBottom.get() > 0 }
+        waitForKeyboardVisibility(true)
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("comment-send").assertIsDisplayed().assertIsEnabled()
         savePreview("comment-keyboard")
@@ -262,17 +267,30 @@ class CommentSheetTest {
     }
 
     private fun withSoftwareKeyboard(test: () -> Unit) {
-        fun shell(command: String): String = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun shell(command: String): String = automation
             .executeShellCommand(command).use { descriptor ->
                 ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText().trim() }
             }
         val previous = shell("settings get secure show_ime_with_hard_keyboard")
+        val previousFlags = automation.serviceInfo.flags
         try {
+            automation.serviceInfo = automation.serviceInfo.apply {
+                flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            }
             shell("settings put secure show_ime_with_hard_keyboard 1")
             test()
         } finally {
             if (previous == "null") shell("settings delete secure show_ime_with_hard_keyboard")
             else shell("settings put secure show_ime_with_hard_keyboard $previous")
+            automation.serviceInfo = automation.serviceInfo.apply { flags = previousFlags }
+        }
+    }
+
+    private fun waitForKeyboardVisibility(visible: Boolean) {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        composeRule.waitUntil(timeoutMillis = 10_000L) {
+            automation.windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD } == visible
         }
     }
 
