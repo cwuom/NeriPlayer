@@ -2595,7 +2595,6 @@ fun NowPlayingScreen(
     advancedLyricsEnabled: Boolean = true,
     showCoverSourceBadge: Boolean = true,
     showLyricTranslation: Boolean = true,
-    showNowPlayingTitle: Boolean = true,
     offlineMode: Boolean = false,
     resolvedCoverUrl: String? = null,
     visualCoverUrl: String? = null,
@@ -3990,17 +3989,6 @@ fun NowPlayingScreen(
                             )
                         }
 
-                        // 标题 - 居中
-                        if (showNowPlayingTitle) {
-                            Text(
-                                text = stringResource(R.string.player_now_playing),
-                                style = MaterialTheme.typography.titleLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.align(Alignment.Center)
-                            )
-                        }
-
                         // 收藏和更多按钮 - 右侧
                         Row(
                             modifier = Modifier.align(Alignment.CenterEnd)
@@ -4030,7 +4018,7 @@ fun NowPlayingScreen(
                                     contentDescription = if (isFavorite) stringResource(R.string.nowplaying_favorited) else stringResource(R.string.nowplaying_favorite),
                                     modifier = Modifier.size(nowPlayingTopActionIconSize),
                                     tint = if (isFavorite) {
-                                        Color.Red.copy(alpha = 0.6f)
+                                        NowPlayingFavoriteIconColor
                                     } else {
                                         MaterialTheme.colorScheme.onSurface
                                     }

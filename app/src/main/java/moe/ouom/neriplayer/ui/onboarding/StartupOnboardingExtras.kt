@@ -1081,7 +1081,6 @@ private fun PlaybackLayoutPreview(
 private fun PlaybackPreviewTopBar(preferences: PlaybackControlLayoutPreferences) {
     val actionButtonSize = preferences.nowPlayingSize.scaleButtonSize(48.dp)
     val actionIconSize = preferences.nowPlayingSize.scaleIconSize(24.dp)
-    val colors = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1093,14 +1092,6 @@ private fun PlaybackPreviewTopBar(preferences: PlaybackControlLayoutPreferences)
                 .align(Alignment.CenterStart)
                 .size(actionButtonSize),
             iconSize = actionIconSize
-        )
-        Text(
-            text = stringResource(R.string.player_now_playing),
-            modifier = Modifier.align(Alignment.Center),
-            style = MaterialTheme.typography.titleMedium,
-            color = colors.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
         )
         Row(
             modifier = Modifier.align(Alignment.CenterEnd),

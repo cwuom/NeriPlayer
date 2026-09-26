@@ -332,7 +332,6 @@ private val PersonalizationHomeTargets = setOf(
 
 private val PersonalizationPlaybackInfoTargets = setOf(
     "setting:show_cover_source_badge",
-    "setting:nowplaying_show_title",
     "setting:nowplaying_song_title_marquee_enabled",
     "setting:nowplaying_cover_lyrics_enabled",
     "setting:nowplaying_progress_show_quality_switch",
@@ -877,7 +876,6 @@ private val SettingSearchAliases = mapOf(
     ),
     "show_cover_source_badge" to listOf("badge", "source", "cover", "biaoshi"),
     "always_use_new_tab_style" to listOf("tab", "bottom bar", "new ui"),
-    "nowplaying_show_title" to listOf("title", "song name", "geming"),
     "nowplaying_song_title_marquee_enabled" to listOf(
         "marquee",
         "scrolling title",
