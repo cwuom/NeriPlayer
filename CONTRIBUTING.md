@@ -50,8 +50,8 @@
 - **Android Studio**：最新稳定版
 - **JDK**：17
 - **Kotlin**：2.4.10，JVM target 17
-- **AGP**：9.2.1
-- **Gradle**：9.4.1
+- **AGP**：9.4.1
+- **Gradle**：9.6.1
 - **compileSdk / targetSdk / minSdk**：37 / 36 / 28
 - **NDK**：`27.0.12077973`
 - **CMake**：`3.28.0+`
@@ -63,6 +63,8 @@
 
 - 仓库依赖 Git 子模块，首次克隆请使用 `--recursive`，或手动执行
   `git submodule update --init --recursive`。
+- `buildSrc`、`ksp-annotations` 与 `ksp-processor` 使用 JDK 17 工具链；
+  请安装 JDK 17，建议 Android Studio 的 Gradle JDK 和命令行 `JAVA_HOME` 也指向它。
 - 构建脚本会读取 Git 短提交生成版本名，本地请确保已安装 Git。
 - 依赖版本由 `gradle/libs.versions.toml` 与各模块 `build.gradle.kts` 管理。
 - 应用只保留 `zh` 与 `en` 资源，见 `build-logic` 的 locale filter。

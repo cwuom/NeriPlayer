@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="CompilerConfiguration">
-    <bytecodeTargetLevel target="17" />
+    <bytecodeTargetLevel target="17">
+      <module name="NeriPlayer.accompanist-lyrics-core" target="25" />
+      <module name="NeriPlayer.accompanist-lyrics-ui" target="25" />
+      <module name="NeriPlayer.app" target="25" />
+    </bytecodeTargetLevel>
   </component>
 </project>

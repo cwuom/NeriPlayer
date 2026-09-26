@@ -1,6 +1,6 @@
 [versions]
 accompanistNavigationAnimation = "0.36.0"
-agp = "9.2.1"
+agp = "9.4.1"
 coilCompose = "2.7.0"
 datastorePreferences = "1.2.1"
 dec = "0.1.2"
