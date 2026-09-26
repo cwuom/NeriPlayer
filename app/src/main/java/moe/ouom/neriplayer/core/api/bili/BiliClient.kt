@@ -31,15 +31,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.nonReplayable
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.platform.bili.prioritizeBiliStreamUrls
 import okhttp3.HttpUrl
+import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okio.ByteString.Companion.encodeUtf8
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -49,6 +52,7 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
+import moe.ouom.neriplayer.util.network.awaitResponse
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
@@ -91,6 +95,17 @@ class BiliClient(
             "https://api.bilibili.com/x/polymer/web-space/seasons_series_list"
         private const val SERIES_ARCHIVES_URL = "https://api.bilibili.com/x/series/archives"
         private const val PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
+        private const val REPLY_URL = "https://api.bilibili.com/x/v2/reply"
+
+        /** 评论区 (x/v2/reply) 的对象类型: 视频 */
+        private const val REPLY_TYPE_VIDEO = 1
+
+        /**
+         * 评论区排序参数 (x/v2/reply 的 `sort`): 接口定义 0 = 按时间, 1 = 按点赞数, 2 = 按回复数。
+         * 匿名实测 (2026-09, 视频 aid 115483835630912 / 117318021548752) `sort=1` 与 `sort=2`
+         * 返回同一份列表、`sort=0` 返回空, 故取语义明确的 1 (按点赞数)。
+         */
+        private const val REPLY_SORT_BY_LIKE = 1
 
         /** 默认 UA (Web) */
         private const val DEFAULT_WEB_UA =
@@ -1758,6 +1773,125 @@ class BiliClient(
         }
 
         return pages
+    }
+
+    /**
+     * 获取视频评论 (评论区, 分页)。
+     *
+     * `x/v2/reply` 不需要 WBI 签名, 因此直接复用 [getJson] (自动附带 UA / Referer / Cookie)。
+     * 这里不抛业务码异常, 交由评论层的 Mapper 统一解析与分类。
+     *
+     * @param aid 视频 av 号 (评论 oid)
+     * @param page 页码, 从 1 开始
+     * @param pageSize 单页数量
+     * @param sort 排序方式, 默认按热度
+     */
+    suspend fun getVideoComments(
+        aid: Long,
+        page: Int = 1,
+        pageSize: Int = 20,
+        sort: Int = REPLY_SORT_BY_LIKE
+    ): JSONObject {
+        require(aid > 0L) { "aid must be positive" }
+        return withContext(Dispatchers.IO) {
+            getJson(
+                REPLY_URL,
+                mapOf(
+                    "type" to REPLY_TYPE_VIDEO.toString(),
+                    "oid" to aid.toString(),
+                    "pn" to page.coerceAtLeast(1).toString(),
+                    "ps" to pageSize.coerceIn(1, 49).toString(),
+                    "sort" to sort.toString()
+                )
+            )
+        }
+    }
+
+    suspend fun hasCommentLogin(): Boolean =
+        !cookieRepo.getCookiesOnce()["SESSDATA"].isNullOrBlank()
+
+    internal suspend fun commentCacheSessionKey(): String? =
+        cookieRepo.getCookiesOnce()["SESSDATA"]?.takeIf { it.isNotBlank() }?.encodeUtf8()?.sha256()?.hex()
+
+    suspend fun getVideoCommentReplies(aid: Long, rootId: String, page: Int, pageSize: Int): JSONObject {
+        require(aid > 0L && (rootId.toLongOrNull() ?: 0L) > 0L)
+        require(page > 0 && pageSize in 1..20)
+        return withContext(Dispatchers.IO) {
+            getJson(
+                "https://api.bilibili.com/x/v2/reply/reply",
+                mapOf(
+                    "type" to REPLY_TYPE_VIDEO.toString(), "oid" to aid.toString(),
+                    "root" to rootId, "pn" to page.toString(), "ps" to pageSize.toString()
+                )
+            )
+        }
+    }
+
+    suspend fun sendVideoComment(
+        aid: Long,
+        content: String,
+        rootId: String? = null,
+        parentId: String? = null
+    ): JSONObject {
+        require(aid > 0L && content.isNotBlank())
+        require((rootId == null && parentId == null) ||
+            ((rootId?.toLongOrNull() ?: 0L) > 0L && (parentId?.toLongOrNull() ?: 0L) > 0L))
+        val cookies = cookieRepo.getCookiesOnce()
+        val csrf = cookies["bili_jct"].orEmpty()
+        if (cookies["SESSDATA"].isNullOrBlank() || csrf.isBlank()) {
+            return JSONObject().put("code", -101)
+        }
+        val request = Request.Builder()
+            .url("https://api.bilibili.com/x/v2/reply/add")
+            .header("User-Agent", DEFAULT_WEB_UA)
+            .header("Referer", REFERER)
+            .apply { headerCookieIfPresent(cookies.toCookieHeader()) }
+            .post(FormBody.Builder()
+                .add("type", REPLY_TYPE_VIDEO.toString())
+                .add("oid", aid.toString())
+                .add("message", content)
+                .add("root", rootId ?: "0")
+                .add("parent", parentId ?: "0")
+                .add("plat", "1")
+                .add("statistics", "{\"appId\":100,\"platform\":5}")
+                .add("gaia_source", "main_web")
+                .add("csrf", csrf)
+                .build().nonReplayable())
+            .build()
+        // 网络结果不确定时保留草稿，避免自动重试发出重复评论
+        val client = http.newBuilder().retryOnConnectionFailure(false).followRedirects(false).build()
+        return client.newCall(request).awaitResponse { response ->
+            if (!response.isSuccessful) throw IOException("Bili comment HTTP ${response.code}")
+            JSONObject(response.body.string())
+        }
+    }
+
+    suspend fun setVideoCommentLiked(aid: Long, commentId: String, liked: Boolean): JSONObject {
+        require(aid > 0L && (commentId.toLongOrNull() ?: 0L) > 0L)
+        val cookies = cookieRepo.getCookiesOnce()
+        val csrf = cookies["bili_jct"].orEmpty()
+        if (cookies["SESSDATA"].isNullOrBlank() || csrf.isBlank()) {
+            return JSONObject().put("code", -101)
+        }
+        val request = Request.Builder()
+            .url("https://api.bilibili.com/x/v2/reply/action")
+            .header("User-Agent", DEFAULT_WEB_UA)
+            .header("Referer", REFERER)
+            .apply { headerCookieIfPresent(cookies.toCookieHeader()) }
+            .post(
+                FormBody.Builder()
+                    .add("type", REPLY_TYPE_VIDEO.toString())
+                    .add("oid", aid.toString())
+                    .add("rpid", commentId)
+                    .add("action", if (liked) "1" else "0")
+                    .add("csrf", csrf)
+                    .build()
+            )
+            .build()
+        return http.newCall(request).awaitResponse { response ->
+            if (!response.isSuccessful) throw IOException("Bili comment HTTP ${response.code}")
+            JSONObject(response.body.string())
+        }
     }
 
 }

@@ -4352,7 +4352,6 @@ private fun SettingsPersonalizationPageContent(
         val autoShowKeyboard by autoSettingsRepository.autoShowKeyboardFlow.collectAsState(initial = false)
         val showCoverSourceBadge by autoSettingsRepository.showCoverSourceBadgeFlow.collectAsState(initial = true)
         val alwaysUseNewTabStyle by autoSettingsRepository.alwaysUseNewTabStyleFlow.collectAsState(initial = true)
-        val nowPlayingShowTitle by autoSettingsRepository.nowPlayingShowTitleFlow.collectAsState(initial = true)
         val nowPlayingSongTitleMarqueeEnabled by autoSettingsRepository
             .nowPlayingSongTitleMarqueeEnabledFlow
             .collectAsState(initial = true)
@@ -4488,16 +4487,6 @@ private fun SettingsPersonalizationPageContent(
                 checked = showCoverSourceBadge,
                 onCheckedChange = { enabled ->
                     scope.launch { autoSettingsRepository.setShowCoverSourceBadge(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_SHOW_TITLE),
-                checked = nowPlayingShowTitle,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setNowPlayingShowTitle(enabled) }
                 },
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,

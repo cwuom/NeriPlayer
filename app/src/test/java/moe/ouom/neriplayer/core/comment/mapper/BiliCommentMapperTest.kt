@@ -1,0 +1,246 @@
+package moe.ouom.neriplayer.core.comment.mapper
+
+import moe.ouom.neriplayer.core.comment.CommentApiException
+import moe.ouom.neriplayer.core.comment.model.CommentError
+import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+
+/**
+ * Bilibili 评论 JSON -> 统一评论模型 的单元测试。
+ */
+class BiliCommentMapperTest {
+    @Test
+    fun `nested previews preserve root and stop recursive preview parsing`() {
+        val page = parseBiliCommentPage(JSONObject("""{"code":0,"data":{
+            "page":{"num":1,"size":20,"count":1},"replies":[{
+                "rpid":10,"replies":[{"rpid":11,"root":10,"content":{"message":"reply @someone : hello"},
+                "replies":[{"rpid":12}]}]
+            }]}}"""), 1, 20)
+        val reply = page.comments.single().previewReplies.single()
+        assertEquals("11", reply.id)
+        assertEquals("10", reply.rootId)
+        assertEquals("reply @someone : hello", reply.content)
+        assertTrue(reply.previewReplies.isEmpty())
+    }
+
+    @Test
+    fun `truncated first page remains pageable even when total is below page size`() {
+        val page = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20,"count":10},"replies":[{"rpid":1},{"rpid":2},{"rpid":3}]}}"""),
+            page = 1,
+            pageSize = 20
+        )
+        assertEquals(3, page.comments.size)
+        assertTrue(page.hasMore)
+    }
+
+    @Test
+    fun `empty response with known remaining comments is unavailable`() {
+        val error = parseError(
+            """{"code":0,"data":{"page":{"num":1,"size":20,"count":10},"replies":null}}"""
+        )
+        assertEquals(CommentError.API, error.reason)
+    }
+
+    @Test
+    fun `degraded and mismatched pagination is unavailable`() {
+        for (pagination in listOf(
+            """{"num":0,"size":0,"count":0}""",
+            """{"num":2,"size":20,"count":40}""",
+            """{"num":1,"size":0,"count":0}"""
+        )) {
+            val error = parseError("""{"code":0,"data":{"page":$pagination,"replies":null}}""")
+            assertEquals(CommentError.API, error.reason)
+        }
+    }
+
+    @Test
+    fun `valid empty last page is still a successful end`() {
+        val page = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":2,"size":20,"count":20},"replies":null}}"""),
+            page = 2,
+            pageSize = 20
+        )
+        assertTrue(page.comments.isEmpty())
+        assertEquals(false, page.hasMore)
+        assertEquals(20L, page.total)
+    }
+
+    /**
+     * 调用解析器并断言其抛出 CommentApiException，返回该异常以便核对错误码与映射原因。
+     */
+    private fun parseError(json: String): CommentApiException {
+        try {
+            parseBiliCommentPage(JSONObject(json), page = 1, pageSize = 20)
+        } catch (error: CommentApiException) {
+            return error
+        }
+        fail("expected CommentApiException")
+        error("unreachable")
+    }
+
+    /**
+     * 正常响应：解析回复列表与总数，秒级 ctime 归一化为毫秒，头像补协议头并追加尺寸参数。
+     */
+    @Test
+    fun `parses replies, total and normalises ctime to milliseconds`() {
+        val page = parseBiliCommentPage(
+            JSONObject(
+                """
+                {
+                  "code": 0,
+                  "data": {
+                    "page": { "num": 1, "size": 20, "count": 42 },
+                    "replies": [
+                      {
+                        "rpid": 555,
+                        "like": 7,
+                        "action": 1,
+                        "rcount": 2,
+                        "ctime": 1700000000,
+                        "content": { "message": "前排" },
+                        "member": {
+                          "mid": "12345",
+                          "uname": "UP主",
+                          "avatar": "//i1.hdslb.com/bfs/face/abc.jpg",
+                          "level_info": { "current_level": 5 }
+                        }
+                      },
+                      {
+                        "rpid": 666,
+                        "like": 0,
+                        "count": 3,
+                        "ctime": 1700000001,
+                        "content": { "message": "second" },
+                        "member": {
+                          "mid": "",
+                          "uname": "路人",
+                          "avatar": "https://example.com/a.png"
+                        }
+                      }
+                    ]
+                  }
+                }
+                """.trimIndent()
+            ),
+            page = 1,
+            pageSize = 20
+        )
+
+        assertEquals(1, page.page)
+        assertEquals(20, page.pageSize)
+        assertEquals(42L, page.total)
+        assertTrue(page.hasMore)
+        assertEquals(2, page.comments.size)
+
+        val first = page.comments[0]
+        assertEquals("555", first.id)
+        assertEquals("12345", first.userId)
+        assertEquals("UP主", first.username)
+        assertEquals("前排", first.content)
+        assertEquals(7L, first.likeCount)
+        assertTrue(first.isLiked)
+        assertEquals(2L, first.replyCount)
+        // ctime 是秒, 归一化为毫秒
+        assertEquals(1700000000000L, first.createTime)
+        assertEquals(CommentPlatform.BILIBILI, first.platform)
+        assertEquals(5, first.userLevel)
+        // // 开头的头像补协议头, 并追加尺寸参数
+        assertTrue(first.avatarUrl.orEmpty().startsWith("https://i1.hdslb.com/bfs/face/abc.jpg@96w_96h"))
+
+        val second = page.comments[1]
+        assertEquals("666", second.id)
+        assertNull(second.userId)
+        assertEquals("路人", second.username)
+        assertEquals(3L, second.replyCount)
+        assertNull(second.userLevel)
+        // 非 hdslb / biliimg 域名原样返回
+        assertEquals("https://example.com/a.png", second.avatarUrl)
+    }
+
+    /**
+     * 缺少分页载荷不能证明没有评论
+     */
+    @Test
+    fun `null data is reported as unavailable`() {
+        assertEquals(CommentError.API, parseError("""{"code":0,"data":null}""").reason)
+    }
+
+    /**
+     * 响应缺少 replies 字段时不崩溃，返回空列表且 total 为 0、hasMore 为 false。
+     */
+    @Test
+    fun `missing replies does not crash`() {
+        val page = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20,"count":0}}}"""),
+            page = 1,
+            pageSize = 20
+        )
+
+        assertTrue(page.comments.isEmpty())
+        assertEquals(0L, page.total)
+        assertEquals(false, page.hasMore)
+    }
+
+    /**
+     * total 未知时按本页条数推断 hasMore：满页为 true，不满页为 false。
+     */
+    @Test
+    fun `hasMore falls back to page size when total is unknown`() {
+        val replies = (1..20).joinToString(",") { """{"rpid":$it}""" }
+        val fullPage = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20},"replies":[$replies]}}"""),
+            page = 1,
+            pageSize = 20
+        )
+        assertTrue(fullPage.hasMore)
+
+        val partialPage = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20},"replies":[{"rpid":1},{"rpid":2}]}}"""),
+            page = 1,
+            pageSize = 20
+        )
+        assertEquals(false, partialPage.hasMore)
+    }
+
+    /**
+     * 评论关闭错误码 12061 映射为 CommentError.CLOSED，并保留原始 code。
+     */
+    @Test
+    fun `reply closed code is reported as closed`() {
+        val error = parseError("""{"code":12061,"message":"评论区已关闭"}""")
+
+        assertEquals(12061, error.code)
+        assertEquals(CommentError.CLOSED, error.reason)
+    }
+
+    /**
+     * 非零 code 抛出异常并按表映射原因：-403→PERMISSION、-404→NOT_FOUND、500→SERVER、-1→API。
+     */
+    @Test
+    fun `non zero code throws with the mapped reason`() {
+        assertEquals(CommentError.PERMISSION, parseError("""{"code":-403}""").reason)
+        assertEquals(CommentError.NOT_FOUND, parseError("""{"code":-404}""").reason)
+        assertEquals(CommentError.SERVER, parseError("""{"code":500}""").reason)
+        assertEquals(CommentError.API, parseError("""{"code":-1}""").reason)
+    }
+
+    /**
+     * 错误码映射表逐项校验，含 -412 也归为 PERMISSION、0 归为 API。
+     */
+    @Test
+    fun `error code mapping table`() {
+        assertEquals(CommentError.PERMISSION, biliCommentError(-403))
+        assertEquals(CommentError.PERMISSION, biliCommentError(-412))
+        assertEquals(CommentError.NOT_FOUND, biliCommentError(-404))
+        assertEquals(CommentError.CLOSED, biliCommentError(12061))
+        assertEquals(CommentError.SERVER, biliCommentError(503))
+        assertEquals(CommentError.API, biliCommentError(-1))
+        assertEquals(CommentError.API, biliCommentError(0))
+    }
+}

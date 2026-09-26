@@ -631,13 +631,21 @@ For release build and signing details, see
   playback, downloads, lyrics, playback metadata completion, playback fallback
   for restricted playback, syncing local favorites to NetEase Liked Songs,
   artist pages, paged artist songs/albums, and artist follow support.
+  Now Playing comments offer Popular (default), Newest, and Recommended sorting,
+  quoted comments, expandable reply threads, and long-press copying, plus like/unlike,
+  posting, and replying when signed in. Failed submissions retain the draft; uncertain
+  network results are never automatically resent. Comments show the current session's
+  memory cache first and revalidate silently when unchanged. Opening the sheet does not open the keyboard.
 - **Bilibili**:
   web login, QR login, video search, created favorites, subscribed favorites,
   collections, favorite/collection list search, multi-part video-to-audio
   playback, and downloads.
   Link recognition keeps the selected part and can recover collection context
   from `season_id` or video details.
-  It is not a full video discovery or comments client.
+  Now Playing comments offer Popular (default) and Newest sorting, plus signed-in
+  like/unlike actions. Newest and later pages may require sign-in. Comment numbers
+  follow the displayed list order. Reply pagination, long-press copying, and signed-in
+  posting and replying are supported, with session-isolated memory caching and silent background revalidation.
 - **YouTube Music**:
   login, home/library playlist browsing, playlist details, search, playback compatibility,
   PoToken, and JS Challenge support. Content access remains bound by platform rules
@@ -989,7 +997,7 @@ These directions can change with maintainer bandwidth, platform availability,
 and community feedback. They are not fixed-date commitments.
 
 - [ ] Video playback
-- [ ] Comment section
+- [x] Comment reading, sorting, and likes (NetEase / Bilibili)
 - [ ] More third-party playback, library, and account capabilities
 - [ ] Fuller QQ Music account support, library data, and a more stable auth path
 

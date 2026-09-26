@@ -20,6 +20,7 @@ import kotlin.math.sqrt
 
 internal const val NowPlayingActiveContentColorTransitionDurationMs = 220
 internal const val NowPlayingActiveContentColorStabilizationDelayMs = 72
+internal val NowPlayingFavoriteIconColor = Color(0xFFB71C1C)
 
 private const val NowPlayingActiveIconMinSaturation = 0.32f
 private const val NowPlayingActiveIconBoostedMinSaturation = 0.52f

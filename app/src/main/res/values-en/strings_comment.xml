@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Comments -->
+    <string name="comment_title">Comments</string>
+    <string name="comment_entry">View comments</string>
+    <string name="comment_total_format">%1$s total</string>
+    <string name="comment_loading">Loading comments…</string>
+    <string name="comment_empty">No comments yet</string>
+    <string name="comment_retry">Reload</string>
+    <string name="comment_reply_count_format">%1$s replies</string>
+    <string name="comment_error_network">Network error. Check your connection and try again</string>
+    <string name="comment_error_permission">Sign-in expired or no permission to view comments</string>
+    <string name="comment_error_not_found">The comment resource does not exist or was deleted</string>
+    <string name="comment_error_closed">Comments are disabled for this video</string>
+    <string name="comment_error_server">Server error. Please try again later</string>
+    <string name="comment_error_unavailable">Comments are temporarily unavailable. Try signing in to this platform</string>
+    <string name="comment_error_unknown">Failed to load comments</string>
+    <string name="comment_anonymous_user">Anonymous</string>
+    <string name="comment_user_level_format">Lv%1$d</string>
+    <string name="comment_no_more">No more comments</string>
+    <string name="comment_sort">Sort comments</string>
+    <string name="comment_sort_hot">Popular</string>
+    <string name="comment_sort_newest">Newest</string>
+    <string name="comment_sort_recommended">Recommended</string>
+    <string name="comment_floor_format">#%1$d</string>
+    <string name="comment_like">Like comment</string>
+    <string name="comment_unlike">Unlike comment</string>
+    <string name="comment_liked">Liked</string>
+    <string name="comment_not_liked">Not liked</string>
+    <string name="comment_like_login_required">Sign in to this platform in Settings, or check your account permissions</string>
+    <string name="comment_like_failed">Could not update your like. Please try again</string>
+    <string name="comment_dismiss_error">Dismiss message</string>
+    <string name="comment_sort_loading">Changing comment order</string>
+    <string name="comment_reload_failed">Could not reload. Your previous comments are still here</string>
+    <string name="comment_like_verification">Platform verification failed. Please try again later</string>
+    <string name="comment_error_code_format">%1$s (%2$d)</string>
+    <string name="comment_reply">Reply</string>
+    <string name="comment_actions">Comment actions</string>
+    <string name="comment_copy">Copy comment</string>
+    <string name="comment_reply_to">Reply to %1$s</string>
+    <string name="comment_deleted">Original comment deleted</string>
+    <string name="comment_collapse_replies">Collapse replies</string>
+    <string name="comment_more_replies">Load more replies</string>
+    <string name="comment_empty_replies">No visible replies</string>
+    <string name="comment_cancel_reply">Cancel reply</string>
+    <string name="comment_write_hint">Write a comment…</string>
+    <string name="comment_send">Send</string>
+    <string name="comment_length_format">%1$d / %2$d</string>
+    <string name="comment_send_login_required">Sign in to this platform in Settings or check your comment permissions. Your draft is saved.</string>
+    <string name="comment_send_uncertain">Network error. Delivery is uncertain and your draft is saved. Refresh to check whether it was posted before retrying.</string>
+    <string name="comment_send_failed">Could not send. Your draft is saved. Check the content or platform restrictions before retrying.</string>
+    <string name="comment_send_success">Sent. Your comment may appear after moderation.</string>
+</resources>

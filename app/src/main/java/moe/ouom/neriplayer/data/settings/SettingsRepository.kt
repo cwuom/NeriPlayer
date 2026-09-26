@@ -110,9 +110,6 @@ class SettingsRepository(private val context: Context) {
     val nowPlayingKeepScreenOnFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingKeepScreenOnFlow
 
-    val nowPlayingShowTitleFlow: Flow<Boolean> =
-        autoSettingsRepository.nowPlayingShowTitleFlow
-
     val nowPlayingSongTitleMarqueeEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingSongTitleMarqueeEnabledFlow
 
@@ -658,10 +655,6 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setNowPlayingKeepScreenOn(enabled: Boolean) {
         autoSettingsRepository.setNowPlayingKeepScreenOn(enabled)
-    }
-
-    suspend fun setNowPlayingShowTitle(enabled: Boolean) {
-        autoSettingsRepository.setNowPlayingShowTitle(enabled)
     }
 
     suspend fun setNowPlayingProgressShowQualitySwitch(enabled: Boolean) {

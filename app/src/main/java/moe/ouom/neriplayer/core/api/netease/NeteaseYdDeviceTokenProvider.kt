@@ -10,6 +10,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -39,7 +40,9 @@ internal class NeteaseYdDeviceTokenProvider(
     private val context: Context
 ) {
 
-    suspend fun getSnapshot(): NeteaseYdDeviceSnapshot {
+    suspend fun getCommentToken(): String = getSnapshot(forComment = true).token
+
+    suspend fun getSnapshot(forComment: Boolean = false): NeteaseYdDeviceSnapshot {
         NPLogger.d(NETEASE_YD_TOKEN_TAG, "getToken start")
         val pageLoaded = CompletableDeferred<Unit>()
         val tokenResult = CompletableDeferred<NeteaseYdDeviceSnapshot>()
@@ -52,13 +55,13 @@ internal class NeteaseYdDeviceTokenProvider(
                 return NeteaseYdDeviceSnapshot()
             }
 
-            val apiReady = waitFingerprintApiReady(webView)
+            val apiReady = waitFingerprintApiReady(webView, forComment)
             if (!apiReady) {
                 NPLogger.w(NETEASE_YD_TOKEN_TAG, "getToken aborted because createNEFingerprint is unavailable")
                 return NeteaseYdDeviceSnapshot(cookies = readCookieMap())
             }
 
-            requestToken(webView)
+            requestToken(webView, forComment)
             val snapshot = withTimeoutOrNull(NETEASE_YD_TOKEN_TIMEOUT_MS) {
                 tokenResult.await()
             } ?: NeteaseYdDeviceSnapshot(cookies = readCookieMap())
@@ -68,7 +71,7 @@ internal class NeteaseYdDeviceTokenProvider(
             )
             snapshot
         } finally {
-            destroyWebView(webView)
+            withContext(NonCancellable) { destroyWebView(webView) }
         }
     }
 
@@ -117,8 +120,8 @@ internal class NeteaseYdDeviceTokenProvider(
                                     )
                                 )
                             }
-                        }.onFailure { error ->
-                            NPLogger.w(NETEASE_YD_TOKEN_TAG, "bridge parse failed raw=${payload.take(160)}", error)
+                        }.onFailure {
+                            NPLogger.w(NETEASE_YD_TOKEN_TAG, "bridge parse failed")
                             if (!tokenResult.isCompleted) {
                                 tokenResult.complete(
                                     NeteaseYdDeviceSnapshot(cookies = readCookieMap())
@@ -153,12 +156,13 @@ internal class NeteaseYdDeviceTokenProvider(
         return loaded
     }
 
-    private suspend fun waitFingerprintApiReady(webView: WebView): Boolean {
+    private suspend fun waitFingerprintApiReady(webView: WebView, forComment: Boolean): Boolean {
         val deadline = System.currentTimeMillis() + NETEASE_YD_READY_TIMEOUT_MS
         var attempt = 0
         while (System.currentTimeMillis() < deadline) {
             attempt += 1
-            val ready = evaluateJson(webView, READY_CHECK_SCRIPT)?.optBoolean("ready") == true
+            val script = if (forComment) COMMENT_READY_SCRIPT else READY_CHECK_SCRIPT
+            val ready = evaluateJson(webView, script)?.optBoolean("ready") == true
             NPLogger.d(NETEASE_YD_TOKEN_TAG, "waitFingerprintApiReady attempt=$attempt ready=$ready")
             if (ready) {
                 return true
@@ -168,9 +172,9 @@ internal class NeteaseYdDeviceTokenProvider(
         return false
     }
 
-    private suspend fun requestToken(webView: WebView) {
+    private suspend fun requestToken(webView: WebView, forComment: Boolean) {
         NPLogger.d(NETEASE_YD_TOKEN_TAG, "requestToken start")
-        evaluateRaw(webView, buildRequestTokenScript())
+        evaluateRaw(webView, if (forComment) COMMENT_TOKEN_SCRIPT else buildRequestTokenScript())
     }
 
     private fun readCookieMap(): Map<String, String> {
@@ -264,6 +268,39 @@ internal class NeteaseYdDeviceTokenProvider(
     }
 
     private companion object {
+        // 评论校验与二维码登录使用不同业务令牌，沿用网页评论的获取方式
+        private val COMMENT_READY_SCRIPT = """
+            (function() {
+              if (window.WM && typeof window.WM.getToken === 'function') {
+                return JSON.stringify({ready: true});
+              }
+              if (!window.__neriCommentWatchmanLoading) {
+                window.__neriCommentWatchmanLoading = true;
+                var script = document.createElement('script');
+                script.src = 'https://acstatic-dun.126.net/tool.min.js';
+                script.onload = function() {
+                  initWatchman({productNumber: 'YD00000558929251', onload: function(instance) {
+                    window.WM = instance;
+                  }});
+                };
+                document.head.appendChild(script);
+              }
+              return JSON.stringify({ready: false});
+            })();
+        """.trimIndent()
+
+        private val COMMENT_TOKEN_SCRIPT = """
+            (function() {
+              try {
+                window.WM.getToken('bd5d2f973ef74cd2a61325a412ae54d9', function(token) {
+                  window.$NETEASE_YD_TOKEN_BRIDGE.onToken(JSON.stringify({token: token || ''}));
+                });
+              } catch (error) {
+                window.$NETEASE_YD_TOKEN_BRIDGE.onToken(JSON.stringify({error: 'comment token unavailable'}));
+              }
+            })();
+        """.trimIndent()
+
         private val READY_CHECK_SCRIPT = """
             (function() {
               try {

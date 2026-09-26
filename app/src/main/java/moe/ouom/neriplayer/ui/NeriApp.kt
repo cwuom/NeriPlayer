@@ -1870,7 +1870,6 @@ private fun NeriAppContent(
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val showCoverSourceBadge by repo.showCoverSourceBadgeFlow.collectAsStateWithLifecycle(initialValue = true)
     val nowPlayingKeepScreenOn by repo.nowPlayingKeepScreenOnFlow.collectAsStateWithLifecycle(initialValue = true)
-    val showNowPlayingTitle by repo.nowPlayingShowTitleFlow.collectAsStateWithLifecycle(initialValue = true)
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsStateWithLifecycle(initialValue = true)
     val defaultStartDestination: String? by repo.defaultStartDestinationFlow
         .collectAsStateWithLifecycle(initialValue = null)
@@ -5221,7 +5220,6 @@ private fun NeriAppContent(
                                     advancedLyricsEnabled = advancedLyricsEnabled,
                                     showCoverSourceBadge = showCoverSourceBadge,
                                     showLyricTranslation = showLyricTranslation,
-                                    showNowPlayingTitle = showNowPlayingTitle,
                                     offlineMode = offlineMode,
                                     resolvedCoverUrl = displayCoverUrl,
                                     visualCoverUrl = playbackVisualCoverUrl,

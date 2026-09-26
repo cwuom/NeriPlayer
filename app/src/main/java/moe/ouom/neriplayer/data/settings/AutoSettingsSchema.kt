@@ -530,19 +530,6 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Tab
         )
 
-        @AutoSetting(
-            key = "nowplaying_show_title",
-            type = SettingValueType.Boolean,
-            defaultBoolean = true,
-            order = 20,
-            ui = SettingUiType.Switch
-        )
-        val nowPlayingShowTitle = autoSetting(
-            titleRes = R.string.settings_nowplaying_title,
-            descriptionRes = R.string.settings_nowplaying_title_desc,
-            icon = AutoSettingIcon.LibraryMusic
-        )
-
         @AutoSetting(order = 25)
         val nowPlayingSongTitleMarqueeEnabled = autoSwitchSetting(
             key = "nowplaying_song_title_marquee_enabled",

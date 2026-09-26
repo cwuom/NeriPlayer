@@ -30,7 +30,9 @@ import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.nonReplayable
 import okhttp3.Cookie
+import okio.ByteString.Companion.encodeUtf8
 import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl
@@ -48,6 +50,7 @@ import java.security.SecureRandom
 import java.util.Locale
 import java.util.zip.GZIPInputStream
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
+import moe.ouom.neriplayer.core.di.AppContainer
 
 internal fun mergeNeteaseRequestCookies(
     persistedCookies: Map<String, String>,
@@ -369,7 +372,11 @@ internal class NeteaseRequestSessionStore {
     }
 }
 
-class NeteaseClient {
+class NeteaseClient(
+    private val commentCheckToken: suspend () -> String = {
+        NeteaseYdDeviceTokenProvider(AppContainer.applicationContext).getCommentToken()
+    }
+) {
     private companion object {
         const val MAX_RESPONSE_BYTES = 4L * 1024L * 1024L
     }
@@ -383,6 +390,10 @@ class NeteaseClient {
 
     /** 是否已登录 */
     fun hasLogin(): Boolean = sessionStore.currentSession().hasLogin()
+
+    internal fun commentCacheSessionKey(): String? =
+        sessionStore.currentSession().persistedCookiesSnapshot()["MUSIC_U"]
+            ?.takeIf { it.isNotBlank() }?.encodeUtf8()?.sha256()?.hex()
 
     /** 设置/更新持久化 Cookie, 并把它们注入到本实例的 CookieJar */
     fun setPersistedCookies(cookies: Map<String, String>) {
@@ -495,9 +506,9 @@ class NeteaseClient {
         mode: CryptoMode = CryptoMode.WEAPI,
         method: String = "POST",
         usePersistedCookies: Boolean = true,
-        retryHttp1OnStreamReset: Boolean = false
+        retryHttp1OnStreamReset: Boolean = false,
+        session: NeteaseRequestSession = sessionStore.currentSession()
     ): String {
-        val session = sessionStore.currentSession()
         if (mode == CryptoMode.WEAPI) {
             withContext(Dispatchers.IO) {
                 ensureWeapiSessionIfNeeded(session, mode, usePersistedCookies)
@@ -1323,5 +1334,112 @@ class NeteaseClient {
             }
         } catch (_: Exception) { }
         return resp
+    }
+
+    // 最新排序必须使用上一页的游标，不能用 offset 替代时间边界
+    suspend fun getSongCommentsCancellable(
+        songId: Long,
+        page: Int = 1,
+        pageSize: Int = 20,
+        sortType: Int = 2,
+        cursor: String? = null,
+    ): String {
+        require(songId > 0L) { "songId 必须为正数" }
+        require(page > 0 && pageSize in 1..100)
+        require(sortType in setOf(2, 3, 99))
+        require(sortType != 3 || page == 1 || !cursor.isNullOrBlank())
+        val offset = (page.toLong() - 1L) * pageSize
+        val nextCursor = when (sortType) {
+            2 -> "normalHot#$offset"
+            3 -> if (page == 1) "0" else requireNotNull(cursor)
+            else -> offset.toString()
+        }
+        return requestCancellable(
+            url = "https://music.163.com/api/v2/resource/comments",
+            params = mapOf(
+                "threadId" to "R_SO_4_$songId",
+                "pageNo" to page,
+                "pageSize" to pageSize,
+                "sortType" to sortType,
+                "cursor" to nextCursor,
+                "showInner" to true
+            ),
+            mode = CryptoMode.API,
+        )
+    }
+
+    suspend fun setSongCommentLiked(songId: Long, commentId: String, liked: Boolean): String {
+        require(songId > 0L && (commentId.toLongOrNull() ?: 0L) > 0L)
+        val session = sessionStore.currentSession()
+        if (!session.hasLogin()) return "{\"code\":301}"
+        withContext(Dispatchers.IO) {
+            ensureWeapiSessionIfNeeded(session, CryptoMode.WEAPI, usePersistedCookies = true)
+        }
+        val checkToken = commentCheckToken()
+        if (sessionStore.currentSession() !== session) return "{\"code\":301}"
+        check(checkToken.isNotBlank()) { "NetEase comment verification unavailable" }
+        val action = if (liked) "like" else "unlike"
+        return requestCancellable(
+            url = "https://music.163.com/weapi/v1/comment/$action",
+            params = mapOf(
+                "threadId" to "R_SO_4_$songId",
+                "commentId" to commentId,
+                "like" to liked,
+                "checkToken" to checkToken,
+                "csrf_token" to session.requestCookiesForUrl(neteaseMainUrl)["__csrf"].orEmpty()
+            ),
+            mode = CryptoMode.WEAPI,
+            session = session
+        )
+    }
+
+    suspend fun getSongCommentReplies(
+        songId: Long,
+        rootId: String,
+        pageSize: Int,
+        cursor: String?
+    ): String {
+        require(songId > 0L && (rootId.toLongOrNull() ?: 0L) > 0L)
+        require(pageSize in 1..100)
+        return requestCancellable(
+            url = "https://music.163.com/weapi/resource/comment/floor/get",
+            params = mapOf(
+                "threadId" to "R_SO_4_$songId",
+                "parentCommentId" to rootId,
+                "limit" to pageSize,
+                "time" to (cursor ?: "-1")
+            )
+        )
+    }
+
+    suspend fun sendSongComment(songId: Long, content: String, replyToId: String? = null): String {
+        require(songId > 0L && content.isNotBlank())
+        require(replyToId == null || (replyToId.toLongOrNull() ?: 0L) > 0L)
+        val session = sessionStore.currentSession()
+        if (!session.hasLogin()) return "{\"code\":301}"
+        withContext(Dispatchers.IO) {
+            ensureWeapiSessionIfNeeded(session, CryptoMode.WEAPI, usePersistedCookies = true)
+        }
+        val checkToken = commentCheckToken()
+        if (sessionStore.currentSession() !== session) return "{\"code\":301}"
+        check(checkToken.isNotBlank()) { "NetEase comment verification unavailable" }
+        val path = if (replyToId == null) "resource/comments/add" else "v1/resource/comments/reply"
+        val params = mutableMapOf<String, Any>(
+            "threadId" to "R_SO_4_$songId",
+            "content" to content,
+            "checkToken" to checkToken,
+            "csrf_token" to session.requestCookiesForUrl(neteaseMainUrl)["__csrf"].orEmpty()
+        )
+        replyToId?.let { params["commentId"] = it }
+        val request = buildRequest(
+            "https://music.163.com/weapi/$path",
+            params, CryptoMode.WEAPI, "POST", true, session
+        ).let { it.newBuilder().post(requireNotNull(it.body).nonReplayable()).build() }
+        // 发评没有幂等键，连接失败时交给用户核对，不能自动重发
+        val client = session.okHttpClient.newBuilder()
+            .retryOnConnectionFailure(false)
+            .followRedirects(false)
+            .build()
+        return executeRequestCancellable(client, request)
     }
 }
