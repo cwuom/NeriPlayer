@@ -50,7 +50,14 @@ data class RankedEditableLyricMatch(
     val candidate: EditableLyricMatchCandidate,
     val score: Int,
     val durationDeltaMs: Long?,
-    val confidence: EditableLyricMatchConfidence = EditableLyricMatchConfidence.LOW
+    val confidence: EditableLyricMatchConfidence = EditableLyricMatchConfidence.LOW,
+    /**
+     * 该候选歌词自身是否带逐词时间轴。
+     *
+     * 独立于 [EditableLyricMatchRequest.preferWordTimed]: 即使调用方不偏好逐词,
+     * 这里也必须如实反映歌词内容, 否则 UI 无法稳定地标记"逐词"。
+     */
+    val hasWordTiming: Boolean = false
 )
 
 enum class EditableLyricMatchConfidence(val rank: Int) {
@@ -60,6 +67,7 @@ enum class EditableLyricMatchConfidence(val rank: Int) {
 }
 
 private const val MIN_EDITABLE_LYRIC_MATCH_SCORE = 35
+private const val WORD_TIMED_LYRIC_MATCH_BONUS = 36
 private const val MIN_RELIABLE_LYRIC_TITLE_SCORE = 52
 private const val MIN_RELIABLE_LYRIC_ARTIST_SCORE = 24
 private const val KUGOU_LYRIC_SOURCE_PRIORITY = 5
@@ -107,7 +115,9 @@ fun rankEditableLyricMatches(
             val albumScore = scoreLyricMatchAlbum(request.albumName.orEmpty(), candidate.album.orEmpty())
             val durationScore = scoreLyricMatchDuration(request.durationMs, candidate.durationMs)
             val qualityScore = scoreLyricMatchQuality(candidate)
-            val wordTimingScore = scoreLyricMatchWordTiming(request, candidate)
+            val hasWordTiming = hasEditableLyricWordTiming(candidate.lyrics)
+            val wordTimingScore =
+                if (request.preferWordTimed && hasWordTiming) WORD_TIMED_LYRIC_MATCH_BONUS else 0
             val keywordScore = scoreLyricMatchKeyword(request.keyword, candidate)
             val canUseKeywordFallback = hasPlaceholderLyricMetadata(request.trackName) ||
                 hasPlaceholderLyricMetadata(request.artistName)
@@ -153,13 +163,15 @@ fun rankEditableLyricMatches(
                 candidate = candidate,
                 score = score,
                 durationDeltaMs = durationDeltaMs(request.durationMs, candidate.durationMs),
-                confidence = confidence
+                confidence = confidence,
+                hasWordTiming = hasWordTiming
             )
         }
         .sortedWith(
             editableLyricMatchResultComparator(
                 sourceRank = ::editableLyricMatchSourcePriority,
-                sourceFallbackRank = { it.ordinal }
+                sourceFallbackRank = { it.ordinal },
+                preferWordTimed = request.preferWordTimed
             )
         )
         .toList()
@@ -167,9 +179,20 @@ fun rankEditableLyricMatches(
 
 internal fun editableLyricMatchResultComparator(
     sourceRank: (EditableLyricMatchSource) -> Int,
-    sourceFallbackRank: (EditableLyricMatchSource) -> Int = { it.ordinal }
+    sourceFallbackRank: (EditableLyricMatchSource) -> Int = { it.ordinal },
+    preferWordTimed: Boolean = false
 ): Comparator<RankedEditableLyricMatch> {
-    return compareByDescending<RankedEditableLyricMatch> { it.confidence.rank }
+    // 偏好逐词时把逐词结果整体提为一档, 而不是只加 [WORD_TIMED_LYRIC_MATCH_BONUS] 分。
+    // 只加分的话, 一个"高置信度的逐行结果"仍然会压过"中置信度的逐词结果",
+    // 与"优先使用逐词歌词"的语义不符。
+    val wordTimingTier: Comparator<RankedEditableLyricMatch> =
+        if (preferWordTimed) {
+            compareByDescending { it.hasWordTiming }
+        } else {
+            compareBy { 0 }
+        }
+    return wordTimingTier
+        .thenByDescending { it.confidence.rank }
         .thenByDescending { it.score }
         .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
         .thenByDescending { sourceRank(it.candidate.source) }
@@ -186,16 +209,6 @@ internal fun hasLyricMatchSignal(
     val keywordScore = scoreLyricMatchKeyword(request.keyword, candidate)
     return (titleScore >= 20 || keywordScore > 0) &&
         (artistScore >= MIN_RELIABLE_LYRIC_ARTIST_SCORE || candidate.artist.isBlank())
-}
-
-private fun scoreLyricMatchWordTiming(
-    request: EditableLyricMatchRequest,
-    candidate: EditableLyricMatchCandidate
-): Int {
-    if (!request.preferWordTimed) {
-        return 0
-    }
-    return if (hasEditableLyricWordTiming(candidate.lyrics)) 36 else 0
 }
 
 fun hasEditableLyricWordTiming(rawLyric: String): Boolean {

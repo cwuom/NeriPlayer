@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.CacheSizePolicy
+import moe.ouom.neriplayer.data.settings.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.YouTubePlaybackSourcePreferencePolicy
@@ -168,7 +169,10 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
             }
             val normalized = when (name) {
                 SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS.name,
-                SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS.name ->
+                SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS.name,
+                SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS.name,
+                SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS.name,
+                SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS.name ->
                     normalizeLyricDefaultOffsetMs(value)
                 SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS.name,
                 SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS.name,
@@ -218,6 +222,9 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         }
         sanitizeStringValue(strings, SettingsKeys.YOUTUBE_PLAYBACK_SOURCE.name, onAdjusted) {
             YouTubePlaybackSourcePreferencePolicy.normalize(it)
+        }
+        sanitizeStringValue(strings, SettingsKeys.DEFAULT_LYRIC_SOURCE.name, onAdjusted) {
+            LyricSourcePreferencePolicy.normalize(it)
         }
         sanitizeStringValue(strings, SettingsKeys.BILI_AUDIO_QUALITY.name, onAdjusted) {
             normalizeChoice(it, BILI_AUDIO_QUALITY_VALUES, DEFAULT_BILI_AUDIO_QUALITY)

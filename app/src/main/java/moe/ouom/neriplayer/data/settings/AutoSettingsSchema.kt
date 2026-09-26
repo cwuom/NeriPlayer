@@ -939,6 +939,54 @@ object AutoSettingsSchema {
     }
 
     /*
+     * 歌词源设置
+     *
+     * 决定播放时歌词从哪里来, 以及是否为了逐词结果改变匹配顺序
+     * 默认跟随平台并优先逐词，逐词候选排序可能与旧版不同
+     */
+    @AutoSettingsSection(
+        order = 66
+    )
+    object lyricSource {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_lyric_source,
+            descriptionRes = R.string.settings_lyric_source_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
+            key = "prefer_word_timed_lyrics",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 10,
+            ui = SettingUiType.Switch
+        )
+        val preferWordTimedLyrics = autoSwitchSetting(
+            key = "prefer_word_timed_lyrics",
+            defaultValue = true,
+            titleRes = R.string.settings_prefer_word_timed_lyrics,
+            descriptionRes = R.string.settings_prefer_word_timed_lyrics_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
+            key = "default_lyric_source",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_LYRIC_SOURCE,
+            order = 11,
+            ui = SettingUiType.Custom,
+            normalizer = LyricSourcePreferencePolicy::class
+        )
+        val defaultLyricSource = autoStringSetting(
+            key = "default_lyric_source",
+            defaultValue = DEFAULT_LYRIC_SOURCE,
+            titleRes = R.string.settings_default_lyric_source,
+            descriptionRes = R.string.settings_default_lyric_source_desc,
+            icon = AutoSettingIcon.LibraryMusic
+        )
+    }
+
+    /*
      * 歌词设置
      *
      * 放歌词外观, 外部词幕适配和各来源默认歌词偏移
@@ -1252,6 +1300,45 @@ object AutoSettingsSchema {
         val qqMusicLyricDefaultOffsetMs = autoSetting(
             titleRes = R.string.settings_lyrics_offset_qq_music,
             descriptionRes = R.string.settings_lyrics_offset_qq_music_desc
+        )
+
+        @AutoSetting(
+            key = "kugou_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+            order = 40,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val kugouLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_kugou,
+            descriptionRes = R.string.settings_lyrics_offset_kugou_desc
+        )
+
+        @AutoSetting(
+            key = "lrclib_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+            order = 50,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val lrclibLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_lrclib,
+            descriptionRes = R.string.settings_lyrics_offset_lrclib_desc
+        )
+
+        @AutoSetting(
+            key = "amll_ttml_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
+            order = 60,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val amllTtmlLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_amll_ttml,
+            descriptionRes = R.string.settings_lyrics_offset_amll_ttml_desc
         )
     }
 

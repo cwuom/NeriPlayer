@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
 import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
@@ -178,6 +179,35 @@ class PlayerLyricsProviderTest {
         )
 
         assertTrue(shouldLoadRemoteLyrics(song))
+    }
+
+    @Test
+    fun `preferred source runs before stored lyrics for remote songs`() {
+        val remoteSong = SongItem(
+            id = 2L,
+            name = "Signal",
+            artist = "Artist One",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 240_000L,
+            coverUrl = null,
+            matchedLyric = "[00:01.00]Previously downloaded lyrics"
+        )
+
+        assertTrue(shouldTryPreferredLyricSource(remoteSong, LyricSourcePreference.Kugou))
+        assertFalse(shouldTryPreferredLyricSource(remoteSong, LyricSourcePreference.Automatic))
+        assertFalse(
+            shouldTryPreferredLyricSource(
+                remoteSong.copy(matchedLyric = ""),
+                LyricSourcePreference.Kugou
+            )
+        )
+        assertFalse(
+            shouldTryPreferredLyricSource(
+                remoteSong.copy(mediaUri = "/tmp/local.mp3"),
+                LyricSourcePreference.Kugou
+            )
+        )
     }
 
     @Test
@@ -568,6 +598,47 @@ class PlayerLyricsProviderTest {
         )
 
         assertNull(selected)
+    }
+
+    @Test
+    fun selectFirstUsableAutomaticExternalLyricsRequiresKnownCompatibleDuration() {
+        val matches = listOf(
+            rankedCandidate(
+                id = "unknown",
+                source = EditableLyricMatchSource.KUGOU,
+                durationMs = 0L,
+                lyrics = "[00:01.00]Unknown duration"
+            ),
+            rankedCandidate(
+                id = "different-version",
+                source = EditableLyricMatchSource.KUGOU,
+                durationMs = 300_000L,
+                lyrics = "[00:01.00]Different version"
+            ),
+            rankedCandidate(
+                id = "compatible",
+                source = EditableLyricMatchSource.KUGOU,
+                durationMs = 242_000L,
+                lyrics = "[00:01.00]Compatible version"
+            )
+        )
+
+        val selected = PlayerLyricsProvider.selectFirstUsableAutomaticExternalLyrics(
+            expectedDurationMs = 240_000L,
+            expectedTitle = "Signal",
+            expectedArtist = "Artist One",
+            matches = matches
+        )
+
+        assertEquals("Compatible version", selected?.lyrics?.single()?.text)
+        assertNull(
+            PlayerLyricsProvider.selectFirstUsableAutomaticExternalLyrics(
+                expectedDurationMs = 0L,
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                matches = matches
+            )
+        )
     }
 
     @Test

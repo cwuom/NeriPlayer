@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -143,6 +144,7 @@ import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidateForRecovery
+import moe.ouom.neriplayer.data.settings.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.CacheSizePolicy
@@ -392,10 +394,20 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.cloudMusicLyricDefaultOffsetMs
         qqMusicLyricDefaultOffsetMs =
             initialPlaybackPreferences.qqMusicLyricDefaultOffsetMs
+        kugouLyricDefaultOffsetMs =
+            initialPlaybackPreferences.kugouLyricDefaultOffsetMs
+        lrclibLyricDefaultOffsetMs =
+            initialPlaybackPreferences.lrclibLyricDefaultOffsetMs
+        amllTtmlLyricDefaultOffsetMs =
+            initialPlaybackPreferences.amllTtmlLyricDefaultOffsetMs
         externalBluetoothLyricsEnabled = false
         externalBluetoothTranslationEnabled = false
         dynamicIslandLyricsEnabled = false
         amllLyricsEnabled = initialPlaybackPreferences.amllLyricsEnabled
+        preferWordTimedLyrics = initialPlaybackPreferences.preferWordTimedLyrics
+        defaultLyricSource = LyricSourcePreferencePolicy.fromStorage(
+            initialPlaybackPreferences.defaultLyricSource
+        )
         lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
         LyriconManager.setEnabled(lyriconEnabled)
         if (lyriconEnabled && !LyriconManager.isInitialized()) {
@@ -1123,8 +1135,30 @@ internal fun PlayerManager.initializeImpl(
                 val changed = amllLyricsEnabled != enabled
                 amllLyricsEnabled = enabled
                 if (changed) {
-                    ytMusicLyricsCache.evictAll()
-                    PlayerLyricsProvider.clearAmllLyricsCache()
+                    evictLyricCachesForSourcePreferenceChange()
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.preferWordTimedLyricsFlow.collect { enabled ->
+                val changed = preferWordTimedLyrics != enabled
+                preferWordTimedLyrics = enabled
+                if (changed) {
+                    evictLyricCachesForSourcePreferenceChange()
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.defaultLyricSourceFlow.collect { source ->
+                val changed = defaultLyricSource != source
+                defaultLyricSource = source
+                if (changed) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "默认歌词源设置更新: ${source.storageValue}"
+                    )
+                    evictLyricCachesForSourcePreferenceChange()
+                    syncLyriconSong(_currentSongFlow.value)
                     syncExternalBluetoothLyrics(_currentSongFlow.value)
                 }
             }
@@ -1208,6 +1242,27 @@ internal fun PlayerManager.initializeImpl(
         ioScope.launch {
             settingsRepo.qqMusicLyricDefaultOffsetMsFlow.collect { offsetMs ->
                 qqMusicLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
+            }
+        }
+        ioScope.launch {
+            settingsRepo.kugouLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                kugouLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
+            }
+        }
+        ioScope.launch {
+            settingsRepo.lrclibLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                lrclibLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
+            }
+        }
+        ioScope.launch {
+            settingsRepo.amllTtmlLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                amllTtmlLyricDefaultOffsetMs = offsetMs
                 updateExternalBluetoothLyricLine(_playbackPositionMs.value)
                 updateLyriconLyricOffset()
             }
@@ -4000,6 +4055,7 @@ internal fun PlayerManager.releaseImpl() {
         externalBluetoothTranslationLoadJob?.cancel()
         externalBluetoothTranslationLoadJob = null
         externalBluetoothLyrics = emptyList()
+        externalBluetoothPreferredLyricSource = null
         floatingTranslatedLyrics = emptyList()
         floatingTranslationMatchesByIndex = emptyMap()
         externalBluetoothLyricsSongKey = null
@@ -4066,4 +4122,16 @@ internal fun PlayerManager.releaseImpl() {
         UsbExclusiveSystemSoundGuard.forceRelease(application, "player_release_finally")
         StartupAudioFocusController.forceRelease("player_release_finally")
     }
+}
+
+/**
+ * 歌词来源相关设置变更后必须清空全部歌词缓存。
+ *
+ * 这些缓存都没有 TTL, 只靠设置变化时主动失效来维持一致, 否则改完设置后
+ * 当前歌曲会继续沿用旧来源的歌词, 表现为"设置没生效"。
+ */
+private fun PlayerManager.evictLyricCachesForSourcePreferenceChange() {
+    PlayerLyricsProvider.clearLyricsCaches(neteaseLyricsCache, ytMusicLyricsCache)
+    _lyricsPreferenceRevisionFlow.update { it + 1L }
+    syncExternalBluetoothLyrics(_currentSongFlow.value)
 }

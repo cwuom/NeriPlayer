@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,10 +15,13 @@ import moe.ouom.neriplayer.core.download.model.DownloadTask
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import kotlin.math.pow
 
 class NowPlayingScreenTest {
@@ -264,6 +268,52 @@ class NowPlayingScreenTest {
                 loadedHasLyrics = false
             )
         )
+    }
+
+    @Test
+    fun `reopening now playing shows cached lyrics before preferred lookup`() {
+        val song = SongItem(
+            id = 51L,
+            name = "Cached song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            matchedLyric = "[00:01.00]Stored line"
+        )
+        val stored = buildNowPlayingInitialLyricsState(song, cachedPreferredLyrics = null)
+        assertEquals("Stored line", stored.lyrics.single().text)
+        assertNull(stored.preferredSource)
+
+        val preferred = buildNowPlayingInitialLyricsState(
+            song,
+            cachedPreferredLyrics = PreferredLyricSourceResult(
+                lyrics = listOf(LyricEntry("Kugou line", 1_000L, 2_000L)),
+                source = LyricSourcePreference.Kugou
+            )
+        )
+        assertEquals("Kugou line", preferred.lyrics.single().text)
+        assertEquals(LyricSourcePreference.Kugou, preferred.preferredSource)
+    }
+
+    @Test
+    fun `preferred source state does not mix downloaded lyrics with selected source`() {
+        val state = buildPreferredLyricSourceState(
+            PreferredLyricSourceResult(
+                lyrics = listOf(LyricEntry("Kugou original", 1_000L, 2_000L)),
+                translatedLyrics = listOf(LyricEntry("Kugou translation", 1_000L, 2_000L)),
+                source = LyricSourcePreference.Kugou
+            )
+        )
+
+        assertNull(state.rawLyrics)
+        assertNull(state.rawTranslatedLyrics)
+        assertNull(state.rawPhoneticLyrics)
+        assertEquals("Kugou original", state.lyrics.single().text)
+        assertEquals("Kugou translation", state.translatedLyrics.single().text)
+        assertTrue(state.phoneticLyrics.isEmpty())
+        assertEquals(LyricSourcePreference.Kugou, state.preferredSource)
     }
 
     @Test

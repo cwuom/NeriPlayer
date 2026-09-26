@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen.tab
+package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -721,6 +721,13 @@ fun SettingsScreen(
     onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     qqMusicLyricDefaultOffsetMs: Long,
     onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
+    kugouLyricDefaultOffsetMs: Long,
+    onKugouLyricDefaultOffsetMsChange: (Long) -> Unit,
+    lrclibLyricDefaultOffsetMs: Long,
+    onLrclibLyricDefaultOffsetMsChange: (Long) -> Unit,
+    amllTtmlLyricDefaultOffsetMs: Long,
+    onAmllTtmlLyricDefaultOffsetMsChange: (Long) -> Unit,
+    onResetAllLyricDefaultOffsets: () -> Unit,
     floatingLyricsPreferences: FloatingLyricsPreferences,
     onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
     advancedBlurEnabled: Boolean,
@@ -1702,7 +1709,7 @@ fun SettingsScreen(
                 }
 
                 SettingsPage.Lyrics -> {
-                    for (cardIndex in 0..3) {
+                    for (cardIndex in 0..4) {
                         item(key = "${selectedPage.name}:card:$cardIndex") {
                             SettingsLyricsSection(
                                 expanded = true,
@@ -1731,6 +1738,16 @@ fun SettingsScreen(
                                 qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
                                 onQqMusicLyricDefaultOffsetMsChange =
                                     onQqMusicLyricDefaultOffsetMsChange,
+                                kugouLyricDefaultOffsetMs = kugouLyricDefaultOffsetMs,
+                                onKugouLyricDefaultOffsetMsChange =
+                                    onKugouLyricDefaultOffsetMsChange,
+                                lrclibLyricDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
+                                onLrclibLyricDefaultOffsetMsChange =
+                                    onLrclibLyricDefaultOffsetMsChange,
+                                amllTtmlLyricDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
+                                onAmllTtmlLyricDefaultOffsetMsChange =
+                                    onAmllTtmlLyricDefaultOffsetMsChange,
+                                onResetAllLyricDefaultOffsets = onResetAllLyricDefaultOffsets,
                                 cardIndex = cardIndex,
                                 highlightTargetId = settingsHighlightTargetId,
                                 highlightPulse = settingsHighlightPulse,

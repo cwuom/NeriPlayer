@@ -31,6 +31,8 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.core.player.metadata.SongMetadataRequestCoordinator
 import moe.ouom.neriplayer.core.player.metadata.hasUsableLyrics
 import moe.ouom.neriplayer.core.player.metadata.LocalMetadataWritePlaybackAction
@@ -985,13 +987,22 @@ internal suspend fun PlayerManager.getPreferredNeteaseRomanizedLyricContentImpl(
     )
 }
 
-internal suspend fun PlayerManager.getTranslatedLyricsImpl(song: SongItem): List<LyricEntry> {
+internal suspend fun PlayerManager.getTranslatedLyricsImpl(
+    song: SongItem,
+    skipPreferredSource: Boolean = false
+): List<LyricEntry> {
     return PlayerLyricsProvider.getTranslatedLyrics(
         song = song,
         application = application,
         neteaseClient = neteaseClient,
         neteaseLyricsCache = neteaseLyricsCache,
         editableLyricsMatcher = AppContainer.editableLyricsMatcher,
+        preferWordTimedLyrics = preferWordTimedLyrics,
+        defaultLyricSource = if (skipPreferredSource) {
+            LyricSourcePreference.Automatic
+        } else {
+            defaultLyricSource
+        },
         ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
     )
@@ -1003,11 +1014,17 @@ internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<
         application = application,
         neteaseClient = neteaseClient,
         neteaseLyricsCache = neteaseLyricsCache,
+        editableLyricsMatcher = AppContainer.editableLyricsMatcher,
+        preferWordTimedLyrics = preferWordTimedLyrics,
+        defaultLyricSource = defaultLyricSource,
         biliSourceTag = BILI_SOURCE_TAG
     )
 }
 
-internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntry> {
+internal suspend fun PlayerManager.getLyricsImpl(
+    song: SongItem,
+    skipPreferredSource: Boolean = false
+): List<LyricEntry> {
     return PlayerLyricsProvider.getLyrics(
         song = song,
         application = application,
@@ -1018,10 +1035,28 @@ internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntr
         editableLyricsMatcher = AppContainer.editableLyricsMatcher,
         amllTtmlClient = amllTtmlClient,
         amllLyricsEnabled = amllLyricsEnabled,
+        preferWordTimedLyrics = preferWordTimedLyrics,
+        defaultLyricSource = if (skipPreferredSource) {
+            LyricSourcePreference.Automatic
+        } else {
+            defaultLyricSource
+        },
         ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
     )
 }
+
+internal suspend fun PlayerManager.getPreferredLyricSourceResultImpl(
+    song: SongItem,
+    preference: LyricSourcePreference
+): PreferredLyricSourceResult? = PlayerLyricsProvider.tryGetPreferredLyricSourceResult(
+    song = song,
+    preference = preference,
+    preferWordTimed = preferWordTimedLyrics,
+    editableLyricsMatcher = AppContainer.editableLyricsMatcher,
+    neteaseClient = neteaseClient,
+    neteaseLyricsCache = neteaseLyricsCache
+)
 
 internal fun PlayerManager.playFromQueueImpl(
     index: Int,

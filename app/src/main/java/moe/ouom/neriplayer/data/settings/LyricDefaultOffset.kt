@@ -8,6 +8,9 @@ internal const val MAX_LYRIC_DEFAULT_OFFSET_MS = 5000L
 internal const val LYRIC_DEFAULT_OFFSET_STEP_MS = 50L
 internal const val DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS = 1000L
 internal const val DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS = 500L
+internal const val DEFAULT_KUGOU_LYRIC_OFFSET_MS = 0L
+internal const val DEFAULT_LRCLIB_LYRIC_OFFSET_MS = 0L
+internal const val DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS = 0L
 
 fun normalizeLyricDefaultOffsetMs(value: Long): Long {
     val stepAligned =
@@ -18,12 +21,23 @@ fun normalizeLyricDefaultOffsetMs(value: Long): Long {
 internal fun resolveLyricDefaultOffsetMs(
     lyricSource: MusicPlatform?,
     cloudMusicDefaultOffsetMs: Long,
-    qqMusicDefaultOffsetMs: Long
+    qqMusicDefaultOffsetMs: Long,
+    kugouDefaultOffsetMs: Long = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+    lrclibDefaultOffsetMs: Long = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+    amllTtmlDefaultOffsetMs: Long = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
+    preferredLyricSource: LyricSourcePreference? = null
 ): Long {
-    return if (lyricSource == MusicPlatform.QQ_MUSIC) {
-        qqMusicDefaultOffsetMs
-    } else {
-        cloudMusicDefaultOffsetMs
+    return when (preferredLyricSource) {
+        LyricSourcePreference.Kugou -> kugouDefaultOffsetMs
+        LyricSourcePreference.LrcLib -> lrclibDefaultOffsetMs
+        LyricSourcePreference.AmllTtml -> amllTtmlDefaultOffsetMs
+        LyricSourcePreference.QqMusic -> qqMusicDefaultOffsetMs
+        LyricSourcePreference.CloudMusic -> cloudMusicDefaultOffsetMs
+        else -> if (lyricSource == MusicPlatform.QQ_MUSIC) {
+            qqMusicDefaultOffsetMs
+        } else {
+            cloudMusicDefaultOffsetMs
+        }
     }
 }
 
@@ -31,13 +45,21 @@ internal fun resolveEffectiveLyricOffsetMs(
     lyricSource: MusicPlatform?,
     cloudMusicDefaultOffsetMs: Long,
     qqMusicDefaultOffsetMs: Long,
-    userLyricOffsetMs: Long
+    userLyricOffsetMs: Long,
+    kugouDefaultOffsetMs: Long = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+    lrclibDefaultOffsetMs: Long = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+    amllTtmlDefaultOffsetMs: Long = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
+    preferredLyricSource: LyricSourcePreference? = null
 ): Long {
     return saturatingAddLyricOffsetMs(
         value = resolveLyricDefaultOffsetMs(
             lyricSource = lyricSource,
             cloudMusicDefaultOffsetMs = cloudMusicDefaultOffsetMs,
-            qqMusicDefaultOffsetMs = qqMusicDefaultOffsetMs
+            qqMusicDefaultOffsetMs = qqMusicDefaultOffsetMs,
+            kugouDefaultOffsetMs = kugouDefaultOffsetMs,
+            lrclibDefaultOffsetMs = lrclibDefaultOffsetMs,
+            amllTtmlDefaultOffsetMs = amllTtmlDefaultOffsetMs,
+            preferredLyricSource = preferredLyricSource
         ),
         delta = userLyricOffsetMs
     )

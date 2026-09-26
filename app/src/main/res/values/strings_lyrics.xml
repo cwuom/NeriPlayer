@@ -83,5 +83,6 @@
     <string name="lyrics_match_source_qq_music">QQ 音乐</string>
     <string name="lyrics_match_source_amll_ttml">AMLL TTML</string>
     <string name="lyrics_match_source_lrclib">LRCLIB</string>
+    <string name="lyrics_match_word_timed">逐词</string>
     <string name="lyrics_match_source_youtube_music">YouTube Music</string>
 </resources>

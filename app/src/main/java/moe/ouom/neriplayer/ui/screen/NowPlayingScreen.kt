@@ -161,6 +161,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -239,6 +240,8 @@ import moe.ouom.neriplayer.core.download.model.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.resolveLyricTextForPlayback
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
+import moe.ouom.neriplayer.core.player.metadata.shouldTryPreferredLyricSource
 import moe.ouom.neriplayer.core.player.metadata.shouldReadManagedDownloadLyrics
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
@@ -268,6 +271,10 @@ import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_KUGOU_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.data.settings.LyricFontScalePage
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
@@ -2375,7 +2382,8 @@ internal data class LoadedLyricsState(
     val phoneticLyrics: List<LyricEntry>,
     val plainLyrics: List<LyricEntry>,
     val plainTranslatedLyrics: List<LyricEntry>,
-    val embeddedPhoneticLyrics: List<LyricEntry>
+    val embeddedPhoneticLyrics: List<LyricEntry>,
+    val preferredSource: LyricSourcePreference? = null
 )
 
 internal enum class ManagedLyricVariant {
@@ -2490,6 +2498,21 @@ internal fun buildNowPlayingFastLyricsState(
     )
 }
 
+internal fun buildPreferredLyricSourceState(
+    result: PreferredLyricSourceResult
+): LoadedLyricsState = LoadedLyricsState(
+    rawLyrics = null,
+    rawTranslatedLyrics = null,
+    rawPhoneticLyrics = null,
+    lyrics = result.lyrics,
+    translatedLyrics = result.translatedLyrics,
+    phoneticLyrics = result.romanizedLyrics,
+    plainLyrics = result.lyrics.flattenWordTimedEntries(),
+    plainTranslatedLyrics = result.translatedLyrics.flattenWordTimedEntries(),
+    embeddedPhoneticLyrics = emptyList(),
+    preferredSource = result.source
+)
+
 /**
  * 为当前曲目建立无需磁盘访问的首帧歌词快照
  */
@@ -2509,6 +2532,12 @@ internal fun buildNowPlayingImmediateLyricsState(song: SongItem?): LoadedLyricsS
         )
     )
 }
+
+internal fun buildNowPlayingInitialLyricsState(
+    song: SongItem?,
+    cachedPreferredLyrics: PreferredLyricSourceResult?
+): LoadedLyricsState = cachedPreferredLyrics?.let(::buildPreferredLyricSourceState)
+    ?: buildNowPlayingImmediateLyricsState(song)
 
 internal fun shouldReplaceLyricsAfterRefresh(
     sameSong: Boolean,
@@ -2594,6 +2623,12 @@ fun NowPlayingScreen(
     val themeSeedColorHex by settingsRepo.themeSeedColorFlow.collectAsStateWithLifecycle(
         initialValue = ThemeDefaults.DEFAULT_SEED_COLOR_HEX
     )
+    val preferWordTimedLyrics by settingsRepo.preferWordTimedLyricsFlow
+        .collectAsStateWithLifecycle(initialValue = true)
+    val defaultLyricSource by settingsRepo.defaultLyricSourceFlow
+        .collectAsStateWithLifecycle(initialValue = PlayerManager.defaultLyricSource)
+    val lyricsPreferenceRevision by PlayerManager.lyricsPreferenceRevisionFlow
+        .collectAsStateWithLifecycle()
     val targetNowPlayingColorScheme = LocalNeriTargetColorScheme.current
     val targetNowPlayingActiveIconColor = resolveNowPlayingActiveIconColor(
         accentColor = targetNowPlayingColorScheme.primary,
@@ -2645,6 +2680,15 @@ fun NowPlayingScreen(
     val qqMusicLyricDefaultOffsetMs by settingsRepo
         .qqMusicLyricDefaultOffsetMsFlow
         .collectAsStateWithLifecycle(initialValue = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS)
+    val kugouLyricDefaultOffsetMs by settingsRepo
+        .kugouLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_KUGOU_LYRIC_OFFSET_MS)
+    val lrclibLyricDefaultOffsetMs by settingsRepo
+        .lrclibLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_LRCLIB_LYRIC_OFFSET_MS)
+    val amllTtmlLyricDefaultOffsetMs by settingsRepo
+        .amllTtmlLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS)
     val lyricTranslationUsePhonetic by settingsRepo
         .lyricTranslationUsePhoneticFlow
         .collectAsStateWithLifecycle(initialValue = false)
@@ -2827,45 +2871,59 @@ fun NowPlayingScreen(
     val volumeSheetState = rememberModalBottomSheetState()
 
     val currentLyricSourceKey = currentSong?.stableKey()
-    var secondaryLyricsResolved by remember(currentLyricSourceKey) { mutableStateOf(false) }
-    val immediateLyricsState = remember(
-        currentLyricSourceKey,
-        currentSong?.matchedLyric,
-        currentSong?.matchedTranslatedLyric,
-        currentSong?.matchedRomanizedLyric,
-        currentSong?.originalLyric,
-        currentSong?.originalTranslatedLyric,
-        currentSong?.originalRomanizedLyric
+    val shouldLoadPreferredLyrics = currentSong?.let { song ->
+        shouldTryPreferredLyricSource(song, defaultLyricSource)
+    } == true
+    val cachedPreferredLyrics = remember(
+        currentSong,
+        defaultLyricSource,
+        preferWordTimedLyrics,
+        lyricsPreferenceRevision
     ) {
-        buildNowPlayingImmediateLyricsState(currentSong)
+        currentSong?.let { song ->
+            PlayerManager.getCachedPreferredLyricSourceResult(
+                song,
+                defaultLyricSource,
+                preferWordTimedLyrics
+            )
+        }
+    }
+    var secondaryLyricsResolved by remember(currentLyricSourceKey, defaultLyricSource) {
+        mutableStateOf(false)
+    }
+    val immediateLyricsState = remember(currentSong, cachedPreferredLyrics) {
+        buildNowPlayingInitialLyricsState(currentSong, cachedPreferredLyrics)
     }
     // 切歌时直接以歌曲对象已有文本建立首帧，侧载快读完成后再覆盖，避免歌曲和歌词错帧
-    var lyrics by remember(currentLyricSourceKey) {
+    var lyrics by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.lyrics)
     }
-    var translatedLyrics by remember(currentLyricSourceKey) {
+    var translatedLyrics by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.translatedLyrics)
     }
-    var rawLyricsText by remember(currentLyricSourceKey) {
+    var rawLyricsText by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.rawLyrics)
     }
-    var rawTranslatedLyricsText by remember(currentLyricSourceKey) {
+    var rawTranslatedLyricsText by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.rawTranslatedLyrics)
     }
-    var rawPhoneticLyricsText by remember(currentLyricSourceKey) {
+    var rawPhoneticLyricsText by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.rawPhoneticLyrics)
     }
-    var remotePhoneticLyrics by remember(currentLyricSourceKey) {
+    var remotePhoneticLyrics by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.phoneticLyrics)
     }
-    var plainLyrics by remember(currentLyricSourceKey) {
+    var plainLyrics by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.plainLyrics)
     }
-    var plainTranslatedLyrics by remember(currentLyricSourceKey) {
+    var plainTranslatedLyrics by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.plainTranslatedLyrics)
     }
-    var embeddedPhoneticLyrics by remember(currentLyricSourceKey) {
+    var embeddedPhoneticLyrics by remember(currentLyricSourceKey, defaultLyricSource) {
         mutableStateOf(immediateLyricsState.embeddedPhoneticLyrics)
+    }
+    var loadedPreferredLyricSource by remember(currentLyricSourceKey, defaultLyricSource) {
+        mutableStateOf(immediateLyricsState.preferredSource)
     }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
     var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
@@ -3031,7 +3089,10 @@ fun NowPlayingScreen(
         resolveNowPlayingLyricsMediaReloadKey(
             song = currentSong,
             currentMediaUrl = currentMediaUrl
-        )
+        ),
+        preferWordTimedLyrics,
+        defaultLyricSource,
+        lyricsPreferenceRevision
     ) {
         val song = currentSong
         val lyricIdentity = song?.stableKey().orEmpty()
@@ -3058,7 +3119,11 @@ fun NowPlayingScreen(
                 loadedLyricsState.translatedLyrics.isNotEmpty() ||
                 loadedLyricsState.phoneticLyrics.isNotEmpty()
             val sameSong = song != null
-            if (song == null || shouldReplaceLyricsAfterRefresh(sameSong, loadedHasLyrics)) {
+            if (shouldReplaceLyricsAfterRefresh(
+                    sameSong = sameSong,
+                    loadedHasLyrics = loadedHasLyrics
+                )
+            ) {
                 rawLyricsText = loadedLyricsState.rawLyrics
                 rawTranslatedLyricsText = loadedLyricsState.rawTranslatedLyrics
                 rawPhoneticLyricsText = loadedLyricsState.rawPhoneticLyrics
@@ -3068,6 +3133,7 @@ fun NowPlayingScreen(
                 plainLyrics = loadedLyricsState.plainLyrics
                 plainTranslatedLyrics = loadedLyricsState.plainTranslatedLyrics
                 embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
+                loadedPreferredLyricSource = loadedLyricsState.preferredSource
             }
             NPLogger.d(
                 "NowPlayingLyrics",
@@ -3142,41 +3208,56 @@ fun NowPlayingScreen(
                 currentLyric = song?.matchedRomanizedLyric,
                 legacyLyric = song?.originalRomanizedLyric
             )
-            buildNowPlayingFastLyricsState(
-                rawLyrics = resolveNowPlayingLyricText(
-                    isManagedLocalDownload = isManagedLocalDownload,
-                    localLyrics = localLyrics,
-                    downloadedLyrics = downloadedLyrics,
-                    localLyric = localLyrics?.lyric,
-                    storedLyric = storedRawLyrics,
-                    downloadedLyric = null,
-                    variant = ManagedLyricVariant.ORIGINAL
-                ),
-                rawTranslatedLyrics = resolveNowPlayingLyricText(
-                    isManagedLocalDownload = isManagedLocalDownload,
-                    localLyrics = localLyrics,
-                    downloadedLyrics = downloadedLyrics,
-                    localLyric = localLyrics?.translatedLyric,
-                    storedLyric = storedRawTranslatedLyrics,
-                    downloadedLyric = null,
-                    variant = ManagedLyricVariant.TRANSLATED
-                ),
-                rawPhoneticLyrics = resolveNowPlayingLyricText(
-                    isManagedLocalDownload = isManagedLocalDownload,
-                    localLyrics = localLyrics,
-                    downloadedLyrics = downloadedLyrics,
-                    localLyric = localLyrics?.romanizedLyric,
-                    storedLyric = storedRawPhoneticLyrics,
-                    downloadedLyric = null,
-                    variant = ManagedLyricVariant.ROMANIZED
+            cachedPreferredLyrics?.let(::buildPreferredLyricSourceState)
+                ?: buildNowPlayingFastLyricsState(
+                    rawLyrics = resolveNowPlayingLyricText(
+                        isManagedLocalDownload = isManagedLocalDownload,
+                        localLyrics = localLyrics,
+                        downloadedLyrics = downloadedLyrics,
+                        localLyric = localLyrics?.lyric,
+                        storedLyric = storedRawLyrics,
+                        downloadedLyric = null,
+                        variant = ManagedLyricVariant.ORIGINAL
+                    ),
+                    rawTranslatedLyrics = resolveNowPlayingLyricText(
+                        isManagedLocalDownload = isManagedLocalDownload,
+                        localLyrics = localLyrics,
+                        downloadedLyrics = downloadedLyrics,
+                        localLyric = localLyrics?.translatedLyric,
+                        storedLyric = storedRawTranslatedLyrics,
+                        downloadedLyric = null,
+                        variant = ManagedLyricVariant.TRANSLATED
+                    ),
+                    rawPhoneticLyrics = resolveNowPlayingLyricText(
+                        isManagedLocalDownload = isManagedLocalDownload,
+                        localLyrics = localLyrics,
+                        downloadedLyrics = downloadedLyrics,
+                        localLyric = localLyrics?.romanizedLyric,
+                        storedLyric = storedRawPhoneticLyrics,
+                        downloadedLyric = null,
+                        variant = ManagedLyricVariant.ROMANIZED
+                    )
                 )
-            )
         }
         publishLoadedLyricsState(fastLoadedLyricsState, stage = "fast")
         // 快读结果已经发布, 完整侧载校验必须在独立后台阶段执行, 不能阻塞切歌首帧
         launch {
             val loadedLyricsState = withContext(Dispatchers.IO) {
             val isLocalSong = song?.isLocalSong() == true
+            if (shouldLoadPreferredLyrics && song != null) {
+                PlayerManager.getPreferredLyricSourceResult(song, defaultLyricSource)?.let { preferred ->
+                    NPLogger.d(
+                        "NowPlayingLyrics",
+                        "使用偏好歌词源: source=${defaultLyricSource.storageValue}, song=${song.name}"
+                    )
+                    return@withContext buildPreferredLyricSourceState(preferred)
+                }
+                NPLogger.d(
+                    "NowPlayingLyrics",
+                    "偏好歌词源未命中，回退已存或平台歌词: source=${defaultLyricSource.storageValue}, " +
+                        "song=${song.name}"
+                )
+            }
             val isManagedLocalDownload = managedLocalDownloadDetected
             val canReadManagedDownloadLyrics = managedDownloadLyricsReadable
             val localLyrics = if (isLocalSong && !isManagedLocalDownload) {
@@ -3352,7 +3433,11 @@ fun NowPlayingScreen(
                 }
                 !effectiveRawLyrics.isNullOrBlank() -> {
                     val parsedRawLyrics = parseNeteaseLyricsAuto(effectiveRawLyrics)
-                    if (parsedRawLyrics.hasWordTimedEntries() || song == null) {
+                    // 关闭"优先使用逐词歌词"后, 不再为了逐词去在线覆盖已有歌词
+                    if (!preferWordTimedLyrics ||
+                        parsedRawLyrics.hasWordTimedEntries() ||
+                        song == null
+                    ) {
                         parsedRawLyrics
                     } else {
                         PlayerManager.getLyrics(song)
@@ -3582,6 +3667,10 @@ fun NowPlayingScreen(
         cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
         qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
         userLyricOffsetMs = currentSong?.userLyricOffsetMs ?: 0L,
+        kugouDefaultOffsetMs = kugouLyricDefaultOffsetMs,
+        lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
+        amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
+        preferredLyricSource = loadedPreferredLyricSource,
     )
     val progressInfoSegments = remember(
         currentPlaybackAudioInfo,
@@ -7827,6 +7916,8 @@ fun LyricsEditorSheet(
     }
     var isLyricMatching by remember { mutableStateOf(false) }
     var lyricMatchError by remember { mutableStateOf<String?>(null) }
+    val preferWordTimedLyrics by AppContainer.settingsRepo.preferWordTimedLyricsFlow
+        .collectAsState(initial = true)
     var selectedLyricMatchSources by remember(originalSong.stableKey()) {
         mutableStateOf(
             defaultEditableLyricMatchSources(
@@ -7834,10 +7925,15 @@ fun LyricsEditorSheet(
             )
         )
     }
-    val visibleLyricMatchResults = remember(lyricMatchResultsBySource, selectedLyricMatchSources) {
+    val visibleLyricMatchResults = remember(
+        lyricMatchResultsBySource,
+        selectedLyricMatchSources,
+        preferWordTimedLyrics
+    ) {
         filterCachedLyricMatchResults(
             resultsBySource = lyricMatchResultsBySource,
-            selectedSources = selectedLyricMatchSources
+            selectedSources = selectedLyricMatchSources,
+            preferWordTimedLyrics = preferWordTimedLyrics
         )
     }
     val hasSearchedSelectedLyricSources = selectedLyricMatchSources.any { source ->
@@ -7911,6 +8007,7 @@ fun LyricsEditorSheet(
                             artistName = originalSong.customArtist ?: originalSong.artist,
                             albumName = originalSong.album,
                             durationMs = originalSong.durationMs,
+                            preferWordTimed = preferWordTimedLyrics,
                             sources = sourcesToSearch
                         )
                     )
@@ -8439,6 +8536,10 @@ private fun buildLyricMatchMetaText(result: RankedEditableLyricMatch): String {
     val candidate = result.candidate
     return buildString {
         append(stringResource(candidate.source.stringResId()))
+        if (result.hasWordTiming) {
+            append(" · ")
+            append(stringResource(R.string.lyrics_match_word_timed))
+        }
         if (candidate.durationMs > 0L) {
             append(" · ")
             append(formatDuration(candidate.durationMs))
@@ -8472,7 +8573,8 @@ private fun defaultEditableLyricsMatchKeyword(song: SongItem): String {
 
 private fun filterCachedLyricMatchResults(
     resultsBySource: Map<EditableLyricMatchSource, List<RankedEditableLyricMatch>>,
-    selectedSources: Set<EditableLyricMatchSource>
+    selectedSources: Set<EditableLyricMatchSource>,
+    preferWordTimedLyrics: Boolean = true
 ): List<RankedEditableLyricMatch> {
     if (selectedSources.isEmpty()) {
         return emptyList()
@@ -8486,7 +8588,8 @@ private fun filterCachedLyricMatchResults(
                     val index = lyricMatchSelectableSources.indexOf(source)
                     if (index >= 0) lyricMatchSelectableSources.size - index else 0
                 },
-                sourceFallbackRank = lyricMatchSelectableSources::indexOf
+                sourceFallbackRank = lyricMatchSelectableSources::indexOf,
+                preferWordTimed = preferWordTimedLyrics
             )
         )
         .toList()

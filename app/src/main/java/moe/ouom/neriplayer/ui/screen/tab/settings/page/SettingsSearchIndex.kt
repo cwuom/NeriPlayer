@@ -112,6 +112,7 @@ internal fun settingsPageForSection(section: String): SettingsPage? {
         AutoSettingsSections.display -> SettingsPage.Personalization
         AutoSettingsSections.motion -> SettingsPage.Motion
         AutoSettingsSections.lyrics -> SettingsPage.Lyrics
+        AutoSettingsSections.lyricSource -> SettingsPage.Lyrics
         AutoSettingsSections.network -> SettingsPage.Network
         AutoSettingsSections.download -> SettingsPage.Downloads
         AutoSettingsSections.trafficManagement -> SettingsPage.TrafficManagement
@@ -222,10 +223,15 @@ internal fun settingsSearchScrollAnchor(
 private fun lyricsCardIndex(targetId: String): Int {
     return when (targetId) {
         "setting:floating_lyrics_enabled" -> 0
+        "setting:prefer_word_timed_lyrics",
+        "setting:default_lyric_source" -> 1
         "setting:cloud_music_lyric_default_offset_ms",
-        "setting:qq_music_lyric_default_offset_ms" -> 2
-        in LyricAppearanceSearchTargets -> 3
-        else -> 1
+        "setting:qq_music_lyric_default_offset_ms",
+        "setting:kugou_lyric_default_offset_ms",
+        "setting:lrclib_lyric_default_offset_ms",
+        "setting:amll_ttml_lyric_default_offset_ms" -> 3
+        in LyricAppearanceSearchTargets -> 4
+        else -> 2
     }
 }
 
@@ -789,7 +795,11 @@ private val PageSearchAliases = mapOf(
     ),
     SettingsPage.Personalization to listOf("display", "home", "font", "dpi", "background", "tab", "xianshi"),
     SettingsPage.Motion to listOf("motion", "animation", "glass", "blur", "dynamic", "dongxiao", "mohu"),
-    SettingsPage.Lyrics to listOf("lyrics", "lrc", "amll", "lyricon", "floating", "bluetooth", "geci"),
+    SettingsPage.Lyrics to listOf(
+        "lyrics", "lrc", "amll", "lyricon", "floating", "bluetooth", "geci",
+        "lyric source", "lyrics source", "lyric provider", "word timed", "word by word",
+        "kugou", "netease", "qq music", "lrclib", "ttml", "geciyuan", "zhuci"
+    ),
     SettingsPage.Network to listOf("network", "proxy", "bypass", "daili", "wangluo"),
     SettingsPage.Playback to listOf("playback", "audio", "queue", "volume", "fade", "crossfade", "bofang"),
     SettingsPage.UsbExclusive to listOf("usb", "dac", "pcm", "uac", "exclusive", "bit perfect", "dizhan"),
@@ -919,6 +929,9 @@ private val SettingSearchAliases = mapOf(
     ),
     "cloud_music_lyric_default_offset_ms" to listOf("netease lyrics offset", "wy geci pianyi"),
     "qq_music_lyric_default_offset_ms" to listOf("qq lyrics offset", "qq geci pianyi"),
+    "kugou_lyric_default_offset_ms" to listOf("kugou lyrics offset", "kugou geci pianyi"),
+    "lrclib_lyric_default_offset_ms" to listOf("lrclib lyrics offset"),
+    "amll_ttml_lyric_default_offset_ms" to listOf("amll ttml lyrics offset"),
     "bypass_proxy" to listOf("proxy", "vpn", "direct", "daili"),
     "download_directory_uri" to listOf("folder", "path", "saf", "xiazai mulu"),
     "download_file_name_template" to listOf("filename", "template", "mingming"),
