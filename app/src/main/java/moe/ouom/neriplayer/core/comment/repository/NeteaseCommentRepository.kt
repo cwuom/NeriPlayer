@@ -31,6 +31,12 @@ internal class NeteaseCommentRepository(
 
     override val platform: CommentPlatform = CommentPlatform.NETEASE
 
+    override suspend fun cachedComments(source: CommentSource, pageSize: Int, sort: CommentSort): CommentPage? {
+        require(source.platform == platform)
+        return CommentMemoryCache.get(platform.name, source.resourceId, 1, sort, pageSize,
+            sessionKey = clientProvider().commentCacheSessionKey())
+    }
+
     override suspend fun loadComments(
         source: CommentSource,
         page: Int,
@@ -42,13 +48,9 @@ internal class NeteaseCommentRepository(
         require(source.platform == platform)
         val resourceId = source.resourceId
         val client = clientProvider()
-        val authenticated = client.hasLogin()
-        if ((forceRefresh && page == 1) || authenticated) {
-            CommentMemoryCache.invalidate(platform.name, resourceId)
-        }
-        // 登录响应包含个人点赞状态，不放入跨账号共享的匿名缓存
-        if (!forceRefresh && !authenticated) {
-            CommentMemoryCache.get(platform.name, resourceId, page, sort, pageSize, cursor)?.let { return it }
+        val sessionKey = client.commentCacheSessionKey()
+        if (!forceRefresh) {
+            CommentMemoryCache.get(platform.name, resourceId, page, sort, pageSize, cursor, sessionKey)?.let { return it }
         }
 
         // 只记录非敏感上下文, 不打印评论正文 / Cookie (§36)
@@ -74,8 +76,9 @@ internal class NeteaseCommentRepository(
         if (result.hasMore && (result.comments.isEmpty() || stalledTimeCursor)) {
             throw CommentApiException(200, CommentError.API, "NetEase comment pagination did not advance")
         }
-        if (!authenticated && !client.hasLogin()) {
-            CommentMemoryCache.put(platform.name, resourceId, page, result, sort, pageSize, cursor)
+        if (sessionKey == client.commentCacheSessionKey()) {
+            if (forceRefresh && page == 1) CommentMemoryCache.invalidate(platform.name, resourceId)
+            CommentMemoryCache.put(platform.name, resourceId, page, result, sort, pageSize, cursor, sessionKey)
         }
         return result
     }

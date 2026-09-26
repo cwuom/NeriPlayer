@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -30,7 +31,6 @@ import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
 import moe.ouom.neriplayer.core.comment.model.commentLengthLimit
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
-import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
 
@@ -40,14 +40,18 @@ internal fun CommentComposer(
     offlineMode: Boolean,
     onDraft: (String) -> Unit,
     onReply: (CommentReplyTarget?) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    focusRequest: Int = 0
 ) {
     val source = ui.source ?: return
     val limit = source.platform.commentLengthLimit()
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(ui.replyTarget) {
-        if (ui.replyTarget != null) focusRequester.requestFocus()
+    LaunchedEffect(ui.source) {
+        focusManager.clearFocus(force = true)
+    }
+    LaunchedEffect(focusRequest) {
+        if (focusRequest > 0 && ui.replyTarget != null) focusRequester.requestFocus()
     }
     LaunchedEffect(ui.sendSucceeded) {
         if (ui.sendSucceeded) focusManager.clearFocus()
@@ -72,6 +76,7 @@ internal fun CommentComposer(
                 onValueChange = onDraft,
                 modifier = Modifier.weight(1f).focusRequester(focusRequester).testTag("comment-draft"),
                 enabled = !ui.isSending,
+                shape = MaterialTheme.shapes.extraLarge,
                 placeholder = { Text(stringResource(R.string.comment_write_hint)) },
                 maxLines = 3,
                 isError = ui.draft.length > limit,
@@ -79,16 +84,16 @@ internal fun CommentComposer(
                     { Text(stringResource(R.string.comment_length_format, ui.draft.length, limit)) }
                 } else null
             )
-            HapticTextButton(
+            HapticIconButton(
                 onClick = onSend,
-                enabled = !offlineMode && !ui.isSending && !ui.isRefreshing && !ui.isLoadingMore &&
+                enabled = !offlineMode && !ui.isSending && !ui.isRefreshing && !ui.isCheckingCache && !ui.isLoadingMore &&
                     ui.pendingSort == null && ui.likingIds.isEmpty() &&
                     ui.status in setOf(CommentListStatus.SUCCESS, CommentListStatus.EMPTY) &&
                     ui.draft.isNotBlank() && ui.draft.length <= limit,
                 modifier = Modifier.testTag("comment-send")
             ) {
                 if (ui.isSending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text(stringResource(R.string.comment_send))
+                else Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.comment_send))
             }
         }
         val message = when {

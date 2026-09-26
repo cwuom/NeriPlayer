@@ -42,6 +42,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okio.ByteString.Companion.encodeUtf8
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -1808,6 +1809,9 @@ class BiliClient(
 
     suspend fun hasCommentLogin(): Boolean =
         !cookieRepo.getCookiesOnce()["SESSDATA"].isNullOrBlank()
+
+    internal suspend fun commentCacheSessionKey(): String? =
+        cookieRepo.getCookiesOnce()["SESSDATA"]?.takeIf { it.isNotBlank() }?.encodeUtf8()?.sha256()?.hex()
 
     suspend fun getVideoCommentReplies(aid: Long, rootId: String, page: Int, pageSize: Int): JSONObject {
         require(aid > 0L && (rootId.toLongOrNull() ?: 0L) > 0L)

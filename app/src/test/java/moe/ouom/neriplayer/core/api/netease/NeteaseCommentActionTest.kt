@@ -4,9 +4,26 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class NeteaseCommentActionTest {
+    @Test
+    fun `cache session key is anonymous without login and changes with the account`() {
+        val client = NeteaseClient { "" }
+        assertNull(client.commentCacheSessionKey())
+        client.setPersistedCookies(mapOf("MUSIC_U" to "test-account-a"))
+        val first = client.commentCacheSessionKey()
+        assertEquals(64, first?.length)
+        client.setPersistedCookies(mapOf("MUSIC_U" to "test-account-a", "__csrf" to "rotated"))
+        assertEquals(first, client.commentCacheSessionKey())
+        client.setPersistedCookies(mapOf("MUSIC_U" to "test-account-b"))
+        assertNotEquals(first, client.commentCacheSessionKey())
+        client.logout()
+        assertNull(client.commentCacheSessionKey())
+    }
+
     @Test
     fun `missing login rejects before requesting verification`(): Unit = runBlocking {
         val client = NeteaseClient { error("Verification must not start without login") }

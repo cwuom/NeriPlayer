@@ -32,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.nonReplayable
 import okhttp3.Cookie
+import okio.ByteString.Companion.encodeUtf8
 import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl
@@ -389,6 +390,10 @@ class NeteaseClient(
 
     /** 是否已登录 */
     fun hasLogin(): Boolean = sessionStore.currentSession().hasLogin()
+
+    internal fun commentCacheSessionKey(): String? =
+        sessionStore.currentSession().persistedCookiesSnapshot()["MUSIC_U"]
+            ?.takeIf { it.isNotBlank() }?.encodeUtf8()?.sha256()?.hex()
 
     /** 设置/更新持久化 Cookie, 并把它们注入到本实例的 CookieJar */
     fun setPersistedCookies(cookies: Map<String, String>) {

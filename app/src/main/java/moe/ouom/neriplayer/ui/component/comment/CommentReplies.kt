@@ -19,6 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
@@ -36,20 +38,21 @@ internal fun CommentActionBox(
     replyEnabled: Boolean,
     onReply: (CommentReplyTarget) -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = MaterialTheme.shapes.extraLarge,
     content: @Composable () -> Unit
 ) {
     var expanded by remember(comment.id) { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val reply = { onReply(CommentReplyTarget(comment.id, rootId, comment.username)) }
-    Box(modifier.combinedClickable(
-        onClick = { if (replyEnabled) reply() },
-        onClickLabel = stringResource(R.string.comment_reply),
+    Box(modifier.clip(shape).combinedClickable(
+        onClick = { expanded = true },
+        onClickLabel = stringResource(R.string.comment_actions),
         onLongClickLabel = stringResource(R.string.comment_actions),
         onLongClick = { expanded = true }
     )) {
         content()
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, shape = MaterialTheme.shapes.large) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.comment_copy)) },
                 onClick = {
@@ -97,7 +100,7 @@ internal fun CommentReplyItem(
     onReply: (CommentReplyTarget) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    CommentActionBox(comment, rootId, replyEnabled, onReply, modifier) {
+    CommentActionBox(comment, rootId, replyEnabled, onReply, modifier, MaterialTheme.shapes.medium) {
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(

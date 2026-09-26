@@ -39,6 +39,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -140,6 +141,11 @@ internal fun CommentSheetContent(
     val context = LocalContext.current
     val sortLoadingDescription = stringResource(R.string.comment_sort_loading)
     val listState = rememberLazyListState()
+    var replyFocusRequest by remember(ui.source) { mutableIntStateOf(0) }
+    val requestReply: (CommentReplyTarget?) -> Unit = { target ->
+        onReply(target)
+        if (target != null) replyFocusRequest++
+    }
     val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
     val panelHeight = (windowHeight * 0.72f).coerceAtMost(620.dp)
 
@@ -157,10 +163,12 @@ internal fun CommentSheetContent(
             lastVisible >= info.totalItemsCount - 2
         }
     }
-    LaunchedEffect(reachedEnd, ui.hasMore, ui.isLoadingMore, ui.loadMoreError, ui.status, ui.likingIds, ui.pendingSort, ui.isSending) {
+    LaunchedEffect(reachedEnd, ui.hasMore, ui.isLoadingMore, ui.isRefreshing, ui.isCheckingCache, ui.loadMoreError, ui.status, ui.likingIds, ui.pendingSort, ui.isSending) {
         if (reachedEnd &&
             ui.hasMore &&
             !ui.isLoadingMore &&
+            !ui.isRefreshing &&
+            !ui.isCheckingCache &&
             !ui.isSending &&
             ui.pendingSort == null &&
             ui.likingIds.isEmpty() &&
@@ -217,7 +225,8 @@ internal fun CommentSheetContent(
                 .weight(1f)
         ) {
             when (ui.status) {
-                CommentListStatus.IDLE, CommentListStatus.LOADING -> CommentLoadingBlock()
+                CommentListStatus.IDLE -> Unit
+                CommentListStatus.LOADING -> CommentLoadingBlock()
 
                 CommentListStatus.EMPTY -> CommentEmptyBlock()
 
@@ -243,9 +252,9 @@ internal fun CommentSheetContent(
                                 floor = index + 1,
                                 offlineMode = offlineMode,
                                 isLiking = comment.id in ui.likingIds,
-                                likeEnabled = !ui.isRefreshing && !ui.isLoadingMore && !ui.isSending && ui.pendingSort == null,
+                                likeEnabled = !ui.isRefreshing && !ui.isCheckingCache && !ui.isLoadingMore && !ui.isSending && ui.pendingSort == null,
                                 onLike = { onLike(comment.id) },
-                                onReply = onReply,
+                                onReply = requestReply,
                                 onToggleReplies = { onToggleReplies(comment.id) },
                                 repliesExpanded = thread?.expanded == true,
                                 hasReplyThread = thread != null,
@@ -254,7 +263,7 @@ internal fun CommentSheetContent(
                         }
                         if (thread?.expanded == true) {
                             items(thread.comments, key = { "reply:${comment.id}:${it.id}" }, contentType = { "reply" }) { reply ->
-                                CommentReplyItem(reply, comment.id, replyEnabled, onReply, Modifier.padding(start = 24.dp))
+                                CommentReplyItem(reply, comment.id, replyEnabled, requestReply, Modifier.padding(start = 24.dp))
                             }
                             item(key = "reply-footer:${comment.id}", contentType = "reply-footer") {
                                 when {
@@ -334,7 +343,7 @@ internal fun CommentSheetContent(
             }
         }
 
-        CommentComposer(ui, offlineMode, onDraft, onReply, onSend)
+        CommentComposer(ui, offlineMode, onDraft, requestReply, onSend, replyFocusRequest)
     }
 }
 

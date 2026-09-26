@@ -28,6 +28,13 @@ internal class BiliCommentRepository(
 
     private val resolvedResourceIds = LinkedHashMap<CommentSource, Long>(16, 0.75f, true)
 
+    override suspend fun cachedComments(source: CommentSource, pageSize: Int, sort: CommentSort): CommentPage? {
+        require(source.platform == platform)
+        val resourceId = synchronized(resolvedResourceIds) { resolvedResourceIds[source] } ?: return null
+        return CommentMemoryCache.get(platform.name, resourceId, 1, sort, pageSize,
+            sessionKey = clientProvider().commentCacheSessionKey())
+    }
+
     override suspend fun loadComments(
         source: CommentSource,
         page: Int,
@@ -40,12 +47,9 @@ internal class BiliCommentRepository(
         require(sort in CommentSort.supportedBy(platform))
         val resourceId = resolveResourceId(source)
         val client = clientProvider()
-        val authenticated = client.hasCommentLogin()
-        if ((forceRefresh && page == 1) || authenticated) {
-            CommentMemoryCache.invalidate(platform.name, resourceId)
-        }
-        if (!forceRefresh && !authenticated) {
-            CommentMemoryCache.get(platform.name, resourceId, page, sort, pageSize, cursor)?.let { return it }
+        val sessionKey = client.commentCacheSessionKey()
+        if (!forceRefresh) {
+            CommentMemoryCache.get(platform.name, resourceId, page, sort, pageSize, cursor, sessionKey)?.let { return it }
         }
 
         NPLogger.d(TAG, "load comments: platform=BILIBILI, resourceId=$resourceId, page=$page")
@@ -53,8 +57,9 @@ internal class BiliCommentRepository(
             client.getVideoComments(resourceId, page, pageSize, if (sort == CommentSort.NEWEST) 0 else 1)
         }
         val result = parseBiliCommentPage(root, page, pageSize)
-        if (!authenticated && !client.hasCommentLogin()) {
-            CommentMemoryCache.put(platform.name, resourceId, page, result, sort, pageSize, cursor)
+        if (sessionKey == client.commentCacheSessionKey()) {
+            if (forceRefresh && page == 1) CommentMemoryCache.invalidate(platform.name, resourceId)
+            CommentMemoryCache.put(platform.name, resourceId, page, result, sort, pageSize, cursor, sessionKey)
         }
         return result
     }

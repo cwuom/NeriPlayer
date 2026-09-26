@@ -15,6 +15,8 @@ internal interface CommentRepository {
 
     val platform: CommentPlatform
 
+    suspend fun cachedComments(source: CommentSource, pageSize: Int, sort: CommentSort): CommentPage? = null
+
     /**
      * 加载指定页的评论。
      *

@@ -634,7 +634,8 @@ For release build and signing details, see
   Now Playing comments offer Popular (default), Newest, and Recommended sorting,
   quoted comments, expandable reply threads, and long-press copying, plus like/unlike,
   posting, and replying when signed in. Failed submissions retain the draft; uncertain
-  network results are never automatically resent.
+  network results are never automatically resent. Comments show the current session's
+  memory cache first and revalidate silently when unchanged. Opening the sheet does not open the keyboard.
 - **Bilibili**:
   web login, QR login, video search, created favorites, subscribed favorites,
   collections, favorite/collection list search, multi-part video-to-audio
@@ -644,7 +645,7 @@ For release build and signing details, see
   Now Playing comments offer Popular (default) and Newest sorting, plus signed-in
   like/unlike actions. Newest and later pages may require sign-in. Comment numbers
   follow the displayed list order. Reply pagination, long-press copying, and signed-in
-  posting and replying are supported.
+  posting and replying are supported, with session-isolated memory caching and silent background revalidation.
 - **YouTube Music**:
   login, home/library playlist browsing, playlist details, search, playback compatibility,
   PoToken, and JS Challenge support. Content access remains bound by platform rules

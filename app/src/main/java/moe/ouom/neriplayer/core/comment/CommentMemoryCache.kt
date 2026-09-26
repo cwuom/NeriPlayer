@@ -35,9 +35,9 @@ internal object CommentMemoryCache {
     fun get(
         platform: String, resourceId: Long, page: Int,
         sort: CommentSort = CommentSort.HOT, pageSize: Int = COMMENT_PAGE_SIZE,
-        cursor: String? = null
+        cursor: String? = null, sessionKey: String? = null
     ): CommentPage? {
-        val key = "$platform:$resourceId:$sort:$pageSize:$page:${cursor.orEmpty()}"
+        val key = "$platform:$resourceId:$sort:$pageSize:$page:${cursor.orEmpty()}:${sessionKey.orEmpty()}"
         val now = System.currentTimeMillis()
         synchronized(lock) {
             val entry = entries[key] ?: return null
@@ -55,9 +55,9 @@ internal object CommentMemoryCache {
     fun put(
         platform: String, resourceId: Long, page: Int, pageData: CommentPage,
         sort: CommentSort = CommentSort.HOT, pageSize: Int = COMMENT_PAGE_SIZE,
-        cursor: String? = null
+        cursor: String? = null, sessionKey: String? = null
     ) {
-        val key = "$platform:$resourceId:$sort:$pageSize:$page:${cursor.orEmpty()}"
+        val key = "$platform:$resourceId:$sort:$pageSize:$page:${cursor.orEmpty()}:${sessionKey.orEmpty()}"
         val now = System.currentTimeMillis()
         synchronized(lock) {
             entries[key] = Entry(pageData, now)

@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.width
@@ -19,10 +20,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.captureToImage
@@ -47,6 +52,7 @@ import moe.ouom.neriplayer.core.comment.model.CommentSort
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.SongComment
 import moe.ouom.neriplayer.core.comment.model.CommentQuote
+import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
@@ -92,6 +98,69 @@ class CommentSheetTest {
 
     @Test fun lightLayoutAndScrolledList() = renderPreview(dark = false, fontScale = 1f)
     @Test fun darkLayoutAtLargeFont() = renderPreview(dark = true, fontScale = 1.3f)
+
+    @Test
+    fun longPressHighlightDoesNotCoverCardCorners() {
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(360.dp).background(Color.White)) {
+                    CommentItem(
+                        comment = sampleState().comments.single(), floor = 1, offlineMode = false,
+                        isLiking = false, likeEnabled = true, onLike = {}, onReply = {}, onToggleReplies = {},
+                        repliesExpanded = false, hasReplyThread = false, replyEnabled = true,
+                        modifier = Modifier.testTag("highlight-card")
+                    )
+                }
+            }
+        }
+        val card = composeRule.onNodeWithTag("highlight-card")
+        val before = card.captureToImage().asAndroidBitmap().getPixel(2, 2)
+        card.performTouchInput { longClick(Offset(width / 2f, 24f)) }
+        composeRule.waitForIdle()
+        val after = card.captureToImage().asAndroidBitmap()
+        File(context.cacheDir, "comment-long-press.png").outputStream().use {
+            after.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+        assertEquals(before, after.getPixel(2, 2))
+    }
+
+    @Test
+    fun openingWithRetainedReplyDoesNotFocusEditorButExplicitReplyDoes() = withSoftwareKeyboard {
+        val state = mutableStateOf(sampleState().copy(
+            replyTarget = CommentReplyTarget("1", "1", "海边的风"), draft = "未发出的回复"
+        ))
+        val visible = mutableStateOf(true)
+        val imeBottom = AtomicInteger()
+        composeRule.setContent {
+            MaterialTheme {
+                if (visible.value) {
+                    ModalBottomSheet(onDismissRequest = {}, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+                        val bottom = WindowInsets.ime.getBottom(LocalDensity.current)
+                        SideEffect { imeBottom.set(bottom) }
+                        CommentSheetContent(
+                            ui = state.value, offlineMode = false, onRefresh = {}, onRetry = {}, onLoadMore = {},
+                            onSort = {}, onLike = {}, onDismissLikeError = {},
+                            onReply = { state.value = state.value.copy(replyTarget = it) }
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.onNodeWithTag("comment-draft").assertIsNotFocused()
+        composeRule.runOnIdle { assertEquals(0, imeBottom.get()) }
+        composeRule.onNodeWithText(state.value.comments.single().content).performClick()
+        composeRule.onNodeWithTag("comment-draft").assertIsNotFocused()
+        composeRule.onNodeWithText(context.getString(R.string.comment_copy)).performClick()
+        composeRule.onNodeWithText(state.value.comments.single().content).performTouchInput { longClick() }
+        composeRule.onNodeWithText(context.getString(R.string.comment_reply)).performClick()
+        composeRule.onNodeWithTag("comment-draft").assertIsFocused()
+        composeRule.waitUntil(timeoutMillis = 5_000L) { imeBottom.get() > 0 }
+        composeRule.runOnIdle { visible.value = false }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { visible.value = true }
+        composeRule.onNodeWithTag("comment-draft").assertIsNotFocused()
+        composeRule.waitUntil(timeoutMillis = 5_000L) { imeBottom.get() == 0 }
+    }
 
     @Test
     fun longPressCopiesExactContentAndCanReplyToNestedComment() {

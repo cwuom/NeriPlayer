@@ -14,11 +14,36 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 
 class BiliCommentActionTest {
+    @Test
+    fun `cache session key follows login without depending on rotating csrf`(): Unit = runBlocking {
+        val cookies = mock(BiliCookieRepository::class.java)
+        val http = OkHttpClient.Builder().addInterceptor { error("Unexpected request") }.build()
+        val client = BiliClient(cookies, http)
+        try {
+            `when`(cookies.getCookiesOnce()).thenReturn(emptyMap())
+            assertNull(client.commentCacheSessionKey())
+            `when`(cookies.getCookiesOnce()).thenReturn(mapOf("SESSDATA" to "test-account-a"))
+            val first = client.commentCacheSessionKey()
+            assertEquals(64, first?.length)
+            `when`(cookies.getCookiesOnce()).thenReturn(mapOf("SESSDATA" to "test-account-a", "bili_jct" to "rotated"))
+            assertEquals(first, client.commentCacheSessionKey())
+            `when`(cookies.getCookiesOnce()).thenReturn(mapOf("SESSDATA" to "test-account-b"))
+            assertNotEquals(first, client.commentCacheSessionKey())
+            `when`(cookies.getCookiesOnce()).thenReturn(emptyMap())
+            assertNull(client.commentCacheSessionKey())
+        } finally {
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
+    }
+
     @Test
     fun `posting and nested replies use exact root parent and csrf without retry`(): Unit = runBlocking {
         val cookies = mock(BiliCookieRepository::class.java)

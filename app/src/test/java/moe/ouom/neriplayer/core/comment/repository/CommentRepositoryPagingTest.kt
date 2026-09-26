@@ -114,17 +114,47 @@ class CommentRepositoryPagingTest {
     }
 
     @Test
-    fun `authenticated comments bypass anonymous cache and previous account state`(): Unit = runBlocking {
+    fun `netease cached comments are isolated by login session and refreshed without losing fallback`(): Unit = runBlocking {
         val client = mock(NeteaseClient::class.java)
         val source = CommentSource(CommentPlatform.NETEASE, AID)
         val repository = NeteaseCommentRepository { client }
         `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenReturn(neteasePage(1..1, false))
         repository.loadComments(source, 1, 20)
-        `when`(client.hasLogin()).thenReturn(true)
+        `when`(client.commentCacheSessionKey()).thenReturn("session-a")
+        assertNull(repository.cachedComments(source, 20, CommentSort.HOT))
         `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenReturn(neteasePage(2..2, false), neteasePage(3..3, false))
         assertEquals("2", repository.loadComments(source, 1, 20).comments.single().id)
+        assertEquals("2", repository.cachedComments(source, 20, CommentSort.HOT)?.comments?.single()?.id)
+        assertEquals("2", repository.loadComments(source, 1, 20).comments.single().id)
+        `when`(client.commentCacheSessionKey()).thenReturn("session-b")
+        assertNull(repository.cachedComments(source, 20, CommentSort.HOT))
         assertEquals("3", repository.loadComments(source, 1, 20).comments.single().id)
-        assertNull(CommentMemoryCache.get("NETEASE", AID, 1))
+        `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenThrow(IllegalStateException("offline"))
+        assertTrue(runCatching { repository.loadComments(source, 1, 20, forceRefresh = true) }.isFailure)
+        assertEquals("3", repository.cachedComments(source, 20, CommentSort.HOT)?.comments?.single()?.id)
+        `when`(client.commentCacheSessionKey()).thenReturn(null)
+        assertEquals("1", repository.cachedComments(source, 20, CommentSort.HOT)?.comments?.single()?.id)
+    }
+
+    @Test
+    fun `bilibili caches verified identity separately for each session`(): Unit = runBlocking {
+        val client = biliClient()
+        val repository = BiliCommentRepository { client }
+        `when`(client.commentCacheSessionKey()).thenReturn("session-a")
+        `when`(client.getVideoComments(AID, 1, 20, 1)).thenReturn(biliPage(1..1, 1, 1), biliPage(2..2, 1, 1))
+        assertNull(repository.cachedComments(biliSource(), 20, CommentSort.HOT))
+        repository.loadComments(biliSource(), 1, 20)
+        assertEquals("1", repository.cachedComments(biliSource(), 20, CommentSort.HOT)?.comments?.single()?.id)
+        `when`(client.commentCacheSessionKey()).thenReturn("session-b")
+        assertNull(repository.cachedComments(biliSource(), 20, CommentSort.HOT))
+        repository.loadComments(biliSource(), 1, 20)
+        assertEquals("2", repository.cachedComments(biliSource(), 20, CommentSort.HOT)?.comments?.single()?.id)
+        assertNull(repository.cachedComments(biliSource().copy(secondaryId = "different"), 20, CommentSort.HOT))
+        `when`(client.getVideoComments(AID, 1, 20, 1)).thenThrow(IllegalStateException("offline"))
+        assertTrue(runCatching { repository.loadComments(biliSource(), 1, 20, forceRefresh = true) }.isFailure)
+        assertEquals("2", repository.cachedComments(biliSource(), 20, CommentSort.HOT)?.comments?.single()?.id)
+        `when`(client.commentCacheSessionKey()).thenReturn(null)
+        assertNull(repository.cachedComments(biliSource(), 20, CommentSort.HOT))
     }
 
     @Test

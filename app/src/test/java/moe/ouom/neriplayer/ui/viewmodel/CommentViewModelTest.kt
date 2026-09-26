@@ -59,6 +59,7 @@ class CommentViewModelTest {
         val requestedPages = mutableListOf<Int>()
         val forceRefreshes = mutableListOf<Boolean>()
         val pages = mutableMapOf<Int, CommentPage>()
+        var cachedPage: CommentPage? = null
         val sorts = mutableListOf<CommentSort>()
         val cursors = mutableListOf<String?>()
         val likes = mutableListOf<Pair<String, Boolean>>()
@@ -77,6 +78,8 @@ class CommentViewModelTest {
         /** 模拟「仓库层把取消吞成业务错误」的形态 (曾经的 runCatching 就是如此) */
         var swallowCancellation: Boolean = false
         var secondaryIds = mutableListOf<String?>()
+
+        override suspend fun cachedComments(source: CommentSource, pageSize: Int, sort: CommentSort) = cachedPage
 
         /**
          * 假仓库实现：记录请求页码/强制刷新标志/次生 id，按页码返回预置数据，并可注入延迟与失败。
@@ -133,6 +136,145 @@ class CommentViewModelTest {
             delay(delayMs)
             replyFailure?.let { throw it }
             return replyPages[page] ?: CommentPage(emptyList(), page, pageSize, 0L, false)
+        }
+    }
+
+    @Test
+    fun `cached comments appear before network and identical data never animates`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            cachedPage = pageOf(1, listOf("cached"), platform)
+            pages[1] = requireNotNull(cachedPage)
+            delayMs = 1_000L
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        try {
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceTimeBy(100L)
+            assertEquals(listOf("cached"), vm.uiState.value.comments.map { it.id })
+            assertEquals(CommentListStatus.SUCCESS, vm.uiState.value.status)
+            assertFalse(vm.uiState.value.isRefreshing)
+            advanceTimeBy(950L)
+            assertFalse(vm.uiState.value.isRefreshing)
+            advanceUntilIdle()
+            assertEquals(listOf(true), repository.forceRefreshes)
+            assertEquals(listOf("cached"), vm.uiState.value.comments.map { it.id })
+        } finally {
+            vm.onSheetHidden()
+        }
+    }
+
+    @Test
+    fun `changed cache shows refresh only after the response then replaces data`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            cachedPage = pageOf(1, listOf("cached"), platform)
+            pages[1] = pageOf(1, listOf("new"), platform)
+            delayMs = 1_000L
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        try {
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceTimeBy(100L)
+            assertFalse(vm.uiState.value.isRefreshing)
+            advanceTimeBy(950L)
+            assertTrue(vm.uiState.value.isRefreshing)
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.isRefreshing)
+            assertEquals(listOf("new"), vm.uiState.value.comments.map { it.id })
+        } finally {
+            vm.onSheetHidden()
+        }
+    }
+
+    @Test
+    fun `cache survives background network failure including an empty cached page`() = commentTest {
+        for (ids in listOf(listOf("cached"), emptyList())) {
+            val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+                cachedPage = pageOf(1, ids, platform)
+                failure = IOException("offline")
+            }
+            val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceUntilIdle()
+            assertEquals(ids, vm.uiState.value.comments.map { it.id })
+            assertEquals(if (ids.isEmpty()) CommentListStatus.EMPTY else CommentListStatus.SUCCESS, vm.uiState.value.status)
+            assertFalse(vm.uiState.value.isRefreshing)
+            assertNull(vm.uiState.value.error)
+        }
+    }
+
+    @Test
+    fun `cursor-only cache updates stay silent but visible changes with the same id animate`() = commentTest {
+        val cached = pageOf(1, listOf("1"), CommentPlatform.NETEASE).copy(nextCursor = "old")
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            cachedPage = cached
+            pages[1] = cached.copy(nextCursor = "new")
+            delayMs = 1_000L
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        try {
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceTimeBy(1_050L)
+            assertFalse(vm.uiState.value.isRefreshing)
+            assertEquals("new", vm.uiState.value.nextCursor)
+            vm.onSheetHidden()
+            repository.pages[1] = cached.copy(comments = listOf(cached.comments.single().copy(likeCount = 42L)))
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceTimeBy(1_050L)
+            assertTrue(vm.uiState.value.isRefreshing)
+            advanceUntilIdle()
+            assertEquals(42L, vm.uiState.value.comments.single().likeCount)
+        } finally {
+            vm.onSheetHidden()
+        }
+    }
+
+    @Test
+    fun `switching source during cached update animation cannot publish the old response`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            cachedPage = pageOf(1, listOf("cached"), platform)
+            pages[1] = pageOf(1, listOf("old-response"), platform)
+            delayMs = 1_000L
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        try {
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceTimeBy(1_050L)
+            assertTrue(vm.uiState.value.isRefreshing)
+            repository.cachedPage = null
+            repository.pages[1] = pageOf(1, listOf("new-song"), repository.platform)
+            vm.onSourceChanged(source(repository.platform, 2L))
+            advanceUntilIdle()
+            assertEquals(listOf("new-song"), vm.uiState.value.comments.map { it.id })
+            assertFalse(vm.uiState.value.isRefreshing)
+            assertFalse(vm.uiState.value.isCheckingCache)
+        } finally {
+            vm.onSheetHidden()
+        }
+    }
+
+    @Test
+    fun `background cache check excludes writes and paging but preserves typing`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
+            cachedPage = pageOf(1, listOf("1"), platform, hasMore = true)
+            pages[1] = requireNotNull(cachedPage)
+            delayMs = 1_000L
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        try {
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceTimeBy(100L)
+            vm.updateDraft("typing while checking")
+            vm.toggleLike("1")
+            vm.loadMore()
+            vm.sendComment()
+            assertTrue(repository.likes.isEmpty())
+            assertTrue(repository.sends.isEmpty())
+            assertEquals(listOf(1), repository.requestedPages)
+            advanceUntilIdle()
+            assertEquals("typing while checking", vm.uiState.value.draft)
+            assertFalse(vm.uiState.value.isCheckingCache)
+        } finally {
+            vm.onSheetHidden()
         }
     }
 

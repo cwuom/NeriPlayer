@@ -6,6 +6,7 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,6 +17,7 @@ import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.model.COMMENT_PAGE_SIZE
 import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.CommentSort
 import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
@@ -59,6 +61,7 @@ internal data class CommentUiState(
     val hasMore: Boolean = false,
     val total: Long? = null,
     val isRefreshing: Boolean = false,
+    val isCheckingCache: Boolean = false,
     val isLoadingMore: Boolean = false,
     val error: CommentError? = null,
     val loadMoreError: CommentError? = null,
@@ -154,7 +157,7 @@ internal class CommentViewModel : ViewModel() {
      */
     fun onSourceChanged(source: CommentSource?) {
         if (isSameCommentSource(source, activeSource) &&
-            _uiState.value.status != CommentListStatus.IDLE
+            (_uiState.value.status != CommentListStatus.IDLE || _uiState.value.isCheckingCache)
         ) {
             return
         }
@@ -175,13 +178,13 @@ internal class CommentViewModel : ViewModel() {
 
         _uiState.value = CommentUiState(
             source = source,
-            status = CommentListStatus.LOADING,
+            isCheckingCache = true,
             draft = previous?.draft.orEmpty(),
             replyTarget = previous?.replyTarget,
             sendError = previous?.sendError,
             sendErrorCode = previous?.sendErrorCode
         )
-        startLoad(source = source, page = 1, forceRefresh = false)
+        startLoad(source = source, page = 1, forceRefresh = false, cacheFirst = true)
     }
 
     fun selectSort(sort: CommentSort) {
@@ -199,6 +202,7 @@ internal class CommentViewModel : ViewModel() {
             replyThreads = emptyMap(),
             isLoadingMore = false,
             isRefreshing = false,
+            isCheckingCache = false,
             error = null,
             loadMoreError = null
         )
@@ -208,7 +212,7 @@ internal class CommentViewModel : ViewModel() {
     fun toggleLike(commentId: String) {
         val source = activeSource ?: return
         val current = _uiState.value
-        if (current.status != CommentListStatus.SUCCESS || current.isRefreshing || current.isSending ||
+        if (current.status != CommentListStatus.SUCCESS || current.isRefreshing || current.isCheckingCache || current.isSending ||
             current.isLoadingMore || current.pendingSort != null) return
         if (commentId in current.likingIds) return
         val comment = current.comments.find { it.id == commentId } ?: return
@@ -271,7 +275,7 @@ internal class CommentViewModel : ViewModel() {
     fun refresh() {
         val source = activeSource ?: return
         val current = _uiState.value
-        if (current.isRefreshing || current.isLoadingMore || current.isSending || current.likingIds.isNotEmpty() ||
+        if (current.isRefreshing || current.isCheckingCache || current.isLoadingMore || current.isSending || current.likingIds.isNotEmpty() ||
             current.pendingSort != null) return
         cancelReplies()
         _uiState.update { it.copy(isRefreshing = true, error = null, replyThreads = emptyMap()) }
@@ -283,7 +287,7 @@ internal class CommentViewModel : ViewModel() {
         val source = activeSource ?: return
         val current = _uiState.value
         // 同一时刻只允许一个翻页请求 (§30/§67)
-        if (current.isLoadingMore || current.isRefreshing || current.isSending || current.likingIds.isNotEmpty() ||
+        if (current.isLoadingMore || current.isRefreshing || current.isCheckingCache || current.isSending || current.likingIds.isNotEmpty() ||
             current.pendingSort != null) return
         if (!current.hasMore) return
         if (current.status != CommentListStatus.SUCCESS) return
@@ -309,6 +313,7 @@ internal class CommentViewModel : ViewModel() {
             it.copy(
                 status = CommentListStatus.IDLE,
                 isRefreshing = false,
+                isCheckingCache = false,
                 isLoadingMore = false,
                 likingIds = emptySet(),
                 pendingSort = null,
@@ -336,7 +341,7 @@ internal class CommentViewModel : ViewModel() {
         val source = activeSource ?: return
         val current = _uiState.value
         val content = current.draft.trim()
-        if (current.isSending || current.isRefreshing || current.isLoadingMore ||
+        if (current.isSending || current.isRefreshing || current.isCheckingCache || current.isLoadingMore ||
             current.pendingSort != null || current.likingIds.isNotEmpty() ||
             current.status !in setOf(CommentListStatus.SUCCESS, CommentListStatus.EMPTY) ||
             content.isBlank() || current.draft.length > source.platform.commentLengthLimit()) return
@@ -382,7 +387,7 @@ internal class CommentViewModel : ViewModel() {
     fun loadReplies(rootId: String) {
         val source = activeSource ?: return
         val current = _uiState.value
-        if (current.isRefreshing || current.pendingSort != null || current.status != CommentListStatus.SUCCESS) return
+        if (current.isRefreshing || current.isCheckingCache || current.pendingSort != null || current.status != CommentListStatus.SUCCESS) return
         if (current.comments.none { it.id == rootId }) return
         val thread = current.replyThreads[rootId] ?: CommentReplyState()
         if (thread.loading || !thread.hasMore) return
@@ -446,7 +451,8 @@ internal class CommentViewModel : ViewModel() {
     private fun startLoad(
         source: CommentSource,
         page: Int,
-        forceRefresh: Boolean
+        forceRefresh: Boolean,
+        cacheFirst: Boolean = false
     ) {
         val repository = repositoryFactory(source.platform)
         val isFirstPage = page <= 1
@@ -460,17 +466,41 @@ internal class CommentViewModel : ViewModel() {
         }
 
         val job = viewModelScope.launch {
+            var cached: CommentPage? = null
             try {
+                if (cacheFirst) {
+                    cached = repository.cachedComments(source, COMMENT_PAGE_SIZE, sort)
+                    if (!isActive || requestGeneration != generation) return@launch
+                    val snapshot = cached
+                    _uiState.update { current ->
+                        if (snapshot == null) current.copy(status = CommentListStatus.LOADING, isCheckingCache = false)
+                        else current.copy(
+                            status = if (snapshot.comments.isEmpty()) CommentListStatus.EMPTY else CommentListStatus.SUCCESS,
+                            comments = snapshot.comments.distinctBy { it.id },
+                            page = snapshot.page,
+                            hasMore = snapshot.hasMore,
+                            total = snapshot.total,
+                            nextCursor = snapshot.nextCursor
+                        )
+                    }
+                }
                 val result = repository.loadComments(
                     source = source,
                     page = page,
                     pageSize = COMMENT_PAGE_SIZE,
-                    forceRefresh = forceRefresh,
+                    forceRefresh = forceRefresh || cached != null,
                     sort = sort,
                     cursor = cursor
                 )
                 // 歌曲已经切换, 丢弃过期结果 (§23/§24)
                 if (!isActive || requestGeneration != generation) return@launch
+
+                if (cached != null && (cached.comments != result.comments || cached.total != result.total ||
+                        cached.hasMore != result.hasMore)) {
+                    _uiState.update { it.copy(isRefreshing = true) }
+                    delay(CACHE_UPDATE_INDICATION_MS)
+                    if (!isActive || requestGeneration != generation) return@launch
+                }
 
                 _uiState.update { current ->
                     val comments = if (isFirstPage) {
@@ -494,6 +524,7 @@ internal class CommentViewModel : ViewModel() {
                         // 不能让它把首页拿到的总数覆盖成 0, 否则头部会从「共 N 条」掉到「共 0 条」(§32/§33)
                         total = if (isFirstPage) result.total else current.total ?: result.total,
                         isRefreshing = false,
+                        isCheckingCache = false,
                         isLoadingMore = false,
                         error = null,
                         loadMoreError = null
@@ -517,12 +548,14 @@ internal class CommentViewModel : ViewModel() {
                 _uiState.update { current ->
                     if (isFirstPage) {
                         current.copy(
-                            status = if (current.comments.isNotEmpty()) CommentListStatus.SUCCESS
+                            status = if (cached != null) current.status
+                                else if (current.comments.isNotEmpty()) CommentListStatus.SUCCESS
                                 else CommentListStatus.ERROR,
                             pendingSort = null,
                             isRefreshing = false,
+                            isCheckingCache = false,
                             isLoadingMore = false,
-                            error = reason
+                            error = if (cached == null) reason else null
                         )
                     } else {
                         current.copy(
@@ -543,5 +576,6 @@ internal class CommentViewModel : ViewModel() {
 
     private companion object {
         const val TAG = "NERI-CommentVM"
+        const val CACHE_UPDATE_INDICATION_MS = 350L
     }
 }

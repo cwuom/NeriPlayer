@@ -10,6 +10,17 @@ import org.junit.Test
 
 class CommentMemoryCacheTest {
     @Test
+    fun `login session participates in cache identity and invalidation covers every session`() {
+        val page = CommentPage(emptyList(), 1, 20, 0L, false)
+        CommentMemoryCache.put("NETEASE", 1L, 1, page, sessionKey = "session-a")
+        assertNotNull(CommentMemoryCache.get("NETEASE", 1L, 1, sessionKey = "session-a"))
+        assertNull(CommentMemoryCache.get("NETEASE", 1L, 1, sessionKey = "session-b"))
+        assertNull(CommentMemoryCache.get("NETEASE", 1L, 1))
+        CommentMemoryCache.invalidate("NETEASE", 1L)
+        assertNull(CommentMemoryCache.get("NETEASE", 1L, 1, sessionKey = "session-a"))
+    }
+
+    @Test
     fun `sort page size and cursor are independent cache dimensions`() {
         val page = CommentPage(emptyList(), 2, 20, 0L, false)
         CommentMemoryCache.put("NETEASE", 1L, 2, page, CommentSort.NEWEST, 20, "123")
