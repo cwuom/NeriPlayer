@@ -87,6 +87,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.ConcurrentHashMap
 
+private const val DELETE_PROGRESS_REFERENCE_STEP = 32
 
 internal fun GlobalDownloadManager.scheduleFullLibraryDeleteRecoveryIfNeeded(
     context: Context,
@@ -866,6 +867,8 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
         )
         val completedReferenceCount = AtomicInteger(0)
         val failedReferenceCount = AtomicInteger(0)
+        val attemptedReferenceCount = AtomicInteger(0)
+        val progressPublishLock = Any()
         val onDeleteAttemptFinished: (String, Boolean) -> Unit = { reference, deleted ->
             if (deleted) {
                 confirmedDeletedReferences += reference
@@ -873,13 +876,20 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
             } else {
                 failedReferenceCount.incrementAndGet()
             }
-            updateDownloadedSongDeleteProgress(
-                session = session,
-                phase = DownloadedSongDeletePhase.DELETING_REFERENCES,
-                totalReferenceCount = requestedReferences.size,
-                completedReferenceCount = completedReferenceCount.get(),
-                failedReferenceCount = failedReferenceCount.get()
-            )
+            val attempted = attemptedReferenceCount.incrementAndGet()
+            if (attempted == 1 || attempted % DELETE_PROGRESS_REFERENCE_STEP == 0 ||
+                attempted == requestedReferences.size
+            ) {
+                synchronized(progressPublishLock) {
+                    updateDownloadedSongDeleteProgress(
+                        session = session,
+                        phase = DownloadedSongDeletePhase.DELETING_REFERENCES,
+                        totalReferenceCount = requestedReferences.size,
+                        completedReferenceCount = completedReferenceCount.get(),
+                        failedReferenceCount = failedReferenceCount.get()
+                    )
+                }
+            }
         }
         var deletedReferences = if (requestedReferences.isNotEmpty()) {
             if (deletesEntireCatalog) {

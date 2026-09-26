@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import moe.ouom.neriplayer.core.startup.app.InstrumentationTestRuntime
 import moe.ouom.neriplayer.data.traffic.downloadNetworkTypeOrNull
 
 internal fun AudioDownloadManager.initializeImpl(context: Context) {
@@ -26,6 +27,8 @@ internal fun AudioDownloadManager.initializeImpl(context: Context) {
             networkType = initialNetworkType,
             initialGeneration = persistedNetworkGeneration
         )
+        // 仪器测试会切换共享 SAF 夹具，系统网络回调不能在测试中异步恢复这些文件
+        if (InstrumentationTestRuntime.isActive) return
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 handleDefaultDownloadNetworkCallback(
