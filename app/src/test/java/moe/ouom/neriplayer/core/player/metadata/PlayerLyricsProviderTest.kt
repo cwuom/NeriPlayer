@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
 import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
@@ -81,6 +82,46 @@ class PlayerLyricsProviderTest {
     }
 
     @Test
+    fun `managed downloads prefer indexed sidecar text for every lyric variant`() {
+        assertEquals(
+            "downloaded",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = true,
+                localLyric = "local",
+                storedLyric = "stored",
+                downloadedLyric = "downloaded"
+            )
+        )
+        assertEquals(
+            "local",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = true,
+                localLyric = "local",
+                storedLyric = "stored",
+                downloadedLyric = null
+            )
+        )
+        assertEquals(
+            "stored",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = true,
+                localLyric = null,
+                storedLyric = "stored",
+                downloadedLyric = null
+            )
+        )
+        assertEquals(
+            "local",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = false,
+                localLyric = "local",
+                storedLyric = "stored",
+                downloadedLyric = "downloaded"
+            )
+        )
+    }
+
+    @Test
     fun `local songs never load remote lyrics`() {
         val song = SongItem(
             id = 1L,
@@ -93,6 +134,34 @@ class PlayerLyricsProviderTest {
             mediaUri = "/tmp/local.mp3"
         )
 
+        assertFalse(shouldLoadRemoteLyrics(song))
+    }
+
+    @Test
+    fun `managed local downloads still read downloaded lyrics before remote fallback`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Downloaded",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/song.mp3"
+        )
+
+        assertTrue(
+            shouldReadManagedDownloadLyrics(
+                song = song,
+                isManagedLocalDownload = true
+            )
+        )
+        assertFalse(
+            shouldReadManagedDownloadLyrics(
+                song = song,
+                isManagedLocalDownload = false
+            )
+        )
         assertFalse(shouldLoadRemoteLyrics(song))
     }
 
@@ -110,6 +179,35 @@ class PlayerLyricsProviderTest {
         )
 
         assertTrue(shouldLoadRemoteLyrics(song))
+    }
+
+    @Test
+    fun `preferred source runs before stored lyrics for remote songs`() {
+        val remoteSong = SongItem(
+            id = 2L,
+            name = "Signal",
+            artist = "Artist One",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 240_000L,
+            coverUrl = null,
+            matchedLyric = "[00:01.00]Previously downloaded lyrics"
+        )
+
+        assertTrue(shouldTryPreferredLyricSource(remoteSong, LyricSourcePreference.Kugou))
+        assertFalse(shouldTryPreferredLyricSource(remoteSong, LyricSourcePreference.Automatic))
+        assertFalse(
+            shouldTryPreferredLyricSource(
+                remoteSong.copy(matchedLyric = ""),
+                LyricSourcePreference.Kugou
+            )
+        )
+        assertFalse(
+            shouldTryPreferredLyricSource(
+                remoteSong.copy(mediaUri = "/tmp/local.mp3"),
+                LyricSourcePreference.Kugou
+            )
+        )
     }
 
     @Test
@@ -500,6 +598,47 @@ class PlayerLyricsProviderTest {
         )
 
         assertNull(selected)
+    }
+
+    @Test
+    fun selectFirstUsableAutomaticExternalLyricsRequiresKnownCompatibleDuration() {
+        val matches = listOf(
+            rankedCandidate(
+                id = "unknown",
+                source = EditableLyricMatchSource.KUGOU,
+                durationMs = 0L,
+                lyrics = "[00:01.00]Unknown duration"
+            ),
+            rankedCandidate(
+                id = "different-version",
+                source = EditableLyricMatchSource.KUGOU,
+                durationMs = 300_000L,
+                lyrics = "[00:01.00]Different version"
+            ),
+            rankedCandidate(
+                id = "compatible",
+                source = EditableLyricMatchSource.KUGOU,
+                durationMs = 242_000L,
+                lyrics = "[00:01.00]Compatible version"
+            )
+        )
+
+        val selected = PlayerLyricsProvider.selectFirstUsableAutomaticExternalLyrics(
+            expectedDurationMs = 240_000L,
+            expectedTitle = "Signal",
+            expectedArtist = "Artist One",
+            matches = matches
+        )
+
+        assertEquals("Compatible version", selected?.lyrics?.single()?.text)
+        assertNull(
+            PlayerLyricsProvider.selectFirstUsableAutomaticExternalLyrics(
+                expectedDurationMs = 0L,
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                matches = matches
+            )
+        )
     }
 
     @Test

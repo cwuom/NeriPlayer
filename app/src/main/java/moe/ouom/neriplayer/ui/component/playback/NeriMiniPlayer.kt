@@ -23,9 +23,12 @@ package moe.ouom.neriplayer.ui.component.playback
  * Created: 2025/8/8
  */
 
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -49,13 +52,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -71,17 +78,23 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
-import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
+import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
+import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sign
 
 object NeriMiniPlayerDefaults {
@@ -96,6 +109,8 @@ private const val MINI_PLAYER_ARTIST_LINE_HEIGHT_DP = 20f
 private const val MINI_PLAYER_TITLE_MIN_VISUAL_FONT_SIZE_SP = 10f
 private const val MINI_PLAYER_ARTIST_MIN_VISUAL_FONT_SIZE_SP = 9f
 private const val MINI_PLAYER_METADATA_AUTO_SIZE_STEP_SP = 0.25f
+private const val MINI_PLAYER_COVER_BITMAP_MAX_DIMENSION_PX = 128
+private const val MINI_PLAYER_COVER_FRAME_CACHE_LIMIT = 4
 
 internal data class MiniPlayerTextAutoSizeRange(
     val minFontSizeSp: Float,
@@ -205,6 +220,152 @@ internal fun resolveMiniPlayerDisplayedCoverUrl(
     }
 }
 
+internal data class MiniPlayerCoverFrame(
+    val coverUrl: String,
+    val identityKey: String,
+    val decodedBitmap: ImageBitmap? = null,
+    /**
+     * 每次重新进入同一封面时使用新的令牌, 防止旧的 Coil 回调污染新请求
+     */
+    val requestToken: Any = Unit
+)
+
+internal fun miniPlayerCoverIdentityKey(
+    identityKey: String?,
+    coverUrl: String?
+): String? {
+    return identityKey
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: coverUrl?.trim()?.takeIf(String::isNotEmpty)
+}
+
+internal fun sameMiniPlayerCoverRequest(
+    first: MiniPlayerCoverFrame?,
+    second: MiniPlayerCoverFrame?
+): Boolean {
+    if (first == null || second == null) return first == second
+    return first.coverUrl == second.coverUrl &&
+        first.identityKey == second.identityKey &&
+        first.requestToken == second.requestToken
+}
+
+internal fun sameMiniPlayerCoverFrame(
+    first: MiniPlayerCoverFrame?,
+    second: MiniPlayerCoverFrame?
+): Boolean {
+    if (first == null || second == null) return first == second
+    return first.coverUrl == second.coverUrl && first.identityKey == second.identityKey
+}
+
+internal fun shouldCommitMiniPlayerCoverRequest(
+    completedRequest: MiniPlayerCoverFrame,
+    latestRequest: MiniPlayerCoverFrame?
+): Boolean = sameMiniPlayerCoverRequest(completedRequest, latestRequest)
+
+internal fun shouldCommitMiniPlayerCoverFrame(
+    completedFrame: MiniPlayerCoverFrame,
+    latestRequestedFrame: MiniPlayerCoverFrame?,
+    latestRetainedFrame: MiniPlayerCoverFrame?,
+    currentIdentityKey: String?
+): Boolean {
+    latestRequestedFrame?.let { requestedFrame ->
+        return sameMiniPlayerCoverRequest(completedFrame, requestedFrame)
+    }
+    val retainedFrame = latestRetainedFrame ?: return false
+    if (!sameMiniPlayerCoverRequest(completedFrame, retainedFrame)) return false
+    val normalizedCurrentIdentity = currentIdentityKey
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+    return normalizedCurrentIdentity == null ||
+        completedFrame.identityKey == normalizedCurrentIdentity
+}
+
+internal fun shouldClearMiniPlayerRetainedCoverAfterGrace(
+    requestedFrame: MiniPlayerCoverFrame?,
+    retainedFrame: MiniPlayerCoverFrame?,
+    failedFrame: MiniPlayerCoverFrame?,
+    clearDelayElapsed: Boolean,
+    hasCurrentSong: Boolean = true
+): Boolean {
+    if (!clearDelayElapsed || retainedFrame == null || hasCurrentSong) return false
+    if (requestedFrame == null) return true
+    return failedFrame != null &&
+        sameMiniPlayerCoverRequest(requestedFrame, failedFrame)
+}
+
+internal fun resolveMiniPlayerVisibleCoverFrame(
+    requestedFrame: MiniPlayerCoverFrame?,
+    displayedFrame: MiniPlayerCoverFrame?,
+    cachedFrame: MiniPlayerCoverFrame?,
+    retainedFrame: MiniPlayerCoverFrame?,
+    hasCurrentSong: Boolean = true,
+    failedFrame: MiniPlayerCoverFrame? = null,
+    clearRetainedFrame: Boolean = false
+): MiniPlayerCoverFrame? {
+    if (!hasCurrentSong) return null
+    if (clearRetainedFrame) return null
+    val retainedCandidate = cachedFrame ?: displayedFrame ?: retainedFrame
+    val retained = if (
+        retainedCandidate != null &&
+            requestedFrame != null &&
+            retainedCandidate.decodedBitmap == null &&
+            sameMiniPlayerCoverFrame(retainedCandidate, requestedFrame)
+    ) {
+        requestedFrame
+    } else {
+        retainedCandidate
+    }
+    if (retained?.decodedBitmap != null) {
+        return retained
+    }
+    if (
+        retained != null &&
+        (failedFrame == null || !sameMiniPlayerCoverRequest(retained, failedFrame))
+    ) {
+        return retained
+    }
+    return requestedFrame?.takeUnless { frame ->
+        failedFrame != null && sameMiniPlayerCoverRequest(frame, failedFrame)
+    }
+}
+
+internal fun miniPlayerCoverCacheKey(frame: MiniPlayerCoverFrame): String {
+    return "${frame.identityKey}|data=${frame.coverUrl}"
+}
+
+private fun resolveMiniPlayerCoverBitmap(
+    state: AsyncImagePainter.State.Success
+): ImageBitmap? {
+    return runCatching {
+        val drawable = state.result.drawable
+        val maxDimension = MINI_PLAYER_COVER_BITMAP_MAX_DIMENSION_PX
+        if (drawable is BitmapDrawable) {
+            val sourceBitmap = drawable.bitmap
+            val scale = min(
+                maxDimension.toFloat() / sourceBitmap.width.coerceAtLeast(1),
+                maxDimension.toFloat() / sourceBitmap.height.coerceAtLeast(1)
+            ).coerceAtMost(1f)
+            if (scale < 1f) {
+                Bitmap.createScaledBitmap(
+                    sourceBitmap,
+                    (sourceBitmap.width * scale).roundToInt().coerceAtLeast(1),
+                    (sourceBitmap.height * scale).roundToInt().coerceAtLeast(1),
+                    true
+                ).asImageBitmap()
+            } else {
+                copyBitmapForRetainedDisplay(sourceBitmap)?.asImageBitmap()
+            }
+        } else {
+            drawable.toBitmap(
+                width = maxDimension,
+                height = maxDimension,
+                config = Bitmap.Config.ARGB_8888
+            ).asImageBitmap()
+        }
+    }.getOrNull()
+}
+
 @Composable
 internal fun AutoSizingMiniPlayerText(
     text: String,
@@ -282,13 +443,75 @@ fun NeriMiniPlayer(
     enableBlur: Boolean = true,
     offlineMode: Boolean = false,
     isPlaybackWaiting: Boolean = false,
-    isAudioRouteMuted: Boolean = false
+    isAudioRouteMuted: Boolean = false,
+    visualCoverUrl: String? = null,
+    coverIdentityKey: String? = null,
+    visualCoverIdentityKey: String? = null,
+    hasCurrentSong: Boolean = true
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val context = LocalContext.current
     val requestedCoverUrl = coverUrl?.trim()?.takeIf { it.isNotEmpty() }
-    var displayedCoverUrl by remember { mutableStateOf(requestedCoverUrl) }
-    val latestRequestedCoverUrl by rememberUpdatedState(requestedCoverUrl)
+    val retainedCoverUrl = visualCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    val requestedIdentityKey = miniPlayerCoverIdentityKey(
+        identityKey = coverIdentityKey,
+        coverUrl = requestedCoverUrl
+    )
+    val retainedIdentityKey = miniPlayerCoverIdentityKey(
+        identityKey = visualCoverIdentityKey,
+        coverUrl = retainedCoverUrl
+    )
+    val requestedFrame = remember(requestedCoverUrl, requestedIdentityKey) {
+        requestedCoverUrl?.let { url ->
+            requestedIdentityKey?.let { key ->
+                MiniPlayerCoverFrame(
+                    coverUrl = url,
+                    identityKey = key,
+                    requestToken = Any()
+                )
+            }
+        }
+    }
+    val retainedFrame = remember(retainedCoverUrl, retainedIdentityKey) {
+        retainedCoverUrl?.let { url ->
+            retainedIdentityKey?.let { key ->
+                MiniPlayerCoverFrame(
+                    coverUrl = url,
+                    identityKey = key,
+                    requestToken = Any()
+                )
+            }
+        }
+    }
+    val effectiveRetainedFrame = if (
+        retainedFrame?.decodedBitmap == null &&
+            sameMiniPlayerCoverFrame(requestedFrame, retainedFrame)
+    ) {
+        requestedFrame
+    } else {
+        retainedFrame
+    }
+    var displayedFrame by remember { mutableStateOf<MiniPlayerCoverFrame?>(null) }
+    var failedCoverFrame by remember(requestedFrame, effectiveRetainedFrame) {
+        mutableStateOf<MiniPlayerCoverFrame?>(null)
+    }
+    var clearRetainedFrame by remember(requestedFrame, effectiveRetainedFrame) {
+        mutableStateOf(false)
+    }
+    val decodedFramesByIdentity = remember {
+        mutableStateMapOf<String, MiniPlayerCoverFrame>()
+    }
+    val latestRequestedFrame by rememberUpdatedState(requestedFrame)
+    val latestRetainedFrame by rememberUpdatedState(effectiveRetainedFrame)
+    val failedFrameForVisibleState = failedCoverFrame?.takeIf { failed ->
+        when {
+            requestedFrame != null -> sameMiniPlayerCoverRequest(failed, requestedFrame)
+            effectiveRetainedFrame != null ->
+                sameMiniPlayerCoverRequest(failed, effectiveRetainedFrame)
+            else -> false
+        }
+    }
+    val latestFailedFrame by rememberUpdatedState(failedFrameForVisibleState)
     val currentOnPrevious by rememberUpdatedState(onPrevious)
     val currentOnNext by rememberUpdatedState(onNext)
     val swipeOffset = remember { Animatable(0f) }
@@ -318,17 +541,149 @@ fun NeriMiniPlayer(
         }
     }
 
-    LaunchedEffect(requestedCoverUrl) {
-        if (requestedCoverUrl == null) {
-            delay(MINI_PLAYER_COVER_CLEAR_DELAY_MS)
-            if (latestRequestedCoverUrl == null) {
-                displayedCoverUrl = resolveMiniPlayerDisplayedCoverUrl(
-                    requestedCoverUrl = null,
-                    displayedCoverUrl = displayedCoverUrl,
-                    requestSucceeded = false,
-                    clearDelayElapsed = true
+    val cachedRequestedFrame = requestedFrame?.let { frame ->
+        decodedFramesByIdentity[frame.identityKey]?.takeIf {
+            it.decodedBitmap != null && it.coverUrl == frame.coverUrl
+        }
+    }
+    val cachedRetainedFrame = retainedFrame?.let { frame ->
+        decodedFramesByIdentity[frame.identityKey]?.takeIf {
+            it.decodedBitmap != null && it.coverUrl == frame.coverUrl
+        }
+    }
+    val sharedFrameForCurrentIdentity = sequenceOf(
+        requestedIdentityKey,
+        retainedIdentityKey
+    ).filterNotNull()
+        .distinct()
+        .mapNotNull(RetainedPlaybackCoverBitmapCache::getLatestForOwner)
+        .firstOrNull()
+        ?.let { entry ->
+            MiniPlayerCoverFrame(
+                coverUrl = entry.coverUrl,
+                identityKey = entry.ownerKey,
+                decodedBitmap = entry.bitmap,
+                requestToken = requestedFrame?.requestToken ?: Any()
+            )
+        }
+    val effectiveCachedRequestedFrame = cachedRequestedFrame
+        ?: requestedFrame?.let { frame ->
+            RetainedPlaybackCoverBitmapCache.getExact(
+                ownerKey = frame.identityKey,
+                coverUrl = frame.coverUrl
+            )
+        }?.let { entry ->
+            requestedFrame.copy(decodedBitmap = entry.bitmap)
+        }
+    val visibleFrame = resolveMiniPlayerVisibleCoverFrame(
+        requestedFrame = requestedFrame,
+        displayedFrame = displayedFrame,
+        cachedFrame = effectiveCachedRequestedFrame ?: sharedFrameForCurrentIdentity,
+        retainedFrame = cachedRetainedFrame ?: effectiveRetainedFrame,
+        failedFrame = failedFrameForVisibleState,
+        clearRetainedFrame = clearRetainedFrame
+    )
+
+    fun publishDecodedFrame(
+        completedFrame: MiniPlayerCoverFrame,
+        decodedBitmap: ImageBitmap?
+    ) {
+        if (
+            decodedBitmap == null ||
+                !shouldCommitMiniPlayerCoverFrame(
+                    completedFrame = completedFrame,
+                    latestRequestedFrame = latestRequestedFrame,
+                    latestRetainedFrame = latestRetainedFrame,
+                    currentIdentityKey = coverIdentityKey
                 )
+        ) {
+            return
+        }
+        val decodedFrame = completedFrame.copy(decodedBitmap = decodedBitmap)
+        displayedFrame = decodedFrame
+        failedCoverFrame = null
+        clearRetainedFrame = false
+        decodedFramesByIdentity[decodedFrame.identityKey] = decodedFrame
+        RetainedPlaybackCoverBitmapCache.put(
+            ownerKey = decodedFrame.identityKey,
+            coverUrl = decodedFrame.coverUrl,
+            cacheKey = null,
+            bitmap = decodedBitmap
+        )
+        while (decodedFramesByIdentity.size > MINI_PLAYER_COVER_FRAME_CACHE_LIMIT) {
+            val oldestKey = decodedFramesByIdentity.keys.firstOrNull() ?: break
+            decodedFramesByIdentity.remove(oldestKey)
+        }
+    }
+
+    fun rejectCoverFrame(failedFrame: MiniPlayerCoverFrame?) {
+        if (failedFrame == null) return
+        val displayedDecodedFrame = displayedFrame?.takeIf {
+            it.decodedBitmap != null && sameMiniPlayerCoverRequest(it, failedFrame)
+        }
+        val cachedDecodedFrame = decodedFramesByIdentity[failedFrame.identityKey]
+            ?.takeIf {
+                it.decodedBitmap != null && sameMiniPlayerCoverRequest(it, failedFrame)
             }
+        if (displayedDecodedFrame != null || cachedDecodedFrame != null) return
+        val latestFrame = latestRequestedFrame
+        if (latestFrame == null) {
+            val retainedFrame = latestRetainedFrame
+            if (
+                retainedFrame != null &&
+                    sameMiniPlayerCoverRequest(failedFrame, retainedFrame)
+            ) {
+                failedCoverFrame = failedFrame
+            }
+            return
+        }
+        if (!sameMiniPlayerCoverRequest(failedFrame, latestFrame)) return
+        failedCoverFrame = failedFrame
+        clearRetainedFrame = false
+        if (
+            displayedFrame != null &&
+            sameMiniPlayerCoverRequest(displayedFrame, failedFrame)
+        ) {
+            displayedFrame = null
+        }
+        decodedFramesByIdentity.entries.removeAll { (_, cachedFrame) ->
+            sameMiniPlayerCoverRequest(cachedFrame, failedFrame)
+        }
+    }
+
+    LaunchedEffect(
+        requestedFrame,
+        effectiveRetainedFrame,
+        failedFrameForVisibleState,
+        hasCurrentSong
+    ) {
+        if (clearRetainedFrame || hasCurrentSong) return@LaunchedEffect
+        val retainedFrame = effectiveRetainedFrame ?: displayedFrame
+        val failedFrame = failedFrameForVisibleState
+        val shouldWait = when {
+            requestedFrame == null -> retainedFrame != null
+            failedFrame != null -> sameMiniPlayerCoverRequest(failedFrame, requestedFrame)
+            else -> false
+        }
+        if (!shouldWait) return@LaunchedEffect
+        val requestAtStart = requestedFrame
+        val retainedAtStart = effectiveRetainedFrame
+        delay(MINI_PLAYER_COVER_CLEAR_DELAY_MS)
+        val currentRetained = latestRetainedFrame ?: displayedFrame
+        val currentFailed = latestFailedFrame
+        if (
+            latestRequestedFrame == requestAtStart &&
+                latestRetainedFrame == retainedAtStart &&
+                shouldClearMiniPlayerRetainedCoverAfterGrace(
+                    requestedFrame = latestRequestedFrame,
+                    retainedFrame = currentRetained,
+                    failedFrame = currentFailed,
+                    clearDelayElapsed = true,
+                    hasCurrentSong = hasCurrentSong
+                )
+        ) {
+            clearRetainedFrame = true
+            displayedFrame = null
         }
     }
 
@@ -420,7 +775,7 @@ fun NeriMiniPlayer(
                     modifier = Modifier
                         .size(40.dp)
                         .background(
-                            color = if (displayedCoverUrl != null || requestedCoverUrl != null) {
+                            color = if (visibleFrame != null) {
                                 Color.Transparent
                             } else {
                                 MaterialTheme.colorScheme.primaryContainer
@@ -428,48 +783,82 @@ fun NeriMiniPlayer(
                             shape = RoundedCornerShape(8.dp)
                         )
                 ) {
-                    if (displayedCoverUrl != null) {
-                        AsyncImage(
-                            model = fastScrollableImageRequest(
-                                context = context,
-                                data = displayedCoverUrl,
-                                sizePx = 128,
-                                crossfade = false,
-                                offlineMode = offlineMode
-                            ),
+                    if (visibleFrame?.decodedBitmap != null) {
+                        Image(
+                            bitmap = visibleFrame.decodedBitmap,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .matchParentSize()
                                 .clip(RoundedCornerShape(8.dp))
                         )
+                    } else if (visibleFrame != null) {
+                        key(visibleFrame.requestToken) {
+                            AsyncImage(
+                                model = fastScrollableImageRequest(
+                                    context = context,
+                                    data = visibleFrame.coverUrl,
+                                    sizePx = 128,
+                                    crossfade = false,
+                                    offlineMode = offlineMode,
+                                    cacheKey = miniPlayerCoverCacheKey(visibleFrame)
+                                ),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .clip(RoundedCornerShape(8.dp)),
+                                onSuccess = { state ->
+                                    val bitmap = resolveMiniPlayerCoverBitmap(state)
+                                    if (bitmap != null &&
+                                        shouldCommitMiniPlayerCoverFrame(
+                                            completedFrame = visibleFrame,
+                                            latestRequestedFrame = latestRequestedFrame,
+                                            latestRetainedFrame = latestRetainedFrame,
+                                            currentIdentityKey = coverIdentityKey
+                                        )
+                                    ) {
+                                        publishDecodedFrame(visibleFrame, bitmap)
+                                    } else if (bitmap == null) {
+                                        rejectCoverFrame(visibleFrame)
+                                    }
+                                },
+                                onError = { rejectCoverFrame(visibleFrame) }
+                            )
+                        }
                     }
 
-                    if (requestedCoverUrl != null && requestedCoverUrl != displayedCoverUrl) {
-                        AsyncImage(
-                            model = fastScrollableImageRequest(
-                                context = context,
-                                data = requestedCoverUrl,
-                                sizePx = 128,
-                                crossfade = false,
-                                offlineMode = offlineMode
-                            ),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .matchParentSize()
-                                .graphicsLayer { alpha = 0f },
-                            onSuccess = {
-                                if (latestRequestedCoverUrl == requestedCoverUrl) {
-                                    displayedCoverUrl = resolveMiniPlayerDisplayedCoverUrl(
-                                        requestedCoverUrl = requestedCoverUrl,
-                                        displayedCoverUrl = displayedCoverUrl,
-                                        requestSucceeded = true
-                                    )
-                                }
-                            }
-                        )
-                    } else if (displayedCoverUrl == null) {
+        if (
+            requestedFrame != null &&
+            failedFrameForVisibleState == null &&
+            !sameMiniPlayerCoverFrame(requestedFrame, visibleFrame)
+        ) {
+                        key(requestedFrame.requestToken) {
+                            AsyncImage(
+                                model = fastScrollableImageRequest(
+                                    context = context,
+                                    data = requestedFrame.coverUrl,
+                                    sizePx = 128,
+                                    crossfade = false,
+                                    offlineMode = offlineMode,
+                                    cacheKey = miniPlayerCoverCacheKey(requestedFrame)
+                                ),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .graphicsLayer { alpha = 0f },
+                                onSuccess = { state ->
+                                    resolveMiniPlayerCoverBitmap(state)?.let { bitmap ->
+                                        publishDecodedFrame(requestedFrame, bitmap)
+                                    } ?: rejectCoverFrame(requestedFrame)
+                                },
+                                onError = { rejectCoverFrame(requestedFrame) }
+                            )
+                        }
+                    }
+
+                    if (visibleFrame == null) {
                         Box(
                             modifier = Modifier.matchParentSize(),
                             contentAlignment = Alignment.Center

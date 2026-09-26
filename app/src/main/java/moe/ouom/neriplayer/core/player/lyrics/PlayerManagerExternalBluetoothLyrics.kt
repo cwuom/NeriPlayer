@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothLyricPay
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
@@ -24,6 +25,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
     externalBluetoothTranslationLoadJob?.cancel()
     externalBluetoothTranslationLoadJob = null
     externalBluetoothLyrics = emptyList()
+    externalBluetoothPreferredLyricSource = null
     floatingTranslatedLyrics = emptyList()
     floatingTranslationMatchesByIndex = emptyMap()
     externalBluetoothLyricsSongKey = song?.stableKey()
@@ -35,8 +37,8 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
 
     val songKey = song.stableKey()
     externalBluetoothLyricsLoadJob = ioScope.launch {
-        val lyrics = loadExternalLyrics(song)
-            .sortedBy { it.startTimeMs }
+        val (loadedLyrics, preferredSource) = loadExternalLyrics(song)
+        val lyrics = loadedLyrics.sortedBy { it.startTimeMs }
         currentCoroutineContext().ensureActive()
 
         val currentSong = _currentSongFlow.value
@@ -46,6 +48,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
 
         externalBluetoothLyricsSongKey = songKey
         externalBluetoothLyrics = lyrics
+        externalBluetoothPreferredLyricSource = preferredSource
         updateExternalBluetoothLyricLine(_playbackPositionMs.value)
         if (shouldProvideExternalTranslatedLyricLine()) {
             startExternalBluetoothTranslationLoad(song, songKey)
@@ -81,7 +84,10 @@ private fun PlayerManager.startExternalBluetoothTranslationLoad(
 ) {
     externalBluetoothTranslationLoadJob?.cancel()
     externalBluetoothTranslationLoadJob = ioScope.launch {
-        val translatedLyrics = loadExternalTranslatedLyrics(song)
+        val translatedLyrics = loadExternalTranslatedLyrics(
+            song,
+            skipPreferredSource = externalBluetoothPreferredLyricSource == null
+        )
             .sortedBy { it.startTimeMs }
         currentCoroutineContext().ensureActive()
 
@@ -103,9 +109,12 @@ private fun PlayerManager.startExternalBluetoothTranslationLoad(
     }
 }
 
-private suspend fun PlayerManager.loadExternalLyrics(song: SongItem): List<LyricEntry> {
+private suspend fun PlayerManager.loadExternalLyrics(
+    song: SongItem
+): Pair<List<LyricEntry>, LyricSourcePreference?> {
     return try {
-        getLyrics(song)
+        val preferred = getPreferredLyricSourceResult(song, defaultLyricSource)
+        (preferred?.lyrics ?: getLyrics(song, skipPreferredSource = true)) to preferred?.source
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (error: Throwable) {
@@ -114,13 +123,16 @@ private suspend fun PlayerManager.loadExternalLyrics(song: SongItem): List<Lyric
             "external lyrics load failed: song=${song.name}/${song.id}",
             error
         )
-        emptyList()
+        emptyList<LyricEntry>() to null
     }
 }
 
-private suspend fun PlayerManager.loadExternalTranslatedLyrics(song: SongItem): List<LyricEntry> {
+private suspend fun PlayerManager.loadExternalTranslatedLyrics(
+    song: SongItem,
+    skipPreferredSource: Boolean
+): List<LyricEntry> {
     return try {
-        getTranslatedLyrics(song)
+        getTranslatedLyrics(song, skipPreferredSource)
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (error: Throwable) {
@@ -150,6 +162,10 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
         cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
         qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
         userLyricOffsetMs = song.userLyricOffsetMs,
+        kugouDefaultOffsetMs = kugouLyricDefaultOffsetMs,
+        lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
+        amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
+        preferredLyricSource = externalBluetoothPreferredLyricSource,
     )
 
     val line = findExternalBluetoothLyricLine(

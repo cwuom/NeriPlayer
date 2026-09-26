@@ -17,6 +17,12 @@
     <string name="lyrics_translation_use_phonetic_desc">开启后用音译替代歌词翻译显示在第二行</string>
     <string name="lyrics_translation_use_phonetic_unavailable">当前歌词没有音译，无法开启</string>
     <string name="lyrics_translation_use_phonetic_requires_translation">需要先开启歌词翻译</string>
+    <string name="lyrics_translation_short">译</string>
+    <string name="lyrics_phonetic_short">音</string>
+    <string name="lyrics_secondary_mode_translation">显示翻译</string>
+    <string name="lyrics_secondary_mode_phonetic">显示音译</string>
+    <string name="lyrics_secondary_mode_none">不显示翻译和音译</string>
+    <string name="lyrics_phonetic_only_desc">当前歌曲只有音译，可在此控制显示</string>
     <string name="lyrics_offset_hint">向右滑动歌词快进，向左滑动歌词延后</string>
     <string name="lyrics_unknown_song">未知歌曲</string>
     <string name="lyrics_unknown_artist">未知艺术家</string>
@@ -44,6 +50,7 @@
     <string name="lyrics_phone_speaker">手机扬声器</string>
     <string name="lyrics_original">原文</string>
     <string name="lyrics_translation">翻译</string>
+    <string name="lyrics_romanized">罗马字</string>
     <string name="music_restore_original">恢复修改</string>
     <string name="music_restore_cover">恢复封面</string>
     <string name="music_restore_title">恢复歌名</string>
@@ -55,6 +62,7 @@
     <string name="music_lyrics_fill_failed">歌词填充失败</string>
     <string name="lyrics_editor_hint_original">[00:00.00]在这里输入歌词\n[00:05.00]支持LRC格式\n[00:10.00]格式: [分:秒.毫秒]歌词内容</string>
     <string name="lyrics_editor_hint_translation">[00:00.00]在这里输入翻译歌词\n[00:05.00]支持LRC格式\n[00:10.00]格式: [分:秒.毫秒]翻译内容</string>
+    <string name="lyrics_editor_hint_romanized">[00:00.00]在这里输入罗马字歌词\n[00:05.00]支持LRC格式\n[00:10.00]格式: [分:秒.毫秒]罗马字内容</string>
     <string name="lyrics_match_action">匹配</string>
     <string name="lyrics_match_title">匹配歌词</string>
     <string name="lyrics_match_keyword">匹配关键字</string>
@@ -75,5 +83,6 @@
     <string name="lyrics_match_source_qq_music">QQ 音乐</string>
     <string name="lyrics_match_source_amll_ttml">AMLL TTML</string>
     <string name="lyrics_match_source_lrclib">LRCLIB</string>
+    <string name="lyrics_match_word_timed">逐词</string>
     <string name="lyrics_match_source_youtube_music">YouTube Music</string>
 </resources>

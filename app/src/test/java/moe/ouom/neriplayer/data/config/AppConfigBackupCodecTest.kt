@@ -8,6 +8,21 @@ import org.junit.Test
 
 class AppConfigBackupCodecTest {
     @Test
+    fun `download directory is retained when a persisted provider is temporarily unavailable`() {
+        assertFalse(shouldClearImportedDownloadDirectory(PersistedTreeAccess.Accessible))
+        assertFalse(shouldClearImportedDownloadDirectory(PersistedTreeAccess.PermissionLost))
+        assertFalse(shouldClearImportedDownloadDirectory(PersistedTreeAccess.ProviderFailure))
+        assertTrue(shouldWarnImportedDownloadDirectory(PersistedTreeAccess.PermissionLost))
+        assertTrue(shouldWarnImportedDownloadDirectory(PersistedTreeAccess.ProviderFailure))
+    }
+
+    @Test
+    fun `download directory is cleared only without a grant or after confirmed missing`() {
+        assertTrue(shouldClearImportedDownloadDirectory(PersistedTreeAccess.NoPersistedPermission))
+        assertTrue(shouldClearImportedDownloadDirectory(PersistedTreeAccess.Missing))
+    }
+
+    @Test
     fun `codec round trip keeps config payload stable`() {
         val payload = AppConfigBackup(
             formatVersion = 1,

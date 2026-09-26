@@ -64,6 +64,40 @@ class LyricDefaultOffsetTest {
     }
 
     @Test
+    fun resolveEffectiveLyricOffsetMs_usesOnlyTheLoadedPreferredSource() {
+        val offsets = listOf(
+            LyricSourcePreference.Kugou to 150L,
+            LyricSourcePreference.LrcLib to -200L,
+            LyricSourcePreference.AmllTtml to 300L
+        )
+        offsets.forEach { (source, expected) ->
+            assertEquals(
+                expected + 25L,
+                resolveEffectiveLyricOffsetMs(
+                    lyricSource = MusicPlatform.CLOUD_MUSIC,
+                    cloudMusicDefaultOffsetMs = 1_000L,
+                    qqMusicDefaultOffsetMs = 500L,
+                    userLyricOffsetMs = 25L,
+                    kugouDefaultOffsetMs = 150L,
+                    lrclibDefaultOffsetMs = -200L,
+                    amllTtmlDefaultOffsetMs = 300L,
+                    preferredLyricSource = source
+                )
+            )
+        }
+        assertEquals(
+            1_025L,
+            resolveEffectiveLyricOffsetMs(
+                lyricSource = MusicPlatform.CLOUD_MUSIC,
+                cloudMusicDefaultOffsetMs = 1_000L,
+                qqMusicDefaultOffsetMs = 500L,
+                userLyricOffsetMs = 25L,
+                preferredLyricSource = null
+            )
+        )
+    }
+
+    @Test
     fun resolveEffectiveLyricOffsetMs_saturatesOverflow() {
         assertEquals(
             Long.MAX_VALUE,

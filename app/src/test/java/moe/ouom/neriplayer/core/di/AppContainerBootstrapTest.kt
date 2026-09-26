@@ -151,6 +151,18 @@ class AppContainerBootstrapTest {
     }
 
     @Test
+    fun `warmYouTubePlaybackIfEnabled skips background warm bootstrap when runtime disables it`() {
+        var warmCalls = 0
+
+        warmYouTubePlaybackIfEnabled(
+            backgroundWarmupAllowed = false,
+            warmBootstrapAsync = { warmCalls += 1 }
+        )
+
+        assertEquals(0, warmCalls)
+    }
+
+    @Test
     fun `handleYouTubeAuthStateChanged does nothing when YouTube is disabled`() {
         val steps = mutableListOf<String>()
 

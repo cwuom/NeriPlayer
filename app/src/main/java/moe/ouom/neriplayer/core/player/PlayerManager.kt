@@ -107,6 +107,8 @@ import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackPo
 import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackResumePosition
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
+import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.metadata.YouTubeMusicLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
@@ -172,6 +174,7 @@ import moe.ouom.neriplayer.core.player.persistence.addToQueueEndImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueNextImpl
 import moe.ouom.neriplayer.core.player.persistence.applyRemoteQueueUpdateImpl
 import moe.ouom.neriplayer.core.player.persistence.getLyricsImpl
+import moe.ouom.neriplayer.core.player.persistence.getPreferredLyricSourceResultImpl
 import moe.ouom.neriplayer.core.player.persistence.getNeteaseLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.getNeteaseRomanizedLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.getNeteaseTranslatedLyricsImpl
@@ -222,6 +225,10 @@ import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_KUGOU_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.resolveEffectiveLyricOffsetMs
@@ -438,6 +445,10 @@ object PlayerManager {
     internal var lyriconEnabled = false
     @Volatile
     internal var amllLyricsEnabled = false
+    @Volatile
+    internal var preferWordTimedLyrics = true
+    @Volatile
+    internal var defaultLyricSource = LyricSourcePreference.Automatic
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false
@@ -446,6 +457,9 @@ object PlayerManager {
     internal var floatingLyricsShowTranslation = true
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
     internal var qqMusicLyricDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+    internal var kugouLyricDefaultOffsetMs = DEFAULT_KUGOU_LYRIC_OFFSET_MS
+    internal var lrclibLyricDefaultOffsetMs = DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+    internal var amllTtmlLyricDefaultOffsetMs = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
     @Volatile
     internal var biliSkipSegmentPromptEnabled = false
     internal var keepLastPlaybackProgressEnabled = true
@@ -546,6 +560,8 @@ object PlayerManager {
 
     internal val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
+    internal val _lyricsPreferenceRevisionFlow = MutableStateFlow(0L)
+    val lyricsPreferenceRevisionFlow: StateFlow<Long> = _lyricsPreferenceRevisionFlow
     @Volatile
     internal var localPlaylistPlaybackSource: LocalPlaylistPlaybackSource? = null
     internal val playbackDemandArbiter = PlaybackDemandArbiter()
@@ -594,6 +610,12 @@ object PlayerManager {
 
     @Volatile
     internal var externalBluetoothLyricsSongKey: String? = null
+    @Volatile
+    internal var externalBluetoothPreferredLyricSource: LyricSourcePreference? = null
+    @Volatile
+    private var lyriconPreferredLyricSourceSongKey: String? = null
+    @Volatile
+    private var lyriconPreferredLyricSource: LyricSourcePreference? = null
     @Volatile
     internal var externalBluetoothLyrics: List<LyricEntry> = emptyList()
     @Volatile
@@ -821,9 +843,14 @@ object PlayerManager {
                     null
                 } else {
                     ioScope.launch(start = CoroutineStart.LAZY) lyriconUpdate@{
-                        val lyrics = getLyrics(song)
+                        val preferred = getPreferredLyricSourceResult(song, defaultLyricSource)
+                        val lyrics = preferred?.lyrics ?: getLyrics(
+                            song,
+                            skipPreferredSource = true
+                        )
                         currentCoroutineContext().ensureActive()
-                        val translatedLyrics = getTranslatedLyrics(song)
+                        val translatedLyrics = preferred?.translatedLyrics
+                            ?: getTranslatedLyrics(song, skipPreferredSource = true)
                         currentCoroutineContext().ensureActive()
                         val updateJob = currentCoroutineContext()[Job] ?: return@lyriconUpdate
                         lyriconUpdateCoordinator.runIfCurrent(
@@ -832,12 +859,17 @@ object PlayerManager {
                         ) {
                             val currentSong = _currentSongFlow.value
                             if (currentSong?.sameIdentityAs(song) == true) {
+                                lyriconPreferredLyricSourceSongKey = currentSong.stableKey()
+                                lyriconPreferredLyricSource = preferred?.source
                                 LyriconManager.updateSong(
                                     song = currentSong,
                                     lyrics = lyrics,
                                     translatedLyrics = translatedLyrics,
                                     lyricOffsetMs = lyricOffsetOverrideMs
-                                        ?: resolveLyriconLyricOffsetMs(currentSong),
+                                        ?: resolveLyriconLyricOffsetMs(
+                                            currentSong,
+                                            preferred?.source
+                                        ),
                                 )
                             }
                         }
@@ -845,6 +877,8 @@ object PlayerManager {
                 }
             },
             onPublished = {
+                lyriconPreferredLyricSourceSongKey = null
+                lyriconPreferredLyricSource = null
                 when {
                     !lyriconEnabled -> LyriconManager.setPlaybackState(false)
                     song == null -> {
@@ -880,12 +914,20 @@ object PlayerManager {
         LyriconManager.setPosition(song?.let { _playbackPositionMs.value } ?: 0L)
     }
 
-    private fun resolveLyriconLyricOffsetMs(song: SongItem): Long {
+    private fun resolveLyriconLyricOffsetMs(
+        song: SongItem,
+        preferredSource: LyricSourcePreference? = lyriconPreferredLyricSource
+            .takeIf { lyriconPreferredLyricSourceSongKey == song.stableKey() }
+    ): Long {
         return resolveEffectiveLyricOffsetMs(
             lyricSource = song.matchedLyricSource,
             cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
             qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
             userLyricOffsetMs = song.userLyricOffsetMs,
+            kugouDefaultOffsetMs = kugouLyricDefaultOffsetMs,
+            lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
+            amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
+            preferredLyricSource = preferredSource,
         )
     }
 
@@ -2566,7 +2608,8 @@ object PlayerManager {
         resumePlaybackAfterRefresh: Boolean = true,
         resumedPlaybackCommandSource: PlaybackCommandSource? = null,
         youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
-        cacheKeyToInvalidateBeforeResolve: String? = null
+        cacheKeyToInvalidateBeforeResolve: String? = null,
+        allowLocalSongRecovery: Boolean = false
     ) = refreshCurrentSongUrlImpl(
         resumePositionMs = resumePositionMs,
         allowFallback = allowFallback,
@@ -2576,7 +2619,8 @@ object PlayerManager {
         resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
         resumedPlaybackCommandSource = resumedPlaybackCommandSource,
         youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve
+        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve,
+        allowLocalSongRecovery = allowLocalSongRecovery
     )
 
     internal fun handleTrackEndedIfNeeded(source: String) =
@@ -2702,13 +2746,33 @@ object PlayerManager {
     suspend fun getPreferredNeteaseRomanizedLyricContent(songId: Long): String =
         getPreferredNeteaseRomanizedLyricContentImpl(songId)
 
-    suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> =
-        getTranslatedLyricsImpl(song)
+    suspend fun getTranslatedLyrics(
+        song: SongItem,
+        skipPreferredSource: Boolean = false
+    ): List<LyricEntry> = getTranslatedLyricsImpl(song, skipPreferredSource)
 
     suspend fun getRomanizedLyrics(song: SongItem): List<LyricEntry> =
         getRomanizedLyricsImpl(song)
 
-    suspend fun getLyrics(song: SongItem): List<LyricEntry> = getLyricsImpl(song)
+    suspend fun getLyrics(
+        song: SongItem,
+        skipPreferredSource: Boolean = false
+    ): List<LyricEntry> = getLyricsImpl(song, skipPreferredSource)
+
+    internal suspend fun getPreferredLyricSourceResult(
+        song: SongItem,
+        preference: LyricSourcePreference
+    ): PreferredLyricSourceResult? = getPreferredLyricSourceResultImpl(song, preference)
+
+    internal fun getCachedPreferredLyricSourceResult(
+        song: SongItem,
+        preference: LyricSourcePreference,
+        preferWordTimed: Boolean
+    ): PreferredLyricSourceResult? = PlayerLyricsProvider.peekPreferredLyricSourceResult(
+        song = song,
+        preference = preference,
+        preferWordTimed = preferWordTimed
+    )
 
     fun playFromQueue(
         index: Int,
@@ -2756,7 +2820,9 @@ object PlayerManager {
         restoreBaseArtist: Boolean = false,
         clearMatchedMetadata: Boolean = false,
         writeLocalMetadata: Boolean = false,
-        writeLyrics: Boolean = false
+        writeLyrics: Boolean = false,
+        persistManualRemoteCover: Boolean = false,
+        restoreBaseLyrics: Boolean = false
     ) = updateSongCustomInfoImpl(
         originalSong,
         customCoverUrl,
@@ -2767,7 +2833,9 @@ object PlayerManager {
         restoreBaseArtist,
         clearMatchedMetadata,
         writeLocalMetadata,
-        writeLyrics
+        writeLyrics,
+        persistManualRemoteCover,
+        restoreBaseLyrics
     )
 
     fun hydrateSongMetadata(originalSong: SongItem, updatedSong: SongItem) =
@@ -2800,11 +2868,17 @@ object PlayerManager {
         songToUpdate: SongItem,
         newLyrics: String?,
         newTranslatedLyrics: String?,
-        writeLocalMetadata: Boolean = false
-    ) = updateSongLyricsAndTranslationImpl(
+        newRomanizedLyrics: String? = null,
+        writeLocalMetadata: Boolean = false,
+        persistLocalSidecars: Boolean = true,
+        syncDownloadedMetadata: Boolean = true
+    ): Boolean = updateSongLyricsAndTranslationImpl(
         songToUpdate = songToUpdate,
         newLyrics = newLyrics,
         newTranslatedLyrics = newTranslatedLyrics,
-        writeLocalMetadata = writeLocalMetadata
+        newRomanizedLyrics = newRomanizedLyrics,
+        writeLocalMetadata = writeLocalMetadata,
+        persistLocalSidecars = persistLocalSidecars,
+        syncDownloadedMetadata = syncDownloadedMetadata
     )
 }

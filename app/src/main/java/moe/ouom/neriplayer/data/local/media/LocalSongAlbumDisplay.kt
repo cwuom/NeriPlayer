@@ -30,22 +30,72 @@ import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun normalizeLocalAlbumIdentity(
     album: String?,
-    usesFallbackAlbum: Boolean
+    usesFallbackAlbum: Boolean,
+    stripManagedSourcePrefix: Boolean = false
 ): String {
     val normalized = album?.trim().orEmpty()
     if (normalized.isBlank()) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
-    return if (usesFallbackAlbum) LocalSongSupport.LOCAL_ALBUM_IDENTITY else normalized
+    if (usesFallbackAlbum) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
+
+    // 只有带受管下载来源身份的歌曲才清理历史来源前缀
+    val withoutSourcePrefix = if (
+        stripManagedSourcePrefix &&
+        normalized.length >= LOCAL_SOURCE_ALBUM_PREFIX.length &&
+            normalized.regionMatches(
+                0,
+                LOCAL_SOURCE_ALBUM_PREFIX,
+                0,
+                LOCAL_SOURCE_ALBUM_PREFIX.length,
+                ignoreCase = true
+            ) && (
+                normalized.length == LOCAL_SOURCE_ALBUM_PREFIX.length ||
+                    !normalized[LOCAL_SOURCE_ALBUM_PREFIX.length].isWhitespace()
+                )
+    ) {
+        normalized.substring(LOCAL_SOURCE_ALBUM_PREFIX.length)
+            .trim()
+            .trimStart('-', ':', '_', '|')
+            .trim()
+    } else {
+        normalized
+    }
+    return withoutSourcePrefix.takeIf { it.isNotBlank() }
+        ?: LocalSongSupport.LOCAL_ALBUM_IDENTITY
+}
+
+internal fun isNeteaseManagedSourceStableKey(sourceStableKey: String?): Boolean {
+    val normalized = sourceStableKey?.trim()?.takeIf(String::isNotBlank) ?: return false
+    val firstSeparator = normalized.indexOf('|')
+    if (firstSeparator <= 0 || normalized.substring(0, firstSeparator).toLongOrNull() == null) {
+        return false
+    }
+    val secondSeparator = normalized.indexOf('|', firstSeparator + 1)
+    if (secondSeparator <= firstSeparator + 1) return false
+    val sourceAlbum = normalized.substring(firstSeparator + 1, secondSeparator)
+    val sourceUri = normalized.substring(secondSeparator + 1)
+    return sourceAlbum.equals("netease", ignoreCase = true) && sourceUri.isBlank()
 }
 
 fun SongItem.displayAlbum(context: Context): String {
     val normalized = album.trim()
     if (normalized.isBlank()) return normalized
-    return if (
-        normalized == LocalSongSupport.LOCAL_ALBUM_IDENTITY ||
-        LocalFilesPlaylist.matches(normalized, context)
-    ) {
-        context.getString(R.string.local_files)
+    val displayValue = if (LocalSongSupport.isLocalSong(this, context)) {
+        normalizeLocalAlbumIdentity(
+            album = normalized,
+            usesFallbackAlbum = false,
+            stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(sourceStableKey)
+        )
     } else {
         normalized
     }
+    return if (
+        displayValue == LocalSongSupport.LOCAL_ALBUM_IDENTITY ||
+        LocalFilesPlaylist.matches(displayValue, context)
+    ) {
+        context.getString(R.string.local_files)
+    } else {
+        displayValue
+    }
 }
+
+private const val LOCAL_SOURCE_ALBUM_PREFIX = "Netease"

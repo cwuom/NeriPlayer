@@ -45,6 +45,9 @@ internal interface LocalPlaylistDao {
     )
     suspend fun getPlaylists(): List<LocalPlaylistEntity>
 
+    @Query("SELECT * FROM local_playlist WHERE playlist_id = :playlistId LIMIT 1")
+    suspend fun getPlaylist(playlistId: Long): LocalPlaylistEntity?
+
     @Query(
         "SELECT * FROM playlist_member ORDER BY playlist_id ASC, display_position ASC, " +
             "identity_key ASC"
@@ -52,13 +55,28 @@ internal interface LocalPlaylistDao {
     suspend fun getMembers(): List<PlaylistMemberEntity>
 
     @Query(
+        "SELECT * FROM playlist_member WHERE playlist_id = :playlistId " +
+            "ORDER BY display_position ASC, identity_key ASC"
+    )
+    suspend fun getMembersForPlaylist(playlistId: Long): List<PlaylistMemberEntity>
+
+    @Query(
         "SELECT * FROM playlist_member_token ORDER BY playlist_id ASC, identity_key ASC, " +
             "token_index ASC, device_id ASC, counter ASC"
     )
     suspend fun getMemberTokens(): List<PlaylistMemberTokenEntity>
 
+    @Query(
+        "SELECT * FROM playlist_member_token WHERE playlist_id = :playlistId " +
+            "ORDER BY identity_key ASC, token_index ASC, device_id ASC, counter ASC"
+    )
+    suspend fun getMemberTokensForPlaylist(playlistId: Long): List<PlaylistMemberTokenEntity>
+
     @Query("SELECT * FROM track ORDER BY identity_key ASC")
     suspend fun getTracks(): List<TrackEntity>
+
+    @Query("SELECT * FROM track WHERE identity_key IN (:identityKeys)")
+    suspend fun getTracksByIdentityKeys(identityKeys: List<String>): List<TrackEntity>
 
     @Upsert
     suspend fun insertPlaylists(playlists: List<LocalPlaylistEntity>)

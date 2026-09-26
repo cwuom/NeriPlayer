@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -48,6 +49,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
@@ -123,6 +125,7 @@ import moe.ouom.neriplayer.core.player.url.shouldAdvanceAfterStuckTrackEnd
 import moe.ouom.neriplayer.core.player.url.shouldAttemptUrlRefresh
 import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheForPlaybackRecovery
+import moe.ouom.neriplayer.core.player.url.shouldRecoverMissingLocalPlayback
 import moe.ouom.neriplayer.core.player.url.shouldTreatPlaybackFailureAsTrackEnd
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForError
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
@@ -141,6 +144,7 @@ import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidateForRecovery
+import moe.ouom.neriplayer.data.settings.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.CacheSizePolicy
@@ -390,10 +394,20 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.cloudMusicLyricDefaultOffsetMs
         qqMusicLyricDefaultOffsetMs =
             initialPlaybackPreferences.qqMusicLyricDefaultOffsetMs
+        kugouLyricDefaultOffsetMs =
+            initialPlaybackPreferences.kugouLyricDefaultOffsetMs
+        lrclibLyricDefaultOffsetMs =
+            initialPlaybackPreferences.lrclibLyricDefaultOffsetMs
+        amllTtmlLyricDefaultOffsetMs =
+            initialPlaybackPreferences.amllTtmlLyricDefaultOffsetMs
         externalBluetoothLyricsEnabled = false
         externalBluetoothTranslationEnabled = false
         dynamicIslandLyricsEnabled = false
         amllLyricsEnabled = initialPlaybackPreferences.amllLyricsEnabled
+        preferWordTimedLyrics = initialPlaybackPreferences.preferWordTimedLyrics
+        defaultLyricSource = LyricSourcePreferencePolicy.fromStorage(
+            initialPlaybackPreferences.defaultLyricSource
+        )
         lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
         LyriconManager.setEnabled(lyriconEnabled)
         if (lyriconEnabled && !LyriconManager.isInitialized()) {
@@ -641,12 +655,23 @@ internal fun PlayerManager.initializeImpl(
                 val currentSong = _currentSongFlow.value
                 val currentUrl = _currentMediaUrl.value
                 val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
+                val isLocalFileMissingRecovery = shouldRecoverMissingLocalPlayback(
+                    error = error,
+                    isLocalSong = currentSong?.let { song -> isLocalSong(song) } == true,
+                    currentUrl = currentUrl
+                )
+                if (isLocalFileMissingRecovery) {
+                    // 迁移完成后旧 file URI 可能在 Media3 打开前才失效，先丢弃桥接
+                    // 让下一次解析从当前 SAF 快照按文件名重绑定
+                    currentSong?.let(AudioDownloadManager::invalidateCompletedAudioReference)
+                }
                 val shouldInvalidateCache =
                     shouldInvalidateCacheForPlaybackRecovery(error, isOfflineCache)
 
                 val cause = error.cause
                 val shouldResumeAfterRecovery = resumePlaybackRequested || player.playWhenReady || player.isPlaying
                 if (
+                    !isLocalFileMissingRecovery &&
                     shouldResumeAfterRecovery &&
                     trySwitchToNextPlaybackCandidateForRecovery(
                         reason = "player_error_${error.errorCodeName}",
@@ -674,7 +699,8 @@ internal fun PlayerManager.initializeImpl(
                                 currentSong,
                                 currentUrl
                             )
-                        ) || cacheKeyToInvalidateBeforeResolve != null
+                        ) || cacheKeyToInvalidateBeforeResolve != null ||
+                        isLocalFileMissingRecovery
                     val resumePositionMs = pendingSeekPositionOrNull()
                         ?: maxOf(
                             player.currentPosition.coerceAtLeast(0L),
@@ -690,7 +716,8 @@ internal fun PlayerManager.initializeImpl(
                         resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
                         resumedPlaybackCommandSource = activePlaybackCommandSource,
                         youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-                        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve
+                        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve,
+                        allowLocalSongRecovery = isLocalFileMissingRecovery
                     )
                     return
                 }
@@ -1108,8 +1135,30 @@ internal fun PlayerManager.initializeImpl(
                 val changed = amllLyricsEnabled != enabled
                 amllLyricsEnabled = enabled
                 if (changed) {
-                    ytMusicLyricsCache.evictAll()
-                    PlayerLyricsProvider.clearAmllLyricsCache()
+                    evictLyricCachesForSourcePreferenceChange()
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.preferWordTimedLyricsFlow.collect { enabled ->
+                val changed = preferWordTimedLyrics != enabled
+                preferWordTimedLyrics = enabled
+                if (changed) {
+                    evictLyricCachesForSourcePreferenceChange()
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.defaultLyricSourceFlow.collect { source ->
+                val changed = defaultLyricSource != source
+                defaultLyricSource = source
+                if (changed) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "默认歌词源设置更新: ${source.storageValue}"
+                    )
+                    evictLyricCachesForSourcePreferenceChange()
+                    syncLyriconSong(_currentSongFlow.value)
                     syncExternalBluetoothLyrics(_currentSongFlow.value)
                 }
             }
@@ -1193,6 +1242,27 @@ internal fun PlayerManager.initializeImpl(
         ioScope.launch {
             settingsRepo.qqMusicLyricDefaultOffsetMsFlow.collect { offsetMs ->
                 qqMusicLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
+            }
+        }
+        ioScope.launch {
+            settingsRepo.kugouLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                kugouLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
+            }
+        }
+        ioScope.launch {
+            settingsRepo.lrclibLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                lrclibLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
+            }
+        }
+        ioScope.launch {
+            settingsRepo.amllTtmlLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                amllTtmlLyricDefaultOffsetMs = offsetMs
                 updateExternalBluetoothLyricLine(_playbackPositionMs.value)
                 updateLyriconLyricOffset()
             }
@@ -3985,6 +4055,7 @@ internal fun PlayerManager.releaseImpl() {
         externalBluetoothTranslationLoadJob?.cancel()
         externalBluetoothTranslationLoadJob = null
         externalBluetoothLyrics = emptyList()
+        externalBluetoothPreferredLyricSource = null
         floatingTranslatedLyrics = emptyList()
         floatingTranslationMatchesByIndex = emptyMap()
         externalBluetoothLyricsSongKey = null
@@ -4051,4 +4122,16 @@ internal fun PlayerManager.releaseImpl() {
         UsbExclusiveSystemSoundGuard.forceRelease(application, "player_release_finally")
         StartupAudioFocusController.forceRelease("player_release_finally")
     }
+}
+
+/**
+ * 歌词来源相关设置变更后必须清空全部歌词缓存。
+ *
+ * 这些缓存都没有 TTL, 只靠设置变化时主动失效来维持一致, 否则改完设置后
+ * 当前歌曲会继续沿用旧来源的歌词, 表现为"设置没生效"。
+ */
+private fun PlayerManager.evictLyricCachesForSourcePreferenceChange() {
+    PlayerLyricsProvider.clearLyricsCaches(neteaseLyricsCache, ytMusicLyricsCache)
+    _lyricsPreferenceRevisionFlow.update { it + 1L }
+    syncExternalBluetoothLyrics(_currentSongFlow.value)
 }

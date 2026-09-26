@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.lookup
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 
 internal object ManagedDownloadCoverLookup {
@@ -9,7 +10,7 @@ internal object ManagedDownloadCoverLookup {
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         audio: ManagedDownloadStorage.StoredEntry
     ): String? {
-        snapshot.metadataByAudioName[audio.name]?.let { metadata ->
+        ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)?.let { metadata ->
             return resolveMetadataCoverReference(
                 snapshot = snapshot,
                 audioName = audio.name,
@@ -24,8 +25,7 @@ internal object ManagedDownloadCoverLookup {
         audioName: String,
         metadata: ManagedDownloadStorage.DownloadedAudioMetadata
     ): String? {
-        metadata.coverPath
-            ?.takeIf(snapshot.knownReferences::contains)
+        ManagedDownloadArtifactPlanner.trustedMetadataReference(metadata.coverPath, snapshot)
             ?.let { return it }
         val baseName = audioName.substringBeforeLast('.', audioName)
         val stableKey = metadata.stableKey

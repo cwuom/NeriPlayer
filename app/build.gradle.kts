@@ -68,7 +68,7 @@ android {
         buildConfigField("long", "BUILD_TIMESTAMP", "${System.currentTimeMillis()}L")
 
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner"
 
         renderscriptTargetApi = 31
         renderscriptSupportModeEnabled = true
@@ -200,6 +200,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 tasks.withType<Test>().configureEach {
+    // Android 单元测试中的 Context 可能没有真实文件目录，临时文件统一放到任务临时目录
+    systemProperty("java.io.tmpdir", temporaryDir.absolutePath)
     systemProperty(
         "runNeteaseSmoke",
         System.getProperty("runNeteaseSmoke") ?: "false"

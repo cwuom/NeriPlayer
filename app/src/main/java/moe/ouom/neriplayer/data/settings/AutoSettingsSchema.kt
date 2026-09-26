@@ -939,6 +939,54 @@ object AutoSettingsSchema {
     }
 
     /*
+     * 歌词源设置
+     *
+     * 决定播放时歌词从哪里来, 以及是否为了逐词结果改变匹配顺序
+     * 默认跟随平台并优先逐词，逐词候选排序可能与旧版不同
+     */
+    @AutoSettingsSection(
+        order = 66
+    )
+    object lyricSource {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_lyric_source,
+            descriptionRes = R.string.settings_lyric_source_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
+            key = "prefer_word_timed_lyrics",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 10,
+            ui = SettingUiType.Switch
+        )
+        val preferWordTimedLyrics = autoSwitchSetting(
+            key = "prefer_word_timed_lyrics",
+            defaultValue = true,
+            titleRes = R.string.settings_prefer_word_timed_lyrics,
+            descriptionRes = R.string.settings_prefer_word_timed_lyrics_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
+            key = "default_lyric_source",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_LYRIC_SOURCE,
+            order = 11,
+            ui = SettingUiType.Custom,
+            normalizer = LyricSourcePreferencePolicy::class
+        )
+        val defaultLyricSource = autoStringSetting(
+            key = "default_lyric_source",
+            defaultValue = DEFAULT_LYRIC_SOURCE,
+            titleRes = R.string.settings_default_lyric_source,
+            descriptionRes = R.string.settings_default_lyric_source_desc,
+            icon = AutoSettingIcon.LibraryMusic
+        )
+    }
+
+    /*
      * 歌词设置
      *
      * 放歌词外观, 外部词幕适配和各来源默认歌词偏移
@@ -1253,6 +1301,45 @@ object AutoSettingsSchema {
             titleRes = R.string.settings_lyrics_offset_qq_music,
             descriptionRes = R.string.settings_lyrics_offset_qq_music_desc
         )
+
+        @AutoSetting(
+            key = "kugou_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+            order = 40,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val kugouLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_kugou,
+            descriptionRes = R.string.settings_lyrics_offset_kugou_desc
+        )
+
+        @AutoSetting(
+            key = "lrclib_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+            order = 50,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val lrclibLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_lrclib,
+            descriptionRes = R.string.settings_lyrics_offset_lrclib_desc
+        )
+
+        @AutoSetting(
+            key = "amll_ttml_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
+            order = 60,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val amllTtmlLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_amll_ttml,
+            descriptionRes = R.string.settings_lyrics_offset_amll_ttml_desc
+        )
     }
 
     /*
@@ -1301,7 +1388,61 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Download
         )
 
-        @AutoSetting(order = 40)
+        @AutoSetting(order = 10)
+        val downloadFollowPlaybackAudioQuality = autoSwitchSetting(
+            key = "download_follow_playback_audio_quality",
+            defaultValue = true,
+            titleRes = R.string.settings_download_follow_playback_audio_quality,
+            descriptionRes = R.string.settings_download_follow_playback_audio_quality_desc,
+            icon = AutoSettingIcon.Audiotrack
+        )
+
+        @AutoSetting(
+            key = "download_netease_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY,
+            order = 20,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadNeteaseAudioQuality = autoStringSetting(
+            key = "download_netease_audio_quality",
+            defaultValue = DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY,
+            titleRes = R.string.settings_download_netease_audio_quality,
+            iconRes = R.drawable.ic_netease_cloud_music
+        )
+
+        @AutoSetting(
+            key = "download_youtube_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY,
+            order = 30,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadYouTubeAudioQuality = autoStringSetting(
+            key = "download_youtube_audio_quality",
+            defaultValue = DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY,
+            titleRes = R.string.settings_download_youtube_audio_quality,
+            iconRes = R.drawable.ic_youtube
+        )
+
+        @AutoSetting(
+            key = "download_bili_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY,
+            order = 40,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadBiliAudioQuality = autoStringSetting(
+            key = "download_bili_audio_quality",
+            defaultValue = DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY,
+            titleRes = R.string.settings_download_bili_audio_quality,
+            iconRes = R.drawable.ic_bilibili
+        )
+
+        @AutoSetting(order = 50)
         val downloadMetadataPostProcessingEnabled = autoSwitchSetting(
             key = "download_metadata_post_processing_enabled",
             defaultValue = true,
@@ -1310,7 +1451,7 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.AutoAwesome
         )
 
-        @AutoSetting(order = 50)
+        @AutoSetting(order = 60)
         val standardizedLyricEmbeddingEnabled = autoSwitchSetting(
             key = "standardized_lyric_embedding_enabled",
             defaultValue = false,
@@ -1320,7 +1461,7 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
-            order = 60,
+            order = 70,
             ui = SettingUiType.Custom
         )
         val downloadParallelism = autoIntSetting(

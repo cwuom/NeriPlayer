@@ -7,8 +7,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.toPlaybackSongItem
+import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
@@ -39,20 +39,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
-class LocalPlaylistRepositoryTest {
 
-    @get:Rule
-    val tempFolder = TemporaryFolder()
-
-    @Before
-    fun setUpCoverMapper() {
-        CoverUrlMapper.installForTest(CoverUrlMapper.createForTest())
-    }
-
-    @After
-    fun tearDownCoverMapper() {
-        CoverUrlMapper.installForTest(null)
-    }
+class LocalPlaylistRepositoryTest : LocalPlaylistRepositoryTestSupport() {
 
     @Test
     fun `async initial load does not publish or overwrite before persisted state is ready`() = runTest {
@@ -92,6 +80,30 @@ class LocalPlaylistRepositoryTest {
             setOf("persisted", "new"),
             repository.playlists.value.mapTo(mutableSetOf(), LocalPlaylist::name)
         )
+    }
+
+    @Test
+    fun `fast playlist preview reads only the requested playlist object`() = runTest {
+        val first = playlistJson(id = 301L, name = "first")
+            .trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+        val second = playlistJson(id = 302L, name = "target")
+            .trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+        val storage = RecordingStorage(primary = "[$first,$second]")
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "fast_preview.json"),
+            autoSyncEnabled = false,
+            storage = storage
+        )
+
+        val preview = repository.readFastPlaylist(302L)
+
+        assertEquals("target", preview?.name)
+        assertEquals(302L, preview?.id)
     }
 
     @Test
@@ -149,7 +161,7 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
-    fun `scanned adds skip local metadata duplicates in regular playlist`() = runTest {
+    fun `scanned adds keep distinct files with matching local metadata`() = runTest {
         val playlistId = 43L
         val repository = LocalPlaylistRepository.createForTest(
             context = mockContext(),
@@ -174,10 +186,45 @@ class LocalPlaylistRepositoryTest {
         val playlist = repository.playlists.value.single { it.id == playlistId }
 
         assertEquals(1, firstAdd)
-        assertEquals(0, secondAdd)
-        assertEquals(1, playlist.songs.size)
-        assertEquals(contentAlias.mediaUri, playlist.songs.single().mediaUri)
-        assertEquals(contentAlias.localFileName, playlist.songs.single().localFileName)
+        assertEquals(1, secondAdd)
+        assertEquals(2, playlist.songs.size)
+        assertEquals(
+            setOf(contentAlias.mediaUri, pathAlias.mediaUri),
+            playlist.songs.map { it.mediaUri }.toSet()
+        )
+    }
+
+    @Test
+    fun `scanned adds to a regular playlist retain source creation time`() = runTest {
+        val playlistId = 44L
+        val sourceSong = localSong(index = 9, name = "source-time").copy(
+            addedAt = 123L,
+            logicalCreatedAtMs = 123L,
+            createdAtSource = "FILESYSTEM_BIRTH",
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "regular_scanned_creation_time.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "普通歌单"))
+        )
+
+        assertEquals(
+            1,
+            repository.addScannedSongsToPlaylistAndCount(playlistId, listOf(sourceSong))
+        )
+
+        val stored = repository.playlists.value
+            .single { it.id == playlistId }
+            .songs
+            .single()
+        assertEquals(123L, stored.addedAt)
+        assertEquals(123L, stored.logicalCreatedAtMs)
+        assertTrue((stored.membershipAddedAtMs ?: 0L) > 123L)
     }
 
     @Test
@@ -857,6 +904,134 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `scanned metadata clears invalid covers without restoring them from persistence merge`() = runTest {
+        val playlistId = 160L
+        val storage = RecordingStorage(primary = null)
+        val audioFile = tempFolder.newFile("invalid-cover-song.mp3")
+        val invalidCover = tempFolder.newFile("invalid-cover.jpg").apply {
+            writeText("not an image")
+        }
+        val song = SongItem(
+            id = 161L,
+            name = "Local song",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = invalidCover.toURI().toString(),
+            originalCoverUrl = invalidCover.toURI().toString(),
+            mediaUri = audioFile.toURI().toString(),
+            localFilePath = audioFile.absolutePath,
+            channelId = "local"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "invalid-cover-refresh.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            storage = storage
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "Local", songs = mutableListOf(song)))
+        )
+
+        repository.refreshScannedLocalSongMetadata(listOf(song))
+
+        val refreshed = repository.playlists.value.single().songs.single()
+        assertNull(refreshed.coverUrl)
+        assertNull(refreshed.originalCoverUrl)
+
+        val restoredRepository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "invalid-cover-refresh.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            storage = storage
+        )
+        val restored = restoredRepository.playlists.value.single().songs.single()
+        assertNull(restored.coverUrl)
+        assertNull(restored.originalCoverUrl)
+    }
+
+    @Test
+    fun `scanned alias clears invalid covers while keeping the existing playback source`() = runTest {
+        val playlistId = 164L
+        val existingAudio = tempFolder.newFile("retained-source.mp3")
+        val scannedAliasAudio = tempFolder.newFile("scanned-alias.mp3")
+        val invalidExistingCover = tempFolder.newFile("invalid-existing-cover.jpg").apply {
+            writeText("not an image")
+        }
+        val invalidScannedCover = tempFolder.newFile("invalid-scanned-cover.jpg").apply {
+            writeText("not an image")
+        }
+        val existing = SongItem(
+            id = 165L,
+            name = "Local song",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = invalidExistingCover.toURI().toString(),
+            originalCoverUrl = invalidExistingCover.toURI().toString(),
+            mediaUri = existingAudio.toURI().toString(),
+            localFilePath = existingAudio.absolutePath,
+            channelId = "local",
+            audioId = "shared-local-audio-id"
+        )
+        val scannedAlias = existing.copy(
+            id = 166L,
+            coverUrl = invalidScannedCover.toURI().toString(),
+            originalCoverUrl = invalidScannedCover.toURI().toString(),
+            mediaUri = scannedAliasAudio.toURI().toString(),
+            localFilePath = scannedAliasAudio.absolutePath
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "invalid-cover-alias-refresh.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "Local", songs = mutableListOf(existing)))
+        )
+
+        repository.refreshScannedLocalSongMetadata(listOf(scannedAlias))
+
+        val refreshed = repository.playlists.value.single().songs.single()
+        assertEquals(existing.mediaUri, refreshed.mediaUri)
+        assertEquals(existing.localFilePath, refreshed.localFilePath)
+        assertNull(refreshed.coverUrl)
+        assertNull(refreshed.originalCoverUrl)
+    }
+
+    @Test
+    fun `ordinary metadata update still preserves existing covers when new values are absent`() = runTest {
+        val playlistId = 162L
+        val original = localSong(163).copy(
+            coverUrl = "file:///persisted-cover.jpg",
+            originalCoverUrl = "file:///persisted-original-cover.jpg"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "preserve-cover-update.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "Local", songs = mutableListOf(original)))
+        )
+
+        repository.updateSongMetadata(
+            originalSong = original,
+            newSongInfo = original.copy(coverUrl = null, originalCoverUrl = null)
+        )
+
+        val updated = repository.playlists.value.single().songs.single()
+        assertEquals(original.coverUrl, updated.coverUrl)
+        assertEquals(original.originalCoverUrl, updated.originalCoverUrl)
+    }
+
+    @Test
     fun `user metadata update schedules auto sync when requested`() = runTest {
         val playlistId = 156L
         val original = remoteNeteaseSong(id = 157L)
@@ -985,729 +1160,5 @@ class LocalPlaylistRepositoryTest {
 
         assertFalse(applied)
         assertEquals("local", repository.playlists.value.single().name)
-    }
-
-    @Test
-    fun `sync apply succeeds without advancing local mutation epoch`() = runTest {
-        val initial = LocalPlaylist(id = 150L, name = "initial")
-        val syncStore = RecordingSyncMutationStore()
-        var autoSyncTriggerCount = 0
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "successful_guarded_sync_apply.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = true,
-            syncMutationStore = syncStore,
-            autoSyncTrigger = { autoSyncTriggerCount++ }
-        )
-        repository.updatePlaylists(listOf(initial))
-
-        val applied = repository.applySyncedPlaylistsIfUnchanged(
-            playlists = listOf(initial.copy(name = "remote")),
-            expectedMutationVersion = syncStore.mutationVersion
-        )
-
-        assertTrue(applied)
-        assertEquals("remote", repository.playlists.value.single().name)
-        assertEquals(0L, syncStore.mutationVersion)
-        assertEquals(0, autoSyncTriggerCount)
-    }
-
-    @Test
-    fun `same state restore mutation replays after apply failure`() = runTest {
-        val playlist = LocalPlaylist(id = 151L, name = "restored")
-        val storage = RecordingStorage(primary = null)
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "same_state_restore_replay.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            storage = storage,
-            syncMutationStore = RecordingSyncMutationStore(failApply = true)
-        )
-        repository.updatePlaylists(listOf(playlist))
-
-        repository.updatePlaylists(
-            playlists = listOf(playlist),
-            triggerSync = true,
-            restoredPlaylistIds = setOf(playlist.id)
-        )
-        assertTrue(storage.pendingSyncMutation != null)
-
-        val recoveredStore = RecordingSyncMutationStore()
-        var autoSyncTriggerCount = 0
-        LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "same_state_restore_replay.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = true,
-            storage = storage,
-            syncMutationStore = recoveredStore,
-            autoSyncTrigger = { autoSyncTriggerCount++ }
-        )
-
-        assertEquals(listOf(playlist.id), recoveredStore.applied.single().restoredPlaylistIds)
-        assertTrue(storage.pendingSyncMutation == null)
-        assertEquals(1, autoSyncTriggerCount)
-    }
-
-    @Test
-    fun `export allocates one membership token per inserted song`() = runTest {
-        val sourceId = 152L
-        val targetId = 153L
-        val song = remoteNeteaseSong(id = 154L)
-        val syncStore = RecordingSyncMutationStore()
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "export_token_count.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            syncMutationStore = syncStore
-        )
-        repository.updatePlaylists(
-            listOf(
-                LocalPlaylist(id = sourceId, name = "source", songs = mutableListOf(song)),
-                LocalPlaylist(id = targetId, name = "target")
-            )
-        )
-
-        repository.exportSongsToPlaylistByIdentity(sourceId, targetId, listOf(song))
-
-        assertEquals(1, syncStore.allocatedTokenCount)
-        assertEquals(1, repository.playlists.value.single { it.id == targetId }.songs.size)
-    }
-
-    @Test
-    fun `add result only contains songs inserted by this batch`() = runTest {
-        val targetId = 155L
-        val existingSong = remoteNeteaseSong(id = 156L, name = "existing")
-        val newSong = remoteNeteaseSong(id = 157L, name = "new")
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "batch_add_result.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false
-        )
-        repository.updatePlaylists(
-            listOf(
-                LocalPlaylist(
-                    id = targetId,
-                    name = "target",
-                    songs = mutableListOf(existingSong),
-                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-                )
-            )
-        )
-
-        val addResult = repository.addSongsToPlaylistWithResult(
-            targetId,
-            listOf(existingSong, newSong)
-        )
-
-        assertEquals(listOf(newSong.id), addResult.addedSongs.map { it.id })
-
-        repository.removeSongsFromPlaylistByIdentity(targetId, addResult.addedSongs)
-
-        val targetSongs = repository.playlists.value.single { it.id == targetId }.songs
-        assertEquals(listOf(existingSong.id), targetSongs.map { it.id })
-    }
-
-    @Test
-    fun `deleted playlists restore at original positions with a newer timestamp`() = runTest {
-        val first = LocalPlaylist(id = 201L, name = "first")
-        val second = LocalPlaylist(id = 202L, name = "second")
-        val third = LocalPlaylist(id = 203L, name = "third")
-        val fourth = LocalPlaylist(id = 204L, name = "fourth")
-        val syncStore = RecordingSyncMutationStore()
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "delete_restore_playlist.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            syncMutationStore = syncStore
-        )
-        repository.updatePlaylists(listOf(first, second, third, fourth))
-
-        val deleteResults = repository.deletePlaylistsWithResult(listOf(second.id, fourth.id))
-
-        assertEquals(listOf(second.id, fourth.id), deleteResults.map { it.playlist.id })
-        assertEquals(listOf(1, 3), deleteResults.map { it.index })
-        assertEquals(listOf(first.id, third.id), repository.playlists.value.map { it.id })
-        assertEquals(listOf(second.id, fourth.id), syncStore.applied.single().deletedPlaylistIds)
-
-        assertTrue(repository.restoreDeletedPlaylists(deleteResults))
-
-        assertEquals(
-            listOf(first.id, second.id, third.id, fourth.id),
-            repository.playlists.value.map { it.id }
-        )
-        assertTrue(
-            repository.playlists.value.single { it.id == second.id }.modifiedAt > second.modifiedAt
-        )
-        assertEquals(
-            listOf(second.id, fourth.id),
-            syncStore.applied.last().restoredPlaylistIds
-        )
-    }
-
-    @Test
-    fun `removed songs restore at original positions with renewed sync membership`() = runTest {
-        val playlistId = 305L
-        val first = remoteNeteaseSong(id = 306L, name = "first", addedAt = 4L)
-            .copy(syncMembershipTokens = listOf(SyncCausalToken("old", 1L)))
-        val second = remoteNeteaseSong(id = 307L, name = "second", addedAt = 3L)
-            .copy(syncMembershipTokens = listOf(SyncCausalToken("old", 2L)))
-        val third = remoteNeteaseSong(id = 308L, name = "third", addedAt = 2L)
-            .copy(syncMembershipTokens = listOf(SyncCausalToken("old", 3L)))
-        val fourth = remoteNeteaseSong(id = 309L, name = "fourth", addedAt = 1L)
-            .copy(syncMembershipTokens = listOf(SyncCausalToken("old", 4L)))
-        val syncStore = RecordingSyncMutationStore()
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "song_delete_restore_playlist.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            syncMutationStore = syncStore
-        )
-        repository.updatePlaylists(
-            listOf(
-                LocalPlaylist(
-                    id = playlistId,
-                    name = "target",
-                    songs = mutableListOf(first, second, third, fourth),
-                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-                )
-            )
-        )
-
-        val deleteResults = repository.removeSongsFromPlaylistByIdentityWithResult(
-            playlistId,
-            listOf(second, fourth)
-        )
-
-        assertEquals(listOf(second.id, fourth.id), deleteResults.map { it.song.id })
-        assertEquals(listOf(1, 3), deleteResults.map { it.index })
-        assertEquals(listOf(first.id, third.id), repository.playlists.value.single().songs.map { it.id })
-        assertTrue(syncStore.applied.first().addedSongDeletions.isNotEmpty())
-
-        assertTrue(repository.restoreDeletedSongs(deleteResults))
-
-        assertEquals(
-            listOf(first.id, second.id, third.id, fourth.id),
-            repository.playlists.value.single().songs.map { it.id }
-        )
-        val restoredSecond = repository.playlists.value.single().songs.single { it.id == second.id }
-        val deletion = syncStore.applied.first().addedSongDeletions
-            .single { it.songId == second.id }
-        assertEquals(listOf(SyncCausalToken("test-device", 1L)), restoredSecond.syncMembershipTokens)
-        assertTrue(
-            SyncPlaylistDeletionPolicy.applyDeletions(
-                playlistId = playlistId,
-                songs = listOf(SyncSong.fromSongItem(restoredSecond)),
-                deletions = listOf(deletion)
-            ).isNotEmpty()
-        )
-        assertTrue(syncStore.applied.last().removedSongDeletions.isNotEmpty())
-    }
-
-    @Test
-    fun `cleared songs can be restored in their original order`() = runTest {
-        val playlistId = 315L
-        val first = remoteNeteaseSong(id = 316L, name = "first", addedAt = 4L)
-        val second = remoteNeteaseSong(id = 317L, name = "second", addedAt = 3L)
-        val third = remoteNeteaseSong(id = 318L, name = "third", addedAt = 2L)
-        val syncStore = RecordingSyncMutationStore()
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "song_clear_restore_playlist.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            syncMutationStore = syncStore
-        )
-        repository.updatePlaylists(
-            listOf(
-                LocalPlaylist(
-                    id = playlistId,
-                    name = "target",
-                    songs = mutableListOf(first, second, third),
-                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-                )
-            )
-        )
-
-        val deleteResults = repository.clearPlaylistSongsWithResult(playlistId)
-
-        assertEquals(listOf(first.id, second.id, third.id), deleteResults.map { it.song.id })
-        assertEquals(listOf(0, 1, 2), deleteResults.map { it.index })
-        assertTrue(repository.playlists.value.single().songs.isEmpty())
-        assertTrue(syncStore.applied.first().addedSongDeletions.isNotEmpty())
-
-        assertTrue(repository.restoreDeletedSongs(deleteResults))
-
-        assertEquals(
-            listOf(first.id, second.id, third.id),
-            repository.playlists.value.single().songs.map { it.id }
-        )
-        assertTrue(syncStore.applied.last().removedSongDeletions.isNotEmpty())
-    }
-
-    @Test
-    fun `removed local files songs can be restored when download deletion fails`() = runTest {
-        val first = localSong(index = 701, name = "first")
-        val second = localSong(index = 702, name = "second")
-        val context = mockContext()
-        val repository = LocalPlaylistRepository.createForTest(
-            context = context,
-            file = File(tempFolder.root, "local_files_song_restore.json"),
-            normalizePlaylists = { playlists ->
-                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
-                    playlists
-                } else {
-                    playlists + LocalPlaylist(
-                        id = LocalFilesPlaylist.SYSTEM_ID,
-                        name = "Local Files"
-                    )
-                }
-            },
-            autoSyncEnabled = false
-        )
-        assertEquals(
-            2,
-            repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(first, second))
-        )
-
-        val deleteResults = repository.removeSongsFromPlaylistByIdentityWithResult(
-            LocalFilesPlaylist.SYSTEM_ID,
-            listOf(first)
-        )
-
-        assertEquals(1, deleteResults.size)
-        assertTrue(repository.restoreDeletedSongs(deleteResults))
-        assertEquals(
-            listOf(first.id, second.id),
-            repository.playlists.value.single().songs.map { it.id }
-        )
-    }
-
-    @Test
-    fun `restored playlist id is committed before external sync is scheduled`() = runTest {
-        val syncStore = RecordingSyncMutationStore()
-        var autoSyncTriggerCount = 0
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "restored_playlist_sync.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = true,
-            syncMutationStore = syncStore,
-            autoSyncTrigger = { autoSyncTriggerCount++ }
-        )
-
-        repository.updatePlaylists(
-            playlists = listOf(LocalPlaylist(id = 147L, name = "restored")),
-            triggerSync = true,
-            restoredPlaylistIds = setOf(147L)
-        )
-
-        assertEquals(listOf(147L), syncStore.applied.single().restoredPlaylistIds)
-        assertEquals(1, autoSyncTriggerCount)
-    }
-
-    @Test
-    fun `startup replay schedules auto sync after mutation is applied`() = runTest {
-        val song = remoteNeteaseSong(id = 142L)
-        val storage = RecordingStorage(
-            primary = playlistJson(
-                id = FavoritesPlaylist.SYSTEM_ID,
-                name = "favorites",
-                songs = listOf(song)
-            )
-        )
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "pending_sync_schedule.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            storage = storage,
-            syncMutationStore = RecordingSyncMutationStore(failApply = true)
-        )
-        repository.removeFromFavorites(song)
-
-        var autoSyncTriggerCount = 0
-        LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "pending_sync_schedule.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = true,
-            storage = storage,
-            syncMutationStore = RecordingSyncMutationStore(),
-            autoSyncTrigger = { autoSyncTriggerCount++ }
-        )
-
-        assertEquals(1, autoSyncTriggerCount)
-        assertTrue(storage.pendingSyncMutation == null)
-    }
-
-    @Test
-    fun `failed pending mutation does not block edits and replays in commit order`() = runTest {
-        val playlistId = 151L
-        val song = remoteNeteaseSong(id = 152L)
-        val storage = RecordingStorage(
-            primary = playlistJson(
-                id = playlistId,
-                name = "before",
-                songs = listOf(song)
-            )
-        )
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "pending_sync_merge.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            storage = storage,
-            syncMutationStore = RecordingSyncMutationStore(failApply = true)
-        )
-
-        repository.removeSongsFromPlaylistByIdentity(playlistId, listOf(song))
-        repository.renamePlaylist(playlistId, "after")
-        repository.addPreparedSongsToPlaylist(playlistId, listOf(song))
-
-        val editedPlaylist = repository.playlists.value.single()
-        assertEquals("after", editedPlaylist.name)
-        assertEquals(song.id, editedPlaylist.songs.single().id)
-        assertTrue(repository.syncMutationPending.value)
-
-        val recoveredSyncStore = RecordingSyncMutationStore()
-        LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "pending_sync_merge.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            storage = storage,
-            syncMutationStore = recoveredSyncStore
-        )
-
-        assertEquals(2, recoveredSyncStore.applied.size)
-        assertEquals(1, recoveredSyncStore.applied[0].addedSongDeletions.size)
-        assertEquals(1, recoveredSyncStore.applied[1].removedSongDeletions.size)
-        assertTrue(storage.pendingSyncMutation == null)
-    }
-
-    @Test
-    fun `failed later commit keeps earlier committed mutation replayable`() = runTest {
-        val playlistId = 161L
-        val song = remoteNeteaseSong(id = 162L)
-        val storage = RecordingStorage(
-            primary = playlistJson(
-                id = playlistId,
-                name = "before",
-                songs = listOf(song)
-            )
-        )
-        val repository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "pending_sync_failed_transition.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            storage = storage,
-            syncMutationStore = RecordingSyncMutationStore(failApply = true)
-        )
-        repository.removeSongsFromPlaylistByIdentity(playlistId, listOf(song))
-
-        storage.failCommit = true
-        val failure = runCatching {
-            repository.renamePlaylist(playlistId, "uncommitted")
-        }.exceptionOrNull()
-        storage.failCommit = false
-
-        assertTrue(failure is IOException)
-        val recoveredSyncStore = RecordingSyncMutationStore()
-        val recoveredRepository = LocalPlaylistRepository.createForTest(
-            context = mockContext(),
-            file = File(tempFolder.root, "pending_sync_failed_transition.json"),
-            normalizePlaylists = { it },
-            autoSyncEnabled = false,
-            storage = storage,
-            syncMutationStore = recoveredSyncStore
-        )
-
-        assertEquals("before", recoveredRepository.playlists.value.single().name)
-        assertEquals(1, recoveredSyncStore.applied.size)
-        assertEquals(1, recoveredSyncStore.applied.single().addedSongDeletions.size)
-        assertTrue(storage.pendingSyncMutation == null)
-    }
-
-    @Test
-    fun `safe mutation runner reports io failure without throwing`() = runTest {
-        val result = runLocalPlaylistMutationSafely("test") {
-            throw IOException("simulated")
-        }
-
-        assertTrue(result.exceptionOrNull() is IOException)
-    }
-
-    private fun mockContext(): Context {
-        val context = mock(Context::class.java)
-        `when`(context.filesDir).thenReturn(tempFolder.root)
-        `when`(context.applicationContext).thenReturn(context)
-        `when`(context.getString(R.string.playlist_create)).thenReturn("Playlist")
-        `when`(context.getString(R.string.favorite_my_music)).thenReturn("Favorites")
-        `when`(context.getString(R.string.local_files)).thenReturn("Local Files")
-        return context
-    }
-
-    private fun localSong(index: Int, name: String = "song-$index"): SongItem {
-        val path = File(tempFolder.root, "song-$index.mp3").absolutePath
-        return SongItem(
-            id = index.toLong(),
-            name = name,
-            artist = "artist",
-            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
-            albumId = 0L,
-            durationMs = 1000L + index,
-            coverUrl = null,
-            mediaUri = path,
-            localFilePath = path
-        )
-    }
-
-    private fun scannedAliasSong(
-        id: Long,
-        mediaUri: String,
-        localFilePath: String? = null
-    ): SongItem {
-        return SongItem(
-            id = id,
-            name = "晴天",
-            artist = "周杰伦",
-            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
-            albumId = 0L,
-            durationMs = 269_000L,
-            coverUrl = null,
-            mediaUri = mediaUri,
-            localFileName = "周杰伦 - 晴天.mp3",
-            localFilePath = localFilePath,
-            channelId = "local",
-            audioId = id.toString()
-        )
-    }
-
-    private fun remoteNeteaseSong(
-        id: Long = 42L,
-        name: String = "song",
-        addedAt: Long = 0L
-    ): SongItem {
-        return SongItem(
-            id = id,
-            name = name,
-            artist = "artist",
-            album = "NeteaseAlbum",
-            albumId = 7L,
-            durationMs = 1_000L,
-            coverUrl = null,
-            channelId = "netease",
-            audioId = id.toString(),
-            addedAt = addedAt
-        )
-    }
-
-    private fun songJson(id: Long, name: String, addedAt: Long): String {
-        return """
-            {
-              "id": $id,
-              "name": "$name",
-              "artist": "artist",
-              "album": "NeteaseAlbum",
-              "albumId": 7,
-              "durationMs": 1000,
-              "coverUrl": null,
-              "channelId": "netease",
-              "audioId": "$id",
-              "addedAt": $addedAt
-            }
-        """.trimIndent()
-    }
-
-    private fun downloadedLocalCopy(source: SongItem): SongItem {
-        val path = File(tempFolder.root, "song.mp3").absolutePath
-        return SongItem(
-            id = 99L,
-            name = source.name,
-            artist = source.artist,
-            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
-            albumId = 0L,
-            durationMs = source.durationMs,
-            coverUrl = null,
-            mediaUri = path,
-            localFileName = "song.mp3",
-            localFilePath = path,
-            channelId = "local",
-            audioId = "99",
-            sourceStableKey = source.stableKey()
-        )
-    }
-
-    private fun downloadedPlaybackCopy(
-        source: SongItem,
-        downloadedId: Long = source.id
-    ): SongItem {
-        val path = File(tempFolder.root, "downloaded-song.mp3").absolutePath
-        return DownloadedSong(
-            id = downloadedId,
-            name = source.name,
-            artist = source.artist,
-            album = "Local Files",
-            filePath = path,
-            fileSize = 1L,
-            downloadTime = 1L,
-            coverUrl = source.coverUrl,
-            durationMs = source.durationMs,
-            stableKey = source.stableKey(),
-            sourceIdentityAlbum = source.identity().album,
-            sourceMediaUri = source.identity().mediaUri,
-            sourceChannelId = source.channelId,
-            sourceAudioId = source.audioId,
-            sourceSubAudioId = source.subAudioId,
-            sourcePlaylistContextId = source.playlistContextId
-        ).toPlaybackSongItem()
-    }
-
-    private fun playlistJson(
-        id: Long,
-        name: String,
-        songs: List<SongItem> = emptyList()
-    ): String {
-        val songsJson = songs.joinToString(separator = ",") { song ->
-            songJson(song.id, song.name, song.addedAt)
-        }
-        return """
-            [
-              {
-                "id": $id,
-                "name": "$name",
-                "songs": [$songsJson],
-                "modifiedAt": 1000,
-                "customCoverUrl": null,
-                "songOrderVersion": $DISPLAY_ORDER_SONG_ORDER_VERSION
-              }
-            ]
-        """.trimIndent()
-    }
-
-    private class FailingCommitStorage(
-        var primary: String?
-    ) : LocalPlaylistStorage {
-        override fun readPrimary(): String? = primary
-
-        override fun readBackup(): String? = null
-
-        override fun commit(
-            text: String,
-            rotateBackup: Boolean,
-            replaceBackupWithCommittedPrimary: Boolean
-        ) {
-            throw IOException("simulated write failure")
-        }
-
-        override fun quarantinePrimary(): File? = null
-    }
-
-    private class BlockingReadStorage(
-        private var primary: String?
-    ) : LocalPlaylistStorage {
-        val primaryReadStarted = CountDownLatch(1)
-        val allowPrimaryRead = CountDownLatch(1)
-        val primaryReadThread = AtomicReference<Thread>()
-
-        override fun readPrimary(): String? {
-            primaryReadThread.set(Thread.currentThread())
-            primaryReadStarted.countDown()
-            check(allowPrimaryRead.await(5, TimeUnit.SECONDS)) {
-                "Timed out waiting to release playlist initialization"
-            }
-            return primary
-        }
-
-        override fun readBackup(): String? = null
-
-        override fun commit(
-            text: String,
-            rotateBackup: Boolean,
-            replaceBackupWithCommittedPrimary: Boolean
-        ) {
-            primary = text
-        }
-
-        override fun quarantinePrimary(): File? = null
-    }
-
-    private class RecordingStorage(
-        var primary: String?,
-        private val backup: String? = null,
-        var failCommit: Boolean = false
-    ) : LocalPlaylistStorage {
-        var pendingSyncMutation: String? = null
-        var commitCount: Int = 0
-
-        override fun readPrimary(): String? = primary
-
-        override fun readBackup(): String? = backup
-
-        override fun commit(
-            text: String,
-            rotateBackup: Boolean,
-            replaceBackupWithCommittedPrimary: Boolean
-        ) {
-            commitCount++
-            if (failCommit) throw IOException("simulated write failure")
-            primary = text
-        }
-
-        override fun quarantinePrimary(): File? = null
-
-        override fun readPendingSyncMutation(): String? = pendingSyncMutation
-
-        override fun writePendingSyncMutation(text: String) {
-            pendingSyncMutation = text
-        }
-
-        override fun clearPendingSyncMutation() {
-            pendingSyncMutation = null
-        }
-    }
-
-    private class RecordingSyncMutationStore(
-        private val failApply: Boolean = false
-    ) : LocalPlaylistSyncMutationStore {
-        val applied = mutableListOf<LocalPlaylistSyncMutation>()
-        var allocatedTokenCount = 0
-            private set
-        var mutationVersion = 0L
-            private set
-        private var nextCounter = 1L
-
-        override fun getOrCreateDeviceId(): String = "test-device"
-
-        override fun nextSyncCausalTokens(count: Int): List<SyncCausalToken> {
-            require(count >= 0)
-            allocatedTokenCount += count
-            return List(count) {
-                SyncCausalToken(
-                    deviceId = getOrCreateDeviceId(),
-                    counter = nextCounter++
-                )
-            }
-        }
-
-        override fun getSyncMutationVersion(): Long = mutationVersion
-
-        override fun markSyncMutation(): Long {
-            mutationVersion += 1L
-            return mutationVersion
-        }
-
-        override fun apply(mutation: LocalPlaylistSyncMutation) {
-            if (failApply) throw IOException("simulated sync mutation failure")
-            applied += mutation
-        }
     }
 }

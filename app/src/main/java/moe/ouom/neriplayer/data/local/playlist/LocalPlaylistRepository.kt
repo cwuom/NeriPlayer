@@ -25,8 +25,13 @@ package moe.ouom.neriplayer.data.local.playlist
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.SystemClock
 import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,11 +50,14 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.audioimport.localSongNewestFirstComparator
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomShadowImportStatus
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncPlan
@@ -79,6 +87,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.io.StringReader
 import java.security.MessageDigest
 import java.util.LinkedHashSet
 import java.util.Locale
@@ -101,6 +110,19 @@ data class LocalPlaylistDeleteResult(
     val index: Int
 )
 
+internal fun resolvePlaylistSongAddedAt(
+    song: SongItem,
+    membershipAddedAt: Long,
+    index: Int,
+    preserveScannedSourceAddedAt: Boolean
+): Long {
+    val fallback = (membershipAddedAt - index).coerceAtLeast(1L)
+    if (!preserveScannedSourceAddedAt) return fallback
+    return (song.logicalCreatedAtMs ?: song.addedAt)
+        .takeIf { it > 0L }
+        ?: fallback
+}
+
 internal fun shouldRewriteLegacyPlaylistsAfterInitialLoad(
     migrationRequired: Boolean,
     allowMigrationWrite: Boolean,
@@ -110,55 +132,62 @@ internal fun shouldRewriteLegacyPlaylistsAfterInitialLoad(
 }
 
 class LocalPlaylistRepository private constructor(
-    private val context: Context,
+    internal val context: Context,
     file: File = File(context.filesDir, "local_playlists.json"),
-    private val normalizePlaylists: (List<LocalPlaylist>) -> List<LocalPlaylist> = { playlists ->
+    internal val normalizePlaylists: (List<LocalPlaylist>) -> List<LocalPlaylist> = { playlists ->
         SystemLocalPlaylists.normalize(playlists, context)
     },
-    private val autoSyncEnabled: Boolean = true,
-    private val loadSynchronously: Boolean = false,
-    private val storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir),
-    private val providedSyncMutationStore: LocalPlaylistSyncMutationStore? = null,
-    private val providedAutoSyncTrigger: (() -> Unit)? = null,
-    private val roomStore: LocalPlaylistRoomStore? = null
+    internal val autoSyncEnabled: Boolean = true,
+    internal val loadSynchronously: Boolean = false,
+    internal val storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir),
+    internal val providedSyncMutationStore: LocalPlaylistSyncMutationStore? = null,
+    internal val providedAutoSyncTrigger: (() -> Unit)? = null,
+    internal val roomStore: LocalPlaylistRoomStore? = null
 ) {
-    private val gson = Gson()
-    private val playlistCommitMutex = Mutex()
-    private val syncStorage by lazy { SecureTokenStorage(context) }
-    private val syncMutationStore by lazy {
+    internal val gson = Gson()
+    internal val playlistCommitMutex = Mutex()
+    internal val syncStorage by lazy { SecureTokenStorage(context) }
+    internal val syncMutationStore by lazy {
         providedSyncMutationStore ?: SecureLocalPlaylistSyncMutationStore(syncStorage)
     }
-    private data class NeteaseResolvedCandidate(
+    internal data class NeteaseResolvedCandidate(
         val song: SongItem,
         val neteaseId: Long
     )
 
-    private data class LocalNeteaseCandidateSummary(
+    internal data class LocalNeteaseCandidateSummary(
         val supportedSongs: Int,
         val skippedUnsupported: Int,
         val skippedExisting: Int,
         val candidates: List<NeteaseResolvedCandidate>
     )
 
-    private data class NeteaseCandidateValidationResult(
+    internal data class NeteaseCandidateValidationResult(
         val supportedSongs: Int,
         val skippedUnsupported: Int,
         val skippedExisting: Int,
         val candidates: List<NeteaseResolvedCandidate>
     )
 
-    private data class ParsedNeteasePlaylistId(
+    internal data class ParsedNeteasePlaylistId(
         val playlistId: Long?,
         val success: Boolean
     )
 
-    private data class ParsedNeteasePlaylistTrackIds(
+    internal data class ParsedNeteasePlaylistTrackIds(
         val trackIds: List<Long>,
         val trackCount: Int,
         val success: Boolean
     )
 
-    private data class NeteaseRemotePlaylistSyncPlan(
+    internal data class SongMetadataUpdate(
+        val originalSong: SongItem,
+        val newSongInfo: SongItem,
+        val clearCoverUrl: Boolean = false,
+        val clearOriginalCoverUrl: Boolean = false
+    )
+
+    internal data class NeteaseRemotePlaylistSyncPlan(
         val targetPlaylistId: Long,
         val totalSongs: Int,
         val supportedSongs: Int,
@@ -169,33 +198,33 @@ class LocalPlaylistRepository private constructor(
         val message: String? = null
     )
 
-    private val _playlists = MutableStateFlow<List<LocalPlaylist>>(emptyList())
+    internal val _playlists = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlists: StateFlow<List<LocalPlaylist>> = _playlists
-    private val _playlistCount = MutableStateFlow(0)
+    internal val _playlistCount = MutableStateFlow(0)
     val playlistCount: StateFlow<Int> = _playlistCount
-    private val _syncMutationPending = MutableStateFlow(false)
+    internal val _syncMutationPending = MutableStateFlow(false)
     val syncMutationPending: StateFlow<Boolean> = _syncMutationPending
-    private val _initializationReadyFlow = MutableStateFlow(false)
+    internal val _initializationReadyFlow = MutableStateFlow(false)
     internal val initializationReadyFlow: StateFlow<Boolean> = _initializationReadyFlow
-    private var preserveBackupOnNextWrite = false
-    private var corruptPrimaryNeedsQuarantine = false
-    private var replaceBackupOnNextWrite = false
-    private val initialLoad = CompletableDeferred<Unit>()
+    internal var preserveBackupOnNextWrite = false
+    internal var corruptPrimaryNeedsQuarantine = false
+    internal var replaceBackupOnNextWrite = false
+    internal val initialLoad = CompletableDeferred<Unit>()
     @Volatile
-    private var initialLoadFailure: Exception? = null
-    private val initializationScope by lazy {
+    internal var initialLoadFailure: Exception? = null
+    internal val initializationScope by lazy {
         CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
     @Volatile
-    private var roomStorageEnabled = roomStore != null
+    internal var roomStorageEnabled = roomStore != null
 
-    private data class PlaylistLoadResult(
+    internal data class PlaylistLoadResult(
         val playlists: List<LocalPlaylist>,
         val migrationRequired: Boolean,
         val allowMigrationWrite: Boolean
     )
 
-    private data class ParsedPlaylistCandidate(
+    internal data class ParsedPlaylistCandidate(
         val decoded: List<LocalPlaylist>,
         val normalized: List<LocalPlaylist>
     )
@@ -215,866 +244,132 @@ class LocalPlaylistRepository private constructor(
         return initialLoadFailure == null
     }
 
+    /** 首帧只读取当前歌单，权威状态仍由正常初始化流程提供 */
+    internal suspend fun readFastPlaylist(playlistId: Long): LocalPlaylist? = withContext(Dispatchers.IO) {
+        runCatching {
+            roomStore?.readPlaylistIfRoomPrimary(playlistId)
+        }.onFailure { error ->
+            NPLogger.w(
+                "LocalPlaylistRepo",
+                "Fast Room playlist preview unavailable: ${error.message}"
+            )
+        }.getOrNull()?.let { return@withContext it }
+
+        val primaryText = runCatching { storage.readPrimary() }
+            .onFailure { error ->
+                NPLogger.w(
+                    "LocalPlaylistRepo",
+                    "Fast legacy playlist preview unavailable: ${error.message}"
+                )
+            }
+            .getOrNull()
+            ?: return@withContext null
+        parseFastPlaylistPreview(primaryText, playlistId)
+    }
+
     internal suspend fun requireInitialized() {
         if (!awaitInitialized()) {
             throw IOException("Local playlist initialization failed", initialLoadFailure)
         }
     }
 
-    private fun completeInitialLoad() {
-        try {
-            loadFromDisk()
-            _initializationReadyFlow.value = true
-            initialLoad.complete(Unit)
-        } catch (error: Exception) {
-            NPLogger.e("LocalPlaylistRepo", "Failed to load playlists", error)
-            initialLoadFailure = error
-            initialLoad.complete(Unit)
-        }
-    }
 
-    private fun loadFromDisk() {
-        val roomPrimary = readRoomPrimary()
-        if (roomPrimary != null) {
-            LegacyJsonCleanupScheduler.schedule(context, "local-playlist-room-load")
-            recoverPendingSyncMutation(
-                committedDomainDigest = LocalPlaylistRoomStore.domainDigest(roomPrimary)
-            )
-            _playlists.value = roomPrimary
-            _playlistCount.value = roomPrimary.size
-            return
-        }
 
-        val loadResult = readStoredPlaylists()
-        val committedPlaylists = loadResult.playlists
-        val committedDomainDigest = LocalPlaylistRoomStore.domainDigest(committedPlaylists)
-        recoverPendingSyncMutation(committedDomainDigest)
 
-        var roomPromotedDuringLoad = false
-        if (roomStorageEnabled && roomStore != null) {
-            val activeRoomStore = roomStore
-            val imported = runCatching {
-                runBlocking {
-                    activeRoomStore.importLegacyAndPromote(
-                        playlists = committedPlaylists,
-                        sourceDigest = committedDomainDigest
-                    )
-                }
-            }.onFailure { error ->
-                roomStorageEnabled = false
-                NPLogger.e(
-                    "LocalPlaylistRepo",
-                    "Failed to promote legacy playlists to Room; JSON remains authoritative",
-                    error
-                )
-            }.getOrNull()
-            if (imported?.status == LocalPlaylistRoomShadowImportStatus.SKIPPED_NOT_EQUIVALENT) {
-                roomStorageEnabled = false
-                NPLogger.w(
-                    "LocalPlaylistRepo",
-                    "Room mapper is not equivalent; keep legacy playlist storage"
-                )
-            } else if (imported?.status == LocalPlaylistRoomShadowImportStatus.IMPORTED) {
-                roomPromotedDuringLoad = true
-                LegacyJsonCleanupScheduler.schedule(context, "local-playlist-import")
-            }
-        }
 
-        if (
-            shouldRewriteLegacyPlaylistsAfterInitialLoad(
-                migrationRequired = loadResult.migrationRequired,
-                allowMigrationWrite = loadResult.allowMigrationWrite,
-                roomPromotedDuringLoad = roomPromotedDuringLoad
-            )
-        ) {
-            runCatching {
-                persistToDisk(loadResult.playlists)
-            }.onFailure { error ->
-                NPLogger.e("LocalPlaylistRepo", "Failed to persist normalized playlists", error)
-            }
-        }
-        _playlists.value = loadResult.playlists
-        _playlistCount.value = loadResult.playlists.size
-    }
 
-    private fun readRoomPrimary(): List<LocalPlaylist>? {
-        if (!roomStorageEnabled || roomStore == null) {
-            return null
-        }
-        val activeRoomStore = roomStore
-        return runCatching {
-            runBlocking {
-                activeRoomStore.readIfRoomPrimary()
-            }
-        }.onFailure { error ->
-            roomStorageEnabled = false
-            NPLogger.e(
-                "LocalPlaylistRepo",
-                "Failed to read Room playlists; falling back to legacy storage",
-                error
-            )
-        }.getOrNull()
-    }
 
-    private fun readStoredPlaylists(): PlaylistLoadResult {
-        val primaryRead = runCatching(storage::readPrimary)
-        val primaryText = primaryRead.getOrNull()
-        if (primaryRead.isSuccess && primaryText == null) {
-            return recoverFromBackup(primaryWasCorrupt = false)
-                ?: emptyPlaylistLoadResult(allowMigrationWrite = true)
-        }
 
-        if (primaryRead.isFailure) {
-            NPLogger.e(
-                "LocalPlaylistRepo",
-                "Failed to read primary playlist storage",
-                primaryRead.exceptionOrNull()
-            )
-            preserveBackupOnNextWrite = true
-            return recoverFromBackup(primaryWasCorrupt = false)
-                ?: emptyPlaylistLoadResult(allowMigrationWrite = false)
-        }
 
-        val primaryParsed = parsePlaylists(primaryText.orEmpty(), "primary")
-        if (primaryParsed != null) {
-            return PlaylistLoadResult(
-                playlists = primaryParsed.normalized,
-                migrationRequired = primaryParsed.normalized != primaryParsed.decoded,
-                allowMigrationWrite = true
-            )
-        }
 
-        return recoverFromBackup(primaryWasCorrupt = true)
-            ?: emptyPlaylistLoadResult(allowMigrationWrite = false)
-    }
 
-    private fun emptyPlaylistLoadResult(allowMigrationWrite: Boolean): PlaylistLoadResult {
-        val normalized = normalizePlaylistOrder(emptyList())
-        return PlaylistLoadResult(
-            playlists = normalized,
-            migrationRequired = normalized.isNotEmpty(),
-            allowMigrationWrite = allowMigrationWrite
-        )
-    }
 
-    private fun recoverFromBackup(primaryWasCorrupt: Boolean): PlaylistLoadResult? {
-        val backupRead = runCatching(storage::readBackup)
-        val backupText = backupRead.getOrNull()
-        if (backupRead.isFailure) {
-            NPLogger.e(
-                "LocalPlaylistRepo",
-                "Failed to read playlist backup",
-                backupRead.exceptionOrNull()
-            )
-        }
 
-        val backupParsed = backupText?.let { parsePlaylists(it, "backup") }
-        if (backupText != null && backupParsed == null) {
-            replaceBackupOnNextWrite = true
-        }
-        val primaryReadyForRestore = if (primaryWasCorrupt) {
-            corruptPrimaryNeedsQuarantine = true
-            quarantineCorruptPrimary()
-        } else {
-            true
-        }
-        if (backupParsed == null) {
-            return null
-        }
 
-        val repairSucceeded = primaryReadyForRestore &&
-            runCatching {
-                storage.commit(backupText, rotateBackup = false)
-            }.onFailure { error ->
-                preserveBackupOnNextWrite = true
-                NPLogger.e("LocalPlaylistRepo", "Failed to restore playlist backup", error)
-            }.isSuccess
-        return PlaylistLoadResult(
-            playlists = backupParsed.normalized,
-            migrationRequired = backupParsed.normalized != backupParsed.decoded,
-            allowMigrationWrite = repairSucceeded
-        )
-    }
 
-    private fun quarantineCorruptPrimary(): Boolean {
-        return runCatching(storage::quarantinePrimary)
-            .onSuccess { quarantine ->
-                corruptPrimaryNeedsQuarantine = false
-                if (quarantine != null) {
-                    NPLogger.w(
-                        "LocalPlaylistRepo",
-                        "Quarantined corrupt playlist storage: ${quarantine.name}"
-                    )
-                }
-            }
-            .onFailure { error ->
-                preserveBackupOnNextWrite = true
-                NPLogger.e("LocalPlaylistRepo", "Failed to quarantine corrupt playlists", error)
-            }
-            .isSuccess
-    }
 
-    private fun parsePlaylists(text: String, source: String): ParsedPlaylistCandidate? {
-        return runCatching {
-            validateLocalPlaylistJson(text, source)
-            val type = object : TypeToken<List<LocalPlaylist>>() {}.type
-            val decoded = requireNotNull(gson.fromJson<List<LocalPlaylist>>(text, type)) {
-                "Playlist $source contains JSON null"
-            }
-            ParsedPlaylistCandidate(
-                decoded = decoded,
-                normalized = normalizePlaylistOrder(decoded)
-            )
-        }.onFailure { error ->
-            NPLogger.e("LocalPlaylistRepo", "Failed to parse $source playlists", error)
-        }.getOrNull()
-    }
 
-    private fun migratePlaylistSongOrder(playlists: List<LocalPlaylist>): List<LocalPlaylist> {
-        if (playlists.isEmpty()) return playlists
 
-        var changed = false
-        val migrated = playlists.map { playlist ->
-            if (playlist.songOrderVersion >= DISPLAY_ORDER_SONG_ORDER_VERSION) {
-                val displaySongs = sortSongsByAddedAtForDisplay(playlist.songs)
-                if (displaySongs == playlist.songs) {
-                    playlist
-                } else {
-                    changed = true
-                    playlist.copy(songs = displaySongs)
-                }
-            } else {
-                changed = true
-                playlist.copy(
-                    songs = migrateLegacySongsToDisplayOrder(playlist.songs, playlist.modifiedAt),
-                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-                )
-            }
-        }
-        return if (changed) migrated else playlists
-    }
 
-    private fun normalizePlaylistOrder(playlists: List<LocalPlaylist>): List<LocalPlaylist> {
-        val normalizedRemoteSources = normalizeRemoteSourcePlaylistEntries(playlists)
-        val normalizedMemberships = normalizeSongMembershipTokens(normalizedRemoteSources)
-        val migrated = migratePlaylistSongOrder(normalizedMemberships)
-        return migratePlaylistSongOrder(
-            normalizeSongMembershipTokens(normalizePlaylists(migrated))
-        )
-    }
 
-    private fun normalizeRemoteSourcePlaylistEntries(
-        playlists: List<LocalPlaylist>
-    ): List<LocalPlaylist> {
-        var changed = false
-        val normalized = playlists.map { playlist ->
-            if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
-                playlist
-            } else {
-                val projectedSongs = projectRemoteSourcePlaylistEntries(playlist.songs)
-                if (projectedSongs == playlist.songs) {
-                    playlist
-                } else {
-                    changed = true
-                    playlist.copy(songs = projectedSongs)
-                }
-            }
-        }
-        return if (changed) normalized else playlists
-    }
 
-    private fun normalizeSongMembershipTokens(
-        playlists: List<LocalPlaylist>
-    ): List<LocalPlaylist> {
-        var changed = false
-        val normalized = playlists.map { playlist ->
-            var playlistChanged = false
-            val songs = playlist.songs.mapTo(mutableListOf()) { song ->
-                val normalizedTokens = song.syncMembershipTokens.normalizedSyncCausalTokens()
-                if (normalizedTokens == song.syncMembershipTokens) {
-                    song
-                } else {
-                    changed = true
-                    playlistChanged = true
-                    song.copy(syncMembershipTokens = normalizedTokens)
-                }
-            }
-            if (playlistChanged) playlist.copy(songs = songs) else playlist
-        }
-        return if (changed) normalized else playlists
-    }
 
-    private fun migrateLegacySongsToDisplayOrder(
-        songs: List<SongItem>,
-        playlistModifiedAt: Long
-    ): MutableList<SongItem> {
-        if (songs.isEmpty()) return mutableListOf()
 
-        val newestAddedAt = maxOf(
-            System.currentTimeMillis(),
-            playlistModifiedAt,
-            songs.maxOfOrNull { it.addedAt } ?: 0L
-        )
-        return songs
-            .asReversed()
-            .mapIndexed { index, song ->
-                val displayAddedAt = (newestAddedAt - index).coerceAtLeast(1L)
-                song.copy(addedAt = displayAddedAt)
-            }
-            .toMutableList()
-    }
 
-    private fun sortSongsByAddedAtForDisplay(songs: List<SongItem>): MutableList<SongItem> {
-        if (songs.size < 2) return songs.toMutableList()
-        return songs
-            .withIndex()
-            .sortedWith(
-                compareByDescending<IndexedValue<SongItem>> { it.value.addedAt }
-                    .thenBy { it.index }
-            )
-            .mapTo(mutableListOf()) { it.value }
-    }
 
-    private fun persistToDisk(playlists: List<LocalPlaylist>, serialized: String = gson.toJson(playlists)) {
-        if (corruptPrimaryNeedsQuarantine && !quarantineCorruptPrimary()) {
-            throw IOException("Corrupt playlist storage could not be quarantined")
-        }
-        storage.commit(
-            text = serialized,
-            rotateBackup = !preserveBackupOnNextWrite,
-            replaceBackupWithCommittedPrimary = replaceBackupOnNextWrite
-        )
-        preserveBackupOnNextWrite = false
-        replaceBackupOnNextWrite = false
-    }
 
-    private suspend fun <T> commitPlaylistMutation(block: suspend () -> T): T {
-        return withContext(Dispatchers.IO) {
-            requireInitialized()
-            playlistCommitMutex.lock()
-            try {
-                block()
-            } finally {
-                playlistCommitMutex.unlock()
-            }
-        }
-    }
 
-    private suspend fun publishLocked(
-        playlists: List<LocalPlaylist>,
-        triggerSync: Boolean = true,
-        syncMutation: LocalPlaylistSyncMutation = LocalPlaylistSyncMutation(),
-        markLocalMutation: Boolean = triggerSync
-    ) {
-        val normalized = normalizePlaylistOrder(playlists)
-        val stateChanged = normalized != _playlists.value
-        if (!stateChanged && syncMutation.isEmpty) {
-            if (markLocalMutation) {
-                syncMutationStore.markSyncMutation()
-            }
-            if (triggerSync && autoSyncEnabled) {
-                scheduleAutoSync()
-            }
-            return
-        }
 
-        val currentDomainDigest = LocalPlaylistRoomStore.domainDigest(_playlists.value)
-        val nextDomainDigest = LocalPlaylistRoomStore.domainDigest(normalized)
-        val legacyPrimaryText = if (!roomStorageEnabled) {
-            storage.readPrimary()
-        } else {
-            null
-        }
-        val pendingOutbox = preparePendingSyncMutationUpdate(
-            currentDomainDigest = currentDomainDigest,
-            legacyPrimaryText = legacyPrimaryText,
-            nextDomainDigest = nextDomainDigest,
-            syncMutation = syncMutation
-        )
-        // 没有墓碑要提交时可以先推进版本, 含墓碑的变更由存储层和版本一起提交
-        if (markLocalMutation && syncMutation.isEmpty && pendingOutbox == null) {
-            syncMutationStore.markSyncMutation()
-        }
-        val roomWasEnabledBeforeOutbox = roomStorageEnabled
-        if (pendingOutbox != null || !syncMutation.isEmpty) {
-            writePendingSyncMutation(pendingOutbox)
-        }
-        var committedToRoom = false
-        var roomFallbackRequired = roomWasEnabledBeforeOutbox && !roomStorageEnabled
-        if (stateChanged && roomStorageEnabled && roomStore != null) {
-            val activeRoomStore = roomStore
-            runCatching {
-                activeRoomStore.writeIncremental(
-                    previous = _playlists.value,
-                    next = normalized,
-                    sourceDigest = nextDomainDigest
-                )
-            }.onSuccess {
-                committedToRoom = true
-            }.onFailure { error ->
-                roomFallbackRequired = true
-                roomStorageEnabled = false
-                NPLogger.e(
-                    "LocalPlaylistRepo",
-                    "Room playlist commit failed; falling back to legacy JSON",
-                    error
-                )
-            }
-        }
-        if (stateChanged && !committedToRoom) {
-            persistToDisk(normalized)
-            val fallbackRoomStore = roomStore
-            if (roomFallbackRequired && fallbackRoomStore != null) {
-                runCatching {
-                    fallbackRoomStore.markLegacyJsonPrimary(nextDomainDigest)
-                }.onFailure { error ->
-                    NPLogger.e(
-                        "LocalPlaylistRepo",
-                        "Failed to mark legacy JSON fallback state in Room",
-                        error
-                    )
-                }
-            }
-        }
-        if (stateChanged) {
-            _playlists.value = normalized
-            _playlistCount.value = normalized.size
-        }
-        if (pendingOutbox != null) {
-            val settled = runCatching {
-                settlePendingSyncMutation(pendingOutbox, triggerSync)
-            }.onFailure { error ->
-                _syncMutationPending.value = true
-                NPLogger.e(
-                    "LocalPlaylistRepo",
-                    "Playlist saved; sync mutation will be retried",
-                    error
-                )
-            }.isSuccess
-            if (!settled) return
-        } else if (triggerSync && autoSyncEnabled) {
-            scheduleAutoSync()
-        }
-    }
 
-    private fun recoverPendingSyncMutation(committedDomainDigest: String) {
-        runCatching {
-            runBlocking {
-                flushPendingSyncMutation(committedDomainDigest)
-            }
-        }.onFailure { error ->
-            NPLogger.e("LocalPlaylistRepo", "Failed to replay playlist sync mutation", error)
-        }
-    }
 
-    private suspend fun flushPendingSyncMutation(committedDomainDigest: String): Boolean {
-        val committedOutbox = readPendingSyncMutationOutbox(
-            committedDomainDigest = committedDomainDigest,
-            legacyPrimaryText = storage.readPrimary()
-        )
-        if (committedOutbox == null) {
-            clearPendingSyncMutation()
-            _syncMutationPending.value = false
-            return false
-        }
-        return settlePendingSyncMutation(committedOutbox, triggerSync = false)
-    }
 
-    private suspend fun preparePendingSyncMutationUpdate(
-        currentDomainDigest: String,
-        legacyPrimaryText: String?,
-        nextDomainDigest: String,
-        syncMutation: LocalPlaylistSyncMutation
-    ): LocalPlaylistSyncMutationOutbox? {
-        val committedMutations = readPendingSyncMutationOutbox(
-            committedDomainDigest = currentDomainDigest,
-            legacyPrimaryText = legacyPrimaryText
-        )
-            ?.mutations
-            .orEmpty()
-        if (committedMutations.isEmpty() && syncMutation.isEmpty) {
-            return null
-        }
 
-        val nextMutation = syncMutation.withExpectedPrimaryDigest(nextDomainDigest)
-        return LocalPlaylistSyncMutationOutbox(committedMutations + nextMutation)
-    }
 
-    private fun decodeCommittedSyncMutationOutbox(
-        text: String,
-        committedDomainDigest: String,
-        legacyPrimaryText: String?
-    ): LocalPlaylistSyncMutationOutbox? {
-        val outbox = runCatching {
-            val root = JSONObject(text)
-            if (root.has("mutations")) {
-                requireNotNull(gson.fromJson(text, LocalPlaylistSyncMutationOutbox::class.java))
-            } else {
-                LocalPlaylistSyncMutationOutbox(
-                    mutations = listOf(
-                        requireNotNull(gson.fromJson(text, LocalPlaylistSyncMutation::class.java))
-                    )
-                )
-            }
-        }.getOrElse { error ->
-            NPLogger.e("LocalPlaylistRepo", "Discarding corrupt playlist sync mutation", error)
-            return null
-        }
-        return trimCommittedSyncMutationOutbox(
-            outbox = outbox,
-            committedDomainDigest = committedDomainDigest,
-            legacyPrimaryText = legacyPrimaryText
-        )
-    }
 
-    private fun trimCommittedSyncMutationOutbox(
-        outbox: LocalPlaylistSyncMutationOutbox,
-        committedDomainDigest: String,
-        legacyPrimaryText: String?
-    ): LocalPlaylistSyncMutationOutbox? {
-        if (outbox.mutations.isEmpty()) return null
-        val legacyDigest = legacyPrimaryText?.let(::primaryDigest)
-        val committedIndex = outbox.mutations.indexOfLast { mutation ->
-            mutation.expectedPrimaryDigest == committedDomainDigest ||
-                mutation.expectedPrimaryDigest == legacyDigest
-        }
-        if (committedIndex < 0) return null
-        return LocalPlaylistSyncMutationOutbox(
-            mutations = outbox.mutations.take(committedIndex + 1)
-        )
-    }
 
-    private suspend fun readPendingSyncMutationOutbox(
-        committedDomainDigest: String,
-        legacyPrimaryText: String?
-    ): LocalPlaylistSyncMutationOutbox? {
-        if (roomStorageEnabled && roomStore != null) {
-            val activeRoomStore = roomStore
-            val roomOutbox = runCatching {
-                activeRoomStore.readPendingSyncMutationOutbox()
-            }.onFailure { error ->
-                roomStorageEnabled = false
-                NPLogger.e(
-                    "LocalPlaylistRepo",
-                    "Failed to read Room sync outbox; falling back to legacy outbox",
-                    error
-                )
-            }.getOrNull()
-            if (roomOutbox != null) {
-                return trimCommittedSyncMutationOutbox(
-                    outbox = roomOutbox,
-                    committedDomainDigest = committedDomainDigest,
-                    legacyPrimaryText = legacyPrimaryText
-                )
-            }
-        }
 
-        val pendingText = storage.readPendingSyncMutation() ?: return null
-        return decodeCommittedSyncMutationOutbox(
-            text = pendingText,
-            committedDomainDigest = committedDomainDigest,
-            legacyPrimaryText = legacyPrimaryText
-        )
-    }
 
-    private suspend fun writePendingSyncMutation(outbox: LocalPlaylistSyncMutationOutbox?) {
-        if (roomStorageEnabled && roomStore != null) {
-            val activeRoomStore = roomStore
-            val roomWriteSucceeded = runCatching {
-                if (outbox == null) {
-                    activeRoomStore.clearPendingSyncMutationOutbox()
-                } else {
-                    activeRoomStore.writePendingSyncMutationOutbox(outbox)
-                }
-            }.onFailure { error ->
-                roomStorageEnabled = false
-                NPLogger.e(
-                    "LocalPlaylistRepo",
-                    "Failed to write Room sync outbox; falling back to legacy outbox",
-                    error
-                )
-            }.isSuccess
-            if (roomWriteSucceeded) {
-                return
-            }
-        }
-        if (outbox == null) {
-            storage.clearPendingSyncMutation()
-        } else {
-            storage.writePendingSyncMutation(gson.toJson(outbox))
-        }
-    }
 
-    private suspend fun clearPendingSyncMutation() {
-        if (roomStorageEnabled && roomStore != null) {
-            val activeRoomStore = roomStore
-            try {
-                activeRoomStore.clearPendingSyncMutationOutbox()
-            } catch (error: Exception) {
-                roomStorageEnabled = false
-                NPLogger.e("LocalPlaylistRepo", "Failed to clear Room sync outbox", error)
-                throw IOException("Failed to clear Room sync outbox", error)
-            }
-        }
-        storage.clearPendingSyncMutation()
-    }
 
-    private suspend fun settlePendingSyncMutation(
-        outbox: LocalPlaylistSyncMutationOutbox,
-        triggerSync: Boolean
-    ): Boolean {
-        val hasSyncMutation = outbox.mutations.any { mutation -> !mutation.isEmpty }
-        try {
-            outbox.mutations.forEach { mutation ->
-                if (!mutation.isEmpty) {
-                    syncMutationStore.applyAndMarkMutation(mutation)
-                }
-            }
-            if ((triggerSync || hasSyncMutation) && autoSyncEnabled && !scheduleAutoSync()) {
-                throw IOException("Failed to schedule playlist sync mutation")
-            }
-            clearPendingSyncMutation()
-            _syncMutationPending.value = false
-            return hasSyncMutation
-        } catch (error: Exception) {
-            _syncMutationPending.value = true
-            throw IOException("Playlist saved but sync mutation is pending", error)
-        }
-    }
 
-    private fun primaryDigest(text: String): String {
-        return MessageDigest.getInstance("SHA-256")
-            .digest(text.toByteArray(Charsets.UTF_8))
-            .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
-    }
 
-    private fun scheduleAutoSync(): Boolean {
-        return try {
-            val autoSyncTrigger = providedAutoSyncTrigger
-            if (autoSyncTrigger != null) {
-                autoSyncTrigger()
-            } else {
-                if (!syncStorage.isAutoSyncEnabled()) {
-                    NPLogger.d("LocalPlaylistRepo", "Auto sync disabled, skip")
-                }
-                GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
-                WebDavSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
-            }
-            true
-        } catch (e: Exception) {
-            NPLogger.e("LocalPlaylistRepo", "Failed to schedule sync", e)
-            false
-        }
-    }
 
-    private fun sanitizePlaylistName(name: String, excludedPlaylistId: Long? = null): String {
-        val defaultName = context.getString(R.string.playlist_create)
-        // 限制歌单名长度，保证重名处理时也不会超出最大字数
-        val base = name.trim().ifBlank { defaultName }.take(MAX_PLAYLIST_NAME_LENGTH)
-        val occupiedNames = _playlists.value
-            .asSequence()
-            .filter { playlist -> excludedPlaylistId == null || playlist.id != excludedPlaylistId }
-            .map { it.name.lowercase() }
-            .toSet()
 
-        var candidate = base
-        var index = 2
-        while (
-            SystemLocalPlaylists.matchesReservedName(candidate, context) ||
-            candidate.lowercase() in occupiedNames
-        ) {
-            val suffix = "_$index"
-            val allowed = (MAX_PLAYLIST_NAME_LENGTH - suffix.length).coerceAtLeast(0)
-            candidate = (base.take(allowed) + suffix).take(MAX_PLAYLIST_NAME_LENGTH)
-            index++
-        }
-        return candidate
-    }
 
-    private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
 
-    private fun projectRemoteSourcePlaylistEntries(
-        songs: List<SongItem>
-    ): MutableList<SongItem> {
-        return songs.mapTo(mutableListOf()) { song ->
-            song.toSyncableRemoteSongOrNull(context) ?: song
-        }
-    }
 
-    private fun stampSongsForPlaylistInsert(songs: List<SongItem>, addedAt: Long): List<SongItem> {
-        if (songs.isEmpty()) return emptyList()
 
-        val membershipTokens = syncMutationStore.nextSyncCausalTokens(songs.size)
-        check(membershipTokens.size == songs.size) {
-            "Expected ${songs.size} sync membership tokens, got ${membershipTokens.size}"
-        }
-        return songs.mapIndexed { index, song ->
-            song.copy(
-                addedAt = (addedAt - index).coerceAtLeast(1L),
-                syncMembershipTokens = listOf(membershipTokens[index])
-            )
-        }
-    }
 
-    private fun renewSongsForPlaylistRestore(songs: List<SongItem>): List<SongItem> {
-        if (songs.isEmpty()) return emptyList()
 
-        val membershipTokens = syncMutationStore.nextSyncCausalTokens(songs.size)
-        check(membershipTokens.size == songs.size) {
-            "Expected ${songs.size} sync membership tokens, got ${membershipTokens.size}"
-        }
-        return songs.mapIndexed { index, song ->
-            song.copy(syncMembershipTokens = listOf(membershipTokens[index]))
-        }
-    }
 
-    private fun nextPlaylistSongAddedAt(playlist: LocalPlaylist, now: Long): Long {
-        val latestExistingAddedAt = playlist.songs.maxOfOrNull { it.addedAt } ?: 0L
-        return maxOf(now, latestExistingAddedAt + 1L)
-    }
 
-    private fun stampSongsForDisplayOrder(
-        songs: List<SongItem>,
-        newestAt: Long
-    ): MutableList<SongItem> {
-        return songs.mapIndexedTo(mutableListOf()) { index, song ->
-            song.copy(addedAt = (newestAt - index).coerceAtLeast(1L))
-        }
-    }
 
-    private fun mergeNewSongsFirst(
-        existingSongs: List<SongItem>,
-        newSongs: List<SongItem>
-    ): MutableList<SongItem> {
-        return (newSongs + existingSongs).toMutableList()
-    }
 
-    private fun buildPlaylistSongDeletionMutation(
-        playlistId: Long,
-        songs: List<SongItem>,
-        deletedAt: Long
-    ): LocalPlaylistSyncMutation {
-        val deletions = buildPlaylistSongDeletions(playlistId, songs, deletedAt)
-        return LocalPlaylistSyncMutation(addedSongDeletions = deletions)
-    }
 
-    private fun buildPlaylistSongDeletionRemoval(
-        playlistId: Long,
-        songs: List<SongItem>
-    ): LocalPlaylistSyncMutation {
-        val remoteIdentities = songs
-            .asSequence()
-            .filter { it.isSyncableRemoteSong(context) }
-            .map { it.identity() }
-            .toList()
-        if (remoteIdentities.isEmpty()) return LocalPlaylistSyncMutation()
-        return LocalPlaylistSyncMutation(
-            removedSongDeletions = listOf(
-                PlaylistSongDeletionRemoval(
-                    playlistId = playlistId,
-                    identities = remoteIdentities
-                )
-            )
-        )
-    }
 
-    private fun buildPlaylistSongDeletions(
-        playlistId: Long,
-        songs: List<SongItem>,
-        deletedAt: Long
-    ): List<SyncPlaylistSongDeletion> {
-        if (songs.isEmpty() || isLocalFilesPlaylist(playlistId)) {
-            return emptyList()
-        }
 
-        val deviceId = syncMutationStore.getOrCreateDeviceId()
-        return songs
-            .asSequence()
-            .filter { it.isSyncableRemoteSong(context) }
-            .map { song ->
-                val identity = song.identity()
-                SyncPlaylistSongDeletion(
-                    playlistId = playlistId,
-                    songId = identity.id,
-                    album = identity.album,
-                    mediaUri = LocalSongSupport.sanitizeMediaUriForSync(identity.mediaUri),
-                    deletedAt = deletedAt,
-                    deviceId = deviceId,
-                    removedMembershipTokens = song.syncMembershipTokens.orEmpty()
-                )
-            }
-            .toList()
-    }
 
-    private suspend fun hydrateLocalSongsForPersistence(
-        songs: List<SongItem>,
-        hydrateLocalMetadata: Boolean = true
-    ): List<SongItem> {
-        if (!hydrateLocalMetadata) {
-            return songs
-        }
-        if (songs.none { LocalSongSupport.isLocalSong(it, context) }) {
-            return songs
-        }
 
-        return coroutineScope {
-            val hydrateDispatcher = Dispatchers.IO.limitedParallelism(4)
-            songs.map { song ->
-                async(hydrateDispatcher) {
-                    LocalAudioImportManager.hydrateLocalSongMetadata(context, song)
-                }
-            }.awaitAll()
-        }
-    }
 
-    private fun hasExistingSong(
-        existingSongs: List<SongItem>,
-        candidate: SongItem,
-        includeLocalMetadataFallback: Boolean = false
-    ): Boolean {
-        return existingSongs.any { existing ->
-            existing.sameIdentityAs(candidate) ||
-                LocalSongSupport.hasSameLocalSource(
-                    first = existing,
-                    second = candidate,
-                    includeMetadataFallback = includeLocalMetadataFallback
-                )
-        }
-    }
 
-    private fun distinctPlaylistSongs(
-        songs: List<SongItem>,
-        includeLocalMetadataFallback: Boolean = false
-    ): MutableList<SongItem> {
-        val duplicateIndex = SongDuplicateIndex(includeLocalMetadataFallback)
-        val distinct = mutableListOf<SongItem>()
-        songs.forEach { song ->
-            if (duplicateIndex.contains(song)) return@forEach
-            duplicateIndex.add(song)
-            distinct += song
-        }
-        return distinct
-    }
 
-    private fun filterNewSongs(
-        existingSongs: List<SongItem>,
-        candidates: List<SongItem>,
-        includeLocalMetadataFallback: Boolean = false
-    ): List<SongItem> {
-        val accepted = SongDuplicateIndex(includeLocalMetadataFallback).apply {
-            existingSongs.forEach(::add)
-        }
-        return candidates.filter { candidate ->
-            if (accepted.contains(candidate)) {
-                false
-            } else {
-                accepted.add(candidate)
-                true
-            }
-        }
-    }
 
-    private class SongDuplicateIndex(
+
+
+
+    internal fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    internal class SongDuplicateIndex(
         private val includeLocalMetadataFallback: Boolean
     ) {
         private val identities = HashSet<SongIdentity>()
@@ -1092,19 +387,44 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private fun nextPlaylistId(existing: List<LocalPlaylist>): Long {
-        val usedIds = existing.mapTo(HashSet(existing.size)) { it.id }
-        var candidate = System.currentTimeMillis()
-        while (candidate in usedIds) {
-            candidate++
+    /** 按来源列表顺序匹配歌曲，避免每个候选都重新扫描整张列表 */
+    internal class SongMatchIndex(
+        private val songs: List<SongItem>,
+        private val includeLocalMetadataFallback: Boolean
+    ) {
+        private val identityToIndex = HashMap<SongIdentity, Int>()
+        private val localKeyToIndex = HashMap<String, Int>()
+
+        init {
+            songs.forEachIndexed { index, song ->
+                identityToIndex.putIfAbsent(song.identity(), index)
+                LocalSongSupport.localDuplicateKeys(
+                    song = song,
+                    includeMetadataFallback = includeLocalMetadataFallback
+                ).forEach { key ->
+                    localKeyToIndex.putIfAbsent(key, index)
+                }
+            }
         }
-        return candidate
+
+        fun firstMatch(candidate: SongItem): SongItem? {
+            var matchIndex = identityToIndex[candidate.identity()] ?: Int.MAX_VALUE
+            LocalSongSupport.localDuplicateKeys(
+                song = candidate,
+                includeMetadataFallback = includeLocalMetadataFallback
+            ).forEach { key ->
+                val index = localKeyToIndex[key] ?: return@forEach
+                if (index < matchIndex) {
+                    matchIndex = index
+                }
+            }
+            return songs.getOrNull(matchIndex)
+        }
     }
 
-    private fun isLocalFilesPlaylist(playlistId: Long, playlistName: String? = null): Boolean {
-        return playlistId == LocalFilesPlaylist.SYSTEM_ID ||
-            (playlistId < 0 && playlistName != null && LocalFilesPlaylist.matches(playlistName, context))
-    }
+
+
+
 
     suspend fun createPlaylist(name: String) {
         withContext(Dispatchers.IO) {
@@ -1132,7 +452,12 @@ class LocalPlaylistRepository private constructor(
     }
 
     suspend fun createPlaylistWithScannedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
-        return createPlaylistWithPreparedSongs(name, songs)
+        return createPlaylistWithSongs(
+            name = name,
+            songs = songs,
+            hydrateLocalMetadata = false,
+            preserveScannedSourceAddedAt = true
+        )
     }
 
     suspend fun createPlaylistWithPreparedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
@@ -1143,34 +468,7 @@ class LocalPlaylistRepository private constructor(
         )
     }
 
-    private suspend fun createPlaylistWithSongs(
-        name: String,
-        songs: List<SongItem>,
-        hydrateLocalMetadata: Boolean
-    ): LocalPlaylist {
-        return withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            val distinctSongs = distinctPlaylistSongs(
-                stampSongsForPlaylistInsert(
-                    songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
-                    addedAt = now
-                )
-            )
-            commitPlaylistMutation {
-                val list = _playlists.value.toMutableList()
-                val playlist = LocalPlaylist(
-                    id = nextPlaylistId(list),
-                    name = sanitizePlaylistName(name),
-                    songs = distinctSongs,
-                    modifiedAt = now,
-                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-                )
-                list.add(playlist)
-                publishLocked(list)
-                playlist
-            }
-        }
-    }
+
 
     suspend fun addToFavorites(song: SongItem) {
         withContext(Dispatchers.IO) {
@@ -1302,10 +600,6 @@ class LocalPlaylistRepository private constructor(
                 deletedSongs
             }
         }
-    }
-
-    suspend fun clearPlaylistSongs(playlistId: Long) {
-        clearPlaylistSongsWithResult(playlistId)
     }
 
     suspend fun clearPlaylistSongsWithResult(
@@ -1481,10 +775,6 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    suspend fun restoreDeletedPlaylist(deleteResult: LocalPlaylistDeleteResult): Boolean {
-        return restoreDeletedPlaylists(listOf(deleteResult))
-    }
-
     suspend fun restoreDeletedPlaylists(
         deleteResults: List<LocalPlaylistDeleteResult>
     ): Boolean {
@@ -1560,9 +850,15 @@ class LocalPlaylistRepository private constructor(
                     if (playlist.id != playlistId) return@map playlist
                     val byIdentity = playlist.songs.associateBy { it.identity() }
                     val ordered = newOrder.mapNotNull { byIdentity[it] }.toMutableList()
+                    val orderedIndex = SongDuplicateIndex(
+                        includeLocalMetadataFallback = false
+                    ).apply {
+                        ordered.forEach(::add)
+                    }
                     playlist.songs.forEach { song ->
-                        if (ordered.none { it.sameIdentityAs(song) }) {
+                        if (!orderedIndex.contains(song)) {
                             ordered += song
+                            orderedIndex.add(song)
                         }
                     }
                     val modifiedAt = System.currentTimeMillis()
@@ -1612,7 +908,8 @@ class LocalPlaylistRepository private constructor(
             playlistId = playlistId,
             songs = songs,
             hydrateLocalMetadata = false,
-            includeLocalMetadataFallback = true
+            includeLocalMetadataFallback = true,
+            preserveScannedSourceAddedAt = true
         )
     }
 
@@ -1635,174 +932,43 @@ class LocalPlaylistRepository private constructor(
         )
     }
 
-    private suspend fun addSongsToPlaylistWithResult(
-        playlistId: Long,
-        songs: List<SongItem>,
-        hydrateLocalMetadata: Boolean,
-        includeLocalMetadataFallback: Boolean = false
-    ): LocalPlaylistSongAddResult {
-        return withContext(Dispatchers.IO) {
-            if (songs.isEmpty()) return@withContext LocalPlaylistSongAddResult(emptyList())
-            val now = System.currentTimeMillis()
-            val hydratedSongs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata)
-            commitPlaylistMutation {
-                LocalPlaylistSongAddResult(
-                    addedSongs = addStampedSongsToPlaylistLocked(
-                        playlistId = playlistId,
-                        songs = hydratedSongs,
-                        now = now,
-                        includeLocalMetadataFallback = includeLocalMetadataFallback
-                    )
-                )
-            }
-        }
-    }
 
-    private suspend fun addStampedSongsToPlaylistLocked(
-        playlistId: Long,
-        songs: List<SongItem>,
-        now: Long,
-        includeLocalMetadataFallback: Boolean = false
-    ): List<SongItem> {
-        if (songs.isEmpty()) {
-            return emptyList()
-        }
 
-        var addedSongs = emptyList<SongItem>()
-        var syncMutation = LocalPlaylistSyncMutation()
-        val updated = _playlists.value.map { playlist ->
-            if (playlist.id != playlistId) return@map playlist
-            if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
-                return@map playlist
-            }
 
-            val newSongs = filterNewSongs(
-                existingSongs = playlist.songs,
-                candidates = songs,
-                includeLocalMetadataFallback = includeLocalMetadataFallback
-            )
-            if (newSongs.isEmpty()) {
-                playlist
-            } else {
-                val toAdd = stampSongsForPlaylistInsert(
-                    songs = newSongs,
-                    addedAt = nextPlaylistSongAddedAt(playlist, now)
-                )
-                addedSongs = toAdd
-                syncMutation += buildPlaylistSongDeletionRemoval(playlist.id, toAdd)
-                playlist.copy(
-                    songs = mergeNewSongsFirst(playlist.songs, toAdd),
-                    modifiedAt = now,
-                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-                )
-            }
-        }
-        publishLocked(updated, syncMutation = syncMutation)
-        return addedSongs
-    }
-
-    suspend fun syncLocalFilesPlaylist(
-        songs: List<SongItem>,
-        allowEmptyReplacement: Boolean = false
-    ): Boolean {
-        return withContext(Dispatchers.IO) {
-            val normalizedSongs = distinctPlaylistSongs(
-                songs = hydrateLocalSongsForPersistence(songs),
-                includeLocalMetadataFallback = true
-            )
-            commitPlaylistMutation {
-                val currentLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
-                if (
-                    normalizedSongs.isEmpty() &&
-                    !allowEmptyReplacement &&
-                    currentLocalFiles?.songs?.isNotEmpty() == true
-                ) {
-                    NPLogger.w(
-                        "LocalPlaylistRepo",
-                        "Skip replacing Local Files playlist with empty scan result"
-                    )
-                    return@commitPlaylistMutation false
-                }
-
-                val updated = _playlists.value.map { playlist ->
-                    if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
-                        playlist
-                    } else {
-                        playlist.copy(
-                            songs = normalizedSongs,
-                            modifiedAt = System.currentTimeMillis(),
-                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-                        )
-                    }
-                }
-                publishLocked(updated)
-                true
-            }
-        }
-    }
 
     suspend fun addSongsToLocalFilesPlaylist(songs: List<SongItem>) {
         addSongsToLocalFilesPlaylistAndCount(songs)
     }
 
     suspend fun addSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
-        return addSongsToLocalFilesPlaylistAndCount(
+        return addSongsToLocalFilesPlaylistWithResult(
             songs = songs,
             hydrateLocalMetadata = true
-        )
+        ).addedCount
     }
 
     suspend fun addScannedSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
-        return addSongsToLocalFilesPlaylistAndCount(
+        return addScannedSongsToLocalFilesPlaylistWithResult(songs).addedCount
+    }
+
+    suspend fun addScannedSongsToLocalFilesPlaylistWithResult(
+        songs: List<SongItem>
+    ): LocalPlaylistSongAddResult {
+        return addSongsToLocalFilesPlaylistWithResult(
             songs = songs,
-            hydrateLocalMetadata = false
+            hydrateLocalMetadata = false,
+            preserveScannedSourceAddedAt = true
         )
     }
 
-    private suspend fun addSongsToLocalFilesPlaylistAndCount(
-        songs: List<SongItem>,
-        hydrateLocalMetadata: Boolean
-    ): Int {
-        return withContext(Dispatchers.IO) {
-            if (songs.isEmpty()) return@withContext 0
-            val now = System.currentTimeMillis()
-            val hydratedSongs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata)
-            commitPlaylistMutation {
-                var addedCount = 0
-                val updated = _playlists.value.map { playlist ->
-                    if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
-                        return@map playlist
-                    }
 
-                    val newSongs = filterNewSongs(
-                        existingSongs = playlist.songs,
-                        candidates = hydratedSongs,
-                        includeLocalMetadataFallback = true
-                    )
-                    if (newSongs.isEmpty()) {
-                        playlist
-                    } else {
-                        val toAdd = stampSongsForPlaylistInsert(
-                            songs = newSongs,
-                            addedAt = nextPlaylistSongAddedAt(playlist, now)
-                        )
-                        addedCount += toAdd.size
-                        playlist.copy(
-                            songs = mergeNewSongsFirst(playlist.songs, toAdd),
-                            modifiedAt = now,
-                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-                        )
-                    }
-                }
-                publishLocked(updated)
-                addedCount
-            }
-        }
-    }
+
+
 
     suspend fun refreshScannedLocalSongMetadata(
         songs: List<SongItem>,
         includeEmbeddedAssets: Boolean = false,
+        includeLyricContents: Boolean = false,
         onProgress: (processed: Int, total: Int) -> Unit = { _, _ -> }
     ) {
         withContext(Dispatchers.IO) {
@@ -1817,28 +983,117 @@ class LocalPlaylistRepository private constructor(
 
             val refreshDispatcher = Dispatchers.IO.limitedParallelism(LOCAL_METADATA_REFRESH_PARALLELISM)
             var processedCount = 0
+            val allUpdates = ArrayList<SongMetadataUpdate>()
+            val refreshStartedAt = SystemClock.elapsedRealtime()
             candidates.chunked(LOCAL_METADATA_REFRESH_BATCH_SIZE).forEach { batch ->
+                val batchStartedAt = SystemClock.elapsedRealtime()
                 val updates = coroutineScope {
                     batch.map { originalSong ->
                         async(refreshDispatcher) {
-                            val hydratedSong = if (includeEmbeddedAssets) {
-                                LocalAudioImportManager.hydrateLocalSongMetadata(
-                                    context,
-                                    originalSong
+                            when {
+                                includeEmbeddedAssets -> SongMetadataUpdate(
+                                    originalSong = originalSong,
+                                    newSongInfo = LocalAudioImportManager.hydrateLocalSongMetadata(
+                                        context,
+                                        originalSong
+                                    )
                                 )
-                            } else {
-                                LocalAudioImportManager.hydrateLocalSongTextMetadata(context, originalSong)
+                                includeLyricContents -> SongMetadataUpdate(
+                                    originalSong = originalSong,
+                                    newSongInfo = LocalAudioImportManager.hydrateLocalSongTextMetadata(
+                                        context,
+                                        originalSong
+                                    )
+                                )
+                                else -> LocalAudioImportManager
+                                    .hydrateLocalSongCoverMetadataResult(context, originalSong)
+                                    .let { result ->
+                                        SongMetadataUpdate(
+                                            originalSong = originalSong,
+                                            newSongInfo = result.song,
+                                            clearCoverUrl = result.clearCoverUrl,
+                                            clearOriginalCoverUrl = result.clearOriginalCoverUrl
+                                        )
+                                    }
                             }
+                        }
+                    }.awaitAll()
+                }.filter { update ->
+                    update.newSongInfo != update.originalSong
+                }
+                allUpdates += updates
+                processedCount += batch.size
+                onProgress(processedCount, candidates.size)
+                NPLogger.d(
+                    "LocalPlaylistRepo",
+                    "本地扫描后台批次完成: processed=$processedCount/${candidates.size}, " +
+                        "updates=${updates.size}, elapsed=" +
+                        "${SystemClock.elapsedRealtime() - batchStartedAt}ms"
+                )
+            }
+            applySongMetadataUpdates(allUpdates)
+            NPLogger.d(
+                "LocalPlaylistRepo",
+                "本地扫描后台刷新完成: candidates=${candidates.size}, " +
+                    "updates=${allUpdates.size}, elapsed=" +
+                    "${SystemClock.elapsedRealtime() - refreshStartedAt}ms"
+            )
+        }
+    }
+
+    suspend fun refreshMissingLocalSongDurations(
+        songs: List<SongItem>,
+        onProgress: (processed: Int, total: Int) -> Unit = { _, _ -> }
+    ) {
+        withContext(Dispatchers.IO) {
+            val candidates = distinctPlaylistSongs(
+                songs = songs.filter {
+                    it.durationMs <= 0L && LocalSongSupport.isLocalSong(it, context)
+                },
+                includeLocalMetadataFallback = true
+            ).filter { song ->
+                song.localFilePath?.isNotBlank() == true ||
+                    song.mediaUri?.let { reference ->
+                        reference.startsWith("content://", ignoreCase = true) ||
+                            reference.startsWith("file://", ignoreCase = true) ||
+                            reference.startsWith("/")
+                    } == true
+            }
+            onProgress(0, candidates.size)
+            if (candidates.isEmpty()) return@withContext
+
+            val dispatcher = Dispatchers.IO.limitedParallelism(
+                LOCAL_DURATION_REFRESH_PARALLELISM
+            )
+            val mediaStoreDurations = LocalMediaSupport.resolveMediaStoreDurationsFast(
+                context = context,
+                sources = candidates.mapNotNull { it.localMediaUri() }
+            )
+            val updates = ArrayList<Pair<SongItem, SongItem>>(candidates.size)
+            var processed = 0
+            candidates.chunked(LOCAL_DURATION_REFRESH_BATCH_SIZE).forEach { batch ->
+                updates += coroutineScope {
+                    batch.map { originalSong ->
+                        async(dispatcher) {
+                            val bulkDuration = originalSong.localMediaUri()
+                                ?.toString()
+                                ?.let(mediaStoreDurations::get)
+                            val hydratedSong = bulkDuration?.let { durationMs ->
+                                originalSong.copy(durationMs = durationMs)
+                            } ?: LocalAudioImportManager.hydrateLocalSongDurationMetadata(
+                                context,
+                                originalSong
+                            )
                             originalSong to hydratedSong
                         }
                     }.awaitAll()
                 }.filter { (originalSong, hydratedSong) ->
                     hydratedSong != originalSong
                 }
-                applySongMetadataUpdates(updates)
-                processedCount += batch.size
-                onProgress(processedCount, candidates.size)
+                processed += batch.size
+                onProgress(processed, candidates.size)
             }
+            applySongDurationUpdates(updates)
         }
     }
 
@@ -1862,18 +1117,6 @@ class LocalPlaylistRepository private constructor(
                 val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId }
                     ?: return@commitPlaylistMutation
                 val inSourceOrder = source.songs.filter { it.identity() in wanted }
-                addStampedSongsToPlaylistLocked(targetPlaylistId, inSourceOrder, now)
-            }
-        }
-    }
-
-    suspend fun exportSongsToPlaylistById(sourcePlaylistId: Long, targetPlaylistId: Long, songIds: List<Long>) {
-        withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            commitPlaylistMutation {
-                val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId }
-                    ?: return@commitPlaylistMutation
-                val inSourceOrder = source.songs.filter { it.id in songIds }
                 addStampedSongsToPlaylistLocked(targetPlaylistId, inSourceOrder, now)
             }
         }
@@ -1924,69 +1167,27 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private suspend fun applySongMetadataUpdates(updates: List<Pair<SongItem, SongItem>>) {
-        if (updates.isEmpty()) {
-            return
-        }
 
-        commitPlaylistMutation {
-            val updateIndex = SongMetadataUpdateIndex(updates)
-            var changed = false
-            val updated = _playlists.value.map { playlist ->
-                var playlistChanged = false
-                val refreshedSongs = playlist.songs.map { currentSong ->
-                    val newSongInfo = updateIndex.find(currentSong) ?: return@map currentSong
-                    val mergedSongInfo = mergeSongMetadataForPersistence(
-                        currentSong = currentSong,
-                        newSongInfo = newSongInfo
-                    )
-                    if (currentSong == mergedSongInfo) {
-                        currentSong
-                    } else {
-                        saveCoverMapping(mergedSongInfo)
-                        changed = true
-                        playlistChanged = true
-                        mergedSongInfo
-                    }
-                }.toMutableList()
 
-                if (playlistChanged) {
-                    playlist.copy(
-                        songs = refreshedSongs,
-                        songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-                    )
-                } else {
-                    playlist
-                }
-            }
 
-            if (changed) {
-                publishLocked(
-                    playlists = updated,
-                    triggerSync = false,
-                    markLocalMutation = false
-                )
-            }
-        }
-    }
 
-    private class SongMetadataUpdateIndex(updates: List<Pair<SongItem, SongItem>>) {
-        private val byIdentity = HashMap<SongIdentity, SongItem>(updates.size * 2)
-        private val byLocalKey = HashMap<String, SongItem>(updates.size * 3)
+    internal class SongMetadataUpdateIndex(updates: List<SongMetadataUpdate>) {
+        private val byIdentity = HashMap<SongIdentity, SongMetadataUpdate>(updates.size * 2)
+        private val byLocalKey = HashMap<String, SongMetadataUpdate>(updates.size * 3)
 
         init {
-            updates.forEach { (originalSong, hydratedSong) ->
-                byIdentity[originalSong.identity()] = hydratedSong
+            updates.forEach { update ->
+                byIdentity[update.originalSong.identity()] = update
                 LocalSongSupport.localDuplicateKeys(
-                    song = originalSong,
+                    song = update.originalSong,
                     includeMetadataFallback = true
                 ).forEach { key ->
-                    byLocalKey.putIfAbsent(key, hydratedSong)
+                    byLocalKey.putIfAbsent(key, update)
                 }
             }
         }
 
-        fun find(song: SongItem): SongItem? {
+        fun find(song: SongItem): SongMetadataUpdate? {
             byIdentity[song.identity()]?.let { return it }
             return LocalSongSupport.localDuplicateKeys(
                 song = song,
@@ -2008,63 +1209,9 @@ class LocalPlaylistRepository private constructor(
         )
     }
 
-    private fun mergeSongMetadataForPersistence(
-        currentSong: SongItem,
-        newSongInfo: SongItem
-    ): SongItem {
-        val mergedSong = newSongInfo.copy(
-            addedAt = currentSong.addedAt,
-            coverUrl = newSongInfo.coverUrl.takeIf { !it.isNullOrBlank() }
-                ?: currentSong.coverUrl,
-            originalCoverUrl = newSongInfo.originalCoverUrl.takeIf { !it.isNullOrBlank() }
-                ?: currentSong.originalCoverUrl
-                ?: currentSong.coverUrl,
-            syncMembershipTokens = currentSong.syncMembershipTokens.normalizedSyncCausalTokens()
-        )
-        if (!shouldPreserveEntryPlaybackSource(currentSong, newSongInfo)) {
-            return mergedSong
-        }
 
-        // 下载副本可共享远端身份，但文件引用只能由下载副本持有
-        return mergedSong.copy(
-            id = currentSong.id,
-            name = currentSong.name,
-            artist = currentSong.artist,
-            album = currentSong.album,
-            albumId = currentSong.albumId,
-            durationMs = currentSong.durationMs,
-            coverUrl = currentSong.coverUrl,
-            originalName = currentSong.originalName,
-            originalArtist = currentSong.originalArtist,
-            originalCoverUrl = currentSong.originalCoverUrl ?: currentSong.coverUrl,
-            mediaUri = currentSong.mediaUri,
-            localFileName = currentSong.localFileName,
-            localFilePath = currentSong.localFilePath,
-            channelId = currentSong.channelId,
-            audioId = currentSong.audioId,
-            subAudioId = currentSong.subAudioId,
-            playlistContextId = currentSong.playlistContextId,
-            sourceStableKey = currentSong.sourceStableKey,
-            streamUrl = currentSong.streamUrl,
-            neteaseArtists = currentSong.neteaseArtists
-        )
-    }
 
-    private fun shouldPreserveEntryPlaybackSource(
-        currentSong: SongItem,
-        newSongInfo: SongItem
-    ): Boolean {
-        val currentIsLocal = LocalSongSupport.isLocalSong(currentSong, null)
-        val updatedIsLocal = LocalSongSupport.isLocalSong(newSongInfo, null)
-        if (currentIsLocal != updatedIsLocal) {
-            return true
-        }
-        if (!currentIsLocal) {
-            return false
-        }
-        return LocalSongSupport.identityMediaReference(currentSong) !=
-            LocalSongSupport.identityMediaReference(newSongInfo)
-    }
+
 
     suspend fun rebaseLyricOffsetsForSource(
         targetSource: MusicPlatform,
@@ -2122,19 +1269,7 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private fun saveCoverMapping(newSongInfo: SongItem) {
-        runCatching {
-            val mapper = CoverUrlMapper.getInstance(context)
-            if (newSongInfo.coverUrl != null && newSongInfo.originalCoverUrl != null) {
-                mapper.saveCoverMapping(newSongInfo.coverUrl, newSongInfo.originalCoverUrl)
-            }
-            if (newSongInfo.customCoverUrl != null && newSongInfo.originalCoverUrl != null) {
-                mapper.saveCoverMapping(newSongInfo.customCoverUrl, newSongInfo.originalCoverUrl)
-            }
-        }.onFailure {
-            NPLogger.e("LocalPlaylistRepo", "Failed to save cover mapping", it)
-        }
-    }
+
 
     suspend fun updatePlaylists(
         playlists: List<LocalPlaylist>,
@@ -2174,13 +1309,7 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private fun mergeExternalPlaylists(playlists: List<LocalPlaylist>): MutableList<LocalPlaylist> {
-        val preservedLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
-        return playlists
-            .filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
-            .toMutableList()
-            .apply { preservedLocalFiles?.let(::add) }
-    }
+
 
     suspend fun reorderPlaylists(newOrder: List<Long>) {
         withContext(Dispatchers.IO) {
@@ -2215,13 +1344,6 @@ class LocalPlaylistRepository private constructor(
 
     fun filterNeteaseLikeSyncCandidatesPreservingDuplicates(songs: List<SongItem>): List<SongItem> {
         return resolveLocalNeteaseCandidates(songs).map(NeteaseResolvedCandidate::song)
-    }
-
-    suspend fun filterNeteaseLikeSyncCandidatesExcludingLiked(
-        client: NeteaseClient,
-        songs: List<SongItem>
-    ): List<SongItem> {
-        return prepareNeteaseLikeSyncPlan(client, songs).pendingSongs
     }
 
     suspend fun fetchNeteaseRemotePlaylists(client: NeteaseClient): List<NeteaseRemotePlaylist> {
@@ -2528,78 +1650,11 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private fun resolveLikedNeteasePlaylistId(client: NeteaseClient): Long? {
-        val raw = runCatching { client.getLikedPlaylistId(0) }
-            .getOrElse { error ->
-                NPLogger.e("LocalPlaylistRepo", "getLikedPlaylistId failed: ${error.message}", error)
-                return null
-            }
-        if (parseNeteaseCode(raw) == 301 && client.hasLogin()) {
-            runCatching { client.ensureWeapiSession() }.onFailure {
-                NPLogger.w("LocalPlaylistRepo", "ensureWeapiSession retry failed: ${it.message}")
-            }
-            val retried = runCatching { client.getLikedPlaylistId(0) }
-                .getOrElse { error ->
-                    NPLogger.e("LocalPlaylistRepo", "getLikedPlaylistId retry failed: ${error.message}", error)
-                    return null
-                }
-            return parseNeteaseLikedPlaylistId(retried).playlistId
-        }
-        return parseNeteaseLikedPlaylistId(raw).playlistId
-    }
 
-    private fun buildNeteasePlaylistSyncPlan(
-        client: NeteaseClient,
-        targetPlaylistId: Long,
-        totalSongs: Int,
-        validatedSummary: NeteaseCandidateValidationResult
-    ): NeteaseRemotePlaylistSyncPlan {
-        val targetSnapshot = fetchNeteasePlaylistTrackSnapshot(client, targetPlaylistId)
-        if (!targetSnapshot.compareSucceeded) {
-            return NeteaseRemotePlaylistSyncPlan(
-                targetPlaylistId = targetPlaylistId,
-                totalSongs = totalSongs,
-                supportedSongs = validatedSummary.supportedSongs,
-                skippedUnsupported = validatedSummary.skippedUnsupported,
-                skippedExisting = validatedSummary.skippedExisting,
-                candidates = emptyList(),
-                compareSucceeded = false,
-                message = targetSnapshot.message ?: NETEASE_COMPARE_FAILED_MESSAGE
-            )
-        }
 
-        var skippedExisting = validatedSummary.skippedExisting
-        val pendingCandidates = ArrayList<NeteaseResolvedCandidate>(validatedSummary.candidates.size)
-        validatedSummary.candidates.forEach { candidate ->
-            val fingerprint = candidate.song.toNeteaseFingerprint()
-            if (candidate.neteaseId in targetSnapshot.trackIds ||
-                (fingerprint != null && fingerprint in targetSnapshot.fingerprints)
-            ) {
-                skippedExisting += 1
-            } else {
-                pendingCandidates += candidate
-            }
-        }
 
-        val message = if (pendingCandidates.isEmpty()) {
-            context.getString(R.string.local_playlist_sync_netease_all_synced)
-        } else {
-            null
-        }
 
-        return NeteaseRemotePlaylistSyncPlan(
-            targetPlaylistId = targetPlaylistId,
-            totalSongs = totalSongs,
-            supportedSongs = validatedSummary.supportedSongs,
-            skippedUnsupported = validatedSummary.skippedUnsupported,
-            skippedExisting = skippedExisting,
-            candidates = pendingCandidates,
-            compareSucceeded = true,
-            message = message
-        )
-    }
-
-    private fun NeteaseRemotePlaylistSyncPlan.toLikeSyncPlan(): NeteaseLikeSyncPlan {
+    internal fun NeteaseRemotePlaylistSyncPlan.toLikeSyncPlan(): NeteaseLikeSyncPlan {
         return NeteaseLikeSyncPlan(
             totalSongs = totalSongs,
             supportedSongs = supportedSongs,
@@ -2611,429 +1666,49 @@ class LocalPlaylistRepository private constructor(
         )
     }
 
-    private data class NeteasePlaylistTrackSnapshot(
+    internal data class NeteasePlaylistTrackSnapshot(
         val trackIds: Set<Long>,
         val fingerprints: Set<String>,
         val compareSucceeded: Boolean,
         val message: String? = null
     )
 
-    private fun fetchNeteasePlaylistTrackSnapshot(
-        client: NeteaseClient,
-        playlistId: Long
-    ): NeteasePlaylistTrackSnapshot {
-        val raw = runCatching { client.getPlaylistDetail(playlistId) }
-            .getOrElse { error ->
-                NPLogger.e("LocalPlaylistRepo", "getPlaylistDetail failed: ${error.message}", error)
-                return NeteasePlaylistTrackSnapshot(
-                    trackIds = emptySet(),
-                    fingerprints = emptySet(),
-                    compareSucceeded = false,
-                    message = NETEASE_COMPARE_FAILED_MESSAGE
-                )
-            }
-        val retriedRaw = if (parseNeteaseCode(raw) == 301 && client.hasLogin()) {
-            runCatching { client.ensureWeapiSession() }.onFailure {
-                NPLogger.w("LocalPlaylistRepo", "ensureWeapiSession retry failed: ${it.message}")
-            }
-            runCatching { client.getPlaylistDetail(playlistId) }
-                .getOrElse { error ->
-                    NPLogger.e("LocalPlaylistRepo", "getPlaylistDetail retry failed: ${error.message}", error)
-                    return NeteasePlaylistTrackSnapshot(
-                        trackIds = emptySet(),
-                        fingerprints = emptySet(),
-                        compareSucceeded = false,
-                        message = NETEASE_COMPARE_FAILED_MESSAGE
-                    )
-                }
-        } else {
-            raw
-        }
 
-        val parsed = parseNeteaseTrackIdsFromPlaylistDetail(retriedRaw)
-        if (!parsed.success) {
-            return NeteasePlaylistTrackSnapshot(
-                trackIds = emptySet(),
-                fingerprints = emptySet(),
-                compareSucceeded = false,
-                message = NETEASE_COMPARE_FAILED_MESSAGE
-            )
-        }
-        if (parsed.trackIds.isEmpty() && parsed.trackCount > 0) {
-            NPLogger.w(
-                "LocalPlaylistRepo",
-                "Playlist detail returned empty trackIds but trackCount=${parsed.trackCount} for playlistId=$playlistId"
-            )
-            return NeteasePlaylistTrackSnapshot(
-                trackIds = emptySet(),
-                fingerprints = emptySet(),
-                compareSucceeded = false,
-                message = NETEASE_COMPARE_FAILED_MESSAGE
-            )
-        }
 
-        val detailSummary = fetchNeteaseLikedSongDetailSummaryByPages(client, parsed.trackIds)
-        return NeteasePlaylistTrackSnapshot(
-            trackIds = LinkedHashSet(parsed.trackIds),
-            fingerprints = detailSummary.fingerprints,
-            compareSucceeded = true
-        )
-    }
 
-    private fun addNeteasePlaylistSongIdsBatch(
-        client: NeteaseClient,
-        playlistId: Long,
-        songIds: List<Long>
-    ): Boolean {
-        if (songIds.isEmpty()) return true
-        val raw = runCatching { client.addSongsToPlaylist(playlistId, songIds) }
-            .getOrElse { error ->
-                NPLogger.e(
-                    "LocalPlaylistRepo",
-                    "addSongsToPlaylist failed for playlistId=$playlistId: ${error.message}",
-                    error
-                )
-                return false
-            }
-        val code = parseNeteaseCode(raw)
-        if (code == 200) return true
-        if (code == 301 && client.hasLogin()) {
-            runCatching { client.ensureWeapiSession() }.onFailure {
-                NPLogger.w("LocalPlaylistRepo", "ensureWeapiSession retry failed: ${it.message}")
-            }
-            val retry = runCatching { client.addSongsToPlaylist(playlistId, songIds) }
-                .getOrElse { error ->
-                    NPLogger.e(
-                        "LocalPlaylistRepo",
-                        "addSongsToPlaylist retry failed for playlistId=$playlistId: ${error.message}",
-                        error
-                    )
-                    return false
-                }
-            return parseNeteaseCode(retry) == 200
-        }
-        NPLogger.w(
-            "LocalPlaylistRepo",
-            "addSongsToPlaylist returned code=$code for playlistId=$playlistId, size=${songIds.size}"
-        )
-        return false
-    }
 
-    private fun resolveNeteaseSongId(song: SongItem): Long? {
-        if (song.channelId.equals("netease", ignoreCase = true)) {
-            song.audioId
-                ?.toLongOrNull()
-                ?.takeIf { it > 0L }
-                ?.let { return it }
-        }
-        val songId = song.id.takeIf { it > 0 } ?: return null
-        if (song.channelId.equals("netease", ignoreCase = true)) return songId
-        if (song.album.startsWith(NETEASE_ALBUM_PREFIX)) {
-            return songId
-        }
-        if (song.matchedLyricSource == MusicPlatform.CLOUD_MUSIC) {
-            val matched = song.matchedSongId?.toLongOrNull()
-            if (matched != null && matched > 0) return matched
-        }
-        if (song.coverUrl.isNeteaseCoverUrl() || song.originalCoverUrl.isNeteaseCoverUrl()) {
-            return songId
-        }
-        return null
-    }
 
-    private fun buildLocalNeteaseCandidates(songs: List<SongItem>): LocalNeteaseCandidateSummary {
-        if (songs.isEmpty()) {
-            return LocalNeteaseCandidateSummary(
-                supportedSongs = 0,
-                skippedUnsupported = 0,
-                skippedExisting = 0,
-                candidates = emptyList()
-            )
-        }
 
-        var supportedSongs = 0
-        var skippedExisting = 0
-        val seenNeteaseIds = mutableSetOf<Long>()
-        val candidates = ArrayList<NeteaseResolvedCandidate>(songs.size)
-        for (candidate in resolveLocalNeteaseCandidates(songs)) {
-            val neteaseId = candidate.neteaseId
-            if (!seenNeteaseIds.add(neteaseId)) {
-                // 同一首网易云歌曲只保留最早出现的那条，保证顺序稳定
-                skippedExisting += 1
-                continue
-            }
-            supportedSongs += 1
-            candidates += candidate
-        }
-        val skippedUnsupported = songs.size - supportedSongs - skippedExisting
-        return LocalNeteaseCandidateSummary(
-            supportedSongs = supportedSongs,
-            skippedUnsupported = skippedUnsupported,
-            skippedExisting = skippedExisting,
-            candidates = candidates
-        )
-    }
 
-    private fun resolveLocalNeteaseCandidates(songs: List<SongItem>): List<NeteaseResolvedCandidate> {
-        return songs.mapNotNull { song ->
-            resolveNeteaseSongId(song)?.let { neteaseId ->
-                NeteaseResolvedCandidate(song = song, neteaseId = neteaseId)
-            }
-        }
-    }
 
-    private fun validateNeteaseSyncCandidates(
-        client: NeteaseClient,
-        summary: LocalNeteaseCandidateSummary
-    ): NeteaseCandidateValidationResult {
-        if (summary.candidates.isEmpty()) {
-            return NeteaseCandidateValidationResult(
-                supportedSongs = 0,
-                skippedUnsupported = summary.skippedUnsupported,
-                skippedExisting = summary.skippedExisting,
-                candidates = emptyList()
-            )
-        }
 
-        val validatedCandidates = ArrayList<NeteaseResolvedCandidate>(summary.candidates.size)
-        var skippedUnsupported = summary.skippedUnsupported
-        summary.candidates.chunked(NETEASE_SONG_DETAIL_BATCH_SIZE).forEachIndexed { pageIndex, chunk ->
-            val resolvedIds = fetchResolvableNeteaseSongIds(
-                client = client,
-                ids = chunk.map(NeteaseResolvedCandidate::neteaseId),
-                logLabel = "validateNeteaseSyncCandidates page ${pageIndex + 1}"
-            )
-            if (resolvedIds == null) {
-                validatedCandidates.addAll(chunk)
-                return@forEachIndexed
-            }
 
-            chunk.forEach { candidate ->
-                if (candidate.neteaseId in resolvedIds) {
-                    validatedCandidates += candidate
-                } else {
-                    skippedUnsupported += 1
-                    NPLogger.w(
-                        "LocalPlaylistRepo",
-                        "Filtered invalid netease songId before sync: songId=${candidate.neteaseId} name=${candidate.song.name}"
-                    )
-                }
-            }
-        }
 
-        return NeteaseCandidateValidationResult(
-            supportedSongs = validatedCandidates.size,
-            skippedUnsupported = skippedUnsupported,
-            skippedExisting = summary.skippedExisting,
-            candidates = validatedCandidates
-        )
-    }
 
-    private fun parseNeteaseLikedPlaylistId(raw: String): ParsedNeteasePlaylistId {
-        if (raw.isBlank()) return ParsedNeteasePlaylistId(playlistId = null, success = false)
-        return runCatching {
-            val root = JSONObject(raw)
-            if (root.optInt("code", -1) != 200) {
-                return@runCatching ParsedNeteasePlaylistId(playlistId = null, success = false)
-            }
-            val id = root.optLong("playlistId", 0L)
-            ParsedNeteasePlaylistId(
-                playlistId = id.takeIf { it > 0L },
-                success = true
-            )
-        }.getOrElse { error ->
-            NPLogger.e("LocalPlaylistRepo", "Failed to parse liked playlist id: ${error.message}", error)
-            ParsedNeteasePlaylistId(playlistId = null, success = false)
-        }
-    }
 
-    private fun parseNeteaseTrackIdsFromPlaylistDetail(raw: String): ParsedNeteasePlaylistTrackIds {
-        if (raw.isBlank()) {
-            return ParsedNeteasePlaylistTrackIds(
-                trackIds = emptyList(),
-                trackCount = 0,
-                success = false
-            )
-        }
-        return runCatching {
-            val root = JSONObject(raw)
-            if (root.optInt("code", -1) != 200) {
-                return@runCatching ParsedNeteasePlaylistTrackIds(
-                    trackIds = emptyList(),
-                    trackCount = 0,
-                    success = false
-                )
-            }
-            val playlist = root.optJSONObject("playlist")
-            val trackIdsArr = playlist?.optJSONArray("trackIds")
-            val ids = LinkedHashSet<Long>()
-            if (trackIdsArr != null) {
-                for (i in 0 until trackIdsArr.length()) {
-                    val id = trackIdsArr.optJSONObject(i)?.optLong("id", 0L) ?: 0L
-                    if (id > 0L) {
-                        ids.add(id)
-                    }
-                }
-            }
-            ParsedNeteasePlaylistTrackIds(
-                trackIds = ids.toList(),
-                trackCount = playlist?.optInt("trackCount", ids.size) ?: ids.size,
-                success = true
-            )
-        }.getOrElse { error ->
-            NPLogger.e("LocalPlaylistRepo", "Failed to parse track ids: ${error.message}", error)
-            ParsedNeteasePlaylistTrackIds(
-                trackIds = emptyList(),
-                trackCount = 0,
-                success = false
-            )
-        }
-    }
 
-    private data class NeteaseSongDetailSummary(
+
+
+    internal data class NeteaseSongDetailSummary(
         val ids: Set<Long>,
         val fingerprints: Set<String>
     )
 
-    private fun fetchNeteaseLikedSongDetailSummaryByPages(
-        client: NeteaseClient,
-        trackIds: List<Long>
-    ): NeteaseSongDetailSummary {
-        if (trackIds.isEmpty()) {
-            return NeteaseSongDetailSummary(
-                ids = emptySet(),
-                fingerprints = emptySet()
-            )
-        }
 
-        val resolvedIds = LinkedHashSet<Long>(trackIds.size)
-        val fingerprints = mutableSetOf<String>()
-        trackIds.chunked(NETEASE_SONG_DETAIL_BATCH_SIZE).forEachIndexed { pageIndex, ids ->
-            val raw = runCatching { client.getSongDetail(ids) }
-                .getOrElse { error ->
-                    NPLogger.e(
-                        "LocalPlaylistRepo",
-                        "getSongDetail page ${pageIndex + 1} failed: ${error.message}",
-                        error
-                    )
-                    return@forEachIndexed
-                }
-            val parsed = parseNeteaseSongDetailSummary(raw)
-            if (!parsed.success) {
-                NPLogger.w(
-                    "LocalPlaylistRepo",
-                    "getSongDetail page ${pageIndex + 1} returned invalid payload"
-                )
-                return@forEachIndexed
-            }
-            resolvedIds.addAll(parsed.ids)
-            fingerprints.addAll(parsed.fingerprints)
-        }
-        return NeteaseSongDetailSummary(
-            ids = resolvedIds,
-            fingerprints = fingerprints
-        )
-    }
 
-    private data class ParsedNeteaseSongDetailSummary(
+    internal data class ParsedNeteaseSongDetailSummary(
         val ids: Set<Long>,
         val fingerprints: Set<String>,
         val success: Boolean
     )
 
-    private fun parseNeteaseSongDetailSummary(raw: String): ParsedNeteaseSongDetailSummary {
-        if (raw.isBlank()) {
-            return ParsedNeteaseSongDetailSummary(
-                ids = emptySet(),
-                fingerprints = emptySet(),
-                success = false
-            )
-        }
-        return runCatching {
-            val root = JSONObject(raw)
-            if (root.optInt("code", -1) != 200) {
-                return@runCatching ParsedNeteaseSongDetailSummary(
-                    ids = emptySet(),
-                    fingerprints = emptySet(),
-                    success = false
-                )
-            }
-            val songs = root.optJSONArray("songs")
-            val ids = LinkedHashSet<Long>()
-            val fingerprints = mutableSetOf<String>()
-            if (songs != null) {
-                for (i in 0 until songs.length()) {
-                    val song = songs.optJSONObject(i) ?: continue
-                    val id = song.optLong("id", 0L)
-                    if (id > 0L) {
-                        ids.add(id)
-                    }
-                    buildNeteaseFingerprint(
-                        name = song.optString("name", ""),
-                        artist = parseNeteaseSongArtist(song),
-                        durationMs = song.optLong("dt", 0L)
-                    )?.let(fingerprints::add)
-                }
-            }
-            ParsedNeteaseSongDetailSummary(
-                ids = ids,
-                fingerprints = fingerprints,
-                success = true
-            )
-        }.getOrElse { error ->
-            NPLogger.e("LocalPlaylistRepo", "Failed to parse song detail ids: ${error.message}", error)
-            ParsedNeteaseSongDetailSummary(
-                ids = emptySet(),
-                fingerprints = emptySet(),
-                success = false
-            )
-        }
-    }
 
-    private fun fetchResolvableNeteaseSongIds(
-        client: NeteaseClient,
-        ids: List<Long>,
-        logLabel: String
-    ): Set<Long>? {
-        if (ids.isEmpty()) return emptySet()
 
-        fun requestSongDetail(): String {
-            return client.getSongDetail(ids)
-        }
 
-        val raw = runCatching { requestSongDetail() }
-            .getOrElse { error ->
-                NPLogger.e("LocalPlaylistRepo", "$logLabel failed: ${error.message}", error)
-                return null
-            }
 
-        val retriedRaw = if (parseNeteaseCode(raw) == 301 && client.hasLogin()) {
-            runCatching { client.ensureWeapiSession() }.onFailure {
-                NPLogger.w("LocalPlaylistRepo", "$logLabel ensureWeapiSession retry failed: ${it.message}")
-            }
-            runCatching { requestSongDetail() }
-                .getOrElse { error ->
-                    NPLogger.e("LocalPlaylistRepo", "$logLabel retry failed: ${error.message}", error)
-                    return null
-                }
-        } else {
-            raw
-        }
 
-        val parsed = parseNeteaseSongDetailSummary(retriedRaw)
-        if (!parsed.success) {
-            NPLogger.w("LocalPlaylistRepo", "$logLabel returned invalid payload")
-            return null
-        }
-        return parsed.ids
-    }
 
-    private fun parseNeteaseCode(raw: String): Int {
-        if (raw.isBlank()) return -1
-        return runCatching { JSONObject(raw).optInt("code", -1) }.getOrElse { -1 }
-    }
-
-    private fun SongItem.toNeteaseFingerprint(): String? {
+    internal fun SongItem.toNeteaseFingerprint(): String? {
         return buildNeteaseFingerprint(
             name = originalName ?: customName ?: name,
             artist = originalArtist ?: customArtist ?: artist,
@@ -3041,65 +1716,30 @@ class LocalPlaylistRepository private constructor(
         )
     }
 
-    private fun buildNeteaseFingerprint(
-        name: String?,
-        artist: String?,
-        durationMs: Long
-    ): String? {
-        val normalizedName = normalizeFingerprintToken(name)
-        val normalizedArtist = normalizeArtistToken(artist)
-        if (normalizedName.isBlank() || normalizedArtist.isBlank()) return null
-        val durationBucket = if (durationMs > 0L) ((durationMs + 2_500L) / 5_000L).toString() else "0"
-        return "$normalizedName|$normalizedArtist|$durationBucket"
-    }
 
-    private fun parseNeteaseSongArtist(song: JSONObject): String {
-        val artists = song.optJSONArray("ar") ?: return ""
-        val names = ArrayList<String>(artists.length())
-        for (i in 0 until artists.length()) {
-            val name = artists.optJSONObject(i)?.optString("name", "")?.trim().orEmpty()
-            if (name.isNotBlank()) {
-                names += name
-            }
-        }
-        return names.joinToString(" / ")
-    }
 
-    private fun normalizeArtistToken(raw: String?): String {
-        if (raw.isNullOrBlank()) return ""
-        return raw.splitToSequence("/", "&", " feat. ", " feat ", ",", "，", "、")
-            .map(::normalizeFingerprintToken)
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sorted()
-            .joinToString("|")
-    }
 
-    private fun normalizeFingerprintToken(raw: String?): String {
-        if (raw.isNullOrBlank()) return ""
-        val lowered = raw.lowercase(Locale.ROOT)
-        val builder = StringBuilder(lowered.length)
-        lowered.forEach { ch ->
-            if (Character.isLetterOrDigit(ch)) {
-                builder.append(ch)
-            }
-        }
-        return builder.toString()
-    }
 
-    private fun String?.isNeteaseCoverUrl(): Boolean {
+
+
+
+
+    internal fun String?.isNeteaseCoverUrl(): Boolean {
         if (this.isNullOrBlank()) return false
         return contains("music.126.net", ignoreCase = true)
     }
 
     companion object {
         const val MAX_PLAYLIST_NAME_LENGTH = 10
-        private const val LOCAL_METADATA_REFRESH_BATCH_SIZE = 48
-        private const val LOCAL_METADATA_REFRESH_PARALLELISM = 4
-        private const val NETEASE_PLAYLIST_ADD_BATCH_SIZE = 50
-        private const val NETEASE_SONG_DETAIL_BATCH_SIZE = 300
-        private const val NETEASE_ALBUM_PREFIX = "Netease"
-        private const val NETEASE_COMPARE_FAILED_MESSAGE =
+        internal const val LOCAL_METADATA_HYDRATE_BATCH_SIZE = 48
+        internal const val LOCAL_METADATA_REFRESH_BATCH_SIZE = 48
+        internal const val LOCAL_METADATA_REFRESH_PARALLELISM = 4
+        internal const val LOCAL_DURATION_REFRESH_BATCH_SIZE = 64
+        internal const val LOCAL_DURATION_REFRESH_PARALLELISM = 16
+        internal const val NETEASE_PLAYLIST_ADD_BATCH_SIZE = 50
+        internal const val NETEASE_SONG_DETAIL_BATCH_SIZE = 300
+        internal const val NETEASE_ALBUM_PREFIX = "Netease"
+        internal const val NETEASE_COMPARE_FAILED_MESSAGE =
             "网易云云端比对失败，已停止同步以避免误同步"
 
         @SuppressLint("StaticFieldLeak")

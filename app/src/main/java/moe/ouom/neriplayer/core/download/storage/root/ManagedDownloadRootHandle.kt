@@ -7,3 +7,9 @@ internal sealed interface ManagedDownloadRootHandle {
     data class FileRoot(val dir: File) : ManagedDownloadRootHandle
     data class TreeRoot(val tree: DocumentFile) : ManagedDownloadRootHandle
 }
+
+internal class ManagedDownloadRootUnavailableException(
+    configuredUri: String
+) : IllegalStateException(
+    "Configured SAF download directory is unavailable: $configuredUri"
+)
