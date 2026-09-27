@@ -964,6 +964,119 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `queue reorder owner commits duplicate rows by occurrence key`() {
+        val repeated = testSong(id = 1L, name = "Repeated")
+        val other = testSong(id = 2L, name = "Other")
+        val source = buildNowPlayingQueueEntries(listOf(repeated, other, repeated))
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.move(enabled = true, from = source[2].key, to = source[0].key)
+        assertTrue(owner.isDirty)
+        assertEquals(listOf(source[2].key, source[0].key, source[1].key), owner.entries.map { it.key })
+
+        var committedIndex = -1
+        owner.finish(true, source[2].key, 2, source) { _, index ->
+            committedIndex = index
+            true
+        }
+
+        assertEquals(0, committedIndex)
+        assertFalse(owner.isDirty)
+    }
+
+    @Test
+    fun `queue reorder owner restores source when control is revoked`() {
+        val source = buildNowPlayingQueueEntries(
+            listOf(testSong(id = 1L, name = "First"), testSong(id = 2L, name = "Second"))
+        )
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.move(enabled = false, from = source[0].key, to = source[1].key)
+        assertFalse(owner.isDirty)
+        owner.move(enabled = true, from = source[0].key, to = source[1].key)
+        owner.revokeReorder(source)
+
+        assertEquals(source, owner.entries.toList())
+        assertFalse(owner.isDirty)
+    }
+
+    @Test
+    fun `queue reorder owner rolls back a rejected player commit`() {
+        val source = buildNowPlayingQueueEntries(
+            listOf(testSong(id = 1L, name = "First"), testSong(id = 2L, name = "Second"))
+        )
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.move(enabled = true, from = source[0].key, to = source[1].key)
+        owner.finish(true, source[0].key, 0, source) { _, _ -> false }
+
+        assertEquals(source, owner.entries.toList())
+        assertFalse(owner.isDirty)
+    }
+
+    @Test
+    fun `queue reorder owner ignores invalid drag keys and syncs only when clean`() {
+        val source = buildNowPlayingQueueEntries(
+            listOf(testSong(id = 1L, name = "First"), testSong(id = 2L, name = "Second"))
+        )
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.move(true, null, source[1].key)
+        owner.move(true, source[0].key, 1)
+        owner.move(true, "missing", source[1].key)
+        owner.move(true, source[0].key, source[0].key)
+        assertFalse(owner.isDirty)
+        owner.revokeReorder(source)
+        owner.move(true, source[0].key, source[1].key)
+        owner.sync(source)
+        assertEquals(listOf(source[1], source[0]), owner.entries.toList())
+        owner.finish(false, source[0].key, 0, source) { _, _ -> error("must not commit") }
+        assertEquals(source, owner.entries.toList())
+        owner.sync(source.reversed())
+        assertEquals(source.reversed(), owner.entries.toList())
+    }
+
+    @Test
+    fun `queue reorder owner uses fallback current index and ignores clean finish`() {
+        val source = buildNowPlayingQueueEntries(
+            listOf(testSong(id = 1L, name = "First"), testSong(id = 2L, name = "Second"))
+        )
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.finish(true, null, 0, source) { _, _ -> error("must not commit") }
+        owner.move(true, source[0].key, source[1].key)
+        var index = -1
+        owner.finish(true, null, 0, source) { _, resolvedIndex ->
+            index = resolvedIndex
+            true
+        }
+        assertEquals(0, index)
+    }
+
+    @Test
+    fun `queue row policies preserve click and visual precedence`() {
+        var selected = 0
+        var played = 0
+        val select: () -> Unit = { selected++ }
+        val play: () -> Unit = { played++ }
+        queueRowClick(true, select, play)()
+        queueRowClick(false, select, play)()
+        assertEquals(1, selected)
+        assertEquals(1, played)
+        assertTrue(shouldShowQueueCurrentMarker(true, false))
+        assertFalse(shouldShowQueueCurrentMarker(true, true))
+        assertFalse(shouldShowQueueCurrentMarker(false, false))
+
+        assertEquals(Color.Red.copy(alpha = 0.64f), queueRowContainerColor(true, true, Color.Red, Color.Green, Color.Blue))
+        assertEquals(Color.Green.copy(alpha = 0.42f), queueRowContainerColor(false, true, Color.Red, Color.Green, Color.Blue))
+        assertEquals(Color.Blue.copy(alpha = 0.36f), queueRowContainerColor(false, false, Color.Red, Color.Green, Color.Blue))
+        assertNull(queueArtworkUrl(null))
+        assertNull(queueArtworkUrl("  "))
+        assertEquals("content://cover", queueArtworkUrl("content://cover"))
+        assertEquals(setOf("a", "b"), selectAllNowPlayingQueueKeys(false, setOf("a", "b")))
+        assertEquals(emptySet<String>(), selectAllNowPlayingQueueKeys(true, setOf("a", "b")))
+        assertFalse(isNowPlayingQueueIndexInputError("", null))
+        assertFalse(isNowPlayingQueueIndexInputError("1", 0))
+        assertTrue(isNowPlayingQueueIndexInputError("11", null))
+        assertEquals("123456", filterNowPlayingQueueIndexInput("a1b234567"))
+    }
+
+    @Test
     fun `queue entry sync keeps the same mutable list after commit`() {
         val first = testSong(id = 1L, name = "First")
         val second = testSong(id = 2L, name = "Second")
@@ -1150,6 +1263,34 @@ class NowPlayingScreenTest {
                 firstVisibleItemIndex = 4_096,
                 firstVisibleItemScrollOffset = 12
             )
+        )
+    }
+
+    @Test
+    fun `queue scroll plan preserves first positioning and later animation`() {
+        val initial = planNowPlayingQueueScroll(10, 7, false, false, false, 0, 0)
+        val later = planNowPlayingQueueScroll(10, 7, false, false, true, 0, 0)
+        val already = planNowPlayingQueueScroll(10, 7, false, false, false, 7, 0)
+
+        assertEquals(NowPlayingQueueScrollCommand.Jump(7), initial)
+        assertEquals(NowPlayingQueueScrollCommand.Animate(7), later)
+        assertEquals(NowPlayingQueueScrollCommand.AlreadyPositioned, already)
+        assertTrue(already.marksPositioned)
+    }
+
+    @Test
+    fun `queue scroll plan pauses during selection and stale current index`() {
+        assertEquals(
+            NowPlayingQueueScrollCommand.Skip,
+            planNowPlayingQueueScroll(10, 7, true, false, true, 0, 0)
+        )
+        assertEquals(
+            NowPlayingQueueScrollCommand.Skip,
+            planNowPlayingQueueScroll(10, 7, false, true, true, 0, 0)
+        )
+        assertEquals(
+            NowPlayingQueueScrollCommand.Skip,
+            planNowPlayingQueueScroll(10, 10, false, false, true, 0, 0)
         )
     }
 

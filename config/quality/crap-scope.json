@@ -8,7 +8,8 @@
     "moe/ouom/neriplayer/core/api/bili/BiliRequestSupport.kt",
     "moe/ouom/neriplayer/ui/screen/tab/HomeContinueSection.kt",
     "moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPreflight.kt",
-    "moe/ouom/neriplayer/ui/screen/tab/SettingsNavigationSearch.kt"
+    "moe/ouom/neriplayer/ui/screen/tab/SettingsNavigationSearch.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingQueueSheet.kt"
   ],
   "method_scopes": [
     {
