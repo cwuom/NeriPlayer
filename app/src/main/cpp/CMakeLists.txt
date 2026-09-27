@@ -64,6 +64,7 @@ add_library(
     SHARED
     ${NERI_CRASH_DIR}/native_crash_handler.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_bridge.cpp
+    ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_device_selection.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_recovery_action_latch.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_runtime_report_v2.cpp
     ${NERI_USB_FEEDBACK_DIR}/usb_explicit_feedback_engine.cpp
