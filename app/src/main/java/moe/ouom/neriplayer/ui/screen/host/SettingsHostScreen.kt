@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/1/17
  */
 
-import android.net.Uri
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -42,26 +41,30 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.ThemeMode
-import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.ui.AppSettingsHostBindings
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
-import moe.ouom.neriplayer.util.platform.LanguageManager
 
 internal enum class SettingsScreenState {
     Settings,
     DownloadManager,
     DownloadProgress
+}
+
+internal fun <T> selectSettingsHostPage(
+    state: SettingsScreenState,
+    settings: T,
+    downloadManager: T,
+    downloadProgress: T
+): T = when (state) {
+    SettingsScreenState.Settings -> settings
+    SettingsScreenState.DownloadManager -> downloadManager
+    SettingsScreenState.DownloadProgress -> downloadProgress
 }
 
 private fun SettingsScreenState.saveableKey(): String = "settings_host:${name}"
@@ -101,156 +104,151 @@ internal fun shouldAdvanceSettingsScreenTransition(
     renderedScreenStates == setOf(targetState)
 
 @Composable
-fun SettingsHostScreen(
-    dynamicColor: Boolean,
-    onDynamicColorChange: (Boolean) -> Unit,
-    isDarkTheme: Boolean,
-    themeMode: ThemeMode,
-    onThemeToggleRequest: (Offset, Float) -> Unit,
-    onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit,
-    preferredQuality: String,
-    onQualityChange: (String) -> Unit,
-    youtubePreferredQuality: String,
-    onYouTubeQualityChange: (String) -> Unit,
-    biliPreferredQuality: String,
-    onBiliQualityChange: (String) -> Unit,
-    mobileDataFollowDefaultAudioQuality: Boolean,
-    onMobileDataFollowDefaultAudioQualityChange: (Boolean) -> Unit,
-    mobileDataNeteaseAudioQuality: String,
-    onMobileDataNeteaseAudioQualityChange: (String) -> Unit,
-    mobileDataYouTubeAudioQuality: String,
-    onMobileDataYouTubeAudioQualityChange: (String) -> Unit,
-    mobileDataBiliAudioQuality: String,
-    onMobileDataBiliAudioQualityChange: (String) -> Unit,
-    seedColorHex: String,
-    onSeedColorChange: (String) -> Unit,
-    themeColorPalette: List<String>,
-    onAddColorToPalette: (String) -> Unit,
-    onRemoveColorFromPalette: (String) -> Unit,
-    themePaletteStyle: String,
-    onThemePaletteStyleChange: (String) -> Unit,
-    themeColorSpec: String,
-    onThemeColorSpecChange: (String) -> Unit,
-    devModeEnabled: Boolean,
-    onDevModeChange: (Boolean) -> Unit,
-    lyricBlurEnabled: Boolean,
-    onLyricBlurEnabledChange: (Boolean) -> Unit,
-    lyricBlurAmount: Float,
-    onLyricBlurAmountChange: (Float) -> Unit,
-    cloudMusicLyricDefaultOffsetMs: Long,
-    onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
-    qqMusicLyricDefaultOffsetMs: Long,
-    onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
-    kugouLyricDefaultOffsetMs: Long,
-    onKugouLyricDefaultOffsetMsChange: (Long) -> Unit,
-    lrclibLyricDefaultOffsetMs: Long,
-    onLrclibLyricDefaultOffsetMsChange: (Long) -> Unit,
-    amllTtmlLyricDefaultOffsetMs: Long,
-    onAmllTtmlLyricDefaultOffsetMsChange: (Long) -> Unit,
-    onResetAllLyricDefaultOffsets: () -> Unit,
-    floatingLyricsPreferences: FloatingLyricsPreferences,
-    onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
-    advancedBlurEnabled: Boolean,
-    onAdvancedBlurEnabledChange: (Boolean) -> Unit,
-    enhancedAdvancedBlurEnabled: Boolean,
-    onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
-    enhancedAdvancedBlurRadiusDp: Float,
-    onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit,
-    advancedBlurQuality: AdvancedBlurQuality,
-    onAdvancedBlurQualityChange: (AdvancedBlurQuality) -> Unit,
-    nowPlayingAudioReactiveEnabled: Boolean,
-    onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
-    nowPlayingDynamicBackgroundEnabled: Boolean,
-    onNowPlayingDynamicBackgroundEnabledChange: (Boolean) -> Unit,
-    nowPlayingCoverBlurBackgroundEnabled: Boolean,
-    onNowPlayingCoverBlurBackgroundEnabledChange: (Boolean) -> Unit,
-    nowPlayingCoverBlurAmount: Float,
-    onNowPlayingCoverBlurAmountChange: (Float) -> Unit,
-    nowPlayingCoverBlurDarken: Float,
-    onNowPlayingCoverBlurDarkenChange: (Float) -> Unit,
-    lyricFontScales: LyricFontScales,
-    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
-    uiDensityScale: Float,
-    onUiDensityScaleChange: (Float) -> Unit,
-    bypassProxy: Boolean,
-    onBypassProxyChange: (Boolean) -> Unit,
-    backgroundImageUri: String?,
-    onBackgroundImageChange: (Uri?) -> Unit,
-    downloadDirectoryUri: String?,
-    downloadFileNameTemplate: String?,
-    onDownloadDirectoryUriChange: (String?, String?) -> Unit,
-    onDownloadFileNameTemplateChange: (String?) -> Unit,
-    backgroundImageBlur: Float,
-    onBackgroundImageBlurChange: (Float) -> Unit,
-    onBackgroundImageBlurChangeFinished: (Float) -> Unit,
-    backgroundImageAlpha: Float,
-    onBackgroundImageAlphaChange: (Float) -> Unit,
-    onBackgroundImageAlphaChangeFinished: (Float) -> Unit,
-    defaultStartDestination: String,
-    onDefaultStartDestinationChange: (String) -> Unit,
-    showHomeContinueCard: Boolean,
-    onShowHomeContinueCardChange: (Boolean) -> Unit,
-    showHomeTrendingCard: Boolean,
-    onShowHomeTrendingCardChange: (Boolean) -> Unit,
-    showHomeRadarCard: Boolean,
-    onShowHomeRadarCardChange: (Boolean) -> Unit,
-    showHomeRecommendedCard: Boolean,
-    onShowHomeRecommendedCardChange: (Boolean) -> Unit,
-    homeHasRecentUsage: Boolean,
-    playbackFadeIn: Boolean,
-    onPlaybackFadeInChange: (Boolean) -> Unit,
-    playbackCrossfadeNext: Boolean,
-    onPlaybackCrossfadeNextChange: (Boolean) -> Unit,
-    sleepTimerFinishCurrentOnExpiry: Boolean,
-    onSleepTimerFinishCurrentOnExpiryChange: (Boolean) -> Unit,
-    playbackFadeInDurationMs: Long,
-    onPlaybackFadeInDurationMsChange: (Long) -> Unit,
-    playbackFadeOutDurationMs: Long,
-    onPlaybackFadeOutDurationMsChange: (Long) -> Unit,
-    playbackCrossfadeInDurationMs: Long,
-    onPlaybackCrossfadeInDurationMsChange: (Long) -> Unit,
-    playbackCrossfadeOutDurationMs: Long,
-    onPlaybackCrossfadeOutDurationMsChange: (Long) -> Unit,
-    playbackVolumeNormalizationEnabled: Boolean,
-    onPlaybackVolumeNormalizationEnabledChange: (Boolean) -> Unit,
-    playbackHighResolutionOutputEnabled: Boolean,
-    onPlaybackHighResolutionOutputEnabledChange: (Boolean) -> Unit,
-    playbackVolumeBalance: Float,
-    onPlaybackVolumeBalanceChange: (Float) -> Unit,
-    keepLastPlaybackProgress: Boolean,
-    onKeepLastPlaybackProgressChange: (Boolean) -> Unit,
-    rememberLongFormPlaybackProgress: Boolean,
-    onRememberLongFormPlaybackProgressChange: (Boolean) -> Unit,
-    keepPlaybackModeState: Boolean,
-    onKeepPlaybackModeStateChange: (Boolean) -> Unit,
-    neteaseAutoSourceSwitch: Boolean,
-    onNeteaseAutoSourceSwitchChange: (Boolean) -> Unit,
-    neteaseLocalSourceFallback: Boolean,
-    onNeteaseLocalSourceFallbackChange: (Boolean) -> Unit,
-    stopOnBluetoothDisconnect: Boolean,
-    onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
-    usbExclusivePlayback: Boolean,
-    onUsbExclusivePlaybackChange: (Boolean) -> Unit,
-    allowMixedPlayback: Boolean,
-    onAllowMixedPlaybackChange: (Boolean) -> Unit,
-    preemptAudioFocus: Boolean,
-    onPreemptAudioFocusChange: (Boolean) -> Unit,
-    maxCacheSizeBytes: Long,
-    onMaxCacheSizeBytesChange: (Long) -> Unit,
-    onClearCacheClick: (StorageCacheClearOptions) -> Unit,
-    onBeforeLanguageRestart: () -> Unit = {},
-    onLanguageChanged: (LanguageManager.Language) -> Unit = {},
-    coherentFeedbackEnabled: Boolean = false,
-    renderScene: @Composable (
-        revealTopFraction: Float,
-        contentTranslationYFraction: Float,
-        contentScale: Float,
-        sceneDepth: Int,
-        content: @Composable () -> Unit
-    ) -> Unit = { _, _, _, _, content ->
-        content()
-    },
+internal fun SettingsHostScreen(
+    bindings: AppSettingsHostBindings,
+    renderScene: @Composable (Float, Float, Float, Int, @Composable () -> Unit) -> Unit
 ) {
+    val settingsState = bindings.state
+    val devModeEnabled = settingsState.appearance.theme.devModeEnabled
+    val themeColorPalette = settingsState.appearance.theme.themeColorPalette
+    val lyricBlurEnabled = settingsState.lyrics.lyricPresentation.lyricBlurEnabled
+    val lyricBlurAmount = settingsState.lyrics.lyricPresentation.lyricBlurAmount
+    val cloudMusicLyricDefaultOffsetMs = settingsState.lyrics.lyricOffsets.cloudMusicLyricDefaultOffsetMs
+    val qqMusicLyricDefaultOffsetMs = settingsState.lyrics.lyricOffsets.qqMusicLyricDefaultOffsetMs
+    val kugouLyricDefaultOffsetMs = settingsState.lyrics.lyricOffsets.kugouLyricDefaultOffsetMs
+    val lrclibLyricDefaultOffsetMs = settingsState.lyrics.lyricOffsets.lrclibLyricDefaultOffsetMs
+    val amllTtmlLyricDefaultOffsetMs = settingsState.lyrics.lyricOffsets.amllTtmlLyricDefaultOffsetMs
+    val floatingLyricsPreferences = settingsState.lyrics.lyricPresentation.floatingLyricsPreferences
+    val advancedBlurEnabled = settingsState.appearance.visualBlur.advancedBlurEnabled
+    val enhancedAdvancedBlurEnabled = settingsState.appearance.visualBlur.enhancedAdvancedBlurEnabled
+    val enhancedAdvancedBlurRadiusDp = settingsState.appearance.visualBlur.enhancedAdvancedBlurRadiusDp
+    val advancedBlurQuality = settingsState.appearance.visualBlur.advancedBlurQuality
+    val nowPlayingAudioReactiveEnabled = settingsState.appearance.nowPlayingVisual.nowPlayingAudioReactiveEnabled
+    val nowPlayingDynamicBackgroundEnabled = settingsState.appearance.nowPlayingVisual.nowPlayingDynamicBackgroundEnabled
+    val nowPlayingCoverBlurBackgroundEnabled = settingsState.appearance.nowPlayingVisual.nowPlayingCoverBlurBackgroundEnabled
+    val nowPlayingCoverBlurAmount = settingsState.appearance.nowPlayingVisual.nowPlayingCoverBlurAmount
+    val nowPlayingCoverBlurDarken = settingsState.appearance.nowPlayingVisual.nowPlayingCoverBlurDarken
+    val lyricFontScales = settingsState.lyrics.lyricPresentation.lyricFontScales
+    val uiDensityScale = settingsState.appearance.visualBackground.uiDensityScale
+    val bypassProxy = settingsState.other.storage.bypassProxy
+    val backgroundImageUri = settingsState.appearance.visualBackground.backgroundImageUri
+    val downloadDirectoryUri = settingsState.other.storage.downloadDirectoryUri
+    val downloadFileNameTemplate = settingsState.other.storage.downloadFileNameTemplate
+    val backgroundImageBlur = settingsState.appearance.visualBackground.backgroundImageBlur
+    val showHomeContinueCard = settingsState.other.homeCards.showHomeContinueCard
+    val showHomeTrendingCard = settingsState.other.homeCards.showHomeTrendingCard
+    val showHomeRadarCard = settingsState.other.homeCards.showHomeRadarCard
+    val showHomeRecommendedCard = settingsState.other.homeCards.showHomeRecommendedCard
+    val playbackFadeIn = settingsState.playback.playbackFade.playbackFadeIn
+    val playbackCrossfadeNext = settingsState.playback.playbackFade.playbackCrossfadeNext
+    val sleepTimerFinishCurrentOnExpiry = settingsState.playback.playbackContinuity.sleepTimerFinishCurrentOnExpiry
+    val playbackFadeInDurationMs = settingsState.playback.playbackFade.playbackFadeInDurationMs
+    val playbackFadeOutDurationMs = settingsState.playback.playbackFade.playbackFadeOutDurationMs
+    val playbackCrossfadeInDurationMs = settingsState.playback.playbackFade.playbackCrossfadeInDurationMs
+    val playbackCrossfadeOutDurationMs = settingsState.playback.playbackOutput.playbackCrossfadeOutDurationMs
+    val playbackVolumeNormalizationEnabled = settingsState.playback.playbackOutput.playbackVolumeNormalizationEnabled
+    val playbackHighResolutionOutputEnabled = settingsState.playback.playbackOutput.playbackHighResolutionOutputEnabled
+    val playbackVolumeBalance = settingsState.playback.playbackOutput.playbackVolumeBalance
+    val keepLastPlaybackProgress = settingsState.playback.playbackContinuity.keepLastPlaybackProgress
+    val rememberLongFormPlaybackProgress = settingsState.playback.playbackContinuity.rememberLongFormPlaybackProgress
+    val keepPlaybackModeState = settingsState.playback.playbackContinuity.keepPlaybackModeState
+    val neteaseAutoSourceSwitch = settingsState.playback.playbackSources.neteaseAutoSourceSwitch
+    val neteaseLocalSourceFallback = settingsState.playback.playbackSources.neteaseLocalSourceFallback
+    val stopOnBluetoothDisconnect = settingsState.playback.playbackContinuity.stopOnBluetoothDisconnect
+    val usbExclusivePlayback = settingsState.playback.playbackOutput.usbExclusivePlayback
+    val allowMixedPlayback = settingsState.playback.playbackSources.allowMixedPlayback
+    val preemptAudioFocus = settingsState.playback.playbackSources.preemptAudioFocus
+    val maxCacheSizeBytes = settingsState.other.storage.maxCacheSizeBytes
+    val preferredQuality = settingsState.playback.defaultAudioQuality.preferredQuality
+    val youtubePreferredQuality = settingsState.playback.defaultAudioQuality.youtubePreferredQuality
+    val biliPreferredQuality = settingsState.playback.defaultAudioQuality.biliPreferredQuality
+    val mobileDataFollowDefaultAudioQuality = settingsState.playback.defaultAudioQuality.mobileDataFollowDefaultAudioQuality
+    val mobileDataNeteaseAudioQuality = settingsState.playback.mobileAudioQuality.mobileDataNeteaseAudioQuality
+    val mobileDataYouTubeAudioQuality = settingsState.playback.mobileAudioQuality.mobileDataYouTubeAudioQuality
+    val mobileDataBiliAudioQuality = settingsState.playback.mobileAudioQuality.mobileDataBiliAudioQuality
+    val dynamicColor = settingsState.appearance.theme.dynamicColorEnabled
+    val seedColorHex = settingsState.appearance.theme.themeSeedColor
+    val themePaletteStyle = settingsState.appearance.theme.themePaletteStyleValue
+    val themeColorSpec = settingsState.appearance.visualBlur.themeColorSpecValue
+    val onDynamicColorChange = bindings.appearanceActions.onDynamicColorChange
+    val onQualityChange = bindings.qualityActions.onQualityChange
+    val onYouTubeQualityChange = bindings.qualityActions.onYouTubeQualityChange
+    val onBiliQualityChange = bindings.qualityActions.onBiliQualityChange
+    val onMobileDataFollowDefaultAudioQualityChange = bindings.qualityActions.onMobileDataFollowDefaultAudioQualityChange
+    val onMobileDataNeteaseAudioQualityChange = bindings.qualityActions.onMobileDataNeteaseAudioQualityChange
+    val onMobileDataYouTubeAudioQualityChange = bindings.qualityActions.onMobileDataYouTubeAudioQualityChange
+    val onMobileDataBiliAudioQualityChange = bindings.qualityActions.onMobileDataBiliAudioQualityChange
+    val onSeedColorChange = bindings.appearanceActions.onSeedColorChange
+    val onAddColorToPalette = bindings.appearanceActions.onAddColorToPalette
+    val onRemoveColorFromPalette = bindings.appearanceActions.onRemoveColorFromPalette
+    val onThemePaletteStyleChange = bindings.appearanceActions.onThemePaletteStyleChange
+    val onThemeColorSpecChange = bindings.appearanceActions.onThemeColorSpecChange
+    val onDevModeChange = bindings.appearanceActions.onDevModeChange
+    val onLyricBlurEnabledChange = bindings.lyricsActions.onLyricBlurEnabledChange
+    val onLyricBlurAmountChange = bindings.lyricsActions.onLyricBlurAmountChange
+    val onCloudMusicLyricDefaultOffsetMsChange = bindings.lyricsActions.onCloudMusicLyricDefaultOffsetMsChange
+    val onQqMusicLyricDefaultOffsetMsChange = bindings.lyricsActions.onQqMusicLyricDefaultOffsetMsChange
+    val onKugouLyricDefaultOffsetMsChange = bindings.lyricsActions.onKugouLyricDefaultOffsetMsChange
+    val onLrclibLyricDefaultOffsetMsChange = bindings.lyricsActions.onLrclibLyricDefaultOffsetMsChange
+    val onAmllTtmlLyricDefaultOffsetMsChange = bindings.lyricsActions.onAmllTtmlLyricDefaultOffsetMsChange
+    val onResetAllLyricDefaultOffsets = bindings.lyricsActions.onResetAllLyricDefaultOffsets
+    val onFloatingLyricsPreferencesChange = bindings.lyricsActions.onFloatingLyricsPreferencesChange
+    val onAdvancedBlurEnabledChange = bindings.appearanceActions.onAdvancedBlurEnabledChange
+    val onEnhancedAdvancedBlurEnabledChange = bindings.appearanceActions.onEnhancedAdvancedBlurEnabledChange
+    val onEnhancedAdvancedBlurRadiusDpChange = bindings.appearanceActions.onEnhancedAdvancedBlurRadiusDpChange
+    val onAdvancedBlurQualityChange = bindings.appearanceActions.onAdvancedBlurQualityChange
+    val onNowPlayingAudioReactiveEnabledChange = bindings.appearanceActions.onNowPlayingAudioReactiveEnabledChange
+    val onNowPlayingDynamicBackgroundEnabledChange = bindings.appearanceActions.onNowPlayingDynamicBackgroundEnabledChange
+    val onNowPlayingCoverBlurBackgroundEnabledChange = bindings.appearanceActions.onNowPlayingCoverBlurBackgroundEnabledChange
+    val onNowPlayingCoverBlurAmountChange = bindings.appearanceActions.onNowPlayingCoverBlurAmountChange
+    val onNowPlayingCoverBlurDarkenChange = bindings.appearanceActions.onNowPlayingCoverBlurDarkenChange
+    val onLyricFontScaleChange = bindings.lyricsActions.onLyricFontScaleChange
+    val onUiDensityScaleChange = bindings.appearanceActions.onUiDensityScaleChange
+    val onBypassProxyChange = bindings.storageActions.onBypassProxyChange
+    val onBackgroundImageChange = bindings.appearanceActions.onBackgroundImageChange
+    val onDownloadDirectoryUriChange = bindings.storageActions.onDownloadDirectoryUriChange
+    val onDownloadFileNameTemplateChange = bindings.storageActions.onDownloadFileNameTemplateChange
+    val onBackgroundImageBlurChange = bindings.appearanceActions.onBackgroundImageBlurChange
+    val onBackgroundImageBlurChangeFinished = bindings.appearanceActions.onBackgroundImageBlurChangeFinished
+    val onBackgroundImageAlphaChange = bindings.appearanceActions.onBackgroundImageAlphaChange
+    val onBackgroundImageAlphaChangeFinished = bindings.appearanceActions.onBackgroundImageAlphaChangeFinished
+    val onDefaultStartDestinationChange = bindings.homeActions.onDefaultStartDestinationChange
+    val onShowHomeContinueCardChange = bindings.homeActions.onShowHomeContinueCardChange
+    val onShowHomeTrendingCardChange = bindings.homeActions.onShowHomeTrendingCardChange
+    val onShowHomeRadarCardChange = bindings.homeActions.onShowHomeRadarCardChange
+    val onShowHomeRecommendedCardChange = bindings.homeActions.onShowHomeRecommendedCardChange
+    val onPlaybackFadeInChange = bindings.playbackActions.onPlaybackFadeInChange
+    val onPlaybackCrossfadeNextChange = bindings.playbackActions.onPlaybackCrossfadeNextChange
+    val onSleepTimerFinishCurrentOnExpiryChange = bindings.playbackActions.onSleepTimerFinishCurrentOnExpiryChange
+    val onPlaybackFadeInDurationMsChange = bindings.playbackActions.onPlaybackFadeInDurationMsChange
+    val onPlaybackFadeOutDurationMsChange = bindings.playbackActions.onPlaybackFadeOutDurationMsChange
+    val onPlaybackCrossfadeInDurationMsChange = bindings.playbackActions.onPlaybackCrossfadeInDurationMsChange
+    val onPlaybackCrossfadeOutDurationMsChange = bindings.playbackActions.onPlaybackCrossfadeOutDurationMsChange
+    val onPlaybackVolumeNormalizationEnabledChange = bindings.playbackActions.onPlaybackVolumeNormalizationEnabledChange
+    val onPlaybackHighResolutionOutputEnabledChange = bindings.playbackActions.onPlaybackHighResolutionOutputEnabledChange
+    val onPlaybackVolumeBalanceChange = bindings.playbackActions.onPlaybackVolumeBalanceChange
+    val onKeepLastPlaybackProgressChange = bindings.playbackActions.onKeepLastPlaybackProgressChange
+    val onRememberLongFormPlaybackProgressChange = bindings.playbackActions.onRememberLongFormPlaybackProgressChange
+    val onKeepPlaybackModeStateChange = bindings.playbackActions.onKeepPlaybackModeStateChange
+    val onNeteaseAutoSourceSwitchChange = bindings.playbackActions.onNeteaseAutoSourceSwitchChange
+    val onNeteaseLocalSourceFallbackChange = bindings.playbackActions.onNeteaseLocalSourceFallbackChange
+    val onStopOnBluetoothDisconnectChange = bindings.playbackActions.onStopOnBluetoothDisconnectChange
+    val onUsbExclusivePlaybackChange = bindings.playbackActions.onUsbExclusivePlaybackChange
+    val onAllowMixedPlaybackChange = bindings.playbackActions.onAllowMixedPlaybackChange
+    val onPreemptAudioFocusChange = bindings.playbackActions.onPreemptAudioFocusChange
+    val onMaxCacheSizeBytesChange = bindings.storageActions.onMaxCacheSizeBytesChange
+    val onClearCacheClick = bindings.storageActions.onClearCacheClick
+    val backgroundImageAlpha = bindings.environment.backgroundImageAlpha
+    val coherentFeedbackEnabled = bindings.environment.coherentFeedbackEnabled
+    val defaultStartDestination = bindings.environment.defaultStartDestination
+    val homeHasRecentUsage = bindings.environment.homeHasRecentUsage
+    val isDarkTheme = bindings.environment.isDarkTheme
+    val onBeforeLanguageRestart = bindings.environment.onBeforeLanguageRestart
+    val onLanguageChanged = bindings.environment.onLanguageChanged
+    val onThemeModeRequest = bindings.environment.onThemeModeRequest
+    val onThemeToggleRequest = bindings.environment.onThemeToggleRequest
+    val themeMode = bindings.environment.themeMode
+
     var screenState by rememberSaveable { mutableStateOf(SettingsScreenState.Settings) }
     var requestedScreenState by rememberSaveable { mutableStateOf(SettingsScreenState.Settings) }
     val saveableStateHolder = rememberSaveableStateHolder()
@@ -376,9 +374,8 @@ fun SettingsHostScreen(
                 state.navigationDepth
             ) {
                     saveableStateHolder.SaveableStateProvider(state.saveableKey()) {
-                        when (state) {
-                            SettingsScreenState.Settings -> {
-                                SettingsScreen(
+                        val settingsPage: @Composable () -> Unit = {
+                            SettingsScreen(
                             listState = settingsListState,
                             dynamicColor = dynamicColor,
                             onDynamicColorChange = onDynamicColorChange,
@@ -533,28 +530,26 @@ fun SettingsHostScreen(
                             onClearCacheClick = onClearCacheClick,
                             onBeforeLanguageRestart = onBeforeLanguageRestart,
                             onLanguageChanged = onLanguageChanged
-                                )
-                            }
-
-                            SettingsScreenState.DownloadManager -> {
-                                DownloadManagerScreen(
-                                    onBack = { requestScreen(SettingsScreenState.Settings) },
-                                    onOpenDownloadProgress = {
-                                        requestScreen(SettingsScreenState.DownloadProgress)
-                                    },
-                                    listState = downloadManagerListState
-                                )
-                            }
-
-                            SettingsScreenState.DownloadProgress -> {
-                                DownloadProgressScreen(
-                                    onBack = {
-                                        requestScreen(SettingsScreenState.DownloadManager)
-                                    },
-                                    listState = downloadProgressListState
-                                )
-                            }
+                            )
                         }
+                        val downloadManagerPage: @Composable () -> Unit = {
+                            DownloadManagerScreen(
+                                onBack = { requestScreen(SettingsScreenState.Settings) },
+                                onOpenDownloadProgress = {
+                                    requestScreen(SettingsScreenState.DownloadProgress)
+                                },
+                                listState = downloadManagerListState
+                            )
+                        }
+                        val downloadProgressPage: @Composable () -> Unit = {
+                            DownloadProgressScreen(
+                                onBack = { requestScreen(SettingsScreenState.DownloadManager) },
+                                listState = downloadProgressListState
+                            )
+                        }
+                        selectSettingsHostPage(
+                            state, settingsPage, downloadManagerPage, downloadProgressPage
+                        ).invoke()
                     }
             }
         }

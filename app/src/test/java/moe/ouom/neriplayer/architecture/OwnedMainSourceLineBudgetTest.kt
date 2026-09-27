@@ -148,7 +148,31 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbExclusiveLivenessPort.kt",
             "app/src/main/java/moe/ouom/neriplayer/core/player/usb/recovery/UsbInterruptedPlaybackOwner.kt",
             "app/src/main/java/moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbInterruptedPlaybackPort.kt",
-            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherLocalControlOwner.kt"
+            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherLocalControlOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppSettingsRoute.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppSettingsRouteOwners.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppSettingsRouteActions.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppSettingsHostBindings.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppMainTabRouteSelection.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppDebugCrashActionOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppSettingsRouteState.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppLyricOffsetSettingsOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppSettingsCacheClearOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppNavigationGraph.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppNavigationScaffold.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppManagedProcessingBannerOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppThemeRevealOverlayHost.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppGlobalDialogHosts.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppNavigationSceneRenderer.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppStartupDestinationEffect.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppNowPlayingOverlay.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppNowPlayingBackdrop.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/NowPlayingBlurPolicy.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/NowPlayingBlurState.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/NowPlayingBlurImageRequests.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/NowPlayingBackdropLayers.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/NowPlayingBlurEffectOwner.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

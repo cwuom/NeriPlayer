@@ -48,16 +48,19 @@ class NeriAppProcessingBannerLayoutPolicyTest {
 
     @Test
     fun processingBannerOverlaysExpandedContentWithoutReservingCollapsedSpace() {
-        val source = source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
+        val source = scaffoldSource()
         val contentLayout = source
-            .substringAfter("LocalMiniPlayerHeight provides bottomBarLayoutInsets.screenBottomInset")
+            .substringAfter("private fun AppManagedProcessingLayer(")
 
-        assertTrue(contentLayout.contains("Box(\n                                modifier = Modifier"))
+        assertTrue(contentLayout.contains("Box(\n"))
         assertTrue(contentLayout.contains(".managedProcessingRevealGesture("))
-        assertTrue(contentLayout.contains("visible = managedProcessingBannerActive &&"))
-        assertTrue(contentLayout.contains("!managedProcessingBannerCollapsed"))
+        assertTrue(contentLayout.contains("visible = presentation.visible"))
         assertTrue(contentLayout.contains(".align(Alignment.TopCenter)"))
-        assertTrue(contentLayout.contains(".captureAdvancedGlassBackdrop(contentGlassBackdrop)"))
+        assertTrue(contentLayout.contains("content(layoutInsets)"))
+        assertTrue(
+            source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
+                .contains(".captureAdvancedGlassBackdrop(contentGlassBackdrop)")
+        )
         assertFalse(contentLayout.contains(".weight(1f)\n                                        .fillMaxWidth()"))
     }
 
@@ -73,7 +76,7 @@ class NeriAppProcessingBannerLayoutPolicyTest {
 
     @Test
     fun processingBannerCollapseAndExpandUseHeightAndContentAnimations() {
-        val source = source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
+        val source = scaffoldSource()
         val banner = bannerSource()
             .substringAfter("internal fun ManagedLibraryProcessingBanner(")
 
@@ -84,7 +87,7 @@ class NeriAppProcessingBannerLayoutPolicyTest {
         assertTrue(source.contains("slideOutVertically("))
         assertTrue(source.contains("fadeIn("))
         assertTrue(source.contains("fadeOut("))
-        assertTrue(source.contains("onExpand = {"))
+        assertTrue(source.contains("onExpand = owner::expand"))
     }
 
     @Test
@@ -103,7 +106,7 @@ class NeriAppProcessingBannerLayoutPolicyTest {
 
     @Test
     fun collapsedRevealGestureOnlyConsumesARealTopDownDrag() {
-        val source = source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
+        val source = scaffoldSource()
         val bannerSource = bannerSource()
         val gesture = bannerSource
             .substringAfter("internal fun Modifier.managedProcessingRevealGesture(")
@@ -119,35 +122,24 @@ class NeriAppProcessingBannerLayoutPolicyTest {
         assertTrue(gesture.contains("onExpand()"))
         assertTrue(bannerSource.contains("enabled = interactive"))
         assertTrue(bannerSource.contains("if (interactive)"))
-        assertTrue(source.contains("interactive = managedProcessingBannerActive"))
+        assertTrue(source.contains("interactive = presentation.visible"))
     }
 
     @Test
     fun processingBannerRetainsContentDuringExitAnimation() {
-        val source = source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
-        val contentLayout = source
-            .substringAfter("val managedLibraryProcessingState by")
-            .substringBefore("val homeHostRuntimeState = rememberHomeHostRuntimeState()")
-
-        assertTrue(contentLayout.contains("managedProcessingBannerDisplayState"))
-        assertTrue(contentLayout.contains("managedProcessingBannerDisplayProgress"))
-        assertTrue(
-            contentLayout.contains(
-                "LaunchedEffect(managedLibraryProcessingState, managedMigrationProgress)"
-            )
-        )
-        assertTrue(contentLayout.contains("managedLibraryProcessingState.takeIf"))
-
-        val visibility = source
-            .substringAfter("AnimatedVisibility(\n                                    visible = managedProcessingBannerActive")
-            .substringBefore("ManagedLibraryProcessingBanner(")
-        assertTrue(visibility.contains("slideOutVertically("))
-        assertTrue(visibility.contains("fadeOut("))
-        assertTrue(visibility.contains("shrinkVertically("))
+        val source = scaffoldSource()
+        assertTrue(source.contains("owner.observe(currentState, currentProgress)"))
+        assertTrue(source.contains("exit = managedProcessingBannerExitTransition()"))
+        assertTrue(source.contains("slideOutVertically("))
+        assertTrue(source.contains("fadeOut("))
+        assertTrue(source.contains("shrinkVertically("))
     }
 
     private fun bannerSource(): String =
         source("app/src/main/java/moe/ouom/neriplayer/ui/AppStatusBanners.kt")
+
+    private fun scaffoldSource(): String =
+        source("app/src/main/java/moe/ouom/neriplayer/ui/AppNavigationScaffold.kt")
 
     private fun source(path: String): String {
         var directory = File(System.getProperty("user.dir") ?: ".")
