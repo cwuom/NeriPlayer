@@ -118,7 +118,9 @@
     "moe/ouom/neriplayer/core/player/playback/PlaybackStatsWritePort.kt",
     "moe/ouom/neriplayer/listentogether/session/ListenTogetherRoomStateOwner.kt",
     "moe/ouom/neriplayer/listentogether/session/ListenTogetherSessionProjection.kt",
-    "moe/ouom/neriplayer/listentogether/session/ListenTogetherPendingEvents.kt"
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherPendingEvents.kt",
+    "moe/ouom/neriplayer/core/player/playback/PlayerQueueNavigationOwner.kt",
+    "moe/ouom/neriplayer/core/player/playback/PlayerManagerQueueNavigationExtensions.kt"
   ],
   "method_scopes": [
     {
