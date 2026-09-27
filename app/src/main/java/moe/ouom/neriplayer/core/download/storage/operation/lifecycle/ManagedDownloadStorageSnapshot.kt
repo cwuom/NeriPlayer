@@ -322,8 +322,7 @@ internal fun ManagedDownloadStorage.findMetadataByDirectLookup(
                     children: Collection<QueriedTreeChild>
                 ): StoredEntry? = children.asSequence()
                     .filterNot(QueriedTreeChild::isDirectory)
-                    .filter { child -> child.name == metadataName }
-                    .firstOrNull()
+                    .firstOrNull { child -> child.name == metadataName }
                     ?.toStoredEntry()
                     ?: children.asSequence()
                         .filterNot(QueriedTreeChild::isDirectory)

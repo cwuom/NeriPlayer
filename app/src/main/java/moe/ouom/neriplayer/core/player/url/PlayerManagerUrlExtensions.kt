@@ -254,7 +254,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
             "NERI-PlayerManager",
             "resolveSongUrl: bypass complete YouTube cache for forced refresh: $cacheKey"
         )
-        CachedResourceIntegrity(false, false, 0L)
+        CachedResourceIntegrity(isComplete = false, requiresRepair = false, coveredLength = 0L)
     } else {
         inspectExoPlayerCache(cacheKey)
     }
@@ -1421,11 +1421,11 @@ internal fun shouldRetryLocalPlaybackResolution(
 internal fun PlayerManager.inspectExoPlayerCache(
     cacheKey: String
 ): CachedResourceIntegrity {
-    val mediaCache = cache ?: return CachedResourceIntegrity(false, false, 0L)
+    val mediaCache = cache ?: return CachedResourceIntegrity(isComplete = false, requiresRepair = false, coveredLength = 0L)
     return try {
         val cachedSpans = mediaCache.getCachedSpans(cacheKey)
         if (cachedSpans.isEmpty()) {
-            return CachedResourceIntegrity(false, false, 0L)
+            return CachedResourceIntegrity(isComplete = false, requiresRepair = false, coveredLength = 0L)
         }
 
         val contentLength = ContentMetadata.getContentLength(
@@ -1433,7 +1433,7 @@ internal fun PlayerManager.inspectExoPlayerCache(
         )
         if (contentLength <= 0L) {
             NPLogger.d("NERI-PlayerManager", "缓存命中但缺少内容长度，视为未完成缓存: $cacheKey")
-            return CachedResourceIntegrity(false, false, 0L)
+            return CachedResourceIntegrity(isComplete = false, requiresRepair = false, coveredLength = 0L)
         }
 
         val integrity = inspectCachedResourceSpans(cachedSpans, contentLength)
@@ -1458,7 +1458,7 @@ internal fun PlayerManager.inspectExoPlayerCache(
         integrity
     } catch (e: Exception) {
         NPLogger.w("NERI-PlayerManager", "检查缓存完整性失败: ${e.message}")
-        CachedResourceIntegrity(false, true, 0L)
+        CachedResourceIntegrity(isComplete = false, requiresRepair = true, coveredLength = 0L)
     }
 }
 

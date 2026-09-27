@@ -237,12 +237,12 @@ internal object NewPipeFallbackTracker {
 
     fun maybeSkipSignature(playerJsUrl: String): Boolean {
         val key = playerJsUrl.ifBlank { "<unknown-signature>" }
-        return signatureFailures[key]?.get() ?: 0 >= FAILURE_THRESHOLD
+        return (signatureFailures[key]?.get() ?: 0) >= FAILURE_THRESHOLD
     }
 
     fun maybeSkipThrottling(playerJsUrl: String): Boolean {
         val key = playerJsUrl.ifBlank { "<unknown-throttling>" }
-        return throttlingFailures[key]?.get() ?: 0 >= FAILURE_THRESHOLD
+        return (throttlingFailures[key]?.get() ?: 0) >= FAILURE_THRESHOLD
     }
 
     fun recordSignatureFailure(playerJsUrl: String) {

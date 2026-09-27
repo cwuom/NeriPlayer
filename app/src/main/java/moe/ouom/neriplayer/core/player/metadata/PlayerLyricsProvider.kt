@@ -72,7 +72,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
-    val payload: JSONObject = JSONObject(rawResponse)
+    val payload = JSONObject(rawResponse)
     val yrc: String = payload.optJSONObject("yrc")?.optString("lyric").orEmpty()
     if (yrc.isNotBlank()) {
         return yrc
@@ -83,14 +83,14 @@ internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
 }
 
 internal fun extractTranslatedNeteaseLyricContent(rawResponse: String): String {
-    val payload: JSONObject = JSONObject(rawResponse)
+    val payload = JSONObject(rawResponse)
     return payload.optJSONObject("ytlrc")?.optString("lyric")
         ?: payload.optJSONObject("tlyric")?.optString("lyric")
         ?: ""
 }
 
 internal fun extractRomanizedNeteaseLyricContent(rawResponse: String): String {
-    val payload: JSONObject = JSONObject(rawResponse)
+    val payload = JSONObject(rawResponse)
     return normalizeLegacyLrcTimestamps(
         payload.optJSONObject("romalrc")?.optString("lyric").orEmpty()
     )

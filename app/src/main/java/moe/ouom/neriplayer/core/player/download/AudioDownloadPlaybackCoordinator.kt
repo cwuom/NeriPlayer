@@ -164,10 +164,9 @@ internal class AudioDownloadPlaybackCoordinator(
                     configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
                 )
             }
-            .mapNotNull { reference ->
+            .firstNotNullOfOrNull { reference ->
                 resolveReboundDownloadedPlaybackUri(context, reference)
             }
-            .firstOrNull()
     }
 
     suspend fun resolvePermittedLocalPlaybackUri(

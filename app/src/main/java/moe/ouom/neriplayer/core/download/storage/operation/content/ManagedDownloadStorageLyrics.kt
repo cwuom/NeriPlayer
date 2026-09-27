@@ -378,9 +378,7 @@ internal fun ManagedDownloadStorage.resolveSourceTreeRootFast(
     song: SongItem
 ): RootHandle.TreeRoot? {
     val references = listOfNotNull(song.mediaUri, song.localFilePath)
-    val directTreeUri = references.asSequence()
-        .mapNotNull(::managedDownloadTreeUri)
-        .firstOrNull()
+    val directTreeUri = references.firstNotNullOfOrNull(::managedDownloadTreeUri)
     val treeUri = directTreeUri ?: inferLegacyDownloadTreeUri(context, references)
         ?: return null
     val tree = try {

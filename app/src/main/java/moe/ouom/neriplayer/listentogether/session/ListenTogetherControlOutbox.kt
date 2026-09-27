@@ -60,7 +60,7 @@ internal class ListenTogetherControlOutbox(
 
     fun singlePendingWithLegacyFallback(): PendingListenTogetherControlEvent? {
         return synchronized(events) {
-            events.values.filter { it.legacyFallbackEvent != null }.singleOrNull()
+            events.values.singleOrNull { it.legacyFallbackEvent != null }
         }
     }
 

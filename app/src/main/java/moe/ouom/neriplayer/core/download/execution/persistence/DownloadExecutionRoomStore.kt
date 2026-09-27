@@ -142,9 +142,7 @@ internal object DownloadExecutionRoomStore {
         val identity: DownloadBatchIdentity,
         val stateBits: Int,
         val networkGeneration: Long?
-    ) {
-
-    }
+    )
 
     internal fun canStartBatchForCurrentNetwork(
         batch: DownloadBatchEntity,

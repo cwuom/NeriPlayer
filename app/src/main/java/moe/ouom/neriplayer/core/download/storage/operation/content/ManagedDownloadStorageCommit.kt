@@ -1317,11 +1317,9 @@ internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing
         val prepared = ManagedDownloadTreeMutationLocks.withLock(root.tree.uri) {
             fun refreshAndReconcileExistingTarget(): StoredEntry? {
                 val refreshed = treeChildRegistry.treeChildrenForWrite(context, root.tree)
-                val exactTarget = refreshed.children
-                    .filter { child ->
-                        ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
-                    }
-                    .singleOrNull()
+                val exactTarget = refreshed.children.singleOrNull { child ->
+                    ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
+                }
                     ?: return null
                 return reconcileExistingTreePromotionTargetLocked(
                     context = context,
@@ -1343,11 +1341,9 @@ internal suspend fun ManagedDownloadStorage.copyPendingTreeAudioWithoutReplacing
                     isComplete = true
                 )
             } ?: treeChildRegistry.treeChildrenForWrite(context, root.tree)
-            val recovered = beforeCreate.children
-                .filter { child ->
-                    ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
-                }
-                .singleOrNull()
+            val recovered = beforeCreate.children.singleOrNull { child ->
+                ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
+            }
                 ?.let { existingTarget ->
                     reconcileExistingTreePromotionTargetLocked(
                         context = context,

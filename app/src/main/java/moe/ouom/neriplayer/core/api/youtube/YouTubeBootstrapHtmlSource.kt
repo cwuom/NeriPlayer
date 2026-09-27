@@ -237,9 +237,8 @@ internal class YouTubeBootstrapHtmlSource(html: String) {
         ) {
             return true
         }
-        val quote = before
-        if (quote == '"' || quote == '\'') {
-            return after == quote
+        if (before == '"' || before == '\'') {
+            return after == before
         }
         return !before.isJavaScriptIdentifierPart() && !after.isJavaScriptIdentifierPart()
     }

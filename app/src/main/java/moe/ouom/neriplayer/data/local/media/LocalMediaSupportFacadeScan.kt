@@ -305,8 +305,7 @@ internal fun LocalMediaSupport.resolveCoverReferenceByPriorityImpl(
     fallbackReference: String? = null
 ): String? {
     return sequenceOf(sidecarReference, embeddedReference, fallbackReference)
-        .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-        .firstOrNull()
+        .firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotBlank) }
 }
 
 internal fun LocalMediaSupport.resolveNearbyCoverUriImpl(context: Context, song: SongItem): String? {

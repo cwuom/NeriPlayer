@@ -133,7 +133,7 @@ internal fun mergePendingDownloadRecoveryCandidates(
             // 不把旧 operation 的半成品嫁接到新的 operation，避免新任务
             // 在错误的 staging 文件上继续写入
             workingFile = pendingDownload.workingFile.takeUnless { operationReplaced },
-            order = existing?.order ?: queuedDownloads.size + index,
+            order = existing?.order ?: (queuedDownloads.size + index),
             cancelled = if (operationReplaced) {
                 // 只继承队列中最终选中的 operation 身份，不继承被替换
                 // 的旧 partial 的 stableKey 取消标记

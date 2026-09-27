@@ -159,9 +159,7 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongFastImpl(
         ?.takeIf(String::isNotBlank)
         ?.let { runCatching { it.toUri() }.getOrNull() }
     val songTree = listOfNotNull(song.mediaUri, song.localFilePath)
-        .asSequence()
-        .mapNotNull(::managedDownloadTreeUri)
-        .firstOrNull()
+        .firstNotNullOfOrNull(::managedDownloadTreeUri)
     if (configuredRoot != null && songTree != null) {
         return areEquivalentDirectoryUris(songTree.toString(), configuredRoot.toString())
     }

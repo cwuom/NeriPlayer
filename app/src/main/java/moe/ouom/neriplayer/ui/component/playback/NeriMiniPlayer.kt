@@ -556,8 +556,7 @@ fun NeriMiniPlayer(
         retainedIdentityKey
     ).filterNotNull()
         .distinct()
-        .mapNotNull(RetainedPlaybackCoverBitmapCache::getLatestForOwner)
-        .firstOrNull()
+        .firstNotNullOfOrNull(RetainedPlaybackCoverBitmapCache::getLatestForOwner)
         ?.let { entry ->
             MiniPlayerCoverFrame(
                 coverUrl = entry.coverUrl,

@@ -71,7 +71,7 @@ internal object DownloadedAudioTagWriter {
     private sealed interface CoverPreparation {
         data object NotRequested : CoverPreparation
 
-        data class Ready(val pictures: Array<Picture>) : CoverPreparation
+        class Ready(val pictures: Array<Picture>) : CoverPreparation
 
         data object Unchanged : CoverPreparation
 

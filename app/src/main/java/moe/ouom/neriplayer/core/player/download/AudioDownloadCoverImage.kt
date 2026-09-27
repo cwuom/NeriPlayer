@@ -9,7 +9,7 @@ import java.io.OutputStream
 import java.nio.ByteBuffer
 import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWithin
 
-internal data class AudioDownloadCoverImage(val bytes: ByteArray, val mimeType: String)
+internal class AudioDownloadCoverImage(val bytes: ByteArray, val mimeType: String)
 
 internal fun prepareDownloadedCoverImage(bytes: ByteArray, maxBytes: Long): AudioDownloadCoverImage {
     if (bytes.isEmpty() || bytes.size.toLong() > maxBytes) {
