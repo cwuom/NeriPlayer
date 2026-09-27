@@ -153,7 +153,9 @@
     "moe/ouom/neriplayer/listentogether/session/ListenTogetherHeartbeatOwner.kt",
     "moe/ouom/neriplayer/listentogether/session/ListenTogetherListenerWatchdogOwner.kt",
     "moe/ouom/neriplayer/ui/screen/tab/SettingsScreen.kt",
-    "moe/ouom/neriplayer/ui/AppUsbExclusiveSettingsActions.kt"
+    "moe/ouom/neriplayer/ui/AppUsbExclusiveSettingsActions.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherConnectionRecoveryOwner.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherConnectionRecoveryPolicy.kt"
   ],
   "method_scopes": [
     {
@@ -628,7 +630,9 @@
         "onRoomStateCommitted",
         "recordWebSocketMessage",
         "applyForwardedControllerRequestLocally",
+        "connectWebSocket",
         "disconnectWebSocket",
+        "handleWebSocketControlSendFailure",
         "shouldDeferIncomingStateForLocalTrackFinish",
         "trySendTrackFinishedLegacyFallback",
         "sendPing",
@@ -657,6 +661,21 @@
         "markOutbound",
         "noteOutboundSync",
         "send"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
+      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$connectionRecoveryOwner$1",
+      "methods": [
+        "<init>",
+        "session",
+        "isController",
+        "updateBackgroundKeepAlive",
+        "connectWebSocket",
+        "closeRoomLocally",
+        "beginMembershipRecovery",
+        "rejoinRoom",
+        "membershipRecoveryFailed"
       ]
     }
   ]

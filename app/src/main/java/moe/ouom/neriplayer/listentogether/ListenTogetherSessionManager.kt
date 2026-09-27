@@ -30,12 +30,8 @@ import moe.ouom.neriplayer.listentogether.control.controllerHeartbeatRecoveryTyp
 import moe.ouom.neriplayer.listentogether.control.nextListenTogetherEventId
 import moe.ouom.neriplayer.listentogether.control.requestControlEventTypes
 import moe.ouom.neriplayer.listentogether.control.trackBoundRequestControlEventTypes
-import moe.ouom.neriplayer.listentogether.lifecycle.cancelListenTogetherBackgroundJobs
 import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
 import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
-import moe.ouom.neriplayer.listentogether.network.reconnect.LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS
-import moe.ouom.neriplayer.listentogether.network.reconnect.isTerminalListenTogetherReconnectError
-import moe.ouom.neriplayer.listentogether.network.reconnect.listenTogetherReconnectDelayMs
 import moe.ouom.neriplayer.listentogether.network.ws.ListenTogetherWebSocketClient
 import moe.ouom.neriplayer.listentogether.network.ws.redactListenTogetherWsUrlForLog
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
@@ -81,6 +77,9 @@ import moe.ouom.neriplayer.listentogether.session.ListenTogetherListenerWatchdog
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherListenerWatchdogSnapshot
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherSocketHealthOwner
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherSocketHealthPort
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherConnectionRecoveryOwner
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherConnectionRecoveryPort
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherRejoinIdentity
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherControllerLinkOwner
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherLinkEventPort
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherLinkSessionPort
@@ -118,7 +117,6 @@ import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherU
 import moe.ouom.neriplayer.util.units.MINUTE_MS
 import moe.ouom.neriplayer.util.units.SECOND_MS
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 
@@ -128,12 +126,7 @@ class ListenTogetherSessionManager(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    @Volatile
-    private var reconnectJob: Job? = null
-    private var membershipRecoveryJob: Job? = null
     private var softSyncRateRecheckJob: Job? = null
-    // 串行化重连生命周期的 check-then-act, 避免 onClosed/onFailure 并发触发多条 WS
-    private val connectionLock = Any()
 
     @Volatile
     private var started = false
@@ -142,12 +135,9 @@ class ListenTogetherSessionManager(
     @Volatile
     private var lastControllerLocalControlAtElapsedMs: Long = 0L
     @Volatile
-    private var reconnectEnabled = false
-    @Volatile
     private var applicationInForeground = true
     @Volatile
     private var retainedMembershipCredential: ListenTogetherMembershipCredential? = null
-    private val reconnectAttempt = AtomicInteger(0)
     private val forwardedRequestDeduper = ListenTogetherForwardedRequestDeduper()
     @Volatile
     private var observedControllerOffline = false
@@ -160,14 +150,52 @@ class ListenTogetherSessionManager(
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
 
+    private val connectionRecoveryOwner: ListenTogetherConnectionRecoveryOwner = ListenTogetherConnectionRecoveryOwner(
+        scope = scope,
+        port = object : ListenTogetherConnectionRecoveryPort {
+            override fun session(): ListenTogetherSessionState = _sessionState.value
+            override fun isController(session: ListenTogetherSessionState): Boolean =
+                isCurrentUserController(session)
+            override fun updateBackgroundKeepAlive(reason: String) =
+                this@ListenTogetherSessionManager.updateBackgroundKeepAlive(reason)
+            override fun connectWebSocket() = this@ListenTogetherSessionManager.connectWebSocket()
+            override fun closeRoomLocally(reason: String) =
+                this@ListenTogetherSessionManager.closeRoomLocally(reason)
+            override fun beginMembershipRecovery(session: ListenTogetherSessionState) {
+                socketHealthOwner.pendingRefreshAfterReconnect = true
+                heartbeatOwner.stop()
+                socketHealthOwner.stopKeepAlive()
+                _sessionState.value = session.copy(
+                    connectionState = ListenTogetherConnectionState.CONNECTING,
+                    lastError = AppContainer.applicationContext.getString(R.string.listen_together_error_rejoining)
+                )
+                webSocketClient.disconnect(code = 1000, reason = "listener_recovering")
+            }
+            override suspend fun rejoinRoom(identity: ListenTogetherRejoinIdentity) {
+                joinRoom(
+                    baseUrl = identity.baseUrl,
+                    roomId = identity.roomId,
+                    userUuid = identity.userUuid,
+                    nickname = identity.nickname
+                )
+            }
+            override fun membershipRecoveryFailed(errorMessage: String) {
+                _sessionState.value = _sessionState.value.copy(
+                    connectionState = ListenTogetherConnectionState.DISCONNECTED,
+                    lastError = errorMessage
+                )
+            }
+        }
+    )
+
     private val socketHealthOwner = ListenTogetherSocketHealthOwner(
         scope = scope,
         port = object : ListenTogetherSocketHealthPort {
             override fun session(): ListenTogetherSessionState = _sessionState.value
-            override fun reconnectEnabled(): Boolean = this@ListenTogetherSessionManager.reconnectEnabled
+            override fun reconnectEnabled(): Boolean = connectionRecoveryOwner.enabled
             override fun sendPing(sentAtElapsedMs: Long): Boolean = webSocketClient.sendPing(sentAtElapsedMs)
             override fun sendLegacyPing(): Boolean = webSocketClient.sendLegacyPing()
-            override fun scheduleReconnect(reason: String) = this@ListenTogetherSessionManager.scheduleReconnect(reason)
+            override fun scheduleReconnect(reason: String) = connectionRecoveryOwner.scheduleReconnect(reason)
             override fun connectWebSocket() = this@ListenTogetherSessionManager.connectWebSocket()
             override fun updateBackgroundKeepAlive(reason: String) =
                 this@ListenTogetherSessionManager.updateBackgroundKeepAlive(reason)
@@ -251,9 +279,9 @@ class ListenTogetherSessionManager(
                 val resolvedError = error.message ?: error.javaClass.simpleName
                 NPLogger.w(TAG, "refreshListenerRoomStateIfDue(): failed, reason=$reason, error=$resolvedError", error)
                 _sessionState.value = _sessionState.value.copy(lastError = resolvedError)
-                if (handleTerminalReconnectFailure(resolvedError, "listener_watchdog_refresh")) return
-                if (!maybeRecoverFromFatalMembershipError(resolvedError, "listener_watchdog_refresh")) {
-                    scheduleReconnect("listener_watchdog_refresh_failed:$reason")
+                if (connectionRecoveryOwner.handleTerminalFailure(resolvedError, "listener_watchdog_refresh")) return
+                if (!connectionRecoveryOwner.recoverFromMembershipError(resolvedError, "listener_watchdog_refresh")) {
+                    connectionRecoveryOwner.scheduleReconnect("listener_watchdog_refresh_failed:$reason")
                 }
             }
         },
@@ -585,9 +613,7 @@ class ListenTogetherSessionManager(
     }
 
     fun connectWebSocket() {
-        reconnectEnabled = true
-        reconnectJob?.cancel()
-        reconnectJob = null
+        connectionRecoveryOwner.beginConnect()
         val wsUrl = _sessionState.value.wsUrl ?: return
         webSocketConnectingAtElapsedMs = SystemClock.elapsedRealtime()
         ensureListenTogetherForegroundService("connect_websocket")
@@ -601,7 +627,7 @@ class ListenTogetherSessionManager(
             listener = object : ListenTogetherWebSocketClient.Listener {
                 override fun onOpen() {
                     NPLogger.d(TAG, "websocket.onOpen()")
-                    if (!reconnectEnabled || !roomStateOwner.hasActiveRoom()) {
+                    if (!connectionRecoveryOwner.enabled || !roomStateOwner.hasActiveRoom()) {
                         webSocketConnectingAtElapsedMs = 0L
                         NPLogger.d(TAG, "websocket.onOpen(): drop inactive session")
                         webSocketClient.disconnect(code = 1000, reason = "inactive_session")
@@ -610,9 +636,7 @@ class ListenTogetherSessionManager(
                     webSocketConnectingAtElapsedMs = 0L
                     socketHealthOwner.noteMessage()
                     val shouldRefreshState = socketHealthOwner.pendingRefreshAfterReconnect
-                    resetReconnectAttempt()
-                    reconnectJob?.cancel()
-                    reconnectJob = null
+                    connectionRecoveryOwner.socketOpened()
                     _sessionState.value = _sessionState.value.copy(
                         connectionState = ListenTogetherConnectionState.CONNECTED,
                         lastError = null
@@ -747,10 +771,10 @@ class ListenTogetherSessionManager(
                                 }
                                 NPLogger.w(TAG, "websocket.controlResult(): $resolvedError")
                                 _sessionState.value = _sessionState.value.copy(lastError = resolvedError)
-                                if (handleTerminalReconnectFailure(resolvedError, "control_result")) {
+                                if (connectionRecoveryOwner.handleTerminalFailure(resolvedError, "control_result")) {
                                     return
                                 }
-                                maybeRecoverFromFatalMembershipError(
+                                connectionRecoveryOwner.recoverFromMembershipError(
                                     errorMessage = resolvedError,
                                     reason = "control_result"
                                 )
@@ -764,10 +788,10 @@ class ListenTogetherSessionManager(
                             }
                             NPLogger.w(TAG, "websocket.error(): $resolvedError")
                             _sessionState.value = _sessionState.value.copy(lastError = resolvedError)
-                            if (handleTerminalReconnectFailure(resolvedError, "socket_error")) {
+                            if (connectionRecoveryOwner.handleTerminalFailure(resolvedError, "socket_error")) {
                                 return
                             }
-                            maybeRecoverFromFatalMembershipError(
+                            connectionRecoveryOwner.recoverFromMembershipError(
                                 errorMessage = resolvedError,
                                 reason = "socket_error"
                             )
@@ -797,10 +821,10 @@ class ListenTogetherSessionManager(
                         connectionState = ListenTogetherConnectionState.DISCONNECTED,
                         lastError = reason.takeIf { it.isNotBlank() }
                     )
-                    if (handleTerminalReconnectFailure(reason, "socket_closed:$code")) {
+                    if (connectionRecoveryOwner.handleTerminalFailure(reason, "socket_closed:$code")) {
                         return
                     }
-                    scheduleReconnect("closed:$code:${reason.ifBlank { "unknown" }}")
+                    connectionRecoveryOwner.scheduleReconnect("closed:$code:${reason.ifBlank { "unknown" }}")
                 }
 
                 override fun onFailure(error: Throwable) {
@@ -812,10 +836,10 @@ class ListenTogetherSessionManager(
                         connectionState = ListenTogetherConnectionState.DISCONNECTED,
                         lastError = error.message ?: error.javaClass.simpleName
                     )
-                    if (handleTerminalReconnectFailure(error.message, "socket_failure")) {
+                    if (connectionRecoveryOwner.handleTerminalFailure(error.message, "socket_failure")) {
                         return
                     }
-                    scheduleReconnect("failure:${error.message ?: error.javaClass.simpleName}")
+                    connectionRecoveryOwner.scheduleReconnect("failure:${error.message ?: error.javaClass.simpleName}")
                 }
 
                 override fun onProtocolError(rawText: String, error: Throwable) {
@@ -833,12 +857,8 @@ class ListenTogetherSessionManager(
 
     fun disconnectWebSocket() {
         localControlOwner.clearCoalesced("disconnect")
-        reconnectEnabled = false
-        resetReconnectAttempt()
+        connectionRecoveryOwner.stop()
         socketHealthOwner.pendingRefreshAfterReconnect = false
-        cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
-        reconnectJob = null
-        membershipRecoveryJob = null
         controllerLinkOwner.clear()
         socketHealthOwner.cancelForegroundProbe()
         stopListenTogetherSoftSyncRateRecheck()
@@ -872,7 +892,7 @@ class ListenTogetherSessionManager(
                 connectionState = snapshot.connectionState,
                 roomId = snapshot.roomId,
                 wsUrl = snapshot.wsUrl,
-                reconnectEnabled = reconnectEnabled,
+                reconnectEnabled = connectionRecoveryOwner.enabled,
                 connectingSinceElapsedMs = webSocketConnectingAtElapsedMs,
                 nowElapsedMs = SystemClock.elapsedRealtime()
             )
@@ -889,7 +909,7 @@ class ListenTogetherSessionManager(
                 val probeStartedAtElapsedMs = SystemClock.elapsedRealtime()
                 if (!socketHealthOwner.sendPing()) {
                     socketHealthOwner.pendingRefreshAfterReconnect = true
-                    scheduleReconnect("foreground_ping_send_failed")
+                    connectionRecoveryOwner.scheduleReconnect("foreground_ping_send_failed")
                     return
                 }
                 socketHealthOwner.scheduleForegroundProbe(
@@ -914,7 +934,7 @@ class ListenTogetherSessionManager(
         if (
             shouldHoldListenTogetherBackgroundKeepAlive(
                 sessionActive = !_sessionState.value.roomId.isNullOrBlank(),
-                reconnectEnabled = reconnectEnabled,
+                reconnectEnabled = connectionRecoveryOwner.enabled,
                 applicationInForeground = applicationInForeground
             )
         ) {
@@ -945,12 +965,8 @@ class ListenTogetherSessionManager(
         val leaveRoomId = snapshot.roomId
         val leaveToken = snapshot.token
         retainedMembershipCredential = null
-        reconnectEnabled = false
-        resetReconnectAttempt()
+        connectionRecoveryOwner.stop()
         socketHealthOwner.pendingRefreshAfterReconnect = false
-        cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
-        reconnectJob = null
-        membershipRecoveryJob = null
         controllerLinkOwner.clear()
         socketHealthOwner.cancelForegroundProbe()
         stopListenTogetherSoftSyncRateRecheck()
@@ -1313,7 +1329,7 @@ class ListenTogetherSessionManager(
             expectedPositionMs = expectedPositionMs,
             roomNotice = roomNoticeForState(state)
         )
-        maybeRecoverMissingListenerMembership(state, reason = "apply_room_state")
+        connectionRecoveryOwner.recoverMissingListenerMembership(state, reason = "apply_room_state")
     }
 
     private fun recordWebSocketMessage(message: ListenTogetherSocketEnvelope): Boolean =
@@ -1779,7 +1795,7 @@ class ListenTogetherSessionManager(
         val snapshot = _sessionState.value
         val shouldHold = shouldHoldListenTogetherBackgroundKeepAlive(
             sessionActive = !snapshot.roomId.isNullOrBlank(),
-            reconnectEnabled = reconnectEnabled,
+            reconnectEnabled = connectionRecoveryOwner.enabled,
             applicationInForeground = applicationInForeground
         )
         if (shouldHold) {
@@ -1931,65 +1947,6 @@ class ListenTogetherSessionManager(
         }
     }
 
-    private fun resetReconnectAttempt() {
-        // 与 scheduleReconnect 的自增共用同一把锁串行, 避免与成功/断开后的重置交错导致计数漂移
-        synchronized(connectionLock) {
-            reconnectAttempt.set(0)
-        }
-    }
-
-    private fun scheduleReconnect(reason: String) {
-        val snapshot = _sessionState.value
-        if (!reconnectEnabled) {
-            NPLogger.d(TAG, "scheduleReconnect(): skipped, reconnect disabled, reason=$reason")
-            return
-        }
-        if (snapshot.wsUrl.isNullOrBlank() || snapshot.roomId.isNullOrBlank()) {
-            NPLogger.d(TAG, "scheduleReconnect(): skipped, missing room/wsUrl, reason=$reason")
-            return
-        }
-        if (snapshot.connectionState == ListenTogetherConnectionState.CONNECTING) {
-            NPLogger.d(TAG, "scheduleReconnect(): skipped, already connecting, reason=$reason")
-            return
-        }
-        updateBackgroundKeepAlive("reconnect_scheduled:$reason")
-        synchronized(connectionLock) {
-            if (reconnectJob?.isActive == true) {
-                NPLogger.d(TAG, "scheduleReconnect(): already scheduled, reason=$reason")
-                return
-            }
-            val attempt = reconnectAttempt.incrementAndGet()
-            if (attempt > LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS) {
-                NPLogger.w(
-                    TAG,
-                    "scheduleReconnect(): max attempts reached ($LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS), giving up, reason=$reason"
-                )
-                closeRoomLocally("reconnect_max_attempts_exceeded")
-                return
-            }
-            val delayMs = listenTogetherReconnectDelayMs(attempt)
-            NPLogger.w(
-                TAG,
-                "scheduleReconnect(): roomId=${snapshot.roomId}, attempt=$attempt, delayMs=$delayMs, reason=$reason"
-            )
-            reconnectJob = scope.launch {
-                delay(delayMs)
-                reconnectJob = null
-                val latest = _sessionState.value
-                if (!reconnectEnabled || latest.wsUrl.isNullOrBlank() || latest.roomId.isNullOrBlank()) {
-                    NPLogger.d(TAG, "scheduleReconnect(): cancelled before execution")
-                    return@launch
-                }
-                updateBackgroundKeepAlive("reconnect_attempt:$reason")
-                NPLogger.d(TAG, "reconnect(): roomId=${latest.roomId}, attempt=$attempt")
-                if (tryRecoverMembershipBeforeReconnect("scheduled_reconnect:$reason")) {
-                    return@launch
-                }
-                connectWebSocket()
-            }
-        }
-    }
-
     private fun sendControlEventPureWebSocket(
         event: ListenTogetherEvent,
         reason: String
@@ -2040,7 +1997,7 @@ class ListenTogetherSessionManager(
             "handleWebSocketControlSendFailure(): type=${event.type}, eventId=${event.eventId}, reason=$reason"
         )
         _sessionState.value = _sessionState.value.copy(lastError = resolvedMessage)
-        scheduleReconnect("control_send_failed:${event.type}:$reason")
+        connectionRecoveryOwner.scheduleReconnect("control_send_failed:${event.type}:$reason")
     }
 
     private fun sendControlEventOverHttpFallback(
@@ -2087,10 +2044,10 @@ class ListenTogetherSessionManager(
                     error
                 )
                 _sessionState.value = _sessionState.value.copy(lastError = resolvedError)
-                if (handleTerminalReconnectFailure(resolvedError, "http_control_fallback")) {
+                if (connectionRecoveryOwner.handleTerminalFailure(resolvedError, "http_control_fallback")) {
                     return@onFailure
                 }
-                maybeRecoverFromFatalMembershipError(resolvedError, "http_control_fallback")
+                connectionRecoveryOwner.recoverFromMembershipError(resolvedError, "http_control_fallback")
             }
         }
     }
@@ -2121,10 +2078,10 @@ class ListenTogetherSessionManager(
             if (trySendTrackFinishedLegacyFallback(resolvedError)) {
                 return
             }
-            if (handleTerminalReconnectFailure(resolvedError, "http_control_fallback_response")) {
+            if (connectionRecoveryOwner.handleTerminalFailure(resolvedError, "http_control_fallback_response")) {
                 return
             }
-            maybeRecoverFromFatalMembershipError(resolvedError, "http_control_fallback_response")
+            connectionRecoveryOwner.recoverFromMembershipError(resolvedError, "http_control_fallback_response")
             return
         }
         _sessionState.value = _sessionState.value.copy(lastError = null)
@@ -2165,124 +2122,13 @@ class ListenTogetherSessionManager(
             )
             val resolvedError = error.message ?: error.javaClass.simpleName
             _sessionState.value = _sessionState.value.copy(lastError = resolvedError)
-            if (handleTerminalReconnectFailure(resolvedError, "refresh_after_reconnect")) {
+            if (connectionRecoveryOwner.handleTerminalFailure(resolvedError, "refresh_after_reconnect")) {
                 return@onFailure
             }
-            if (!maybeRecoverFromFatalMembershipError(resolvedError, "refresh_after_reconnect")) {
-                scheduleReconnect("refresh_state_failed:$reason")
+            if (!connectionRecoveryOwner.recoverFromMembershipError(resolvedError, "refresh_after_reconnect")) {
+                connectionRecoveryOwner.scheduleReconnect("refresh_state_failed:$reason")
             }
         }
-    }
-
-    private fun maybeRecoverMissingListenerMembership(
-        state: ListenTogetherRoomState,
-        reason: String
-    ) {
-        val snapshot = _sessionState.value
-        val userUuid = snapshot.userUuid ?: return
-        if (isCurrentUserController(snapshot)) return
-        if (state.roomStatus == ListenTogetherRoomStatuses.CLOSED) return
-        if (state.members.any { it.userUuid.ifBlank { it.userId.orEmpty() } == userUuid }) return
-        NPLogger.w(
-            TAG,
-            "maybeRecoverMissingListenerMembership(): userUuid=$userUuid missing from roomId=${state.roomId}, reason=$reason"
-        )
-        triggerListenerMembershipRecovery("$reason:missing_member")
-    }
-
-    private fun maybeRecoverFromFatalMembershipError(
-        errorMessage: String?,
-        reason: String
-    ): Boolean {
-        val normalized = errorMessage?.trim()?.lowercase().orEmpty()
-        if (
-            "member not in room" !in normalized &&
-            "member missing" !in normalized
-        ) {
-            return false
-        }
-        NPLogger.w(TAG, "maybeRecoverFromFatalMembershipError(): reason=$reason, error=$errorMessage")
-        return triggerListenerMembershipRecovery("$reason:$normalized")
-    }
-
-    private fun tryRecoverMembershipBeforeReconnect(reason: String): Boolean {
-        val snapshot = _sessionState.value
-        if (isCurrentUserController(snapshot)) return false
-        return triggerListenerMembershipRecovery(reason)
-    }
-
-    private fun triggerListenerMembershipRecovery(reason: String): Boolean {
-        val snapshot = _sessionState.value
-        val baseUrl = snapshot.baseUrl
-        val roomId = snapshot.roomId
-        val userUuid = snapshot.userUuid
-        val nickname = snapshot.nickname
-        if (baseUrl.isNullOrBlank() || roomId.isNullOrBlank() || userUuid.isNullOrBlank() || nickname.isNullOrBlank()) {
-            NPLogger.d(TAG, "triggerListenerMembershipRecovery(): skipped, missing session, reason=$reason")
-            return false
-        }
-        if (isCurrentUserController(snapshot)) {
-            NPLogger.d(TAG, "triggerListenerMembershipRecovery(): skipped, current user is controller")
-            return false
-        }
-        if (membershipRecoveryJob?.isActive == true) {
-            NPLogger.d(TAG, "triggerListenerMembershipRecovery(): already running, reason=$reason")
-            return true
-        }
-        reconnectEnabled = true
-        reconnectJob?.cancel()
-        reconnectJob = null
-        socketHealthOwner.pendingRefreshAfterReconnect = true
-        heartbeatOwner.stop()
-        socketHealthOwner.stopKeepAlive()
-        webSocketClient.disconnect(code = 1000, reason = "listener_recovering")
-        _sessionState.value = snapshot.copy(
-            connectionState = ListenTogetherConnectionState.CONNECTING,
-            lastError = AppContainer.applicationContext.getString(R.string.listen_together_error_rejoining)
-        )
-        membershipRecoveryJob = scope.launch {
-            try {
-                NPLogger.w(
-                    TAG,
-                    "triggerListenerMembershipRecovery(): rejoin roomId=$roomId, userUuid=$userUuid, reason=$reason"
-                )
-                joinRoom(baseUrl, roomId, userUuid, nickname)
-                connectWebSocket()
-            } catch (error: Throwable) {
-                val resolvedError = error.message ?: error.javaClass.simpleName
-                NPLogger.e(
-                    TAG,
-                    "triggerListenerMembershipRecovery(): failed, roomId=$roomId, userUuid=$userUuid, reason=$reason, error=$resolvedError",
-                    error
-                )
-                _sessionState.value = _sessionState.value.copy(
-                    connectionState = ListenTogetherConnectionState.DISCONNECTED,
-                    lastError = resolvedError
-                )
-                if (handleTerminalReconnectFailure(resolvedError, "listener_membership_recovery_failed")) {
-                    return@launch
-                }
-                scheduleReconnect("listener_membership_recovery_failed:$reason")
-            } finally {
-                membershipRecoveryJob = null
-            }
-        }
-        return true
-    }
-
-    private fun handleTerminalReconnectFailure(
-        errorMessage: String?,
-        reason: String
-    ): Boolean {
-        if (!isTerminalListenTogetherReconnectError(errorMessage)) {
-            return false
-        }
-        NPLogger.w(
-            TAG,
-            "handleTerminalReconnectFailure(): stop reconnect, reason=$reason, error=$errorMessage"
-        )
-        closeRoomLocally(errorMessage ?: "listen_together_unavailable")
-        return true
     }
 
     private fun noteOutboundSync() = heartbeatOwner.noteOutboundSync()
@@ -2315,13 +2161,9 @@ class ListenTogetherSessionManager(
             TAG,
             "closeRoomLocally(): roomId=${snapshot.roomId}, role=${snapshot.role}, reason=$reason, lastAppliedVersion=${roomStateOwner.lastAppliedVersion()}"
         )
-        reconnectEnabled = false
+        connectionRecoveryOwner.stop()
         localControlOwner.clearOutbox()
-        resetReconnectAttempt()
         socketHealthOwner.pendingRefreshAfterReconnect = false
-        cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
-        reconnectJob = null
-        membershipRecoveryJob = null
         controllerLinkOwner.clear()
         socketHealthOwner.cancelForegroundProbe()
         stopListenTogetherSoftSyncRateRecheck()
