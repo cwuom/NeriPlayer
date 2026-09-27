@@ -92,9 +92,47 @@
     "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditLyricsSources.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditRestoreSources.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditSave.kt",
-    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditSearchSheet.kt"
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditSearchSheet.kt",
+    "moe/ouom/neriplayer/core/player/media/LocalPlaybackMediaResolver.kt",
+    "moe/ouom/neriplayer/core/player/media/PlaybackMediaItemFactory.kt",
+    "moe/ouom/neriplayer/core/player/usb/confirmation/UsbExclusiveLoudPlaybackConfirmationOwner.kt",
+    "moe/ouom/neriplayer/core/player/usb/confirmation/UsbExclusiveLoudPlaybackSnapshotSource.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/core/player/PlayerManager.kt",
+      "class": "moe.ouom.neriplayer.core.player.PlayerManager",
+      "methods": [
+        "localMediaSource$app",
+        "isYouTubeMusicTrack$app",
+        "isBiliTrack$app",
+        "toPlayableLocalUrl$app",
+        "isReadableLocalMediaUri$app",
+        "isReadableLocalMediaUri$app$default",
+        "restorableLocalMediaState$app",
+        "restorableLocalMediaState$app$default",
+        "isRestorableLocalMediaUri$app",
+        "isRestorableLocalMediaUri$app$default",
+        "isRestorableLocalSong$app",
+        "isRestorableLocalSong$app$default",
+        "sanitizeRestoredPlaylist$app",
+        "computeCacheKey$app",
+        "computeCacheKey$app$default",
+        "buildNeteasePlaybackCacheKey$app",
+        "buildNeteasePreviewCacheKey$app",
+        "computeYouTubeCacheKey$app",
+        "computeYouTubeCacheKey$app$default",
+        "buildMediaItem$app",
+        "buildMediaItem$app$default",
+        "<clinit>",
+        "getUsbExclusiveLoudPlaybackConfirmationFlow$app",
+        "requestUsbExclusiveLoudPlaybackConfirmation$app",
+        "requestUsbExclusiveLoudPlaybackConfirmation$app$default",
+        "confirmUsbExclusiveLoudPlayback$app",
+        "cancelUsbExclusiveLoudPlayback$app",
+        "currentUsbExclusiveLoudPlaybackSnapshot"
+      ]
+    },
     {
       "source": "moe/ouom/neriplayer/ui/screen/tab/SettingsScreen.kt",
       "class": "moe.ouom.neriplayer.ui.screen.tab.SettingsScreenKt",

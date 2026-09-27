@@ -28,15 +28,9 @@ package moe.ouom.neriplayer.core.player
 
 import android.app.Application
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.AudioDeviceCallback
-import android.media.AudioManager
-import android.net.Uri
 import android.os.Looper
-import android.os.Process
 import android.os.SystemClock
-import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -81,6 +75,8 @@ import moe.ouom.neriplayer.core.player.lifecycle.releaseImpl
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.lyrics.LyriconUpdateCoordinator
+import moe.ouom.neriplayer.core.player.media.LocalPlaybackMediaResolver
+import moe.ouom.neriplayer.core.player.media.PlaybackMediaItemFactory
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
@@ -120,16 +116,9 @@ import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshInFlightController
 import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
-import moe.ouom.neriplayer.core.player.policy.storage.resolveRestorableLocalMediaState
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationCoordinator
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationSnapshot
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationToken
-import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource
-import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudPlaybackRisk
-import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveOutputDeviceClass
-import moe.ouom.neriplayer.core.player.policy.usb.estimateUsbExclusiveLoudness
-import moe.ouom.neriplayer.core.player.policy.usb.predictedUsbExclusivePlaybackGain
-import moe.ouom.neriplayer.core.player.policy.usb.shouldRequestUsbExclusiveLoudPlaybackWarning
 import moe.ouom.neriplayer.core.player.prefetch.GenericUrlPrefetchCache
 import moe.ouom.neriplayer.core.player.prefetch.PlaybackDemandArbiter
 import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
@@ -211,22 +200,23 @@ import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_PLAYBACK_PREFER_M4A
 import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
 import moe.ouom.neriplayer.core.player.url.safeCustomPlaybackCacheKey
-import moe.ouom.neriplayer.core.player.url.stripListenTogetherStreamQualityMetadata
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
+import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackConfirmation
+import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackConfirmationOwner
+import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackSignals
+import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackSnapshot
+import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackSnapshotSource
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.shouldTreatReadyAtStartAsUnhealthyPrepared
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_KUGOU_LYRIC_OFFSET_MS
@@ -245,7 +235,6 @@ import moe.ouom.neriplayer.listentogether.playback.authoritativeStreamUrlForCurr
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.shouldHoldListenTogetherPlaybackForSafetyPause
 import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForAudioRouteLoss
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -254,7 +243,6 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.playback.stopPlaybackImmediatelyImpl
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
-import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
@@ -272,25 +260,8 @@ internal data class LocalPlaylistPlaybackSource(
 
 @Suppress("ObjectPropertyName", "ktlint:standard:property-naming")
 object PlayerManager {
-    const val BILI_SOURCE_TAG = "Bilibili"
+    const val BILI_SOURCE_TAG = PlaybackMediaItemFactory.BILI_SOURCE_TAG
     const val NETEASE_SOURCE_TAG = "Netease"
-
-    internal data class UsbExclusiveLoudPlaybackConfirmation(
-        val id: Long,
-        val systemVolumePercent: Int,
-        val deviceClass: UsbExclusiveOutputDeviceClass,
-        val deviceName: String,
-        val estimatedPeakDbfs: Double,
-        val peakSource: UsbExclusiveLoudnessPeakSource,
-        val riskThresholdDbfs: Int,
-        val risk: UsbExclusiveLoudPlaybackRisk
-    )
-
-    private data class PendingUsbExclusiveLoudPlaybackConfirmation(
-        val confirmation: UsbExclusiveLoudPlaybackConfirmation,
-        val continuePlayback: () -> Unit,
-        val cancelPlayback: (() -> Unit)?
-    )
 
     @Volatile
     internal var initialized = false
@@ -688,14 +659,10 @@ object PlayerManager {
     internal val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()
 
-    private val _usbExclusiveLoudPlaybackConfirmationFlow =
-        MutableStateFlow<UsbExclusiveLoudPlaybackConfirmation?>(null)
+    private val usbExclusiveLoudPlaybackConfirmationOwner = UsbExclusiveLoudPlaybackConfirmationOwner()
     internal val usbExclusiveLoudPlaybackConfirmationFlow:
         StateFlow<UsbExclusiveLoudPlaybackConfirmation?> =
-        _usbExclusiveLoudPlaybackConfirmationFlow
-    private var pendingUsbExclusiveLoudPlaybackConfirmation:
-        PendingUsbExclusiveLoudPlaybackConfirmation? = null
-    private var nextUsbExclusiveLoudPlaybackConfirmationId = 0L
+        usbExclusiveLoudPlaybackConfirmationOwner.confirmationFlow
 
     internal val _playbackCommandFlow = MutableSharedFlow<PlaybackCommand>(
         extraBufferCapacity = 32
@@ -1620,12 +1587,11 @@ object PlayerManager {
     }
 
     internal fun isYouTubeMusicTrack(song: SongItem): Boolean {
-        return song.channelId == ListenTogetherChannels.YOUTUBE_MUSIC || isYouTubeMusicSong(song)
+        return PlaybackMediaItemFactory.isYouTubeSource(song)
     }
 
     internal fun isBiliTrack(song: SongItem): Boolean {
-        return song.channelId == ListenTogetherChannels.BILIBILI ||
-            song.album.startsWith(BILI_SOURCE_TAG)
+        return PlaybackMediaItemFactory.isBiliSource(song)
     }
     internal fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
@@ -1644,125 +1610,34 @@ object PlayerManager {
     }
 
     internal fun localMediaSource(song: SongItem): String? {
-        val preferred = preferredLocalMediaReference(
-            localFilePath = song.localFilePath,
-            mediaUri = song.mediaUri
-        )
-        return listOfNotNull(preferred, song.localFilePath, song.mediaUri)
-            .distinct()
-            .firstOrNull(::isReadableLocalMediaUri)
-            ?: preferred
+        return LocalPlaybackMediaResolver.source(song, application)
     }
 
-    internal fun toPlayableLocalUrl(mediaUri: String?): String? {
-        val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return null
-        return if (uriString.startsWith("/")) {
-            Uri.fromFile(File(uriString)).toString()
-        } else {
-            val parsed = runCatching { uriString.toUri() }.getOrNull() ?: return null
-            when (parsed.scheme?.lowercase()) {
-                null, "" -> Uri.fromFile(File(uriString)).toString()
-                else -> uriString
-            }
-        }
-    }
+    internal fun toPlayableLocalUrl(mediaUri: String?): String? =
+        LocalPlaybackMediaResolver.playableUrl(mediaUri)
 
-    internal fun isReadableLocalMediaUri(mediaUri: String?, context: Context = application): Boolean {
-        val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return false
-        if (uriString.startsWith("/")) {
-            return canOpenLocalFile(File(uriString))
-        }
-
-        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return false
-        return when (uri.scheme?.lowercase()) {
-            null, "" -> canOpenLocalFile(File(uriString))
-            "file" -> uri.path?.let(::File)?.let(::canOpenLocalFile) == true
-            "content", "android.resource" -> runCatching {
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
-            }.getOrDefault(false)
-            else -> false
-        }
-    }
+    internal fun isReadableLocalMediaUri(mediaUri: String?, context: Context = application): Boolean =
+        LocalPlaybackMediaResolver.isReadable(mediaUri, context)
 
     internal fun restorableLocalMediaState(
         mediaUri: String?,
         context: Context = application,
-    ): RestorableLocalMediaState {
-        val uriString = mediaUri?.takeIf { it.isNotBlank() }
-            ?: return RestorableLocalMediaState.REVOKED
-        if (uriString.startsWith("/")) {
-            return resolveRestorableLocalMediaState(
-                scheme = null,
-                localFileReadable = canOpenLocalFile(File(uriString)),
-            )
-        }
-
-        val uri = runCatching { uriString.toUri() }.getOrNull()
-            ?: return RestorableLocalMediaState.REVOKED
-        return when (uri.scheme?.lowercase()) {
-            null, "" -> resolveRestorableLocalMediaState(
-                scheme = uri.scheme,
-                localFileReadable = canOpenLocalFile(File(uriString)),
-            )
-            "file" -> resolveRestorableLocalMediaState(
-                scheme = uri.scheme,
-                localFileReadable = uri.path?.let(::File)?.let(::canOpenLocalFile) == true,
-            )
-            "content" -> {
-                val hasPersistedReadPermission = context.contentResolver.persistedUriPermissions.any {
-                    it.isReadPermission && it.uri == uri
-                }
-                val hasCurrentReadPermission = context.checkUriPermission(
-                    uri,
-                    Process.myPid(),
-                    Process.myUid(),
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                ) == PackageManager.PERMISSION_GRANTED
-                resolveRestorableLocalMediaState(
-                    scheme = uri.scheme,
-                    hasPersistedReadPermission = hasPersistedReadPermission,
-                    hasCurrentReadPermission = hasCurrentReadPermission,
-                )
-            }
-            else -> resolveRestorableLocalMediaState(scheme = uri.scheme)
-        }
-    }
+    ): RestorableLocalMediaState = LocalPlaybackMediaResolver.restorableState(mediaUri, context)
 
     internal fun isRestorableLocalMediaUri(
         mediaUri: String?,
         context: Context = application,
-    ): Boolean {
-        return restorableLocalMediaState(mediaUri, context) != RestorableLocalMediaState.REVOKED
-    }
+    ): Boolean = LocalPlaybackMediaResolver.isRestorable(mediaUri, context)
 
-    internal fun isRestorableLocalSong(song: SongItem, context: Context = application): Boolean {
-        val preferred = preferredLocalMediaReference(
-            localFilePath = song.localFilePath,
-            mediaUri = song.mediaUri
-        )
-        return listOfNotNull(preferred, song.localFilePath, song.mediaUri)
-            .distinct()
-            .any { isRestorableLocalMediaUri(it, context) }
-    }
+    internal fun isRestorableLocalSong(song: SongItem, context: Context = application): Boolean =
+        LocalPlaybackMediaResolver.isRestorableSong(song, context)
 
     @Suppress("unused")
-    internal fun sanitizeRestoredPlaylist(playlist: List<SongItem>): List<SongItem> {
-        return playlist.filter { song ->
-            !isLocalSong(song) || isRestorableLocalSong(song)
-        }
-    }
+    internal fun sanitizeRestoredPlaylist(playlist: List<SongItem>): List<SongItem> =
+        LocalPlaybackMediaResolver.sanitizeRestoredPlaylist(playlist, application)
 
     internal fun isCurrentSong(song: SongItem): Boolean {
         return _currentSongFlow.value?.sameIdentityAs(song) == true
-    }
-
-    private fun canOpenLocalFile(file: File): Boolean {
-        if (!file.exists() || !file.isFile) {
-            return false
-        }
-        return runCatching {
-            RandomAccessFile(file, "r").use { true }
-        }.getOrDefault(false)
     }
 
     internal fun maybeUpdateSongDuration(song: SongItem, durationMs: Long) {
@@ -2130,144 +2005,39 @@ object PlayerManager {
         bypassWarning: Boolean = false,
         continuePlayback: () -> Unit,
         cancelPlayback: (() -> Unit)? = null
-    ): Boolean {
-        if (bypassWarning) return false
-        val systemVolumePercent = currentSystemMediaVolumePercent() ?: run {
-            NPLogger.w(
-                "NERI-PlayerManager",
-                "cannot read system media volume for USB loudness warning; use conservative full scale"
-            )
-            100
-        }
-        val playbackAlreadyAudible = isPlaybackAudibleForLoudnessWarning()
-        val loudnessEstimate = currentUsbExclusiveLoudnessEstimate(
-            systemVolumePercent = systemVolumePercent,
-            playbackAlreadyAudible = playbackAlreadyAudible
-        )
-        val outputRouteKey = currentAudioOutputRouteKey()
-        if (!shouldRequestUsbExclusiveLoudPlaybackWarning(
-                usbExclusiveEnabled = usbExclusivePlaybackEnabled,
-                appInForeground = usbExclusiveAppInForeground,
-                commandSource = commandSource,
-                playbackAlreadyAudible = playbackAlreadyAudible,
-                loudnessEstimate = loudnessEstimate
-            )
-        ) {
-            return false
-        }
-        val confirmation = UsbExclusiveLoudPlaybackConfirmation(
-            id = ++nextUsbExclusiveLoudPlaybackConfirmationId,
-            systemVolumePercent = systemVolumePercent,
-            deviceClass = loudnessEstimate.deviceClass,
-            deviceName = _currentAudioDevice.value?.name.orEmpty(),
-            estimatedPeakDbfs = loudnessEstimate.estimatedPeakDbfs,
-            peakSource = loudnessEstimate.peakSource,
-            riskThresholdDbfs = loudnessEstimate.riskThresholdDbfs,
-            risk = loudnessEstimate.risk
-        )
-        pendingUsbExclusiveLoudPlaybackConfirmation =
-            PendingUsbExclusiveLoudPlaybackConfirmation(
-                confirmation = confirmation,
-                continuePlayback = continuePlayback,
-                cancelPlayback = cancelPlayback
-            )
-        _usbExclusiveLoudPlaybackConfirmationFlow.value = confirmation
-        NPLogger.i(
-            "NERI-PlayerManager",
-            "defer manual USB playback for loud-volume confirmation: " +
-                "volumePercent=$systemVolumePercent peakDbfs=${loudnessEstimate.estimatedPeakDbfs} " +
-                "source=${loudnessEstimate.peakSource} " +
-                "thresholdDbfs=${loudnessEstimate.riskThresholdDbfs} " +
-                "risk=${loudnessEstimate.risk} route=$outputRouteKey"
-        )
-        return true
-    }
+    ): Boolean = usbExclusiveLoudPlaybackConfirmationOwner.request(
+        commandSource = commandSource,
+        bypassWarning = bypassWarning,
+        snapshot = ::currentUsbExclusiveLoudPlaybackSnapshot,
+        continuePlayback = continuePlayback,
+        cancelPlayback = cancelPlayback
+    )
 
     internal fun confirmUsbExclusiveLoudPlayback(confirmationId: Long) {
-        val pending = pendingUsbExclusiveLoudPlaybackConfirmation ?: return
-        if (pending.confirmation.id != confirmationId) return
-        pendingUsbExclusiveLoudPlaybackConfirmation = null
-        _usbExclusiveLoudPlaybackConfirmationFlow.value = null
-        NPLogger.i(
-            "NERI-PlayerManager",
-            "confirmed manual USB playback at peakDbfs=" +
-                pending.confirmation.estimatedPeakDbfs
-        )
-        pending.continuePlayback()
+        usbExclusiveLoudPlaybackConfirmationOwner.confirm(confirmationId)
     }
 
     internal fun cancelUsbExclusiveLoudPlayback(confirmationId: Long) {
-        val pending = pendingUsbExclusiveLoudPlaybackConfirmation ?: return
-        if (pending.confirmation.id != confirmationId) return
-        pendingUsbExclusiveLoudPlaybackConfirmation = null
-        _usbExclusiveLoudPlaybackConfirmationFlow.value = null
-        pending.cancelPlayback?.invoke()
-        NPLogger.i(
-            "NERI-PlayerManager",
-            "cancelled manual USB playback loud-volume confirmation"
+        usbExclusiveLoudPlaybackConfirmationOwner.cancel(confirmationId)
+    }
+
+    private fun currentUsbExclusiveLoudPlaybackSnapshot(): UsbExclusiveLoudPlaybackSnapshot =
+        UsbExclusiveLoudPlaybackSnapshotSource.capture(
+            UsbExclusiveLoudPlaybackSignals(
+                context = application,
+                usbExclusiveEnabled = usbExclusivePlaybackEnabled,
+                appInForeground = usbExclusiveAppInForeground,
+                currentDevice = _currentAudioDevice.value,
+                reportedPlaying = _isPlayingFlow.value,
+                playerInitialized = ::isPlayerInitialized,
+                playerIsPlaying = { player.isPlaying },
+                playerVolume = { player.volume },
+                requestedVolume = { UsbExclusiveAudioPathTracker.state.value.requestedVolume },
+                nativeState = { UsbExclusiveSessionController.state.value },
+                bitPerfect = usbExclusivePreferences.bitPerfect,
+                riskThresholdDbfs = usbExclusivePreferences.volumeRiskThresholdDbfs
+            )
         )
-    }
-
-    private fun currentSystemMediaVolumePercent(): Int? {
-        val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            ?: return null
-        return runCatching {
-            val minVolume = audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            val range = maxVolume - minVolume
-            if (range <= 0) {
-                100
-            } else {
-                ((currentVolume - minVolume) * 100 / range).coerceIn(0, 100)
-            }
-        }.getOrNull()
-    }
-
-    private fun currentAudioOutputRouteKey(): String {
-        val device = _currentAudioDevice.value
-        val metrics = UsbExclusiveSessionController.state.value.runtimeReport.usbRuntimeMetrics()
-        val route = if (device == null) "unknown" else "${device.type}:${device.name}"
-        return "$route:${metrics.uacVersion ?: "uac_unknown"}:${metrics.candidateId ?: "candidate_unknown"}"
-    }
-
-    private fun currentUsbExclusiveLoudnessEstimate(
-        systemVolumePercent: Int,
-        playbackAlreadyAudible: Boolean
-    ) = run {
-        val nativeState = UsbExclusiveSessionController.state.value
-        val metrics = nativeState.runtimeReport.usbRuntimeMetrics()
-        val currentPlayerVolume = if (isPlayerInitialized()) {
-            runCatching { player.volume.coerceIn(0f, 1f) }
-                .getOrElse { UsbExclusiveAudioPathTracker.state.value.requestedVolume }
-        } else {
-            UsbExclusiveAudioPathTracker.state.value.requestedVolume
-        }
-        val playerVolume = predictedUsbExclusivePlaybackGain(
-            currentPlayerVolume = currentPlayerVolume,
-            playbackAlreadyAudible = playbackAlreadyAudible
-        )
-        val observedOutputPeak = if (playbackAlreadyAudible) {
-            metrics.lastOutputPeak?.takeIf { it.isFinite() && it > 0f }
-        } else {
-            null
-        }
-        estimateUsbExclusiveLoudness(
-            systemVolumePercent = systemVolumePercent,
-            playerVolume = playerVolume,
-            bitPerfect = usbExclusivePreferences.bitPerfect,
-            uacVersion = metrics.uacVersion,
-            outputSampleRate = metrics.sampleRate ?: nativeState.outputSampleRate,
-            outputBitDepth = metrics.subslotBytes?.times(8),
-            observedOutputPeak = observedOutputPeak,
-            riskThresholdDbfs = usbExclusivePreferences.volumeRiskThresholdDbfs
-        )
-    }
-
-    private fun isPlaybackAudibleForLoudnessWarning(): Boolean {
-        return _isPlayingFlow.value ||
-            (isPlayerInitialized() && runCatching { player.isPlaying }.getOrDefault(false))
-    }
 
     internal fun emitPlaybackCommand(
         type: String,
@@ -2469,58 +2239,31 @@ object PlayerManager {
         song: SongItem,
         youtubeQualityOverride: String? = null,
         youtubePreferM4aOverride: Boolean? = null
-    ): String {
-        return when {
-            isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
-            isYouTubeMusicTrack(song) -> {
-                val videoId = song.audioId ?: extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
-                computeYouTubeCacheKey(
-                    videoId = videoId,
-                    preferredQuality = youtubeQualityOverride ?: effectiveYouTubeQuality(),
-                    preferM4a = youtubePreferM4aOverride ?: YOUTUBE_PLAYBACK_PREFER_M4A
-                )
-            }
-            isBiliTrack(song) -> {
-                val cidPart = song.subAudioId ?: song.album
-                    .substringAfter('|', "")
-                    .substringBefore('|')
-                    .takeIf { it.isNotBlank() }
-                val biliSongId = song.audioId ?: song.id.toString()
-                if (cidPart != null) {
-                    "bili-$biliSongId-$cidPart-${effectiveBiliQuality()}"
-                } else {
-                    "bili-$biliSongId-${effectiveBiliQuality()}"
-                }
-            }
-            else -> buildNeteasePlaybackCacheKey(
-                songId = song.id,
-                preferredQuality = effectiveNeteaseQuality(),
-                useFallbackNamespace = neteaseAutoSourceSwitchEnabled ||
-                    neteaseLocalSourceFallbackEnabled
-            )
-        }
-    }
+    ): String = PlaybackMediaItemFactory.cacheKey(
+        song = song,
+        context = application,
+        youtubeQualityOverride = youtubeQualityOverride,
+        youtubePreferM4a = youtubePreferM4aOverride ?: YOUTUBE_PLAYBACK_PREFER_M4A,
+        neteaseFallbackEnabled = { neteaseAutoSourceSwitchEnabled || neteaseLocalSourceFallbackEnabled },
+        youtubeQuality = ::effectiveYouTubeQuality,
+        biliQuality = ::effectiveBiliQuality,
+        neteaseQuality = ::effectiveNeteaseQuality
+    )
 
     internal fun buildNeteasePlaybackCacheKey(
         songId: Long,
         preferredQuality: String,
         useFallbackNamespace: Boolean
-    ): String {
-        val quality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
-        return if (useFallbackNamespace) {
-            "netease-$songId-$quality-fallback-v1"
-        } else {
-            "netease-$songId-$quality"
-        }
-    }
+    ): String = PlaybackMediaItemFactory.neteaseCacheKey(
+        songId,
+        preferredQuality,
+        useFallbackNamespace
+    )
 
     internal fun buildNeteasePreviewCacheKey(
         songId: Long,
         preferredQuality: String
-    ): String {
-        val quality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
-        return "netease-preview-v1-$songId-$quality"
-    }
+    ): String = PlaybackMediaItemFactory.neteasePreviewCacheKey(songId, preferredQuality)
 
     /**
      * 键必须在解析前确定, 预取与播放才能对齐同一份缓存
@@ -2530,13 +2273,7 @@ object PlayerManager {
         videoId: String,
         preferredQuality: String = effectiveYouTubeQuality(),
         preferM4a: Boolean = YOUTUBE_PLAYBACK_PREFER_M4A
-    ): String {
-        return if (preferM4a) {
-            "ytmusic-$videoId-$preferredQuality-stable-m4a"
-        } else {
-            "ytmusic-$videoId-$preferredQuality"
-        }
-    }
+    ): String = PlaybackMediaItemFactory.youtubeCacheKey(videoId, preferredQuality, preferM4a)
 
     internal fun buildMediaItem(
         song: SongItem,
@@ -2544,35 +2281,13 @@ object PlayerManager {
         cacheKey: String,
         mimeType: String? = null,
         allowCustomCacheKey: Boolean = true
-    ): MediaItem {
-        val mediaUrl = stripListenTogetherStreamQualityMetadata(url)
-        val mediaUri = mediaUrl.toUri()
-        val isLocalFile =
-            mediaUrl.startsWith("file://") ||
-            mediaUrl.startsWith("content://") ||
-            mediaUrl.startsWith("android.resource://") ||
-            mediaUrl.startsWith("/")
-        if (mediaUri.path?.endsWith(".flac", ignoreCase = true) == true) {
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "build FLAC media item: songId=${song.id}, host=${mediaUri.host ?: "local"}, " +
-                    "declaredMimeType=${mimeType ?: "missing"}, cacheKey=$cacheKey"
-            )
-        }
-        return MediaItem.Builder()
-            .setMediaId("${song.id}|${song.album}|${song.mediaUri.orEmpty()}")
-            .setUri(mediaUri)
-            .apply {
-                if (!mimeType.isNullOrBlank()) {
-                    setMimeType(mimeType)
-                }
-                // Local files do not need a custom cache key.
-                if (!isLocalFile && allowCustomCacheKey) {
-                    safeCustomPlaybackCacheKey(cacheKey)?.let(::setCustomCacheKey)
-                }
-            }
-            .build()
-    }
+    ): MediaItem = PlaybackMediaItemFactory.mediaItem(
+        song,
+        url,
+        cacheKey,
+        mimeType,
+        { if (allowCustomCacheKey) safeCustomPlaybackCacheKey(cacheKey) else null }
+    )
 
     internal fun applyWakeModeForPlaybackUrl(url: String?) {
         val wakeMode = resolvePlaybackWakeMode(url)
