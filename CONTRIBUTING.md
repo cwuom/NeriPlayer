@@ -266,6 +266,14 @@
   - `engine/`：Media3 音频处理器，包括响度均衡、声道平衡和高解析输出相关处理。
   - `playback/PlaybackStatsTracker.kt`：播放统计采集；播放命令与队列推进也在
     `playback/PlayerManagerPlaybackExtensions.kt`。
+  - 队列列表与当前索引由 `PlayerQueueSnapshot` 一起持有，`PlayerQueueStateStore`
+    统一发布状态；持久化与队列展示从同一快照读取。
+    整队替换使用 `publishCurrentQueue`；移动、删除、插入和洗牌使用
+    `updateCurrentQueue`，在锁内基于最新快照计算，播放器与磁盘操作放在锁外。
+    异步歌曲元数据写回使用 `updateQueuedSong`，按歌曲身份更新最新队列，保留当前选曲。
+    UI 重排只提供顺序，歌曲内容取自最新队列；重复歌曲无法准确对应时拒绝旧请求并刷新界面。
+    恢复洗牌前顺序时若歌曲集合已改变或副本对应存在歧义，保留当前队列。
+    队列事务保证列表与索引一致；当前歌曲 Flow 和 Media3 副作用的线程边界仍需单独检查。
   - `timer/SleepTimerManager.kt`：睡眠定时器。
   - `engine/datasource/ConditionalHttpDataSourceFactory.kt`：为特定域名动态附加 Header。
   - `watchdog/PlayerManagerStartupWatchdogExtensions.kt`、

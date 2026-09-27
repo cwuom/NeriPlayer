@@ -6,6 +6,8 @@ import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueDisplayIndices
 import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerRepeatAllShuffleOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
+import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.model.reorderQueueSongsPreservingLatestMetadata
 import moe.ouom.neriplayer.data.model.SongItem
 
 class PlayerManagerQueueOrderTest {
@@ -26,6 +28,28 @@ class PlayerManagerQueueOrderTest {
         )
 
         assertEquals(emptyList<Int>(), displayIndices)
+    }
+
+    @Test
+    fun `queue snapshot keeps its own list and rejects a stale current index`() {
+        val input = mutableListOf(testSong(1L, "First"), testSong(2L, "Second"))
+        val snapshot = PlayerQueueSnapshot.from(input, currentIndex = 8)
+        input.clear()
+
+        assertEquals(listOf(1L, 2L), snapshot.playlist.map { it.id })
+        assertEquals(-1, snapshot.currentIndex)
+    }
+
+    @Test
+    fun `queue snapshot selects only an existing row`() {
+        val snapshot = PlayerQueueSnapshot.from(
+            listOf(testSong(1L, "First"), testSong(2L, "Second")),
+            currentIndex = 0
+        )
+
+        assertEquals(1, snapshot.selecting(1).currentIndex)
+        assertEquals(-1, snapshot.selecting(3).currentIndex)
+        assertEquals(-1, PlayerQueueSnapshot.from(emptyList(), 0).currentIndex)
     }
 
     @Test
@@ -199,6 +223,18 @@ class PlayerManagerQueueOrderTest {
     }
 
     @Test
+    fun `queue move discards a stale current index`() {
+        val index = resolveQueueCurrentIndexAfterMove(
+            currentIndex = 9,
+            fromIndex = 0,
+            toIndex = 2,
+            queueSize = 3
+        )
+
+        assertEquals(-1, index)
+    }
+
+    @Test
     fun `queue current index stays on next item when current row is removed`() {
         val index = resolveQueueCurrentIndexAfterRemoval(
             currentIndex = 2,
@@ -254,6 +290,28 @@ class PlayerManagerQueueOrderTest {
     }
 
     @Test
+    fun `queue removal discards a stale current index`() {
+        val index = resolveQueueCurrentIndexAfterRemoval(
+            currentIndex = 9,
+            removedIndex = 1,
+            queueSize = 3
+        )
+
+        assertEquals(-1, index)
+    }
+
+    @Test
+    fun `invalid removal cannot preserve a stale current index`() {
+        val index = resolveQueueCurrentIndexAfterRemoval(
+            currentIndex = 9,
+            removedIndex = -1,
+            queueSize = 3
+        )
+
+        assertEquals(-1, index)
+    }
+
+    @Test
     fun `reorder resolves current song when submitted index is stale`() {
         val current = testSong(2L, "Current")
         val queue = listOf(
@@ -289,6 +347,91 @@ class PlayerManagerQueueOrderTest {
         )
 
         assertEquals(1, index)
+    }
+
+    @Test
+    fun `reorder uses current song metadata when the submitted list is stale`() {
+        val first = testSong(1L, "First")
+        val second = testSong(2L, "Second")
+        val updatedSecond = second.copy(name = "Updated")
+
+        val reordered = reorderQueueSongsPreservingLatestMetadata(
+            currentQueue = listOf(first, updatedSecond),
+            requestedQueue = listOf(second, first)
+        )
+
+        assertEquals(listOf("Updated", "First"), reordered?.map { it.name })
+    }
+
+    @Test
+    fun `reorder rejects a different song multiset`() {
+        val first = testSong(1L, "First")
+        val second = testSong(2L, "Second")
+
+        assertEquals(
+            null,
+            reorderQueueSongsPreservingLatestMetadata(
+                currentQueue = listOf(first, second),
+                requestedQueue = listOf(first, first)
+            )
+        )
+    }
+
+    @Test
+    fun `an old shuffle order cannot restore a removed song`() {
+        val first = testSong(1L, "First")
+        val second = testSong(2L, "Second")
+
+        assertEquals(
+            null,
+            reorderQueueSongsPreservingLatestMetadata(
+                currentQueue = listOf(second),
+                requestedQueue = listOf(first, second)
+            )
+        )
+    }
+
+    @Test
+    fun `reorder preserves distinct occurrences of the same song`() {
+        val first = testSong(1L, "First occurrence")
+        val second = first.copy(name = "Second occurrence")
+
+        assertEquals(
+            listOf(second, first),
+            reorderQueueSongsPreservingLatestMetadata(
+                currentQueue = listOf(first, second),
+                requestedQueue = listOf(second, first)
+            )
+        )
+    }
+
+    @Test
+    fun `reorder keeps the latest metadata of the only unmatched occurrence`() {
+        val first = testSong(1L, "First occurrence")
+        val second = first.copy(name = "Second occurrence")
+        val editedFirst = first.copy(name = "Edited first")
+
+        assertEquals(
+            listOf(second, editedFirst),
+            reorderQueueSongsPreservingLatestMetadata(
+                currentQueue = listOf(editedFirst, second),
+                requestedQueue = listOf(second, first)
+            )
+        )
+    }
+
+    @Test
+    fun `reorder rejects ambiguous changed duplicate occurrences`() {
+        val first = testSong(1L, "First occurrence")
+        val second = first.copy(name = "Second occurrence")
+
+        assertEquals(
+            null,
+            reorderQueueSongsPreservingLatestMetadata(
+                currentQueue = listOf(first.copy(name = "Edited first"), second.copy(name = "Edited second")),
+                requestedQueue = listOf(second, first)
+            )
+        )
     }
 
     private fun testSong(id: Long, name: String): SongItem {

@@ -1803,11 +1803,14 @@ internal fun NowPlayingQueueSheet(
                 currentIndex = latestCurrentIndexInQueueEntries,
                 currentIndexByKey = currentIndexByKey
             )
-            PlayerManager.reorderQueue(
+            val reordered = PlayerManager.reorderQueue(
                 queue = queueEntries.map { it.song },
                 currentIndexInQueue = currentIndexAfterReorder
             )
             queueOrderDirty = false
+            if (!reordered) {
+                syncNowPlayingQueueEntries(queueEntries, latestSourceEntries)
+            }
         },
         maxScrollPerFrame = NowPlayingQueueReorderAutoScrollMaxPerFrame,
         dragCancelledAnimation = SpringDragCancelledAnimation(

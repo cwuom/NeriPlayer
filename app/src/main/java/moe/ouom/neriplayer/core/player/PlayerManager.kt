@@ -98,6 +98,8 @@ import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayState
+import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.model.PlayerQueueStateStore
 import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
@@ -486,10 +488,42 @@ object PlayerManager {
         val recordedAtMs: Long = SystemClock.elapsedRealtime()
     )
 
-    @Volatile
-    internal var currentPlaylist: List<SongItem> = emptyList()
-    @Volatile
-    internal var currentIndex = -1
+    private val queueStore = PlayerQueueStateStore()
+    internal val currentPlaylist: List<SongItem>
+        get() = queueStore.snapshot().playlist
+    internal var currentIndex: Int
+        get() = queueStore.snapshot().currentIndex
+        set(value) {
+            queueStore.select(value)
+        }
+    internal fun currentQueueSnapshot(): PlayerQueueSnapshot = queueStore.snapshot()
+
+    internal fun publishCurrentQueue(
+        playlist: List<SongItem>,
+        currentIndex: Int,
+        bumpDisplayRevision: Boolean = false
+    ) {
+        queueStore.publish(playlist, currentIndex)
+        if (bumpDisplayRevision) bumpCurrentQueueDisplayRevision()
+    }
+
+    internal fun updateCurrentQueueSongs(
+        transform: (List<SongItem>) -> List<SongItem>?
+    ): PlayerQueueSnapshot? = queueStore.updatePlaylist(transform)
+
+    internal fun updateCurrentQueue(
+        bumpDisplayRevision: Boolean = false,
+        transform: (PlayerQueueSnapshot) -> PlayerQueueSnapshot?
+    ): PlayerQueueSnapshot? {
+        val updated = queueStore.update(transform)
+        if (updated != null && bumpDisplayRevision) bumpCurrentQueueDisplayRevision()
+        return updated
+    }
+
+    internal fun updateQueuedSong(
+        song: SongItem,
+        transform: (SongItem) -> SongItem?
+    ): SongItem? = queueStore.updateSongMatching(song, transform)
     @Volatile
     internal var shuffleRestorePlaylistReference: List<SongItem>? = null
     @Volatile
@@ -566,8 +600,7 @@ object PlayerManager {
     internal var localPlaylistPlaybackSource: LocalPlaylistPlaybackSource? = null
     internal val playbackDemandArbiter = PlaybackDemandArbiter()
 
-    internal val _currentQueueFlow = MutableStateFlow<List<SongItem>>(emptyList())
-    val currentQueueFlow: StateFlow<List<SongItem>> = _currentQueueFlow
+    val currentQueueFlow: StateFlow<List<SongItem>> = queueStore.playlistFlow
     internal val _currentQueueDisplayRevisionFlow = MutableStateFlow(0L)
     val currentQueueDisplayRevisionFlow: StateFlow<Long> = _currentQueueDisplayRevisionFlow
 
@@ -1269,11 +1302,9 @@ object PlayerManager {
         _currentMediaUrl.value = null
         currentMediaUrlResolvedAtMs = 0L
         setCurrentSongForPlayback(null)
-        _currentQueueFlow.value = emptyList()
+        publishCurrentQueue(emptyList(), -1)
         shuffleRestorePlaylistReference = null
         shuffleRestoreCurrentIndex = -1
-        currentPlaylist = emptyList()
-        currentIndex = -1
         consecutivePlayFailures = 0
         NPLogger.d("NERI-PlayerManager", "resetForListenTogetherJoin(): state cleared")
         ioScope.launch {
@@ -1589,9 +1620,10 @@ object PlayerManager {
     }
 
     fun currentQueueDisplaySnapshot(): PlayerQueueDisplayState {
+        val snapshot = currentQueueSnapshot()
         return buildPlayerQueueDisplayState(
-            playlist = currentPlaylist,
-            currentIndex = currentIndex
+            playlist = snapshot.playlist,
+            currentIndex = snapshot.currentIndex
         )
     }
 
@@ -1725,16 +1757,12 @@ object PlayerManager {
         val resolvedDurationMs = durationMs.takeIf { it > 0L } ?: return
         var changed = false
 
-        val queueIndex = queueIndexOf(song)
-        if (queueIndex != -1) {
-            val queuedSong = currentPlaylist[queueIndex]
-            if (queuedSong.durationMs <= 0L) {
-                val updatedPlaylist = currentPlaylist.toMutableList()
-                updatedPlaylist[queueIndex] = queuedSong.copy(durationMs = resolvedDurationMs)
-                currentPlaylist = updatedPlaylist
-                _currentQueueFlow.value = currentPlaylist
-                changed = true
-            }
+        val updatedQueueSong = updateQueuedSong(song) { queuedSong ->
+            queuedSong.takeIf { it.durationMs <= 0L }
+                ?.copy(durationMs = resolvedDurationMs)
+        }
+        if (updatedQueueSong != null) {
+            changed = true
         }
 
         val currentSong = _currentSongFlow.value

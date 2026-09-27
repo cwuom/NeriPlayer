@@ -30,7 +30,9 @@ import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.lyrics.isExternalBluetoothLyricCadenceActive
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.core.player.model.reorderQueueSongsPreservingLatestMetadata
 import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerRepeatAllShuffleOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
@@ -698,9 +700,7 @@ internal fun PlayerManager.playPlaylistImpl(
             songKeys = songs.mapTo(LinkedHashSet(songs.size)) { song -> song.stableKey() }
         )
     }
-    currentPlaylist = songs
-    _currentQueueFlow.value = currentPlaylist
-    currentIndex = startIndex.coerceIn(0, songs.lastIndex)
+    publishCurrentQueue(songs, startIndex.coerceIn(0, songs.lastIndex))
 
     if (player.shuffleModeEnabled && commandSource != PlaybackCommandSource.REMOTE_SYNC) {
         rememberShuffleRestoreQueueSnapshot()
@@ -721,12 +721,13 @@ internal fun PlayerManager.playPlaylistImpl(
 }
 
 private fun PlayerManager.rememberShuffleRestoreQueueSnapshot() {
-    if (currentPlaylist.isEmpty()) {
+    val snapshot = currentQueueSnapshot()
+    if (snapshot.playlist.isEmpty()) {
         clearShuffleRestoreQueueSnapshot()
         return
     }
-    shuffleRestorePlaylistReference = currentPlaylist.toList()
-    shuffleRestoreCurrentIndex = currentIndex.coerceIn(currentPlaylist.indices)
+    shuffleRestorePlaylistReference = snapshot.playlist
+    shuffleRestoreCurrentIndex = snapshot.currentIndex.coerceIn(snapshot.playlist.indices)
 }
 
 private fun PlayerManager.clearShuffleRestoreQueueSnapshot() {
@@ -745,37 +746,40 @@ private fun PlayerManager.restoreShuffleRestoreQueueSnapshot(): Boolean {
         return false
     }
 
-    val restoredPlaylist = restoreOrder.playlist.toMutableList()
-    if (currentSong != null && restoreOrder.currentIndex in restoredPlaylist.indices) {
-        restoredPlaylist[restoreOrder.currentIndex] = currentSong
+    val restoredQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
+        val latestSongs = reorderQueueSongsPreservingLatestMetadata(
+            currentQueue = snapshot.playlist,
+            requestedQueue = restoreOrder.playlist
+        ) ?: return@updateCurrentQueue null
+        val index = resolvePlayerQueueRestoreOrder(
+            restorePlaylist = latestSongs,
+            currentSong = currentSong,
+            fallbackIndex = restoreOrder.currentIndex
+        )?.currentIndex ?: return@updateCurrentQueue null
+        PlayerQueueSnapshot.from(latestSongs, index)
     }
-    currentPlaylist = restoredPlaylist
-    currentIndex = restoreOrder.currentIndex
-    _currentQueueFlow.value = currentPlaylist
-    setCurrentSongForPlayback(currentPlaylist.getOrNull(currentIndex))
-    bumpCurrentQueueDisplayRevision()
     clearShuffleRestoreQueueSnapshot()
+    if (restoredQueue == null) return false
+    setCurrentSongForPlayback(restoredQueue.playlist.getOrNull(restoredQueue.currentIndex))
     return true
 }
 
 internal fun PlayerManager.shuffleCurrentQueueForSequentialPlayback(): Boolean {
-    val order = resolvePlayerSequentialShuffleOrder(
-        queueSize = currentPlaylist.size,
-        currentIndex = currentIndex
-    )
-    if (order.queueIndices.isEmpty()) {
-        currentIndex = -1
-        return false
+    val shuffledQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
+        val order = resolvePlayerSequentialShuffleOrder(
+            queueSize = snapshot.playlist.size,
+            currentIndex = snapshot.currentIndex
+        )
+        if (order.queueIndices.isEmpty()) return@updateCurrentQueue null
+        val playlist = order.queueIndices.map { index -> snapshot.playlist[index] }
+        if (playlist == snapshot.playlist && snapshot.currentIndex == order.currentIndex) {
+            return@updateCurrentQueue null
+        }
+        PlayerQueueSnapshot.from(playlist, order.currentIndex)
     }
-
-    val shuffledPlaylist = order.queueIndices.map { index -> currentPlaylist[index] }
-    val changed = shuffledPlaylist != currentPlaylist || currentIndex != order.currentIndex
-    currentPlaylist = shuffledPlaylist
-    currentIndex = order.currentIndex
-    if (changed) {
-        _currentQueueFlow.value = currentPlaylist
-        setCurrentSongForPlayback(currentPlaylist.getOrNull(currentIndex))
-        bumpCurrentQueueDisplayRevision()
+    val changed = shuffledQueue != null
+    if (shuffledQueue != null) {
+        setCurrentSongForPlayback(shuffledQueue.playlist.getOrNull(shuffledQueue.currentIndex))
     }
     NPLogger.d(
         "NERI-PlayerManager",
@@ -788,23 +792,26 @@ private fun PlayerManager.reshuffleCurrentQueueForRepeatAllCycle(): Boolean {
     if (
         !player.shuffleModeEnabled ||
         repeatModeSetting != Player.REPEAT_MODE_ALL ||
-        currentPlaylist.size <= 1 ||
-        currentIndex != currentPlaylist.lastIndex ||
         (isListenTogetherActive() && !isCurrentUserControllerInListenTogether())
     ) {
         return false
     }
-    val order = resolvePlayerRepeatAllShuffleOrder(
-        queueSize = currentPlaylist.size,
-        completedIndex = currentIndex
-    )
-    currentPlaylist = order.queueIndices.map { index -> currentPlaylist[index] }
-    currentIndex = order.currentIndex
-    _currentQueueFlow.value = currentPlaylist
-    bumpCurrentQueueDisplayRevision()
+    val shuffledQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
+        if (snapshot.playlist.size <= 1 || snapshot.currentIndex != snapshot.playlist.lastIndex) {
+            return@updateCurrentQueue null
+        }
+        val order = resolvePlayerRepeatAllShuffleOrder(
+            queueSize = snapshot.playlist.size,
+            completedIndex = snapshot.currentIndex
+        )
+        PlayerQueueSnapshot.from(
+            order.queueIndices.map { index -> snapshot.playlist[index] },
+            order.currentIndex
+        )
+    } ?: return false
     NPLogger.d(
         "NERI-PlayerManager",
-        "reshuffleCurrentQueueForRepeatAllCycle: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex"
+        "reshuffleCurrentQueueForRepeatAllCycle: queueSize=${shuffledQueue.playlist.size}, currentIndex=${shuffledQueue.currentIndex}"
     )
     return true
 }
@@ -1243,18 +1250,16 @@ private fun PlayerManager.maybeHydrateSongForPlayback(
             if (requestToken != playbackRequestToken) {
                 return@withContext
             }
-            if (index !in currentPlaylist.indices || !currentPlaylist[index].sameIdentityAs(song)) {
-                return@withContext
-            }
-
-            val updatedPlaylist = currentPlaylist.toMutableList()
-            updatedPlaylist[index] = hydratedSong
-            currentPlaylist = updatedPlaylist
-            _currentQueueFlow.value = updatedPlaylist
+            applied = updateCurrentQueueSongs { playlist ->
+                if (index !in playlist.indices || !playlist[index].sameIdentityAs(song)) {
+                    return@updateCurrentQueueSongs null
+                }
+                playlist.toMutableList().also { it[index] = hydratedSong }
+            } != null
+            if (!applied) return@withContext
             if (_currentSongFlow.value?.sameIdentityAs(song) == true) {
                 setCurrentSongForPlayback(hydratedSong, syncLyricon = false)
             }
-            applied = true
         }
 
         if (!applied) {

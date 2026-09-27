@@ -4070,14 +4070,12 @@ internal fun PlayerManager.releaseImpl() {
         _currentPlaybackAudioInfo.value = null
         currentMediaUrlResolvedAtMs = 0L
         setCurrentSongForPlayback(null)
-        _currentQueueFlow.value = emptyList()
+        publishCurrentQueue(emptyList(), -1)
         shuffleRestorePlaylistReference = null
         shuffleRestoreCurrentIndex = -1
         clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
 
-        currentPlaylist = emptyList()
-        currentIndex = -1
         consecutivePlayFailures = 0
 
         NPLogger.d("NERI-PlayerManager", "release(): completed")
