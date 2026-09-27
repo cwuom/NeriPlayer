@@ -73,7 +73,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     }
 
     @After
-    fun restoreMigrationFixture() = runBlocking {
+    fun restoreMigrationFixture(): Unit = runBlocking {
         try {
             val checkpointStore = ManagedDownloadMigrationCheckpointStore(appContext)
             val workId = (migrationWorkId ?: checkpointStore.readRequest()?.workId)
