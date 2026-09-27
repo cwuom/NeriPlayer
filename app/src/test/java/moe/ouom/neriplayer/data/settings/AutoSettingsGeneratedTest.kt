@@ -391,6 +391,27 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
+    fun inheritedPlaybackSectionKeepsEveryGeneratedSetting() {
+        val settings = AutoSettingsMetadata.settingsIn(AutoSettingsSections.playback)
+
+        assertEquals(39, settings.size)
+        assertEquals(39, settings.map { it.keyName }.toSet().size)
+        assertEquals("playback_fade_in", settings.first().keyName)
+        assertEquals(
+            AutoSettingsSchema.playback.youtubePlaybackSource.key,
+            AutoSettingsMetadata.requireSetting(SettingsKeys.YOUTUBE_PLAYBACK_SOURCE).keyName
+        )
+        assertEquals(
+            AutoSettingsSchema.playback.biliSponsorBlockEnabled.key,
+            AutoSettingsMetadata.requireSetting(SettingsKeys.BILI_SPONSOR_BLOCK_ENABLED).keyName
+        )
+        assertEquals(
+            SettingAccessMode.KeyOnly,
+            AutoSettingsMetadata.requireSetting(SettingsKeys.USB_EXCLUSIVE_PLAYBACK).access
+        )
+    }
+
+    @Test
     fun exploreSearchHistorySettingDefaultsToEnabled() {
         val setting = AutoSettingsSchema.general.exploreSearchHistoryEnabled
 

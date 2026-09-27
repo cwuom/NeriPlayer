@@ -11,6 +11,7 @@ import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSAnnotation
 import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSDeclaration
+import com.google.devtools.ksp.symbol.KSFile
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import moe.ouom.neriplayer.ksp.annotations.AutoSetting
@@ -85,7 +86,7 @@ private class AutoSettingsProcessor(
 
         val dependencies = Dependencies(
             aggregating = false,
-            sources = arrayOf(catalog.declaration.containingFile).filterNotNull().toTypedArray()
+            sources = catalog.sourceFiles.toTypedArray()
         )
         val packageName = catalog.packageName
 
@@ -234,7 +235,8 @@ private data class CatalogSpec(
     val packageName: String,
     val settingsKeysPackageName: String,
     val sectionSpecs: List<SectionSpec>,
-    val settings: List<SettingSpec>
+    val settings: List<SettingSpec>,
+    val sourceFiles: List<KSFile>
 )
 
 private data class SectionSpec(
@@ -263,7 +265,8 @@ private data class SettingSpec(
     val entryReference: String?,
     val exportable: Boolean,
     val repositoryName: String,
-    val normalizerQualifiedName: String?
+    val normalizerQualifiedName: String?,
+    val sourceFile: KSFile?
 ) {
     val keyName: String = constantName.ifBlank { (key ?: propertyName).toConstantName() }
     val valueName: String = repositoryName.ifBlank { propertyName }
@@ -290,7 +293,9 @@ private fun KSClassDeclaration.toCatalogSpec(): CatalogSpec {
         packageName = packageName,
         settingsKeysPackageName = settingsKeysPackageName,
         sectionSpecs = sectionSpecs,
-        settings = settings
+        settings = settings,
+        sourceFiles = (listOfNotNull(containingFile) + settings.mapNotNull { it.sourceFile })
+            .distinct()
     )
 }
 
@@ -328,8 +333,9 @@ private fun KSClassDeclaration.collectSettingSpecs(
     sectionHint: String? = null
 ): Sequence<SettingSpec> {
     return sequence {
+        val ownerReference = qualifiedName?.asString()
         getAllProperties().forEach { property ->
-            property.toSettingSpec(sectionHint)?.let { setting -> yield(setting) }
+            property.toSettingSpec(sectionHint, ownerReference)?.let { setting -> yield(setting) }
         }
         declarations
             .filterIsInstance<KSClassDeclaration>()
@@ -346,10 +352,14 @@ private fun KSClassDeclaration.sectionKeyHint(): String {
         ?: simpleName.asString()
 }
 
-private fun KSPropertyDeclaration.toSettingSpec(sectionHint: String? = null): SettingSpec? {
+private fun KSPropertyDeclaration.toSettingSpec(
+    sectionHint: String? = null,
+    ownerReference: String? = null
+): SettingSpec? {
     val annotation = annotations.firstByName(AutoSetting::class.qualifiedName.orEmpty()) ?: return null
     val inferredSection = sectionHint ?: parentSectionName() ?: "general"
-    val sourceReference = sourceReference()
+    val sourceReference = ownerReference?.let { "$it.${simpleName.asString()}" }
+        ?: sourceReference()
     val settingSpecValueType = autoSettingSpecValueType()
     val annotationKey = annotation.stringArgument("key").ifBlank { null }
     val entryReference = sourceReference.takeIf {
@@ -383,7 +393,8 @@ private fun KSPropertyDeclaration.toSettingSpec(sectionHint: String? = null): Se
         entryReference = entryReference,
         exportable = annotation.booleanArgument("exportable", defaultValue = true),
         repositoryName = annotation.stringArgument("repositoryName"),
-        normalizerQualifiedName = annotation.classArgument("normalizer")
+        normalizerQualifiedName = annotation.classArgument("normalizer"),
+        sourceFile = containingFile
     )
 }
 
