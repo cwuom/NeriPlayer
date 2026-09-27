@@ -335,13 +335,14 @@ internal fun PlayerManager.initializeImpl(
             FloatingLyricsOverlayManager.initialize(app)
             currentCacheSize = effectiveMaxCacheSize
 
+            statePersistenceCoordinator.reopen()
+            urlRefreshController.cancelCurrent()
             ioScope = newIoScope()
             mainScope = newMainScope()
 
         stateFile = File(app.filesDir, "last_playlist.json")
         playbackStateFile = File(app.filesDir, "last_playback_state.json")
-        lastPersistedPlaylistReference = null
-        lastPersistedPlaybackState = null
+        statePersistenceWriter.invalidate()
         shuffleRestorePlaylistReference = null
         shuffleRestoreCurrentIndex = -1
         lastStatePersistAtMs = 0L
@@ -669,7 +670,7 @@ internal fun PlayerManager.initializeImpl(
                     shouldInvalidateCacheForPlaybackRecovery(error, isOfflineCache)
 
                 val cause = error.cause
-                val shouldResumeAfterRecovery = resumePlaybackRequested || player.playWhenReady || player.isPlaying
+                val shouldResumeAfterRecovery = resumePlaybackRequested
                 if (
                     !isLocalFileMissingRecovery &&
                     shouldResumeAfterRecovery &&
@@ -706,14 +707,13 @@ internal fun PlayerManager.initializeImpl(
                             player.currentPosition.coerceAtLeast(0L),
                             _playbackPositionMs.value.coerceAtLeast(0L)
                         )
-                    val resumePlaybackAfterRefresh = player.playWhenReady || player.isPlaying
                     refreshCurrentSongUrl(
                         resumePositionMs = resumePositionMs,
                         allowFallback = false,
                         reason = "playback_error_${error.errorCodeName}",
                         bypassCooldown = shouldBypassRefreshCooldown,
                         fallbackSeekPositionMs = resumePositionMs,
-                        resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
+                        resumePlaybackAfterRefresh = shouldResumeAfterRecovery,
                         resumedPlaybackCommandSource = activePlaybackCommandSource,
                         youtubeRecoveryStrategy = youtubeRecoveryStrategy,
                         cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve,
@@ -1459,6 +1459,9 @@ internal fun PlayerManager.initializeImpl(
             "initialize(): success, cacheSize=$effectiveMaxCacheSize, restoredQueueSize=${currentPlaylist.size}, currentIndex=$currentIndex, currentDevice=${_currentAudioDevice.value?.type}:${_currentAudioDevice.value?.name}"
         )
     }.onFailure { e ->
+        statePersistenceCoordinator.close()
+        statePersistenceWriter.invalidate()
+        urlRefreshController.cancelCurrent()
         NPLogger.e(
             "NERI-PlayerManager",
             "initialize(): failed, cacheSize=$effectiveMaxCacheSize, currentPlaylistSize=${currentPlaylist.size}, currentIndex=$currentIndex",
@@ -1524,6 +1527,11 @@ internal fun PlayerManager.initializeImpl(
         initialized = false
         }
     } finally {
+        if (!initialized) {
+            statePersistenceCoordinator.close()
+            statePersistenceWriter.invalidate()
+            urlRefreshController.cancelCurrent()
+        }
         synchronized(initializationLock) {
             initializationInProgress = false
         }
@@ -3962,6 +3970,10 @@ internal fun PlayerManager.releaseImpl() {
         "NERI-PlayerManager",
         "release(): begin, currentSong=${_currentSongFlow.value?.name}, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, isPlaying=${_isPlayingFlow.value}, mediaUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
     )
+    statePersistenceCoordinator.close()
+    statePersistenceWriter.invalidate()
+    urlRefreshController.cancelCurrent()
+    clearRestoredPlayback()
     try {
         updateResumePlaybackRequested(false)
         lastAutoTrackAdvanceAtMs = 0L

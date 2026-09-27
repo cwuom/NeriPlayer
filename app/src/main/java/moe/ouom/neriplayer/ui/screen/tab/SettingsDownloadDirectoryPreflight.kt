@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProbeResult
 import java.io.IOException
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS = 3_000L
 
@@ -57,7 +58,7 @@ internal suspend fun <T> runDownloadDirectoryPreflight(
         }
     }
     return try {
-        withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+        withTimeoutOrNull(timeoutMs.coerceAtLeast(1L).milliseconds) {
             probe.await()
         }
     } finally {

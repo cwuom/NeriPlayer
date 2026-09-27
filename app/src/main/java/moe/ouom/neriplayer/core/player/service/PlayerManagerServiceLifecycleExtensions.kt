@@ -34,8 +34,7 @@ internal fun PlayerManager.suspendPlaybackForServiceRestart(reason: String) {
     _playWhenReadyFlow.value = false
     _playbackPositionMs.value = positionMs
     stopProgressUpdates()
-    restoredShouldResumePlayback = shouldResume
-    restoredResumePositionMs = positionMs
+    setRestoredPlayback(positionMs, shouldResume)
     updateResumePlaybackRequested(shouldResume)
     scheduleStatePersist(
         positionMs = positionMs,
