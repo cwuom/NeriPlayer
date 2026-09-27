@@ -331,7 +331,8 @@ Current positioning:
    git clone --recursive https://github.com/cwuom/NeriPlayer.git
    cd NeriPlayer
    ```
-2. Open the project with the latest stable Android Studio and sync dependencies.
+2. Install JDK 17, then open the project with the latest stable Android Studio
+   and sync dependencies. Set the Gradle JDK to 17 when possible.
 3. Build the Debug APK:
    ```bash
    ./gradlew :app:assembleDebug
@@ -667,6 +668,7 @@ For release build and signing details, see
 - `targetSdk = 36`
 - `minSdk = 28`
 - Java 17 / Kotlin JVM 17
+- AGP `9.4.1` / Gradle `9.6.1`
 - NDK `27.0.12077973`
 - CMake `3.28.0+`
 - Version name format: `<git_short_hash>.<MMddHHmm>`

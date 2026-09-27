@@ -258,7 +258,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
    git clone --recursive https://github.com/cwuom/NeriPlayer.git
    cd NeriPlayer
    ```
-2. 使用 Android Studio 最新稳定版打开项目并同步依赖。
+2. 安装 JDK 17，并使用 Android Studio 最新稳定版打开项目、同步依赖；
+   建议将 Gradle JDK 设为 17。
 3. 构建调试版：
    ```bash
    ./gradlew :app:assembleDebug
@@ -512,6 +513,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `targetSdk = 36`
 - `minSdk = 28`
 - Java 17 / Kotlin JVM 17
+- AGP `9.4.1` / Gradle `9.6.1`
 - NDK `27.0.12077973`
 - CMake `3.28.0+`
 - 版本名格式：`<git短哈希>.<MMddHHmm>`

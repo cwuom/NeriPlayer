@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.testing.ManualInstrumentedTest
 import org.junit.Assume.assumeTrue
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -35,6 +36,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class TagLibM4aWriteProbeTest {
     @Test
+    @ManualInstrumentedTest
     fun probeM4aMetadataAndCoverWrite() {
         val arguments = InstrumentationRegistry.getArguments()
         val sourcePath = arguments.getString("samplePath")
@@ -116,6 +118,7 @@ class TagLibM4aWriteProbeTest {
     }
 
     @Test
+    @ManualInstrumentedTest
     fun probeLocalMediaSupportM4aWrite() = runBlocking {
         val arguments = InstrumentationRegistry.getArguments()
         val sourcePath = arguments.getString("samplePath")
@@ -160,6 +163,7 @@ class TagLibM4aWriteProbeTest {
     }
 
     @Test
+    @ManualInstrumentedTest
     fun downloadedM4aMetadataWriteHandlesPlatformIdAndTranslationAliases() = runBlocking {
         val source = requiredProbeSource()
         val coverPath = InstrumentationRegistry.getArguments().getString("coverPath")
@@ -230,6 +234,7 @@ class TagLibM4aWriteProbeTest {
     }
 
     @Test
+    @ManualInstrumentedTest
     fun probeLocalMediaSupportM4aCoverWritePreservesEmbeddedLyrics() = runBlocking {
         val source = requiredProbeSource()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -291,6 +296,7 @@ class TagLibM4aWriteProbeTest {
     }
 
     @Test
+    @ManualInstrumentedTest
     fun probeLocalMediaSupportM4aRepeatedCoverWritesAndClear() = runBlocking {
         assumeTrue("WebP probe needs Android 11+", Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
         val source = requiredProbeSource()
@@ -382,6 +388,7 @@ class TagLibM4aWriteProbeTest {
     }
 
     @Test
+    @ManualInstrumentedTest
     fun probeLocalMediaSupportM4aContentUriWrite() = runBlocking {
         assumeTrue("MediaStore test needs Android 10+", Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
         val source = requiredProbeSource()
@@ -480,6 +487,7 @@ class TagLibM4aWriteProbeTest {
     }
 
     @Test
+    @ManualInstrumentedTest
     fun probeLocalMediaSupportM4aStagedContentWrite() = runBlocking {
         val source = requiredProbeSource()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -549,6 +557,7 @@ class TagLibM4aWriteProbeTest {
     }
 
     @Test
+    @ManualInstrumentedTest
     fun standaloneContentWriteRejectsUnreadableCoverAndPreservesAudio() = runBlocking {
         val source = requiredProbeSource()
         val context = InstrumentationRegistry.getInstrumentation().targetContext

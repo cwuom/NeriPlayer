@@ -56,8 +56,8 @@ If it affects extension paths, tests, or module boundaries, update CONTRIBUTING.
 - **Android Studio**: latest stable version
 - **JDK**: 17
 - **Kotlin**: 2.4.10, JVM target 17
-- **AGP**: 9.2.1
-- **Gradle**: 9.4.1
+- **AGP**: 9.4.1
+- **Gradle**: 9.6.1
 - **compileSdk / targetSdk / minSdk**: 37 / 36 / 28
 - **NDK**: `27.0.12077973`
 - **CMake**: `3.28.0+`
@@ -69,6 +69,9 @@ Additional notes:
 
 - The repository uses Git submodules. Clone with `--recursive`, or run
   `git submodule update --init --recursive`.
+- `buildSrc`, `ksp-annotations`, and `ksp-processor` use JDK 17 toolchains.
+  Install JDK 17; point the Android Studio Gradle JDK and command-line
+  `JAVA_HOME` to it when possible.
 - The build script reads the Git short commit hash to generate the version name,
   so Git must be installed locally.
 - Dependency versions are managed by `gradle/libs.versions.toml` and module

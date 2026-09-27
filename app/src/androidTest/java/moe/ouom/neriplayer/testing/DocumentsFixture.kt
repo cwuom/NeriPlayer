@@ -73,34 +73,40 @@ internal object DocumentsFixture {
         val previousFlags = automation.serviceInfo.flags
         if (confirmPicker) {
             automation.serviceInfo = automation.serviceInfo.apply {
-                flags = flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                flags = flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                    AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
             }
         }
         try {
             instrumentation.targetContext.startActivity(intent)
             val deadline = SystemClock.elapsedRealtime() + 20_000
-            var selected = false
+            var selectedAt = 0L
             while (completed.count != 0L && SystemClock.elapsedRealtime() < deadline) {
                 if (confirmPicker) {
-                    val root = instrumentation.uiAutomation.rootInActiveWindow
-                    if (root?.packageName?.toString() in setOf("com.android.documentsui", "com.google.android.documentsui")) {
-                        val ids = if (selected) listOf("android:id/button1") else listOf(
+                    val now = SystemClock.elapsedRealtime()
+                    val roots = (automation.windows.mapNotNull { it.root } +
+                        listOfNotNull(automation.rootInActiveWindow)).distinctBy { it.windowId }
+                    picker@ for (root in roots) {
+                        if (root.packageName?.toString() !in setOf("com.android.documentsui", "com.google.android.documentsui")) continue
+                        val ids = if (now - selectedAt < 1_000L) listOf("android:id/button1") else listOf(
+                            "android:id/button1",
                             "com.android.documentsui:id/action_menu_select",
-                            "com.google.android.documentsui:id/action_menu_select",
-                            "android:id/button1"
+                            "com.google.android.documentsui:id/action_menu_select"
                         )
                         for (id in ids) {
-                            val node = root?.findAccessibilityNodeInfosByViewId(id)?.firstOrNull { it.isEnabled && it.isClickable }
+                            val node = root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull { it.isEnabled && it.isClickable }
                             if (node?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
-                                selected = true
-                                break
+                                if (id != "android:id/button1") selectedAt = now
+                                break@picker
                             }
                         }
                     }
                 }
                 completed.await(50, TimeUnit.MILLISECONDS)
             }
-            check(completed.count == 0L) { "test directory authorization timed out: $initial" }
+            check(completed.count == 0L) {
+                "test directory authorization timed out: $initial, active=${automation.rootInActiveWindow?.packageName}"
+            }
             check(resultCode.get() == Activity.RESULT_OK) { "test directory authorization failed: ${response.get()}" }
             return requireNotNull(response.get())
         } finally {
