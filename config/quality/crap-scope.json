@@ -43,7 +43,13 @@
     "moe/ouom/neriplayer/core/api/youtube/YouTubePlayerResponseParsers.kt",
     "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusivePcmWriter.kt",
     "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveSinkVolumeOwner.kt",
-    "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveTransportStartPolicy.kt"
+    "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveTransportStartPolicy.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingCover.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingCoverTopBar.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingTrackIdentity.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingCoverActionToolbar.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingCoverControlsPlacement.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingCoverLyrics.kt"
   ],
   "method_scopes": [
     {
@@ -165,6 +171,15 @@
         "ensureForeground",
         "onForegroundFailure",
         "updatePlaybackPresentation"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/ui/screen/NowPlayingScreen.kt",
+      "class": "moe.ouom.neriplayer.ui.screen.NowPlayingScreenKt",
+      "methods": [
+        "NowPlayingScreen",
+        "NowPlayingScreen$lambda$185$0$0$1",
+        "NowPlayingScreen$lambda$185$0$0$1$17"
       ]
     }
   ]

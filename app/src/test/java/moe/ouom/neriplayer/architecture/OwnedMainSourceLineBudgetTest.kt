@@ -59,7 +59,13 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveAudioSink.kt",
             "app/src/main/java/moe/ouom/neriplayer/core/player/usb/sink/UsbExclusivePcmWriter.kt",
             "app/src/main/java/moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveSinkVolumeOwner.kt",
-            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveTransportStartPolicy.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveTransportStartPolicy.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingCover.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingCoverTopBar.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingTrackIdentity.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingCoverActionToolbar.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingCoverControlsPlacement.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingCoverLyrics.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)
