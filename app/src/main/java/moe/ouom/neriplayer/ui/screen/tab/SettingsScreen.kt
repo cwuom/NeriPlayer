@@ -268,6 +268,7 @@ import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
 import java.io.IOException
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS = 3_000L
 private const val MIGRATION_CHECKPOINT_RETRY_DELAY_MS = 1_000L
@@ -294,7 +295,7 @@ internal suspend fun <T> runDownloadDirectoryPreflight(
         }
     }
     return try {
-        withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+        withTimeoutOrNull(timeoutMs.coerceAtLeast(1L).milliseconds) {
             probe.await()
         }
     } finally {
