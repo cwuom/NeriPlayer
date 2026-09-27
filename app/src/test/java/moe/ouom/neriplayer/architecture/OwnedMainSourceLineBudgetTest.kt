@@ -28,5 +28,18 @@ class OwnedMainSourceLineBudgetTest {
                 LocalManagementLineBudget.isWithinBudget(physicalLines)
             )
         }
+
+        val nativeSources = File(projectRoot, "app/src/main/cpp/usb/exclusive")
+        assertTrue("缺少 USB 独占输出源码目录", nativeSources.isDirectory)
+        val nativeFiles = nativeSources.listFiles().orEmpty()
+            .filter { it.isFile && it.extension in setOf("cpp", "h") }
+        assertTrue("USB 独占输出源码目录为空", nativeFiles.isNotEmpty())
+        nativeFiles.forEach { file ->
+            val physicalLines = LocalManagementLineBudget.countPhysicalLines(file)
+            assertTrue(
+                "${file.relativeTo(projectRoot)} 有 $physicalLines 行，必须少于 ${LocalManagementLineBudget.MAX_EXCLUSIVE} 行",
+                LocalManagementLineBudget.isWithinBudget(physicalLines)
+            )
+        }
     }
 }
