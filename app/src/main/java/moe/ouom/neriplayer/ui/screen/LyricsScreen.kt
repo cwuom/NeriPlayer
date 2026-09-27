@@ -635,21 +635,30 @@ fun LyricsScreen(
                     viewModel = nowPlayingViewModel,
                     originalSong = currentSong!!,
                     queue = displayedQueue,
-                    displayedLyrics = lyrics,
-                    displayedTranslatedLyrics = translatedLyrics.orEmpty(),
-                    hasTranslationLyrics = hasTranslation,
-                    hasPhoneticLyrics = hasPhonetic,
-                    onDismiss = {
-                        showMoreOptions = false
-                        requestedSecondaryMode = null
-                    },
-                    onShowSongDetails = { detailSong = it },
-                    onEnterAlbum = onEnterAlbum,
-                    onNavigateUp = onExitNowPlaying,
+                    lyricContent = MoreOptionsLyricContent(
+                        lyrics = lyrics,
+                        translatedLyrics = translatedLyrics.orEmpty(),
+                        hasTranslation = hasTranslation,
+                        hasPhonetic = hasPhonetic
+                    ),
+                    navigation = MoreOptionsSheetNavigation(
+                        onDismiss = {
+                            showMoreOptions = false
+                            requestedSecondaryMode = null
+                        },
+                        onShowSongDetails = { detailSong = it },
+                        onEnterAlbum = onEnterAlbum,
+                        onNavigateUp = onExitNowPlaying
+                    ),
                     snackbarHostState = snackbarHostState,
-                    lyricFontScalePage = LyricFontScalePage.LYRICS,
-                    lyricFontScales = lyricFontScales,
-                    onLyricFontScaleChange = onLyricFontScaleChange
+                    fontSettings = MoreOptionsFontSettings(
+                        page = LyricFontScalePage.LYRICS,
+                        scales = lyricFontScales,
+                        onChange = onLyricFontScaleChange
+                    ),
+                    biliClient = AppContainer.biliClient,
+                    currentPlaybackAudioInfo = null,
+                    offlineMode = false
                 )
             }
         }

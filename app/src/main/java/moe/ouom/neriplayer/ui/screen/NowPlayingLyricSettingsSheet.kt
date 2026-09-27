@@ -121,11 +121,11 @@ internal fun lyricPhoneticSwitchAction(
 internal fun booleanToggleClick(checked: Boolean, onCheckedChange: (Boolean) -> Unit): () -> Unit =
     { onCheckedChange(!checked) }
 
-private fun lyricToggleModifier(
+private fun Modifier.lyricToggleModifier(
     enabled: Boolean,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
-): Modifier = Modifier
+): Modifier = this
     .fillMaxWidth()
     .clip(RoundedCornerShape(12.dp))
     .clickable(enabled = enabled, onClick = booleanToggleClick(checked, onCheckedChange))
@@ -349,7 +349,7 @@ private fun LyricTranslationToggle(
         trailingContent = {
             Switch(checked = checked, onCheckedChange = onCheckedChange)
         },
-        modifier = lyricToggleModifier(true, checked, onCheckedChange)
+        modifier = Modifier.lyricToggleModifier(true, checked, onCheckedChange)
     )
 }
 
@@ -386,7 +386,7 @@ private fun LyricPhoneticListItem(
                 enabled = enabled
             )
         },
-        modifier = lyricToggleModifier(enabled, checked, onCheckedChange)
+        modifier = Modifier.lyricToggleModifier(enabled, checked, onCheckedChange)
     )
 }
 

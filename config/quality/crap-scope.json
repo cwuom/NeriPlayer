@@ -19,7 +19,9 @@
     "moe/ouom/neriplayer/ui/screen/tab/ExploreGlassPillSurface.kt",
     "moe/ouom/neriplayer/ui/MainTabNavigationMotion.kt",
     "moe/ouom/neriplayer/ui/screen/tab/SettingsPlaybackControlLayout.kt",
-    "moe/ouom/neriplayer/ui/screen/tab/SettingsPersonalizationContent.kt"
+    "moe/ouom/neriplayer/ui/screen/tab/SettingsPersonalizationContent.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingPlaybackControls.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSecondaryActions.kt"
   ],
   "method_scopes": [
     {
