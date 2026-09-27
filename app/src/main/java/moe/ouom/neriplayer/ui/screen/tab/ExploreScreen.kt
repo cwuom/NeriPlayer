@@ -38,11 +38,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.indication
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,7 +46,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -61,10 +56,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -77,45 +69,33 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
-import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ripple
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarState
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -138,7 +118,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -157,7 +136,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import androidx.lifecycle.viewmodel.viewModelFactory
-import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
@@ -177,8 +155,6 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
-import moe.ouom.neriplayer.data.local.media.displayAlbum
-import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
@@ -193,31 +169,22 @@ import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreSearchResult
-import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseSearchArtistResult
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.shouldLoadExploreSearchMore
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
-import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
-import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
-import moe.ouom.neriplayer.util.format.formatDuration
-import moe.ouom.neriplayer.util.format.formatPlayCount
-import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 private val ExplorePrimaryTabShape = RoundedCornerShape(20.dp)
-private val ExplorePillShape = RoundedCornerShape(999.dp)
 private val ExploreSearchFieldShape = RoundedCornerShape(16.dp)
 
 internal fun exploreSearchSourceDisplayOrder(
@@ -358,6 +325,7 @@ fun ExploreScreen(
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
+    val clipboard = LocalClipboard.current
     if (offlineMode) {
         ExploreOfflineContent(topAppBarState)
         return
@@ -919,63 +887,79 @@ fun ExploreScreen(
                                             }.takeIf { it >= 0 } ?: index
                                             val isFavoriteSong = favoriteSongKeys.contains(song.stableKey())
                                             SongRow(
-                                                index = index + 1,
-                                                song = song,
-                                                isFavorite = isFavoriteSong,
-                                                favoriteActionEnabled = localPlaylistsReady,
-                                                offlineMode = offlineMode,
-                                                snackbarHostState = snackbarHostState,
-                                                onClick = {
-                                                    if (shouldShowBiliPartsPicker(song)) {
-                                                        scope.launch {
-                                                            try {
-                                                                val info = vm.getVideoInfoByAvid(song.id)
-                                                                if (info.pages.size <= 1) {
-                                                                    onSongClick(ui.searchResults, songListIndex)
-                                                                } else {
-                                                                    partsInfo = info
-                                                                    clickedSongCoverUrl = song.coverUrl ?: ""
-                                                                    showPartsSheet = true
+                                                state = ExploreSongRowState(
+                                                    index = index + 1,
+                                                    song = song,
+                                                    isFavorite = isFavoriteSong,
+                                                    favoriteActionEnabled = localPlaylistsReady,
+                                                    offlineMode = offlineMode
+                                                ),
+                                                actions = ExploreSongRowActions(
+                                                    onClick = {
+                                                        if (shouldShowBiliPartsPicker(song)) {
+                                                            scope.launch {
+                                                                try {
+                                                                    val info = vm.getVideoInfoByAvid(song.id)
+                                                                    if (info.pages.size <= 1) {
+                                                                        onSongClick(ui.searchResults, songListIndex)
+                                                                    } else {
+                                                                        partsInfo = info
+                                                                        clickedSongCoverUrl = song.coverUrl ?: ""
+                                                                        showPartsSheet = true
+                                                                    }
+                                                                } catch (e: Exception) {
+                                                                    NPLogger.e("ExploreScreen", composeResources.getString(R.string.search_error), e)
                                                                 }
-                                                            } catch (e: Exception) {
-                                                                NPLogger.e("ExploreScreen", composeResources.getString(R.string.search_error), e)
                                                             }
+                                                        } else {
+                                                            onSongClick(ui.searchResults, songListIndex)
                                                         }
-                                                    } else {
-                                                        onSongClick(ui.searchResults, songListIndex)
-                                                    }
-                                                },
-                                                onPlayNow = { onSongPlayPreservingQueue(song) },
-                                                onPlayNext = { onSongPlayNext(song) },
-                                                onAddToQueueEnd = { onSongAddToQueueEnd(song) },
-                                                onDownload = {
-                                                    GlobalDownloadManager.startDownload(context, song)
-                                                    scope.launch {
-                                                        snackbarHostState.showNeriSnackbar(
-                                                            composeResources.getString(
-                                                                R.string.download_starting,
-                                                                song.displayName()
+                                                    },
+                                                    onPlayNow = { onSongPlayPreservingQueue(song) },
+                                                    onPlayNext = { onSongPlayNext(song) },
+                                                    onAddToQueueEnd = { onSongAddToQueueEnd(song) },
+                                                    onDownload = {
+                                                        GlobalDownloadManager.startDownload(context, song)
+                                                        scope.launch {
+                                                            snackbarHostState.showNeriSnackbar(
+                                                                composeResources.getString(
+                                                                    R.string.download_starting,
+                                                                    song.displayName()
+                                                                )
                                                             )
-                                                        )
-                                                    }
-                                                },
-                                                onToggleFavorite = {
-                                                    if (localPlaylistsReady) {
-                                                        scope.launchLocalPlaylistMutation(
-                                                            "toggleFavoriteFromExplore"
-                                                        ) {
-                                                            val isFavoriteAtAction = FavoritesPlaylist
-                                                                .firstOrNull(repo.playlists.value, context)
-                                                                ?.songs
-                                                                ?.any { it.sameIdentityAs(song) } == true
-                                                            if (isFavoriteAtAction) {
-                                                                repo.removeFromFavorites(song)
-                                                            } else {
-                                                                repo.addToFavorites(song)
+                                                        }
+                                                    },
+                                                    onToggleFavorite = {
+                                                        if (localPlaylistsReady) {
+                                                            scope.launchLocalPlaylistMutation(
+                                                                "toggleFavoriteFromExplore"
+                                                            ) {
+                                                                val isFavoriteAtAction = FavoritesPlaylist
+                                                                    .firstOrNull(repo.playlists.value, context)
+                                                                    ?.songs
+                                                                    ?.any { it.sameIdentityAs(song) } == true
+                                                                if (isFavoriteAtAction) {
+                                                                    repo.removeFromFavorites(song)
+                                                                } else {
+                                                                    repo.addToFavorites(song)
+                                                                }
                                                             }
                                                         }
+                                                    },
+                                                    onCopyInfo = {
+                                                        scope.launch {
+                                                            val result = clipboard.copyPlainTextSafely(
+                                                                label = "text",
+                                                                text = buildExploreSongInfo(song)
+                                                            )
+                                                            snackbarHostState.showNeriSnackbar(
+                                                                composeResources.getString(
+                                                                    exploreClipboardMessageRes(result)
+                                                                )
+                                                            )
+                                                        }
                                                     }
-                                                }
+                                                )
                                             )
                                         }
                                         is ExploreSearchResult.Playlist -> {
@@ -1041,11 +1025,16 @@ fun ExploreScreen(
                         SearchSource.NETEASE -> {
                             NeteaseDefaultContent(
                                 gridState = gridState,
-                                ui = ui,
+                                browse = NeteaseBrowseState(
+                                    selectedTag = ui.selectedTag,
+                                    playlists = ui.playlists,
+                                    loading = ui.loading,
+                                    error = ui.error
+                                ),
                                 tagKeys = tagKeys,
                                 tagLabels = tagLabels,
                                 favoriteKeys = favoriteKeys,
-                                vm = vm,
+                                onTagSelected = vm::loadHighQuality,
                                 onPlay = onPlay,
                                 tagChipSelectedAlpha = tagChipSelectedAlpha,
                                 tagChipUnselectedAlpha = tagChipUnselectedAlpha,
@@ -1060,8 +1049,12 @@ fun ExploreScreen(
                         }
                         SearchSource.YOUTUBE_MUSIC -> {
                             YouTubeMusicExploreContent(
-                                ui = ui,
-                                vm = vm,
+                                browse = YouTubeBrowseState(
+                                    playlists = ui.ytMusicPlaylists,
+                                    loading = ui.ytMusicPlaylistsLoading,
+                                    error = ui.ytMusicPlaylistsError
+                                ),
+                                onRetry = vm::loadYtMusicPlaylists,
                                 onClick = onYouTubeMusicPlaylistClick,
                                 offlineMode = offlineMode,
                                 isTabletLayout = isTabletLayout,
@@ -1668,826 +1661,3 @@ private const val EXPLORE_SEARCH_TYPE_BAR_SLIDE_DIVISOR = 5
 internal const val EXPLORE_SEARCH_TYPE_BAR_CONTAINER_TAG = "explore_search_type_bar"
 internal const val EXPLORE_NETEASE_SEARCH_TYPE_BAR_TAG = "explore_netease_search_type_bar"
 internal const val EXPLORE_YOUTUBE_SEARCH_TYPE_BAR_TAG = "explore_youtube_search_type_bar"
-
-@Composable
-@OptIn(ExperimentalLayoutApi::class)
-private fun NeteaseDefaultContent(
-    gridState: LazyGridState,
-    ui: ExploreUiState,
-    tagKeys: List<String>,
-    tagLabels: List<String>,
-    favoriteKeys: Set<String>,
-    vm: ExploreViewModel,
-    onPlay: (PlaylistSummary) -> Unit,
-    tagChipSelectedAlpha: Float,
-    tagChipUnselectedAlpha: Float,
-    tagChipBorderAlpha: Float,
-    isTabletLayout: Boolean = false
-) {
-    val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val gridHorizontalPadding = if (isTabletLayout) 56.dp else 16.dp
-    val gridMinCellSize = if (isTabletLayout) 170.dp else 150.dp
-    val gridSpacing = if (isTabletLayout) 16.dp else 12.dp
-    val tagListState = rememberLazyListState()
-    val showTagStartFade by remember(tagListState) {
-        derivedStateOf { tagListState.canScrollBackward }
-    }
-    val showTagEndFade by remember(tagListState) {
-        derivedStateOf { tagListState.canScrollForward }
-    }
-    LazyVerticalGrid(
-        state = gridState,
-        columns = GridCells.Adaptive(gridMinCellSize),
-        verticalArrangement = Arrangement.spacedBy(gridSpacing),
-        horizontalArrangement = Arrangement.spacedBy(gridSpacing),
-        contentPadding = PaddingValues(
-            start = gridHorizontalPadding,
-            end = gridHorizontalPadding,
-            top = 16.dp,
-            bottom = 16.dp + miniPlayerHeight
-        ),
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Column(Modifier.fillMaxWidth()) {
-                val displayKeys = tagKeys
-                val displayLabels = tagLabels
-                LazyRow(
-                    state = tagListState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .exploreHorizontalEdgeFade(
-                            showStartFade = showTagStartFade,
-                            showEndFade = showTagEndFade
-                        ),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(displayKeys) { index, tagKey ->
-                        val selected = (ui.selectedTag == tagKey)
-                        ExploreTagChip(
-                            label = displayLabels[index],
-                            selected = selected,
-                            onClick = { if (!selected) vm.loadHighQuality(tagKey) },
-                            selectedAlpha = tagChipSelectedAlpha,
-                            unselectedAlpha = tagChipUnselectedAlpha,
-                            borderAlpha = tagChipBorderAlpha
-                        )
-                    }
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .padding(horizontal = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (ui.loading) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
-                }
-            }
-        }
-        if (ui.playlists.isNotEmpty()) {
-            items(items = ui.playlists, key = { it.id }) { playlist ->
-                PlaylistCard(
-                    playlist = playlist,
-                    isFavorite = favoriteKeys.contains("netease:${playlist.id}"),
-                    onClick = { onPlay(playlist) }
-                )
-            }
-        } else if (ui.loading) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 24.dp),
-                    Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
-        } else if (ui.error != null) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(ui.error, color = MaterialTheme.colorScheme.error)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ExploreTagChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    selectedAlpha: Float,
-    unselectedAlpha: Float,
-    borderAlpha: Float,
-    icon: ImageVector? = null
-) {
-    val containerColor = if (selected) {
-        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = selectedAlpha)
-    } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = unselectedAlpha)
-    }
-    val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    val borderColor = if (selected) {
-        MaterialTheme.colorScheme.secondary.copy(alpha = borderAlpha)
-    } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = borderAlpha)
-    }
-
-    ExploreGlassPillSurface(
-        fallbackColor = containerColor,
-        tintColor = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surface
-        },
-        contentColor = contentColor,
-        border = BorderStroke(1.dp, borderColor),
-        onClick = onClick
-    ) {
-        Row(
-            modifier = Modifier
-                .height(32.dp)
-                .padding(horizontal = 14.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-            }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-internal fun ExploreGlassPillSurface(
-    fallbackColor: Color,
-    tintColor: Color,
-    contentColor: Color,
-    onClick: () -> Unit,
-    border: BorderStroke? = null,
-    content: @Composable () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    Box(
-        modifier = Modifier
-            .minimumInteractiveComponentSize()
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        AdvancedGlassSurface(
-            role = AdvancedGlassRole.ExploreTag,
-            shape = ExplorePillShape,
-            fallbackColor = fallbackColor,
-            tintColor = tintColor
-        ) {
-            Surface(
-                modifier = Modifier
-                    .clip(ExplorePillShape)
-                    .indication(interactionSource, ripple()),
-                shape = ExplorePillShape,
-                color = Color.Transparent,
-                contentColor = contentColor,
-                border = border,
-                content = content
-            )
-        }
-    }
-}
-
-@Composable
-private fun NeteasePlaylistSearchRow(
-    playlist: PlaylistSummary,
-    offlineMode: Boolean,
-    onClick: () -> Unit
-) {
-    val context = LocalContext.current
-    LinkedCollectionRow(
-        title = playlist.name,
-        subtitle = stringResource(
-            R.string.playlist_play_count_format,
-            formatPlayCount(context, playlist.playCount),
-            playlist.trackCount
-        ),
-        coverUrl = playlist.picUrl,
-        offlineMode = offlineMode,
-        fallbackIcon = {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(30.dp)
-            )
-        },
-        onClick = onClick
-    )
-}
-
-@Composable
-private fun BiliPlaylistSearchRow(
-    playlist: BiliPlaylist,
-    offlineMode: Boolean,
-    onClick: () -> Unit
-) {
-    LinkedCollectionRow(
-        title = playlist.title,
-        subtitle = listOfNotNull(
-            playlist.subtitle.takeIf { it.isNotBlank() },
-            pluralStringResource(
-                R.plurals.bili_content_count,
-                playlist.count,
-                playlist.count
-            )
-        ).joinToString(" · "),
-        coverUrl = playlist.coverUrl,
-        offlineMode = offlineMode,
-        fallbackIcon = {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(30.dp)
-            )
-        },
-        onClick = onClick
-    )
-}
-
-@Composable
-private fun YouTubePlaylistSearchRow(
-    playlist: YouTubeMusicPlaylist,
-    offlineMode: Boolean,
-    onClick: () -> Unit
-) {
-    LinkedCollectionRow(
-        title = playlist.title,
-        subtitle = listOfNotNull(
-            playlist.subtitle.takeIf { it.isNotBlank() },
-            pluralStringResource(
-                R.plurals.count_songs_format,
-                playlist.trackCount,
-                playlist.trackCount
-            ).takeIf { playlist.trackCount > 0 }
-        ).joinToString(" · "),
-        coverUrl = playlist.coverUrl,
-        offlineMode = offlineMode,
-        fallbackIcon = {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(30.dp)
-            )
-        },
-        onClick = onClick
-    )
-}
-
-@Composable
-private fun NeteaseArtistSearchRow(
-    result: NeteaseSearchArtistResult,
-    offlineMode: Boolean,
-    onClick: () -> Unit
-) {
-    LinkedCollectionRow(
-        title = result.artist.name,
-        subtitle = listOf(
-            pluralStringResource(
-                R.plurals.artist_song_count,
-                result.musicSize,
-                result.musicSize
-            ),
-            pluralStringResource(
-                R.plurals.artist_album_count,
-                result.albumSize,
-                result.albumSize
-            )
-        ).joinToString(" · "),
-        coverUrl = result.picUrl,
-        offlineMode = offlineMode,
-        fallbackIcon = {
-            Icon(
-                imageVector = Icons.Filled.AccountCircle,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(34.dp)
-            )
-        },
-        onClick = onClick
-    )
-}
-
-@Composable
-private fun YouTubeCreatorSearchRow(
-    creator: YouTubeMusicCreatorSummary,
-    offlineMode: Boolean,
-    onClick: () -> Unit
-) {
-    LinkedCollectionRow(
-        title = creator.title,
-        subtitle = creator.subtitle.ifBlank {
-            stringResource(R.string.explore_search_type_creator)
-        },
-        coverUrl = creator.coverUrl,
-        offlineMode = offlineMode,
-        fallbackIcon = {
-            Icon(
-                imageVector = Icons.Filled.AccountCircle,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(34.dp)
-            )
-        },
-        onClick = onClick
-    )
-}
-
-@Composable
-private fun LinkedCollectionRow(
-    title: String,
-    subtitle: String,
-    coverUrl: String?,
-    offlineMode: Boolean,
-    fallbackIcon: @Composable () -> Unit,
-    onClick: () -> Unit
-) {
-    val context = LocalContext.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                context.performHapticFeedback()
-                onClick()
-            }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(12.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (!coverUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = fastScrollableImageRequest(
-                        context = context,
-                        data = coverUrl,
-                        sizePx = 144,
-                        offlineMode = offlineMode
-                    ),
-                    contentDescription = title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                fallbackIcon()
-            }
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun ExploreSearchNoticeRow(item: ExploreSearchResult.Notice) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = item.message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun SearchLoadingMoreRow() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 18.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        CircularProgressIndicator(modifier = Modifier.size(28.dp))
-    }
-}
-
-@Composable
-private fun SearchLoadMoreErrorRow(
-    error: String,
-    onRetry: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = error,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-            textAlign = TextAlign.Center
-        )
-        HapticTextButton(onClick = onRetry) {
-            Text(stringResource(R.string.action_retry))
-        }
-    }
-}
-
-@Composable
-internal fun SongRow(
-    index: Int,
-    song: SongItem,
-    isFavorite: Boolean,
-    favoriteActionEnabled: Boolean,
-    offlineMode: Boolean,
-    snackbarHostState: SnackbarHostState,
-    onClick: () -> Unit,
-    onPlayNow: () -> Unit,
-    onPlayNext: () -> Unit,
-    onAddToQueueEnd: () -> Unit,
-    onDownload: () -> Unit,
-    onToggleFavorite: () -> Unit
-) {
-    val context = LocalContext.current
-    val composeResources = LocalResources.current
-    val clipboard = LocalClipboard.current
-    val scope = rememberCoroutineScope()
-    val coverUrl = rememberSongDisplayCoverUrl(song)
-    var showMoreMenu by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                context.performHapticFeedback()
-                onClick()
-            }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(modifier = Modifier.width(48.dp), contentAlignment = Alignment.Center) {
-            Text(
-                text = index.toString(),
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                textAlign = TextAlign.Center
-            )
-        }
-
-        if (!coverUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = fastScrollableImageRequest(
-                    context = context,
-                    data = coverUrl,
-                    sizePx = 128,
-                    offlineMode = offlineMode
-                ),
-                contentDescription = song.displayName(),
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
-            )
-            Spacer(Modifier.width(12.dp))
-        } else {
-            Spacer(Modifier.width(12.dp))
-        }
-
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = song.displayName(),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = listOfNotNull(
-                    song.displayArtist().takeIf { it.isNotBlank() },
-                    song.displayAlbum(context).takeIf { it.isNotBlank() }
-                ).joinToString(" · "),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (song.durationMs > 0L) {
-            Text(
-                text = formatDuration(song.durationMs),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Spacer(Modifier.width(8.dp))
-        Box {
-            HapticIconButton(onClick = { showMoreMenu = true }) {
-                Icon(
-                    imageVector = Icons.Filled.MoreVert,
-                    contentDescription = stringResource(R.string.cd_more_actions),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            DropdownMenu(
-                expanded = showMoreMenu,
-                onDismissRequest = { showMoreMenu = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.search_result_play_keep_queue)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.PlayCircle,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        context.performHapticFeedback()
-                        onPlayNow()
-                        showMoreMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.local_playlist_play_next)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        context.performHapticFeedback()
-                        onPlayNext()
-                        showMoreMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.search_result_add_to_current_queue)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        context.performHapticFeedback()
-                        onAddToQueueEnd()
-                        showMoreMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            if (isFavorite) {
-                                stringResource(R.string.favorite_remove)
-                            } else {
-                                stringResource(R.string.favorite_add)
-                            }
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (isFavorite) {
-                                Icons.Filled.Favorite
-                            } else {
-                                Icons.Outlined.FavoriteBorder
-                            },
-                            contentDescription = null
-                        )
-                    },
-                    enabled = favoriteActionEnabled,
-                    onClick = {
-                        context.performHapticFeedback()
-                        onToggleFavorite()
-                        showMoreMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.download_to_local)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.Download,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        context.performHapticFeedback()
-                        onDownload()
-                        showMoreMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.action_copy_song_info)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.ContentCopy,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        scope.launch {
-                            val messageRes = when (
-                                val result = clipboard.copyPlainTextSafely(
-                                    label = "text",
-                                    text = buildExploreSongInfo(song)
-                                )
-                            ) {
-                                is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
-                                    R.string.toast_copy_truncated
-                                } else {
-                                    R.string.toast_copied
-                                }
-                                ClipboardCopyResult.TransactionTooLarge -> R.string.toast_copy_failed
-                            }
-                            snackbarHostState.showNeriSnackbar(
-                                composeResources.getString(messageRes)
-                            )
-                        }
-                        showMoreMenu = false
-                    }
-                )
-            }
-        }
-    }
-}
-
-internal fun buildExploreSongInfo(song: SongItem): String {
-    return "${song.displayName()}-${song.displayArtist()}"
-}
-
-@Composable
-private fun YouTubeMusicExploreContent(
-    ui: ExploreUiState,
-    vm: ExploreViewModel,
-    onClick: (YouTubeMusicPlaylist) -> Unit,
-    offlineMode: Boolean,
-    gridState: LazyGridState,
-    isTabletLayout: Boolean = false
-) {
-    val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val gridHorizontalPadding = if (isTabletLayout) 56.dp else 16.dp
-    val gridMinCellSize = if (isTabletLayout) 156.dp else 120.dp
-    val gridSpacing = if (isTabletLayout) 14.dp else 10.dp
-    when {
-        ui.ytMusicPlaylistsLoading -> {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(bottom = miniPlayerHeight),
-                Alignment.Center
-            ) { CircularProgressIndicator() }
-        }
-        ui.ytMusicPlaylistsError != null -> {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(bottom = miniPlayerHeight),
-                Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        ui.ytMusicPlaylistsError,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    HapticTextButton(onClick = { vm.loadYtMusicPlaylists() }) {
-                        Text(stringResource(R.string.action_retry))
-                    }
-                }
-            }
-        }
-        ui.ytMusicPlaylists.isEmpty() -> {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(bottom = miniPlayerHeight),
-                Alignment.Center
-            ) {
-                Text(
-                    stringResource(R.string.explore_tag_youtube_music),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-        }
-        else -> {
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Adaptive(gridMinCellSize),
-                contentPadding = PaddingValues(
-                    start = gridHorizontalPadding, end = gridHorizontalPadding,
-                    top = 8.dp,
-                    bottom = 16.dp + miniPlayerHeight
-                ),
-                verticalArrangement = Arrangement.spacedBy(gridSpacing),
-                horizontalArrangement = Arrangement.spacedBy(gridSpacing),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(
-                    items = ui.ytMusicPlaylists,
-                    key = { it.browseId }
-                ) { playlist ->
-                    YtMusicExploreCard(
-                        playlist = playlist,
-                        onClick = { onClick(playlist) },
-                        offlineMode = offlineMode
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun YtMusicExploreCard(
-    playlist: YouTubeMusicPlaylist,
-    onClick: () -> Unit,
-    offlineMode: Boolean
-) {
-    val context = LocalContext.current
-    Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-    ) {
-        AsyncImage(
-            model = fastScrollableImageRequest(
-                context = context,
-                data = playlist.coverUrl,
-                sizePx = 384,
-                offlineMode = offlineMode
-            ),
-            contentDescription = playlist.title,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(12.dp))
-        )
-        Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
-            Text(
-                text = playlist.title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall
-            )
-            if (playlist.subtitle.isNotBlank()) {
-                Text(
-                    text = playlist.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip
-                )
-            }
-        }
-    }
-}

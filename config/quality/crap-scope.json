@@ -11,7 +11,10 @@
     "moe/ouom/neriplayer/ui/screen/tab/SettingsNavigationSearch.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingQueueSheet.kt",
     "moe/ouom/neriplayer/ui/onboarding/StartupOnboardingSharedComponents.kt",
-    "moe/ouom/neriplayer/ui/onboarding/StartupBackupRestoreStep.kt"
+    "moe/ouom/neriplayer/ui/onboarding/StartupBackupRestoreStep.kt",
+    "moe/ouom/neriplayer/ui/screen/tab/ExploreSearchResultRows.kt",
+    "moe/ouom/neriplayer/ui/screen/tab/ExploreBrowseContent.kt",
+    "moe/ouom/neriplayer/ui/screen/tab/ExploreGlassPillSurface.kt"
   ],
   "method_scopes": [
     {
