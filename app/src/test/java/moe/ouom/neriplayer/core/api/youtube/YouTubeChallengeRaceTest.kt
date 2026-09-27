@@ -103,4 +103,19 @@ class YouTubeChallengeRaceTest {
         assertFalse(newPipe.isCancelled)
         assertFalse(ejs.isCancelled)
     }
+
+    @Test
+    fun newPipeFailureIsRecordedOnlyForAnAttemptedFailedCandidate() = runTest {
+        val failed = CompletableDeferred(
+            ChallengeCandidateResult<String>(source = "NEWPIPE", value = null, elapsedMs = 3L)
+        )
+        val successful = CompletableDeferred(
+            ChallengeCandidateResult(source = "NEWPIPE", value = "resolved", elapsedMs = 3L)
+        )
+
+        assertFalse(shouldRecordNewPipeFailure(true, failed))
+        assertFalse(shouldRecordNewPipeFailure<String>(false, null))
+        assertFalse(shouldRecordNewPipeFailure(false, successful))
+        assertTrue(shouldRecordNewPipeFailure(false, failed))
+    }
 }

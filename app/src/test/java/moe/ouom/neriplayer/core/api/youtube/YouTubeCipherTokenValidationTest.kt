@@ -2,7 +2,9 @@ package moe.ouom.neriplayer.core.api.youtube
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -62,6 +64,13 @@ class YouTubeCipherTokenValidationTest {
     }
 
     @Test
+    fun `signature candidate must change and remain a plausible token`() {
+        assertNull(validResolvedCipherToken("encrypted", "encrypted"))
+        assertNull(validResolvedCipherToken("encrypted", "[object Object]"))
+        assertEquals("resolved", validResolvedCipherToken("encrypted", "resolved"))
+    }
+
+    @Test
     fun `rejects control characters and query separators`() {
         assertFalse(isPlausibleCipherToken("abc\n123"))
         assertFalse(isPlausibleCipherToken("abc?next=value"))
@@ -87,6 +96,36 @@ class YouTubeCipherTokenValidationTest {
     fun `url without n parameter is not treated as resolved`() {
         val missing = "https://rr5.googlevideo.com/videoplayback?expire=1785098966&itag=140"
         assertFalse(hasPlausibleThrottlingParameter(missing))
+    }
+
+    @Test
+    fun `newpipe throttling classifier rejects only changed invalid urls`() {
+        val original = "https://rr5.googlevideo.com/videoplayback?itag=140&n=encrypted"
+        assertEquals(
+            NewPipeThrottlingCandidateStatus.UNCHANGED,
+            classifyNewPipeThrottlingUrl(original, null)
+        )
+        assertEquals(
+            NewPipeThrottlingCandidateStatus.UNCHANGED,
+            classifyNewPipeThrottlingUrl(original, original)
+        )
+        assertEquals(
+            NewPipeThrottlingCandidateStatus.INVALID,
+            classifyNewPipeThrottlingUrl(original, "$original%20bad")
+        )
+        assertEquals(
+            NewPipeThrottlingCandidateStatus.VALID,
+            classifyNewPipeThrottlingUrl(original, original.replace("encrypted", "resolved"))
+        )
+    }
+
+    @Test
+    fun `cipher token diagnostics describe rejected ascii and non ascii without leaking token`() {
+        assertEquals(
+            "length=5,invalidAscii=1,invalidAsciiCodes=32,nonAscii=1",
+            describeCipherTokenShape("ab c中")
+        )
+        assertEquals("length=0,invalidAscii=0,invalidAsciiCodes=,nonAscii=0", describeCipherTokenShape(null))
     }
 
     @Test

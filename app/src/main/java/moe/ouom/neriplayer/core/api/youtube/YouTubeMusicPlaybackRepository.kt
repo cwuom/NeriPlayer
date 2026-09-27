@@ -32,7 +32,6 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.Locale
 import java.util.TimeZone
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 import kotlin.jvm.Volatile
 import androidx.annotation.VisibleForTesting
@@ -46,14 +45,11 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -157,17 +153,13 @@ private const val PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS = 90L * 1000L
 // 只会把用户点击前面的排队深度成倍拉长, 每首歌还要占 sig 和 n 两次
 private const val MAX_CONCURRENT_PREFETCH_RESOLVES = 1
 
-private const val NEWPIPE_FALLBACK_START_DELAY_MS = 40L
-private const val CIPHER_RESOLVE_TIMEOUT_MS = 12_000L
 // 脏 IP 下 429/503 退避基数与上限, 避免密集重试进一步拉高限流等级 (#Y5)
 private const val RATE_LIMIT_BACKOFF_BASE_MS = 500L
 private const val RATE_LIMIT_BACKOFF_MAX_MS = 5_000L
 
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
-private const val STREAMING_CIPHER_LOG_THRESHOLD_MS = 250L
 private const val YOUTUBE_PLAYBACK_DIAG_PREFIX = "[YT-DIAG-20260530]"
 
-private fun playbackElapsedMs(startedAtMs: Long): Long = System.currentTimeMillis() - startedAtMs
 
 /**
  * 携带 HTTP 状态码与 Retry-After 的请求失败异常
@@ -198,87 +190,6 @@ internal fun rateLimitBackoffMs(error: Throwable?, priorHits: Int): Long? {
         .coerceAtMost(RATE_LIMIT_BACKOFF_MAX_MS)
 }
 
-@VisibleForTesting
-internal object NewPipeFallbackTracker {
-    /**
-     * 一次失败就够
-     *
-     * NewPipe 的反混淆是拿固定正则去套 player.js, 同一版地址要么匹配要么不匹配, 没有偶发;
-     * 等第二次样本等于让冷启动的头两首各白付三秒多
-     */
-    private const val FAILURE_THRESHOLD = 1
-    private val signatureFailures = ConcurrentHashMap<String, AtomicInteger>()
-
-    private val throttlingFailures = ConcurrentHashMap<String, AtomicInteger>()
-
-    @Volatile
-    private var store: YouTubeNewPipeFallbackStore? = null
-
-    /** 存档只在进程内挂一次, 之后每次记录都同步写回 */
-    fun attachStore(newStore: YouTubeNewPipeFallbackStore) {
-        if (store != null) {
-            return
-        }
-        synchronized(this) {
-            if (store != null) {
-                return
-            }
-            store = newStore
-            newStore.load()?.let { snapshot ->
-                snapshot.signature.forEach { key ->
-                    signatureFailures.computeIfAbsent(key) { AtomicInteger() }.set(FAILURE_THRESHOLD)
-                }
-                snapshot.throttling.forEach { key ->
-                    throttlingFailures.computeIfAbsent(key) { AtomicInteger() }.set(FAILURE_THRESHOLD)
-                }
-            }
-        }
-    }
-
-    fun maybeSkipSignature(playerJsUrl: String): Boolean {
-        val key = playerJsUrl.ifBlank { "<unknown-signature>" }
-        return (signatureFailures[key]?.get() ?: 0) >= FAILURE_THRESHOLD
-    }
-
-    fun maybeSkipThrottling(playerJsUrl: String): Boolean {
-        val key = playerJsUrl.ifBlank { "<unknown-throttling>" }
-        return (throttlingFailures[key]?.get() ?: 0) >= FAILURE_THRESHOLD
-    }
-
-    fun recordSignatureFailure(playerJsUrl: String) {
-        val key = playerJsUrl.ifBlank { "<unknown-signature>" }
-        signatureFailures.computeIfAbsent(key) { AtomicInteger() }.incrementAndGet()
-        persist(signatureKey = key, throttlingKey = null)
-    }
-
-    fun recordThrottlingFailure(playerJsUrl: String) {
-        val key = playerJsUrl.ifBlank { "<unknown-throttling>" }
-        throttlingFailures.computeIfAbsent(key) { AtomicInteger() }.incrementAndGet()
-        persist(signatureKey = null, throttlingKey = key)
-    }
-
-    private fun persist(signatureKey: String?, throttlingKey: String?) {
-        val target = store ?: return
-        synchronized(this) {
-            val snapshot = target.load() ?: NewPipeFallbackSnapshot()
-            target.save(
-                snapshot.copy(
-                    signature = signatureKey
-                        ?.let { retainRecentNewPipeFallbackKeys(snapshot.signature, it) }
-                        ?: snapshot.signature,
-                    throttling = throttlingKey
-                        ?.let { retainRecentNewPipeFallbackKeys(snapshot.throttling, it) }
-                        ?: snapshot.throttling
-                )
-            )
-        }
-    }
-
-    fun reset() {
-        signatureFailures.clear()
-        throttlingFailures.clear()
-    }
-}
 
 /**
  * 记录哪些 player client 正在稳定地拒绝请求
@@ -604,12 +515,6 @@ internal data class InFlightBootstrapRequest(
     val forceRefresh: Boolean
 )
 
-internal data class ChallengeCandidateResult<T>(
-    val source: String,
-    val value: T?,
-    val elapsedMs: Long
-)
-
 private data class YouTubePlayerAudioCandidate(
     val format: JSONObject,
     val mimeType: String?,
@@ -618,38 +523,6 @@ private data class YouTubePlayerAudioCandidate(
     val contentLength: Long?,
     val durationMs: Long
 )
-
-interface YouTubeStreamingCipherResolver {
-    fun resolveSignature(encryptedSignature: String): String?
-    fun resolveStreamingUrl(url: String): String
-
-    suspend fun resolveSignatureAsync(encryptedSignature: String): String? {
-        return resolveSignature(encryptedSignature)
-    }
-
-    suspend fun resolveStreamingUrlAsync(url: String): String {
-        return resolveStreamingUrl(url)
-    }
-
-    /**
-     * 把 sig 和 n 一次算完填进求解器缓存
-     *
-     * 分开求解要各建一次 isolate 再各传一遍 player.js, 固定成本付两遍;
-     * 合并算一次之后, 后面两步照原样跑但直接命中缓存
-     * 这一步失败什么都不做, 完整退回原来的两步路径
-     */
-    fun prewarmChallenges(
-        encryptedSignature: String?,
-        obfuscatedThrottlingParameter: String?
-    ) = Unit
-
-    suspend fun prewarmChallengesAsync(
-        encryptedSignature: String?,
-        obfuscatedThrottlingParameter: String?
-    ) {
-        prewarmChallenges(encryptedSignature, obfuscatedThrottlingParameter)
-    }
-}
 
 private fun isPlayableM4aContainer(mimeType: String?): Boolean {
     return when (mimeType?.lowercase(Locale.US)) {
@@ -665,32 +538,6 @@ private fun playableAudioMimePreferenceScore(mimeType: String?): Int {
         mimeType?.lowercase(Locale.US) == "audio/webm" -> 1
         else -> 0
     }
-}
-
-internal suspend fun <T> awaitFirstChallengeSuccess(
-    candidates: List<Deferred<ChallengeCandidateResult<T>>>
-): ChallengeCandidateResult<T>? = coroutineScope {
-    val pending = candidates.toMutableList()
-    while (pending.isNotEmpty()) {
-        val (selected, candidate) = select<Pair<Deferred<ChallengeCandidateResult<T>>, ChallengeCandidateResult<T>>> {
-            pending.forEach { deferred ->
-                deferred.onAwait { deferred to it }
-            }
-        }
-        pending.remove(selected)
-        if (candidate.value != null) {
-            pending.forEach { deferred -> deferred.cancel() }
-            return@coroutineScope candidate
-        }
-    }
-    null
-}
-
-/** 只读已完成且未取消的候选, 避免对被取消的 Deferred await 抛 CancellationException */
-internal suspend fun <T> Deferred<ChallengeCandidateResult<T>>?.hasFailedChallenge(): Boolean {
-    val deferred = this ?: return false
-    if (!deferred.isCompleted || deferred.isCancelled) return false
-    return runCatching { deferred.await().value }.getOrNull() == null
 }
 
 internal data class YouTubePlayerPlayabilityStatus(
@@ -1393,67 +1240,6 @@ internal object YouTubeMusicHlsManifestParser {
     }
 }
 
-/** n 和 sig 是放进 URL 查询参数的短 token, 可能携带 Base64 填充字符 */
-private val CIPHER_TOKEN_PATTERN = Regex("^[A-Za-z0-9._~+\\-/=]+$")
-
-/** JS 求值失败时的假成功返回值, 非空且与原串不同, 能骗过朴素校验 */
-private val CIPHER_TOKEN_JS_JUNK = setOf(
-    "undefined",
-    "null",
-    "nan",
-    "true",
-    "false",
-    "[object object]"
-)
-
-/** 拦截 JS 求值的假成功返回值 */
-internal fun isPlausibleCipherToken(value: String?): Boolean {
-    val token = value?.trim().orEmpty()
-    if (token.isEmpty()) return false
-    if (token.lowercase() in CIPHER_TOKEN_JS_JUNK) return false
-    return CIPHER_TOKEN_PATTERN.matches(token)
-}
-
-@VisibleForTesting
-internal fun describeCipherTokenShape(value: String?): String {
-    val token = value?.trim().orEmpty()
-    val invalidAsciiCount = token.count { it.code < 128 && !CIPHER_TOKEN_PATTERN.matches(it.toString()) }
-    val nonAsciiCount = token.count { it.code >= 128 }
-    val invalidAsciiCodes = token.asSequence()
-        .filter { it.code < 128 && !CIPHER_TOKEN_PATTERN.matches(it.toString()) }
-        .map { it.code }
-        .distinct()
-        .joinToString(",")
-    return "length=${token.length},invalidAscii=$invalidAsciiCount," +
-        "invalidAsciiCodes=$invalidAsciiCodes,nonAscii=$nonAsciiCount"
-}
-
-/** 解密后的流地址必须带合法 n */
-internal fun hasPlausibleThrottlingParameter(url: String): Boolean =
-    isPlausibleCipherToken(extractStreamQueryParameter(url, "n"))
-
-private fun extractStreamQueryParameter(url: String, key: String): String? {
-    val rawQuery = runCatching { URI(url).rawQuery }.getOrNull().orEmpty()
-    return rawQuery.split('&')
-        .asSequence()
-        .mapNotNull { segment ->
-            val resolvedKey = URLDecoder.decode(
-                segment.substringBefore('='),
-                Charsets.UTF_8.name()
-            )
-            if (resolvedKey.isBlank()) {
-                null
-            } else {
-                resolvedKey to URLDecoder.decode(
-                    segment.substringAfter('=', ""),
-                    Charsets.UTF_8.name()
-                )
-            }
-        }
-        .firstOrNull { (resolvedKey, _) -> resolvedKey == key }
-        ?.second
-}
-
 @VisibleForTesting
 internal fun resolvePlayableAudioCacheExpiresAtMs(
     url: String,
@@ -1470,30 +1256,6 @@ internal fun resolvePlayableAudioCacheExpiresAtMs(
                 .coerceAtLeast(cachedAtMs)
         }
     return minOf(defaultExpiresAtMs, streamExpiresAtMs ?: defaultExpiresAtMs)
-}
-
-private fun replaceStreamQueryParameter(url: String, key: String, value: String): String {
-    val pattern = Regex("([?&])${Regex.escape(key)}=[^&]*")
-    return if (pattern.containsMatchIn(url)) {
-        val match = pattern.find(url) ?: return url
-        buildString(url.length + value.length) {
-            append(url, 0, match.range.first)
-            append(match.groupValues[1])
-            append(key)
-            append('=')
-            append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-            append(url, match.range.last + 1, url.length)
-        }
-    } else {
-        val separator = if (url.contains('?')) '&' else '?'
-        buildString(url.length + key.length + value.length + 2) {
-            append(url)
-            append(separator)
-            append(key)
-            append('=')
-            append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-        }
-    }
 }
 
 private fun isYouTubeGoogleVideoStream(url: String): Boolean {
@@ -2961,409 +2723,14 @@ class YouTubeMusicPlaybackRepository(
         videoId: String,
         playerJsUrl: String
     ): YouTubeStreamingCipherResolver {
-        streamingCipherResolverFactory?.let { factory ->
-            return factory(videoId)
-        }
+        streamingCipherResolverFactory?.let { factory -> return factory(videoId) }
         ensureInitialized()
-
-        val signatureErrorLogged = AtomicBoolean(false)
-        val throttlingErrorLogged = AtomicBoolean(false)
-        val signatureEjsFallbackLogged = AtomicBoolean(false)
-        val throttlingEjsFallbackLogged = AtomicBoolean(false)
-        val signatureResolutionLogged = AtomicBoolean(false)
-        val throttlingResolutionLogged = AtomicBoolean(false)
-        val throttlingUnresolvedDropLogged = AtomicBoolean(false)
-        val prewarmedSignatures = ConcurrentHashMap<String, String>()
-        val prewarmedThrottlingParameters = ConcurrentHashMap<String, String>()
-
-        fun maybeLogResolution(
-            challengeType: String,
-            source: String,
-            elapsedMs: Long,
-            logged: AtomicBoolean
-        ) {
-            if (elapsedMs >= STREAMING_CIPHER_LOG_THRESHOLD_MS || logged.compareAndSet(false, true)) {
-                NPLogger.d(
-                    "YouTubeMusicPlayback",
-                    "Resolved $challengeType via $source for $videoId elapsedMs=$elapsedMs"
-                )
-            }
-        }
-
-        return object : YouTubeStreamingCipherResolver {
-            override fun prewarmChallenges(
-                encryptedSignature: String?,
-                obfuscatedThrottlingParameter: String?
-            ) {
-                // 同步解析入口只允许读取已有缓存, 不能再次阻塞调用线程
-            }
-
-            override suspend fun prewarmChallengesAsync(
-                encryptedSignature: String?,
-                obfuscatedThrottlingParameter: String?
-            ) {
-                val solver = ejsChallengeSolver ?: return
-                // 只有两个都在才值得合并, 单个的话走原路径一样是一次求解
-                val signature = encryptedSignature?.takeIf { it.isNotBlank() } ?: return
-                val throttling = obfuscatedThrottlingParameter?.takeIf { it.isNotBlank() } ?: return
-                val resolvedPlayerJsUrl = playerJsUrl.ifBlank { bootstrapCache?.playerJsUrl.orEmpty() }
-                if (resolvedPlayerJsUrl.isBlank()) {
-                    return
-                }
-                val startedAtMs = System.currentTimeMillis()
-                val prewarmed = runCatching {
-                    solver.solveDetailedAsync(
-                        playerJsUrl = resolvedPlayerJsUrl,
-                        encryptedSignature = signature,
-                        throttlingParameter = throttling
-                    )
-                }.onFailure { error ->
-                    if (error is CancellationException) {
-                        throw error
-                    }
-                }.getOrNull()
-                if (prewarmed?.status == YouTubeJsChallengeSolveStatus.SUCCESS) {
-                    val solvedSignature = prewarmed.solution.signature
-                    val solvedThrottling = prewarmed.solution.throttlingParameter
-                    val storedSignature = solvedSignature
-                        ?.takeIf(::isPlausibleCipherToken)
-                        ?.also { prewarmedSignatures[signature] = it }
-                    val storedThrottling = solvedThrottling
-                        ?.takeIf(::isPlausibleCipherToken)
-                        ?.also { prewarmedThrottlingParameters[throttling] = it }
-                    NPLogger.d(
-                        "YouTubeMusicPlayback",
-                        "prewarmed sig and n together for $videoId " +
-                            "hasSignature=${solvedSignature != null} " +
-                            "storedSignature=${storedSignature != null} " +
-                            "hasThrottling=${solvedThrottling != null} " +
-                            "storedThrottling=${storedThrottling != null} " +
-                            "elapsedMs=${playbackElapsedMs(startedAtMs)}"
-                    )
-                }
-            }
-
-            override fun resolveSignature(encryptedSignature: String): String? {
-                return prewarmedSignatures[encryptedSignature]
-            }
-
-            override suspend fun resolveSignatureAsync(encryptedSignature: String): String? {
-                prewarmedSignatures[encryptedSignature]?.let { resolved ->
-                    maybeLogResolution(
-                        challengeType = "signature",
-                        source = "PREWARM_CACHE",
-                        elapsedMs = 0L,
-                        logged = signatureResolutionLogged
-                    )
-                    return resolved
-                }
-                val resolvedPlayerJsUrl = playerJsUrl.ifBlank { bootstrapCache?.playerJsUrl.orEmpty() }
-                val skipSignatureNewPipe = NewPipeFallbackTracker.maybeSkipSignature(resolvedPlayerJsUrl)
-                if (skipSignatureNewPipe && signatureErrorLogged.compareAndSet(false, true)) {
-                    NPLogger.d(
-                        "YouTubeMusicPlayback",
-                        "Skip NewPipe signature for $videoId because player.js is already flagged"
-                    )
-                }
-                return coroutineScope {
-                    withTimeoutOrNull(CIPHER_RESOLVE_TIMEOUT_MS) {
-                        val newPipeDeferred = if (skipSignatureNewPipe) {
-                            null
-                        } else {
-                            async(Dispatchers.Default) {
-                                delay(NEWPIPE_FALLBACK_START_DELAY_MS)
-                                val startedAtMs = System.currentTimeMillis()
-                                val resolvedByNewPipe = runCatching {
-                                    runInterruptible(Dispatchers.IO) {
-                                        YoutubeJavaScriptPlayerManager.deobfuscateSignature(
-                                            videoId,
-                                            encryptedSignature
-                                        )
-                                    }
-                                }.onFailure { error ->
-                                    if (error is CancellationException) {
-                                        throw error
-                                    }
-                                    if (signatureErrorLogged.compareAndSet(false, true)) {
-                                        NPLogger.w(
-                                            "YouTubeMusicPlayback",
-                                            "Failed to deobfuscate streaming signature for $videoId via NewPipe elapsedMs=${playbackElapsedMs(startedAtMs)}",
-                                            error
-                                        )
-                                    }
-                                }.getOrNull()?.takeIf {
-                                    it != encryptedSignature && isPlausibleCipherToken(it)
-                                }
-                                ChallengeCandidateResult(
-                                    source = "NEWPIPE",
-                                    value = resolvedByNewPipe,
-                                    elapsedMs = playbackElapsedMs(startedAtMs)
-                                )
-                            }
-                        }
-                        val ejsDeferred = if (resolvedPlayerJsUrl.isBlank()) {
-                            null
-                        } else {
-                            async(Dispatchers.IO) {
-                                val startedAtMs = System.currentTimeMillis()
-                                val ejsResult = runCatching {
-                                    ejsChallengeSolver?.solveDetailedAsync(
-                                        playerJsUrl = resolvedPlayerJsUrl,
-                                        encryptedSignature = encryptedSignature
-                                    )
-                                }.getOrElse { error ->
-                                    if (error is CancellationException) {
-                                        throw error
-                                    }
-                                    YouTubeJsChallengeSolveResult(
-                                        status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
-                                        detail = "solveDetailed threw unexpectedly",
-                                        cause = error
-                                    )
-                                } ?: YouTubeJsChallengeSolveResult(
-                                    status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
-                                    detail = "ejsChallengeSolver is unavailable"
-                                )
-                                val elapsedMs = playbackElapsedMs(startedAtMs)
-                                val resolvedByEjs = ejsResult.solution.signature
-                                    ?.takeIf {
-                                        it != encryptedSignature && isPlausibleCipherToken(it)
-                                    }
-                                if (resolvedByEjs == null &&
-                                    ejsResult.status == YouTubeJsChallengeSolveStatus.SUCCESS &&
-                                    ejsResult.solution.signature != null &&
-                                    signatureEjsFallbackLogged.compareAndSet(false, true)
-                                ) {
-                                    NPLogger.w(
-                                        "YouTubeMusicPlayback",
-                                        "EJS signature result rejected by token validation for " +
-                                            "$videoId: status=${ejsResult.status}, " +
-                                            "hasValue=true, " +
-                                            "shape=${describeCipherTokenShape(ejsResult.solution.signature)}, " +
-                                            "elapsedMs=$elapsedMs"
-                                    )
-                                }
-                                if (resolvedByEjs == null &&
-                                    ejsResult.status != YouTubeJsChallengeSolveStatus.SUCCESS &&
-                                    signatureEjsFallbackLogged.compareAndSet(false, true)
-                                ) {
-                                    NPLogger.w(
-                                        "YouTubeMusicPlayback",
-                                        "EJS signature fallback failed for $videoId: ${ejsResult.summary()}, elapsedMs=$elapsedMs",
-                                        ejsResult.cause
-                                    )
-                                }
-                                ChallengeCandidateResult(
-                                    source = "EJS_FALLBACK",
-                                    value = resolvedByEjs,
-                                    elapsedMs = elapsedMs
-                                )
-                            }
-                        }
-                        val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
-                        if (winner != null) {
-                            // 同 throttling, 不记失败 EJS 会一直白等启动延迟
-                            if (!skipSignatureNewPipe &&
-                                winner.source != "NEWPIPE" &&
-                                newPipeDeferred.hasFailedChallenge()
-                            ) {
-                                NewPipeFallbackTracker.recordSignatureFailure(resolvedPlayerJsUrl)
-                            }
-                            maybeLogResolution(
-                                challengeType = "signature",
-                                source = winner.source,
-                                elapsedMs = winner.elapsedMs,
-                                logged = signatureResolutionLogged
-                            )
-                            return@withTimeoutOrNull winner.value
-                        }
-                        val newPipeResult = newPipeDeferred?.await()
-                        if (!skipSignatureNewPipe && newPipeResult?.value == null) {
-                            NewPipeFallbackTracker.recordSignatureFailure(resolvedPlayerJsUrl)
-                        }
-                        return@withTimeoutOrNull null
-                    }
-                }
-            }
-
-            override fun resolveStreamingUrl(url: String): String {
-                val obfuscatedN = extractStreamQueryParameter(url, "n") ?: return url
-                prewarmedThrottlingParameters[obfuscatedN]?.let { resolved ->
-                    maybeLogResolution(
-                        challengeType = "throttling",
-                        source = "PREWARM_CACHE",
-                        elapsedMs = 0L,
-                        logged = throttlingResolutionLogged
-                    )
-                    return replaceStreamQueryParameter(url, "n", resolved)
-                }
-                return ""
-            }
-
-            override suspend fun resolveStreamingUrlAsync(url: String): String {
-                val obfuscatedN = extractStreamQueryParameter(url, "n") ?: return url
-                prewarmedThrottlingParameters[obfuscatedN]?.let { resolved ->
-                    maybeLogResolution(
-                        challengeType = "throttling",
-                        source = "PREWARM_CACHE",
-                        elapsedMs = 0L,
-                        logged = throttlingResolutionLogged
-                    )
-                    return replaceStreamQueryParameter(url, "n", resolved)
-                }
-                val resolvedPlayerJsUrl = playerJsUrl.ifBlank { bootstrapCache?.playerJsUrl.orEmpty() }
-                val skipThrottlingNewPipe = NewPipeFallbackTracker.maybeSkipThrottling(resolvedPlayerJsUrl)
-                if (skipThrottlingNewPipe && throttlingErrorLogged.compareAndSet(false, true)) {
-                    NPLogger.d(
-                        "YouTubeMusicPlayback",
-                        "Skip NewPipe throttling for $videoId because player.js is already flagged"
-                    )
-                }
-                return coroutineScope {
-                    withTimeoutOrNull(CIPHER_RESOLVE_TIMEOUT_MS) {
-                        val newPipeDeferred = if (skipThrottlingNewPipe) {
-                            null
-                        } else {
-                            async(Dispatchers.Default) {
-                                delay(NEWPIPE_FALLBACK_START_DELAY_MS)
-                                val startedAtMs = System.currentTimeMillis()
-                                val resolvedByNewPipe = runCatching {
-                                    runInterruptible(Dispatchers.IO) {
-                                        YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(
-                                            videoId,
-                                            url
-                                        )
-                                    }
-                                }.onFailure { error ->
-                                    if (error is CancellationException) {
-                                        throw error
-                                    }
-                                    if (throttlingErrorLogged.compareAndSet(false, true)) {
-                                        NPLogger.w(
-                                            "YouTubeMusicPlayback",
-                                            "Failed to deobfuscate throttling parameter for $videoId via NewPipe elapsedMs=${playbackElapsedMs(startedAtMs)}",
-                                            error
-                                        )
-                                    }
-                                }.getOrNull()?.takeIf { candidateUrl ->
-                                    // player.js 变更后 NewPipe 会返回 n=[object Object]
-                                    // 非空且与原串不同, 只判这两条会放行必然 403 的地址
-                                    val accepted = candidateUrl.isNotBlank() &&
-                                        candidateUrl != url &&
-                                        hasPlausibleThrottlingParameter(candidateUrl)
-                                    if (!accepted &&
-                                        candidateUrl.isNotBlank() &&
-                                        candidateUrl != url &&
-                                        throttlingErrorLogged.compareAndSet(false, true)
-                                    ) {
-                                        NPLogger.w(
-                                            "YouTubeMusicPlayback",
-                                            "Reject NewPipe throttling result for $videoId: " +
-                                                "n=${extractStreamQueryParameter(candidateUrl, "n")}"
-                                        )
-                                    }
-                                    accepted
-                                }
-                                ChallengeCandidateResult(
-                                    source = "NEWPIPE",
-                                    value = resolvedByNewPipe,
-                                    elapsedMs = playbackElapsedMs(startedAtMs)
-                                )
-                            }
-                        }
-                        val ejsDeferred = if (resolvedPlayerJsUrl.isBlank()) {
-                            null
-                        } else {
-                            async(Dispatchers.IO) {
-                                val startedAtMs = System.currentTimeMillis()
-                                val ejsResult = runCatching {
-                                    ejsChallengeSolver?.solveDetailedAsync(
-                                        playerJsUrl = resolvedPlayerJsUrl,
-                                        throttlingParameter = obfuscatedN
-                                    )
-                                }.getOrElse { error ->
-                                    if (error is CancellationException) {
-                                        throw error
-                                    }
-                                    YouTubeJsChallengeSolveResult(
-                                        status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
-                                        detail = "solveDetailed threw unexpectedly",
-                                        cause = error
-                                    )
-                                } ?: YouTubeJsChallengeSolveResult(
-                                    status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
-                                    detail = "ejsChallengeSolver is unavailable"
-                                )
-                                val elapsedMs = playbackElapsedMs(startedAtMs)
-                                val resolvedByEjs = ejsResult.solution.throttlingParameter
-                                    ?.takeIf { it != obfuscatedN && isPlausibleCipherToken(it) }
-                                    ?.let { replaceStreamQueryParameter(url, "n", it) }
-                                if (resolvedByEjs == null &&
-                                    ejsResult.status == YouTubeJsChallengeSolveStatus.SUCCESS &&
-                                    ejsResult.solution.throttlingParameter != null &&
-                                    throttlingEjsFallbackLogged.compareAndSet(false, true)
-                                ) {
-                                    NPLogger.w(
-                                        "YouTubeMusicPlayback",
-                                        "EJS throttling result rejected by token validation for " +
-                                            "$videoId: status=${ejsResult.status}, " +
-                                            "hasValue=true, " +
-                                            "shape=${describeCipherTokenShape(ejsResult.solution.throttlingParameter)}, " +
-                                            "elapsedMs=$elapsedMs"
-                                    )
-                                }
-                                if (resolvedByEjs == null &&
-                                    ejsResult.status != YouTubeJsChallengeSolveStatus.SUCCESS &&
-                                    throttlingEjsFallbackLogged.compareAndSet(false, true)
-                                ) {
-                                    NPLogger.w(
-                                        "YouTubeMusicPlayback",
-                                        "EJS throttling fallback failed for $videoId: ${ejsResult.summary()}, elapsedMs=$elapsedMs",
-                                        ejsResult.cause
-                                    )
-                                }
-                                ChallengeCandidateResult(
-                                    source = "EJS_FALLBACK",
-                                    value = resolvedByEjs,
-                                    elapsedMs = elapsedMs
-                                )
-                            }
-                        }
-                        val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
-                        if (winner != null) {
-                            // 不记失败的话 player.js 变更后 NewPipe 永远不被标记
-                            // NewPipe 每次都要白等启动延迟, EJS 已经先行
-                            if (!skipThrottlingNewPipe &&
-                                winner.source != "NEWPIPE" &&
-                                newPipeDeferred.hasFailedChallenge()
-                            ) {
-                                NewPipeFallbackTracker.recordThrottlingFailure(resolvedPlayerJsUrl)
-                            }
-                            maybeLogResolution(
-                                challengeType = "throttling",
-                                source = winner.source,
-                                elapsedMs = winner.elapsedMs,
-                                logged = throttlingResolutionLogged
-                            )
-                            return@withTimeoutOrNull winner.value ?: url
-                        }
-                        val newPipeResult = newPipeDeferred?.await()
-                        if (!skipThrottlingNewPipe && newPipeResult?.value == null) {
-                            NewPipeFallbackTracker.recordThrottlingFailure(resolvedPlayerJsUrl)
-                        }
-                        // n 参数存在但 NewPipe 与 EJS 都解不出: 返回空串标记该候选不可用
-                        // 让上层继续下一候选/下一 client, 避免返回带混淆 n 的限速 URL (#Y4)
-                        if (throttlingUnresolvedDropLogged.compareAndSet(false, true)) {
-                            NPLogger.w(
-                                "YouTubeMusicPlayback",
-                                "drop stream candidate: throttling n unresolved for $videoId, skip to next candidate/client"
-                            )
-                        }
-                        return@withTimeoutOrNull ""
-                    } ?: ""
-                }
-            }
-        }
+        return createDefaultStreamingCipherResolver(
+            videoId = videoId,
+            playerJsUrl = playerJsUrl,
+            fallbackPlayerJsUrl = { bootstrapCache?.playerJsUrl.orEmpty() },
+            ejsChallengeSolver = ejsChallengeSolver
+        )
     }
 
     private suspend fun resolveHlsPlayableAudio(
