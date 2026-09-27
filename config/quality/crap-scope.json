@@ -39,7 +39,8 @@
     "moe/ouom/neriplayer/core/api/youtube/YouTubePlayerRequestComposer.kt",
     "moe/ouom/neriplayer/core/player/service/PlaybackServicePresentationOwner.kt",
     "moe/ouom/neriplayer/core/player/service/PlaybackServicePresentationSource.kt",
-    "moe/ouom/neriplayer/core/player/service/AndroidPlaybackServicePresentationPort.kt"
+    "moe/ouom/neriplayer/core/player/service/AndroidPlaybackServicePresentationPort.kt",
+    "moe/ouom/neriplayer/core/api/youtube/YouTubePlayerResponseParsers.kt"
   ],
   "method_scopes": [
     {
