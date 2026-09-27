@@ -35,22 +35,17 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
 import androidx.compose.material.icons.outlined.AspectRatio
@@ -68,13 +63,10 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.MeetingRoom
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.RestartAlt
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -103,18 +95,15 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
@@ -193,12 +182,7 @@ import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickn
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.util.time.elapsedMillisSince
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
-import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.LoginSuccessDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
@@ -412,58 +396,6 @@ private fun readPersistedMigrationUiSnapshot(context: Context): PersistedMigrati
     )
 }
 
-private data class PendingSettingsSearchNavigation(
-    val page: SettingsPage,
-    val targetId: String,
-    val requestId: Int
-)
-
-private fun isForwardSettingsPageTransition(
-    initialPage: SettingsPage?,
-    targetPage: SettingsPage?
-): Boolean {
-    if (targetPage == null) return false
-    if (initialPage == null) return true
-    if (targetPage.backTargetPage() == initialPage) return true
-    if (initialPage.backTargetPage() == targetPage) return false
-    return targetPage.ordinal >= initialPage.ordinal
-}
-
-@Composable
-internal fun SettingsPageHost(
-    activePage: SettingsPage?,
-    splitLayout: Boolean,
-    isolateAdvancedGlassTransitions: Boolean,
-    content: @Composable (SettingsPage?) -> Unit
-) {
-    if (splitLayout) {
-        AdvancedGlassScene(active = true) {
-            content(activePage)
-        }
-        return
-    }
-
-    AnimatedContent(
-        targetState = activePage,
-        modifier = Modifier.fillMaxSize(),
-        label = "settings_page_switch",
-        transitionSpec = {
-            isolatedAdvancedGlassHorizontalTransition(
-                forward = isForwardSettingsPageTransition(initialState, targetState)
-            ).using(SizeTransform(clip = true))
-        }
-    ) { selectedPage ->
-        AdvancedGlassNavigationHandoff(
-            enabled = isolateAdvancedGlassTransitions && transition.isRunning
-        ) {
-            AdvancedGlassScene(
-                active = isolateAdvancedGlassTransitions || selectedPage == activePage
-            ) {
-                content(selectedPage)
-            }
-        }
-    }
-}
 
 private fun Context.neteaseQualityLabel(value: String): String {
     return when (value) {
@@ -501,119 +433,6 @@ private fun Context.biliQualityLabel(value: String): String {
     }
 }
 
-@Composable
-private fun SettingsSearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val focusManager = LocalFocusManager.current
-    val shape = RoundedCornerShape(16.dp)
-
-    AdvancedGlassSurface(
-        role = AdvancedGlassRole.SettingsSection,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(48.dp),
-        shape = shape,
-        fallbackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.62f),
-        tintColor = MaterialTheme.colorScheme.surfaceContainerHighest
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Search,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier.weight(1f),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(
-                    onSearch = { focusManager.clearFocus() }
-                ),
-                decorationBox = { innerTextField ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (query.isBlank()) {
-                            Text(
-                                text = stringResource(R.string.settings_search_hint),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        innerTextField()
-                    }
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsSearchResultsCard(
-    query: String,
-    results: List<SettingsSearchEntry>,
-    onResultClick: (SettingsSearchEntry) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    if (query.isBlank()) {
-        return
-    }
-
-    MiuixSettingsSectionCard(modifier = modifier) {
-        if (results.isEmpty()) {
-            Text(
-                text = stringResource(R.string.settings_search_empty),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            results.forEach { entry ->
-                SettingsSearchResultRow(
-                    entry = entry,
-                    onClick = { onResultClick(entry) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsSearchResultRow(
-    entry: SettingsSearchEntry,
-    onClick: () -> Unit
-) {
-    ListItem(
-        modifier = Modifier.settingsItemClickable(onClick = onClick),
-        leadingContent = {
-            Icon(
-                imageVector = entry.page.icon,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        headlineContent = { Text(entry.title) },
-        supportingContent = {
-            Text(stringResource(entry.page.titleRes))
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1255,7 +1074,6 @@ fun SettingsScreen(
         if (settingsSearchQuery.isNotBlank()) {
             item(key = "settings_search_results") {
                 SettingsSearchResultsCard(
-                    query = settingsSearchQuery,
                     results = settingsSearchResults,
                     onResultClick = onSettingsSearchResultClick
                 )
