@@ -46,7 +46,7 @@ constexpr auto kLibusbIsoSyncTypeSynchronous =
     static_cast<int>(LIBUSB_ISO_SYNC_TYPE_SYNC);
 constexpr auto kLibusbIsoSyncTypeAsynchronous =
     static_cast<int>(LIBUSB_ISO_SYNC_TYPE_ASYNC);
-const char* libusbErrName(int rc) {
+static const char* libusbErrName(int rc) {
     return libusb_error_name(rc);
 }
 
