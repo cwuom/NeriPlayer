@@ -66,6 +66,7 @@ add_library(
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_bridge.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_device_selection.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_device_session.cpp
+    ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_handle_registry.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_transfer_run.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_pcm_playback.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_recovery_action_latch.cpp
