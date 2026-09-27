@@ -84,11 +84,14 @@ internal object DocumentsFixture {
             while (completed.count != 0L && SystemClock.elapsedRealtime() < deadline) {
                 if (confirmPicker) {
                     val now = SystemClock.elapsedRealtime()
-                    val roots = (automation.windows.mapNotNull { it.root } +
-                        listOfNotNull(automation.rootInActiveWindow)).distinctBy { it.windowId }
+                    val roots = (listOfNotNull(automation.rootInActiveWindow) +
+                        automation.windows.mapNotNull { it.root }).distinctBy { it.windowId }
                     picker@ for (root in roots) {
-                        if (root.packageName?.toString() !in setOf("com.android.documentsui", "com.google.android.documentsui")) continue
-                        val ids = if (now - selectedAt < 1_000L) listOf("android:id/button1") else listOf(
+                        val packageName = root.packageName?.toString()
+                        val isPicker = packageName in setOf("com.android.documentsui", "com.google.android.documentsui")
+                        // 目录选择后的系统确认弹窗可能由 android 包持有
+                        if (!isPicker && (packageName != "android" || selectedAt == 0L)) continue
+                        val ids = if (!isPicker || now - selectedAt < 1_000L) listOf("android:id/button1") else listOf(
                             "android:id/button1",
                             "com.android.documentsui:id/action_menu_select",
                             "com.google.android.documentsui:id/action_menu_select"
@@ -96,7 +99,7 @@ internal object DocumentsFixture {
                         for (id in ids) {
                             val node = root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull { it.isEnabled && it.isClickable }
                             if (node?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
-                                if (id != "android:id/button1") selectedAt = now
+                                if (isPicker) selectedAt = now
                                 break@picker
                             }
                         }
@@ -105,7 +108,8 @@ internal object DocumentsFixture {
                 completed.await(50, TimeUnit.MILLISECONDS)
             }
             check(completed.count == 0L) {
-                "test directory authorization timed out: $initial, active=${automation.rootInActiveWindow?.packageName}"
+                "test directory authorization timed out: $initial, active=${automation.rootInActiveWindow?.packageName}, " +
+                    "pickerSelected=${selectedAt != 0L}"
             }
             check(resultCode.get() == Activity.RESULT_OK) { "test directory authorization failed: ${response.get()}" }
             return requireNotNull(response.get())
