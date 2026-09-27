@@ -21,6 +21,7 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/HomeContinueSection.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPreflight.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsNavigationSearch.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsThemeControls.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingQueueSheet.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/onboarding/StartupOnboardingScreen.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/onboarding/StartupOnboardingSharedComponents.kt",

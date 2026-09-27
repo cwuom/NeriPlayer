@@ -9,6 +9,7 @@
     "moe/ouom/neriplayer/ui/screen/tab/HomeContinueSection.kt",
     "moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPreflight.kt",
     "moe/ouom/neriplayer/ui/screen/tab/SettingsNavigationSearch.kt",
+    "moe/ouom/neriplayer/ui/screen/tab/SettingsThemeControls.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingQueueSheet.kt",
     "moe/ouom/neriplayer/ui/onboarding/StartupOnboardingSharedComponents.kt",
     "moe/ouom/neriplayer/ui/onboarding/StartupBackupRestoreStep.kt",

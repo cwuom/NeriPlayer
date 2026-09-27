@@ -37,11 +37,9 @@ import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
@@ -50,8 +48,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.BrightnessAuto
-import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.DashboardCustomize
 import androidx.compose.material.icons.outlined.Explore
@@ -96,8 +92,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
@@ -153,7 +147,6 @@ import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
 import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.PlaybackControlSize
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
-import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
@@ -211,7 +204,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
@@ -3797,211 +3789,6 @@ private fun DownloadDirectoryDialogs(
             confirmButton = {}
         )
     }
-}
-
-private data class ThemeOption(
-    val value: String,
-    val labelRes: Int,
-    val descriptionRes: Int
-)
-
-@Composable
-private fun ThemeModeSelectorListItem(
-    isDarkTheme: Boolean,
-    themeMode: ThemeMode,
-    onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var tabsTopLeftInWindow by remember { mutableStateOf(Offset.Zero) }
-    var tabsWidthPx by remember { mutableFloatStateOf(0f) }
-    var tabsHeightPx by remember { mutableFloatStateOf(0f) }
-    val selectedIndex = if (isDarkTheme) 1 else 0
-
-    ListItem(
-        modifier = modifier,
-        leadingContent = {
-            Icon(
-                imageVector = Icons.Outlined.Brightness4,
-                contentDescription = stringResource(R.string.settings_theme_mode),
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        headlineContent = { Text(stringResource(R.string.settings_theme_mode)) },
-        supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.settings_theme_mode_desc))
-                MiuixSettingsSegmentedTabs(
-                    modifier = Modifier.onGloballyPositioned { coordinates ->
-                        tabsTopLeftInWindow = coordinates.positionInWindow()
-                        tabsWidthPx = coordinates.size.width.toFloat()
-                        tabsHeightPx = coordinates.size.height.toFloat()
-                    },
-                    labels = listOf(
-                        stringResource(R.string.settings_theme_mode_light),
-                        stringResource(R.string.settings_theme_mode_dark)
-                    ),
-                    selectedIndex = selectedIndex,
-                    onSelectedIndexChange = { index ->
-                        val targetMode = if (index == 0) {
-                            ThemeMode.LIGHT
-                        } else {
-                            ThemeMode.DARK
-                        }
-                        if (targetMode != themeMode) {
-                            val tabWidth = tabsWidthPx / 2f
-                            val origin = if (tabWidth > 0f && tabsHeightPx > 0f) {
-                                tabsTopLeftInWindow + Offset(
-                                    x = tabWidth * (index + 0.5f),
-                                    y = tabsHeightPx / 2f
-                                )
-                            } else {
-                                Offset.Zero
-                            }
-                            onThemeModeRequest(targetMode, origin, 1f)
-                        }
-                    }
-                )
-            }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
-}
-
-@Composable
-private fun ThemeAutoModeListItem(
-    themeMode: ThemeMode,
-    isDarkTheme: Boolean,
-    onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit
-) {
-    val autoEnabled = themeMode == ThemeMode.AUTO
-    var switchCenterInWindow by remember { mutableStateOf<Offset?>(null) }
-    var revealStartRadiusPx by remember { mutableFloatStateOf(18f) }
-
-    fun requestAutoMode(enabled: Boolean) {
-        if (enabled == autoEnabled) {
-            return
-        }
-        val targetMode = when {
-            enabled -> ThemeMode.AUTO
-            isDarkTheme -> ThemeMode.DARK
-            else -> ThemeMode.LIGHT
-        }
-        onThemeModeRequest(
-            targetMode,
-            switchCenterInWindow ?: Offset.Zero,
-            revealStartRadiusPx
-        )
-    }
-
-    ListItem(
-        leadingContent = {
-            Icon(
-                imageVector = Icons.Outlined.BrightnessAuto,
-                contentDescription = stringResource(R.string.settings_theme_mode_auto),
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        headlineContent = { Text(stringResource(R.string.settings_theme_mode_auto)) },
-        supportingContent = {
-            Text(stringResource(R.string.settings_theme_mode_auto_desc))
-        },
-        trailingContent = {
-            Box(
-                modifier = Modifier.onGloballyPositioned { coordinates ->
-                    revealStartRadiusPx = maxOf(coordinates.size.width, coordinates.size.height) / 2f
-                    switchCenterInWindow = coordinates.positionInWindow() + Offset(
-                        x = coordinates.size.width / 2f,
-                        y = coordinates.size.height / 2f
-                    )
-                }
-                    .size(width = 56.dp, height = 40.dp)
-                    .settingsItemClickable(onClick = {
-                        requestAutoMode(!autoEnabled)
-                    }),
-                contentAlignment = Alignment.Center
-            ) {
-                MiuixSettingsSwitch(
-                    checked = autoEnabled,
-                    onCheckedChange = null
-                )
-            }
-        },
-        modifier = Modifier.settingsItemClickable(onClick = {
-            requestAutoMode(!autoEnabled)
-        }),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
-}
-
-@Composable
-private fun ThemePaletteStyleSelector(
-    selectedStyle: String,
-    onStyleChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val normalizedStyle = ThemeDefaults.normalizePaletteStyle(selectedStyle)
-    val options = listOf(
-        ThemeOption("TonalSpot", R.string.settings_theme_style_tonal_spot, R.string.settings_theme_style_tonal_spot_desc),
-        ThemeOption("Neutral", R.string.settings_theme_style_neutral, R.string.settings_theme_style_neutral_desc),
-        ThemeOption("Vibrant", R.string.settings_theme_style_vibrant, R.string.settings_theme_style_vibrant_desc),
-        ThemeOption("Expressive", R.string.settings_theme_style_expressive, R.string.settings_theme_style_expressive_desc),
-        ThemeOption("Monochrome", R.string.settings_theme_style_monochrome, R.string.settings_theme_style_monochrome_desc),
-        ThemeOption("Fidelity", R.string.settings_theme_style_fidelity, R.string.settings_theme_style_fidelity_desc)
-    )
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.settings_theme_palette_style),
-            modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = stringResource(R.string.settings_theme_palette_style_desc),
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        options.forEach { option ->
-            MiuixSettingsChoiceRow(
-                title = stringResource(option.labelRes),
-                subtitle = stringResource(option.descriptionRes),
-                selected = normalizedStyle == option.value,
-                onClick = { onStyleChange(option.value) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun ThemeColorSpecSelector(
-    selectedSpec: String,
-    onSpecChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val normalizedSpec = ThemeDefaults.normalizeColorSpec(selectedSpec)
-    val options = listOf(
-        ThemeDefaults.COLOR_SPECS[0] to stringResource(R.string.settings_theme_color_spec_2021),
-        ThemeDefaults.COLOR_SPECS[1] to stringResource(R.string.settings_theme_color_spec_2025)
-    )
-
-    ListItem(
-        modifier = modifier,
-        headlineContent = { Text(stringResource(R.string.settings_theme_color_spec)) },
-        supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.settings_theme_color_spec_desc))
-                MiuixSettingsSegmentedTabs(
-                    labels = options.map { it.second },
-                    selectedIndex = options.indexOfFirst { it.first == normalizedSpec }.coerceAtLeast(0),
-                    onSelectedIndexChange = { index -> onSpecChange(options[index].first) }
-                )
-            }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
 }
 
 @Composable
