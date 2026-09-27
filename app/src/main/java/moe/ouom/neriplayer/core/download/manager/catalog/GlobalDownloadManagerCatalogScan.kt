@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshPreserveReason
 import moe.ouom.neriplayer.core.download.model.remoteSourceStableKeyOrNull
+import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.policy.observeDownloadedSongReferencesFromSnapshot
 import moe.ouom.neriplayer.core.download.policy.partitionForBoundedParallelism
 import moe.ouom.neriplayer.core.download.policy.withDownloadClearRoomTimeout
@@ -371,7 +372,8 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
             }
             refreshOutcome = ManagedLibraryRefreshOutcome.Published(
                 rootKey = scanRootKey,
-                songCount = songs.size
+                songCount = songs.size,
+                audioFileNames = songs.mapNotNull(DownloadedSong::resolvedLocalFileName).toSet()
             )
         }
         if (retryAfterDeletion) {
@@ -478,7 +480,13 @@ private suspend fun GlobalDownloadManager.refreshCatalogDuringFullLibraryDelete(
                         "全选删除待收敛时强制刷新目录: previous=${existingSongs.size}, " +
                             "missing=${missingSongs.size}, visible=${visibleSongs.size}"
                     )
-                    ManagedLibraryRefreshOutcome.Published(rootKey, visibleSongs.size)
+                    ManagedLibraryRefreshOutcome.Published(
+                        rootKey = rootKey,
+                        songCount = visibleSongs.size,
+                        audioFileNames = visibleSongs
+                            .mapNotNull(DownloadedSong::resolvedLocalFileName)
+                            .toSet()
+                    )
                 }
             }
         }

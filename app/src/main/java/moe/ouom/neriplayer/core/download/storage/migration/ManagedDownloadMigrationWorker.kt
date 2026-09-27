@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirector
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE
+import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import kotlin.math.roundToInt
@@ -347,11 +348,13 @@ internal fun shouldAbortSupersededMigrationWorker(
 internal fun shouldRetryAfterMigrationFinalScan(
     outcome: ManagedLibraryRefreshOutcome,
     expectedRootKey: String?,
-    minimumSongCount: Int
+    minimumSongCount: Int,
+    expectedAudioFileNames: Set<String> = emptySet()
 ): Boolean = outcome !is ManagedLibraryRefreshOutcome.Published ||
     expectedRootKey == null ||
     outcome.rootKey != expectedRootKey ||
-    outcome.songCount < minimumSongCount
+    outcome.songCount < minimumSongCount ||
+    !outcome.audioFileNames.containsAll(expectedAudioFileNames)
 
 internal fun migrationProgressCheckpointIds(
     currentWorkId: String,
@@ -999,6 +1002,10 @@ class ManagedDownloadMigrationWorker(
                 minimumSourceEntryCount,
                 checkpointStore.readMinimumAudioCount(migrationWorkId)
             )
+            val expectedAudioFileNames = checkpointStore.readTargetNames(migrationWorkId)
+                .values
+                .filter { name -> name.substringAfterLast('.', "").lowercase() in audioExtensions }
+                .toSet()
             var finalScanOutcome: ManagedLibraryRefreshOutcome? = null
             for (attempt in 1..MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS) {
                 if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
@@ -1022,16 +1029,24 @@ class ManagedDownloadMigrationWorker(
                 if (!shouldRetryAfterMigrationFinalScan(
                         outcome,
                         expectedRootKey,
-                        minimumSongCount
+                        minimumSongCount,
+                        expectedAudioFileNames
                     )
                 ) {
                     break
+                }
+                val scanDetail = when (outcome) {
+                    is ManagedLibraryRefreshOutcome.Published ->
+                        "Published(root=${outcome.rootKey}, songs=${outcome.songCount}, " +
+                            "missingAudio=${expectedAudioFileNames.count { it !in outcome.audioFileNames }})"
+                    else -> outcome.toString()
                 }
                 NPLogger.w(
                     TAG,
                     "迁移后目标目录扫描未发布: attempt=$attempt, " +
                         "expectedRoot=$expectedRootKey, minimumSongs=$minimumSongCount, " +
-                        "outcome=$outcome"
+                        "expectedAudioNames=${expectedAudioFileNames.size}, " +
+                        "outcome=$scanDetail"
                 )
                 if (attempt < MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS) {
                     delay(IMMEDIATE_FINAL_SCAN_RETRY_DELAY_MS)
@@ -1040,7 +1055,8 @@ class ManagedDownloadMigrationWorker(
             if (shouldRetryAfterMigrationFinalScan(
                     checkNotNull(finalScanOutcome),
                     expectedRootKey,
-                    minimumSongCount
+                    minimumSongCount,
+                    expectedAudioFileNames
                 )
             ) {
                 val retryFinalScan = shouldRetryMigrationAttempt(
