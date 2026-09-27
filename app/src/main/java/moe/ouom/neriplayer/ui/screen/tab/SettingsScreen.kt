@@ -46,22 +46,12 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
-import androidx.compose.material.icons.outlined.AspectRatio
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Colorize
-import androidx.compose.material.icons.outlined.DashboardCustomize
-import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.FormatSize
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.MeetingRoom
-import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.RestartAlt
-import androidx.compose.material.icons.outlined.Star
-import androidx.compose.material.icons.outlined.TextFields
-import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -91,21 +81,17 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -143,14 +129,8 @@ import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
-import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.data.settings.PlaybackControlSize
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
-import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
-import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
@@ -161,8 +141,6 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataBiliAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataNeteaseAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataYouTubeAudioQuality
-import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
-import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.storage.StorageUsageSummary
 import moe.ouom.neriplayer.data.storage.analyzeStorageUsage
@@ -201,10 +179,8 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickabl
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsPreferenceDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
@@ -1349,61 +1325,93 @@ fun SettingsScreen(
                 SettingsPage.Personalization -> {
                     for (cardIndex in 0..4) {
                         item(key = "${selectedPage.name}:card:$cardIndex") {
-                            SettingsPersonalizationPageContent(
-                                autoSettingsRepository = autoSettingsRepository,
-                                scope = scope,
-                                defaultStartDestinationLabel = defaultStartDestinationLabel,
-                                onOpenDefaultStartDestination = { showDefaultStartDestinationDialog = true },
-                                internationalEnabled = internationalEnabled,
-                                homeTrendingLabelRes = homeTrendingLabelRes,
-                                homeRadarLabelRes = homeRadarLabelRes,
-                                homeRecommendedLabelRes = homeRecommendedLabelRes,
-                                homeTrendingSupportingRes = homeTrendingSupportingRes,
-                                homeRadarSupportingRes = homeRadarSupportingRes,
-                                homeRecommendedSupportingRes = homeRecommendedSupportingRes,
-                                homeStartAvailable = homeStartAvailable,
-                                showHomeContinueCard = showHomeContinueCard,
-                                onShowHomeContinueCardChange = onShowHomeContinueCardChange,
-                                showHomeTrendingCard = showHomeTrendingCard,
-                                onShowHomeTrendingCardChange = onShowHomeTrendingCardChange,
-                                showHomeRadarCard = showHomeRadarCard,
-                                onShowHomeRadarCardChange = onShowHomeRadarCardChange,
-                                showHomeRecommendedCard = showHomeRecommendedCard,
-                                onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
-                                backgroundImageUri = backgroundImageUri,
-                                onPickBackgroundImage = {
-                                    photoPickerLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                },
-                                onClearBackgroundImage = {
-                                    scope.launch {
-                                        BackgroundImageStorage.deleteManagedBackground(
-                                            context = context,
-                                            uriString = backgroundImageUri
+                            when (cardIndex) {
+                                0 -> SettingsPersonalizationStartCard(
+                                    autoSettingsRepository = autoSettingsRepository,
+                                    scope = scope,
+                                    defaultStartDestinationLabel = defaultStartDestinationLabel,
+                                    onOpenDefaultStartDestination = {
+                                        showDefaultStartDestinationDialog = true
+                                    },
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished
+                                )
+                                1 -> SettingsPersonalizationHomeCard(
+                                    internationalEnabled = internationalEnabled,
+                                    homeTrendingLabelRes = homeTrendingLabelRes,
+                                    homeRadarLabelRes = homeRadarLabelRes,
+                                    homeRecommendedLabelRes = homeRecommendedLabelRes,
+                                    homeTrendingSupportingRes = homeTrendingSupportingRes,
+                                    homeRadarSupportingRes = homeRadarSupportingRes,
+                                    homeRecommendedSupportingRes = homeRecommendedSupportingRes,
+                                    homeStartAvailable = homeStartAvailable,
+                                    showHomeContinueCard = showHomeContinueCard,
+                                    onShowHomeContinueCardChange = onShowHomeContinueCardChange,
+                                    showHomeTrendingCard = showHomeTrendingCard,
+                                    onShowHomeTrendingCardChange = onShowHomeTrendingCardChange,
+                                    showHomeRadarCard = showHomeRadarCard,
+                                    onShowHomeRadarCardChange = onShowHomeRadarCardChange,
+                                    showHomeRecommendedCard = showHomeRecommendedCard,
+                                    onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished
+                                )
+                                2 -> SettingsPersonalizationPlaybackInfoCard(
+                                    autoSettingsRepository = autoSettingsRepository,
+                                    scope = scope,
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished
+                                )
+                                3 -> SettingsPersonalizationControlsCard(
+                                    autoSettingsRepository = autoSettingsRepository,
+                                    settingsRepository = AppContainer.settingsRepo,
+                                    scope = scope,
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished
+                                )
+                                4 -> SettingsPersonalizationBackgroundCard(
+                                    backgroundImageUri = backgroundImageUri,
+                                    onPickBackgroundImage = {
+                                        photoPickerLauncher.launch(
+                                            PickVisualMediaRequest(
+                                                ActivityResultContracts.PickVisualMedia.ImageOnly
+                                            )
                                         )
-                                        onBackgroundImageChange(null)
-                                    }
-                                },
-                                pendingBackgroundImageBlur = pendingBackgroundImageBlur,
-                                onPendingBackgroundImageBlurChange = { pendingBackgroundImageBlur = it },
-                                onBackgroundImageBlurCommit = {
-                                    onBackgroundImageBlurChange(pendingBackgroundImageBlur)
-                                    onBackgroundImageBlurChangeFinished(pendingBackgroundImageBlur)
-                                },
-                                pendingBackgroundImageAlpha = pendingBackgroundImageAlpha,
-                                onPendingBackgroundImageAlphaChange = {
-                                    pendingBackgroundImageAlpha = it
-                                    onBackgroundImageAlphaChange(it)
-                                },
-                                onBackgroundImageAlphaCommit = {
-                                    onBackgroundImageAlphaChangeFinished(pendingBackgroundImageAlpha)
-                                },
-                                cardIndex = cardIndex,
-                                highlightTargetId = settingsHighlightTargetId,
-                                highlightPulse = settingsHighlightPulse,
-                                onHighlightFinished = onSettingsHighlightFinished
-                            )
+                                    },
+                                    onClearBackgroundImage = {
+                                        scope.launch {
+                                            BackgroundImageStorage.deleteManagedBackground(
+                                                context = context,
+                                                uriString = backgroundImageUri
+                                            )
+                                            onBackgroundImageChange(null)
+                                        }
+                                    },
+                                    pendingBackgroundImageBlur = pendingBackgroundImageBlur,
+                                    onPendingBackgroundImageBlurChange = {
+                                        pendingBackgroundImageBlur = it
+                                    },
+                                    onBackgroundImageBlurCommit = {
+                                        onBackgroundImageBlurChange(pendingBackgroundImageBlur)
+                                        onBackgroundImageBlurChangeFinished(pendingBackgroundImageBlur)
+                                    },
+                                    pendingBackgroundImageAlpha = pendingBackgroundImageAlpha,
+                                    onPendingBackgroundImageAlphaChange = {
+                                        pendingBackgroundImageAlpha = it
+                                        onBackgroundImageAlphaChange(it)
+                                    },
+                                    onBackgroundImageAlphaCommit = {
+                                        onBackgroundImageAlphaChangeFinished(pendingBackgroundImageAlpha)
+                                    },
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished
+                                )
+                            }
                         }
                     }
                 }
@@ -3789,849 +3797,6 @@ private fun DownloadDirectoryDialogs(
             confirmButton = {}
         )
     }
-}
-
-@Composable
-private fun SettingsPersonalizationPageContent(
-    autoSettingsRepository: AutoSettingsRepository,
-    scope: kotlinx.coroutines.CoroutineScope,
-    defaultStartDestinationLabel: String,
-    onOpenDefaultStartDestination: () -> Unit,
-    internationalEnabled: Boolean,
-    homeTrendingLabelRes: Int,
-    homeRadarLabelRes: Int,
-    homeRecommendedLabelRes: Int,
-    homeTrendingSupportingRes: Int?,
-    homeRadarSupportingRes: Int?,
-    homeRecommendedSupportingRes: Int?,
-    homeStartAvailable: Boolean,
-    showHomeContinueCard: Boolean,
-    onShowHomeContinueCardChange: (Boolean) -> Unit,
-    showHomeTrendingCard: Boolean,
-    onShowHomeTrendingCardChange: (Boolean) -> Unit,
-    showHomeRadarCard: Boolean,
-    onShowHomeRadarCardChange: (Boolean) -> Unit,
-    showHomeRecommendedCard: Boolean,
-    onShowHomeRecommendedCardChange: (Boolean) -> Unit,
-    backgroundImageUri: String?,
-    onPickBackgroundImage: () -> Unit,
-    onClearBackgroundImage: () -> Unit,
-    pendingBackgroundImageBlur: Float,
-    onPendingBackgroundImageBlurChange: (Float) -> Unit,
-    onBackgroundImageBlurCommit: () -> Unit,
-    pendingBackgroundImageAlpha: Float,
-    onPendingBackgroundImageAlphaChange: (Float) -> Unit,
-    onBackgroundImageAlphaCommit: () -> Unit,
-    cardIndex: Int? = null,
-    highlightTargetId: String? = null,
-    highlightPulse: Int = 0,
-    onHighlightFinished: (() -> Unit)? = null
-) {
-    fun shouldShowCard(index: Int): Boolean = cardIndex == null || cardIndex == index
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Transparent),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        val autoShowKeyboard by autoSettingsRepository.autoShowKeyboardFlow.collectAsState(initial = false)
-        val showCoverSourceBadge by autoSettingsRepository.showCoverSourceBadgeFlow.collectAsState(initial = true)
-        val alwaysUseNewTabStyle by autoSettingsRepository.alwaysUseNewTabStyleFlow.collectAsState(initial = true)
-        val nowPlayingSongTitleMarqueeEnabled by autoSettingsRepository
-            .nowPlayingSongTitleMarqueeEnabledFlow
-            .collectAsState(initial = true)
-        val nowPlayingKeepScreenOn by autoSettingsRepository.nowPlayingKeepScreenOnFlow.collectAsState(initial = true)
-        val nowPlayingToolbarDockEnabled by autoSettingsRepository.nowPlayingToolbarDockEnabledFlow.collectAsState(
-            initial = true
-        )
-        val playbackControlLayoutPreferences by AppContainer.settingsRepo
-            .playbackControlLayoutPreferencesFlow
-            .collectAsState(initial = PlaybackControlLayoutPreferences())
-        val nowPlayingCoverLyricsEnabled by autoSettingsRepository.nowPlayingCoverLyricsEnabledFlow.collectAsState(
-            initial = true
-        )
-        val nowPlayingProgressShowQualitySwitch by autoSettingsRepository
-            .nowPlayingProgressShowQualitySwitchFlow
-            .collectAsState(initial = true)
-        val nowPlayingProgressShowAudioCodec by autoSettingsRepository
-            .nowPlayingProgressShowAudioCodecFlow
-            .collectAsState(initial = true)
-        val nowPlayingProgressShowAudioSpec by autoSettingsRepository
-            .nowPlayingProgressShowAudioSpecFlow
-            .collectAsState(initial = true)
-        if (shouldShowCard(0)) PersonalizationDetailCard {
-            MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_personalization_start_section),
-                description = stringResource(R.string.settings_personalization_start_section_desc)
-            )
-            AutoSettingsListItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DEFAULT_START_DESTINATION),
-                leadingContent = {
-                    Icon(
-                        imageVector = Icons.Outlined.Home,
-                        contentDescription = stringResource(R.string.settings_default_start_screen),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        stringResource(
-                            R.string.settings_default_start_screen_desc,
-                            defaultStartDestinationLabel
-                        )
-                    )
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished,
-                onClick = onOpenDefaultStartDestination
-            )
-
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.AUTO_SHOW_KEYBOARD),
-                checked = autoShowKeyboard,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setAutoShowKeyboard(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-        }
-
-        if (shouldShowCard(1)) PersonalizationDetailCard {
-            MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_personalization_home_section),
-                description = stringResource(R.string.settings_personalization_home_section_desc)
-            )
-            SettingsHomeCardSwitch(
-                title = stringResource(R.string.player_continue),
-                icon = Icons.Outlined.History,
-                checked = showHomeContinueCard,
-                onCheckedChange = onShowHomeContinueCardChange,
-                targetId = "setting:home_card_continue",
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-
-            SettingsHomeCardSwitch(
-                title = stringResource(homeTrendingLabelRes),
-                description = homeTrendingSupportingRes?.let { stringResource(it) },
-                icon = Icons.Outlined.Bolt,
-                checked = showHomeTrendingCard,
-                onCheckedChange = onShowHomeTrendingCardChange,
-                targetId = "setting:home_card_trending",
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-
-            SettingsHomeCardSwitch(
-                title = stringResource(homeRadarLabelRes),
-                description = homeRadarSupportingRes?.let { stringResource(it) },
-                icon = if (internationalEnabled) Icons.Outlined.Explore else Icons.Outlined.Radar,
-                checked = showHomeRadarCard,
-                onCheckedChange = onShowHomeRadarCardChange,
-                targetId = "setting:home_card_radar",
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-
-            SettingsHomeCardSwitch(
-                title = stringResource(homeRecommendedLabelRes),
-                description = homeRecommendedSupportingRes?.let { stringResource(it) },
-                icon = Icons.Outlined.Star,
-                checked = showHomeRecommendedCard,
-                onCheckedChange = onShowHomeRecommendedCardChange,
-                targetId = "setting:home_card_recommended",
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-
-            LazyAnimatedVisibility(visible = !homeStartAvailable) {
-                Text(
-                    text = stringResource(R.string.settings_home_hidden_notice),
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        if (shouldShowCard(2)) PersonalizationDetailCard {
-            MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_personalization_playback_info_section),
-                description = stringResource(R.string.settings_personalization_playback_info_section_desc)
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.SHOW_COVER_SOURCE_BADGE),
-                checked = showCoverSourceBadge,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setShowCoverSourceBadge(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.NOW_PLAYING_SONG_TITLE_MARQUEE_ENABLED
-                ),
-                checked = nowPlayingSongTitleMarqueeEnabled,
-                onCheckedChange = { enabled ->
-                    scope.launch {
-                        autoSettingsRepository.setNowPlayingSongTitleMarqueeEnabled(enabled)
-                    }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOW_PLAYING_COVER_LYRICS_ENABLED),
-                checked = nowPlayingCoverLyricsEnabled,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setNowPlayingCoverLyricsEnabled(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.NOWPLAYING_PROGRESS_SHOW_QUALITY_SWITCH
-                ),
-                checked = nowPlayingProgressShowQualitySwitch,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setNowPlayingProgressShowQualitySwitch(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_CODEC),
-                checked = nowPlayingProgressShowAudioCodec,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setNowPlayingProgressShowAudioCodec(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_SPEC),
-                checked = nowPlayingProgressShowAudioSpec,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setNowPlayingProgressShowAudioSpec(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-        }
-
-        if (shouldShowCard(3)) PersonalizationDetailCard {
-            MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_personalization_playback_controls_section),
-                description = stringResource(R.string.settings_personalization_playback_controls_section_desc)
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ALWAYS_USE_NEW_TAB_STYLE),
-                checked = alwaysUseNewTabStyle,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setAlwaysUseNewTabStyle(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_KEEP_SCREEN_ON),
-                checked = nowPlayingKeepScreenOn,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setNowPlayingKeepScreenOn(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            val nowPlayingControlsAtBottom =
-                playbackControlLayoutPreferences.nowPlayingPlacement.placesControlsAtBottom
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED),
-                checked = nowPlayingToolbarDockEnabled && !nowPlayingControlsAtBottom,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setNowPlayingToolbarDockEnabled(enabled) }
-                },
-                enabled = !nowPlayingControlsAtBottom,
-                supportingContent = if (nowPlayingControlsAtBottom) {
-                    {
-                        Text(
-                            stringResource(
-                                R.string.settings_nowplaying_toolbar_dock_disabled_by_control_position
-                            )
-                        )
-                    }
-                } else {
-                    null
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            PlaybackControlLayoutSettings(
-                preferences = playbackControlLayoutPreferences,
-                onPreferencesChange = { preferences ->
-                    scope.launch {
-                        AppContainer.settingsRepo.setPlaybackControlLayoutPreferences(preferences)
-                    }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-        }
-
-        if (shouldShowCard(4)) PersonalizationDetailCard {
-            MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_personalization_background_section),
-                description = stringResource(R.string.settings_personalization_background_section_desc)
-            )
-            AutoSettingsListItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_URI),
-                leadingContent = {
-                    Icon(
-                        imageVector = Icons.Outlined.Wallpaper,
-                        contentDescription = stringResource(R.string.settings_custom_background),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        if (backgroundImageUri != null) {
-                            stringResource(R.string.settings_background_change)
-                        } else {
-                            stringResource(R.string.settings_background_select)
-                        }
-                    )
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished,
-                onClick = onPickBackgroundImage
-            )
-
-            LazyAnimatedVisibility(visible = backgroundImageUri != null) {
-                Column {
-                    MiuixSettingsTextButton(onClick = onClearBackgroundImage) {
-                        Text(stringResource(R.string.background_clear))
-                    }
-
-                    AutoSettingsListItem(
-                        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_BLUR),
-                        showDefaultIcon = false,
-                        highlightTargetId = highlightTargetId,
-                        highlightPulse = highlightPulse,
-                        onHighlightFinished = onHighlightFinished,
-                        supportingContent = {
-                            MiuixSettingsSlider(
-                                value = pendingBackgroundImageBlur,
-                                onValueChange = onPendingBackgroundImageBlurChange,
-                                onValueChangeFinished = onBackgroundImageBlurCommit,
-                                valueRange = 0f..25f
-                            )
-                        }
-                    )
-
-                    AutoSettingsListItem(
-                        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_ALPHA),
-                        showDefaultIcon = false,
-                        highlightTargetId = highlightTargetId,
-                        highlightPulse = highlightPulse,
-                        onHighlightFinished = onHighlightFinished,
-                        supportingContent = {
-                            MiuixSettingsSlider(
-                                value = pendingBackgroundImageAlpha,
-                                onValueChange = onPendingBackgroundImageAlphaChange,
-                                onValueChangeFinished = onBackgroundImageAlphaCommit,
-                                valueRange = 0.1f..1.0f
-                            )
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsLyricsAppearanceContent(
-    autoSettingsRepository: AutoSettingsRepository,
-    scope: kotlinx.coroutines.CoroutineScope,
-    lyricFontScales: LyricFontScales,
-    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
-    highlightTargetId: String?,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
-) {
-    val showLyricTranslation by autoSettingsRepository.showLyricTranslationFlow.collectAsState(initial = true)
-    val lyricTranslationUsePhonetic by autoSettingsRepository.lyricTranslationUsePhoneticFlow.collectAsState(
-        initial = false
-    )
-
-    MiuixSettingsSectionIntro(
-        title = stringResource(R.string.settings_lyrics_appearance_section),
-        description = stringResource(R.string.settings_lyrics_appearance_section_desc)
-    )
-    PersonalizationSwitchItem(
-        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.SHOW_LYRIC_TRANSLATION),
-        checked = showLyricTranslation,
-        onCheckedChange = { enabled ->
-            scope.launch { autoSettingsRepository.setShowLyricTranslation(enabled) }
-        },
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-    PersonalizationSwitchItem(
-        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_TRANSLATION_USE_PHONETIC),
-        checked = lyricTranslationUsePhonetic,
-        onCheckedChange = { enabled ->
-            scope.launch { autoSettingsRepository.setLyricTranslationUsePhonetic(enabled) }
-        },
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-    MiuixSettingsSectionIntro(
-        title = stringResource(R.string.settings_lyrics_cover_page_section),
-        description = stringResource(R.string.settings_lyrics_cover_page_section_desc)
-    )
-    LyricFontScaleSettingsItem(
-        setting = AutoSettingsMetadata.requireSetting(
-            AutoSettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE
-        ),
-        currentScale = lyricFontScales.coverLyric,
-        onScaleCommit = { scale ->
-            onLyricFontScaleChange(LyricFontScaleTarget.COVER_LYRIC, scale)
-        },
-        sampleText = stringResource(R.string.settings_lyrics_sample),
-        sampleBaseSizeSp = 18f,
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-    LyricFontScaleSettingsItem(
-        setting = AutoSettingsMetadata.requireSetting(
-            AutoSettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE
-        ),
-        currentScale = lyricFontScales.coverTranslation,
-        onScaleCommit = { scale ->
-            onLyricFontScaleChange(LyricFontScaleTarget.COVER_TRANSLATION, scale)
-        },
-        sampleText = stringResource(R.string.settings_lyrics_translation_sample),
-        sampleBaseSizeSp = 14f,
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-    MiuixSettingsSectionIntro(
-        title = stringResource(R.string.settings_lyrics_page_section),
-        description = stringResource(R.string.settings_lyrics_page_section_desc)
-    )
-    LyricFontScaleSettingsItem(
-        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE),
-        currentScale = lyricFontScales.lyricsPageLyric,
-        onScaleCommit = { scale ->
-            onLyricFontScaleChange(LyricFontScaleTarget.LYRICS_PAGE_LYRIC, scale)
-        },
-        sampleText = stringResource(R.string.settings_lyrics_sample),
-        sampleBaseSizeSp = 20f,
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-    LyricFontScaleSettingsItem(
-        setting = AutoSettingsMetadata.requireSetting(
-            AutoSettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE
-        ),
-        currentScale = lyricFontScales.lyricsPageTranslation,
-        onScaleCommit = { scale ->
-            onLyricFontScaleChange(LyricFontScaleTarget.LYRICS_PAGE_TRANSLATION, scale)
-        },
-        sampleText = stringResource(R.string.settings_lyrics_translation_sample),
-        sampleBaseSizeSp = 16f,
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-}
-
-@Composable
-private fun PersonalizationDetailCard(
-    content: @Composable () -> Unit
-) {
-    MiuixSettingsSectionCard(
-        content = content
-    )
-}
-
-private enum class PlaybackControlLayoutSetting {
-    NOW_PLAYING_PLACEMENT,
-    NOW_PLAYING_SIZE,
-    LYRICS_SIZE
-}
-
-@Composable
-private fun PlaybackControlLayoutSettings(
-    preferences: PlaybackControlLayoutPreferences,
-    onPreferencesChange: (PlaybackControlLayoutPreferences) -> Unit,
-    highlightTargetId: String?,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
-) {
-    val selectedSetting = remember {
-        mutableStateOf<PlaybackControlLayoutSetting?>(null)
-    }
-
-    PlaybackControlLayoutListItem(
-        targetId = "setting:nowplaying_control_placement",
-        icon = Icons.Outlined.DashboardCustomize,
-        title = stringResource(R.string.settings_nowplaying_control_placement),
-        description = stringResource(R.string.settings_nowplaying_control_placement_desc),
-        value = nowPlayingControlPlacementLabel(preferences.nowPlayingPlacement),
-        onClick = {
-            selectedSetting.value = PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT
-        },
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-    PlaybackControlLayoutListItem(
-        targetId = "setting:nowplaying_control_size",
-        icon = Icons.Outlined.AspectRatio,
-        title = stringResource(R.string.settings_nowplaying_control_size),
-        description = stringResource(R.string.settings_nowplaying_control_size_desc),
-        value = playbackControlSizeLabel(preferences.nowPlayingSize),
-        onClick = {
-            selectedSetting.value = PlaybackControlLayoutSetting.NOW_PLAYING_SIZE
-        },
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-    PlaybackControlLayoutListItem(
-        targetId = "setting:lyrics_control_size",
-        icon = Icons.Outlined.TextFields,
-        title = stringResource(R.string.settings_lyrics_control_size),
-        description = stringResource(R.string.settings_lyrics_control_size_desc),
-        value = playbackControlSizeLabel(preferences.lyricsSize),
-        onClick = {
-            selectedSetting.value = PlaybackControlLayoutSetting.LYRICS_SIZE
-        },
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-
-    val setting = selectedSetting.value ?: return
-    val title = when (setting) {
-        PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT ->
-            stringResource(R.string.settings_nowplaying_control_placement)
-        PlaybackControlLayoutSetting.NOW_PLAYING_SIZE ->
-            stringResource(R.string.settings_nowplaying_control_size)
-        PlaybackControlLayoutSetting.LYRICS_SIZE ->
-            stringResource(R.string.settings_lyrics_control_size)
-    }
-    MiuixSettingsDialog(
-        onDismissRequest = { selectedSetting.value = null },
-        title = { Text(title) },
-        text = {
-            Column {
-                when (setting) {
-                    PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT -> {
-                        NowPlayingControlPlacement.entries.forEach { placement ->
-                            MiuixSettingsChoiceRow(
-                                title = nowPlayingControlPlacementLabel(placement),
-                                subtitle = if (placement.placesControlsAtBottom) {
-                                    stringResource(
-                                        R.string.settings_nowplaying_toolbar_dock_disabled_by_control_position
-                                    )
-                                } else {
-                                    null
-                                },
-                                selected = placement == preferences.nowPlayingPlacement,
-                                onClick = {
-                                    onPreferencesChange(
-                                        preferences.copy(nowPlayingPlacement = placement)
-                                    )
-                                    selectedSetting.value = null
-                                }
-                            )
-                        }
-                    }
-
-                    PlaybackControlLayoutSetting.NOW_PLAYING_SIZE,
-                    PlaybackControlLayoutSetting.LYRICS_SIZE -> {
-                        PlaybackControlSize.entries.forEach { size ->
-                            val selected = when (setting) {
-                                PlaybackControlLayoutSetting.NOW_PLAYING_SIZE ->
-                                    size == preferences.nowPlayingSize
-                                PlaybackControlLayoutSetting.LYRICS_SIZE ->
-                                    size == preferences.lyricsSize
-                            }
-                            MiuixSettingsChoiceRow(
-                                title = playbackControlSizeLabel(size),
-                                selected = selected,
-                                onClick = {
-                                    onPreferencesChange(
-                                        when (setting) {
-                                            PlaybackControlLayoutSetting.NOW_PLAYING_SIZE ->
-                                                preferences.copy(nowPlayingSize = size)
-                                            PlaybackControlLayoutSetting.LYRICS_SIZE ->
-                                                preferences.copy(lyricsSize = size)
-                                        }
-                                    )
-                                    selectedSetting.value = null
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            MiuixSettingsTextButton(
-                onClick = { selectedSetting.value = null },
-                text = { Text(stringResource(R.string.action_close)) }
-            )
-        }
-    )
-}
-
-@Composable
-private fun PlaybackControlLayoutListItem(
-    targetId: String,
-    icon: ImageVector,
-    title: String,
-    description: String,
-    value: String,
-    onClick: () -> Unit,
-    highlightTargetId: String?,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
-) {
-    ListItem(
-        modifier = Modifier
-            .settingsHighlightTarget(
-                targetId = targetId,
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            .settingsItemClickable(onClick = onClick),
-        leadingContent = {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        headlineContent = { Text(title) },
-        supportingContent = {
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        trailingContent = {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
-}
-
-@Composable
-private fun nowPlayingControlPlacementLabel(
-    placement: NowPlayingControlPlacement
-): String = when (placement) {
-    NowPlayingControlPlacement.LOWER ->
-        stringResource(R.string.settings_nowplaying_control_placement_lower)
-    NowPlayingControlPlacement.BOTTOM ->
-        stringResource(R.string.settings_nowplaying_control_placement_bottom)
-    NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS ->
-        stringResource(R.string.settings_nowplaying_control_placement_bottom_with_progress)
-}
-
-@Composable
-private fun playbackControlSizeLabel(size: PlaybackControlSize): String = when (size) {
-    PlaybackControlSize.SMALL -> stringResource(R.string.settings_playback_control_size_small)
-    PlaybackControlSize.MEDIUM -> stringResource(R.string.settings_playback_control_size_medium)
-    PlaybackControlSize.LARGE -> stringResource(R.string.settings_playback_control_size_large)
-}
-
-@Composable
-private fun PersonalizationSwitchItem(
-    setting: AutoSettingInfo,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-    supportingContent: (@Composable () -> Unit)? = null,
-    highlightTargetId: String?,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
-) {
-    AutoSettingsListItem(
-        setting = setting,
-        enabled = enabled,
-        supportingContent = supportingContent,
-        trailingContent = {
-            MiuixSettingsSwitch(
-                checked = checked,
-                enabled = enabled,
-                onCheckedChange = onCheckedChange
-            )
-        },
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished,
-        onClick = if (enabled) {
-            { onCheckedChange(!checked) }
-        } else {
-            null
-        }
-    )
-}
-
-@Composable
-private fun LyricFontScaleSettingsItem(
-    setting: AutoSettingInfo,
-    currentScale: Float,
-    onScaleCommit: (Float) -> Unit,
-    sampleText: String,
-    sampleBaseSizeSp: Float,
-    highlightTargetId: String?,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
-) {
-    var pendingScale by remember(setting.keyName) {
-        mutableFloatStateOf(normalizeLyricFontScale(currentScale))
-    }
-
-    LaunchedEffect(currentScale) {
-        val normalizedScale = normalizeLyricFontScale(currentScale)
-        if ((pendingScale - normalizedScale).absoluteValue > 0.001f) {
-            pendingScale = normalizedScale
-        }
-    }
-
-    AutoSettingsListItem(
-        setting = setting,
-        showDefaultIcon = true,
-        supportingContent = {
-            Column(Modifier.fillMaxWidth()) {
-                Text(
-                    text = stringResource(
-                        R.string.settings_lyrics_font_scale_value,
-                        (pendingScale * 100).roundToInt()
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                MiuixSettingsSlider(
-                    value = pendingScale,
-                    onValueChange = { pendingScale = it },
-                    onValueChangeFinished = {
-                        onScaleCommit(normalizeLyricFontScale(pendingScale))
-                    },
-                    valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
-                    steps = 10
-                )
-                Text(
-                    text = sampleText,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    textAlign = TextAlign.Center,
-                    fontSize = scaledLyricFontSize(sampleBaseSizeSp, pendingScale).sp
-                )
-            }
-        },
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
-}
-
-@Composable
-private fun SettingsHomeCardSwitch(
-    title: String,
-    icon: ImageVector,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    description: String? = null,
-    enabled: Boolean = true,
-    targetId: String,
-    highlightTargetId: String?,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
-) {
-    ListItem(
-        modifier = Modifier
-            .settingsHighlightTarget(
-                targetId = targetId,
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            .then(
-                if (enabled) {
-                    Modifier.settingsItemClickable {
-                        onCheckedChange(!checked)
-                    }
-                } else {
-                    Modifier.alpha(0.5f)
-                }
-            ),
-        leadingContent = {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        headlineContent = { Text(title) },
-        supportingContent = description?.let { text ->
-            {
-                Text(
-                    text = text,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        trailingContent = {
-            MiuixSettingsSwitch(
-                checked = checked,
-                enabled = enabled,
-                onCheckedChange = onCheckedChange
-            )
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
 }
 
 @Composable

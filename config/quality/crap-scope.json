@@ -17,7 +17,9 @@
     "moe/ouom/neriplayer/ui/screen/tab/ExploreSearchResultRows.kt",
     "moe/ouom/neriplayer/ui/screen/tab/ExploreBrowseContent.kt",
     "moe/ouom/neriplayer/ui/screen/tab/ExploreGlassPillSurface.kt",
-    "moe/ouom/neriplayer/ui/MainTabNavigationMotion.kt"
+    "moe/ouom/neriplayer/ui/MainTabNavigationMotion.kt",
+    "moe/ouom/neriplayer/ui/screen/tab/SettingsPlaybackControlLayout.kt",
+    "moe/ouom/neriplayer/ui/screen/tab/SettingsPersonalizationContent.kt"
   ],
   "method_scopes": [
     {
