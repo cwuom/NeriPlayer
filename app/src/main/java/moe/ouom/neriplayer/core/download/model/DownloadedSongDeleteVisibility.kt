@@ -19,16 +19,18 @@ internal class DownloadedSongDeleteVisibility {
     )
 
     fun begin(songs: Collection<DownloadedSong>): Token {
-        val identities = songs
-            .mapTo(linkedSetOf()) { song -> song.deletionIdentity().trim() }
-            .filter(String::isNotBlank)
-            .toSet()
+        val firstSongsByIdentity = linkedMapOf<String, DownloadedSong>()
+        songs.forEach { song ->
+            val identity = song.deletionIdentity().trim()
+            if (identity.isNotBlank()) {
+                firstSongsByIdentity.putIfAbsent(identity, song)
+            }
+        }
+        val identities = firstSongsByIdentity.keys.toSet()
         val tokenId = nextTokenId.incrementAndGet()
         synchronized(stateLock) {
             val baselines = identities.associateWith { identity ->
-                baselineSongsByIdentity[identity] ?: songs.first { song ->
-                    song.deletionIdentity().trim() == identity
-                }.also { song ->
+                baselineSongsByIdentity[identity] ?: firstSongsByIdentity.getValue(identity).also { song ->
                     baselineSongsByIdentity[identity] = song
                 }
             }
