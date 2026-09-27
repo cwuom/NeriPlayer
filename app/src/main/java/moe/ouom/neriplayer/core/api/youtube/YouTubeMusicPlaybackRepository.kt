@@ -25,10 +25,7 @@ package moe.ouom.neriplayer.core.api.youtube
 
 
 import android.content.Context
-import androidx.media3.common.MimeTypes
 import java.io.IOException
-import java.net.URI
-import java.net.URLEncoder
 import java.util.Locale
 import kotlin.jvm.Volatile
 import androidx.annotation.VisibleForTesting
@@ -46,39 +43,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
-import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
-import moe.ouom.neriplayer.data.auth.youtube.shouldStartYouTubeWebAuthRecovery
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.YouTubePlaybackSourcePreference
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureDisabledException
-import moe.ouom.neriplayer.data.platform.youtube.appendYouTubeConsentCookie
 import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
-import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
-import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
-import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okio.Buffer
-import org.json.JSONArray
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.localization.Localization
-import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
@@ -86,50 +66,11 @@ import org.schabi.newpipe.extractor.stream.StreamInfo
 // 预热请求本身已经由单例合并, 首播不应再额外等待调度窗口
 private const val YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS = 0L
 // 首播更看重尽快落到可播链路, 别在 fallback 前白等太久的 PO token
-private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
 // 普通播放不为低概率的后续候选逐个启动 EJS, 失败后尽快交给 TVHTML5
 private const val WEB_REMIX_PLAYBACK_MAX_CANDIDATES = 2
-private const val PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS = 90L * 1000L
 // EJS solver 内部按 solverLock 串行, 预取并发再高也不增加求解吞吐
 // 只会把用户点击前面的排队深度成倍拉长, 每首歌还要占 sig 和 n 两次
 private const val MAX_CONCURRENT_PREFETCH_RESOLVES = 1
-
-// 脏 IP 下 429/503 退避基数与上限, 避免密集重试进一步拉高限流等级 (#Y5)
-private const val RATE_LIMIT_BACKOFF_BASE_MS = 500L
-private const val RATE_LIMIT_BACKOFF_MAX_MS = 5_000L
-
-private const val YOUTUBE_PLAYBACK_DIAG_PREFIX = "[YT-DIAG-20260530]"
-
-
-/**
- * 携带 HTTP 状态码与 Retry-After 的请求失败异常
- * 仍继承 IOException, 保持既有 catch(IOException) 与消息正则解析 (401/403/429) 兼容
- */
-internal class YouTubeHttpStatusException(
-    val statusCode: Int,
-    val retryAfterMs: Long?,
-    message: String
-) : IOException(message)
-
-/** 解析 Retry-After: 仅支持 delta-seconds 整数秒形式, HTTP-date 形式忽略并走指数退避 */
-@VisibleForTesting
-internal fun parseRetryAfterMs(headerValue: String?): Long? {
-    val seconds = headerValue?.trim()?.toLongOrNull() ?: return null
-    return if (seconds >= 0L) seconds * 1000L else null
-}
-
-/** 429/503 退避时长: 优先 Retry-After, 否则按累计命中次数指数退避, 统一封顶 */
-@VisibleForTesting
-internal fun rateLimitBackoffMs(error: Throwable?, priorHits: Int): Long? {
-    val status = error as? YouTubeHttpStatusException ?: return null
-    if (status.statusCode != 429 && status.statusCode != 503) {
-        return null
-    }
-    status.retryAfterMs?.let { return it.coerceIn(0L, RATE_LIMIT_BACKOFF_MAX_MS) }
-    return (RATE_LIMIT_BACKOFF_BASE_MS shl priorHits.coerceIn(0, 3))
-        .coerceAtMost(RATE_LIMIT_BACKOFF_MAX_MS)
-}
-
 
 /**
  * 记录哪些 player client 正在稳定地拒绝请求
@@ -137,9 +78,6 @@ internal fun rateLimitBackoffMs(error: Throwable?, priorHits: Int): Long? {
  * ANDROID_MUSIC 在部分账号和出口上恒回 400 INVALID_ARGUMENT, 换 bootstrap 也没用
  * 每次解析都白付一次往返; 连续失败到阈值后先停一段时间, 成功一次就恢复
  */
-/** player.js 地址到 STS 的进程级缓存，地址带版本哈希所以无需失效 */
-private val signatureTimestampCache = ConcurrentHashMap<String, Int>()
-
 internal object PlayerClientHealthTracker {
     private const val FAILURE_THRESHOLD = 3
     private const val SUPPRESSION_WINDOW_MS = 30L * 60L * 1000L
@@ -187,110 +125,11 @@ internal fun <T> selectUsablePlayerClients(
     return usable.ifEmpty { profiles }
 }
 
-enum class YouTubePlayableStreamType {
-    DIRECT,
-    HLS
-}
-
-data class YouTubePlayableAudio(
-    val url: String,
-    val durationMs: Long = 0L,
-    val mimeType: String? = null,
-    val contentLength: Long? = null,
-    val streamType: YouTubePlayableStreamType = YouTubePlayableStreamType.DIRECT,
-    val bitrateKbps: Int? = null,
-    val sampleRateHz: Int? = null
-)
-
-private enum class DirectRangeVerificationStatus {
-    READABLE,
-    NON_PARTIAL_CONTENT,
-    EMPTY_BODY,
-    NO_BYTES_READ,
-    REQUEST_FAILED
-}
-
-private data class DirectRangeVerificationResult(
-    val status: DirectRangeVerificationStatus,
-    val httpCode: Int?,
-    val bytesRead: Long,
-    val elapsedMs: Long
-) {
-    val isReadable: Boolean
-        get() = status == DirectRangeVerificationStatus.READABLE
-}
-
-private fun YouTubePlayableAudio.missingPoTokenDiagnosticMetadata(clientName: String): String {
-    val audioItag = extractStreamQueryParameter(url, "itag")
-        ?.takeIf { it.all(Char::isDigit) }
-        ?: "<unknown>"
-    return "client=$clientName " +
-        "itag=$audioItag " +
-        "mimeType=${mimeType ?: "<unknown>"} " +
-        "bitrate=${bitrateKbps ?: "<unknown>"} " +
-        "sourceKind=$streamType " +
-        "contentLength=${contentLength ?: "<unknown>"}"
-}
-
 internal data class YouTubeAudioMetadata(
     val durationMs: Long = 0L,
     val mimeType: String? = null,
     val contentLength: Long? = null
 )
-
-/**
- * 这次解析结果是不是在把登录态往下掉
- *
- * 手里还攥着登录 cookie 却解析出游客态, 那就是服务端这一次没认出来, 不是事实;
- * 之前只在"缓存里已经有登录态"时才拦, 于是冷启动或缓存本身是游客态时这份会一路落盘,
- * 而落盘的游客态会一直粘着, 下次冷启动直接从掉登录开局
- */
-internal fun demotesYouTubeLogin(
-    parsedLoggedIn: Boolean,
-    holdsLoginCookies: Boolean
-): Boolean = holdsLoginCookies && !parsedLoggedIn
-
-/**
- * 这份结果能不能顶掉内存里那份
- *
- * 游客态的 bootstrap 里 apiKey/visitorData/clientVersion/STS 全都是能用的, 播放照样成,
- * 所以只在已经握着一份登录态时才拒绝覆盖; 一律不缓存会让出口被判游客时缓存永远建不起来,
- * 每次播放都要现拉现解析, 那几秒会一比一落在首播上
- */
-internal fun demotesCachedYouTubeLogin(
-    cachedLoggedIn: Boolean?,
-    parsedLoggedIn: Boolean,
-    holdsLoginCookies: Boolean
-): Boolean = cachedLoggedIn == true && demotesYouTubeLogin(parsedLoggedIn, holdsLoginCookies)
-
-/**
- * 这份存档还能不能拿来垫一次播放
- *
- * 只看年龄不看指纹: 换账号时 clearAuthBoundCaches 已经把缓存清空了, 能留到这里的
- * 就是同一个身份; 指纹在启动早期会因为 auth 还在加载而短暂漂移, 为此丢掉一份好存档
- * 等于把十几秒的解析摆回首播路径上
- */
-internal fun isUsableStaleBootstrap(
-    bootstrap: YouTubePlaybackBootstrap,
-    nowMs: Long,
-    maxAgeMs: Long = BOOTSTRAP_SNAPSHOT_MAX_AGE_MS
-): Boolean {
-    if (bootstrap.apiKey.isBlank() || bootstrap.playerJsUrl.isBlank()) {
-        return false
-    }
-    val ageMs = nowMs - bootstrap.fetchedAtMs
-    return ageMs in 0L until maxAgeMs
-}
-
-/**
- * 已经排上一次加载时还要不要真的等它
- *
- * 只有 forceRefresh 明确要新的, 或者手上什么都没有时才值得等
- */
-internal fun shouldAwaitBootstrapLoad(
-    forceRefresh: Boolean,
-    hasUsableStaleBootstrap: Boolean
-): Boolean = forceRefresh || !hasUsableStaleBootstrap
 
 @VisibleForTesting
 internal fun resolveYouTubeSignatureTimestamp(
@@ -369,50 +208,6 @@ internal fun shouldRetryPlayerLocaleFallback(playabilityStatus: String): Boolean
         !playabilityStatus.equals("AGE_CHECK_REQUIRED", ignoreCase = true)
 }
 
-@Serializable
-internal data class YouTubePlaybackBootstrap(
-    val apiKey: String,
-    val webRemixClientVersion: String,
-    val visitorData: String,
-    val playerJsUrl: String,
-    /** 整串登录 cookie 不落盘, 恢复存档时按当时的 auth 重新拼一份 */
-    @Transient val cookieHeader: String = "",
-    val authFingerprint: String,
-    val sessionIndex: String,
-    val userAgent: String,
-    val remoteHost: String,
-    val signatureTimestamp: Int?,
-    val appInstallData: String,
-    val coldConfigData: String,
-    val coldHashData: String,
-    val hotHashData: String,
-    val deviceExperimentId: String,
-    val rolloutToken: String,
-    val dataSyncId: String,
-    val delegatedSessionId: String,
-    val userSessionId: String,
-    val loggedIn: Boolean,
-    val fetchedAtMs: Long,
-    val version: Int = BOOTSTRAP_SNAPSHOT_VERSION_CURRENT
-)
-
-/** 播放和下载共用一份 bootstrap, 避免两个仓库各自拿旧版本去请求 player */
-class YouTubePlaybackBootstrapCoordinator {
-    @Volatile
-    internal var cache: YouTubePlaybackBootstrap? = null
-
-    internal val requestLock = Any()
-    internal val inFlightRequests =
-        linkedMapOf<InFlightBootstrapRequest, Deferred<YouTubePlaybackBootstrap>>()
-    internal val loadMutex = Mutex()
-}
-
-private data class CachedPlayableAudio(
-    val audio: YouTubePlayableAudio,
-    val cachedAtMs: Long,
-    val expiresAtMs: Long
-)
-
 private data class InFlightPlayableAudioRequest(
     val videoId: String,
     val preferredQualityKey: String,
@@ -442,83 +237,10 @@ private class InFlightPlayableAudioEntry(
     fun promote(): Boolean = onDemandSignal.complete(Unit)
 }
 
-internal data class InFlightBootstrapRequest(
-    val authFingerprint: String,
-    val forceRefresh: Boolean
-)
-
-private fun isPlayableM4aContainer(mimeType: String?): Boolean {
-    return when (mimeType?.lowercase(Locale.US)) {
-        "audio/mp4", "audio/m4a", "audio/aac" -> true
-        else -> false
-    }
-}
-
-private fun playableAudioMimePreferenceScore(mimeType: String?): Int {
-    return when {
-        mimeType?.lowercase(Locale.US) == MimeTypes.APPLICATION_M3U8.lowercase(Locale.US) -> 3
-        isPlayableM4aContainer(mimeType) -> 2
-        mimeType?.lowercase(Locale.US) == "audio/webm" -> 1
-        else -> 0
-    }
-}
-
 private data class PlayerAudioResolution(
     val playableAudio: YouTubePlayableAudio? = null,
     val metadata: YouTubeAudioMetadata? = null
 )
-
-internal fun satisfiesYouTubePlaybackQuality(
-    playableAudio: YouTubePlayableAudio,
-    preferredQualityKey: String?
-): Boolean {
-    val minimumBitrateKbps = when (YouTubeMusicPlaybackQuality.fromSetting(preferredQualityKey)) {
-        YouTubeMusicPlaybackQuality.LOW -> null
-        YouTubeMusicPlaybackQuality.MEDIUM -> 96
-        YouTubeMusicPlaybackQuality.HIGH -> 128
-        YouTubeMusicPlaybackQuality.VERY_HIGH -> 160
-    }
-    return minimumBitrateKbps == null ||
-        playableAudio.bitrateKbps?.let { it >= minimumBitrateKbps } == true
-}
-
-@VisibleForTesting
-internal fun resolvePlayableAudioCacheExpiresAtMs(
-    url: String,
-    cachedAtMs: Long,
-    defaultTtlMs: Long,
-    safetyMarginMs: Long = PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS
-): Long {
-    val defaultExpiresAtMs = cachedAtMs + defaultTtlMs.coerceAtLeast(0L)
-    val streamExpiresAtMs = extractStreamQueryParameter(url, "expire")
-        ?.toLongOrNull()
-        ?.takeIf { it > 0L }
-        ?.let { expireSeconds ->
-            (expireSeconds * 1000L - safetyMarginMs.coerceAtLeast(0L))
-                .coerceAtLeast(cachedAtMs)
-        }
-    return minOf(defaultExpiresAtMs, streamExpiresAtMs ?: defaultExpiresAtMs)
-}
-
-@VisibleForTesting
-internal fun isTrustedYouTubeDirectUrlForStrictRecovery(url: String): Boolean {
-    if (!isYouTubeGoogleVideoStream(url)) {
-        return true
-    }
-    val clientName = extractStreamQueryParameter(url, "c")
-        ?.trim()
-        ?.uppercase(Locale.US)
-        .orEmpty()
-    return when (clientName) {
-        YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME,
-        YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME -> true
-        YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME,
-        YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME,
-        YOUTUBE_PLAYER_TV_CLIENT_NAME ->
-            !extractStreamQueryParameter(url, "pot").isNullOrBlank()
-        else -> false
-    }
-}
 
 class YouTubeMusicPlaybackRepository(
     private val okHttpClient: OkHttpClient,
@@ -532,58 +254,42 @@ class YouTubeMusicPlaybackRepository(
         YouTubePlaybackBootstrapCoordinator()
 ) {
     private val downloader = NewPipeOkHttpDownloader(okHttpClient, authProvider)
-    private val playableAudioCache = linkedMapOf<String, CachedPlayableAudio>()
+    private val playableAudioCache = YouTubePlayableAudioCache()
     private val inFlightPlayableAudio = linkedMapOf<InFlightPlayableAudioRequest, InFlightPlayableAudioEntry>()
-    private val inFlightBootstrapRequests = bootstrapCoordinator.inFlightRequests
     private val inFlightPlayableAudioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val prefetchResolveGate = YouTubePrefetchResolveGate(MAX_CONCURRENT_PREFETCH_RESOLVES)
 
-    private val ejsChallengeSolver = applicationContext?.let {
-        YouTubeEjsChallengeSolver(it, okHttpClient)
-    }
-    private val poTokenProvider = poTokenProvider ?: applicationContext?.let {
-        YouTubeWebPoTokenProvider(it, authProvider)
-    }
+    private val ejsChallengeSolver = createPlaybackEjsSolver(applicationContext, okHttpClient)
+    private val streamAccessOwner = YouTubePlaybackStreamAccessOwner(
+        okHttpClient = okHttpClient,
+        poTokenProvider = resolvePlaybackPoTokenProvider(poTokenProvider, applicationContext, authProvider),
+        scope = inFlightPlayableAudioScope
+    )
 
-    private val bootstrapStore = applicationContext?.let { YouTubeBootstrapStore(it) }
 
     init {
         // NewPipe 解不动哪版 player.js 是确定的, 记到下次冷启动免得再白付一次三秒
-        applicationContext?.let { context ->
-            runCatching { NewPipeFallbackTracker.attachStore(YouTubeNewPipeFallbackStore(context)) }
-        }
+        attachPlaybackFallbackStore(applicationContext)
     }
 
-    private var bootstrapCache: YouTubePlaybackBootstrap?
-        get() = bootstrapCoordinator.cache
-        set(value) {
-            bootstrapCoordinator.cache = value
-        }
+    private val bootstrapOwner = YouTubePlaybackBootstrapOwner(
+        okHttpClient = okHttpClient,
+        authProvider = authProvider,
+        authAutoRefreshManager = authAutoRefreshManager,
+        ejsChallengeSolver = ejsChallengeSolver,
+        applicationContext = applicationContext,
+        coordinator = bootstrapCoordinator,
+        scope = inFlightPlayableAudioScope
+    )
 
-    /** 存档只在进程内读一次, 读不到也不必每次播放都再去碰一次磁盘 */
-    @Volatile
-    private var bootstrapSnapshotRestored = false
-
-    private val bootstrapRequestLock = bootstrapCoordinator.requestLock
-
-    /**
-     * 同一时刻只允许一份 bootstrap 在解析
-     *
-     * 首页 HTML 是 MB 级的, 解析中途还要摊平上千条 EXPERIMENT_FLAGS; 两份一起跑会把堆压到
-     * 不停触发阻塞 GC, 实测各自从一秒级劣化到二十秒
-     */
-    private val bootstrapLoadMutex = bootstrapCoordinator.loadMutex
+    private val bootstrapCache: YouTubePlaybackBootstrap?
+        get() = bootstrapOwner.current
 
     private val warmBootstrapLock = Any()
 
     @Volatile
-    private var inFlightStaleBootstrapRefresh: Deferred<Unit>? = null
-
-    @Volatile
     private var inFlightWarmBootstrap: Deferred<Unit>? = null
-
-    private val inFlightSignatureTimestampWarmups = ConcurrentHashMap<String, Deferred<Int?>>()
 
     @Volatile
     private var authCacheGeneration: Long = 0L
@@ -782,30 +488,8 @@ class YouTubeMusicPlaybackRepository(
         }
     }
 
-    private fun warmWebPoTokenSessionAsync(reason: String) {
-        if (!YouTubeFeatureGate.isEnabled()) return
-        val provider = poTokenProvider ?: return
-        inFlightPlayableAudioScope.launch {
-            val startedAtMs = System.currentTimeMillis()
-            runCatching { provider.warmSession() }
-                .onSuccess {
-                    NPLogger.d(
-                        "YouTubeMusicPlayback",
-                        "Warm WebPo session finished in background: reason=$reason, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-                    )
-                }
-                .onFailure { error ->
-                    if (error is CancellationException) {
-                        throw error
-                    }
-                    NPLogger.w(
-                        "YouTubeMusicPlayback",
-                        "Warm WebPo session failed in background: reason=$reason",
-                        error
-                    )
-                }
-        }
-    }
+    private fun warmWebPoTokenSessionAsync(reason: String) =
+        streamAccessOwner.warmSessionAsync(reason)
 
     fun warmBootstrapAsync() {
         if (!YouTubeFeatureGate.isEnabled()) return
@@ -844,22 +528,10 @@ class YouTubeMusicPlaybackRepository(
 
     fun clearAuthBoundCaches(cancelInFlightPlayableAudio: Boolean = true) {
         authCacheGeneration += 1L
-        bootstrapCache = null
+        bootstrapOwner.clear()
         lastAuthFingerprint = null
-        // 换了身份, 存档里的 sessionIndex/dataSyncId 全都作废
-        bootstrapStore?.clear()
-        bootstrapSnapshotRestored = true
         synchronized(playableAudioCache) {
             playableAudioCache.clear()
-        }
-        synchronized(bootstrapRequestLock) {
-            val deferreds = inFlightBootstrapRequests.values.toList()
-            inFlightBootstrapRequests.clear()
-            deferreds.forEach { deferred ->
-                deferred.cancel(CancellationException("YouTube auth updated"))
-            }
-            inFlightStaleBootstrapRefresh?.cancel(CancellationException("YouTube auth updated"))
-            inFlightStaleBootstrapRefresh = null
         }
         synchronized(warmBootstrapLock) {
             inFlightWarmBootstrap?.cancel(CancellationException("YouTube auth updated"))
@@ -874,7 +546,7 @@ class YouTubeMusicPlaybackRepository(
                 }
             }
         }
-        poTokenProvider?.clearSession()
+        streamAccessOwner.clearSession()
     }
 
     internal fun shouldClearAuthBoundCachesForFingerprintChange(
@@ -1660,95 +1332,10 @@ class YouTubeMusicPlaybackRepository(
         prefetchedPoToken: Deferred<String?>? = null,
         allowBlockingAcquisition: Boolean,
         allowUnverifiedDirectFallback: Boolean
-    ): YouTubePlayableAudio? {
-        if (playableAudio == null ||
-            playableAudio.streamType != YouTubePlayableStreamType.DIRECT ||
-            !profile.requiresGvsPoToken()
-        ) {
-            return playableAudio
-        }
-
-        val startedAtMs = System.currentTimeMillis()
-        val streamUrl = playableAudio.url
-        if (!isYouTubeGoogleVideoStream(streamUrl)) {
-            return playableAudio
-        }
-
-        val existingPoToken = extractStreamQueryParameter(streamUrl, "pot")
-        if (!existingPoToken.isNullOrBlank()) {
-            NPLogger.d(
-                "YouTubeMusicPlayback",
-                "reuse existing stream PO token: videoId=$videoId, elapsedMs=${playbackElapsedMs(startedAtMs)}, forceRefresh=$forceRefresh"
-            )
-            return playableAudio
-        }
-
-        val poToken = resolveWebRemixPoToken(
-            videoId = videoId,
-            bootstrap = bootstrap,
-            forceRefresh = forceRefresh,
-            prefetchedPoToken = prefetchedPoToken,
-            allowBlockingAcquisition = allowBlockingAcquisition
-        )
-            .orEmpty()
-        if (poToken.isBlank()) {
-            if (allowUnverifiedDirectFallback &&
-                profile.clientName != YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME
-            ) {
-                return playableAudio
-            }
-            if (!allowBlockingAcquisition) {
-                NPLogger.d(
-                    "YouTubeMusicPlayback",
-                    "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_web_direct_fast_fallback " +
-                        "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
-                        "fallbackReason=missing_pot_fast_path_timeout " +
-                        "fallbackPath=continue_player_clients " +
-                        "branchElapsedMs=${playbackElapsedMs(startedAtMs)} " +
-                        "forceRefresh=$forceRefresh"
-                )
-                return null
-            }
-            if (!allowUnverifiedDirectFallback) {
-                return null
-            }
-            val verification = verifyDirectRangeReadable(
-                streamUrl,
-                buildBootstrapRequestAuth(auth, bootstrap)
-            )
-            if (verification.isReadable) {
-                NPLogger.d(
-                    "YouTubeMusicPlayback",
-                    "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
-                        "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
-                        "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
-                        "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
-                        "candidateDecision=accepted"
-                )
-                return playableAudio
-            }
-            NPLogger.w(
-                "YouTubeMusicPlayback",
-                "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
-                    "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
-                    "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
-                    "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
-                    "candidateDecision=rejected " +
-                    "fallbackReason=missing_pot_range_verification_failed " +
-                    "fallbackPath=continue_player_clients " +
-                    "branchElapsedMs=${playbackElapsedMs(startedAtMs)}"
-            )
-            return null
-        }
-
-        NPLogger.d(
-            "YouTubeMusicPlayback",
-            "attached stream PO token: videoId=$videoId, elapsedMs=${playbackElapsedMs(startedAtMs)}, forceRefresh=$forceRefresh"
-        )
-        return playableAudio.copy(
-            url = replaceStreamQueryParameter(streamUrl, "pot", poToken)
-        )
-    }
+    ): YouTubePlayableAudio? = streamAccessOwner.maybeAttachGvsPoToken(
+        playableAudio, profile, videoId, auth, bootstrap, forceRefresh, prefetchedPoToken,
+        allowBlockingAcquisition, allowUnverifiedDirectFallback
+    )
 
     private fun isTrustedYouTubeDirectForStrictRecovery(
         profile: YouTubePlayerClientProfile,
@@ -1773,181 +1360,14 @@ class YouTubeMusicPlaybackRepository(
             isTrustedYouTubeDirectUrlForStrictRecovery(playableAudio.url)
     }
 
-    private fun verifyDirectRangeReadable(
-        streamUrl: String,
-        auth: YouTubeAuthBundle
-    ): DirectRangeVerificationResult {
-        val startedAtMs = System.currentTimeMillis()
-        val request = buildYouTubeStreamRequest(streamUrl, auth)
-            .newBuilder()
-            .header("Range", "bytes=0-0")
-            .build()
-        return try {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (response.code != 206) {
-                    return@use DirectRangeVerificationResult(
-                        status = DirectRangeVerificationStatus.NON_PARTIAL_CONTENT,
-                        httpCode = response.code,
-                        bytesRead = 0L,
-                        elapsedMs = playbackElapsedMs(startedAtMs)
-                    )
-                }
-                val bytesRead = response.body.source().read(Buffer(), 1L).coerceAtLeast(0L)
-                DirectRangeVerificationResult(
-                    status = if (bytesRead > 0L) {
-                        DirectRangeVerificationStatus.READABLE
-                    } else {
-                        DirectRangeVerificationStatus.NO_BYTES_READ
-                    },
-                    httpCode = response.code,
-                    bytesRead = bytesRead,
-                    elapsedMs = playbackElapsedMs(startedAtMs)
-                )
-            }
-        } catch (_: Exception) {
-            DirectRangeVerificationResult(
-                status = DirectRangeVerificationStatus.REQUEST_FAILED,
-                httpCode = null,
-                bytesRead = 0L,
-                elapsedMs = playbackElapsedMs(startedAtMs)
-            )
-        }
-    }
-
     private fun prefetchWebRemixPoToken(
         videoId: String,
         bootstrap: YouTubePlaybackBootstrap,
         forceRefresh: Boolean
-    ): Deferred<String?>? {
-        val provider = poTokenProvider ?: return null
-        if (bootstrap.visitorData.isBlank()) {
-            return null
-        }
-        return inFlightPlayableAudioScope.async {
-            val startedAtMs = System.currentTimeMillis()
-            runCatching {
-                provider.getWebRemixGvsPoToken(
-                    videoId = videoId,
-                    visitorData = bootstrap.visitorData,
-                    remoteHost = bootstrap.remoteHost,
-                    forceRefresh = forceRefresh
-                )
-            }.onSuccess { token ->
-                NPLogger.d(
-                    "YouTubeMusicPlayback",
-                    "prefetch GVS PO token finished: videoId=$videoId, hasToken=${!token.isNullOrBlank()}, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-                )
-            }.onFailure { error ->
-                if (error is CancellationException) throw error
-                NPLogger.w(
-                    "YouTubeMusicPlayback",
-                    "prefetch GVS PO token failed: videoId=$videoId, elapsedMs=${playbackElapsedMs(startedAtMs)}, error=${error.message}"
-                )
-            }.getOrNull()
-        }
-    }
+    ): Deferred<String?>? = streamAccessOwner.prefetchWebRemixPoToken(videoId, bootstrap, forceRefresh)
 
-    private fun shouldPrefetchWebRemixPoToken(root: JSONObject): Boolean {
-        val streamingData = root.optJSONObject("streamingData") ?: return false
-        val hlsManifestUrl = streamingData.optString("hlsManifestUrl").trim()
-        if (hlsManifestUrl.isNotBlank()) {
-            return !hasWebRemixManifestPoToken(hlsManifestUrl)
-        }
-
-        val formatArrays = listOfNotNull(
-            streamingData.optJSONArray("adaptiveFormats"),
-            streamingData.optJSONArray("formats")
-        )
-        formatArrays.forEach { formats ->
-            for (index in 0 until formats.length()) {
-                val format = formats.optJSONObject(index) ?: continue
-                val mimeType = format.optString("mimeType")
-                    .substringBefore(';')
-                    .trim()
-                if (!mimeType.startsWith("audio/")) {
-                    continue
-                }
-
-                val directUrl = format.optString("url").trim()
-                if (directUrl.isNotBlank()) {
-                    if (
-                        isYouTubeGoogleVideoStream(directUrl) &&
-                        extractStreamQueryParameter(directUrl, "pot").isNullOrBlank()
-                    ) {
-                        return true
-                    }
-                    continue
-                }
-
-                val cipher = format.optString("signatureCipher")
-                    .ifBlank { format.optString("cipher") }
-                    .trim()
-                if (cipher.isNotBlank()) {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    private suspend fun awaitPrefetchedWebRemixPoToken(
-        videoId: String,
-        prefetchedPoToken: Deferred<String?>?,
-        timeoutMs: Long? = null
-    ): String? {
-        return prefetchedPoToken
-            ?.let { deferred ->
-                runCatching {
-                    when {
-                        timeoutMs == null -> deferred.await()
-                        deferred.isCompleted -> deferred.await()
-                        else -> withTimeoutOrNull(timeoutMs) { deferred.await() }
-                    }
-                }
-                    .onFailure { error ->
-                        if (error is CancellationException) throw error
-                        NPLogger.w(
-                            "YouTubeMusicPlayback",
-                            "Await prefetched GVS PO token failed: videoId=$videoId, error=${error.message}"
-                        )
-                    }
-                    .getOrNull()
-            }
-    }
-
-    private suspend fun resolveWebRemixPoToken(
-        videoId: String,
-        bootstrap: YouTubePlaybackBootstrap,
-        forceRefresh: Boolean,
-        prefetchedPoToken: Deferred<String?>?,
-        allowBlockingAcquisition: Boolean
-    ): String {
-        val prefetchedToken = awaitPrefetchedWebRemixPoToken(
-            videoId = videoId,
-            prefetchedPoToken = prefetchedPoToken,
-            timeoutMs = if (allowBlockingAcquisition) {
-                null
-            } else {
-                WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS
-            }
-        ).orEmpty()
-        if (prefetchedToken.isNotBlank()) {
-            return prefetchedToken
-        }
-        if (!allowBlockingAcquisition) {
-            NPLogger.d(
-                "YouTubeMusicPlayback",
-                "skip blocking GVS PO token mint for fallback-eligible request: videoId=$videoId"
-            )
-            return ""
-        }
-        return poTokenProvider?.getWebRemixGvsPoToken(
-            videoId = videoId,
-            visitorData = bootstrap.visitorData,
-            remoteHost = bootstrap.remoteHost,
-            forceRefresh = forceRefresh
-        ).orEmpty()
-    }
+    private fun shouldPrefetchWebRemixPoToken(root: JSONObject): Boolean =
+        streamAccessOwner.shouldPrefetchWebRemixPoToken(root)
 
     private fun createStreamingCipherResolver(
         videoId: String,
@@ -1974,149 +1394,10 @@ class YouTubeMusicPlaybackRepository(
         forceRefresh: Boolean,
         prefetchedPoToken: Deferred<String?>? = null,
         allowBlockingAcquisition: Boolean
-    ): YouTubePlayableAudio? {
-        val hlsManifestUrl = root.optJSONObject("streamingData")
-            ?.optString("hlsManifestUrl")
-            .orEmpty()
-            .trim()
-        if (hlsManifestUrl.isBlank()) {
-            return null
-        }
-        val resolvedManifestUrl = if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) {
-            if (hasWebRemixManifestPoToken(hlsManifestUrl)) {
-                hlsManifestUrl
-            } else {
-                val poToken = resolveWebRemixPoToken(
-                    videoId = videoId,
-                    bootstrap = bootstrap,
-                    forceRefresh = forceRefresh,
-                    prefetchedPoToken = prefetchedPoToken,
-                    allowBlockingAcquisition = allowBlockingAcquisition
-                )
-                if (poToken.isBlank()) {
-                    if (poTokenProvider == null) {
-                        hlsManifestUrl
-                    } else {
-                        return null
-                    }
-                } else {
-                    appendWebRemixManifestPoToken(hlsManifestUrl, poToken)
-                }
-            }
-        } else {
-            hlsManifestUrl
-        }
-
-        val requestAuth = buildBootstrapRequestAuth(auth = auth, bootstrap = bootstrap)
-        val masterManifest = executeText(buildYouTubeStreamRequest(resolvedManifestUrl, requestAuth))
-        val selectedAudioPlaylist = YouTubeMusicHlsManifestParser.selectAudioPlaylist(
-            masterManifest = masterManifest,
-            masterManifestUrl = resolvedManifestUrl,
-            preferredQualityKey = preferredQualityKey,
-            durationMs = durationMs
-        ) ?: return null
-
-        return YouTubePlayableAudio(
-            url = if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) {
-                carryForwardWebRemixManifestPoToken(
-                    masterManifestUrl = resolvedManifestUrl,
-                    playlistUrl = selectedAudioPlaylist.uri
-                )
-            } else {
-                selectedAudioPlaylist.uri
-            },
-            durationMs = durationMs,
-            mimeType = MimeTypes.APPLICATION_M3U8,
-            contentLength = selectedAudioPlaylist.contentLength,
-            streamType = YouTubePlayableStreamType.HLS,
-            bitrateKbps = selectedAudioPlaylist.estimatedBitrate
-                .takeIf { it > 0 }
-                ?.let { (it + 500) / 1000 }
-        )
-    }
-
-    private fun appendWebRemixManifestPoToken(
-        manifestUrl: String,
-        poToken: String
-    ): String {
-        if (manifestUrl.isBlank() || poToken.isBlank() || hasWebRemixManifestPoToken(manifestUrl)) {
-            return manifestUrl
-        }
-        val uri = runCatching { URI(manifestUrl) }.getOrNull()
-            ?: return replaceStreamQueryParameter(manifestUrl, "pot", poToken)
-        val rawPath = uri.rawPath.orEmpty()
-        if (!rawPath.contains("/api/manifest/")) {
-            return replaceStreamQueryParameter(manifestUrl, "pot", poToken)
-        }
-        val resolvedPath = if (rawPath.endsWith("/")) {
-            "${rawPath}pot/$poToken"
-        } else {
-            "$rawPath/pot/$poToken"
-        }
-        return runCatching {
-            URI(
-                uri.scheme,
-                uri.rawAuthority,
-                resolvedPath,
-                uri.rawQuery,
-                uri.rawFragment
-            ).toString()
-        }.getOrElse {
-            replaceStreamQueryParameter(manifestUrl, "pot", poToken)
-        }
-    }
-
-    private fun hasWebRemixManifestPoToken(manifestUrl: String): Boolean {
-        if (manifestUrl.isBlank()) {
-            return false
-        }
-        return !extractStreamQueryParameter(manifestUrl, "pot").isNullOrBlank() ||
-            "/pot/" in manifestUrl
-    }
-
-    private fun carryForwardWebRemixManifestPoToken(
-        masterManifestUrl: String,
-        playlistUrl: String
-    ): String {
-        if (playlistUrl.isBlank()) {
-            return playlistUrl
-        }
-        val existingPoToken = extractStreamQueryParameter(playlistUrl, "pot")
-        if (!existingPoToken.isNullOrBlank() || "/pot/" in playlistUrl) {
-            return playlistUrl
-        }
-        val poTokenFromQuery = extractStreamQueryParameter(masterManifestUrl, "pot")
-        if (!poTokenFromQuery.isNullOrBlank()) {
-            return replaceStreamQueryParameter(playlistUrl, "pot", poTokenFromQuery)
-        }
-        val poTokenFromPath = Regex("/pot/([^/?#]+)")
-            .find(masterManifestUrl)
-            ?.groupValues
-            ?.getOrNull(1)
-            .orEmpty()
-        if (poTokenFromPath.isBlank()) {
-            return playlistUrl
-        }
-        return appendWebRemixManifestPoToken(playlistUrl, poTokenFromPath)
-    }
-
-    private fun buildYouTubeStreamRequest(
-        url: String,
-        auth: YouTubeAuthBundle
-    ): Request {
-        val headers = auth.buildYouTubeStreamRequestHeaders(
-            refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
-            streamUrl = url
-        )
-        return Request.Builder()
-            .url(url)
-            .apply {
-                headers.forEach { (name, value) ->
-                    header(name, value)
-                }
-            }
-            .build()
-    }
+    ): YouTubePlayableAudio? = streamAccessOwner.resolveHlsPlayableAudio(
+        root, preferredQualityKey, auth, durationMs, profile, videoId, bootstrap,
+        forceRefresh, prefetchedPoToken, allowBlockingAcquisition
+    )
 
     private fun postPlayerRequest(
         videoId: String,
@@ -2151,7 +1432,7 @@ class YouTubeMusicPlaybackRepository(
         if (!profile.includeSignatureTimestamp) return null
         return resolveYouTubeSignatureTimestamp(
             bootstrapTimestamp = bootstrap.signatureTimestamp,
-            cachedTimestamp = signatureTimestampCache[bootstrap.playerJsUrl]
+            cachedTimestamp = bootstrapOwner.signatureTimestampFor(bootstrap.playerJsUrl)
         )
     }
 
@@ -2176,457 +1457,10 @@ class YouTubeMusicPlaybackRepository(
         return root.optJSONObject(responseField) ?: root
     }
 
-    private fun resolvePlayerJavaScriptUrl(rawUrl: String): String {
-        return when {
-            rawUrl.startsWith("https://") || rawUrl.startsWith("http://") -> rawUrl
-            rawUrl.startsWith("//") -> "https:$rawUrl"
-            rawUrl.startsWith("/") -> "$YOUTUBE_MUSIC_ORIGIN$rawUrl"
-            else -> "$YOUTUBE_MUSIC_ORIGIN/$rawUrl"
-        }
-    }
-
     private suspend fun bootstrap(
         auth: YouTubeAuthBundle,
         forceRefresh: Boolean = false
-    ): YouTubePlaybackBootstrap {
-        val startedAtMs = System.currentTimeMillis()
-        val requestAuth = authProvider().normalized().takeIf { it.hasLoginCookies() } ?: auth
-        val requestAuthFingerprint = requestAuth.buildBootstrapAuthFingerprint(
-            origin = requestAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
-        )
-        val cached = bootstrapCache
-            ?: restoreBootstrapSnapshotIfNeeded(
-                authFingerprint = requestAuthFingerprint,
-                cookieHeader = appendYouTubeConsentCookie(requestAuth.effectiveCookieHeader())
-            )
-        if (!forceRefresh &&
-            cached != null &&
-            cached.authFingerprint == requestAuthFingerprint
-        ) {
-            val ageMs = System.currentTimeMillis() - cached.fetchedAtMs
-            if (ageMs < PLAYABLE_BOOTSTRAP_TTL_MS) {
-                NPLogger.d(
-                    "YouTubeMusicPlayback",
-                    "bootstrap cache hit: forceRefresh=$forceRefresh, ageMs=$ageMs, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-                )
-                return cached
-            }
-            // 过了新鲜期不等于已经失效, 重拉一次要十几秒, 先拿旧的开播, 刷新丢后台;
-            // 真过期了播放器那边会带 forceRefresh 再走一遍, 那条路才需要等
-            if (ageMs < BOOTSTRAP_SNAPSHOT_MAX_AGE_MS) {
-                refreshStaleBootstrapAsync(auth)
-                NPLogger.d(
-                    "YouTubeMusicPlayback",
-                    "bootstrap stale hit: ageMs=$ageMs, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-                )
-                return cached
-            }
-        }
-
-        val requestKey = InFlightBootstrapRequest(
-            authFingerprint = requestAuthFingerprint,
-            forceRefresh = forceRefresh
-        )
-        var joinedInFlight = false
-        val deferred = synchronized(bootstrapRequestLock) {
-            inFlightBootstrapRequests[requestKey]?.takeUnless { it.isCompleted || it.isCancelled }?.also {
-                joinedInFlight = true
-            } ?: run {
-                lateinit var created: Deferred<YouTubePlaybackBootstrap>
-                created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
-                    try {
-                        loadBootstrap(auth = auth, forceRefresh = forceRefresh)
-                    } finally {
-                        synchronized(bootstrapRequestLock) {
-                            if (inFlightBootstrapRequests[requestKey] === created) {
-                                inFlightBootstrapRequests.remove(requestKey)
-                            }
-                        }
-                    }
-                }
-                inFlightBootstrapRequests[requestKey] = created
-                created
-            }
-        }
-        if (joinedInFlight) {
-            NPLogger.d(
-                "YouTubeMusicPlayback",
-                "join in-flight bootstrap: forceRefresh=$forceRefresh, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-            )
-        }
-        if (!deferred.isActive && !deferred.isCompleted && !deferred.isCancelled) {
-            deferred.start()
-        }
-        // 加载已经排上了, 但手里还有份能用的旧 bootstrap 时等它没有意义,
-        // 解析慢的那十几秒会一比一变成首播延迟
-        val staleFallback = cached?.takeIf {
-            isUsableStaleBootstrap(it, System.currentTimeMillis())
-        }
-        if (!shouldAwaitBootstrapLoad(forceRefresh, staleFallback != null)) {
-            NPLogger.d(
-                "YouTubeMusicPlayback",
-                "serve stale bootstrap instead of waiting: ageMs=${System.currentTimeMillis() - (staleFallback?.fetchedAtMs ?: 0L)}, fingerprintMatched=${staleFallback?.authFingerprint == requestAuthFingerprint}, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-            )
-            return staleFallback!!
-        }
-        return deferred.await()
-    }
-
-    /**
-     * 冷启动第一次要 bootstrap 时把上次的存档捞回来
-     *
-     * cookieHeader 没有落盘, 这里按当前 auth 重拼一份; 指纹对得上就说明还是同一个身份,
-     * 拼出来的和当初存的是同一串
-     */
-    private fun restoreBootstrapSnapshotIfNeeded(
-        authFingerprint: String,
-        cookieHeader: String
-    ): YouTubePlaybackBootstrap? {
-        val store = synchronized(bootstrapRequestLock) {
-            if (bootstrapSnapshotRestored) {
-                return null
-            }
-            bootstrapSnapshotRestored = true
-            bootstrapStore
-        } ?: return null
-
-        val snapshot = store.load()
-        if (!isYouTubeBootstrapSnapshotUsable(
-                snapshot = snapshot,
-                authFingerprint = authFingerprint,
-                nowMs = System.currentTimeMillis()
-            )
-        ) {
-            return null
-        }
-        // 旧版本可能已经把一份游客态写进存档了, 拿它开局就是直接掉登录
-        if (snapshot != null &&
-            demotesYouTubeLogin(
-                parsedLoggedIn = snapshot.loggedIn,
-                holdsLoginCookies = authProvider().normalized().hasLoginCookies()
-            )
-        ) {
-            NPLogger.w(
-                "YouTubeMusicPlayback",
-                "drop anonymous bootstrap snapshot while login cookies are present"
-            )
-            store.clear()
-            return null
-        }
-        val restored = (snapshot ?: return null).copy(cookieHeader = cookieHeader)
-        val authGeneration = authCacheGeneration
-        synchronized(bootstrapRequestLock) {
-            if (bootstrapCache == null && authGeneration == authCacheGeneration) {
-                bootstrapCache = restored
-            }
-        }
-        NPLogger.d(
-            "YouTubeMusicPlayback",
-            "bootstrap snapshot restored: ageMs=${System.currentTimeMillis() - restored.fetchedAtMs}, loggedIn=${restored.loggedIn}"
-        )
-        return restored
-    }
-
-    /**
-     * 旧 bootstrap 还能用的时候, 刷新不该占着播放这条路
-     *
-     * 同一时刻只留一个刷新在跑, 否则连点几首歌就会并发拉好几份首页, 那正是首播被拖慢的原因
-     */
-    private fun refreshStaleBootstrapAsync(auth: YouTubeAuthBundle) {
-        val refreshTask = synchronized(bootstrapRequestLock) {
-            inFlightStaleBootstrapRefresh
-                ?.takeUnless { it.isCompleted || it.isCancelled }
-                ?: run {
-                    lateinit var created: Deferred<Unit>
-                    created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
-                        try {
-                            loadBootstrap(auth = auth, forceRefresh = true)
-                            return@async
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: Exception) {
-                            NPLogger.w(
-                                "YouTubeMusicPlayback",
-                                "stale bootstrap refresh failed: ${error.message}"
-                            )
-                        } finally {
-                            synchronized(bootstrapRequestLock) {
-                                if (inFlightStaleBootstrapRefresh === created) {
-                                    inFlightStaleBootstrapRefresh = null
-                                }
-                            }
-                        }
-                    }
-                    inFlightStaleBootstrapRefresh = created
-                    created
-                }
-        }
-        if (!refreshTask.isActive && !refreshTask.isCompleted && !refreshTask.isCancelled) {
-            refreshTask.start()
-        }
-    }
-
-    private suspend fun loadBootstrap(
-        auth: YouTubeAuthBundle,
-        forceRefresh: Boolean
-    ): YouTubePlaybackBootstrap = bootstrapLoadMutex.withLock {
-        val requestAuth = authProvider().normalized().takeIf { it.hasLoginCookies() } ?: auth
-        val requestAuthFingerprint = requestAuth.buildBootstrapAuthFingerprint(
-            origin = requestAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
-        )
-        // 排队期间前一个可能已经解析好了, 再解析一遍只是重复付这十几秒
-        if (!forceRefresh) {
-            bootstrapCache
-                ?.takeIf { it.authFingerprint == requestAuthFingerprint }
-                ?.takeIf { System.currentTimeMillis() - it.fetchedAtMs < PLAYABLE_BOOTSTRAP_TTL_MS }
-                ?.let { cached ->
-                    NPLogger.d(
-                        "YouTubeMusicPlayback",
-                        "bootstrap load coalesced: ageMs=${System.currentTimeMillis() - cached.fetchedAtMs}"
-                    )
-                    return@withLock cached
-                }
-        }
-        loadBootstrapLocked(auth = auth, forceRefresh = forceRefresh)
-    }
-
-    private suspend fun loadBootstrapLocked(
-        auth: YouTubeAuthBundle,
-        forceRefresh: Boolean
-    ): YouTubePlaybackBootstrap {
-        val startedAtMs = System.currentTimeMillis()
-        var workingAuth = authProvider().normalized().takeIf { it.hasLoginCookies() } ?: auth
-        var userAgent = workingAuth.resolveBootstrapUserAgent()
-        var authFingerprint = workingAuth.buildBootstrapAuthFingerprint(
-            origin = workingAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
-        )
-        var cookieHeader = appendYouTubeConsentCookie(workingAuth.effectiveCookieHeader())
-        if (cookieHeader.isBlank()) {
-            throw IOException("YouTube Music auth cookies missing")
-        }
-
-        val authGeneration = authCacheGeneration
-        val homeHtml = try {
-            fetchBootstrapHtml(
-                auth = workingAuth,
-                userAgent = userAgent,
-                cookieHeader = cookieHeader
-            )
-        } catch (error: IOException) {
-            if (isYouTubeAuthRecoverableFailure(error)) {
-                if (shouldStartYouTubeWebAuthRecovery(error)) {
-                    authAutoRefreshManager?.refreshIfNeeded(
-                        reason = "playback_bootstrap_http_recoverable",
-                        force = true
-                    )
-                }
-                workingAuth = authProvider().normalized()
-                cookieHeader = appendYouTubeConsentCookie(workingAuth.effectiveCookieHeader())
-                if (cookieHeader.isBlank()) {
-                    throw error
-                }
-                userAgent = workingAuth.resolveBootstrapUserAgent()
-                authFingerprint = workingAuth.buildBootstrapAuthFingerprint(
-                    origin = workingAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
-                )
-                fetchBootstrapHtml(
-                    auth = workingAuth,
-                    userAgent = userAgent,
-                    cookieHeader = cookieHeader
-                )
-            } else {
-                throw error
-            }
-        }
-        val fetchedAtMs = System.currentTimeMillis()
-        val bootstrapSource = YouTubeBootstrapHtmlSource(homeHtml)
-        // 解析这段实测三到十四秒而下载只占一秒, 分段计时才知道是摊平 ytcfg 还是补 STS
-        val ytcfgStartedAtMs = System.currentTimeMillis()
-        val dataSyncId = bootstrapSource.optionalString("DATASYNC_ID", "datasyncId")
-        val ytcfgElapsedMs = playbackElapsedMs(ytcfgStartedAtMs)
-        val (derivedDelegatedSessionId, derivedUserSessionId) = parseDataSyncId(dataSyncId)
-        val playerJsUrl = resolvePlayerJavaScriptUrl(
-            bootstrapSource.requireString(
-                "YouTube bootstrap parse failed",
-                "jsUrl"
-            )
-        )
-        val cached = bootstrapCache
-        val cachedSignatureTimestamp = cached
-            ?.takeIf { it.playerJsUrl == playerJsUrl }
-            ?.signatureTimestamp
-        val bootstrapSignatureTimestamp = bootstrapSource.optionalNumber("STS", "signatureTimestamp")
-            .toIntOrNull()
-        val signatureTimestamp = bootstrapSignatureTimestamp
-            ?: signatureTimestampCache[playerJsUrl]
-            ?: if (forceRefresh) {
-                // 强制刷新仍然要给 TV fallback 一份最新 STS, 普通首播交给后台补齐
-                val stsStartedAtMs = System.currentTimeMillis()
-                fetchPlayerSignatureTimestamp(playerJsUrl, userAgent)
-                    .also {
-                        NPLogger.d(
-                            "YouTubeMusicPlayback",
-                            "bootstrap fetched signature timestamp from player.js: elapsedMs=${playbackElapsedMs(stsStartedAtMs)}"
-                        )
-                    }
-            } else {
-                null
-            }
-        val parsedBootstrap = YouTubePlaybackBootstrap(
-            apiKey = bootstrapSource.requireString(
-                "YouTube bootstrap parse failed",
-                "INNERTUBE_API_KEY",
-                "innertubeApiKey"
-            ),
-            webRemixClientVersion = bootstrapSource.requireString(
-                "YouTube bootstrap parse failed",
-                "INNERTUBE_CLIENT_VERSION",
-                "INNERTUBE_CONTEXT_CLIENT_VERSION",
-                "innertubeContextClientVersion"
-            ),
-            visitorData = bootstrapSource.requireString(
-                "YouTube bootstrap parse failed",
-                "VISITOR_DATA",
-                "visitorData"
-            ),
-            playerJsUrl = playerJsUrl,
-            cookieHeader = cookieHeader,
-            authFingerprint = authFingerprint,
-            sessionIndex = workingAuth.resolveXGoogAuthUser(
-                fallback = bootstrapSource.optionalNumber("SESSION_INDEX").ifBlank { "0" }
-            ),
-            userAgent = userAgent,
-            remoteHost = bootstrapSource.optionalString("remoteHost"),
-            signatureTimestamp = signatureTimestamp ?: cachedSignatureTimestamp,
-            appInstallData = bootstrapSource.optionalString("appInstallData"),
-            coldConfigData = bootstrapSource.optionalString("coldConfigData"),
-            coldHashData = bootstrapSource.optionalString(
-                "coldHashData",
-                "SERIALIZED_COLD_HASH_DATA"
-            ),
-            hotHashData = bootstrapSource.optionalString(
-                "hotHashData",
-                "SERIALIZED_HOT_HASH_DATA"
-            ),
-            deviceExperimentId = bootstrapSource.optionalString("deviceExperimentId"),
-            rolloutToken = bootstrapSource.optionalString("rolloutToken"),
-            dataSyncId = dataSyncId,
-            delegatedSessionId = bootstrapSource.optionalString("DELEGATED_SESSION_ID")
-                .ifBlank { derivedDelegatedSessionId },
-            userSessionId = bootstrapSource.optionalString("USER_SESSION_ID")
-                .ifBlank { derivedUserSessionId },
-            loggedIn = bootstrapSource.optionalBoolean("LOGGED_IN")
-                .equals("true", ignoreCase = true),
-            fetchedAtMs = fetchedAtMs
-        )
-        if (cached != null && cached.webRemixClientVersion != parsedBootstrap.webRemixClientVersion) {
-            YoutubeJavaScriptPlayerManager.clearAllCaches()
-        }
-        return parsedBootstrap.also { parsed ->
-            NPLogger.d(
-                "YouTubeMusicPlayback",
-                "bootstrap parsed: forceRefresh=$forceRefresh, loggedIn=${parsed.loggedIn}, ytcfgMs=$ytcfgElapsedMs, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-            )
-            if (cached?.playerJsUrl != parsed.playerJsUrl) {
-                inFlightPlayableAudioScope.launch {
-                    runCatching {
-                        ejsChallengeSolver?.warmPlayerScriptAsync(parsed.playerJsUrl)
-                    }.onFailure { error ->
-                        if (error is CancellationException) {
-                            throw error
-                        }
-                        NPLogger.w(
-                            "YouTubeMusicPlayback",
-                            "Warm player script cache failed: ${error.message}"
-                        )
-                    }
-                }
-            }
-            if (parsed.signatureTimestamp == null) {
-                warmSignatureTimestampAsync(
-                    playerJsUrl = parsed.playerJsUrl,
-                    userAgent = parsed.userAgent
-                )
-            }
-            val holdsLoginCookies = workingAuth.hasLoginCookies()
-            val demotesLogin = demotesCachedYouTubeLogin(
-                cachedLoggedIn = cached?.loggedIn,
-                parsedLoggedIn = parsed.loggedIn,
-                holdsLoginCookies = holdsLoginCookies
-            )
-            if (demotesLogin) {
-                NPLogger.w(
-                    "YouTubeMusicPlayback",
-                    "keep logged-in bootstrap: parsed came back anonymous while login cookies are present"
-                )
-            }
-            if (authGeneration == authCacheGeneration && !demotesLogin) {
-                bootstrapCache = parsed
-                // 存档只收登录态: 出口被判游客时服务端会连着回 loggedIn=false,
-                // 那份能用来播放但不能留到下次冷启动, 否则一开局就是掉登录
-                if (!demotesYouTubeLogin(parsed.loggedIn, holdsLoginCookies)) {
-                    bootstrapStore?.save(parsed)
-                } else {
-                    NPLogger.d(
-                        "YouTubeMusicPlayback",
-                        "cache anonymous bootstrap for playback but keep it out of the archive"
-                    )
-                }
-            }
-        }
-    }
-
-    private suspend fun fetchBootstrapHtml(
-        auth: YouTubeAuthBundle,
-        userAgent: String,
-        cookieHeader: String
-    ): String {
-        var lastError: IOException? = null
-        val requestLocale = currentPlayerRequestLocale()
-        for ((index, origin) in BOOTSTRAP_PAGE_ORIGINS.withIndex()) {
-            // 前一个 origin 若因 429/503 失败, 换 origin 前先退避, 避免脏 IP 下无延迟连打 (#Y5)
-            if (index > 0) {
-                rateLimitBackoffMs(lastError, index - 1)?.let { backoffMs ->
-                    NPLogger.w(
-                        "YouTubeMusicPlayback",
-                        "bootstrap rate limited, backoff=${backoffMs}ms before origin=$origin"
-                    )
-                    delay(backoffMs)
-                }
-            }
-            val startedAtMs = System.currentTimeMillis()
-            val requestHeaders = auth.buildYouTubePageRequestHeaders(
-                original = linkedMapOf(
-                    "Accept-Language" to requestLocale.acceptLanguage
-                ),
-                userAgent = userAgent
-            )
-            val request = Request.Builder()
-                .url("$origin/")
-                .apply {
-                    requestHeaders.forEach { (name, value) ->
-                        header(name, value)
-                    }
-                    header("Cookie", cookieHeader)
-                }
-                .build()
-            try {
-                return executeText(request).also {
-                    NPLogger.d(
-                        "YouTubeMusicPlayback",
-                        "fetchBootstrapHtml ok: origin=$origin, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-                    )
-                }
-            } catch (error: IOException) {
-                lastError = error
-                NPLogger.w(
-                    "YouTubeMusicPlayback",
-                    "fetchBootstrapHtml failed: origin=$origin, elapsedMs=${playbackElapsedMs(startedAtMs)}, error=${error.message}"
-                )
-            }
-        }
-        throw lastError ?: IOException("YouTube Music bootstrap request failed")
-    }
+    ): YouTubePlaybackBootstrap = bootstrapOwner.bootstrap(auth, forceRefresh)
 
     private fun executeJson(request: Request): JSONObject {
         return JSONObject(executeText(request))
@@ -2646,64 +1480,6 @@ class YouTubeMusicPlaybackRepository(
                 )
             }
             return response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
-        }
-    }
-
-    private fun fetchPlayerSignatureTimestamp(
-        playerJsUrl: String,
-        userAgent: String
-    ): Int? {
-        if (playerJsUrl.isBlank()) {
-            return null
-        }
-        // player.js 地址自带版本哈希，同一个地址的 STS 不会变，
-        // 而这里要整份拉下约 2MB 才能取出一个数字，重复付这笔钱会把首播拖成秒级
-        signatureTimestampCache[playerJsUrl]?.let { return it }
-        val request = Request.Builder()
-            .url(playerJsUrl)
-            .header("User-Agent", userAgent)
-            .build()
-        return runCatching {
-            val playerJs = executeText(request)
-            Regex("""(?:signatureTimestamp|sts)\s*:\s*(\d{5})""")
-                .find(playerJs)
-                ?.groupValues
-                ?.getOrNull(1)
-                ?.toIntOrNull()
-        }.onFailure { error ->
-            NPLogger.w(
-                "YouTubeMusicPlayback",
-                "Failed to fetch player signature timestamp",
-                error
-            )
-        }.getOrNull()?.also { timestamp ->
-            signatureTimestampCache[playerJsUrl] = timestamp
-        }
-    }
-
-    private fun warmSignatureTimestampAsync(
-        playerJsUrl: String,
-        userAgent: String
-    ) {
-        if (playerJsUrl.isBlank() || signatureTimestampCache.containsKey(playerJsUrl)) {
-            return
-        }
-        val created = inFlightPlayableAudioScope.async {
-            val startedAtMs = System.currentTimeMillis()
-            val timestamp = fetchPlayerSignatureTimestamp(playerJsUrl, userAgent)
-            NPLogger.d(
-                "YouTubeMusicPlayback",
-                "background player signature timestamp warmup finished: hasValue=${timestamp != null}, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-            )
-            timestamp
-        }
-        val task = inFlightSignatureTimestampWarmups.putIfAbsent(playerJsUrl, created)
-        if (task != null) {
-            created.cancel()
-            return
-        }
-        created.invokeOnCompletion {
-            inFlightSignatureTimestampWarmups.remove(playerJsUrl, created)
         }
     }
 
@@ -2853,83 +1629,9 @@ class YouTubeMusicPlaybackRepository(
         incomingClientName: String? = null,
         preferM4a: Boolean = false,
         preferredQualityKey: String? = null
-    ): YouTubePlayableAudio? {
-        if (incoming == null) {
-            return current
-        }
-        if (current == null) {
-            return incoming
-        }
-        if (
-            preferM4a &&
-            isPlayableM4aContainer(incoming.mimeType) != isPlayableM4aContainer(current.mimeType)
-        ) {
-            // 下载路径必须保留可写入标签的 m4a，即使另一 client 提供了更高码率 webm
-            return if (isPlayableM4aContainer(incoming.mimeType)) incoming else current
-        }
-        val incomingSatisfiesPreferredQuality =
-            satisfiesYouTubePlaybackQuality(incoming, preferredQualityKey)
-        val currentSatisfiesPreferredQuality =
-            satisfiesYouTubePlaybackQuality(current, preferredQualityKey)
-        if (incomingSatisfiesPreferredQuality != currentSatisfiesPreferredQuality) {
-            return if (incomingSatisfiesPreferredQuality) incoming else current
-        }
-        val qualityComparison = comparePlayableAudioQuality(incoming, current)
-        return when {
-            incoming.streamType != current.streamType -> {
-                // 优先 progressive 直链, seek 更快且能绕过数据中心 IP 下的 HLS/SABR 403
-                if (incoming.streamType == YouTubePlayableStreamType.DIRECT) incoming else current
-            }
-            qualityComparison != 0 -> {
-                if (qualityComparison > 0) {
-                    incoming
-                } else {
-                    current
-                }
-            }
-            currentClientName != incomingClientName -> {
-                val incomingClientScore = playbackClientPreferenceScore(
-                    clientName = incomingClientName,
-                    streamType = incoming.streamType
-                )
-                val currentClientScore = playbackClientPreferenceScore(
-                    clientName = currentClientName,
-                    streamType = current.streamType
-                )
-                if (incomingClientScore > currentClientScore) {
-                    incoming
-                } else {
-                    current
-                }
-            }
-            else -> current
-        }
-    }
-
-    private fun playbackClientPreferenceScore(
-        clientName: String?,
-        streamType: YouTubePlayableStreamType
-    ): Int {
-        return when (streamType) {
-            YouTubePlayableStreamType.DIRECT -> when {
-                clientName == YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME -> 40
-                clientName == YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME -> 35
-                clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME -> 30
-                clientName?.startsWith(YOUTUBE_PLAYER_TV_CLIENT_NAME, ignoreCase = true) == true -> 20
-                clientName == YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME -> 15
-                clientName == YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME -> 10
-                clientName.isNullOrBlank() -> 0
-                else -> 5
-            }
-            YouTubePlayableStreamType.HLS -> when {
-                clientName == YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME -> 25
-                clientName == YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME -> 22
-                clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME -> 20
-                clientName?.startsWith(YOUTUBE_PLAYER_TV_CLIENT_NAME, ignoreCase = true) == true -> 5
-                else -> 0
-            }
-        }
-    }
+    ): YouTubePlayableAudio? = YouTubePlayableAudioSelection.selectPreferred(
+        current, incoming, currentClientName, incomingClientName, preferM4a, preferredQualityKey
+    )
 
     private fun shouldReturnPlayableAudioImmediately(
         profile: YouTubePlayerClientProfile,
@@ -2937,57 +1639,9 @@ class YouTubeMusicPlaybackRepository(
         acceptedFromCurrentProfile: Boolean,
         preferredQualityKey: String,
         preferM4a: Boolean
-    ): Boolean {
-        if (!acceptedFromCurrentProfile) {
-            return false
-        }
-        if (playableAudio.streamType != YouTubePlayableStreamType.DIRECT) {
-            return false
-        }
-        if (
-            !satisfiesYouTubePlaybackQuality(playableAudio, preferredQualityKey) &&
-            !(preferM4a && isPlayableM4aContainer(playableAudio.mimeType))
-        ) {
-            return false
-        }
-        return profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME ||
-            profile.clientName == YOUTUBE_PLAYER_TV_CLIENT_NAME ||
-            profile.clientName == YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME ||
-            profile.clientName == YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME ||
-            profile.clientName == YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME ||
-            profile.clientName == YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME
-    }
-
-    private fun comparePlayableAudioQuality(
-        incoming: YouTubePlayableAudio,
-        current: YouTubePlayableAudio
-    ): Int {
-        val incomingBitrate = incoming.bitrateKbps ?: 0
-        val currentBitrate = current.bitrateKbps ?: 0
-        if (incomingBitrate != currentBitrate) {
-            return incomingBitrate.compareTo(currentBitrate)
-        }
-
-        val incomingSampleRate = incoming.sampleRateHz ?: 0
-        val currentSampleRate = current.sampleRateHz ?: 0
-        if (incomingSampleRate != currentSampleRate) {
-            return incomingSampleRate.compareTo(currentSampleRate)
-        }
-
-        val incomingMimeScore = playableAudioMimePreferenceScore(incoming.mimeType)
-        val currentMimeScore = playableAudioMimePreferenceScore(current.mimeType)
-        if (incomingMimeScore != currentMimeScore) {
-            return incomingMimeScore.compareTo(currentMimeScore)
-        }
-
-        val incomingContentLength = incoming.contentLength ?: 0L
-        val currentContentLength = current.contentLength ?: 0L
-        if (incomingContentLength != currentContentLength) {
-            return incomingContentLength.compareTo(currentContentLength)
-        }
-
-        return incoming.durationMs.compareTo(current.durationMs)
-    }
+    ): Boolean = YouTubePlayableAudioSelection.shouldReturnImmediately(
+        profile, playableAudio, acceptedFromCurrentProfile, preferredQualityKey, preferM4a
+    )
 
     @Suppress("UNUSED_PARAMETER")
     private fun shouldRetryWithFreshBootstrapBeforeFallback(
@@ -3025,80 +1679,15 @@ class YouTubeMusicPlaybackRepository(
         requireDirect: Boolean = false,
         avoidDirect: Boolean = false,
         allowUnverifiedDirectFallback: Boolean = true
-    ): YouTubePlayableAudio? {
-        val cacheKey = playableAudioCacheKey(videoId, preferredQualityKey)
-        synchronized(playableAudioCache) {
-            val cached = playableAudioCache[cacheKey] ?: return null
-            val nowMs = System.currentTimeMillis()
-            if (nowMs >= cached.expiresAtMs) {
-                playableAudioCache.remove(cacheKey)
-                NPLogger.d(
-                    "YouTubeMusicPlayback",
-                    "drop expired playable audio cache: videoId=$videoId, quality=$preferredQualityKey, ageMs=${nowMs - cached.cachedAtMs}, expiresInMs=${cached.expiresAtMs - nowMs}"
-                )
-                return null
-            }
-            val qualityKey = preferredQualityKey.substringAfter('|', preferredQualityKey)
-            val acceptsM4aDownloadCache = qualityKey.endsWith("_m4a") &&
-                isPlayableM4aContainer(cached.audio.mimeType)
-            if (!acceptsM4aDownloadCache && !satisfiesYouTubePlaybackQuality(
-                    playableAudio = cached.audio,
-                    preferredQualityKey = qualityKey.removeSuffix("_m4a")
-                )
-            ) {
-                playableAudioCache.remove(cacheKey)
-                NPLogger.d(
-                    "YouTubeMusicPlayback",
-                    "drop cached playable audio below selected quality: " +
-                        "videoId=$videoId, quality=$preferredQualityKey, bitrate=${cached.audio.bitrateKbps}"
-                )
-                return null
-            }
-            if (requireDirect && cached.audio.streamType != YouTubePlayableStreamType.DIRECT) {
-                return null
-            }
-            // 命中缓存里的直链会拿回同一条 403 地址
-            if (avoidDirect && cached.audio.streamType == YouTubePlayableStreamType.DIRECT) {
-                return null
-            }
-            if (!allowUnverifiedDirectFallback &&
-                cached.audio.streamType == YouTubePlayableStreamType.DIRECT &&
-                !isTrustedYouTubeDirectForStrictRecovery(cached.audio)
-            ) {
-                return null
-            }
-            return cached.audio
-        }
-    }
+    ): YouTubePlayableAudio? = playableAudioCache.get(
+        videoId, preferredQualityKey, requireDirect, avoidDirect, allowUnverifiedDirectFallback
+    )
 
     private fun cachePlayableAudio(
         videoId: String,
         preferredQualityKey: String,
         audio: YouTubePlayableAudio
-    ) {
-        val cacheKey = playableAudioCacheKey(videoId, preferredQualityKey)
-        synchronized(playableAudioCache) {
-            val nowMs = System.currentTimeMillis()
-            playableAudioCache.remove(cacheKey)
-            playableAudioCache[cacheKey] = CachedPlayableAudio(
-                audio = audio,
-                cachedAtMs = nowMs,
-                expiresAtMs = resolvePlayableAudioCacheExpiresAtMs(
-                    url = audio.url,
-                    cachedAtMs = nowMs,
-                    defaultTtlMs = PLAYABLE_URL_CACHE_TTL_MS
-                )
-            )
-            while (playableAudioCache.size > PLAYABLE_URL_CACHE_MAX_SIZE) {
-                val eldestKey = playableAudioCache.entries.firstOrNull()?.key ?: break
-                playableAudioCache.remove(eldestKey)
-            }
-        }
-    }
-
-    private fun playableAudioCacheKey(videoId: String, preferredQualityKey: String): String {
-        return "$videoId|${preferredQualityKey.lowercase(Locale.US)}"
-    }
+    ) = playableAudioCache.put(videoId, preferredQualityKey, audio)
 
     private fun currentPlayerRequestLocale(): YouTubeMusicRequestLocale {
         return YouTubeMusicLocaleResolver.preferred()
@@ -3110,38 +1699,7 @@ class YouTubeMusicPlaybackRepository(
         )
     }
 
-    private fun findOptional(source: String, vararg patterns: String): String {
-        patterns.forEach { pattern ->
-            val match = Regex(pattern).find(source)?.groupValues?.getOrNull(1)
-            if (!match.isNullOrBlank()) {
-                return match
-            }
-        }
-        return ""
-    }
-
-    private fun parseDataSyncId(dataSyncId: String): Pair<String, String> {
-        if (dataSyncId.isBlank()) {
-            return "" to ""
-        }
-        val (first, second) = dataSyncId.split("||", limit = 2).let { parts ->
-            parts.getOrElse(0) { "" } to parts.getOrElse(1) { "" }
-        }
-        return if (second.isNotBlank()) {
-            first to second
-        } else {
-            "" to first
-        }
-    }
-
     private companion object {
-        val BOOTSTRAP_PAGE_ORIGINS: List<String> = listOf(
-            YOUTUBE_MUSIC_ORIGIN,
-            YOUTUBE_WEB_ORIGIN
-        )
-        const val PLAYABLE_URL_CACHE_TTL_MS: Long = 8L * 60L * 1000L
-        const val PLAYABLE_BOOTSTRAP_TTL_MS: Long = 10L * 60L * 1000L
-        const val PLAYABLE_URL_CACHE_MAX_SIZE: Int = 64
         const val PLAYER_REQUEST_MAX_ATTEMPTS: Int = 2
         val initializationLock = Any()
 
