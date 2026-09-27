@@ -44,6 +44,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -344,8 +345,13 @@ internal fun shouldAbortSupersededMigrationWorker(
 }
 
 internal fun shouldRetryAfterMigrationFinalScan(
-    outcome: ManagedLibraryRefreshOutcome
-): Boolean = outcome !is ManagedLibraryRefreshOutcome.Published
+    outcome: ManagedLibraryRefreshOutcome,
+    expectedRootKey: String?,
+    minimumSongCount: Int
+): Boolean = outcome !is ManagedLibraryRefreshOutcome.Published ||
+    expectedRootKey == null ||
+    outcome.rootKey != expectedRootKey ||
+    outcome.songCount < minimumSongCount
 
 internal fun migrationProgressCheckpointIds(
     currentWorkId: String,
@@ -982,12 +988,61 @@ class ManagedDownloadMigrationWorker(
                     )
                 )
             }
-            // 目录切换只有在最终扫描发布后才算完成, 否则 UI 可能短暂显示空列表
-            val finalScanOutcome = GlobalDownloadManager.scanLocalFilesAwait(
-                applicationContext,
-                forceRefresh = true
+            // 目录切换只有目标目录的最终扫描发布后才算完成
+            val expectedRootKey = ManagedDownloadStorage.snapshotRootKeyForOperation(
+                context = applicationContext,
+                directoryUri = toDirectoryUri,
+                useDefaultRootWhenDirectoryUriMissing = true
             )
-            if (shouldRetryAfterMigrationFinalScan(finalScanOutcome)) {
+            // 音频已迁移时至少应有一首发布到 catalog，其余数量由目标校验保证
+            val minimumSongCount = maxOf(
+                minimumSourceEntryCount,
+                checkpointStore.readMinimumAudioCount(migrationWorkId)
+            ).coerceAtMost(1)
+            var finalScanOutcome: ManagedLibraryRefreshOutcome? = null
+            for (attempt in 1..MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS) {
+                if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
+                    return Result.success()
+                }
+                if (!ManagedDownloadStorage.areEquivalentDirectoryUris(
+                        ManagedDownloadStorage.configuredDirectoryUri(),
+                        toDirectoryUri
+                    )
+                ) {
+                    ManagedDownloadStorage.updateConfiguredTreeUri(toDirectoryUri)
+                }
+                val outcome = GlobalDownloadManager.scanLocalFilesAwait(
+                    applicationContext,
+                    forceRefresh = true
+                )
+                finalScanOutcome = outcome
+                if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
+                    return Result.success()
+                }
+                if (!shouldRetryAfterMigrationFinalScan(
+                        outcome,
+                        expectedRootKey,
+                        minimumSongCount
+                    )
+                ) {
+                    break
+                }
+                NPLogger.w(
+                    TAG,
+                    "迁移后目标目录扫描未发布: attempt=$attempt, " +
+                        "expectedRoot=$expectedRootKey, minimumSongs=$minimumSongCount, " +
+                        "outcome=$outcome"
+                )
+                if (attempt < MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS) {
+                    delay(IMMEDIATE_FINAL_SCAN_RETRY_DELAY_MS)
+                }
+            }
+            if (shouldRetryAfterMigrationFinalScan(
+                    checkNotNull(finalScanOutcome),
+                    expectedRootKey,
+                    minimumSongCount
+                )
+            ) {
                 val retryFinalScan = shouldRetryMigrationAttempt(
                     runAttemptCount = logicalRetryAttemptCount,
                     maxRetryAttempts = MAX_RETRY_ATTEMPTS
@@ -1507,6 +1562,8 @@ class ManagedDownloadMigrationWorker(
         private const val NOTIFICATION_ID = 1004
         private const val TAG = "ManagedDownloadMigrationWorker"
         private const val MAX_RETRY_ATTEMPTS = 2
+        private const val MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS = 3
+        private const val IMMEDIATE_FINAL_SCAN_RETRY_DELAY_MS = 150L
         private const val WORK_PROGRESS_MIN_INTERVAL_MS = 750L
         private const val WORK_PROGRESS_PERCENT_DELTA = 1
         private const val NOTIFICATION_MIN_INTERVAL_MS = 1_000L

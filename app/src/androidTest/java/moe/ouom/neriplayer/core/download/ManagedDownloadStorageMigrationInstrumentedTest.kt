@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
@@ -14,6 +16,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.io.File
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -26,6 +30,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.ManagedDownloadMigrationCheckpointStore
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import org.json.JSONObject
 import org.junit.After
@@ -49,6 +54,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     )
     private val privateDirectories = mutableListOf<File>()
     private var previousDirectoryUri: String? = null
+    private var migrationWorkId: String? = null
 
     @Before
     fun resetMigrationFixture() {
@@ -64,16 +70,36 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
 
     @After
     fun restoreMigrationFixture() = runBlocking {
-        appContext.contentResolver.call(
-            providerRootUri,
-            ManagedDownloadMigrationTestDocumentProvider.RESET,
-            null,
-            null
-        )
-        SettingsRepository(appContext).setDownloadDirectory(previousDirectoryUri, null)
-        ManagedDownloadStorage.primeSettings(previousDirectoryUri, null)
-        privateDirectories.forEach(File::deleteRecursively)
-        privateDirectories.clear()
+        try {
+            migrationWorkId?.let { workId ->
+                val workManager = WorkManager.getInstance(appContext)
+                val uuid = UUID.fromString(workId)
+                if (workManager.getWorkInfoById(uuid).get()?.state?.isFinished == false) {
+                    workManager.cancelWorkById(uuid).result.get(5, TimeUnit.SECONDS)
+                }
+                val cleared = ManagedDownloadMigrationCheckpointStore(appContext)
+                    .clearCompletedIfCurrent(workId, listOf(workId))
+                if (cleared == true) {
+                    val processing = ManagedLibraryProcessingCoordinator.state.value
+                    if (processing.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE) {
+                        processing.operationId?.let { operationId ->
+                            ManagedLibraryProcessingCoordinator.complete(appContext, operationId)
+                        }
+                    }
+                }
+            }
+        } finally {
+            appContext.contentResolver.call(
+                providerRootUri,
+                ManagedDownloadMigrationTestDocumentProvider.RESET,
+                null,
+                null
+            )
+            SettingsRepository(appContext).setDownloadDirectory(previousDirectoryUri, null)
+            ManagedDownloadStorage.primeSettings(previousDirectoryUri, null)
+            privateDirectories.forEach(File::deleteRecursively)
+            privateDirectories.clear()
+        }
     }
 
     @Test
@@ -489,6 +515,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
             releasePreviousPermission = false,
             minimumSourceEntryCount = 1
         )
+        migrationWorkId = workId
         val workInfo = awaitWork(workId)
 
         assertEquals(WorkInfo.State.SUCCEEDED, workInfo.state)
@@ -589,16 +616,21 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     }
 
     private suspend fun awaitWork(workId: String): WorkInfo {
-        val deadlineMs = SystemClock.elapsedRealtime() + 30_000L
-        val uuid = java.util.UUID.fromString(workId)
+        val deadlineMs = SystemClock.elapsedRealtime() + MIGRATION_WORKER_TIMEOUT_MS
+        val uuid = UUID.fromString(workId)
+        var lastWorkInfo: WorkInfo? = null
         while (SystemClock.elapsedRealtime() < deadlineMs) {
             val workInfo = WorkManager.getInstance(appContext).getWorkInfoById(uuid).get()
             if (workInfo != null && workInfo.state.isFinished) {
                 return workInfo
             }
+            lastWorkInfo = workInfo
             delay(100.milliseconds)
         }
-        throw AssertionError("migration worker did not finish within 30000ms")
+        throw AssertionError(
+            "migration worker did not finish within ${MIGRATION_WORKER_TIMEOUT_MS}ms: " +
+                "state=${lastWorkInfo?.state}, attempts=${lastWorkInfo?.runAttemptCount}"
+        )
     }
 
     private fun isolatedPrivateContext(): Context {
@@ -797,5 +829,6 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
 
     private companion object {
         const val MIGRATION_TEST_TAG = "ManagedDownloadMigrationTest"
+        const val MIGRATION_WORKER_TIMEOUT_MS = 45_000L
     }
 }

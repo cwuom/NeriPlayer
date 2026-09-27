@@ -1029,25 +1029,52 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
-    fun `final scan must publish before migration can complete`() {
+    fun `final scan must publish the target and its migrated audio before completion`() {
+        val targetRoot = "content://provider/tree/target"
         assertFalse(
             shouldRetryAfterMigrationFinalScan(
                 ManagedLibraryRefreshOutcome.Published(
-                    rootKey = "content://provider/tree/target",
+                    rootKey = targetRoot,
                     songCount = 1_000
-                )
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
+            )
+        )
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = "content://provider/tree/source",
+                    songCount = 1_000
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
+            )
+        )
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = targetRoot,
+                    songCount = 0
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
             )
         )
         assertTrue(
             shouldRetryAfterMigrationFinalScan(
                 ManagedLibraryRefreshOutcome.Preserved(
                     ManagedLibraryRefreshPreserveReason.INCOMPLETE_ROOT_ENUMERATION
-                )
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
             )
         )
         assertTrue(
             shouldRetryAfterMigrationFinalScan(
-                ManagedLibraryRefreshOutcome.Failed("provider unavailable")
+                ManagedLibraryRefreshOutcome.Failed("provider unavailable"),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
             )
         )
     }
