@@ -37,17 +37,14 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Icon
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.media.AudioAttributes
 import android.media.AudioManager
-import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -63,9 +60,6 @@ import androidx.core.content.IntentCompat
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
-import androidx.core.graphics.drawable.toBitmap
-import androidx.core.graphics.scale
-import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -75,31 +69,24 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import java.net.URLDecoder
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.activity.shouldProcessUsbDeviceAttachedAction
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackResumeAfterDeviceAttach
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
-import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
-import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
@@ -107,7 +94,6 @@ import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLos
 import moe.ouom.neriplayer.core.player.policy.usb.shouldRunUsbExclusiveBackgroundAudioAnchor
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
-import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.path.sameUsbExclusiveAudioPathConfiguration
@@ -118,21 +104,15 @@ import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
-import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
-import moe.ouom.neriplayer.data.local.media.isUsableCoverReference
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.playbackVisualKey
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
 import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
-import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
@@ -140,13 +120,10 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.util.media.IsLandHelp
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
-import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
-import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.widget.playbackWidgetPresentationChanged
 import moe.ouom.neriplayer.widget.playbackWidgetProgressRefreshBucket
 import moe.ouom.neriplayer.widget.PlaybackWidgetState
 import moe.ouom.neriplayer.widget.PlaybackWidgetUpdater
-import moe.ouom.neriplayer.widget.buildPlaybackWidgetState
 import moe.ouom.neriplayer.widget.shouldPartiallyUpdatePlaybackWidgetProgress
 
 private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
@@ -199,7 +176,7 @@ internal data class PlaybackNotificationSnapshot(
     val floatingLyricsEnabled: Boolean,
 )
 
-private data class PlaybackMetadataSnapshot(
+internal data class PlaybackMetadataSnapshot(
     val songKey: String?,
     val title: String,
     val artist: String,
@@ -221,10 +198,6 @@ private data class PendingStartCommand(
 internal const val MEDIA_SESSION_STOP_SOURCE = "media_session_stop"
 internal const val PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE = "play_songs_and_open_now_playing"
 private const val PLAYBACK_STATE_PROGRESS_BUCKET_MS = 2_000L
-private const val MEDIA_ARTWORK_SIZE_PX = 512
-private const val NOTIFICATION_ARTWORK_SIZE_PX = 256
-private const val MEDIA_ARTWORK_MAX_RETRY_ATTEMPTS = 2
-private const val MEDIA_ARTWORK_RETRY_COOLDOWN_MS = 3_000L
 private const val SERVICE_FLOW_COLLECTOR_RESTART_DELAY_MS = 1_000L
 private const val USB_EXCLUSIVE_FOREGROUND_KEEPALIVE_INTERVAL_MS = 5_000L
 private const val USB_EXCLUSIVE_BACKGROUND_KEEPALIVE_INTERVAL_MS = 1_000L
@@ -232,53 +205,6 @@ private const val USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS = 25_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS = 1
 private const val USB_EXCLUSIVE_KEEPALIVE_LOG_INTERVAL_TICKS = 3L
 private const val TASK_REMOVED_STATE_PERSIST_TIMEOUT_MS = 3_000L
-
-internal fun isLocalCoverReference(reference: String?): Boolean {
-    val normalized = reference?.trim().orEmpty()
-    return normalized.startsWith("content://", ignoreCase = true) ||
-        normalized.startsWith("file:", ignoreCase = true) ||
-        normalized.startsWith("/")
-}
-
-internal fun coverReferenceFileName(reference: String?): String? {
-    val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return null
-    val parsedSegment = runCatching { normalized.toUri().lastPathSegment }
-        .getOrNull()
-    val rawSegment = parsedSegment
-        ?.takeIf(String::isNotBlank)
-        ?: normalized.substringAfterLast('/').takeIf(String::isNotBlank)
-        ?: return null
-    val decodedSegment = runCatching {
-        URLDecoder.decode(rawSegment.replace("+", "%2B"), "UTF-8")
-    }.getOrElse { Uri.decode(rawSegment) }
-    return decodedSegment
-        .substringAfterLast('/')
-        .trim()
-        .takeIf { it.isNotBlank() && it != "." && it != ".." }
-}
-
-internal fun shouldCommitCoverSourceRecovery(
-    currentSongKey: String?,
-    expectedSongKey: String,
-    currentCoverSource: String?,
-    expectedCoverSource: String?
-): Boolean {
-    return currentSongKey == expectedSongKey && currentCoverSource == expectedCoverSource
-}
-
-internal fun isArtworkReadyForSource(
-    artworkPresent: Boolean,
-    artworkOwnerSongKey: String?,
-    currentSongKey: String?,
-    artworkSource: String?,
-    requestedSource: String?
-): Boolean {
-    val normalizedRequestedSource = requestedSource?.trim()?.takeIf(String::isNotBlank)
-        ?: return false
-    return artworkPresent &&
-        artworkOwnerSongKey == currentSongKey &&
-        artworkSource == normalizedRequestedSource
-}
 
 internal fun isLocalPlaybackCommandSyncSource(
     source: String,
@@ -530,117 +456,6 @@ internal fun shouldSkipFullSyncForLocalPlaybackAction(
     return foregroundStarted && hasItems && hasCurrentSong
 }
 
-internal fun resolveMetadataCoverSource(
-    songKey: String?,
-    immediateCoverSource: String?,
-    retainedSongKey: String?,
-    retainedCoverSource: String?
-): String? {
-    immediateCoverSource?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-    return retainedCoverSource?.takeIf {
-        retainedSongKey == songKey && it.isNotBlank()
-    }
-}
-
-internal fun resolveMetadataCoverSourceWithRecovery(
-    songKey: String?,
-    immediateCoverSource: String?,
-    retainedSongKey: String?,
-    retainedCoverSource: String?,
-    recoverySongKey: String?,
-    recoveryCoverSource: String?,
-    recoveryImmediateCoverSource: String?
-): String? {
-    val immediate = immediateCoverSource
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-    val recoveryImmediate = recoveryImmediateCoverSource
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-    val recovery = recoveryCoverSource
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-    if (
-        recoverySongKey == songKey &&
-            recovery != null &&
-            (immediate == null || immediate == recoveryImmediate)
-    ) {
-        return recovery
-    }
-    return resolveMetadataCoverSource(
-        songKey = songKey,
-        immediateCoverSource = immediate,
-        retainedSongKey = retainedSongKey,
-        retainedCoverSource = retainedCoverSource
-    )
-}
-
-internal fun shouldRequestArtworkLoad(
-    coverSource: String?,
-    artworkReady: Boolean,
-    inFlightCoverSource: String?,
-    lastFailedCoverSource: String?,
-    lastFailureAtElapsedRealtime: Long,
-    nowElapsedRealtime: Long,
-    retryCooldownMs: Long = MEDIA_ARTWORK_RETRY_COOLDOWN_MS,
-    currentSongKey: String? = null,
-    inFlightSongKey: String? = null,
-    lastFailedSongKey: String? = null,
-): Boolean {
-    val normalizedSource = coverSource?.trim()?.takeIf { it.isNotEmpty() } ?: return false
-    if (artworkReady) {
-        return false
-    }
-    if (
-        inFlightCoverSource == normalizedSource &&
-        (inFlightSongKey == null || inFlightSongKey == currentSongKey)
-    ) {
-        return false
-    }
-    if (
-        lastFailedCoverSource != normalizedSource ||
-        (lastFailedSongKey != null && lastFailedSongKey != currentSongKey) ||
-        lastFailureAtElapsedRealtime <= 0L
-    ) {
-        return true
-    }
-    val elapsed = nowElapsedRealtime - lastFailureAtElapsedRealtime
-    return elapsed !in 0L..<retryCooldownMs
-}
-
-internal fun shouldDeferArtworkRetryToCoverResolver(
-    isLocalCover: Boolean,
-    coverResolutionRequested: Boolean
-): Boolean = isLocalCover && coverResolutionRequested
-
-internal fun shouldAllowServiceRemoteCoverFallback(
-    isLocalSong: Boolean,
-    hasExplicitCustomCover: Boolean
-): Boolean = !isLocalSong || hasExplicitCustomCover
-
-internal fun shouldAcceptArtworkLoadCallback(
-    requestGeneration: Long,
-    currentGeneration: Long,
-    inFlightGeneration: Long,
-    requestSource: String?,
-    inFlightSource: String?,
-    requestSongKey: String?,
-    inFlightSongKey: String?
-): Boolean {
-    return requestGeneration == currentGeneration &&
-        requestGeneration == inFlightGeneration &&
-        requestSource == inFlightSource &&
-        requestSongKey == inFlightSongKey
-}
-
-internal fun resolveRemoteMetadataArtworkUri(coverSource: String?): String? {
-    val normalizedSource = coverSource?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    return normalizedSource.takeIf {
-        it.startsWith("http://", ignoreCase = true) ||
-            it.startsWith("https://", ignoreCase = true)
-    }
-}
-
 @SuppressLint("ObsoleteSdkInt")
 private fun Context.findActivityReadyForDirectServiceStart(): Activity? {
     var current: Context? = this
@@ -843,35 +658,37 @@ class AudioPlayerService : Service() {
     private var mediaSessionUsesUsbExclusiveVolumeProvider = false
     private var usbExclusiveVolumeProvider: UsbExclusiveLockScreenVolumeProvider? = null
 
-    private var currentCoverSongKey: String? = null
-    private var currentCoverSource: String? = null
-    private var currentMediaArtwork: Bitmap? = null
-    private var currentMediaArtworkOwnerSongKey: String? = null
-    private var currentMediaArtworkSource: String? = null
-    private var currentNotificationLargeIcon: Bitmap? = null
-    private var currentNotificationLargeIconOwnerSongKey: String? = null
-    private var currentNotificationLargeIconSource: String? = null
-    private var artworkLoadInFlightSource: String? = null
-    private var artworkLoadInFlightSongKey: String? = null
-    private var artworkLoadInFlightGeneration: Long = 0L
-    private var artworkLoadGeneration: Long = 0L
-    private var artworkLoadJob: Job? = null
-    private var lastArtworkLoadFailedSource: String? = null
-    private var lastArtworkLoadFailedSongKey: String? = null
-    private var lastArtworkLoadFailedAtElapsedRealtime: Long = -1L
-    private var artworkRetryJob: Job? = null
-    private var artworkRetryAttemptCount: Int = 0
-    private var coverResolutionInFlightSongKey: String? = null
-    private var coverResolutionJob: Job? = null
-    private var coverResolutionGeneration: Long = 0L
-    private var recoveredCoverSongKey: String? = null
-    private var recoveredCoverSource: String? = null
-    private var recoveredCoverImmediateSource: String? = null
     private val serviceScope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, throwable ->
             NPLogger.e("NERI-AudioService", "Uncaught coroutine exception in serviceScope", throwable)
         }
     )
+    private val artworkOwnerDelegate = lazy {
+        PlaybackArtworkOwner(
+            resolver = PlaybackCoverSourceResolver(AndroidPlaybackCoverSources(applicationContext)),
+            loader = CoilPlaybackArtworkBitmapLoader(applicationContext),
+            clock = AndroidPlaybackArtworkClock,
+            scope = serviceScope,
+            ioDispatcher = Dispatchers.IO,
+            onChange = ::onArtworkChanged,
+        )
+    }
+    private val artworkOwner: PlaybackArtworkOwner get() = artworkOwnerDelegate.value
+
+    private fun onArtworkChanged(change: PlaybackArtworkChange) {
+        if (change == PlaybackArtworkChange.RESOLUTION_FINISHED_EMPTY) {
+            updatePlaybackWidget(force = true)
+            return
+        }
+        refreshArtworkPresentation(change)
+    }
+
+    private fun refreshArtworkPresentation(change: PlaybackArtworkChange) {
+        if (change == PlaybackArtworkChange.SOURCE_RESOLVED) lastMetadataSnapshot = null
+        updateMetadata()
+        updateNotification()
+    }
+
     private val mediaSessionPlaybackStateThrottler = MediaSessionPlaybackStateThrottler()
     private var allowServiceRestart = true
     private var hasReceivedStartCommand = false
@@ -2055,31 +1872,23 @@ class AudioPlayerService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val isPlaybackControlPlaying = PlayerManager.playbackControlPlayingFlow.value
-        val isAudioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value
         val song = playbackSurfaceSong()
+        val contentIntent = mainActivityPendingIntent()
+        val builder = mediaNotificationBuilder(contentIntent)
+        addMediaNotificationActions(builder, song, contentIntent)
+        applyMediaNotificationContent(builder, song)
+        return finishMediaNotification(builder, song)
+    }
 
-        val contentIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+    private fun mainActivityPendingIntent(): PendingIntent = PendingIntent.getActivity(
+        this, 0, Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
-        val prevIntent  = servicePendingIntent(ACTION_PREV, 1)
-        val playIntent  = servicePendingIntent(ACTION_PLAY, 2)
-        val pauseIntent = servicePendingIntent(ACTION_PAUSE, 3)
-        val restoreVolumeIntent = servicePendingIntent(ACTION_RESTORE_VOLUME, 8)
-        val nextIntent  = servicePendingIntent(ACTION_NEXT, 4)
-        val toggleFavIntent = servicePendingIntent(ACTION_TOGGLE_FAV, 6)
-        val toggleFloatingLyricsIntent = servicePendingIntent(ACTION_TOGGLE_FLOATING_LYRICS, 7)
-        val favoriteActionIntent = if (requiresInteractiveFavoriteConfirmation(song)) {
-            contentIntent
-        } else {
-            toggleFavIntent
-        }
-
-        val builder = Notification.Builder(this, CHANNEL_ID)
+    private fun mediaNotificationBuilder(contentIntent: PendingIntent): Notification.Builder =
+        Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_small)
             .setContentIntent(contentIntent)
             .setCategory(Notification.CATEGORY_TRANSPORT)
@@ -2093,117 +1902,91 @@ class AudioPlayerService : Service() {
             )
             .applyForegroundServiceBehavior()
 
-        val isFav = isFavoriteSong(song)
+    private fun addMediaNotificationActions(
+        builder: Notification.Builder,
+        song: SongItem?,
+        contentIntent: PendingIntent,
+    ) {
+        builder.addAction(mediaNotificationAction(
+            R.drawable.round_skip_previous_24,
+            getString(R.string.player_previous),
+            servicePendingIntent(ACTION_PREV, 1),
+        ))
+        builder.addAction(playbackControlNotificationAction())
+        builder.addAction(favoriteNotificationAction(song, contentIntent))
+        builder.addAction(mediaNotificationAction(
+            R.drawable.round_skip_next_24,
+            getString(R.string.player_next),
+            servicePendingIntent(ACTION_NEXT, 4),
+        ))
+        builder.addAction(floatingLyricsNotificationAction())
+    }
 
-        val favAction = Notification.Action.Builder(
-            Icon.createWithResource(
-                this,
-                if (isFav) R.drawable.ic_baseline_favorite_24 else R.drawable.ic_outline_favorite_24
-            ),
-            if (isFav) getString(R.string.favorite_remove) else getString(R.string.favorite_add),
-            favoriteActionIntent
-        ).build()
-
-        builder.addAction(
-            mediaNotificationAction(
-                iconRes = R.drawable.round_skip_previous_24,
-                title = getString(R.string.player_previous),
-                pendingIntent = prevIntent
-            )
+    private fun playbackControlNotificationAction(): Notification.Action {
+        val choice = playbackControlActionChoice(
+            audioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value,
+            playbackControlPlaying = PlayerManager.playbackControlPlayingFlow.value,
         )
-        builder.addAction(
-            mediaNotificationAction(
-                iconRes = when {
-                    isAudioRouteMuted -> R.drawable.round_volume_up_24
-                    isPlaybackControlPlaying -> R.drawable.round_pause_24
-                    else -> R.drawable.round_play_arrow_24
-                },
-                title = when {
-                    isAudioRouteMuted -> getString(R.string.player_restore_volume)
-                    isPlaybackControlPlaying -> getString(R.string.player_pause)
-                    else -> getString(R.string.player_play)
-                },
-                pendingIntent = when {
-                    isAudioRouteMuted -> restoreVolumeIntent
-                    isPlaybackControlPlaying -> pauseIntent
-                    else -> playIntent
-                }
-            )
+        val intents = arrayOf(
+            servicePendingIntent(ACTION_PLAY, 2),
+            servicePendingIntent(ACTION_PAUSE, 3),
+            servicePendingIntent(ACTION_RESTORE_VOLUME, 8),
         )
-        builder.addAction(favAction)
-        builder.addAction(
-            mediaNotificationAction(
-                iconRes = R.drawable.round_skip_next_24,
-                title = getString(R.string.player_next),
-                pendingIntent = nextIntent
-            )
+        return mediaNotificationAction(choice.iconRes, getString(choice.titleRes), intents[choice.intentIndex])
+    }
+
+    private fun favoriteNotificationAction(song: SongItem?, contentIntent: PendingIntent): Notification.Action {
+        val favorite = isFavoriteSong(song)
+        val intent = favoriteNotificationIntent(song, contentIntent)
+        return mediaNotificationAction(
+            favoriteActionIcon(favorite),
+            getString(favoriteActionTitle(favorite)),
+            intent,
         )
-        val floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled()
-        builder.addAction(
-            mediaNotificationAction(
-                iconRes = if (floatingLyricsEnabled) {
-                    R.drawable.ic_lyrics_off_24
-                } else {
-                    R.drawable.ic_lyrics_24
-                },
-                title = getString(
-                    if (floatingLyricsEnabled) {
-                        R.string.notification_hide_floating_lyrics
-                    } else {
-                        R.string.notification_show_floating_lyrics
-                    }
-                ),
-                pendingIntent = toggleFloatingLyricsIntent
-            )
+    }
+
+    private fun favoriteNotificationIntent(song: SongItem?, contentIntent: PendingIntent): PendingIntent =
+        if (requiresInteractiveFavoriteConfirmation(song)) contentIntent
+        else servicePendingIntent(ACTION_TOGGLE_FAV, 6)
+
+    private fun floatingLyricsNotificationAction(): Notification.Action {
+        val enabled = isFloatingLyricsCurrentlyEnabled()
+        return mediaNotificationAction(
+            floatingLyricsActionIcon(enabled),
+            getString(floatingLyricsActionTitle(enabled)),
+            servicePendingIntent(ACTION_TOGGLE_FLOATING_LYRICS, 7),
         )
+    }
 
-        builder.setContentTitle(song?.displayName() ?: "NeriPlayer")
-        val currentStatusBarLyricState = statusBarLyricState
-        currentStatusBarLyricState.line?.let(builder::setTicker)
+    private fun applyMediaNotificationContent(builder: Notification.Builder, song: SongItem?) {
+        builder.setContentTitle(serviceNotificationTitle(song))
+        builder.setContentText(currentServiceNotificationText(song))
+        applyMediaNotificationTicker(builder)
+        applyMediaNotificationArtwork(builder, song)
+    }
 
-        val timerState = PlayerManager.sleepTimerManager.timerState.value
-        val contentText = if (timerState.isActive) {
-            val timerInfo = when (timerState.mode) {
-                SleepTimerMode.COUNTDOWN,
-                SleepTimerMode.COUNTDOWN_FINISH_CURRENT -> {
-                    val remaining = PlayerManager.sleepTimerManager.formatRemainingTimeForNotification()
-                    val stringRes = if (timerState.mode == SleepTimerMode.COUNTDOWN_FINISH_CURRENT) {
-                        R.string.notification_timer_finish_current_remaining
-                    } else {
-                        R.string.notification_timer_remaining
-                    }
-                    getString(stringRes, remaining)
-                }
-                SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
-                SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
-            }
-            song?.displayArtist()
-                ?.takeIf { it.isNotBlank() }
-                ?.let { "$it | $timerInfo" }
-                ?: timerInfo
-        } else {
-            song?.displayArtist() ?: ""
-        }
-        builder.setContentText(contentText)
+    private fun applyMediaNotificationTicker(builder: Notification.Builder) {
+        statusBarLyricState.line?.let(builder::setTicker)
+    }
 
-        currentNotificationLargeIcon?.let { builder.setLargeIcon(it) }
+    private fun applyMediaNotificationArtwork(builder: Notification.Builder, song: SongItem?) {
+        artworkOwner.snapshotFor(song).notificationBitmap?.let { builder.setLargeIcon(it) }
+    }
 
-        return builder.build().apply {
-            attachXiaomiMusicIslandShareExtras(song)
+    private fun finishMediaNotification(builder: Notification.Builder, song: SongItem?): Notification {
+        val notification = builder.build()
+        notification.attachXiaomiMusicIslandShareExtras(song)
+        applyMediaNotificationLyricFlags(notification)
+        return notification
+    }
 
-            if (currentStatusBarLyricState.hasTicker) {
-                val FLAG_ALWAYS_SHOW_TICKER = 0x01000000
-                val FLAG_ONLY_UPDATE_TICKER = 0x02000000
-                // 魅族状态栏歌词依赖这两个私有通知标记
-                flags = flags.or(FLAG_ALWAYS_SHOW_TICKER)
-                flags = flags.or(FLAG_ONLY_UPDATE_TICKER)
-                // ticker_icon: 状态栏歌词前的小图标 (16x16dp)
-                extras.putInt("ticker_icon", R.drawable.ic_statusbar_lyric)
-                // false 表示沿用缓存图标, 图标资源变化时才需要切换
-                extras.putBoolean("ticker_icon_switch", false)
-            }
-        }
-
+    private fun applyMediaNotificationLyricFlags(notification: Notification) {
+        if (!statusBarLyricState.hasTicker) return
+        val alwaysShowTicker = 0x01000000
+        val onlyUpdateTicker = 0x02000000
+        notification.flags = notification.flags.or(alwaysShowTicker).or(onlyUpdateTicker)
+        notification.extras.putInt("ticker_icon", R.drawable.ic_statusbar_lyric)
+        notification.extras.putBoolean("ticker_icon_switch", false)
     }
 
     private fun Notification.attachXiaomiMusicIslandShareExtras(song: SongItem?) {
@@ -2361,67 +2144,44 @@ class AudioPlayerService : Service() {
         updatePlaybackWidget()
     }
 
+    private fun currentServiceNotificationText(song: SongItem?): String = serviceNotificationText(
+        song = song,
+        timerState = PlayerManager.sleepTimerManager.timerState.value,
+        remaining = PlayerManager.sleepTimerManager.formatRemainingTimeForNotification(),
+        localized = ::serviceTimerString,
+    )
+
+    private fun serviceTimerString(resId: Int, remaining: String?): String =
+        if (remaining == null) getString(resId) else getString(resId, remaining)
+
     private fun buildNotificationSnapshot(): PlaybackNotificationSnapshot {
         val song = playbackSurfaceSong()
-        val timerState = PlayerManager.sleepTimerManager.timerState.value
-        val text = if (timerState.isActive) {
-            val timerInfo = when (timerState.mode) {
-                SleepTimerMode.COUNTDOWN,
-                SleepTimerMode.COUNTDOWN_FINISH_CURRENT -> {
-                    val remaining = PlayerManager.sleepTimerManager.formatRemainingTimeForNotification()
-                    val stringRes = if (timerState.mode == SleepTimerMode.COUNTDOWN_FINISH_CURRENT) {
-                        R.string.notification_timer_finish_current_remaining
-                    } else {
-                        R.string.notification_timer_remaining
-                    }
-                    getString(stringRes, remaining)
-                }
-                SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
-                SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
-            }
-            song?.displayArtist()
-                ?.takeIf { it.isNotBlank() }
-                ?.let { "$it | $timerInfo" }
-                ?: timerInfo
-        } else {
-            song?.displayArtist() ?: ""
-        }
-        val currentStatusBarLyricState = statusBarLyricState
-        return PlaybackNotificationSnapshot(
-            songKey = song?.stableKey(),
-            title = song?.displayName() ?: "NeriPlayer",
-            text = text,
-            isTransportActive = PlayerManager.isTransportActive(),
-            isPlaybackControlPlaying = PlayerManager.playbackControlPlayingFlow.value,
-            isAudioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value,
+        return serviceNotificationSnapshot(
+            song = song,
+            text = currentServiceNotificationText(song),
+            transportActive = PlayerManager.isTransportActive(),
+            playbackControlPlaying = PlayerManager.playbackControlPlayingFlow.value,
+            audioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value,
             isFavorite = isFavoriteSong(song),
-            requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
-            largeIconReady = isArtworkReadyForSource(
-                artworkPresent = currentNotificationLargeIcon != null,
-                artworkOwnerSongKey = currentNotificationLargeIconOwnerSongKey,
-                currentSongKey = song?.playbackVisualKey(),
-                artworkSource = currentNotificationLargeIconSource,
-                requestedSource = currentCoverSource,
-            ),
-            coverSource = currentCoverSource,
-            statusBarLyricState = currentStatusBarLyricState,
+            interactiveFavorite = requiresInteractiveFavoriteConfirmation(song),
+            artwork = artworkOwner.snapshotFor(song),
+            lyricState = statusBarLyricState,
             floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
         )
     }
 
     private fun updatePlaybackWidget(force: Boolean = false) {
-        if (!PlaybackWidgetUpdater.hasInstalledWidgets(this)) {
-            return
-        }
-        val state = buildCurrentPlaybackWidgetState()
-        if (!force && !playbackWidgetPresentationChanged(lastPlaybackWidgetState, state)) {
-            return
-        }
+        if (!PlaybackWidgetUpdater.hasInstalledWidgets(this)) return
+        updatePlaybackWidgetIfChanged(force, buildCurrentPlaybackWidgetState())
+    }
+
+    private fun updatePlaybackWidgetIfChanged(force: Boolean, state: PlaybackWidgetState) {
+        if (!shouldUpdateServicePlaybackWidget(force, lastPlaybackWidgetState, state)) return
         lastPlaybackWidgetState = state
         PlaybackWidgetUpdater.updateFromPlaybackService(
             context = this,
             state = state,
-            artwork = currentNotificationLargeIcon,
+            artwork = artworkOwner.snapshotFor(playbackSurfaceSong()).notificationBitmap,
         )
     }
 
@@ -2445,459 +2205,45 @@ class AudioPlayerService : Service() {
 
     private fun buildCurrentPlaybackWidgetState(): PlaybackWidgetState {
         val song = playbackSurfaceSong()
-        val fallbackSongActive = PlayerManager.currentSongFlow.value == null && song != null
-        val positionMs = if (fallbackSongActive) {
-            listenTogetherExpectedPositionMs()
-        } else {
-            PlayerManager.playbackPositionFlow.value
-        }
-        val isBuffering = PlayerManager.isTransportBuffering()
-        val isPlaying = PlayerManager.isTransportActive() ||
-            (fallbackSongActive && isListenTogetherRemotePlaying())
-        val status = when {
-            isBuffering -> getString(R.string.widget_playback_buffering)
-            isPlaying -> getString(R.string.widget_playback_playing)
-            song != null -> getString(R.string.widget_playback_paused)
-            else -> getString(R.string.widget_playback_ready)
-        }
-        return buildPlaybackWidgetState(
-            title = song?.displayName() ?: getString(R.string.app_name),
-            subtitle = song?.displayArtist()
-                ?.takeIf { it.isNotBlank() }
-                ?: getString(R.string.widget_playback_idle_subtitle),
-            status = status,
-            positionMs = positionMs,
-            durationMs = song?.durationMs ?: 0L,
-            hasSong = song != null,
-            isPlaying = isPlaying,
-            isFavorite = isFavoriteSong(song),
+        return servicePlaybackWidgetState(ServiceWidgetInputs(
+            song = song,
+            playerSongPresent = PlayerManager.currentSongFlow.value != null,
+            playerPositionMs = PlayerManager.playbackPositionFlow.value,
+            roomPositionMs = listenTogetherExpectedPositionMs(),
+            buffering = PlayerManager.isTransportBuffering(),
+            transportActive = PlayerManager.isTransportActive(),
+            roomPlaying = isListenTogetherRemotePlaying(),
+            favorite = isFavoriteSong(song),
             canToggleFavorite = canToggleFavoriteFromExternalSurface(song),
-            isFloatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
-            artworkReady = isArtworkReadyForSource(
-                artworkPresent = currentNotificationLargeIcon != null,
-                artworkOwnerSongKey = currentNotificationLargeIconOwnerSongKey,
-                currentSongKey = song?.playbackVisualKey(),
-                artworkSource = currentNotificationLargeIconSource,
-                requestedSource = currentCoverSource,
+            floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
+            artwork = artworkOwner.snapshotFor(song),
+            labels = ServiceWidgetLabels(
+                appName = getString(R.string.app_name),
+                idleSubtitle = getString(R.string.widget_playback_idle_subtitle),
+                buffering = getString(R.string.widget_playback_buffering),
+                playing = getString(R.string.widget_playback_playing),
+                paused = getString(R.string.widget_playback_paused),
+                ready = getString(R.string.widget_playback_ready),
             ),
-            contentId = song?.stableKey().orEmpty(),
-            coverId = currentCoverSource.orEmpty(),
-            artworkPending = song != null && (
-                !currentCoverSource.isNullOrBlank() ||
-                    coverResolutionInFlightSongKey == song.playbackVisualKey()
-                ),
-        )
+        ))
     }
 
     private fun updateMetadata() {
         val song = playbackSurfaceSong()
-        val songKey = song?.playbackVisualKey()
-        val duration = song?.durationMs ?: 0L
-        val immediateCoverSource = song.effectiveCoverSource()
-        val coverSource = resolveMetadataCoverSourceWithRecovery(
-            songKey = songKey,
-            immediateCoverSource = immediateCoverSource,
-            retainedSongKey = currentCoverSongKey,
-            retainedCoverSource = currentCoverSource,
-            recoverySongKey = recoveredCoverSongKey,
-            recoveryCoverSource = recoveredCoverSource,
-            recoveryImmediateCoverSource = recoveredCoverImmediateSource,
+        val artwork = artworkOwner.observe(song)
+        val text = serviceMetadataText(
+            song = song,
+            payload = PlayerManager.externalBluetoothLyricPayloadFlow.value,
+            audioDeviceType = currentAudioDeviceType(),
+            forceSendLyrics = PlayerManager.dynamicIslandLyricsEnabled,
         )
-
-        if (
-            recoveredCoverSongKey != songKey ||
-                (
-                    recoveredCoverSongKey == songKey &&
-                        immediateCoverSource?.trim() != recoveredCoverImmediateSource
-                    )
-        ) {
-            recoveredCoverSongKey = null
-            recoveredCoverSource = null
-            recoveredCoverImmediateSource = null
-        }
-
-        if (songKey != currentCoverSongKey || coverSource != currentCoverSource) {
-            val songChanged = songKey != currentCoverSongKey
-            val sourceChanged = coverSource != currentCoverSource
-            currentCoverSongKey = songKey
-            currentCoverSource = coverSource
-            if (songChanged || sourceChanged) {
-                coverResolutionGeneration += 1L
-                coverResolutionJob?.cancel()
-                coverResolutionJob = null
-                coverResolutionInFlightSongKey = null
-                artworkLoadInFlightSource = null
-                artworkLoadInFlightSongKey = null
-                artworkLoadInFlightGeneration = 0L
-                artworkLoadGeneration += 1L
-                artworkLoadJob?.cancel()
-                artworkLoadJob = null
-                artworkRetryJob?.cancel()
-                artworkRetryJob = null
-                artworkRetryAttemptCount = 0
-                lastArtworkLoadFailedSource = null
-                lastArtworkLoadFailedSongKey = null
-                lastArtworkLoadFailedAtElapsedRealtime = -1L
-            }
-        }
-        if (song == null) {
-            coverResolutionJob?.cancel()
-            coverResolutionJob = null
-            coverResolutionInFlightSongKey = null
-            currentMediaArtwork = null
-            currentMediaArtworkOwnerSongKey = null
-            currentMediaArtworkSource = null
-            currentNotificationLargeIcon = null
-            currentNotificationLargeIconOwnerSongKey = null
-            currentNotificationLargeIconSource = null
-            lastArtworkLoadFailedSource = null
-            lastArtworkLoadFailedSongKey = null
-            lastArtworkLoadFailedAtElapsedRealtime = -1L
-            recoveredCoverSongKey = null
-            recoveredCoverSource = null
-            recoveredCoverImmediateSource = null
-            artworkLoadGeneration += 1L
-            coverResolutionGeneration += 1L
-        } else {
-            resolveCoverSourceAsyncIfNeeded(song, song.playbackVisualKey(), immediateCoverSource)
-        }
-        requestLargeIconIfNeeded(currentCoverSource)
-
-        val normalTitle = song?.displayName() ?: "NeriPlayer"
-        val normalArtist = song?.displayArtist().orEmpty()
-        val lyricPayload = PlayerManager.externalBluetoothLyricPayloadFlow.value
-        val useBluetoothLyrics = shouldUseExternalBluetoothLyrics(
-            audioDeviceType = PlayerManager.currentAudioDeviceFlow.value?.type,
-            payload = lyricPayload,
-            forceSendLyrics = PlayerManager.dynamicIslandLyricsEnabled
-        )
-        val metadataText = resolveExternalBluetoothMetadataText(
-            normalTitle = normalTitle,
-            normalArtist = normalArtist,
-            payload = lyricPayload,
-            useBluetoothLyrics = useBluetoothLyrics
-        )
-        val snapshot = PlaybackMetadataSnapshot(
-            songKey = songKey,
-            title = metadataText.title,
-            artist = metadataText.artist,
-            album = metadataText.album,
-            displayTitle = metadataText.displayTitle,
-            displaySubtitle = metadataText.displaySubtitle,
-            displayDescription = metadataText.displayDescription,
-            durationMs = duration,
-            coverSource = currentCoverSource,
-            largeIconReady = isArtworkReadyForSource(
-                artworkPresent = currentMediaArtwork != null,
-                artworkOwnerSongKey = currentMediaArtworkOwnerSongKey,
-                currentSongKey = songKey,
-                artworkSource = currentMediaArtworkSource,
-                requestedSource = currentCoverSource,
-            ),
-        )
-        if (snapshot == lastMetadataSnapshot) {
-            return
-        }
+        val snapshot = serviceMetadataSnapshot(song, text, artwork)
+        if (snapshot == lastMetadataSnapshot) return
         lastMetadataSnapshot = snapshot
-
-        val metadataBuilder = MediaMetadata.Builder()
-            .putString(MediaMetadata.METADATA_KEY_TITLE, metadataText.title)
-            .putString(MediaMetadata.METADATA_KEY_ARTIST, metadataText.artist)
-            .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, metadataText.displayTitle)
-            .putString(
-                MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
-                metadataText.displaySubtitle
-            )
-            .putLong(MediaMetadata.METADATA_KEY_DURATION, duration)
-            .putBitmap(
-                MediaMetadata.METADATA_KEY_ALBUM_ART,
-                currentMediaArtwork?.takeIf {
-                    isArtworkReadyForSource(
-                        artworkPresent = true,
-                        artworkOwnerSongKey = currentMediaArtworkOwnerSongKey,
-                        currentSongKey = songKey,
-                        artworkSource = currentMediaArtworkSource,
-                        requestedSource = currentCoverSource,
-                    )
-                }
-            )
-
-        metadataText.album?.let { album ->
-            metadataBuilder.putString(MediaMetadata.METADATA_KEY_ALBUM, album)
-        }
-        metadataText.displayDescription?.let { description ->
-            metadataBuilder.putString(
-                MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION,
-                description
-            )
-        }
-
-        resolveRemoteMetadataArtworkUri(currentCoverSource)?.let { artworkUri ->
-            metadataBuilder.putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, artworkUri)
-        }
-
-        // Do not set local URIs to METADATA_KEY_ALBUM_ART_URI, as it may prompt the System UI
-        // to attempt loading them directly (which can fail due to permission issues) and
-        // override the bitmap we already provided via METADATA_KEY_ALBUM_ART
-
-        mediaSession.setMetadata(metadataBuilder.build())
+        mediaSession.setMetadata(serviceMediaMetadata(snapshot, artwork))
     }
 
-    private fun resolveCoverSourceAsyncIfNeeded(
-        song: SongItem,
-        songKey: String,
-        immediateCoverSource: String?,
-        forceRefresh: Boolean = false,
-        expectedCoverSource: String? = currentCoverSource,
-    ) {
-        if (!forceRefresh && !immediateCoverSource.isNullOrBlank()) {
-            return
-        }
-        if (forceRefresh && !LocalSongSupport.isLocalSong(song, this)) {
-            return
-        }
-        if (coverResolutionInFlightSongKey == songKey && coverResolutionJob?.isActive == true) {
-            if (!forceRefresh) {
-                return
-            }
-            coverResolutionJob?.cancel()
-        }
-        if (!forceRefresh && currentCoverSongKey == songKey && !currentCoverSource.isNullOrBlank()) {
-            return
-        }
-
-        val requestGeneration = ++coverResolutionGeneration
-        coverResolutionInFlightSongKey = songKey
-        val appCtx = applicationContext
-        val job = serviceScope.launch {
-            try {
-                val resolvedCoverSource = try {
-                    withContext(Dispatchers.IO) {
-                        resolveServiceCoverSource(
-                            context = appCtx,
-                            song = song,
-                            failedSource = immediateCoverSource,
-                        )
-                    }
-                } catch (error: Exception) {
-                    if (error is kotlinx.coroutines.CancellationException) {
-                        throw error
-                    }
-                    NPLogger.d(
-                        "NERI-APS",
-                        "Deferred cover resolve failed: ${error.message}"
-                    )
-                    null
-                }
-                if (requestGeneration != coverResolutionGeneration) {
-                    return@launch
-                }
-                val currentSurfaceSong = playbackSurfaceSong()
-                if (
-                    !shouldCommitCoverSourceRecovery(
-                        currentSongKey = currentSurfaceSong?.playbackVisualKey(),
-                        expectedSongKey = songKey,
-                        currentCoverSource = currentCoverSource,
-                        expectedCoverSource = expectedCoverSource,
-                    ) || resolvedCoverSource.isNullOrBlank()
-                ) {
-                    if (
-                        currentSurfaceSong?.playbackVisualKey() == songKey &&
-                        resolvedCoverSource.isNullOrBlank()
-                    ) {
-                        updatePlaybackWidget(force = true)
-                        if (
-                            !immediateCoverSource.isNullOrBlank() &&
-                            currentCoverSource == expectedCoverSource
-                        ) {
-                            // 等解析任务结束后再重试旧引用, 避免与 SAF 扫描并发
-                            scheduleArtworkRetry(immediateCoverSource, songKey)
-                        }
-                    }
-                    return@launch
-                }
-                if (currentCoverSongKey == songKey && currentCoverSource == resolvedCoverSource) {
-                    requestLargeIconIfNeeded(resolvedCoverSource)
-                    return@launch
-                }
-                recoveredCoverSongKey = songKey
-                recoveredCoverSource = resolvedCoverSource.trim()
-                recoveredCoverImmediateSource = immediateCoverSource
-                    ?.trim()
-                    ?.takeIf(String::isNotBlank)
-                currentCoverSongKey = songKey
-                currentCoverSource = resolvedCoverSource.trim()
-                lastMetadataSnapshot = null
-                updateMetadata()
-                updateNotification()
-            } finally {
-                if (requestGeneration == coverResolutionGeneration) {
-                    coverResolutionInFlightSongKey = null
-                    coverResolutionJob = null
-                }
-            }
-        }
-        coverResolutionJob = job
-    }
-
-    private suspend fun resolveServiceCoverSource(
-        context: Context,
-        song: SongItem,
-        failedSource: String?
-    ): String? {
-        val isLocalSong = LocalSongSupport.isLocalSong(song, context)
-        fun readLocalCandidate(read: () -> String?): String? {
-            return try {
-                read()
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                null
-            }
-        }
-        fun usable(candidate: String?): String? {
-            val normalized = candidate
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?: return null
-            return normalized.takeIf {
-                isUsableServiceCoverCandidate(
-                    context = context,
-                    candidate = it,
-                    failedSource = failedSource
-                )
-            }
-        }
-
-        if (isLocalSong) {
-            val fastLocalCandidate = sequenceOf(
-                readLocalCandidate { AudioDownloadManager.peekLocalCoverUri(song) },
-                readLocalCandidate {
-                    LocalMediaSupport.resolveNearbyCoverUri(context, song)
-                }
-            ).firstNotNullOfOrNull(::usable)
-            if (fastLocalCandidate != null) {
-                return fastLocalCandidate
-            }
-        }
-
-        currentCoroutineContext().ensureActive()
-        val localResolved = try {
-            LocalMediaSupport.resolveCoverUri(context, song)
-        } catch (error: kotlinx.coroutines.CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            null
-        }
-        if (isUsableServiceCoverCandidate(context, localResolved, failedSource)) {
-            return localResolved?.trim()
-        }
-
-        currentCoroutineContext().ensureActive()
-        val cachedDownloadedSong = GlobalDownloadManager.findDownloadedSongCached(song)
-        val indexedReferences = listOfNotNull(
-            cachedDownloadedSong?.coverPath,
-            song.customCoverUrl,
-            song.coverUrl
-        ).mapNotNull { reference ->
-            reference.trim().takeIf(::isLocalCoverReference)
-        }.distinct()
-        var reboundReference: String? = null
-        for (indexedReference in indexedReferences) {
-            currentCoroutineContext().ensureActive()
-            val fileName = coverReferenceFileName(indexedReference) ?: continue
-            val cachedReference = try {
-                ManagedDownloadStorage.findCoverReferenceByFileName(
-                    context = context,
-                    fileName = fileName,
-                    forceRefresh = false
-                )
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                NPLogger.d(
-                    "NERI-APS",
-                    "Cached managed cover lookup failed: file=$fileName, " +
-                        "message=${error.message}"
-                )
-                null
-            }
-            reboundReference = usable(cachedReference)
-            if (reboundReference == null) {
-                currentCoroutineContext().ensureActive()
-                reboundReference = try {
-                    val refreshedReference = ManagedDownloadStorage.findCoverReferenceByFileName(
-                        context = context,
-                        fileName = fileName,
-                        forceRefresh = true,
-                        preferSidecarRefresh = true
-                    )
-                    currentCoroutineContext().ensureActive()
-                    usable(refreshedReference)
-                } catch (error: kotlinx.coroutines.CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    NPLogger.d(
-                        "NERI-APS",
-                        "Rebinding managed cover failed: file=$fileName, " +
-                            "message=${error.message}"
-                    )
-                    null
-                }
-            }
-            if (reboundReference != null) break
-        }
-        if (isUsableServiceCoverCandidate(context, reboundReference, failedSource)) {
-            return reboundReference?.trim()
-        }
-
-        val hasExplicitCustomCover = resolveRemoteMetadataArtworkUri(song.customCoverUrl) != null
-        if (!shouldAllowServiceRemoteCoverFallback(isLocalSong, hasExplicitCustomCover)) {
-            NPLogger.d(
-                "NERI-APS",
-                "Skip remote cover fallback for local song: key=${song.playbackVisualKey()}"
-            )
-            return null
-        }
-        val remoteCandidates = if (isLocalSong) {
-            listOfNotNull(song.customCoverUrl)
-        } else {
-            listOfNotNull(
-                song.customCoverUrl,
-                cachedDownloadedSong?.coverUrl,
-                song.coverUrl,
-                song.originalCoverUrl,
-            )
-        }
-        val remoteFallback = remoteCandidates.firstOrNull { candidate ->
-            val normalized = candidate.trim().takeIf(String::isNotBlank) ?: return@firstOrNull false
-            resolveRemoteMetadataArtworkUri(normalized) != null &&
-                !normalized.equals(failedSource?.trim(), ignoreCase = false)
-        }
-        return remoteFallback
-    }
-
-    private fun isUsableServiceCoverCandidate(
-        context: Context,
-        candidate: String?,
-        failedSource: String?
-    ): Boolean {
-        val normalized = candidate?.trim()?.takeIf(String::isNotBlank) ?: return false
-        if (normalized == failedSource?.trim()) {
-            return false
-        }
-        return if (resolveRemoteMetadataArtworkUri(normalized) != null) {
-            true
-        } else {
-            try {
-                isUsableCoverReference(context, normalized)
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                false
-            }
-        }
-    }
+    private fun currentAudioDeviceType(): Int? = PlayerManager.currentAudioDeviceFlow.value?.type
 
     private fun updatePlaybackState(force: Boolean = false) {
         val isTransportActive = PlayerManager.isTransportActive()
@@ -2989,247 +2335,6 @@ class AudioPlayerService : Service() {
             controlFingerprint = controlFingerprint,
             nowElapsedRealtimeMs = nowElapsedRealtimeMs,
         )
-    }
-
-    private fun requestLargeIconIfNeeded(url: String?) {
-        val normalizedUrl = url?.trim()?.takeIf(String::isNotBlank) ?: return
-        if (
-            !shouldRequestArtworkLoad(
-                coverSource = normalizedUrl,
-                artworkReady = isArtworkReadyForSource(
-                    artworkPresent = currentMediaArtwork != null,
-                    artworkOwnerSongKey = currentMediaArtworkOwnerSongKey,
-                    currentSongKey = currentCoverSongKey,
-                    artworkSource = currentMediaArtworkSource,
-                    requestedSource = normalizedUrl,
-                ),
-                inFlightCoverSource = artworkLoadInFlightSource,
-                lastFailedCoverSource = lastArtworkLoadFailedSource,
-                lastFailureAtElapsedRealtime = lastArtworkLoadFailedAtElapsedRealtime,
-                nowElapsedRealtime = SystemClock.elapsedRealtime(),
-                currentSongKey = currentCoverSongKey,
-                inFlightSongKey = artworkLoadInFlightSongKey,
-                lastFailedSongKey = lastArtworkLoadFailedSongKey,
-            )
-        ) {
-            return
-        }
-        requestLargeIconAsync(normalizedUrl, currentCoverSongKey)
-    }
-
-    private fun requestLargeIconAsync(url: String, songKey: String?) {
-        val appCtx = applicationContext
-        val requestSongKey = songKey
-        val requestGeneration = artworkLoadGeneration + 1L
-        artworkLoadGeneration = requestGeneration
-        artworkLoadInFlightSource = url
-        artworkLoadInFlightSongKey = requestSongKey
-        artworkLoadInFlightGeneration = requestGeneration
-        artworkLoadJob?.cancel()
-        artworkLoadJob = serviceScope.launch(Dispatchers.IO) {
-            try {
-                val loader = coil.Coil.imageLoader(appCtx)
-                val request = offlineCachedImageRequest(
-                    context = appCtx,
-                    data = url,
-                    sizePx = MEDIA_ARTWORK_SIZE_PX,
-                    allowHardware = false,
-                    offlineMode = appCtx.isOfflineModeNow()
-                )
-                val result = loader.execute(request)
-                val drawable = result.drawable ?: run {
-                    withContext(Dispatchers.Main) {
-                        markArtworkLoadFailed(
-                            url = url,
-                            reason = "drawable was null",
-                            requestSongKey = requestSongKey,
-                            requestGeneration = requestGeneration,
-                        )
-                    }
-                    return@launch
-                }
-                val bmp = checkNotNull(copyBitmapForRetainedDisplay(drawable.toBitmap())) {
-                    "Coil returned a recycled artwork bitmap"
-                }
-                val notificationBmp = bmp.scaledToMaxDimension(NOTIFICATION_ARTWORK_SIZE_PX)
-                withContext(Dispatchers.Main) {
-                    if (!shouldAcceptArtworkLoadCallback(
-                            requestGeneration = requestGeneration,
-                            currentGeneration = artworkLoadGeneration,
-                            inFlightGeneration = artworkLoadInFlightGeneration,
-                            requestSource = url,
-                            inFlightSource = artworkLoadInFlightSource,
-                            requestSongKey = requestSongKey,
-                            inFlightSongKey = artworkLoadInFlightSongKey
-                        )
-                    ) {
-                        return@withContext
-                    }
-                    if (artworkLoadInFlightGeneration == requestGeneration) {
-                        artworkLoadInFlightSource = null
-                        artworkLoadInFlightSongKey = null
-                        artworkLoadInFlightGeneration = 0L
-                    }
-                    if (artworkLoadJob === coroutineContext[Job]) {
-                        artworkLoadJob = null
-                    }
-                    if (url == currentCoverSource && requestSongKey == currentCoverSongKey) {
-                        lastArtworkLoadFailedSource = null
-                        lastArtworkLoadFailedSongKey = null
-                        lastArtworkLoadFailedAtElapsedRealtime = -1L
-                        artworkRetryJob?.cancel()
-                        artworkRetryJob = null
-                        artworkRetryAttemptCount = 0
-                        currentMediaArtwork = bmp
-                        currentMediaArtworkOwnerSongKey = requestSongKey
-                        currentMediaArtworkSource = url
-                        currentNotificationLargeIcon = notificationBmp
-                        currentNotificationLargeIconOwnerSongKey = requestSongKey
-                        currentNotificationLargeIconSource = url
-                        updateMetadata()
-                        updateNotification()
-                    }
-                }
-
-                NPLogger.d(
-                    "NERI-APS",
-                    "cover bitmap=${bmp.width}x${bmp.height}, bytes=${bmp.byteCount / 1024 / 1024}MB"
-                )
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    if (artworkLoadJob === coroutineContext[Job]) {
-                        artworkLoadJob = null
-                    }
-                    markArtworkLoadFailed(
-                        url = url,
-                        reason = e.message,
-                        requestSongKey = requestSongKey,
-                        requestGeneration = requestGeneration,
-                    )
-                }
-            }
-        }
-    }
-
-    private fun markArtworkLoadFailed(
-        url: String,
-        reason: String?,
-        requestSongKey: String?,
-        requestGeneration: Long
-    ) {
-        if (!shouldAcceptArtworkLoadCallback(
-                requestGeneration = requestGeneration,
-                currentGeneration = artworkLoadGeneration,
-                inFlightGeneration = artworkLoadInFlightGeneration,
-                requestSource = url,
-                inFlightSource = artworkLoadInFlightSource,
-                requestSongKey = requestSongKey,
-                inFlightSongKey = artworkLoadInFlightSongKey
-            )
-        ) {
-            return
-        }
-        if (artworkLoadInFlightGeneration == requestGeneration) {
-            artworkLoadInFlightSource = null
-            artworkLoadInFlightSongKey = null
-            artworkLoadInFlightGeneration = 0L
-        }
-        if (url == currentCoverSource && requestSongKey == currentCoverSongKey) {
-            lastArtworkLoadFailedSource = url
-            lastArtworkLoadFailedSongKey = requestSongKey
-            lastArtworkLoadFailedAtElapsedRealtime = SystemClock.elapsedRealtime()
-            val currentSong = playbackSurfaceSong()
-            val localSong = currentSong != null &&
-                LocalSongSupport.isLocalSong(currentSong, this)
-            val explicitCustomRemoteCover = currentSong?.customCoverUrl
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?.let { custom ->
-                    custom == url && resolveRemoteMetadataArtworkUri(custom) != null
-                } == true
-            val coverResolutionRequested =
-                currentSong != null &&
-                localSong &&
-                    !explicitCustomRemoteCover &&
-                    currentSong.playbackVisualKey() == requestSongKey
-            if (coverResolutionRequested) {
-                resolveCoverSourceAsyncIfNeeded(
-                    song = currentSong,
-                    songKey = requestSongKey,
-                    immediateCoverSource = url,
-                    forceRefresh = true,
-                    expectedCoverSource = url,
-                )
-            }
-            if (!shouldDeferArtworkRetryToCoverResolver(
-                    isLocalCover = localSong && !explicitCustomRemoteCover,
-                    coverResolutionRequested = coverResolutionRequested
-                )
-            ) {
-                scheduleArtworkRetry(url, requestSongKey)
-            }
-        }
-        NPLogger.d("NERI-APS", "Cover load failed: ${reason ?: "unknown"}")
-    }
-
-    private fun scheduleArtworkRetry(url: String, songKey: String?) {
-        if (artworkRetryAttemptCount >= MEDIA_ARTWORK_MAX_RETRY_ATTEMPTS) {
-            return
-        }
-        artworkRetryAttemptCount += 1
-        artworkRetryJob?.cancel()
-        artworkRetryJob = serviceScope.launch {
-            delay(MEDIA_ARTWORK_RETRY_COOLDOWN_MS)
-            if (url != currentCoverSource || songKey != currentCoverSongKey) return@launch
-            if (isArtworkReadyForSource(
-                    artworkPresent = currentMediaArtwork != null,
-                    artworkOwnerSongKey = currentMediaArtworkOwnerSongKey,
-                    currentSongKey = currentCoverSongKey,
-                    artworkSource = currentMediaArtworkSource,
-                    requestedSource = url,
-                )
-            ) {
-                return@launch
-            }
-            requestLargeIconIfNeeded(url)
-        }
-    }
-
-    private fun Bitmap.scaledToMaxDimension(maxDimensionPx: Int): Bitmap {
-        val longestSide = maxOf(width, height)
-        if (longestSide <= maxDimensionPx) {
-            return this
-        }
-
-        val scale = maxDimensionPx.toFloat() / longestSide
-        val scaledWidth = (width * scale).toInt().coerceAtLeast(1)
-        val scaledHeight = (height * scale).toInt().coerceAtLeast(1)
-        return scale(scaledWidth, scaledHeight, true)
-    }
-
-    private fun SongItem?.effectiveCoverSource(): String? {
-        val song = this ?: return null
-        val customCover = song.customCoverUrl
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-            ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
-        val localSong = LocalSongSupport.isLocalSong(song, this@AudioPlayerService)
-        if (localSong) {
-            // 本地歌曲的远端平台封面可能已经失效, 播放时先使用可验证的本地资产
-            customCover?.let { return it }
-            runCatching { AudioDownloadManager.peekLocalCoverUri(song) }
-                .getOrNull()
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?.let { return it }
-            return song.displayCoverUrl(this@AudioPlayerService)
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?.takeUnless { resolveRemoteMetadataArtworkUri(it) != null }
-        }
-        return song.displayCoverUrl(this@AudioPlayerService)?.takeIf { it.isNotBlank() }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -3333,71 +2438,102 @@ class AudioPlayerService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        NPLogger.w(
-            "NERI-APS",
-            "onDestroy ${buildStateSummary()}"
-        )
-        val preservePlaybackForRestart = allowServiceRestart && shouldKeepServiceSticky()
+        NPLogger.w("NERI-APS", "onDestroy ${buildStateSummary()}")
+        val preservePlaybackForRestart = shouldPreservePlaybackForRestart()
         try {
-            isServiceForegroundActive = false
-            isServiceInstanceActive = false
-            idleShutdownCoordinator.cancel()
-            playerInitializationJob?.cancel()
-            playerInitializationJob = null
-            pendingStartCommands.clear()
-            pendingPlayerActions.clear()
-            flushPlaybackStatsSafely("service_destroy", "destroy")
-            if (this::becomingNoisyReceiver.isInitialized) {
-                runCatching { unregisterReceiver(becomingNoisyReceiver) }
-                    .onFailure { NPLogger.w("NERI-APS", "unregisterReceiver failed during destroy", it) }
-            }
-            usbExclusiveKeepAliveJob?.cancel()
-            usbExclusiveKeepAliveJob = null
-            UsbExclusiveBackgroundAudioAnchor.stop("service_destroy")
-            coverResolutionJob?.cancel()
-            coverResolutionJob = null
-            artworkLoadJob?.cancel()
-            artworkLoadJob = null
-            serviceScope.cancel()
-            disableUsbExclusiveMediaSessionVolumeRouting("service_destroy")
-            if (this::mediaSession.isInitialized) {
-                runCatching {
-                    mediaSession.isActive = false
-                    mediaSession.release()
-                }.onFailure { NPLogger.w("NERI-APS", "media session release failed", it) }
-            }
-            if (keepPlayerRuntimeAfterServiceStop) {
-                NPLogger.i("NERI-APS", "Keeping paused player runtime after idle service shutdown")
-            } else if (preservePlaybackForRestart) {
-                runCatching {
-                    PlayerManager.suspendPlaybackForServiceRestart("service_destroy")
-                }.onFailure { error ->
-                    NPLogger.w(
-                        "NERI-APS",
-                        "player suspend failed during restartable destroy",
-                        error
-                    )
-                }
-            } else {
-                runCatching { PlayerManager.release() }
-                    .onFailure { NPLogger.w("NERI-APS", "player release failed during destroy", it) }
-            }
+            releaseServiceOwnedResources()
+            releasePlayerRuntimeAfterServiceStop(preservePlaybackForRestart)
         } finally {
             clearActiveServiceReference()
             playerRuntimeReady = false
             favoriteSongKeys = emptySet()
-            currentMediaArtwork = null
-            currentMediaArtworkOwnerSongKey = null
-            currentMediaArtworkSource = null
-            currentNotificationLargeIcon = null
-            currentNotificationLargeIconOwnerSongKey = null
-            currentNotificationLargeIconSource = null
-            lastArtworkLoadFailedSource = null
-            lastArtworkLoadFailedSongKey = null
-            lastArtworkLoadFailedAtElapsedRealtime = -1L
             shutdownUsbRuntime("service_destroy")
             super.onDestroy()
         }
+    }
+
+    private fun shouldPreservePlaybackForRestart(): Boolean {
+        if (!allowServiceRestart) return false
+        return shouldKeepServiceSticky()
+    }
+
+    private fun releaseServiceOwnedResources() {
+        isServiceForegroundActive = false
+        isServiceInstanceActive = false
+        idleShutdownCoordinator.cancel()
+        cancelPlayerInitializationForDestroy()
+        pendingStartCommands.clear()
+        pendingPlayerActions.clear()
+        flushPlaybackStatsSafely("service_destroy", "destroy")
+        unregisterNoisyReceiverForDestroy()
+        cancelUsbKeepAliveForDestroy()
+        UsbExclusiveBackgroundAudioAnchor.stop("service_destroy")
+        closeArtworkOwnerForDestroy()
+        serviceScope.cancel()
+        disableUsbExclusiveMediaSessionVolumeRouting("service_destroy")
+        releaseMediaSessionForDestroy()
+    }
+
+    private fun cancelPlayerInitializationForDestroy() {
+        playerInitializationJob?.cancel()
+        playerInitializationJob = null
+    }
+
+    private fun cancelUsbKeepAliveForDestroy() {
+        usbExclusiveKeepAliveJob?.cancel()
+        usbExclusiveKeepAliveJob = null
+    }
+
+    private fun unregisterNoisyReceiverForDestroy() {
+        if (!this::becomingNoisyReceiver.isInitialized) return
+        unregisterInitializedNoisyReceiver()
+    }
+
+    private fun unregisterInitializedNoisyReceiver() {
+        runCatching { unregisterReceiver(becomingNoisyReceiver) }
+            .onFailure { NPLogger.w("NERI-APS", "unregisterReceiver failed during destroy", it) }
+    }
+
+    private fun closeArtworkOwnerForDestroy() {
+        if (artworkOwnerDelegate.isInitialized()) artworkOwner.close()
+    }
+
+    private fun releaseMediaSessionForDestroy() {
+        if (!this::mediaSession.isInitialized) return
+        releaseInitializedMediaSession()
+    }
+
+    private fun releaseInitializedMediaSession() {
+        runCatching {
+            mediaSession.isActive = false
+            mediaSession.release()
+        }.onFailure { NPLogger.w("NERI-APS", "media session release failed", it) }
+    }
+
+    private fun releasePlayerRuntimeAfterServiceStop(preservePlaybackForRestart: Boolean) {
+        if (keepPlayerRuntimeAfterServiceStop) {
+            NPLogger.i("NERI-APS", "Keeping paused player runtime after idle service shutdown")
+            return
+        }
+        releasePlayerRuntimeUnlessKept(preservePlaybackForRestart)
+    }
+
+    private fun releasePlayerRuntimeUnlessKept(preservePlaybackForRestart: Boolean) {
+        if (preservePlaybackForRestart) {
+            suspendPlayerRuntimeForRestart()
+        } else {
+            releasePlayerRuntimeForDestroy()
+        }
+    }
+
+    private fun suspendPlayerRuntimeForRestart() {
+        runCatching { PlayerManager.suspendPlaybackForServiceRestart("service_destroy") }
+            .onFailure { NPLogger.w("NERI-APS", "player suspend failed during restartable destroy", it) }
+    }
+
+    private fun releasePlayerRuntimeForDestroy() {
+        runCatching { PlayerManager.release() }
+            .onFailure { NPLogger.w("NERI-APS", "player release failed during destroy", it) }
     }
 
     override fun onTrimMemory(level: Int) {

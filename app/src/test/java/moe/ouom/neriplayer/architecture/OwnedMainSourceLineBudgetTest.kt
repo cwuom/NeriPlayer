@@ -35,7 +35,13 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsPlaybackControlLayout.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsPersonalizationContent.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingPlaybackControls.kt",
-            "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingSecondaryActions.kt"
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/NowPlayingSecondaryActions.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/service/PlaybackArtworkOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/service/PlaybackArtworkPolicies.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/service/PlaybackArtworkSources.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/service/PlaybackCoverSourceResolver.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/service/PlaybackNotificationWidgetPresentation.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/service/PlaybackServiceMetadataPresentation.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

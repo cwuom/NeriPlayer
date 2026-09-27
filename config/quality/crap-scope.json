@@ -21,7 +21,13 @@
     "moe/ouom/neriplayer/ui/screen/tab/SettingsPlaybackControlLayout.kt",
     "moe/ouom/neriplayer/ui/screen/tab/SettingsPersonalizationContent.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingPlaybackControls.kt",
-    "moe/ouom/neriplayer/ui/screen/NowPlayingSecondaryActions.kt"
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSecondaryActions.kt",
+    "moe/ouom/neriplayer/core/player/service/PlaybackArtworkOwner.kt",
+    "moe/ouom/neriplayer/core/player/service/PlaybackArtworkPolicies.kt",
+    "moe/ouom/neriplayer/core/player/service/PlaybackArtworkSources.kt",
+    "moe/ouom/neriplayer/core/player/service/PlaybackCoverSourceResolver.kt",
+    "moe/ouom/neriplayer/core/player/service/PlaybackNotificationWidgetPresentation.kt",
+    "moe/ouom/neriplayer/core/player/service/PlaybackServiceMetadataPresentation.kt"
   ],
   "method_scopes": [
     {
@@ -38,6 +44,52 @@
         "sendVideoComment",
         "sendVideoComment$default",
         "setVideoCommentLiked"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/player/service/AudioPlayerService.kt",
+      "class": "moe.ouom.neriplayer.core.player.service.AudioPlayerService",
+      "methods": [
+        "<init>",
+        "getArtworkOwner",
+        "onArtworkChanged",
+        "buildNotification",
+        "mainActivityPendingIntent",
+        "mediaNotificationBuilder",
+        "addMediaNotificationActions",
+        "playbackControlNotificationAction",
+        "favoriteNotificationAction",
+        "favoriteNotificationIntent",
+        "floatingLyricsNotificationAction",
+        "applyMediaNotificationContent",
+        "applyMediaNotificationTicker",
+        "applyMediaNotificationArtwork",
+        "finishMediaNotification",
+        "applyMediaNotificationLyricFlags",
+        "currentServiceNotificationText",
+        "serviceTimerString",
+        "buildNotificationSnapshot",
+        "updatePlaybackWidget",
+        "updatePlaybackWidget$default",
+        "updatePlaybackWidgetIfChanged",
+        "buildCurrentPlaybackWidgetState",
+        "updateMetadata",
+        "currentAudioDeviceType",
+        "onDestroy",
+        "shouldPreservePlaybackForRestart",
+        "releaseServiceOwnedResources",
+        "unregisterNoisyReceiverForDestroy",
+        "unregisterInitializedNoisyReceiver",
+        "closeArtworkOwnerForDestroy",
+        "releaseMediaSessionForDestroy",
+        "releaseInitializedMediaSession",
+        "releasePlayerRuntimeAfterServiceStop",
+        "releasePlayerRuntimeUnlessKept",
+        "suspendPlayerRuntimeForRestart",
+        "releasePlayerRuntimeForDestroy",
+        "refreshArtworkPresentation",
+        "cancelPlayerInitializationForDestroy",
+        "cancelUsbKeepAliveForDestroy"
       ]
     }
   ]
