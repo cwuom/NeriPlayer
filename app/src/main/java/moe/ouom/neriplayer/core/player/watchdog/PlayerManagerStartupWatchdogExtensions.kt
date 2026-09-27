@@ -137,7 +137,7 @@ internal fun PlayerManager.cancelPlaybackStartupWatchdog(reason: String) {
 }
 
 private fun PlayerManager.shouldWatchPlaybackStartup(): Boolean {
-    if (!initialized || isPendingMediaLoadActive()) return false
+    if (!initialized || !resumePlaybackRequested || isPendingMediaLoadActive()) return false
     if (!isPlayerInitialized()) return false
     if (player.currentMediaItem == null || !player.playWhenReady) return false
     if (_currentSongFlow.value == null) return false

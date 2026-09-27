@@ -32,6 +32,7 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.mergeLocalPlaybackAudioInfoWithRemoteQuality
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshDeferredCompletion
+import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestHandle
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestSemantics
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResultSideEffects
@@ -72,6 +73,7 @@ import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
 import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
 import moe.ouom.neriplayer.listentogether.playback.shouldPreferListenTogetherSourceBeforeNeteaseFallback
 import moe.ouom.neriplayer.listentogether.playback.shouldSuppressListenTogetherResolverError
+import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
 import java.io.File
 
 internal const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"
@@ -871,9 +873,7 @@ internal fun PlayerManager.cancelUrlRefreshIfNotReusableForPendingLoad(
         resumePlaybackAfterRefresh = true,
         resumedPlaybackCommandSource = commandSource
     )
-    if (urlRefreshController.cancelIfNotReusable(semantics)) {
-        urlRefreshInProgress = false
-    }
+    urlRefreshController.cancelIfNotReusable(semantics)
 }
 
 internal fun PlayerManager.refreshCurrentSongUrlImpl(
@@ -945,101 +945,102 @@ internal fun PlayerManager.refreshCurrentSongUrlImpl(
     lastUrlRefreshKey = cacheKey
     lastUrlRefreshAtMs = now
 
-    var refreshJob: kotlinx.coroutines.Job? = null
-    var refreshDeferred: CompletableDeferred<SongUrlResult>? = null
     val start = urlRefreshController.startOrReuse(
         semantics = semantics,
-        start = {
+        start = { request ->
             val deferred = CompletableDeferred<SongUrlResult>()
-            refreshDeferred = deferred
             val job = ioScope.launch(start = CoroutineStart.LAZY) {
                 runRefreshOperation(
-                    semantics = semantics,
+                    request = request,
                     song = song,
                     deferred = deferred
                 )
             }
-            refreshJob = job
             PlayerManager.UrlRefreshOperation(
-                semantics = semantics,
                 deferred = deferred,
                 job = job
             )
         },
-        cancel = {
-            refreshJob?.cancel()
-            refreshDeferred?.let { RefreshDeferredCompletion(it).cancel() }
-        },
-        fallback = {}
+        cancel = { operation ->
+            operation.job.cancel()
+            RefreshDeferredCompletion(operation.deferred).cancel()
+        }
     )
     if (!start.startedNew) {
         ioScope.launch {
-            runCatching { start.operation.deferred.await() }
+            runCatchingNonCancellation { start.operation.deferred.await() }
         }
         return
     }
-    if (!urlRefreshController.isCurrent(semantics)) {
-        start.operation.job.cancel()
-        RefreshDeferredCompletion(start.operation.deferred).cancel()
+    val operation = start.operation
+    operation.job.invokeOnCompletion { cause ->
+        urlRefreshController.clear(start.request)
+        // lazy 任务可能在进入协程体之前取消，此时也要结束等待结果的请求
+        if (!operation.deferred.isCompleted) {
+            when (cause) {
+                null, is CancellationException -> RefreshDeferredCompletion(operation.deferred)
+                    .cancel(cause)
+                else -> RefreshDeferredCompletion(operation.deferred).completeExceptionally(cause)
+            }
+        }
+    }
+    if (!urlRefreshController.isCurrent(start.request)) {
+        operation.job.cancel()
+        RefreshDeferredCompletion(operation.deferred).cancel()
         return
     }
-    urlRefreshInProgress = true
-    start.operation.job.start()
+    operation.job.start()
 }
 
 private suspend fun PlayerManager.runRefreshOperation(
-    semantics: RefreshRequestSemantics,
+    request: RefreshRequestHandle,
     song: SongItem,
     deferred: CompletableDeferred<SongUrlResult>
 ) {
+    val semantics = request.semantics
     try {
         NPLogger.d("NERI-PlayerManager", "Refreshing stream url (${semantics.reason}): ${semantics.songKey}")
         semantics.cacheKeyToInvalidateBeforeResolve?.let { staleCacheKey ->
             invalidateCachedResourceBeforeResolve(
                 cacheKey = staleCacheKey,
                 reason = semantics.reason,
-                shouldApplyMutation = { canApplyRefreshResult(semantics, song) }
+                shouldApplyMutation = { canApplyRefreshResult(request, song) }
             )
         }
         val result = resolveSongUrl(
             song = song,
             forceRefresh = isYouTubeMusicTrack(song),
             youtubeRecoveryStrategy = semantics.youtubeRecoveryStrategy,
-            sideEffects = RefreshResolverSideEffects(refreshSideEffectGate(semantics, song)),
+            sideEffects = RefreshResolverSideEffects(refreshSideEffectGate(request, song)),
             playbackRequestTokenOverride = semantics.requestGeneration,
-            shouldApplyCacheMutation = { canApplyRefreshResult(semantics, song) }
+            shouldApplyCacheMutation = { canApplyRefreshResult(request, song) }
         )
         deferred.complete(result)
-        handleRefreshResult(semantics, song, result)
+        handleRefreshResult(request, song, result)
     } catch (error: CancellationException) {
         RefreshDeferredCompletion(deferred).cancel(error)
+        throw error
     } catch (error: Exception) {
         RefreshDeferredCompletion(deferred).completeExceptionally(error)
         NPLogger.e("NERI-PlayerManager", "refresh stream url failed (${semantics.reason})", error)
-        handleRefreshResult(semantics, song, SongUrlResult.Failure)
-    } finally {
-        if (urlRefreshController.isCurrent(semantics)) {
-            urlRefreshController.clear(semantics)
-            urlRefreshInProgress = false
-        } else {
-            urlRefreshController.clear(semantics)
-        }
+        handleRefreshResult(request, song, SongUrlResult.Failure)
     }
 }
 
 private suspend fun PlayerManager.handleRefreshResult(
-    semantics: RefreshRequestSemantics,
+    request: RefreshRequestHandle,
     song: SongItem,
     result: SongUrlResult
 ) {
-    val accepted = canApplyRefreshResult(semantics, song)
+    val semantics = request.semantics
+    val accepted = canApplyRefreshResult(request, song)
     when {
         result is SongUrlResult.Success -> {
             val action = resolveRefreshApplyAction(
                 accepted = accepted,
                 resultKind = RefreshResultKind.SUCCESS
             )
-            val gate = refreshSideEffectGate(semantics, song)
+            val gate = refreshSideEffectGate(request, song)
             if (!action.updateDuration ||
                 !RefreshResultSideEffects(gate).updateDuration {
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
@@ -1082,7 +1083,7 @@ private suspend fun PlayerManager.handleRefreshResult(
             )
             if (action.fallbackPlayPause) {
                 withContext(Dispatchers.Main) {
-                    val gate = refreshSideEffectGate(semantics, song)
+                    val gate = refreshSideEffectGate(request, song)
                     val resolvedSeekPositionMs = semantics.fallbackSeekPositionMs?.coerceAtLeast(0L)
                     if (resolvedSeekPositionMs != null) {
                         if (!gate.runMutation {
@@ -1110,14 +1111,14 @@ private suspend fun PlayerManager.handleRefreshResult(
                 resultKind = RefreshResultKind.FAILURE
             )
             if (!action.emitFailureError) return
-            val gate = refreshSideEffectGate(semantics, song)
+            val gate = refreshSideEffectGate(request, song)
             if (!gate.runMutation { clearPendingSeekPosition() }) return
             if (!gate.runMutation {
                     postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.player_playback_network_error)))
                 }
             ) return
             withContext(Dispatchers.Main) {
-                refreshSideEffectGate(semantics, song).runMutation {
+                refreshSideEffectGate(request, song).runMutation {
                     pause(commandSource = PlaybackCommandSource.REMOTE_SYNC)
                 }
             }
@@ -1126,20 +1127,21 @@ private suspend fun PlayerManager.handleRefreshResult(
 }
 
 private fun PlayerManager.refreshSideEffectGate(
-    semantics: RefreshRequestSemantics,
+    request: RefreshRequestHandle,
     song: SongItem
-) = RefreshSideEffectGate { canApplyRefreshResult(semantics, song) }
+) = RefreshSideEffectGate { canApplyRefreshResult(request, song) }
 
 private fun PlayerManager.canApplyRefreshResult(
-    semantics: RefreshRequestSemantics,
+    request: RefreshRequestHandle,
     song: SongItem
 ): Boolean {
+    val semantics = request.semantics
     return _currentSongFlow.value?.sameIdentityAs(song) == true &&
         shouldApplyRefreshResult(
             owner = semantics,
             current = semantics.copy(requestGeneration = playbackRequestToken),
             currentRequestGeneration = playbackRequestToken,
-            ownerActive = urlRefreshController.isCurrent(semantics)
+            ownerActive = urlRefreshController.isCurrent(request)
         )
 }
 

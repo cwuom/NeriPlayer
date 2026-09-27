@@ -149,7 +149,7 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
 private fun PlayerManager.shouldWatchRuntimePlayback(): Boolean {
     if (!initialized || !isPlayerInitialized() || isPendingMediaLoadActive()) return false
     if (_currentSongFlow.value == null || player.currentMediaItem == null) return false
-    if (urlRefreshInProgress) return false
+    if (urlRefreshController.currentSemantics() != null) return false
     if (!resumePlaybackRequested || !player.playWhenReady) return false
     if (!playbackProgressAdvanceReported) return false
     return player.playbackState == Player.STATE_READY ||

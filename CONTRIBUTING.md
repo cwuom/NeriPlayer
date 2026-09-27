@@ -274,6 +274,18 @@
     UI 重排只提供顺序，歌曲内容取自最新队列；重复歌曲无法准确对应时拒绝旧请求并刷新界面。
     恢复洗牌前顺序时若歌曲集合已改变或副本对应存在歧义，保留当前队列。
     队列事务保证列表与索引一致；当前歌曲 Flow 和 Media3 副作用的线程边界仍需单独检查。
+  - `persistence/PlaybackStatePersistenceCoordinator.kt` 统一管理保存请求与延迟任务。
+    在同步事件入口调用 `prepareStatePersist` 或 `scheduleStatePersist`，先捕获完整快照并签发请求，
+    再等待统计落盘或其它异步工作；写入串行执行，排队期间被替代的请求不再写入。
+    `PlaybackStateWriter` 只确认实际成功的后端；JSON 回退后必须完整写回 Room，才能恢复增量保存。
+    协程取消继续向上传播，释放播放器会关闭保存请求入口；存储完成回调不修改当前播放状态。
+    `RestoredPlaybackState` 表达无恢复、保留暂停进度、待自动恢复三种状态，禁止独立修改恢复进度与标记。
+  - URL 刷新的活动状态只由 `RefreshInFlightController` 持有。
+    参数相同可以复用活动任务；写回、完成和取消使用该任务的 `RefreshRequestHandle` 身份，
+    避免旧任务影响参数相同的新任务。看门狗直接读取控制器，不另存“正在刷新”标记。
+    任务完成清理要覆盖 lazy 协程尚未执行就被取消的情况。
+    播放意图通过 `updateResumePlaybackRequested` 修改并撤销冲突刷新；音质刷新在主线程内
+    同步采集当前状态和创建请求，避免捕获旧意图后跨线程读取新代次。
   - `timer/SleepTimerManager.kt`：睡眠定时器。
   - `engine/datasource/ConditionalHttpDataSourceFactory.kt`：为特定域名动态附加 Header。
   - `watchdog/PlayerManagerStartupWatchdogExtensions.kt`、

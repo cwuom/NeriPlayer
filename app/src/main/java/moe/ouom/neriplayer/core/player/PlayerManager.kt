@@ -61,7 +61,6 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
@@ -89,7 +88,6 @@ import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PreferredQualityKeys
 import moe.ouom.neriplayer.core.player.model.forSource
@@ -100,6 +98,7 @@ import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayState
 import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.model.PlayerQueueStateStore
+import moe.ouom.neriplayer.core.player.model.RestoredPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
@@ -120,7 +119,6 @@ import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshInFlightController
-import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestSemantics
 import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
 import moe.ouom.neriplayer.core.player.policy.storage.resolveRestorableLocalMediaState
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationCoordinator
@@ -187,6 +185,10 @@ import moe.ouom.neriplayer.core.player.persistence.getTranslatedLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.hasItemsImpl
 import moe.ouom.neriplayer.core.player.persistence.hydrateSongMetadataImpl
 import moe.ouom.neriplayer.core.player.persistence.persistStateImpl
+import moe.ouom.neriplayer.core.player.persistence.PlaybackStatePersistenceCoordinator
+import moe.ouom.neriplayer.core.player.persistence.PlaybackStatePersistenceSnapshot
+import moe.ouom.neriplayer.core.player.persistence.PlaybackStateWriter
+import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.persistence.playBiliVideoAsAudioImpl
 import moe.ouom.neriplayer.core.player.persistence.playFromQueueImpl
 import moe.ouom.neriplayer.core.player.persistence.rebaseUserLyricOffsetsForSourceImpl
@@ -254,6 +256,7 @@ import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 
 internal const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
@@ -554,10 +557,7 @@ object PlayerManager {
     internal const val QUALITY_CHANGE_REFRESH_DEBOUNCE_MS = 0L
     internal const val MIN_FADE_STEPS = 4
     internal const val MAX_FADE_STEPS = 30
-    @Volatile
-    internal var urlRefreshInProgress = false
     internal data class UrlRefreshOperation(
-        val semantics: RefreshRequestSemantics,
         val deferred: CompletableDeferred<SongUrlResult>,
         val job: Job
     )
@@ -570,21 +570,42 @@ object PlayerManager {
     internal var lastUrlRefreshAtMs: Long = 0L
     internal var currentMediaUrlResolvedAtMs: Long = 0L
     internal var currentPlaybackDemandCacheKey: String? = null
-    internal var restoredResumePositionMs: Long = 0L
-    internal var restoredShouldResumePlayback = false
+    private val restoredPlayback = AtomicReference<RestoredPlaybackState>(RestoredPlaybackState.None)
+    internal val restoredResumePositionMs: Long
+        get() = restoredPlayback.get().positionMs
+    internal val restoredShouldResumePlayback: Boolean
+        get() = restoredPlayback.get() is RestoredPlaybackState.ResumePending
+
+    internal fun restoredPlaybackSnapshot(): RestoredPlaybackState = restoredPlayback.get()
+
+    internal fun setRestoredPlayback(positionMs: Long, shouldResume: Boolean) {
+        restoredPlayback.set(RestoredPlaybackState.from(positionMs, shouldResume))
+    }
+
+    internal fun clearRestoredPlayback() {
+        restoredPlayback.set(RestoredPlaybackState.None)
+    }
+
+    internal fun consumeRestoredPlayback(expected: RestoredPlaybackState): Boolean =
+        restoredPlayback.compareAndSet(expected, RestoredPlaybackState.None)
+
+    internal fun suppressRestoredAutoResume() {
+        restoredPlayback.updateAndGet { it.withoutAutoResume() }
+    }
+
+    @Volatile
     internal var lastStatePersistAtMs: Long = 0L
-    internal var lastPersistedPlaylistReference: List<SongItem>? = null
-    internal var lastPersistedPlaybackState: PersistedPlaybackState? = null
-    internal var scheduledStatePersistJob: Job? = null
+    internal val statePersistenceCoordinator = PlaybackStatePersistenceCoordinator<PlaybackStatePersistenceSnapshot>()
+    internal val statePersistenceWriter = PlaybackStateWriter()
     internal var lastLongFormPlaybackProgressPersistAtMs: Long = 0L
     internal var lastAutoTrackAdvanceAtMs: Long = 0L
     @Volatile
     internal var lastUsbExclusiveFocusDisruptionAtMs: Long = 0L
-    internal val statePersistMutex = Mutex()
     @Volatile
     internal var resumePlaybackRequested = false
-        set(value) {
+        private set(value) {
             field = value
+            urlRefreshController.cancelIfPlaybackIntentChanged(value)
             syncPlaybackControlPlayingState()
         }
     @Volatile
@@ -1280,6 +1301,7 @@ object PlayerManager {
         cancelPendingPauseRequest(resetVolumeToFull = true)
         clearListenTogetherSafetyPause()
         playbackRequestToken += 1
+        urlRefreshController.cancelCurrent()
         cancelPlaybackStartupWatchdog(reason = "listen_together_reset")
         clearActivePlaybackCandidates()
         playJob?.cancel()
@@ -1289,8 +1311,7 @@ object PlayerManager {
         currentYouTubePrefetchJob = null
         currentYouTubePrefetchVideoIds = emptySet()
         updateResumePlaybackRequested(false)
-        restoredShouldResumePlayback = false
-        restoredResumePositionMs = 0L
+        clearRestoredPlayback()
         stopProgressUpdates()
         cancelVolumeFade(resetToFull = true)
         persistCurrentLongFormPlaybackProgress()
@@ -1307,9 +1328,7 @@ object PlayerManager {
         shuffleRestoreCurrentIndex = -1
         consecutivePlayFailures = 0
         NPLogger.d("NERI-PlayerManager", "resetForListenTogetherJoin(): state cleared")
-        ioScope.launch {
-            persistState(positionMs = 0L, shouldResumePlayback = false)
-        }
+        scheduleStatePersist(positionMs = 0L, shouldResumePlayback = false, debounceMs = 0L)
     }
 
     internal fun pendingSeekPositionOrNull(): Long? {
@@ -1608,13 +1627,6 @@ object PlayerManager {
         return song.channelId == ListenTogetherChannels.BILIBILI ||
             song.album.startsWith(BILI_SOURCE_TAG)
     }
-    internal fun shouldPersistEmbeddedLyrics(song: SongItem): Boolean {
-        return song.matchedLyric != null ||
-            song.matchedTranslatedLyric != null ||
-            song.originalLyric != null ||
-            song.originalTranslatedLyric != null
-    }
-
     internal fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
     }
@@ -1775,7 +1787,7 @@ object PlayerManager {
         }
 
         if (changed) {
-            ioScope.launch { persistState() }
+            scheduleStatePersist(debounceMs = 0L)
         }
     }
 
@@ -2089,23 +2101,24 @@ object PlayerManager {
         source: PlaybackAudioSource,
         reason: String
     ) {
-        val currentAudioInfo = _currentPlaybackAudioInfo.value ?: return
-        if (currentAudioInfo.source != source) return
-        val currentSong = _currentSongFlow.value ?: return
-        if (isLocalSong(currentSong)) return
+        withContext(Dispatchers.Main) {
+            val currentAudioInfo = _currentPlaybackAudioInfo.value ?: return@withContext
+            if (currentAudioInfo.source != source) return@withContext
+            val currentSong = _currentSongFlow.value ?: return@withContext
+            if (isLocalSong(currentSong)) return@withContext
 
-        val (positionMs, shouldResumePlaybackAfterRefresh) = withContext(Dispatchers.Main) {
-            player.currentPosition.coerceAtLeast(0L) to (player.playWhenReady || player.isPlaying)
+            // 捕获和签发请求在同一次主线程执行中完成，避免旧意图绑定到新的播放代次
+            val positionMs = player.currentPosition.coerceAtLeast(0L)
+            refreshCurrentSongUrl(
+                resumePositionMs = positionMs,
+                allowFallback = true,
+                reason = reason,
+                bypassCooldown = true,
+                fallbackSeekPositionMs = positionMs,
+                resumePlaybackAfterRefresh = resumePlaybackRequested,
+                resumedPlaybackCommandSource = activePlaybackCommandSource
+            )
         }
-        refreshCurrentSongUrl(
-            resumePositionMs = positionMs,
-            allowFallback = true,
-            reason = reason,
-            bypassCooldown = true,
-            fallbackSeekPositionMs = positionMs,
-            resumePlaybackAfterRefresh = shouldResumePlaybackAfterRefresh,
-            resumedPlaybackCommandSource = activePlaybackCommandSource
-        )
     }
 
     internal fun postPlayerEvent(event: PlayerEvent) {

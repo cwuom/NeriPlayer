@@ -62,26 +62,25 @@ class RefreshMediaLoadPolicyTest {
 
     @Test
     fun `new pending load cancels in flight refresh when generation changes`() {
-        val decision = resolveRefreshInFlightDecision(
-            owner = RefreshInFlightOwner(
-                semantics = refreshSemantics(requestGeneration = 10L),
-                isActive = true
-            ),
-            incoming = refreshSemantics(requestGeneration = 11L)
-        )
+        val controller = RefreshInFlightController<String>()
+        var cancellations = 0
+        val old = controller.startOrReuse(refreshSemantics(requestGeneration = 10L), { "old" }, { cancellations++ })
+        val current = controller.startOrReuse(refreshSemantics(requestGeneration = 11L), { "current" }, {})
 
-        assertEquals(RefreshInFlightDecision.CancelExistingAndStartNew, decision)
+        assertEquals(1, cancellations)
+        assertFalse(controller.isCurrent(old.request))
+        assertTrue(controller.isCurrent(current.request))
     }
 
     @Test
     fun `same semantics refresh request reuses in flight owner`() {
         val semantics = refreshSemantics()
-        val decision = resolveRefreshInFlightDecision(
-            owner = RefreshInFlightOwner(semantics = semantics, isActive = true),
-            incoming = semantics
-        )
+        val controller = RefreshInFlightController<String>()
+        val started = controller.startOrReuse(semantics, { "started" }, {})
+        val reused = controller.startOrReuse(semantics, { "unexpected" }, {})
 
-        assertEquals(RefreshInFlightDecision.ReuseExisting, decision)
+        assertFalse(reused.startedNew)
+        assertSame(started.request, reused.request)
     }
 
     @Test
@@ -108,30 +107,30 @@ class RefreshMediaLoadPolicyTest {
         )
 
         differentSemantics.forEach { incoming ->
-            assertEquals(
-                RefreshInFlightDecision.CancelExistingAndStartNew,
-                resolveRefreshInFlightDecision(
-                    owner = RefreshInFlightOwner(owner, isActive = true),
-                    incoming = incoming
-                )
-            )
+            val controller = RefreshInFlightController<String>()
+            var cancellations = 0
+            val old = controller.startOrReuse(owner, { "old" }, { cancellations++ })
+            val current = controller.startOrReuse(incoming, { "current" }, {})
+
+            assertEquals(1, cancellations)
+            assertTrue(current.startedNew)
+            assertFalse(controller.isCurrent(old.request))
+            assertTrue(controller.isCurrent(current.request))
         }
     }
 
     @Test
-    fun `production refresh gate reuses existing operation without duplicate start or fallback`() {
+    fun `production refresh gate reuses existing request and operation without duplicate start`() {
         val controller = RefreshInFlightController<String>()
         val semantics = refreshSemantics()
         var starts = 0
-        var fallbackCalls = 0
         val started = controller.startOrReuse(
             semantics = semantics,
             start = {
                 starts++
                 "operation"
             },
-            cancel = {},
-            fallback = { fallbackCalls++ }
+            cancel = {}
         )
 
         val reused = controller.startOrReuse(
@@ -140,15 +139,14 @@ class RefreshMediaLoadPolicyTest {
                 starts++
                 "duplicate"
             },
-            cancel = {},
-            fallback = { fallbackCalls++ }
+            cancel = {}
         )
 
         assertEquals(1, starts)
-        assertEquals(0, fallbackCalls)
         assertTrue(started.startedNew)
         assertFalse(reused.startedNew)
         assertSame(started.operation, reused.operation)
+        assertSame(started.request, reused.request)
     }
 
     @Test
@@ -158,15 +156,13 @@ class RefreshMediaLoadPolicyTest {
         controller.startOrReuse(
             semantics = refreshSemantics(requestGeneration = 10L),
             start = { "old" },
-            cancel = { cancels++ },
-            fallback = {}
+            cancel = { cancels++ }
         )
 
         val replacement = controller.startOrReuse(
             semantics = refreshSemantics(requestGeneration = 11L),
             start = { "new" },
-            cancel = { cancels++ },
-            fallback = {}
+            cancel = { cancels++ }
         )
 
         assertEquals(1, cancels)
@@ -183,8 +179,7 @@ class RefreshMediaLoadPolicyTest {
         controller.startOrReuse(
             semantics = oldSemantics,
             start = { deferred },
-            cancel = { RefreshDeferredCompletion(deferred).cancel() },
-            fallback = {}
+            cancel = { RefreshDeferredCompletion(it).cancel() }
         )
 
         val cancelled = controller.cancelIfNotReusable(refreshSemantics(requestGeneration = 11L))
@@ -192,6 +187,59 @@ class RefreshMediaLoadPolicyTest {
         assertTrue(cancelled)
         assertTrue(deferred.isCancelled)
         assertEquals(null, controller.currentSemantics())
+    }
+
+    @Test
+    fun `old completion cannot clear a new request with the same parameters`() {
+        val controller = RefreshInFlightController<String>()
+        val semantics = refreshSemantics()
+        val old = controller.startOrReuse(semantics, { "old" }, {})
+        controller.cancelIfNotReusable(semantics.copy(reason = "replace"))
+        val current = controller.startOrReuse(semantics, { "new" }, {})
+
+        controller.clear(old.request)
+
+        assertFalse(controller.isCurrent(old.request))
+        assertTrue(controller.isCurrent(current.request))
+    }
+
+    @Test
+    fun `failed replacement cannot leave the cancelled operation reusable`() {
+        val controller = RefreshInFlightController<String>()
+        val semantics = refreshSemantics()
+        var cancellations = 0
+        controller.startOrReuse(semantics, { "cancelled" }, { cancellations++ })
+
+        val failed = runCatching {
+            controller.startOrReuse(semantics.copy(reason = "replace"), { error("cannot start") }, {})
+        }
+        val retry = controller.startOrReuse(semantics, { "retry" }, {})
+
+        assertTrue(failed.isFailure)
+        assertEquals(1, cancellations)
+        assertEquals("retry", retry.operation)
+        assertTrue(retry.startedNew)
+    }
+
+    @Test
+    fun `release clears ownership before cancellation callbacks and can be repeated`() {
+        val controller = RefreshInFlightController<String>()
+        var cancellations = 0
+        val started = controller.startOrReuse(
+            semantics = refreshSemantics(),
+            start = { "active" },
+            cancel = {
+                assertEquals("active", it)
+                assertEquals(null, controller.currentSemantics())
+                cancellations++
+            }
+        )
+
+        controller.cancelCurrent()
+        controller.cancelCurrent()
+
+        assertEquals(1, cancellations)
+        assertFalse(controller.isCurrent(started.request))
     }
 
     @Test
@@ -218,13 +266,51 @@ class RefreshMediaLoadPolicyTest {
             resumePlaybackAfterRefresh = false
         )
 
-        assertEquals(
-            RefreshInFlightDecision.CancelExistingAndStartNew,
-            resolveRefreshInFlightDecision(
-                owner = RefreshInFlightOwner(oldIntent, isActive = true),
-                incoming = currentIntent
-            )
+        val controller = RefreshInFlightController<String>()
+        val old = controller.startOrReuse(oldIntent, { "old" }, {})
+        val current = controller.startOrReuse(currentIntent, { "current" }, {})
+
+        assertTrue(current.startedNew)
+        assertFalse(controller.isCurrent(old.request))
+        assertTrue(controller.isCurrent(current.request))
+    }
+
+    @Test
+    fun `manual play invalidates the pending quality refresh that captured a paused player`() {
+        assertChangedIntentRejectsOldRefresh(capturedIntent = false, currentIntent = true)
+    }
+
+    @Test
+    fun `pause invalidates a quality refresh before its queued result is applied`() {
+        assertChangedIntentRejectsOldRefresh(capturedIntent = true, currentIntent = false)
+    }
+
+    @Test
+    fun `repeating the same playback intent keeps its refresh request`() {
+        val controller = RefreshInFlightController<String>()
+        val current = controller.startOrReuse(refreshSemantics(resumePlaybackAfterRefresh = true), { "current" }, {})
+
+        assertFalse(controller.cancelIfPlaybackIntentChanged(true))
+        assertTrue(controller.isCurrent(current.request))
+    }
+
+    private fun assertChangedIntentRejectsOldRefresh(capturedIntent: Boolean, currentIntent: Boolean) {
+        val controller = RefreshInFlightController<String>()
+        var cancellations = 0
+        val old = controller.startOrReuse(
+            refreshSemantics(resumePlaybackAfterRefresh = capturedIntent),
+            { "quality refresh" },
+            { cancellations++ }
         )
+        val oldResult = RefreshSideEffectGate { controller.isCurrent(old.request) }
+        var playing = currentIntent
+
+        assertTrue(controller.cancelIfPlaybackIntentChanged(currentIntent))
+        assertFalse(oldResult.runMutation { playing = capturedIntent })
+
+        assertEquals(currentIntent, playing)
+        assertEquals(1, cancellations)
+        assertFalse(controller.isCurrent(old.request))
     }
 
     @Test

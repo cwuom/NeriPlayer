@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerRepeatAllShuffleOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
+import moe.ouom.neriplayer.core.player.persistence.prepareStatePersist
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackStartPlan
@@ -323,6 +324,7 @@ private fun PlayerManager.persistPausedPlaybackState(
         )
         return
     }
+    val request = prepareStatePersist(positionMs, shouldResumePlayback) ?: return
     ioScope.launch {
         try {
             runCatching { drainPlaybackStatsPersistJobBlocking(reason) }
@@ -333,11 +335,7 @@ private fun PlayerManager.persistPausedPlaybackState(
                         error
                     )
                 }
-            persistStateNow(
-                positionMs = positionMs,
-                shouldResumePlayback = shouldResumePlayback,
-                reason = reason
-            )
+            persistStateNow(request, reason)
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -883,8 +881,7 @@ internal fun PlayerManager.playAtIndex(
     currentMediaUrlResolvedAtMs = 0L
     updateResumePlaybackRequested(!startPaused)
     clearUsbExclusiveInterruptedPlaybackIntent("play_at_index")
-    restoredShouldResumePlayback = false
-    restoredResumePositionMs = 0L
+    clearRestoredPlayback()
     scheduleStatePersist(
         positionMs = resolvedResumePositionMs,
         shouldResumePlayback = !startPaused
@@ -1526,8 +1523,7 @@ internal fun PlayerManager.pauseImpl(
     if (!initialized) return
     val internalUsbTransition = debugReason.startsWith("usb_toggle_")
     if (!internalUsbTransition && shouldBlockLocalRoomControl(commandSource)) return
-    restoredShouldResumePlayback = false
-    restoredResumePositionMs = 0L
+    clearRestoredPlayback()
     if (isPendingMediaLoadActive()) {
         val action = resolvePendingPauseAction(
             pendingLoadActive = true,
@@ -2031,7 +2027,7 @@ internal fun PlayerManager.setShuffleImpl(
             val hadRestoreSnapshot = shuffleRestorePlaylistReference != null
             clearShuffleRestoreQueueSnapshot()
             if (hadRestoreSnapshot) {
-                lastPersistedPlaylistReference = null
+                statePersistenceWriter.invalidate()
                 scheduleStatePersist()
             }
         }
@@ -2058,8 +2054,8 @@ internal fun PlayerManager.setShuffleImpl(
         }
         player.shuffleModeEnabled = false
     }
-    scheduleStatePersist()
     _shuffleModeFlow.value = enabled
+    scheduleStatePersist()
     emitPlaybackCommand(
         type = "PLAYBACK_MODE",
         source = commandSource,
@@ -2355,6 +2351,7 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     clearPendingSeekPosition()
     _playbackPositionMs.value = 0L
     if (currentPlaylist.isEmpty()) {
+        clearRestoredPlayback()
         currentIndex = -1
         setCurrentSongForPlayback(null)
         _currentMediaUrl.value = null
