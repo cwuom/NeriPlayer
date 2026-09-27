@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
@@ -76,6 +77,12 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
                 val uuid = UUID.fromString(workId)
                 if (workManager.getWorkInfoById(uuid).get()?.state?.isFinished == false) {
                     workManager.cancelWorkById(uuid).result.get(5, TimeUnit.SECONDS)
+                }
+                // 取消请求完成后仍需等待 doWork 释放迁移会话
+                withTimeout(MIGRATION_WORKER_STOP_TIMEOUT_MS) {
+                    while (ManagedDownloadStorage.migrationProgressSession.isOwner(workId)) {
+                        delay(50.milliseconds)
+                    }
                 }
                 val cleared = ManagedDownloadMigrationCheckpointStore(appContext)
                     .clearCompletedIfCurrent(workId, listOf(workId))
@@ -830,5 +837,6 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     private companion object {
         const val MIGRATION_TEST_TAG = "ManagedDownloadMigrationTest"
         const val MIGRATION_WORKER_TIMEOUT_MS = 45_000L
+        const val MIGRATION_WORKER_STOP_TIMEOUT_MS = 15_000L
     }
 }

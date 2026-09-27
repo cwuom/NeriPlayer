@@ -1079,7 +1079,7 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
     }
 
     @Test
-    fun `legacy upgrade remains visible until a rebuilt catalog is published`() {
+    fun `scan completion only releases legacy upgrade processing`() {
         assertTrue(
             GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
                 ManagedLibraryProcessingState.Running(
@@ -1104,6 +1104,24 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
                     operationId = "legacy",
                     reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
                     phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE
+                )
+            )
+        )
+        assertFalse(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.Running(
+                    operationId = "migration",
+                    reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+                    phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+                )
+            )
+        )
+        assertFalse(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.WaitingForRetry(
+                    operationId = "migration",
+                    reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+                    phase = ManagedLibraryProcessingPhase.WAITING_FOR_RETRY
                 )
             )
         )

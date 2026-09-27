@@ -82,15 +82,12 @@ internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
 internal fun GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublishImpl(
     state: ManagedLibraryProcessingState
 ): Boolean {
+    // 目录切换由发起者校验目标后结束，扫描器只负责旧库升级的完成信号
     return when (state) {
         is ManagedLibraryProcessingState.Running ->
             state.phase == ManagedLibraryProcessingPhase.REBUILDING_INDEX &&
-                (
-                    state.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE ||
-                        state.reason == ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE
-                    )
-        is ManagedLibraryProcessingState.WaitingForRetry ->
-            state.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE
+                state.reason == ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE
+        is ManagedLibraryProcessingState.WaitingForRetry,
         ManagedLibraryProcessingState.Idle -> false
     }
 }
