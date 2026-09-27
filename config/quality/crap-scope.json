@@ -30,7 +30,11 @@
     "moe/ouom/neriplayer/core/player/service/PlaybackArtworkSources.kt",
     "moe/ouom/neriplayer/core/player/service/PlaybackCoverSourceResolver.kt",
     "moe/ouom/neriplayer/core/player/service/PlaybackNotificationWidgetPresentation.kt",
-    "moe/ouom/neriplayer/core/player/service/PlaybackServiceMetadataPresentation.kt"
+    "moe/ouom/neriplayer/core/player/service/PlaybackServiceMetadataPresentation.kt",
+    "moe/ouom/neriplayer/core/player/service/UsbExclusiveServiceKeepAliveOwner.kt",
+    "moe/ouom/neriplayer/core/player/service/AndroidUsbExclusiveKeepAlivePort.kt",
+    "moe/ouom/neriplayer/core/player/service/UsbExclusiveMediaSessionVolumeRouter.kt",
+    "moe/ouom/neriplayer/core/player/service/AndroidUsbExclusiveVolumeRoutingPort.kt"
   ],
   "method_scopes": [
     {
@@ -55,6 +59,7 @@
       "methods": [
         "<init>",
         "getArtworkOwner",
+        "getUsbVolumeRouter",
         "onArtworkChanged",
         "buildNotification",
         "mainActivityPendingIntent",
@@ -92,7 +97,30 @@
         "releasePlayerRuntimeForDestroy",
         "refreshArtworkPresentation",
         "cancelPlayerInitializationForDestroy",
-        "cancelUsbKeepAliveForDestroy"
+        "cancelUsbKeepAliveForDestroy",
+        "updateUsbExclusiveBackgroundAudioAnchor",
+        "updateUsbExclusiveServiceKeepAlive",
+        "requestUsbExclusiveBackgroundForegroundReassert",
+        "updateMediaSessionVolumeRouting",
+        "disableUsbExclusiveMediaSessionVolumeRouting",
+        "releaseServiceResourcesAfterForegroundFailure",
+        "cancelUsbKeepAliveAfterForegroundFailure",
+        "releaseMediaSessionAfterForegroundFailure",
+        "releaseInitializedMediaSessionAfterForegroundFailure",
+        "releasePlayerAfterForegroundFailure",
+        "releasePlayerRuntimeAfterForegroundFailure"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/player/service/AudioPlayerService.kt",
+      "class": "moe.ouom.neriplayer.core.player.service.AudioPlayerService$UsbKeepAliveHost",
+      "methods": [
+        "<init>",
+        "foregroundStarted",
+        "reassertForeground",
+        "ensureForeground",
+        "onForegroundFailure",
+        "updatePlaybackPresentation"
       ]
     }
   ]
