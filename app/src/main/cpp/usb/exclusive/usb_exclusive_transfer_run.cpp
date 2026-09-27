@@ -49,6 +49,40 @@
 
 namespace neri::usb::exclusive {
 
+int64_t steadyClockNanoseconds() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()
+    ).count();
+}
+
+int exponentialBackoffMs(int consecutiveErrors) {
+    const int shift = std::min(std::max(0, consecutiveErrors - 1), 6);
+    return std::min(
+        kEventLoopErrorBackoffMaxMs,
+        kEventLoopErrorBackoffBaseMs << shift
+    );
+}
+
+timeval timeoutFromMilliseconds(int timeoutMs) {
+    const int boundedTimeoutMs = std::max(0, timeoutMs);
+    timeval timeout {};
+    timeout.tv_sec = boundedTimeoutMs / 1000;
+    timeout.tv_usec = (boundedTimeoutMs % 1000) * 1000;
+    return timeout;
+}
+
+bool shouldLogRepeatedError(int consecutiveErrors) {
+    return consecutiveErrors <= 3 ||
+        (consecutiveErrors & (consecutiveErrors - 1)) == 0 ||
+        consecutiveErrors == kEventLoopConsecutiveErrorLimit;
+}
+
+const char* libusbErrName(int rc) {
+    return libusb_error_name(rc);
+}
+
+
+
 bool allocateTransfers(UsbExclusiveHandle* handle);
 bool refillTransfer(UsbExclusiveHandle* handle, libusb_transfer* transfer);
 void eventLoopThread(UsbExclusiveHandle* handle) noexcept;

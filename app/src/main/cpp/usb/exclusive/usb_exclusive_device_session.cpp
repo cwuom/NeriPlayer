@@ -1454,4 +1454,22 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
     return JNI_TRUE;
 }
 
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeLastOpenError(
+    JNIEnv* env,
+    jclass /*clazz*/
+) {
+    try {
+        const std::string error = readLastOpenError();
+        return env->NewStringUTF(error.c_str());
+    } catch (const std::exception& error) {
+        LOGE("nativeLastOpenError exception: %s", error.what());
+        return env->NewStringUTF("native_last_open_error_unavailable");
+    } catch (...) {
+        LOGE("nativeLastOpenError unknown exception");
+        return env->NewStringUTF("native_last_open_error_unavailable");
+    }
+}
+
 } // namespace neri::usb::exclusive
