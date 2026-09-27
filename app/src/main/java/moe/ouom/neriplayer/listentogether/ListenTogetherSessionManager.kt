@@ -37,15 +37,12 @@ import moe.ouom.neriplayer.listentogether.network.reconnect.LISTEN_TOGETHER_MAX_
 import moe.ouom.neriplayer.listentogether.network.reconnect.isTerminalListenTogetherReconnectError
 import moe.ouom.neriplayer.listentogether.network.reconnect.listenTogetherReconnectDelayMs
 import moe.ouom.neriplayer.listentogether.network.ws.ListenTogetherWebSocketClient
-import moe.ouom.neriplayer.listentogether.network.ws.LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS
 import moe.ouom.neriplayer.listentogether.network.ws.redactListenTogetherWsUrlForLog
-import moe.ouom.neriplayer.listentogether.network.ws.shouldReconnectListenTogetherSocket
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.playback.isShareableForListenTogether
 import moe.ouom.neriplayer.listentogether.playback.isListenTogetherQueueUpdateCause
-import moe.ouom.neriplayer.listentogether.playback.ListenTogetherListenerStallRecovery
 import moe.ouom.neriplayer.listentogether.playback.LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherPlayerStateApplier
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherPlayerStateApplierConfig
@@ -73,12 +70,17 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherStateResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.session.AcceptedRoomState
-import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PAUSED_HEARTBEAT_INTERVAL_MS
-import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherBackgroundKeepAlive
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherForwardedRequestDeduper
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherLocalControlOwner
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherLocalControlPort
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherHeartbeatOwner
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherHeartbeatPort
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherListenerWatchdogOwner
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherListenerWatchdogPort
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherListenerWatchdogSnapshot
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherSocketHealthOwner
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherSocketHealthPort
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherControllerLinkOwner
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherLinkEventPort
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherLinkSessionPort
@@ -91,7 +93,6 @@ import moe.ouom.neriplayer.listentogether.session.ListenTogetherRecentEventTrack
 import moe.ouom.neriplayer.listentogether.session.RoomStateSource
 import moe.ouom.neriplayer.listentogether.session.normalized
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherControlBlockReason
-import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherHeartbeatIntervalMs
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherForegroundRecoveryAction
 import moe.ouom.neriplayer.listentogether.session.resolveReusableListenTogetherMembershipCredential
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherRoomNotice
@@ -99,7 +100,6 @@ import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherClose
 import moe.ouom.neriplayer.listentogether.session.shouldAutoPauseListenTogetherForMemberChange
 import moe.ouom.neriplayer.listentogether.session.shouldHoldListenTogetherBackgroundKeepAlive
 import moe.ouom.neriplayer.listentogether.session.isNormalListenTogetherRoomClosureReason
-import moe.ouom.neriplayer.listentogether.session.shouldReconnectListenTogetherForegroundSocket
 import moe.ouom.neriplayer.listentogether.session.shouldShowListenTogetherControllerReconnectedNotice
 import moe.ouom.neriplayer.listentogether.session.normalizeListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
@@ -108,7 +108,6 @@ import moe.ouom.neriplayer.listentogether.session.shouldDeferListenTogetherIncom
 import moe.ouom.neriplayer.listentogether.session.shouldIgnoreListenTogetherIncomingState
 import moe.ouom.neriplayer.listentogether.session.shouldAcceptListenTogetherAuthoritativeQueueUpdate
 import moe.ouom.neriplayer.listentogether.session.shouldRejectForwardedListenTogetherMemberControl
-import moe.ouom.neriplayer.listentogether.session.shouldRepairListenTogetherListenerState
 import moe.ouom.neriplayer.listentogether.session.toMembershipCredentialOrNull
 import moe.ouom.neriplayer.listentogether.session.prepareListenTogetherSessionUpdate
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherNickname
@@ -129,13 +128,9 @@ class ListenTogetherSessionManager(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var heartbeatJob: Job? = null
-    private var socketKeepAliveJob: Job? = null
     @Volatile
     private var reconnectJob: Job? = null
     private var membershipRecoveryJob: Job? = null
-    private var syncWatchdogJob: Job? = null
-    private var foregroundSocketProbeJob: Job? = null
     private var softSyncRateRecheckJob: Job? = null
     // 串行化重连生命周期的 check-then-act, 避免 onClosed/onFailure 并发触发多条 WS
     private val connectionLock = Any()
@@ -144,8 +139,6 @@ class ListenTogetherSessionManager(
     private var started = false
 
     private val recentEventTracker = ListenTogetherRecentEventTracker()
-    @Volatile
-    private var lastOutboundSyncAtMs: Long = 0L
     @Volatile
     private var lastControllerLocalControlAtElapsedMs: Long = 0L
     @Volatile
@@ -157,20 +150,6 @@ class ListenTogetherSessionManager(
     private val reconnectAttempt = AtomicInteger(0)
     private val forwardedRequestDeduper = ListenTogetherForwardedRequestDeduper()
     @Volatile
-    private var pendingStateRefreshAfterReconnect = false
-    @Volatile
-    private var lastListenerStateRefreshAtElapsedMs: Long = 0L
-    @Volatile
-    private var lastWebSocketMessageAtElapsedMs: Long = 0L
-    @Volatile
-    private var pingSentAtWallMs: Long = 0L
-    @Volatile
-    private var pingSentAtElapsedMs: Long = 0L
-    @Volatile
-    private var estimatedServerClockOffsetMs: Long = 0L
-    @Volatile
-    private var clockSyncPingSupported: Boolean? = null
-    @Volatile
     private var observedControllerOffline = false
     @Volatile
     private var webSocketConnectingAtElapsedMs: Long = 0L
@@ -180,6 +159,22 @@ class ListenTogetherSessionManager(
 
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
+
+    private val socketHealthOwner = ListenTogetherSocketHealthOwner(
+        scope = scope,
+        port = object : ListenTogetherSocketHealthPort {
+            override fun session(): ListenTogetherSessionState = _sessionState.value
+            override fun reconnectEnabled(): Boolean = this@ListenTogetherSessionManager.reconnectEnabled
+            override fun sendPing(sentAtElapsedMs: Long): Boolean = webSocketClient.sendPing(sentAtElapsedMs)
+            override fun sendLegacyPing(): Boolean = webSocketClient.sendLegacyPing()
+            override fun scheduleReconnect(reason: String) = this@ListenTogetherSessionManager.scheduleReconnect(reason)
+            override fun connectWebSocket() = this@ListenTogetherSessionManager.connectWebSocket()
+            override fun updateBackgroundKeepAlive(reason: String) =
+                this@ListenTogetherSessionManager.updateBackgroundKeepAlive(reason)
+        },
+        elapsedRealtimeMs = SystemClock::elapsedRealtime,
+        wallTimeMs = System::currentTimeMillis
+    )
 
     private val roomStateOwner = ListenTogetherRoomStateOwner(
         observer = object : ListenTogetherRoomStateObserver {
@@ -198,12 +193,72 @@ class ListenTogetherSessionManager(
             }
 
             override fun onSocketMessageAccepted() {
-                lastWebSocketMessageAtElapsedMs = SystemClock.elapsedRealtime()
+                socketHealthOwner.noteMessage()
             }
         },
         elapsedRealtimeMs = SystemClock::elapsedRealtime
     )
     val roomState: StateFlow<ListenTogetherRoomState?> = roomStateOwner.roomState
+
+    private val heartbeatOwner = ListenTogetherHeartbeatOwner(
+        scope = scope,
+        port = object : ListenTogetherHeartbeatPort {
+            override fun session(): ListenTogetherSessionState = _sessionState.value
+            override fun isController(session: ListenTogetherSessionState): Boolean =
+                isCurrentUserController(session)
+            override fun currentTrackShareable(): Boolean =
+                PlayerManager.currentSongFlow.value.isShareableForListenTogether()
+            override fun playbackStateName(): String = currentLocalPlaybackStateName()
+            override fun playbackPositionMs(): Long = PlayerManager.playbackPositionFlow.value
+            override fun buildHeartbeat(state: String, positionMs: Long): ListenTogetherEvent =
+                buildHeartbeatEvent(state, positionMs, includeQueue = false)
+            override fun sendHeartbeat(event: ListenTogetherEvent) {
+                markOutboundEvent(event.eventId)
+                sendControlEventPureWebSocket(event, "heartbeat")
+            }
+        },
+        elapsedRealtimeMs = SystemClock::elapsedRealtime
+    )
+
+    private val listenerWatchdogOwner = ListenTogetherListenerWatchdogOwner(
+        scope = scope,
+        port = object : ListenTogetherListenerWatchdogPort {
+            override fun snapshot(): ListenTogetherListenerWatchdogSnapshot {
+                val session = _sessionState.value
+                return ListenTogetherListenerWatchdogSnapshot(
+                    session = session,
+                    room = roomState.value,
+                    isController = isCurrentUserController(session),
+                    pendingRepairVersion = roomStateOwner.pendingRepairVersion(),
+                    lastSocketMessageAtElapsedMs = socketHealthOwner.lastMessageAtElapsedMs,
+                    serverClockOffsetMs = socketHealthOwner.serverClockOffsetMs
+                )
+            }
+            override fun retryPendingMemberRequest(room: ListenTogetherRoomState?) =
+                localControlOwner.retryPendingMemberRequest(room)
+            override fun isControllerNow(): Boolean = isCurrentUserController()
+            override fun applyRoomStateToPlayer(
+                room: ListenTogetherRoomState,
+                cause: String,
+                expectedPositionMs: Long
+            ) = this@ListenTogetherSessionManager.applyRoomStateToPlayer(room, cause, expectedPositionMs)
+            override fun requestControllerLink(room: ListenTogetherRoomState, cause: String, force: Boolean) =
+                controllerLinkOwner.maybeRequest(room, cause, force)
+            override suspend fun refreshRoomState(baseUrl: String, roomId: String) {
+                this@ListenTogetherSessionManager.refreshRoomState(baseUrl, roomId)
+            }
+            override fun onRefreshFailure(error: Throwable, reason: String) {
+                val resolvedError = error.message ?: error.javaClass.simpleName
+                NPLogger.w(TAG, "refreshListenerRoomStateIfDue(): failed, reason=$reason, error=$resolvedError", error)
+                _sessionState.value = _sessionState.value.copy(lastError = resolvedError)
+                if (handleTerminalReconnectFailure(resolvedError, "listener_watchdog_refresh")) return
+                if (!maybeRecoverFromFatalMembershipError(resolvedError, "listener_watchdog_refresh")) {
+                    scheduleReconnect("listener_watchdog_refresh_failed:$reason")
+                }
+            }
+        },
+        elapsedRealtimeMs = SystemClock::elapsedRealtime
+    )
 
     private val localControlOwner = ListenTogetherLocalControlOwner(
         scope = scope,
@@ -220,10 +275,6 @@ class ListenTogetherSessionManager(
         wallTimeMs = System::currentTimeMillis
     )
 
-    private val listenerStallRecovery = ListenTogetherListenerStallRecovery(
-        stallTimeoutMs = LISTENER_PLAYBACK_STALL_TIMEOUT_MS,
-        recoveryCooldownMs = LISTENER_PLAYBACK_STALL_RECOVERY_COOLDOWN_MS
-    )
 
     private val eventFactory = ListenTogetherEventFactory(
         roomStateProvider = { roomState.value },
@@ -293,7 +344,7 @@ class ListenTogetherSessionManager(
         ),
         roomStateProvider = { roomState.value },
         isControllerProvider = { isCurrentUserController() },
-        serverClockOffsetProvider = { estimatedServerClockOffsetMs }
+        serverClockOffsetProvider = { socketHealthOwner.serverClockOffsetMs }
     )
 
     init {
@@ -435,7 +486,7 @@ class ListenTogetherSessionManager(
             roomId = validatedRoomId,
             bearerToken = bearerToken
         )
-        updateServerClockOffsetFromRoundTrip(
+        socketHealthOwner.onRoundTrip(
             serverNowMs = response.serverNowMs,
             sentAtWallMs = sentAtWallMs,
             sentAtElapsedMs = sentAtElapsedMs,
@@ -557,8 +608,8 @@ class ListenTogetherSessionManager(
                         return
                     }
                     webSocketConnectingAtElapsedMs = 0L
-                    lastWebSocketMessageAtElapsedMs = SystemClock.elapsedRealtime()
-                    val shouldRefreshState = pendingStateRefreshAfterReconnect
+                    socketHealthOwner.noteMessage()
+                    val shouldRefreshState = socketHealthOwner.pendingRefreshAfterReconnect
                     resetReconnectAttempt()
                     reconnectJob?.cancel()
                     reconnectJob = null
@@ -567,11 +618,11 @@ class ListenTogetherSessionManager(
                         lastError = null
                     )
                     updateBackgroundKeepAlive("socket_open")
-                    startSocketKeepAlive()
-                    startHeartbeat()
-                    startSyncWatchdog()
-                    cancelForegroundSocketProbe()
-                    pendingStateRefreshAfterReconnect = false
+                    socketHealthOwner.startKeepAlive()
+                    heartbeatOwner.start()
+                    listenerWatchdogOwner.start()
+                    socketHealthOwner.cancelForegroundProbe()
+                    socketHealthOwner.pendingRefreshAfterReconnect = false
                     localControlOwner.replayPending()
                     if (shouldRefreshState) {
                         scope.launch {
@@ -598,7 +649,7 @@ class ListenTogetherSessionManager(
                         "websocket.onMessage(): type=${message.type}, roomId=${message.roomId ?: message.state?.roomId}, version=${message.version ?: message.state?.version}, causedBy=${message.causedBy?.type}:${message.causedBy?.eventId}, ok=${message.ok}, message=${message.message}, resultError=${message.result?.error}"
                     )
                     if (message.type != "pong" && message.type != "np_pong") {
-                        updateServerClockOffsetFromServerMessage(
+                        socketHealthOwner.onServerMessage(
                             serverNowMs = message.nowMs ?: message.result?.applied?.nowMs,
                             reason = message.type
                         )
@@ -688,7 +739,7 @@ class ListenTogetherSessionManager(
                                 ) {
                                     return
                                 }
-                                if (handleUnsupportedClockSyncPingError(resolvedError)) {
+                                if (socketHealthOwner.handleUnsupportedPing(resolvedError)) {
                                     return
                                 }
                                 if (trySendTrackFinishedLegacyFallback(resolvedError)) {
@@ -708,7 +759,7 @@ class ListenTogetherSessionManager(
 
                         "error" -> {
                             val resolvedError = message.message ?: "socket error"
-                            if (handleUnsupportedClockSyncPingError(resolvedError)) {
+                            if (socketHealthOwner.handleUnsupportedPing(resolvedError)) {
                                 return
                             }
                             NPLogger.w(TAG, "websocket.error(): $resolvedError")
@@ -725,11 +776,11 @@ class ListenTogetherSessionManager(
                         "pong",
                         "np_pong" -> {
                             if (message.type == "np_pong") {
-                                clockSyncPingSupported = true
+                                socketHealthOwner.markPongSupported()
                             }
                             _sessionState.value = _sessionState.value.copy(lastError = null)
                             val serverNowMs = message.nowMs
-                            updateServerClockOffsetFromPong(
+                            socketHealthOwner.onPong(
                                 serverNowMs = serverNowMs,
                                 echoedSentAtElapsedMs = message.t
                             )
@@ -739,8 +790,8 @@ class ListenTogetherSessionManager(
 
                 override fun onClosed(code: Int, reason: String) {
                     webSocketConnectingAtElapsedMs = 0L
-                    stopHeartbeat()
-                    stopSocketKeepAlive()
+                    heartbeatOwner.stop()
+                    socketHealthOwner.stopKeepAlive()
                     NPLogger.w(TAG, "websocket.onClosed(): code=$code, reason=$reason")
                     _sessionState.value = _sessionState.value.copy(
                         connectionState = ListenTogetherConnectionState.DISCONNECTED,
@@ -754,8 +805,8 @@ class ListenTogetherSessionManager(
 
                 override fun onFailure(error: Throwable) {
                     webSocketConnectingAtElapsedMs = 0L
-                    stopHeartbeat()
-                    stopSocketKeepAlive()
+                    heartbeatOwner.stop()
+                    socketHealthOwner.stopKeepAlive()
                     NPLogger.e(TAG, "websocket.onFailure(): ${error.message}", error)
                     _sessionState.value = _sessionState.value.copy(
                         connectionState = ListenTogetherConnectionState.DISCONNECTED,
@@ -784,29 +835,24 @@ class ListenTogetherSessionManager(
         localControlOwner.clearCoalesced("disconnect")
         reconnectEnabled = false
         resetReconnectAttempt()
-        pendingStateRefreshAfterReconnect = false
+        socketHealthOwner.pendingRefreshAfterReconnect = false
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
         membershipRecoveryJob = null
         controllerLinkOwner.clear()
-        cancelForegroundSocketProbe()
+        socketHealthOwner.cancelForegroundProbe()
         stopListenTogetherSoftSyncRateRecheck()
-        stopHeartbeat()
-        stopSocketKeepAlive()
-        stopSyncWatchdog()
-        lastOutboundSyncAtMs = 0L
+        socketHealthOwner.stopKeepAlive()
+        listenerWatchdogOwner.stop()
+        heartbeatOwner.reset()
         roomStateOwner.resetVersions()
         lastControllerLocalControlAtElapsedMs = 0L
         forwardedRequestDeduper.clear()
         localControlOwner.resetTransientRequests()
-        lastListenerStateRefreshAtElapsedMs = 0L
-        lastWebSocketMessageAtElapsedMs = 0L
+        listenerWatchdogOwner.resetRefreshTime()
+        socketHealthOwner.resetConnectionTiming()
         webSocketConnectingAtElapsedMs = 0L
-        pingSentAtWallMs = 0L
-        pingSentAtElapsedMs = 0L
-        estimatedServerClockOffsetMs = 0L
-        clockSyncPingSupported = null
-        resetListenerRecoveryState()
+        listenerWatchdogOwner.resetRecovery()
         ListenTogetherBackgroundKeepAlive.release("disconnect")
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         NPLogger.d(TAG, "disconnectWebSocket()")
@@ -833,7 +879,7 @@ class ListenTogetherSessionManager(
         ) {
             ListenTogetherForegroundRecoveryAction.NONE -> Unit
             ListenTogetherForegroundRecoveryAction.CONNECT -> {
-                pendingStateRefreshAfterReconnect = true
+                socketHealthOwner.pendingRefreshAfterReconnect = true
                 ensureListenTogetherForegroundService("foreground_connect")
                 connectWebSocket()
             }
@@ -841,12 +887,12 @@ class ListenTogetherSessionManager(
             ListenTogetherForegroundRecoveryAction.REFRESH_ROOM_STATE -> {
                 ensureListenTogetherForegroundService("foreground_refresh")
                 val probeStartedAtElapsedMs = SystemClock.elapsedRealtime()
-                if (!sendSocketKeepAlivePing()) {
-                    pendingStateRefreshAfterReconnect = true
+                if (!socketHealthOwner.sendPing()) {
+                    socketHealthOwner.pendingRefreshAfterReconnect = true
                     scheduleReconnect("foreground_ping_send_failed")
                     return
                 }
-                scheduleForegroundSocketProbe(
+                socketHealthOwner.scheduleForegroundProbe(
                     roomId = snapshot.roomId,
                     probeStartedAtElapsedMs = probeStartedAtElapsedMs
                 )
@@ -901,12 +947,12 @@ class ListenTogetherSessionManager(
         retainedMembershipCredential = null
         reconnectEnabled = false
         resetReconnectAttempt()
-        pendingStateRefreshAfterReconnect = false
+        socketHealthOwner.pendingRefreshAfterReconnect = false
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
         membershipRecoveryJob = null
         controllerLinkOwner.clear()
-        cancelForegroundSocketProbe()
+        socketHealthOwner.cancelForegroundProbe()
         stopListenTogetherSoftSyncRateRecheck()
         if (
             !leaveBaseUrl.isNullOrBlank() &&
@@ -936,20 +982,19 @@ class ListenTogetherSessionManager(
                 }
             }
         }
-        stopHeartbeat()
-        stopSocketKeepAlive()
-        stopSyncWatchdog()
-        lastOutboundSyncAtMs = 0L
+        socketHealthOwner.stopKeepAlive()
+        listenerWatchdogOwner.stop()
+        heartbeatOwner.reset()
         roomStateOwner.close()
         lastControllerLocalControlAtElapsedMs = 0L
         forwardedRequestDeduper.clear()
         localControlOwner.resetTransientRequests()
-        lastListenerStateRefreshAtElapsedMs = 0L
-        lastWebSocketMessageAtElapsedMs = 0L
+        listenerWatchdogOwner.resetRefreshTime()
+        socketHealthOwner.clearLastMessage()
         webSocketConnectingAtElapsedMs = 0L
-        clockSyncPingSupported = null
+        socketHealthOwner.resetProtocolSupport()
         observedControllerOffline = false
-        resetListenerRecoveryState()
+        listenerWatchdogOwner.resetRecovery()
         ListenTogetherBackgroundKeepAlive.release("leave")
         PlayerManager.clearListenTogetherSafetyPause()
         PlayerManager.resetListenTogetherSyncPlaybackRate()
@@ -964,92 +1009,7 @@ class ListenTogetherSessionManager(
         )
     }
 
-    fun sendPing(): Boolean {
-        return sendSocketKeepAlivePing()
-    }
-
-    private fun sendSocketKeepAlivePing(): Boolean {
-        val sentAtElapsedMs = SystemClock.elapsedRealtime()
-        if (
-            pingSentAtElapsedMs <= 0L ||
-            lastWebSocketMessageAtElapsedMs > pingSentAtElapsedMs
-        ) {
-            pingSentAtElapsedMs = sentAtElapsedMs
-            pingSentAtWallMs = System.currentTimeMillis()
-        }
-        return if (clockSyncPingSupported == false) {
-            webSocketClient.sendLegacyPing()
-        } else {
-            webSocketClient.sendPing(sentAtElapsedMs)
-        }
-    }
-
-    private fun updateServerClockOffsetFromPong(
-        serverNowMs: Long?,
-        echoedSentAtElapsedMs: Long?
-    ) {
-        val nowElapsedMs = SystemClock.elapsedRealtime()
-        val nowWallMs = System.currentTimeMillis()
-        val echoedElapsedMs = echoedSentAtElapsedMs?.takeIf { it > 0L }
-        val sentAtElapsedMs = echoedElapsedMs ?: pingSentAtElapsedMs
-        val sentAtWallMs = when {
-            echoedElapsedMs != null -> nowWallMs - (nowElapsedMs - echoedElapsedMs)
-            else -> pingSentAtWallMs
-        }
-        updateServerClockOffsetFromRoundTrip(
-            serverNowMs = serverNowMs,
-            sentAtWallMs = sentAtWallMs,
-            sentAtElapsedMs = sentAtElapsedMs,
-            nowWallMs = nowWallMs,
-            nowElapsedMs = nowElapsedMs,
-            reason = "pong"
-        )
-    }
-
-    private fun updateServerClockOffsetFromServerMessage(
-        serverNowMs: Long?,
-        reason: String
-    ) {
-        updateServerClockOffsetFromRoundTrip(
-            serverNowMs = serverNowMs,
-            sentAtWallMs = 0L,
-            sentAtElapsedMs = 0L,
-            reason = reason
-        )
-    }
-
-    private fun updateServerClockOffsetFromRoundTrip(
-        serverNowMs: Long?,
-        sentAtWallMs: Long,
-        sentAtElapsedMs: Long,
-        nowWallMs: Long = System.currentTimeMillis(),
-        nowElapsedMs: Long = SystemClock.elapsedRealtime(),
-        reason: String
-    ) {
-        if (serverNowMs == null || serverNowMs <= 0L) return
-        val hasRoundTrip = sentAtWallMs > 0L && sentAtElapsedMs > 0L
-        val rtt = if (hasRoundTrip) nowElapsedMs - sentAtElapsedMs else 0L
-        if (rtt < 0L) return
-        if (rtt > CLOCK_SYNC_MAX_RTT_MS) {
-            NPLogger.w(TAG, "updateServerClockOffsetFromRoundTrip(): ignore stale sample, reason=$reason, rtt=$rtt")
-            return
-        }
-        val clientReferenceWallMs = if (hasRoundTrip) {
-            sentAtWallMs + rtt / 2
-        } else {
-            nowWallMs
-        }
-        val newOffset = serverNowMs - clientReferenceWallMs
-        val prev = estimatedServerClockOffsetMs
-        estimatedServerClockOffsetMs = when (prev) {
-            0L -> newOffset
-            else -> (prev * 7 + newOffset * 3) / 10
-        }
-        NPLogger.d(
-            TAG,
-            "updateServerClockOffsetFromRoundTrip(): reason=$reason, offset=$estimatedServerClockOffsetMs, sample=$newOffset, rtt=$rtt"
-        )
-    }
+    fun sendPing(): Boolean = socketHealthOwner.sendPing()
 
     suspend fun sendControlEvent(event: ListenTogetherEvent): ListenTogetherControlResponse {
         val snapshot = _sessionState.value
@@ -1266,11 +1226,11 @@ class ListenTogetherSessionManager(
         if (!changed) return
         localControlOwner.clearCoalesced("session_changed")
         localControlOwner.clearOutbox()
-        cancelForegroundSocketProbe()
+        socketHealthOwner.cancelForegroundProbe()
         stopListenTogetherSoftSyncRateRecheck()
         observedControllerOffline = false
         webSocketConnectingAtElapsedMs = 0L
-        clockSyncPingSupported = null
+        socketHealthOwner.resetProtocolSupport()
     }
 
     private fun openSessionRoom(roomId: String?) {
@@ -1278,8 +1238,8 @@ class ListenTogetherSessionManager(
     }
 
     private fun finishSessionRoomActivation() {
-        lastListenerStateRefreshAtElapsedMs = 0L
-        lastWebSocketMessageAtElapsedMs = 0L
+        listenerWatchdogOwner.resetRefreshTime()
+        socketHealthOwner.clearLastMessage()
     }
 
     private fun logSessionUpdate(response: ListenTogetherRoomResponse, wsUrl: String?) {
@@ -1815,107 +1775,6 @@ class ListenTogetherSessionManager(
         )
     }
 
-    private fun startHeartbeat() {
-        if (heartbeatJob?.isActive == true) return
-        NPLogger.d(TAG, "startHeartbeat()")
-        if (lastOutboundSyncAtMs == 0L) {
-            lastOutboundSyncAtMs = SystemClock.elapsedRealtime()
-        }
-        heartbeatJob = scope.launch {
-            while (isActive) {
-                val snapshot = _sessionState.value
-                if (
-                    snapshot.connectionState != ListenTogetherConnectionState.CONNECTED ||
-                    !isCurrentUserController(snapshot)
-                ) {
-                    delay(HEARTBEAT_STATE_RECHECK_INTERVAL_MS)
-                    continue
-                }
-                if (!PlayerManager.currentSongFlow.value.isShareableForListenTogether()) {
-                    NPLogger.d(TAG, "heartbeat(): skip non-shareable current track")
-                    delay(HEARTBEAT_STATE_RECHECK_INTERVAL_MS)
-                    continue
-                }
-                val now = SystemClock.elapsedRealtime()
-                val idleMs = now - lastOutboundSyncAtMs
-                val playbackState = currentLocalPlaybackStateName()
-                val heartbeatIntervalMs = resolveListenTogetherHeartbeatIntervalMs(
-                    isPlaying = playbackState == "playing",
-                    playingIntervalMs = LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS,
-                    pausedIntervalMs = LISTEN_TOGETHER_PAUSED_HEARTBEAT_INTERVAL_MS
-                )
-                val remainingMs = heartbeatIntervalMs - idleMs
-                if (remainingMs > 0L) {
-                    delay(minOf(remainingMs, HEARTBEAT_STATE_RECHECK_INTERVAL_MS))
-                    continue
-                }
-                val heartbeat = buildHeartbeatEvent(
-                    state = playbackState,
-                    positionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L),
-                    includeQueue = false
-                )
-                markOutboundEvent(heartbeat.eventId)
-                noteOutboundSync()
-                NPLogger.d(
-                    TAG,
-                    "heartbeat(): eventId=${heartbeat.eventId}, positionMs=${heartbeat.positionMs}, idleMs=$idleMs"
-                )
-                sendControlEventPureWebSocket(heartbeat, "heartbeat")
-            }
-        }
-    }
-
-    private fun stopHeartbeat() {
-        NPLogger.d(TAG, "stopHeartbeat()")
-        heartbeatJob?.cancel()
-        heartbeatJob = null
-    }
-
-    private fun startSocketKeepAlive() {
-        if (socketKeepAliveJob?.isActive == true) return
-        NPLogger.d(TAG, "startSocketKeepAlive()")
-        socketKeepAliveJob = scope.launch {
-            while (isActive) {
-                val snapshot = _sessionState.value
-                if (snapshot.connectionState != ListenTogetherConnectionState.CONNECTED) {
-                    delay(HEARTBEAT_STATE_RECHECK_INTERVAL_MS)
-                    continue
-                }
-                val nowElapsedMs = SystemClock.elapsedRealtime()
-                if (
-                    shouldReconnectListenTogetherSocket(
-                        reconnectEnabled = reconnectEnabled,
-                        connectionState = snapshot.connectionState,
-                        lastMessageAtElapsedMs = lastWebSocketMessageAtElapsedMs,
-                        lastPingSentAtElapsedMs = pingSentAtElapsedMs,
-                        nowElapsedMs = nowElapsedMs,
-                        responseTimeoutMs = LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS
-                    )
-                ) {
-                    NPLogger.w(TAG, "socketKeepAlive(): response timeout, scheduling reconnect")
-                    pendingStateRefreshAfterReconnect = true
-                    scheduleReconnect("socket_keep_alive_response_timeout")
-                    delay(LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS)
-                    continue
-                }
-                val sent = sendSocketKeepAlivePing()
-                if (!sent) {
-                    NPLogger.w(TAG, "socketKeepAlive(): send failed")
-                    pendingStateRefreshAfterReconnect = true
-                    scheduleReconnect("socket_keep_alive_send_failed")
-                }
-                updateBackgroundKeepAlive("socket_keep_alive")
-                delay(LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS)
-            }
-        }
-    }
-
-    private fun stopSocketKeepAlive() {
-        NPLogger.d(TAG, "stopSocketKeepAlive()")
-        socketKeepAliveJob?.cancel()
-        socketKeepAliveJob = null
-    }
-
     private fun updateBackgroundKeepAlive(reason: String) {
         val snapshot = _sessionState.value
         val shouldHold = shouldHoldListenTogetherBackgroundKeepAlive(
@@ -1934,73 +1793,6 @@ class ListenTogetherSessionManager(
         }
     }
 
-    private fun startSyncWatchdog() {
-        if (syncWatchdogJob?.isActive == true) return
-        NPLogger.d(TAG, "startSyncWatchdog()")
-        lastListenerStateRefreshAtElapsedMs = 0L
-        syncWatchdogJob = scope.launch {
-            while (isActive) {
-                delay(SYNC_WATCHDOG_INTERVAL_MS)
-                val snapshot = _sessionState.value
-                if (
-                    snapshot.connectionState != ListenTogetherConnectionState.CONNECTED ||
-                    snapshot.roomId.isNullOrBlank()
-                ) {
-                    continue
-                }
-                if (isCurrentUserController(snapshot)) {
-                    continue
-                }
-                localControlOwner.retryPendingMemberRequest(roomState.value)
-                val state = roomState.value
-                if (state != null) {
-                    applyListenerWatchdogSync(state)
-                    controllerLinkOwner.maybeRequest(state, "listener_watchdog")
-                }
-                refreshListenerRoomStateIfDue(snapshot, "listener_watchdog")
-            }
-        }
-    }
-
-    private fun stopSyncWatchdog() {
-        NPLogger.d(TAG, "stopSyncWatchdog()")
-        syncWatchdogJob?.cancel()
-        syncWatchdogJob = null
-    }
-
-    private fun scheduleForegroundSocketProbe(
-        roomId: String?,
-        probeStartedAtElapsedMs: Long
-    ) {
-        foregroundSocketProbeJob?.cancel()
-        foregroundSocketProbeJob = scope.launch {
-            delay(FOREGROUND_SOCKET_PROBE_TIMEOUT_MS)
-            val snapshot = _sessionState.value
-            if (!shouldReconnectListenTogetherForegroundSocket(
-                    reconnectEnabled = reconnectEnabled,
-                    connectionState = snapshot.connectionState,
-                    expectedRoomId = roomId,
-                    currentRoomId = snapshot.roomId,
-                    lastWebSocketMessageAtElapsedMs = lastWebSocketMessageAtElapsedMs,
-                    probeStartedAtElapsedMs = probeStartedAtElapsedMs
-                )
-            ) {
-                return@launch
-            }
-            NPLogger.w(
-                TAG,
-                "scheduleForegroundSocketProbe(): no websocket response after foreground recovery"
-            )
-            pendingStateRefreshAfterReconnect = true
-            connectWebSocket()
-        }
-    }
-
-    private fun cancelForegroundSocketProbe() {
-        foregroundSocketProbeJob?.cancel()
-        foregroundSocketProbeJob = null
-    }
-
     private fun reconcileListenTogetherSoftSyncRateRecheck() {
         if (abs(PlayerManager.listenTogetherSyncPlaybackRate - 1f) < 0.001f) {
             stopListenTogetherSoftSyncRateRecheck()
@@ -2017,7 +1809,7 @@ class ListenTogetherSessionManager(
                     val currentSong = PlayerManager.currentSongFlow.value
                     val expectedPositionMs = if (state != null && targetSong != null) {
                         state.playback.expectedPositionMs(
-                            serverClockOffsetMs = estimatedServerClockOffsetMs,
+                            serverClockOffsetMs = socketHealthOwner.serverClockOffsetMs,
                             durationMs = targetSong.durationMs
                         )
                     } else {
@@ -2086,70 +1878,6 @@ class ListenTogetherSessionManager(
     private fun stopListenTogetherSoftSyncRateRecheck() {
         softSyncRateRecheckJob?.cancel()
         softSyncRateRecheckJob = null
-    }
-
-    private suspend fun refreshListenerRoomStateIfDue(
-        snapshot: ListenTogetherSessionState,
-        reason: String
-    ) {
-        val baseUrl = snapshot.baseUrl
-        val roomId = snapshot.roomId
-        if (baseUrl.isNullOrBlank() || roomId.isNullOrBlank()) return
-        val nowElapsedMs = SystemClock.elapsedRealtime()
-        val shouldRepair = shouldRepairListenTogetherListenerState(
-            nowElapsedMs = nowElapsedMs,
-            lastWebSocketMessageAtElapsedMs = lastWebSocketMessageAtElapsedMs,
-            lastRefreshAtElapsedMs = lastListenerStateRefreshAtElapsedMs,
-            pendingVersionGap = roomStateOwner.pendingRepairVersion(),
-            webSocketSilenceTimeoutMs = LISTENER_WEB_SOCKET_SILENCE_TIMEOUT_MS,
-            repairMinIntervalMs = LISTENER_STATE_REPAIR_MIN_INTERVAL_MS
-        )
-        if (!shouldRepair) return
-        lastListenerStateRefreshAtElapsedMs = nowElapsedMs
-        runCatching {
-            refreshRoomState(baseUrl, roomId)
-        }.onFailure { error ->
-            val resolvedError = error.message ?: error.javaClass.simpleName
-            NPLogger.w(
-                TAG,
-                "refreshListenerRoomStateIfDue(): failed, reason=$reason, roomId=$roomId, error=$resolvedError",
-                error
-            )
-            _sessionState.value = _sessionState.value.copy(lastError = resolvedError)
-            if (handleTerminalReconnectFailure(resolvedError, "listener_watchdog_refresh")) {
-                return@onFailure
-            }
-            if (!maybeRecoverFromFatalMembershipError(resolvedError, "listener_watchdog_refresh")) {
-                scheduleReconnect("listener_watchdog_refresh_failed:$reason")
-            }
-        }
-    }
-
-    private fun applyListenerWatchdogSync(state: ListenTogetherRoomState) {
-        if (isCurrentUserController()) return
-        if (state.roomStatus != ListenTogetherRoomStatuses.ACTIVE) return
-        val expectedPositionMs = state.playback.expectedPositionMs(
-            serverClockOffsetMs = estimatedServerClockOffsetMs,
-            durationMs = state.targetSongItem()?.durationMs ?: 0L
-        )
-        val needsStallRecovery = listenerStallRecovery.shouldRecover(
-            state = state,
-            nowElapsedMs = SystemClock.elapsedRealtime()
-        )
-        val causeType = if (needsStallRecovery) "WATCHDOG_STALL" else "WATCHDOG"
-        applyRoomStateToPlayer(
-            state = state,
-            causeType = causeType,
-            expectedPositionMs = expectedPositionMs
-        )
-        if (needsStallRecovery) {
-            controllerLinkOwner.maybeRequest(state, causeType, force = true)
-        }
-    }
-
-    private fun resetListenerRecoveryState() {
-        lastListenerStateRefreshAtElapsedMs = 0L
-        listenerStallRecovery.reset()
     }
 
     private suspend fun handleResolvedStreamUrlChanged(url: String?) {
@@ -2295,18 +2023,6 @@ class ListenTogetherSessionManager(
         return sent
     }
 
-    private fun isUnsupportedClockSyncPingError(errorMessage: String): Boolean {
-        return errorMessage.contains("unsupported event type: np_ping", ignoreCase = true)
-    }
-
-    private fun handleUnsupportedClockSyncPingError(errorMessage: String): Boolean {
-        if (!isUnsupportedClockSyncPingError(errorMessage)) return false
-        clockSyncPingSupported = false
-        NPLogger.d(TAG, "socketKeepAlive(): np_ping unsupported, fallback to legacy ping")
-        webSocketClient.sendLegacyPing()
-        return true
-    }
-
     private fun trySendTrackFinishedLegacyFallback(errorMessage: String): Boolean {
         val sent = localControlOwner.tryTrackFinishedLegacyFallback(errorMessage)
         if (sent) _sessionState.value = _sessionState.value.copy(lastError = null)
@@ -2317,7 +2033,7 @@ class ListenTogetherSessionManager(
         event: ListenTogetherEvent,
         reason: String
     ) {
-        pendingStateRefreshAfterReconnect = true
+        socketHealthOwner.pendingRefreshAfterReconnect = true
         val resolvedMessage = AppContainer.applicationContext.getString(R.string.listen_together_error_reconnecting)
         NPLogger.w(
             TAG,
@@ -2516,9 +2232,9 @@ class ListenTogetherSessionManager(
         reconnectEnabled = true
         reconnectJob?.cancel()
         reconnectJob = null
-        pendingStateRefreshAfterReconnect = true
-        stopHeartbeat()
-        stopSocketKeepAlive()
+        socketHealthOwner.pendingRefreshAfterReconnect = true
+        heartbeatOwner.stop()
+        socketHealthOwner.stopKeepAlive()
         webSocketClient.disconnect(code = 1000, reason = "listener_recovering")
         _sessionState.value = snapshot.copy(
             connectionState = ListenTogetherConnectionState.CONNECTING,
@@ -2569,9 +2285,7 @@ class ListenTogetherSessionManager(
         return true
     }
 
-    private fun noteOutboundSync() {
-        lastOutboundSyncAtMs = SystemClock.elapsedRealtime()
-    }
+    private fun noteOutboundSync() = heartbeatOwner.noteOutboundSync()
 
     private fun currentRole(
         sessionState: ListenTogetherSessionState = _sessionState.value
@@ -2604,27 +2318,26 @@ class ListenTogetherSessionManager(
         reconnectEnabled = false
         localControlOwner.clearOutbox()
         resetReconnectAttempt()
-        pendingStateRefreshAfterReconnect = false
+        socketHealthOwner.pendingRefreshAfterReconnect = false
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
         membershipRecoveryJob = null
         controllerLinkOwner.clear()
-        cancelForegroundSocketProbe()
+        socketHealthOwner.cancelForegroundProbe()
         stopListenTogetherSoftSyncRateRecheck()
-        stopHeartbeat()
-        stopSocketKeepAlive()
-        stopSyncWatchdog()
-        lastOutboundSyncAtMs = 0L
+        socketHealthOwner.stopKeepAlive()
+        listenerWatchdogOwner.stop()
+        heartbeatOwner.reset()
         roomStateOwner.close()
         lastControllerLocalControlAtElapsedMs = 0L
         forwardedRequestDeduper.clear()
         localControlOwner.clearPendingMemberRequest()
-        lastListenerStateRefreshAtElapsedMs = 0L
-        lastWebSocketMessageAtElapsedMs = 0L
+        listenerWatchdogOwner.resetRefreshTime()
+        socketHealthOwner.clearLastMessage()
         webSocketConnectingAtElapsedMs = 0L
-        clockSyncPingSupported = null
+        socketHealthOwner.resetProtocolSupport()
         observedControllerOffline = false
-        resetListenerRecoveryState()
+        listenerWatchdogOwner.resetRecovery()
         ListenTogetherBackgroundKeepAlive.release("room_closed")
         PlayerManager.clearListenTogetherSafetyPause()
         PlayerManager.resetListenTogetherSyncPlaybackRate()
@@ -2748,19 +2461,11 @@ class ListenTogetherSessionManager(
         private const val TRACK_SWITCH_FORCE_SYNC_MS = 500L
         private const val TRACK_SWITCH_GRACE_PERIOD_MS = 800L
         private const val CONTROLLER_GRACE_PERIOD_MS = 10 * MINUTE_MS
-        private const val HEARTBEAT_STATE_RECHECK_INTERVAL_MS = 10 * SECOND_MS
         internal const val LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS = 20 * SECOND_MS
-        private const val FOREGROUND_SOCKET_PROBE_TIMEOUT_MS = 5 * SECOND_MS
         private const val CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS = 1_200L
-        private const val SYNC_WATCHDOG_INTERVAL_MS = 8 * SECOND_MS
-        private const val LISTENER_WEB_SOCKET_SILENCE_TIMEOUT_MS = 45 * SECOND_MS
-        private const val LISTENER_STATE_REPAIR_MIN_INTERVAL_MS = 30 * SECOND_MS
-        private const val LISTENER_PLAYBACK_STALL_TIMEOUT_MS = 8 * SECOND_MS
-        private const val LISTENER_PLAYBACK_STALL_RECOVERY_COOLDOWN_MS = 12 * SECOND_MS
         private const val SOFT_SYNC_MIN_DRIFT_MS = 600L
         private const val SOFT_SYNC_FAST_DRIFT_MS = 1_500L
         private const val SOFT_SYNC_RECHECK_INTERVAL_MS = 500L
-        private const val CLOCK_SYNC_MAX_RTT_MS = 30 * SECOND_MS
         private const val UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS = 2 * SECOND_MS
     }
 }

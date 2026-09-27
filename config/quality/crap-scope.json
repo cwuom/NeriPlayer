@@ -148,7 +148,10 @@
     "moe/ouom/neriplayer/ui/NowPlayingBlurState.kt",
     "moe/ouom/neriplayer/ui/NowPlayingBlurImageRequests.kt",
     "moe/ouom/neriplayer/ui/NowPlayingBackdropLayers.kt",
-    "moe/ouom/neriplayer/ui/NowPlayingBlurEffectOwner.kt"
+    "moe/ouom/neriplayer/ui/NowPlayingBlurEffectOwner.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherSocketHealthOwner.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherHeartbeatOwner.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherListenerWatchdogOwner.kt"
   ],
   "method_scopes": [
     {
@@ -766,7 +769,9 @@
         "applyForwardedControllerRequestLocally",
         "disconnectWebSocket",
         "shouldDeferIncomingStateForLocalTrackFinish",
-        "trySendTrackFinishedLegacyFallback"
+        "trySendTrackFinishedLegacyFallback",
+        "sendPing",
+        "noteOutboundSync"
       ]
     },
     {
