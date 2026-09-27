@@ -147,7 +147,8 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/core/player/usb/recovery/UsbExclusiveLivenessOwner.kt",
             "app/src/main/java/moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbExclusiveLivenessPort.kt",
             "app/src/main/java/moe/ouom/neriplayer/core/player/usb/recovery/UsbInterruptedPlaybackOwner.kt",
-            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbInterruptedPlaybackPort.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbInterruptedPlaybackPort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherLocalControlOwner.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

@@ -124,7 +124,8 @@
     "moe/ouom/neriplayer/core/player/usb/recovery/UsbExclusiveLivenessOwner.kt",
     "moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbExclusiveLivenessPort.kt",
     "moe/ouom/neriplayer/core/player/usb/recovery/UsbInterruptedPlaybackOwner.kt",
-    "moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbInterruptedPlaybackPort.kt"
+    "moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbInterruptedPlaybackPort.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherLocalControlOwner.kt"
   ],
   "method_scopes": [
     {
@@ -714,7 +715,10 @@
         "acceptRoomState",
         "onRoomStateCommitted",
         "recordWebSocketMessage",
-        "applyForwardedControllerRequestLocally"
+        "applyForwardedControllerRequestLocally",
+        "disconnectWebSocket",
+        "shouldDeferIncomingStateForLocalTrackFinish",
+        "trySendTrackFinishedLegacyFallback"
       ]
     },
     {
@@ -726,6 +730,19 @@
         "onCommitted",
         "onPositionSupplement",
         "onSocketMessageAccepted"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
+      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$localControlOwner$1",
+      "methods": [
+        "<init>",
+        "currentRoomId",
+        "isController",
+        "nextEventId",
+        "markOutbound",
+        "noteOutboundSync",
+        "send"
       ]
     }
   ]

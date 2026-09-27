@@ -22,12 +22,7 @@ import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.listentogether.compat.buildTrackFinishedLegacyFallbackEvent
-import moe.ouom.neriplayer.listentogether.compat.buildListenTogetherLegacyQueueMutationFallback
-import moe.ouom.neriplayer.listentogether.compat.isListenTogetherQueueMutationCompatibilityError
 import moe.ouom.neriplayer.listentogether.compat.isListenTogetherMemberControlTargetCurrent
-import moe.ouom.neriplayer.listentogether.compat.isListenTogetherPendingMemberControlSatisfied
-import moe.ouom.neriplayer.listentogether.compat.isUnsupportedTrackFinishedEventError
 import moe.ouom.neriplayer.listentogether.compat.shouldSuppressListenerControlWhileAwaitingStream
 import moe.ouom.neriplayer.listentogether.control.ListenTogetherEventFactory
 import moe.ouom.neriplayer.listentogether.control.controlledPlaybackCommandTypes
@@ -78,12 +73,12 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherStateResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.session.AcceptedRoomState
-import moe.ouom.neriplayer.listentogether.session.acknowledgedBy
 import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PAUSED_HEARTBEAT_INTERVAL_MS
 import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherBackgroundKeepAlive
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherForwardedRequestDeduper
-import moe.ouom.neriplayer.listentogether.session.ListenTogetherControlOutbox
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherLocalControlOwner
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherLocalControlPort
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherControllerLinkOwner
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherLinkEventPort
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherLinkSessionPort
@@ -93,8 +88,6 @@ import moe.ouom.neriplayer.listentogether.session.PlayerManagerListenTogetherLin
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherForegroundRecoveryAction
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherMembershipCredential
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherRecentEventTracker
-import moe.ouom.neriplayer.listentogether.session.PendingMemberControlRequest
-import moe.ouom.neriplayer.listentogether.session.PendingTrackFinishedLegacyFallback
 import moe.ouom.neriplayer.listentogether.session.RoomStateSource
 import moe.ouom.neriplayer.listentogether.session.normalized
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherControlBlockReason
@@ -108,10 +101,8 @@ import moe.ouom.neriplayer.listentogether.session.shouldHoldListenTogetherBackgr
 import moe.ouom.neriplayer.listentogether.session.isNormalListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.listentogether.session.shouldReconnectListenTogetherForegroundSocket
 import moe.ouom.neriplayer.listentogether.session.shouldShowListenTogetherControllerReconnectedNotice
-import moe.ouom.neriplayer.listentogether.session.isCurrentListenTogetherCoalescedControlJob
 import moe.ouom.neriplayer.listentogether.session.normalizeListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
-import moe.ouom.neriplayer.listentogether.session.retriedAt
 import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherRoomStateToPlayer
 import moe.ouom.neriplayer.listentogether.session.shouldDeferListenTogetherIncomingStateForLocalTrackFinish
 import moe.ouom.neriplayer.listentogether.session.shouldIgnoreListenTogetherIncomingState
@@ -153,7 +144,6 @@ class ListenTogetherSessionManager(
     private var started = false
 
     private val recentEventTracker = ListenTogetherRecentEventTracker()
-    private val localControlOutbox = ListenTogetherControlOutbox()
     @Volatile
     private var lastOutboundSyncAtMs: Long = 0L
     @Volatile
@@ -168,15 +158,6 @@ class ListenTogetherSessionManager(
     private val forwardedRequestDeduper = ListenTogetherForwardedRequestDeduper()
     @Volatile
     private var pendingStateRefreshAfterReconnect = false
-    @Volatile
-    private var awaitingTrackFinishStableKey: String? = null
-    @Volatile
-    private var pendingTrackFinishedLegacyFallback: PendingTrackFinishedLegacyFallback? = null
-    @Volatile
-    private var pendingMemberControlRequest: PendingMemberControlRequest? = null
-    private val coalescedControlLock = Any()
-    private val pendingCoalescedControlEvents = mutableMapOf<String, PendingCoalescedControlEvent>()
-    private val coalescedControlJobs = mutableMapOf<String, Job>()
     @Volatile
     private var lastListenerStateRefreshAtElapsedMs: Long = 0L
     @Volatile
@@ -196,11 +177,6 @@ class ListenTogetherSessionManager(
 
     private val clientInstanceId = UUID.randomUUID().toString()
     private val clientSequence = AtomicLong(0L)
-
-    private data class PendingCoalescedControlEvent(
-        val event: ListenTogetherEvent,
-        val roomId: String?
-    )
 
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
@@ -228,6 +204,21 @@ class ListenTogetherSessionManager(
         elapsedRealtimeMs = SystemClock::elapsedRealtime
     )
     val roomState: StateFlow<ListenTogetherRoomState?> = roomStateOwner.roomState
+
+    private val localControlOwner = ListenTogetherLocalControlOwner(
+        scope = scope,
+        port = object : ListenTogetherLocalControlPort {
+            override fun currentRoomId(): String? = _sessionState.value.roomId
+            override fun isController(): Boolean = isCurrentUserController()
+            override fun nextEventId(): String = this@ListenTogetherSessionManager.nextEventId()
+            override fun markOutbound(eventId: String?) = markOutboundEvent(eventId)
+            override fun noteOutboundSync() = this@ListenTogetherSessionManager.noteOutboundSync()
+            override fun send(event: ListenTogetherEvent, reason: String): Boolean =
+                sendControlEventPureWebSocket(event, reason)
+        },
+        elapsedRealtimeMs = SystemClock::elapsedRealtime,
+        wallTimeMs = System::currentTimeMillis
+    )
 
     private val listenerStallRecovery = ListenTogetherListenerStallRecovery(
         stallTimeoutMs = LISTENER_PLAYBACK_STALL_TIMEOUT_MS,
@@ -581,7 +572,7 @@ class ListenTogetherSessionManager(
                     startSyncWatchdog()
                     cancelForegroundSocketProbe()
                     pendingStateRefreshAfterReconnect = false
-                    replayPendingLocalControlEvents()
+                    localControlOwner.replayPending()
                     if (shouldRefreshState) {
                         scope.launch {
                             refreshRoomStateAfterReconnect("socket_open")
@@ -629,10 +620,10 @@ class ListenTogetherSessionManager(
                             val acknowledgedEventId = appliedCause?.eventId
                                 ?: message.causedBy?.eventId
                             if (error.isNullOrBlank() && message.ok != false) {
-                                localControlOutbox.acknowledge(acknowledgedEventId)
+                                localControlOwner.acknowledge(acknowledgedEventId)
                             }
                             if (error.isNullOrBlank() && message.ok != false && appliedCauseType == "TRACK_FINISHED") {
-                                pendingTrackFinishedLegacyFallback = null
+                                localControlOwner.clearTrackFinishedFallback()
                             }
                             applied?.let { appliedEvent ->
                                 val appliedState = appliedEvent.state
@@ -674,7 +665,7 @@ class ListenTogetherSessionManager(
                                         )
                                     }
                                     if (accepted != null && appliedEventCause.type == "TRACK_FINISHED") {
-                                        awaitingTrackFinishStableKey = null
+                                        localControlOwner.clearTrackFinishBarrier()
                                     }
                                     if (accepted != null && !isCurrentUserController()) {
                                         applyRoomStateToPlayer(
@@ -690,7 +681,7 @@ class ListenTogetherSessionManager(
                                     ?: message.message
                                     ?: "control event rejected"
                                 if (
-                                    trySendQueueMutationLegacyFallback(
+                                    localControlOwner.tryQueueMutationLegacyFallback(
                                         errorMessage = resolvedError,
                                         eventId = acknowledgedEventId
                                     )
@@ -790,7 +781,7 @@ class ListenTogetherSessionManager(
     }
 
     fun disconnectWebSocket() {
-        clearCoalescedLocalControlEvents("disconnect")
+        localControlOwner.clearCoalesced("disconnect")
         reconnectEnabled = false
         resetReconnectAttempt()
         pendingStateRefreshAfterReconnect = false
@@ -807,9 +798,7 @@ class ListenTogetherSessionManager(
         roomStateOwner.resetVersions()
         lastControllerLocalControlAtElapsedMs = 0L
         forwardedRequestDeduper.clear()
-        awaitingTrackFinishStableKey = null
-        pendingTrackFinishedLegacyFallback = null
-        pendingMemberControlRequest = null
+        localControlOwner.resetTransientRequests()
         lastListenerStateRefreshAtElapsedMs = 0L
         lastWebSocketMessageAtElapsedMs = 0L
         webSocketConnectingAtElapsedMs = 0L
@@ -889,8 +878,8 @@ class ListenTogetherSessionManager(
     }
 
     fun leaveRoom() {
-        clearCoalescedLocalControlEvents("leave")
-        localControlOutbox.clear()
+        localControlOwner.clearCoalesced("leave")
+        localControlOwner.clearOutbox()
         val snapshot = _sessionState.value
         val shouldAutoPause = shouldAutoPauseListenTogetherForMemberChange(
             autoPauseOnMemberChange =
@@ -954,9 +943,7 @@ class ListenTogetherSessionManager(
         roomStateOwner.close()
         lastControllerLocalControlAtElapsedMs = 0L
         forwardedRequestDeduper.clear()
-        awaitingTrackFinishStableKey = null
-        pendingTrackFinishedLegacyFallback = null
-        pendingMemberControlRequest = null
+        localControlOwner.resetTransientRequests()
         lastListenerStateRefreshAtElapsedMs = 0L
         lastWebSocketMessageAtElapsedMs = 0L
         webSocketConnectingAtElapsedMs = 0L
@@ -1277,8 +1264,8 @@ class ListenTogetherSessionManager(
 
     private fun resetForSessionChange(changed: Boolean) {
         if (!changed) return
-        clearCoalescedLocalControlEvents("session_changed")
-        localControlOutbox.clear()
+        localControlOwner.clearCoalesced("session_changed")
+        localControlOwner.clearOutbox()
         cancelForegroundSocketProbe()
         stopListenTogetherSoftSyncRateRecheck()
         observedControllerOffline = false
@@ -1340,7 +1327,7 @@ class ListenTogetherSessionManager(
             lastControllerLocalControlAtElapsedMs = lastControllerLocalControlAtElapsedMs,
             controllerLocalControlCooldownMs = CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS
         )
-        pendingMemberControlRequest = pendingMemberControlRequest.acknowledgedBy(cause)
+        localControlOwner.acknowledgeMember(cause)
         return accepted
     }
 
@@ -1355,9 +1342,7 @@ class ListenTogetherSessionManager(
         )
         controllerLinkOwner.reconcileAvailability(state)
         ensureListenTogetherForegroundService("room_state:${state.version}")
-        awaitingTrackFinishStableKey?.let { waitingStableKey ->
-            if (state.currentStableKey() != waitingStableKey) awaitingTrackFinishStableKey = null
-        }
+        localControlOwner.onRoomStateCommitted(state.currentStableKey())
         _sessionState.value = _sessionState.value.copy(
             roomId = state.roomId,
             role = resolveListenTogetherSessionRole(
@@ -1417,7 +1402,7 @@ class ListenTogetherSessionManager(
             source = RoomStateSource.WEB_SOCKET_STATE,
             cause = message.causedBy
         ) ?: return
-        localControlOutbox.acknowledge(message.causedBy?.eventId)
+        localControlOwner.acknowledge(message.causedBy?.eventId)
         val shouldConfirmControllerLinkUnavailable =
             if (message.causedBy?.type == "LINK_UNAVAILABLE") {
                 controllerLinkOwner.markUnavailable(
@@ -1454,7 +1439,7 @@ class ListenTogetherSessionManager(
             )
         }
         if (message.causedBy?.type == "TRACK_FINISHED") {
-            awaitingTrackFinishStableKey = null
+            localControlOwner.clearTrackFinishBarrier()
         }
         markInboundEvent(message.causedBy?.eventId)
         val currentUserUuid = _sessionState.value.userUuid
@@ -1674,162 +1659,11 @@ class ListenTogetherSessionManager(
             return
         }
         noteControllerLocalControl(command)
-        if (shouldCoalesceLocalControlEvent(event)) {
-            enqueueCoalescedLocalControlEvent(event, snapshot.roomId)
-            return
-        }
-        dispatchLocalControlEvent(event, snapshot.roomId)
-    }
-
-    private fun shouldCoalesceLocalControlEvent(event: ListenTogetherEvent): Boolean {
-        return event.type in COALESCED_LOCAL_CONTROL_EVENT_TYPES
-    }
-
-    private fun enqueueCoalescedLocalControlEvent(
-        event: ListenTogetherEvent,
-        roomId: String?
-    ) {
-        val eventType = event.type
-        synchronized(coalescedControlLock) {
-            pendingCoalescedControlEvents[eventType] = PendingCoalescedControlEvent(event, roomId)
-            coalescedControlJobs.remove(eventType)?.cancel()
-            coalescedControlJobs[eventType] = scope.launch {
-                delay(COALESCED_LOCAL_CONTROL_WINDOW_MS)
-                val pending = synchronized(coalescedControlLock) {
-                    val completingJob = coroutineContext[Job]
-                        ?: return@synchronized null
-                    if (!isCurrentListenTogetherCoalescedControlJob(
-                            currentJob = coalescedControlJobs[eventType],
-                            completingJob = completingJob
-                        )
-                    ) {
-                        return@synchronized null
-                    }
-                    coalescedControlJobs.remove(eventType)
-                    pendingCoalescedControlEvents.remove(eventType)
-                }
-                pending?.let { dispatchLocalControlEvent(it.event, it.roomId) }
-            }
-        }
-    }
-
-    private fun dispatchLocalControlEvent(
-        event: ListenTogetherEvent,
-        expectedRoomId: String?
-    ) {
-        val snapshot = _sessionState.value
-        if (
-            snapshot.roomId.isNullOrBlank() ||
-            snapshot.roomId != expectedRoomId
-        ) {
-            NPLogger.d(
-                TAG,
-                "dispatchLocalControlEvent(): discard stale event type=${event.type}, expectedRoomId=$expectedRoomId, currentRoomId=${snapshot.roomId}, connection=${snapshot.connectionState}"
-            )
-            return
-        }
-        val legacyQueueMutationFallback = buildListenTogetherLegacyQueueMutationFallback(
-            event = event,
-            fallbackEventId = nextEventId()
-        )
-        localControlOutbox.offer(
-            event = event,
-            roomId = snapshot.roomId,
-            legacyFallbackEvent = legacyQueueMutationFallback
-        )
-        if (event.type == "TRACK_FINISHED") {
-            awaitingTrackFinishStableKey = event.finishedTrackStableKey
-            pendingTrackFinishedLegacyFallback = buildTrackFinishedLegacyFallbackEvent(
-                event = event,
-                isController = isCurrentUserController(),
-                nowMs = System.currentTimeMillis(),
-                eventIdFactory = ::nextEventId
-            )?.let { fallbackEvent ->
-                PendingTrackFinishedLegacyFallback(
-                    event = fallbackEvent,
-                    createdAtElapsedMs = SystemClock.elapsedRealtime()
-                )
-            }
-        } else {
-            awaitingTrackFinishStableKey = null
-            pendingTrackFinishedLegacyFallback = null
-        }
-        pendingMemberControlRequest = buildPendingMemberControlRequest(event)
-        markOutboundEvent(event.eventId)
-        noteOutboundSync()
-        NPLogger.d(
-            TAG,
-            "sendEvent(): type=${event.type}, eventId=${event.eventId}, currentIndex=${event.currentIndex}, positionMs=${event.positionMs}, queueSize=${event.queue?.size}"
-        )
-        val wsSent = sendControlEventPureWebSocket(event, "local_playback_command")
-        NPLogger.d(TAG, "sendEvent(): websocketSent=$wsSent, type=${event.type}, eventId=${event.eventId}")
-        if (!wsSent) {
-            NPLogger.w(TAG, "sendEvent(): websocket unavailable, type=${event.type}, eventId=${event.eventId}")
-        }
-    }
-
-    private fun replayPendingLocalControlEvents() {
-        val roomId = _sessionState.value.roomId ?: return
-        val pending = localControlOutbox.pendingForRoom(roomId)
-        if (pending.isEmpty()) return
-        NPLogger.d(
-            TAG,
-            "replayPendingLocalControlEvents(): roomId=$roomId, count=${pending.size}"
-        )
-        pending.forEach { pendingEvent ->
-            if (_sessionState.value.roomId != pendingEvent.roomId) return@forEach
-            markOutboundEvent(pendingEvent.event.eventId)
-            noteOutboundSync()
-            sendControlEventPureWebSocket(
-                event = pendingEvent.event,
-                reason = "replay_local_control"
-            )
-        }
-    }
-
-    private fun clearCoalescedLocalControlEvents(reason: String) {
-        val pendingCount = synchronized(coalescedControlLock) {
-            val count = pendingCoalescedControlEvents.size
-            pendingCoalescedControlEvents.clear()
-            coalescedControlJobs.values.forEach(Job::cancel)
-            coalescedControlJobs.clear()
-            count
-        }
-        if (pendingCount > 0) {
-            NPLogger.d(TAG, "clearCoalescedLocalControlEvents(): reason=$reason, count=$pendingCount")
-        }
+        localControlOwner.enqueueOrDispatch(event, snapshot.roomId)
     }
 
     private fun buildEventForPlaybackCommand(command: PlaybackCommand): ListenTogetherEvent? {
         return eventFactory.buildEventForPlaybackCommand(command)
-    }
-
-    private fun trySendQueueMutationLegacyFallback(
-        errorMessage: String?,
-        eventId: String?
-    ): Boolean {
-        if (!isListenTogetherQueueMutationCompatibilityError(errorMessage)) return false
-        val pending = localControlOutbox.pendingByEventId(eventId)
-            ?: localControlOutbox.singlePendingWithLegacyFallback()
-            ?: return false
-        val fallbackEvent = pending.legacyFallbackEvent ?: return false
-        if (_sessionState.value.roomId != pending.roomId) return false
-        if (localControlOutbox.replace(pending.event.eventId, fallbackEvent) == null) {
-            return false
-        }
-        pendingMemberControlRequest = buildPendingMemberControlRequest(fallbackEvent)
-        markOutboundEvent(fallbackEvent.eventId)
-        noteOutboundSync()
-        NPLogger.w(
-            TAG,
-            "trySendQueueMutationLegacyFallback(): type=${fallbackEvent.type}, " +
-                "eventId=${fallbackEvent.eventId}, originalEventId=${pending.event.eventId}"
-        )
-        sendControlEventPureWebSocket(
-            event = fallbackEvent,
-            reason = "queue_mutation_legacy_fallback"
-        )
-        return true
     }
 
     private fun buildControllerCommitEventFromForwardedRequest(
@@ -1977,7 +1811,7 @@ class ListenTogetherSessionManager(
         return shouldDeferListenTogetherIncomingStateForLocalTrackFinish(
             state = state,
             cause = cause,
-            awaitingTrackFinishStableKey = awaitingTrackFinishStableKey
+            awaitingTrackFinishStableKey = localControlOwner.awaitingTrackFinishStableKey()
         )
     }
 
@@ -2117,7 +1951,7 @@ class ListenTogetherSessionManager(
                 if (isCurrentUserController(snapshot)) {
                     continue
                 }
-                retryPendingMemberControlRequestIfNeeded()
+                localControlOwner.retryPendingMemberRequest(roomState.value)
                 val state = roomState.value
                 if (state != null) {
                     applyListenerWatchdogSync(state)
@@ -2252,55 +2086,6 @@ class ListenTogetherSessionManager(
     private fun stopListenTogetherSoftSyncRateRecheck() {
         softSyncRateRecheckJob?.cancel()
         softSyncRateRecheckJob = null
-    }
-
-    private fun buildPendingMemberControlRequest(event: ListenTogetherEvent): PendingMemberControlRequest? {
-        if (isCurrentUserController()) return null
-        if (event.type !in requestControlEventTypes) return null
-        val nowElapsedMs = SystemClock.elapsedRealtime()
-        return PendingMemberControlRequest(
-            event = event,
-            createdAtElapsedMs = nowElapsedMs,
-            lastSentAtElapsedMs = nowElapsedMs,
-            attempts = 1
-        )
-    }
-
-    private fun retryPendingMemberControlRequestIfNeeded() {
-        val pending = pendingMemberControlRequest ?: return
-        val nowElapsedMs = SystemClock.elapsedRealtime()
-        if (
-            isListenTogetherPendingMemberControlSatisfied(
-                event = pending.event,
-                state = roomState.value,
-                seekSatisfiedDriftMs = PENDING_MEMBER_SEEK_SATISFIED_DRIFT_MS
-            )
-        ) {
-            NPLogger.d(TAG, "retryPendingMemberControlRequestIfNeeded(): request satisfied, type=${pending.event.type}")
-            pendingMemberControlRequest = null
-            return
-        }
-        if (nowElapsedMs - pending.createdAtElapsedMs > PENDING_MEMBER_CONTROL_REQUEST_TTL_MS) {
-            NPLogger.w(TAG, "retryPendingMemberControlRequestIfNeeded(): request expired, type=${pending.event.type}")
-            pendingMemberControlRequest = null
-            return
-        }
-        if (pending.attempts >= PENDING_MEMBER_CONTROL_REQUEST_MAX_ATTEMPTS) {
-            NPLogger.w(TAG, "retryPendingMemberControlRequestIfNeeded(): max attempts reached, type=${pending.event.type}")
-            pendingMemberControlRequest = null
-            return
-        }
-        if (nowElapsedMs - pending.lastSentAtElapsedMs < PENDING_MEMBER_CONTROL_REQUEST_RETRY_INTERVAL_MS) {
-            return
-        }
-        val retryEvent = pending.event
-        pendingMemberControlRequest = pending.retriedAt(nowElapsedMs)
-        markOutboundEvent(retryEvent.eventId)
-        NPLogger.w(
-            TAG,
-            "retryPendingMemberControlRequestIfNeeded(): retry type=${retryEvent.type}, attempt=${pending.attempts + 1}"
-        )
-        sendControlEventPureWebSocket(retryEvent, "pending_member_control_retry")
     }
 
     private suspend fun refreshListenerRoomStateIfDue(
@@ -2523,26 +2308,8 @@ class ListenTogetherSessionManager(
     }
 
     private fun trySendTrackFinishedLegacyFallback(errorMessage: String): Boolean {
-        if (!isUnsupportedTrackFinishedEventError(errorMessage)) return false
-        val pending = pendingTrackFinishedLegacyFallback ?: return false
-        if (pending.attempted) return false
-        val elapsedMs = SystemClock.elapsedRealtime() - pending.createdAtElapsedMs
-        if (elapsedMs > TRACK_FINISHED_LEGACY_FALLBACK_TTL_MS) {
-            pendingTrackFinishedLegacyFallback = null
-            return false
-        }
-        pendingTrackFinishedLegacyFallback = pending.copy(attempted = true)
-        awaitingTrackFinishStableKey = null
-        markOutboundEvent(pending.event.eventId)
-        noteOutboundSync()
-        NPLogger.w(
-            TAG,
-            "trySendTrackFinishedLegacyFallback(): server rejected TRACK_FINISHED, fallbackType=${pending.event.type}, eventId=${pending.event.eventId}, elapsedMs=$elapsedMs"
-        )
-        val sent = sendControlEventPureWebSocket(pending.event, "track_finished_legacy_fallback")
-        if (sent) {
-            _sessionState.value = _sessionState.value.copy(lastError = null)
-        }
+        val sent = localControlOwner.tryTrackFinishedLegacyFallback(errorMessage)
+        if (sent) _sessionState.value = _sessionState.value.copy(lastError = null)
         return sent
     }
 
@@ -2632,7 +2399,7 @@ class ListenTogetherSessionManager(
                 "handleHttpFallbackControlResponse(): rejected, type=${event.type}, reason=$reason, error=$resolvedError"
             )
             _sessionState.value = _sessionState.value.copy(lastError = resolvedError)
-            if (trySendQueueMutationLegacyFallback(resolvedError, event.eventId)) {
+            if (localControlOwner.tryQueueMutationLegacyFallback(resolvedError, event.eventId)) {
                 return
             }
             if (trySendTrackFinishedLegacyFallback(resolvedError)) {
@@ -2645,7 +2412,7 @@ class ListenTogetherSessionManager(
             return
         }
         _sessionState.value = _sessionState.value.copy(lastError = null)
-        localControlOutbox.acknowledge(event.eventId)
+        localControlOwner.acknowledge(event.eventId)
         val applied = response.applied ?: return
         val state = applied.state ?: return
         NPLogger.d(
@@ -2835,7 +2602,7 @@ class ListenTogetherSessionManager(
             "closeRoomLocally(): roomId=${snapshot.roomId}, role=${snapshot.role}, reason=$reason, lastAppliedVersion=${roomStateOwner.lastAppliedVersion()}"
         )
         reconnectEnabled = false
-        localControlOutbox.clear()
+        localControlOwner.clearOutbox()
         resetReconnectAttempt()
         pendingStateRefreshAfterReconnect = false
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
@@ -2851,7 +2618,7 @@ class ListenTogetherSessionManager(
         roomStateOwner.close()
         lastControllerLocalControlAtElapsedMs = 0L
         forwardedRequestDeduper.clear()
-        pendingMemberControlRequest = null
+        localControlOwner.clearPendingMemberRequest()
         lastListenerStateRefreshAtElapsedMs = 0L
         lastWebSocketMessageAtElapsedMs = 0L
         webSocketConnectingAtElapsedMs = 0L
@@ -2985,23 +2752,11 @@ class ListenTogetherSessionManager(
         internal const val LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS = 20 * SECOND_MS
         private const val FOREGROUND_SOCKET_PROBE_TIMEOUT_MS = 5 * SECOND_MS
         private const val CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS = 1_200L
-        private const val COALESCED_LOCAL_CONTROL_WINDOW_MS = 100L
-        private val COALESCED_LOCAL_CONTROL_EVENT_TYPES = setOf(
-            "SET_QUEUE",
-            "REQUEST_SET_QUEUE",
-            "PLAYBACK_MODE",
-            "REQUEST_PLAYBACK_MODE"
-        )
         private const val SYNC_WATCHDOG_INTERVAL_MS = 8 * SECOND_MS
         private const val LISTENER_WEB_SOCKET_SILENCE_TIMEOUT_MS = 45 * SECOND_MS
         private const val LISTENER_STATE_REPAIR_MIN_INTERVAL_MS = 30 * SECOND_MS
         private const val LISTENER_PLAYBACK_STALL_TIMEOUT_MS = 8 * SECOND_MS
         private const val LISTENER_PLAYBACK_STALL_RECOVERY_COOLDOWN_MS = 12 * SECOND_MS
-        private const val PENDING_MEMBER_CONTROL_REQUEST_RETRY_INTERVAL_MS = 3 * SECOND_MS
-        private const val PENDING_MEMBER_CONTROL_REQUEST_TTL_MS = 18 * SECOND_MS
-        private const val PENDING_MEMBER_CONTROL_REQUEST_MAX_ATTEMPTS = 4
-        private const val PENDING_MEMBER_SEEK_SATISFIED_DRIFT_MS = 1_500L
-        private const val TRACK_FINISHED_LEGACY_FALLBACK_TTL_MS = 15 * SECOND_MS
         private const val SOFT_SYNC_MIN_DRIFT_MS = 600L
         private const val SOFT_SYNC_FAST_DRIFT_MS = 1_500L
         private const val SOFT_SYNC_RECHECK_INTERVAL_MS = 500L
