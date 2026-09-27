@@ -28,20 +28,14 @@ import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
-import android.text.format.Formatter
 import android.os.Handler
 import android.os.Looper
-import android.view.PixelCopy
-import android.view.View
-import android.view.ViewTreeObserver
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -52,40 +46,26 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -105,30 +85,22 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import androidx.core.graphics.createBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -156,7 +128,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.R
@@ -166,7 +137,6 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
@@ -206,7 +176,6 @@ import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotCached
 import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.navigation.LauncherShortcutAction
 import moe.ouom.neriplayer.navigation.LauncherShortcutRequest
@@ -276,12 +245,9 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.crash.AnrWatchdog
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
-import moe.ouom.neriplayer.util.media.normalizeCoverArtColorCacheKey
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.util.crash.NativeCrashHandler
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.media.adjustedAccentColorArgb
-import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.platform.openAppBackgroundSettings
 import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
 import moe.ouom.neriplayer.util.platform.requestIgnoreBatteryOptimizationsCompat
@@ -291,7 +257,6 @@ import moe.ouom.neriplayer.util.media.isRemoteImageSource
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.network.rememberOfflineModeState
 import moe.ouom.neriplayer.ui.haptic.syncHapticFeedbackSetting
-import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -304,19 +269,6 @@ private const val LAUNCHER_SHORTCUT_PLAYLIST_READY_TIMEOUT_MS = 5000L
 internal const val MAIN_TAB_LAYER_Z_INDEX = 0f
 internal const val NAV_HOST_LAYER_Z_INDEX = 1f
 internal const val MINI_PLAYER_OVERLAY_Z_INDEX = 2f
-private const val MANAGED_LIBRARY_PROCESSING_Z_INDEX = 3f
-private val MANAGED_LIBRARY_PROCESSING_REVEAL_EDGE = 96.dp
-private val MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD = 24.dp
-internal fun shouldExpandManagedProcessingBannerFromDrag(
-    startY: Float,
-    totalX: Float,
-    totalY: Float,
-    edgePx: Float,
-    thresholdPx: Float
-): Boolean = startY <= edgePx &&
-    totalY >= thresholdPx &&
-    totalY > abs(totalX)
-
 internal data class BottomBarLayoutInsets(
     val navContentBottomPadding: Dp,
     val screenBottomInset: Dp,
@@ -341,14 +293,6 @@ internal fun resolveBottomBarLayoutInsets(
     )
 }
 
-private fun SongItem?.resolveUiCoverSource(context: Context): String? {
-    return this?.displayCoverUrl(context)
-}
-
-private const val NOW_PLAYING_REMOTE_BLUR_IMAGE_SIZE_PX = 640
-private const val NOW_PLAYING_LOCAL_BLUR_IMAGE_SIZE_PX = 384
-private const val NOW_PLAYING_BACKGROUND_CROSSFADE_MS = 520
-
 private tailrec fun Context.findActivity(): Activity? {
     return when (this) {
         is Activity -> this
@@ -356,340 +300,6 @@ private tailrec fun Context.findActivity(): Activity? {
         else -> null
     }
 }
-
-private fun resolvedNowPlayingBlurImageSizePx(coverUrl: String?): Int {
-    return if (isRemoteImageSource(coverUrl)) {
-        NOW_PLAYING_REMOTE_BLUR_IMAGE_SIZE_PX
-    } else {
-        NOW_PLAYING_LOCAL_BLUR_IMAGE_SIZE_PX
-    }
-}
-
-private fun resolvedNowPlayingBlurStrength(coverUrl: String?, configuredBlurAmount: Float): Float {
-    return if (isRemoteImageSource(coverUrl)) {
-        configuredBlurAmount
-    } else {
-        configuredBlurAmount.coerceAtMost(64f)
-    }
-}
-
-internal fun resolvePlaybackVisualCoverUrl(
-    currentCoverUrl: String?,
-    previousVisualCoverUrl: String?,
-    hasCurrentSong: Boolean
-): String? {
-    val normalizedCoverUrl = currentCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
-    return when {
-        normalizedCoverUrl != null -> normalizedCoverUrl
-        !hasCurrentSong -> null
-        else -> previousVisualCoverUrl
-    }
-}
-
-internal fun shouldClearPlaybackVisualCover(
-    currentSongKey: String?,
-    requestedCoverUrl: String?,
-    clearDelayElapsed: Boolean
-): Boolean {
-    return currentSongKey == null && requestedCoverUrl == null && clearDelayElapsed
-}
-
-internal fun shouldClearRetainedPlaybackVisualCoverAfterGrace(
-    currentSongKey: String?,
-    retainedCoverUrl: String?,
-    requestedCoverUrl: String?,
-    clearDelayElapsed: Boolean
-): Boolean = currentSongKey.isNullOrBlank() &&
-    clearDelayElapsed &&
-    !retainedCoverUrl?.trim().isNullOrEmpty() &&
-    requestedCoverUrl?.trim().isNullOrEmpty()
-
-internal fun shouldClearNowPlayingBlurCover(
-    currentSongKey: String?,
-    requestedCoverUrl: String?,
-    clearDelayElapsed: Boolean
-): Boolean = currentSongKey == null &&
-    requestedCoverUrl?.trim().isNullOrEmpty() &&
-    clearDelayElapsed
-
-internal fun shouldRetainNowPlayingBlurCover(
-    stableCoverUrl: String?,
-    currentSongKey: String?,
-    requestedCoverUrl: String?
-): Boolean = !stableCoverUrl?.trim().isNullOrEmpty() &&
-    (currentSongKey != null || !requestedCoverUrl?.trim().isNullOrEmpty())
-
-internal data class PlaybackVisualCoverState(
-    val url: String?,
-    val ownerSongKey: String?
-)
-
-internal fun resolvePlaybackVisualCoverState(
-    currentCoverUrl: String?,
-    previousState: PlaybackVisualCoverState?,
-    currentSongKey: String?,
-    hasCurrentSong: Boolean
-): PlaybackVisualCoverState {
-    val normalizedCoverUrl = currentCoverUrl?.trim()?.takeIf(String::isNotEmpty)
-    return when {
-        normalizedCoverUrl != null -> PlaybackVisualCoverState(
-            url = normalizedCoverUrl,
-            ownerSongKey = currentSongKey
-        )
-        !hasCurrentSong -> PlaybackVisualCoverState(
-            url = null,
-            ownerSongKey = null
-        )
-        else -> previousState ?: PlaybackVisualCoverState(
-            url = null,
-            ownerSongKey = null
-        )
-    }
-}
-
-@Composable
-private fun rememberPlaybackVisualCoverState(
-    coverUrl: String?,
-    currentSongKey: String?
-): PlaybackVisualCoverState {
-    val normalizedCoverUrl = coverUrl?.trim()?.takeIf(String::isNotEmpty)
-    var visualCoverState by remember {
-        mutableStateOf(
-            resolvePlaybackVisualCoverState(
-                currentCoverUrl = normalizedCoverUrl,
-                previousState = null,
-                currentSongKey = currentSongKey,
-                hasCurrentSong = currentSongKey != null
-            )
-        )
-    }
-    val resolvedVisualCoverState = resolvePlaybackVisualCoverState(
-        currentCoverUrl = normalizedCoverUrl,
-        previousState = visualCoverState,
-        currentSongKey = currentSongKey,
-        hasCurrentSong = currentSongKey != null || visualCoverState.url != null
-    )
-    val latestSongKey by rememberUpdatedState(currentSongKey)
-    val latestCoverUrl by rememberUpdatedState(normalizedCoverUrl)
-    val latestVisualCoverState by rememberUpdatedState(visualCoverState)
-    SideEffect {
-        if (visualCoverState != resolvedVisualCoverState) {
-            visualCoverState = resolvedVisualCoverState
-        }
-    }
-    LaunchedEffect(currentSongKey, normalizedCoverUrl, visualCoverState.ownerSongKey) {
-        val stateAtStart = visualCoverState
-        if (stateAtStart.url.isNullOrBlank() || !normalizedCoverUrl.isNullOrBlank()) {
-            return@LaunchedEffect
-        }
-        delay(PLAYBACK_VISUAL_COVER_GRACE_MS)
-        if (
-            latestSongKey == currentSongKey &&
-                latestCoverUrl.isNullOrEmpty() &&
-                latestVisualCoverState == stateAtStart &&
-                shouldClearRetainedPlaybackVisualCoverAfterGrace(
-                    currentSongKey = latestSongKey,
-                    retainedCoverUrl = latestVisualCoverState.url,
-                    requestedCoverUrl = latestCoverUrl,
-                    clearDelayElapsed = true
-                )
-        ) {
-            visualCoverState = PlaybackVisualCoverState(
-                url = null,
-                ownerSongKey = null
-            )
-        }
-    }
-    return resolvedVisualCoverState
-}
-
-@Composable
-private fun TrafficRiskDownloadDialog(
-    request: GlobalDownloadManager.TrafficRiskDownloadRequest,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val networkLabel = stringResource(
-        when (request.networkType) {
-            TrafficNetworkType.ROAMING -> R.string.traffic_risk_network_roaming
-            TrafficNetworkType.MOBILE -> R.string.traffic_risk_network_mobile
-            TrafficNetworkType.WIFI -> R.string.traffic_risk_network_wifi
-        }
-    )
-    val message = if (request.songCount <= 1) {
-        stringResource(
-            R.string.traffic_risk_download_single_message,
-            networkLabel,
-            request.songs.firstOrNull()?.displayName().orEmpty()
-        )
-    } else {
-        pluralStringResource(
-            R.plurals.traffic_risk_download_batch_message,
-            request.songCount,
-            networkLabel,
-            request.songCount
-        )
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.traffic_risk_download_title)) },
-        text = { Text(message) },
-        confirmButton = {
-            HapticTextButton(onClick = onConfirm) {
-                Text(stringResource(R.string.traffic_risk_download_confirm))
-            }
-        },
-        dismissButton = {
-            HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
-            }
-        }
-    )
-}
-
-@Composable
-internal fun MobileDataDownloadInterruptionDialog(
-    request: GlobalDownloadManager.MobileDataDownloadInterruptionRequest,
-    onContinue: () -> Unit,
-    onWaitWifi: () -> Unit,
-    onCancelAll: () -> Unit
-) {
-    val networkLabel = stringResource(
-        when (request.networkType) {
-            TrafficNetworkType.ROAMING -> R.string.traffic_risk_network_roaming
-            TrafficNetworkType.MOBILE -> R.string.traffic_risk_network_mobile
-            TrafficNetworkType.WIFI -> R.string.traffic_risk_network_wifi
-        }
-    )
-
-    AlertDialog(
-        onDismissRequest = onWaitWifi,
-        title = { Text(stringResource(R.string.mobile_data_download_interruption_title)) },
-        confirmButton = {},
-        dismissButton = {},
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    pluralStringResource(
-                        R.plurals.mobile_data_download_interruption_message,
-                        request.taskCount,
-                        networkLabel,
-                        request.taskCount
-                    )
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    HapticTextButton(onClick = onWaitWifi) {
-                        Text(stringResource(R.string.mobile_data_download_wait_wifi))
-                    }
-                    HapticTextButton(onClick = onContinue) {
-                        Text(stringResource(R.string.traffic_risk_download_confirm))
-                    }
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .wrapContentWidth(Alignment.End)
-                ) {
-                    HapticTextButton(onClick = onCancelAll) {
-                        Text(
-                            stringResource(R.string.mobile_data_download_cancel_all),
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
-        }
-    )
-}
-
-@Composable
-private fun UsbExclusiveBackgroundPermissionDialog(
-    batteryOptimizationAllowed: Boolean,
-    onRequestBatteryOptimization: () -> Unit,
-    onOpenAppSettings: () -> Unit,
-    onNeverShowAgain: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(R.string.settings_usb_exclusive_background_permission_title))
-        },
-        confirmButton = {},
-        dismissButton = {},
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.settings_usb_exclusive_background_permission_desc))
-                if (!batteryOptimizationAllowed) {
-                    HapticTextButton(
-                        onClick = onRequestBatteryOptimization,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.settings_usb_exclusive_background_permission_battery))
-                    }
-                }
-                HapticTextButton(
-                    onClick = onOpenAppSettings,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.settings_usb_exclusive_background_permission_app_settings))
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    HapticTextButton(onClick = onNeverShowAgain) {
-                        Text(stringResource(R.string.settings_usb_exclusive_background_permission_never))
-                    }
-                    HapticTextButton(onClick = onDismiss) {
-                        Text(stringResource(R.string.settings_usb_exclusive_background_permission_later))
-                    }
-                }
-            }
-        }
-    )
-}
-
-private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 1080
-private const val THEME_REVEAL_STABLE_DRAW_PASSES = 1
-private const val THEME_REVEAL_DURATION_MILLIS = 720
-private const val THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 900L
-private val THEME_REVEAL_SNAPSHOT_CONFIG = Bitmap.Config.RGB_565
-
-internal data class ThemeRevealSnapshotDimensions(
-    val width: Int,
-    val height: Int
-)
-
-internal fun resolveThemeRevealSnapshotDimensions(
-    width: Int,
-    height: Int,
-    maxDimensionPx: Int = THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX
-): ThemeRevealSnapshotDimensions {
-    val safeWidth = width.coerceAtLeast(1)
-    val safeHeight = height.coerceAtLeast(1)
-    val maxDimension = maxOf(safeWidth, safeHeight)
-    val downsampleRatio = (maxDimension.toFloat() / maxDimensionPx)
-        .coerceAtLeast(1f)
-    return ThemeRevealSnapshotDimensions(
-        width = (safeWidth / downsampleRatio).roundToInt().coerceAtLeast(1),
-        height = (safeHeight / downsampleRatio).roundToInt().coerceAtLeast(1)
-    )
-}
-
-internal fun shouldBlockThemeModeChange(
-    captureInFlight: Boolean,
-    writeInFlight: Boolean,
-    revealActive: Boolean,
-    hasPendingThemePreference: Boolean
-): Boolean = captureInFlight || writeInFlight || revealActive || hasPendingThemePreference
-
-internal fun resolveThemeToggleTarget(isDark: Boolean): ThemeMode =
-    if (isDark) ThemeMode.LIGHT else ThemeMode.DARK
 
 internal fun localPlaylistIdFromSourceRoute(sourceRoute: String?): Long? {
     return sourceRoute
@@ -702,519 +312,6 @@ private data class HomeUsageSnapshot(
     val entries: List<UsageEntry> = emptyList(),
     val isLoaded: Boolean = false
 )
-
-private fun View.drawScaledThemeRevealBitmap(): Bitmap? {
-    if (width <= 0 || height <= 0) {
-        return null
-    }
-    val snapshotDimensions = resolveThemeRevealSnapshotDimensions(
-        width = width,
-        height = height
-    )
-    return runCatching {
-        createBitmap(
-            snapshotDimensions.width,
-            snapshotDimensions.height,
-            THEME_REVEAL_SNAPSHOT_CONFIG
-        ).also { bitmap ->
-            val canvas = Canvas(bitmap)
-            canvas.scale(
-                snapshotDimensions.width.toFloat() / width.toFloat(),
-                snapshotDimensions.height.toFloat() / height.toFloat()
-            )
-            draw(canvas)
-        }
-    }.getOrNull()
-}
-
-private suspend fun captureThemeRevealSnapshot(
-    activity: Activity?,
-    fallbackView: View
-): ImageBitmap? {
-    val windowBitmap = activity?.let { currentActivity ->
-        suspendCancellableCoroutine { continuation ->
-            val decorView = currentActivity.window.decorView
-            if (decorView.width <= 0 || decorView.height <= 0) {
-                continuation.resume(null)
-                return@suspendCancellableCoroutine
-            }
-
-            val snapshotDimensions = resolveThemeRevealSnapshotDimensions(
-                width = decorView.width,
-                height = decorView.height
-            )
-            val bitmap = createBitmap(
-                snapshotDimensions.width,
-                snapshotDimensions.height,
-                THEME_REVEAL_SNAPSHOT_CONFIG
-            )
-
-            PixelCopy.request(
-                currentActivity.window,
-                bitmap,
-                { result ->
-                    continuation.resume(if (result == PixelCopy.SUCCESS) bitmap else null)
-                },
-                Handler(Looper.getMainLooper())
-            )
-        }
-    }
-
-    return windowBitmap?.asImageBitmap() ?: captureThemeRevealFallbackSnapshot(fallbackView)
-}
-
-private suspend fun captureThemeRevealFallbackSnapshot(view: View): ImageBitmap? {
-    return withContext(Dispatchers.Main.immediate) {
-        runCatching {
-            if (view.width > 0 && view.height > 0) {
-                view.drawScaledThemeRevealBitmap()?.asImageBitmap()
-            } else {
-                null
-            }
-        }.getOrNull()
-    }
-}
-
-private suspend fun awaitNextDraw(view: View) {
-    if (!view.isAttachedToWindow || view.width <= 0 || view.height <= 0) {
-        return
-    }
-
-    withTimeoutOrNull(120L) {
-        suspendCancellableCoroutine { continuation ->
-            val observer = view.viewTreeObserver
-            var handled = false
-            val drawListener = object : ViewTreeObserver.OnDrawListener {
-                override fun onDraw() {
-                    if (handled) return
-                    handled = true
-                    view.post {
-                        if (observer.isAlive) {
-                            observer.removeOnDrawListener(this)
-                        }
-                        if (continuation.isActive) {
-                            continuation.resume(Unit)
-                        }
-                    }
-                }
-            }
-
-            observer.addOnDrawListener(drawListener)
-            continuation.invokeOnCancellation {
-                if (handled) {
-                    return@invokeOnCancellation
-                }
-                handled = true
-                view.post {
-                    if (observer.isAlive) {
-                        observer.removeOnDrawListener(drawListener)
-                    }
-                }
-            }
-            view.invalidate()
-        }
-    }
-}
-
-private suspend fun awaitStableDraw(view: View) {
-    repeat(THEME_REVEAL_STABLE_DRAW_PASSES) {
-        awaitNextDraw(view)
-    }
-}
-
-private const val COVER_SEED_WARMUP_DELAY_MS = 180L
-private const val PLAYBACK_VISUAL_COVER_GRACE_MS = 1200L
-private const val PLAYBACK_COVER_SEED_GRACE_MS = 1200L
-
-private data class PlaybackCoverSeed(
-    val coverUrl: String,
-    val seedHex: String,
-    val songKey: String?
-)
-
-internal fun resolveActiveCoverSeedHex(
-    visualCoverUrl: String?,
-    sampledCoverUrl: String?,
-    sampledSeedHex: String?,
-    currentSongKey: String? = null,
-    sampledSongKey: String? = null
-): String? {
-    val visualCacheKey = normalizeCoverArtColorCacheKey(visualCoverUrl) ?: return null
-    val sampledCacheKey = normalizeCoverArtColorCacheKey(sampledCoverUrl) ?: return null
-    val belongsToVisual = visualCacheKey == sampledCacheKey
-    val belongsToSameSong = currentSongKey != null && currentSongKey == sampledSongKey
-    return sampledSeedHex?.takeIf {
-        belongsToVisual || belongsToSameSong
-    }
-}
-
-internal fun resolveCoverSeedWarmupDelayMillis(
-    showNowPlaying: Boolean,
-    dynamicColorEnabled: Boolean,
-    hasCachedSample: Boolean
-): Long {
-    if (!dynamicColorEnabled || showNowPlaying || hasCachedSample) {
-        return 0L
-    }
-    return COVER_SEED_WARMUP_DELAY_MS
-}
-
-/**
- * 根据封面提取播放界面强调色
- */
-@Composable
-private fun NowPlayingAccentBackdrop(
-    coverUrl: String?,
-    isDark: Boolean,
-    modifier: Modifier = Modifier,
-    songKey: String? = null,
-    refreshKey: Int = 0,
-    offlineMode: Boolean = false,
-    onAccentChanged: (String?) -> Unit = {}
-) {
-    val context = LocalContext.current
-    val fallback = if (isDark) Color(0xFF121212) else Color(0xFFF5F5F5)
-    var target by remember { mutableStateOf<Color?>(null) }
-    val normalizedCoverUrl = coverUrl?.trim()?.takeIf(String::isNotEmpty)
-    val latestCoverUrl by rememberUpdatedState(normalizedCoverUrl)
-    val latestSongKey by rememberUpdatedState(songKey)
-
-    LaunchedEffect(normalizedCoverUrl, songKey, isDark, refreshKey, offlineMode) {
-        val requestCoverUrl = normalizedCoverUrl
-        val requestSongKey = songKey
-        if (requestCoverUrl == null) {
-            delay(PLAYBACK_COVER_SEED_GRACE_MS)
-            if (latestCoverUrl == null && latestSongKey == requestSongKey) {
-                target = null
-                onAccentChanged(null)
-            }
-            return@LaunchedEffect
-        }
-        val cached = CoverArtColorCache.peek(requestCoverUrl)
-        currentCoroutineContext().ensureActive()
-        if (
-            cached != null &&
-                latestCoverUrl == requestCoverUrl &&
-                latestSongKey == requestSongKey
-        ) {
-            target = Color(adjustedAccentColorArgb(cached.baseColorArgb, isDark))
-            onAccentChanged(cached.seedHex)
-        }
-        val sample = CoverArtColorCache.getOrLoad(context, requestCoverUrl, offlineMode)
-        currentCoroutineContext().ensureActive()
-        if (latestCoverUrl != requestCoverUrl || latestSongKey != requestSongKey) {
-            return@LaunchedEffect
-        }
-        if (sample != null) {
-            target = Color(adjustedAccentColorArgb(sample.baseColorArgb, isDark))
-            onAccentChanged(sample.seedHex)
-        }
-    }
-
-    val bgColor by androidx.compose.animation.animateColorAsState(
-        targetValue = target ?: fallback,
-        animationSpec = tween(450, easing = FastOutSlowInEasing),
-        label = "accent-bg"
-    )
-
-    val vignetteAlpha by animateFloatAsState(
-        targetValue = if (isDark) 0.12f else 0.25f, // 暗色更强一点，亮色很轻
-        animationSpec = tween(300),
-        label = "vignette-alpha"
-    )
-
-    val whiteMaskAlpha by animateFloatAsState(
-        targetValue = if (isDark) 0f else 0.05f,
-        animationSpec = tween(300),
-        label = "white-mask-alpha"
-    )
-
-    Box(
-        modifier = modifier
-            .background(bgColor)
-            .drawWithContent {
-                drawContent()
-                // 顶部黑色渐隐
-                drawRect(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = vignetteAlpha),
-                            Color.Transparent
-                        )
-                    )
-                )
-                // 亮色模式白色遮罩, 整体柔化
-                if (whiteMaskAlpha > 0f) {
-                    drawRect(Color.White.copy(alpha = whiteMaskAlpha))
-                }
-            }
-    )
-}
-
-@Composable
-private fun OfflineModeBottomBanner() {
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.offline_mode_bottom_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-        )
-    }
-}
-
-private fun Modifier.managedProcessingRevealGesture(
-    collapsed: Boolean,
-    edgePx: Float,
-    thresholdPx: Float,
-    onExpand: () -> Unit
-): Modifier {
-    if (!collapsed) return this
-    return pointerInput(collapsed, edgePx, thresholdPx) {
-        awaitEachGesture {
-            val down = awaitFirstDown(
-                requireUnconsumed = false,
-                pass = PointerEventPass.Initial
-            )
-            if (down.position.y > edgePx) {
-                return@awaitEachGesture
-            }
-
-            var previousPosition = down.position
-            var totalX = 0f
-            var totalY = 0f
-            while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Final)
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                val position = change.position
-                totalX += position.x - previousPosition.x
-                totalY += position.y - previousPosition.y
-                previousPosition = position
-                if (change.pressed && shouldExpandManagedProcessingBannerFromDrag(
-                        startY = down.position.y,
-                        totalX = totalX,
-                        totalY = totalY,
-                        edgePx = edgePx,
-                        thresholdPx = thresholdPx
-                    )) {
-                    change.consume()
-                    onExpand()
-                    break
-                }
-                if (!change.pressed) break
-            }
-        }
-    }
-}
-
-@Composable
-private fun ManagedLibraryProcessingBanner(
-    state: ManagedLibraryProcessingState,
-    migrationProgress: ManagedDownloadStorage.MigrationProgress?,
-    onCollapsedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-    interactive: Boolean = true
-) {
-    val title = when (state.reason) {
-        ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE ->
-            stringResource(R.string.managed_library_processing_upgrade_title)
-        ManagedLibraryProcessingReason.DIRECTORY_CHANGE ->
-            stringResource(R.string.managed_library_processing_directory_title)
-        null -> return
-    }
-    val waitingForRetry = state is ManagedLibraryProcessingState.WaitingForRetry
-    val stageText = when (migrationProgress?.stage) {
-        ManagedDownloadStorage.MigrationStage.PREPARING ->
-            stringResource(R.string.settings_download_directory_migrating_stage_preparing)
-        ManagedDownloadStorage.MigrationStage.COPYING ->
-            stringResource(R.string.settings_download_directory_migrating_stage_copying)
-        ManagedDownloadStorage.MigrationStage.REWRITING_METADATA ->
-            stringResource(R.string.settings_download_directory_migrating_stage_rewriting)
-        ManagedDownloadStorage.MigrationStage.VERIFYING ->
-            stringResource(R.string.settings_download_directory_migrating_stage_verifying)
-        ManagedDownloadStorage.MigrationStage.CLEANING_UP ->
-            stringResource(R.string.settings_download_directory_migrating_stage_cleanup)
-        ManagedDownloadStorage.MigrationStage.FINALIZING ->
-            stringResource(R.string.settings_download_directory_migrating)
-        null -> null
-    }
-    val stageProgress = migrationProgress?.let { progress ->
-        progress.stageProcessed.coerceAtLeast(0) to progress.stageTotal.coerceAtLeast(0)
-    }
-    val processed = stageProgress?.first ?: state.processed?.coerceAtLeast(0)
-    val total = stageProgress?.second?.takeIf { it > 0 }
-        ?: state.total?.takeIf { it > 0 }
-    val stageProgressFraction = if (processed != null && total != null) {
-        (processed.toFloat() / total.toFloat()).coerceIn(0f, 1f)
-    } else {
-        null
-    }
-    val progressFraction = migrationProgress?.fraction
-        ?.coerceIn(0f, 1f)
-        ?: stageProgressFraction
-    val animatedProgressFraction by animateFloatAsState(
-        targetValue = progressFraction ?: 0f,
-        animationSpec = tween(
-            durationMillis = 220,
-            easing = FastOutSlowInEasing
-        ),
-        label = "managed library processing progress"
-    )
-    val currentFileSummary = migrationProgress?.currentFileName
-        ?.takeIf(String::isNotBlank)
-        ?.let { fileName ->
-            stringResource(R.string.settings_download_directory_migrating_current, fileName)
-        }
-    val bytesSummary = migrationProgress?.let { progress ->
-        val (done, totalBytes) = when (progress.stage) {
-            ManagedDownloadStorage.MigrationStage.VERIFYING ->
-                progress.verifiedBytes to progress.verificationBytesTotal
-            ManagedDownloadStorage.MigrationStage.COPYING ->
-                progress.copiedBytes to progress.totalBytes
-            else -> return@let null
-        }
-        if (totalBytes <= 0L) {
-            null
-        } else {
-            stringResource(
-                if (progress.stage == ManagedDownloadStorage.MigrationStage.VERIFYING) {
-                    R.string.settings_download_directory_migrating_verification_progress_bytes
-                } else {
-                    R.string.settings_download_directory_migrating_progress_bytes
-                },
-                Formatter.formatShortFileSize(LocalContext.current, done.coerceAtLeast(0L)),
-                Formatter.formatShortFileSize(LocalContext.current, totalBytes)
-            )
-        }
-    }
-    val dragThresholdPx = with(LocalDensity.current) {
-        MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD.toPx()
-    }
-    val gestureModifier = if (interactive) {
-        Modifier.pointerInput(dragThresholdPx) {
-            var accumulatedDragPx = 0f
-            var stateChanged = false
-            detectVerticalDragGestures(
-                onDragStart = { accumulatedDragPx = 0f },
-                onVerticalDrag = { change, dragAmount ->
-                    change.consume()
-                    if (stateChanged) return@detectVerticalDragGestures
-                    accumulatedDragPx += dragAmount
-                    when {
-                        accumulatedDragPx <= -dragThresholdPx -> {
-                            stateChanged = true
-                            onCollapsedChange(true)
-                        }
-                    }
-                }
-            )
-        }
-    } else {
-        Modifier
-    }
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(16.dp),
-        tonalElevation = 6.dp,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .animateContentSize(
-                animationSpec = tween(
-                    durationMillis = 220,
-                    easing = FastOutSlowInEasing
-                )
-            )
-            .then(gestureModifier)
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    enabled = interactive,
-                    onClick = { onCollapsedChange(true) }
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ExpandLess,
-                        contentDescription = stringResource(R.string.action_collapse)
-                    )
-                }
-            }
-            Text(
-                text = stringResource(
-                    if (waitingForRetry) {
-                        R.string.managed_library_processing_retry
-                    } else {
-                        R.string.managed_library_processing_subtitle
-                    }
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            stageText?.let { text ->
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            if (processed != null && total != null) {
-                Text(
-                    text = stringResource(
-                        R.string.managed_library_processing_progress,
-                        processed,
-                        total
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            bytesSummary?.let { text ->
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            currentFileSummary?.let { text ->
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
-                )
-            }
-            if (!waitingForRetry) {
-                if (progressFraction == null) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                } else {
-                    LinearProgressIndicator(
-                        progress = { animatedProgressFraction },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun NeriApp(
@@ -1582,8 +679,7 @@ private fun NeriAppContent(
         currentSong?.playbackVisualKeyAliases().orEmpty()
     }
     val playbackVisualCoverState = rememberPlaybackVisualCoverState(
-        coverUrl = displayCoverUrl,
-        currentSongKey = currentSongVisualKey
+        playbackVisualCoverRequest(displayCoverUrl, currentSongVisualKey)
     )
     val playbackVisualCoverUrl = playbackVisualCoverState.url
     val coverAssetRefreshKey = remember(
@@ -3509,6 +2605,7 @@ private fun NeriAppContent(
                                     ManagedLibraryProcessingBanner(
                                         state = managedProcessingBannerState,
                                         migrationProgress = managedProcessingBannerProgress,
+                                        modifier = Modifier,
                                         interactive = managedProcessingBannerActive &&
                                             !managedProcessingBannerCollapsed,
                                         onCollapsedChange = {
@@ -4534,24 +3631,22 @@ private fun NeriAppContent(
                             if (!useCoverBlurBackground) {
                                 // 背景固定按暗色逻辑渲染
                                 NowPlayingAccentBackdrop(
-                                    coverUrl = nowPlayingCoverUrl,
-                                    isDark = true,
-                                    songKey = currentSongVisualKey,
-                                    refreshKey = coverAssetRefreshKey,
-                                    modifier = Modifier.fillMaxSize(),
-                                    offlineMode = offlineMode
+                                    request = backdropAccentRequest(
+                                        nowPlayingCoverUrl, currentSongVisualKey, true,
+                                        coverAssetRefreshKey, offlineMode
+                                    ),
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
 
                             if (useCoverBlurBackground) {
                                 // 先铺一层强调色背景, 避免首次加载和旋转重建时黑底闪烁
                                 NowPlayingAccentBackdrop(
-                                    coverUrl = blurBackdropCoverUrl,
-                                    isDark = true,
-                                    songKey = currentSongVisualKey,
-                                    refreshKey = coverAssetRefreshKey,
-                                    modifier = Modifier.fillMaxSize(),
-                                    offlineMode = offlineMode
+                                    request = backdropAccentRequest(
+                                        blurBackdropCoverUrl, currentSongVisualKey, true,
+                                        coverAssetRefreshKey, offlineMode
+                                    ),
+                                    modifier = Modifier.fillMaxSize()
                                 )
                                 val shouldShowStable =
                                     stableCoverUrl != null &&

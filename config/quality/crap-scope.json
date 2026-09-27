@@ -57,7 +57,11 @@
     "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionResources.kt",
     "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionReusePolicy.kt",
     "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionStateProjection.kt",
-    "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSelectedDeviceKeyPort.kt"
+    "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSelectedDeviceKeyPort.kt",
+    "moe/ouom/neriplayer/ui/AppPlaybackVisualOwner.kt",
+    "moe/ouom/neriplayer/ui/AppThemeRevealCapture.kt",
+    "moe/ouom/neriplayer/ui/AppGlobalDialogs.kt",
+    "moe/ouom/neriplayer/ui/AppStatusBanners.kt"
   ],
   "method_scopes": [
     {
