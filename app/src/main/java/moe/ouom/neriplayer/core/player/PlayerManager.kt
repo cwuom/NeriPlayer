@@ -207,6 +207,11 @@ import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlayback
 import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackSignals
 import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackSnapshot
 import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackSnapshotSource
+import moe.ouom.neriplayer.core.player.usb.recovery.PlayerManagerUsbExclusiveLivenessPort
+import moe.ouom.neriplayer.core.player.usb.recovery.PlayerManagerUsbInterruptedPlaybackPort
+import moe.ouom.neriplayer.core.player.usb.recovery.UsbExclusiveLivenessOwner
+import moe.ouom.neriplayer.core.player.usb.recovery.UsbInterruptedPlaybackIntent
+import moe.ouom.neriplayer.core.player.usb.recovery.UsbInterruptedPlaybackOwner
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
@@ -316,6 +321,9 @@ object PlayerManager {
     internal var ioScope = newIoScope()
     internal var mainScope = newMainScope()
     internal var playbackStatsOwner = PlaybackStatsOwner(ioScope, AppPlaybackStatsWritePort)
+    @Volatile
+    internal var usbExclusiveLivenessOwner = UsbExclusiveLivenessOwner(mainScope, PlayerManagerUsbExclusiveLivenessPort)
+    internal var usbInterruptedPlaybackOwner = UsbInterruptedPlaybackOwner(mainScope, PlayerManagerUsbInterruptedPlaybackPort)
     internal var progressJob: Job? = null
     internal var playbackRuntimeWatchdogJob: Job? = null
     @Volatile
@@ -360,11 +368,9 @@ object PlayerManager {
     internal var usbExclusiveToggleTransitionReason = ""
     internal var usbExclusiveRecoveryJob: Job? = null
     internal var usbExclusiveOpenGatePlaybackJob: Job? = null
-    internal var usbExclusiveForegroundRecoveryJob: Job? = null
-    internal var usbExclusiveBackgroundAuditJob: Job? = null
-    internal var usbExclusiveDeviceReattachRecoveryJob: Job? = null
     internal var usbExclusiveRecoveryAttempts = 0
-    internal var usbExclusiveInterruptedPlaybackIntent: UsbExclusiveInterruptedPlaybackIntent? = null
+    internal val usbExclusiveInterruptedPlaybackIntent: UsbInterruptedPlaybackIntent?
+        get() = usbInterruptedPlaybackOwner.intent
     @Volatile
     internal var usbExclusiveRouteGeneration = 0L
     @Volatile
@@ -458,19 +464,11 @@ object PlayerManager {
     internal var stopOnBluetoothDisconnectEnabled = true
     @Volatile
     internal var usbExclusivePlaybackEnabled = false
-    @Volatile
-    internal var usbExclusiveAppInForeground = true
+    internal val usbExclusiveAppInForeground: Boolean
+        get() = usbExclusiveLivenessOwner.appInForeground
     @Volatile
     internal var usbExclusivePreferences = UsbExclusivePreferences()
     internal var allowMixedPlaybackEnabled = false
-
-    internal data class UsbExclusiveInterruptedPlaybackIntent(
-        val queueIndex: Int,
-        val positionMs: Long,
-        val requestToken: Long,
-        val reason: String,
-        val recordedAtMs: Long = SystemClock.elapsedRealtime()
-    )
 
     private val queueStore = PlayerQueueStateStore()
     internal val currentPlaylist: List<SongItem>
