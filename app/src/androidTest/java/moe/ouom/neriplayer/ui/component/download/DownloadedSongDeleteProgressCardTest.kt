@@ -61,7 +61,9 @@ class DownloadedSongDeleteProgressCardTest {
         }
         composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_deleting_files))
             .assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.download_clear_item_progress, 1000, 4000))
+        composeRule.onNodeWithText(
+            context.resources.getQuantityString(R.plurals.download_clear_item_progress, 4000, 1000, 4000)
+        )
             .assertIsDisplayed()
         composeRule.onNode(progressRange(ProgressBarRangeInfo(0.25f, 0f..1f)))
             .assertIsDisplayed()
@@ -86,7 +88,9 @@ class DownloadedSongDeleteProgressCardTest {
             .assertDoesNotExist()
         composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_finalizing))
             .assertDoesNotExist()
-        composeRule.onNodeWithText(context.getString(R.string.download_clear_item_progress, 4000, 4000))
+        composeRule.onNodeWithText(
+            context.resources.getQuantityString(R.plurals.download_clear_item_progress, 4000, 4000, 4000)
+        )
             .assertDoesNotExist()
     }
 
@@ -128,7 +132,9 @@ class DownloadedSongDeleteProgressCardTest {
         composeRule.runOnIdle {
             progress.value = progress.value.copy(totalReferenceCount = 0, completedReferenceCount = 0)
         }
-        composeRule.onNodeWithText(context.getString(R.string.download_clear_item_progress, 0, 0))
+        composeRule.onNodeWithText(
+            context.resources.getQuantityString(R.plurals.download_clear_item_progress, 0, 0, 0)
+        )
             .assertDoesNotExist()
         composeRule.onNodeWithText(context.getString(R.string.download_delete_failed_files, 2))
             .assertIsDisplayed()

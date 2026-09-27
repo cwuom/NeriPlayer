@@ -675,13 +675,13 @@ internal fun shouldAnimateNowPlayingCoverFrame(
 private fun StableNowPlayingCoverImage(
     coverUrl: String?,
     songKey: String?,
-    songKeyAliases: List<String> = emptyList(),
     context: Context,
     coverRequestSizePx: Int,
     offlineMode: Boolean,
     coverCacheKey: String?,
     contentDescription: String?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    songKeyAliases: List<String> = emptyList()
 ) {
     val requestedCover = remember(coverUrl, songKey, coverCacheKey) {
         buildNowPlayingCoverRequest(
@@ -1564,7 +1564,6 @@ private fun NowPlayingQueueQuickActionsFab(
 ) {
     if (!shouldShowNowPlayingQueueQuickActions(queueSize, currentIndex, hasSourceRoute)) return
 
-    val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
 
     Column(

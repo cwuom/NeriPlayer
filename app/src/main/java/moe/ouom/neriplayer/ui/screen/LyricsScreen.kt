@@ -223,7 +223,6 @@ fun LyricsScreen(
         PlayerManager.currentQueueDisplaySnapshot()
     }
     val displayedQueueItems = queueDisplayState.items
-    val displayedQueue = remember(displayedQueueItems) { displayedQueueItems.map { it.song } }
     val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()

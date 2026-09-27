@@ -2,10 +2,8 @@
 <resources>
     <!-- Settings / General -->
     <string name="settings_title">Settings</string>
-    <string name="settings_search_title">Search Settings</string>
     <string name="settings_search_hint">Search settings</string>
     <string name="settings_search_empty">No matching settings</string>
-    <string name="settings_search_result_context">%1$s · %2$s</string>
     <string name="settings_general">General</string>
     <string name="settings_general_desc">Language, haptics, and global behavior</string>
     <string name="settings_accounts_desc">Manage NetEase, Bilibili, and YouTube sign-in states</string>
@@ -14,7 +12,6 @@
     <string name="settings_bypass_proxy">Bypass Proxy</string>
     <string name="settings_bypass_proxy_desc">Ignore system proxy</string>
     <string name="settings_restart_hint">May need to restart app for best effect</string>
-    <string name="settings_expand_network">Network and proxy options</string>
     <string name="settings_about_desc">Version, project home, and developer mode</string>
     <string name="settings_always_record_logs">Always Record Logs</string>
     <string name="settings_always_record_logs_desc">Record runtime logs continuously</string>
@@ -33,10 +30,6 @@
     <string name="settings_ui_scale_dpi">UI Scale (DPI)</string>
     <string name="settings_ui_scale_current">Current: %sx (Default 1.00x)</string>
     <string name="settings_ui_scale_global_desc">Adjust app-wide interface density and text scaling</string>
-    <string name="settings_expand_login">Sign-in methods and account status</string>
-    <string name="settings_expand_personalization">Home, display, and personalization</string>
-    <string name="settings_expand_download">Downloads and local files</string>
-    <string name="settings_expand_backup">Playlist backup and restore</string>
     <string name="settings_bilibili">Bilibili</string>
     <string name="settings_netease">Netease Music</string>
     <string name="settings_qq_music">QQ Music</string>
@@ -47,9 +40,6 @@
     <string name="settings_auto_show_keyboard_desc">Auto focus inputs and try to show the keyboard</string>
     <string name="settings_always_use_new_tab_style">Always Use the New Tab Style</string>
     <string name="settings_always_use_new_tab_style_desc">Use the new tab style even without a background image.</string>
-    <string name="settings_home_cards">Home Sections</string>
-    <string name="settings_home_cards_desc">You can hide any home section. Hide all sections to hide Home.</string>
-    <string name="settings_home_cards_desc_international">When internationalization is enabled, these toggles switch to YouTube Music home sections.</string>
     <string name="settings_home_card_ytmusic_guess_you_like_desc">Control the Guess You Like song shelf.</string>
     <string name="settings_home_card_ytmusic_daily_discover_desc">Control the Daily Discover song shelf.</string>
     <string name="settings_home_card_ytmusic_more_recommendations_desc">Control more YouTube Music recommendation and playlist sections.</string>
@@ -59,7 +49,6 @@
     <string name="settings_home_card_netease_radar_desc">Show Personal Radar, Radar Playlists, Daily Picks, and Private FM.</string>
     <string name="settings_home_card_netease_recommended">Recommended Playlists</string>
     <string name="settings_home_card_netease_recommended_desc">Show For You, Daily, High-Quality, Hot, and ACG playlists.</string>
-    <string name="settings_home_card_netease_login_required">Signing in to NetEase also adds Daily Picks and Private FM sources.</string>
     <string name="settings_personalization_start_section">Start and Input</string>
     <string name="settings_personalization_start_section_desc">Set the default entry and keyboard behavior.</string>
     <string name="settings_personalization_home_section">Home Sections</string>
@@ -81,7 +70,6 @@
     <string name="settings_playback_section_behavior_desc">Control playback state, progress memory, and disconnect handling.</string>
     <string name="settings_playback_section_audio_output">Audio Output</string>
     <string name="settings_playback_section_audio_output_desc">Adjust loudness, balance, USB, and audio focus.</string>
-    <string name="settings_playback_section_transitions">Transitions</string>
     <string name="settings_lyrics_floating_section">Floating Lyrics</string>
     <string name="settings_lyrics_floating_section_desc">Manage floating lyric appearance and behavior.</string>
     <string name="settings_lyrics_source_section">Lyric Services</string>
@@ -159,7 +147,6 @@
     <string name="settings_usb_exclusive_player_state">Player State</string>
     <string name="settings_usb_exclusive_player_playing">Playing</string>
     <string name="settings_usb_exclusive_player_idle">Paused or idle</string>
-    <string name="settings_usb_exclusive_runtime">Native Runtime</string>
     <string name="settings_usb_exclusive_error">Last Error</string>
     <string name="settings_usb_exclusive_source_player">Player PCM</string>
     <string name="settings_usb_exclusive_source_tone">Exclusive test tone</string>
@@ -262,8 +249,6 @@
     <string name="settings_allow_mixed_playback_desc">Do not take audio focus so other apps can play</string>
     <string name="settings_preempt_audio_focus">Preempt Audio Focus</string>
     <string name="settings_preempt_audio_focus_desc">Take audio focus when the main screen opens and playback is idle, making headset controls more likely to target NeriPlayer</string>
-    <string name="settings_lyrics_blur">Blur</string>
-    <string name="settings_lyrics_font_size">Lyrics Font Size</string>
     <string name="settings_lyrics_cover_lyric_font_size">Cover lyric font</string>
     <string name="settings_lyrics_cover_translation_font_size">Cover translation font</string>
     <string name="settings_lyrics_page_lyric_font_size">Lyrics page font</string>
@@ -278,7 +263,6 @@
     <string name="settings_lyrics_lyric_font_size">Lyric font size</string>
     <string name="settings_lyrics_translation_font_size">Translation font size</string>
     <string name="settings_lyrics_translation_sample">Sample translation: the moonlight stays with you</string>
-    <string name="settings_lyrics_font_current">Current: %d%%</string>
     <string name="settings_lyrics_sample">Sample lyrics: Last night the east wind blew</string>
     <string name="settings_custom_background">Custom Background</string>
     <string name="settings_background_change">Change</string>
@@ -290,7 +274,6 @@
     <string name="settings_download_expand">Location, file format, and download tasks</string>
     <string name="settings_download_progress">Download Progress</string>
     <string name="settings_download_songs_count" formatted="false">%d/%d songs</string>
-    <string name="settings_downloading">Downloading: %s</string>
     <string name="settings_download_manager">Download Manager</string>
     <string name="settings_download_directory">Download Directory</string>
     <string name="settings_download_directory_desc">Songs, lyrics, and covers will be saved here</string>
@@ -326,9 +309,6 @@
     <string name="settings_storage_cache_clear_section">Cache Cleanup</string>
     <string name="settings_storage_cache_clear_section_desc">Inspect usage and clear regenerable cache.</string>
     <string name="settings_download_directory_default_label">App private folder</string>
-    <string name="settings_download_directory_custom_label">Custom Directory</string>
-    <string name="settings_download_directory_internal_storage">Internal Storage</string>
-    <string name="settings_download_directory_sd_card">SD Card</string>
     <string name="settings_download_directory_selected">Download directory updated</string>
     <string name="settings_download_directory_reset_done">Download directory reset to default</string>
     <string name="settings_download_directory_pick_failed">Failed to choose download directory: %1$s</string>
@@ -374,33 +354,18 @@
     <string name="settings_configured">Configured</string>
     <string name="settings_not_configured">Not Configured</string>
     <string name="settings_configure">Configure</string>
-    <string name="settings_close">Close</string>
     <string name="settings_about">About</string>
     <string name="settings_version">Version</string>
-    <string name="settings_debug_enabled">Debug mode enabled</string>
-    <string name="settings_debug_mode_on">Debug mode is on</string>
     <string name="settings_build_time">Build Time</string>
     <string name="settings_dolby">Dolby Atmos</string>
-    <string name="language_simplified_chinese">Simplified Chinese</string>
-    <string name="language_english">English</string>
-    <string name="language_follow_system">Follow System</string>
     <string name="language_display_chinese">Chinese / 简体中文</string>
     <string name="language_display_english">English / 英语</string>
     <string name="language_display_system">Follow system / 跟随系统</string>
     <string name="language_setting_title">Language</string>
     <string name="language_select_title">Select Language</string>
-    <string name="language_restart_title">Restart App</string>
-    <string name="language_restart_message">Language changed. App restart required for full effect.</string>
-    <string name="language_restart_now">Restart Now</string>
-    <string name="language_restart_later">Later</string>
-    <string name="language_restart_title_bilingual">Restart app / 重启应用</string>
-    <string name="language_restart_message_bilingual">Language changed. Restart the app to apply it completely.\n语言已更改，需要重启应用以完全生效。</string>
-    <string name="language_restart_now_bilingual">Restart now / 立即重启</string>
-    <string name="language_restart_later_bilingual">Later / 稍后</string>
     <string name="settings_color_picker_hint">Long press color or tap × to delete custom color</string>
     <string name="settings_phone_number_hint">+86 Phone Number</string>
     <string name="settings_resend_code_countdown">Resend (%ds)</string>
-    <string name="settings_empty_placeholder">(Empty)</string>
     <string name="settings_saved_cookie_continue">Continue and refresh</string>
     <string name="settings_saved_cookie_logout">Sign out</string>
     <string name="settings_android12_required">Android 12+ required</string>

@@ -29,16 +29,11 @@
     <string name="sync_auto">Auto Sync</string>
     <string name="sync_now">Sync Now</string>
     <string name="sync_not_synced">Not Synced</string>
-    <string name="sync_success">Sync Successful</string>
-    <string name="sync_failed">Sync Failed</string>
     <string name="sync_upload_failed">Upload Failed</string>
-    <string name="sync_send_failed">Send Failed</string>
     <string name="sync_send_cancelled">Send Cancelled</string>
     <string name="sync_initial_uploaded">Initial Data Uploaded</string>
     <string name="sync_history_frequency">Sync Frequency</string>
     <string name="sync_after_play">After Each Play</string>
-    <string name="sync_configured">Configured</string>
-    <string name="sync_not_configured">Not Configured</string>
     <string name="sync_config">Configure</string>
     <string name="sync_clear_config">Clear Configuration</string>
     <string name="sync_repo_name">Repository Name</string>
@@ -52,12 +47,8 @@
     <string name="sync_data_saver_warning_confirm">Continue</string>
     <string name="sync_diff_failed">Diff Analysis Failed</string>
     <string name="sync_analysis_progress">Analysis Progress</string>
-    <string name="backup_title">Backup &amp; Restore</string>
-    <string name="backup_expand_hint">Playlist backup and restore</string>
-    <string name="backup_no_playlist_data">No playlist data in backup</string>
     <string name="backup_import_failed">Playlist import failed</string>
     <string name="backup_export_failed">Playlist export failed</string>
-    <string name="backup_restore_title">Backup &amp; Restore</string>
     <string name="sync_config_desc">Configure sync</string>
     <string name="sync_auto_desc">Auto sync after changes</string>
     <string name="sync_last_time">Last sync: %s</string>
@@ -107,7 +98,6 @@
     <string name="webdav_sync_channel_name">WebDAV Sync</string>
     <string name="webdav_sync_channel_desc">WebDAV sync status notifications</string>
     <string name="webdav_sync_failed_title">WebDAV Sync Failed</string>
-    <string name="backup_no_playlists">No playlist data in backup file</string>
     <string name="settings_current_playlist">Current Playlist</string>
     <string name="settings_export_playlist">Export Playlist</string>
     <string name="settings_import_playlist">Import Playlist</string>

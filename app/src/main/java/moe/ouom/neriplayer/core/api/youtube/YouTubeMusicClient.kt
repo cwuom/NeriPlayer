@@ -2078,23 +2078,6 @@ internal object YouTubeMusicParser {
         return null
     }
 
-    private fun findRequired(source: String, vararg patterns: String): String {
-        return findOptional(source, *patterns).ifBlank {
-            throw IOException(
-                "YouTube Music bootstrap parse failed: ${patterns.firstOrNull().orEmpty()}"
-            )
-        }
-    }
-
-    private fun findOptional(source: String, vararg patterns: String): String {
-        return patterns.asSequence()
-            .map { pattern ->
-                Regex(pattern).find(source)?.groupValues?.getOrNull(1).orEmpty()
-            }
-            .firstOrNull { it.isNotBlank() }
-            .orEmpty()
-    }
-
     private fun parseDataSyncId(dataSyncId: String): Pair<String, String> {
         if (dataSyncId.isBlank()) {
             return "" to ""

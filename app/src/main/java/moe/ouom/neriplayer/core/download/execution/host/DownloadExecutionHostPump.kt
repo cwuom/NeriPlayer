@@ -44,7 +44,7 @@ internal suspend fun DefaultDownloadExecutionHost.collectPumpCandidates(
     var roomQueryNs = 0L
     var cursor = afterCursor
     var exhausted = false
-    var pendingRequests = ArrayDeque<DownloadExecutionRequest>().apply {
+    val pendingRequests = ArrayDeque<DownloadExecutionRequest>().apply {
         pendingPage?.requests?.forEach(::addLast)
     }
     var pendingContinuationCursor = pendingPage?.continuationCursor

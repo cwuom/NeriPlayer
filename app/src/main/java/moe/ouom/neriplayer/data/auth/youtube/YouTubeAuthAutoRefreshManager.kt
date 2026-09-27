@@ -25,6 +25,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.net.URI
 import java.net.URLEncoder
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class YouTubeAuthAutoRefreshResult(
     val attempted: Boolean = false,
@@ -254,7 +255,6 @@ class YouTubeAuthAutoRefreshManager(
             return YouTubeAuthAutoRefreshResult(reason = "youtube_disabled")
         }
         val auth = authProvider().normalized()
-        val health = authHealthProvider()
         if (!auth.hasLoginCookies()) {
             return YouTubeAuthAutoRefreshResult(reason = "no_login_cookies")
         }
@@ -327,7 +327,7 @@ class YouTubeAuthAutoRefreshManager(
                     if (!loadUrlAndAwait(activeWebView, url)) {
                         return@forEach
                     }
-                    delay(PAGE_SETTLE_DELAY_MS)
+                    delay(PAGE_SETTLE_DELAY_MS.milliseconds)
                     var pageSnapshot = readPageSnapshot(activeWebView)
                     var refreshedAuth = buildObservedAuthBundle(
                         base = currentAuth,
@@ -359,9 +359,9 @@ class YouTubeAuthAutoRefreshManager(
                             "refresh auto-login reason=$reason url=$url loginUrl=$loginUrl"
                         )
                         if (loadUrlAndAwait(activeWebView, loginUrl)) {
-                            delay(PAGE_SETTLE_DELAY_MS)
+                            delay(PAGE_SETTLE_DELAY_MS.milliseconds)
                             if (loadUrlAndAwait(activeWebView, url)) {
-                                delay(PAGE_SETTLE_DELAY_MS)
+                                delay(PAGE_SETTLE_DELAY_MS.milliseconds)
                             }
                             pageSnapshot = readPageSnapshot(activeWebView)
                             refreshedAuth = buildObservedAuthBundle(
@@ -564,7 +564,7 @@ class YouTubeAuthAutoRefreshManager(
             activeWebView.stopLoading()
             activeWebView.loadUrl(url)
         }
-        return withTimeoutOrNull(PAGE_LOAD_TIMEOUT_MS) {
+        return withTimeoutOrNull(PAGE_LOAD_TIMEOUT_MS.milliseconds) {
             deferred.await()
         } ?: false
     }
@@ -732,7 +732,7 @@ class YouTubeAuthAutoRefreshManager(
         activeWebView.evaluateJavascript(script) { raw ->
             result.complete(decodeEvaluateJavascriptValue(raw))
         }
-        withTimeoutOrNull(PAGE_LOAD_TIMEOUT_MS) {
+        withTimeoutOrNull(PAGE_LOAD_TIMEOUT_MS.milliseconds) {
             result.await()
         }
     }

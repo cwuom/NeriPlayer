@@ -10,7 +10,6 @@
     <string name="log_clear">清空日志</string>
     <string name="log_no_file">没有找到日志文件</string>
     <string name="log_cannot_read">无法读取日志文件</string>
-    <string name="log_view_hint">查看应用日志</string>
     <string name="log_enable_hint">请确保已在设置中开启文件日志记录</string>
     <string name="crash_log_title">崩溃日志</string>
     <string name="crash_log_desc">查看应用崩溃记录</string>

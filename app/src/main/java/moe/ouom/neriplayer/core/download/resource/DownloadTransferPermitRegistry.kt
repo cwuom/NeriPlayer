@@ -442,9 +442,7 @@ internal class DownloadTransferPermitRegistry(
     private fun release(permit: Permit) {
         var snapshotToNotify: Snapshot? = null
         synchronized(stateLock) {
-            val active = activeByOwner[permit.ownerKey]
-                ?.takeIf { it.permit === permit }
-                ?: return
+            if (activeByOwner[permit.ownerKey]?.permit !== permit) return
             activeByOwner.remove(permit.ownerKey)
             drainLocked()
             snapshotToNotify = snapshotLocked(nowNs())

@@ -90,8 +90,9 @@ internal fun DownloadedSongDeleteProgressCard(
             val totalReferences = progress?.totalReferenceCount
             if (progress != null && totalReferences != null && totalReferences > 0) {
                 Text(
-                    text = stringResource(
-                        R.string.download_clear_item_progress,
+                    text = pluralStringResource(
+                        R.plurals.download_clear_item_progress,
+                        totalReferences,
                         progress.completedReferenceCount.coerceIn(0, totalReferences.coerceAtLeast(0)),
                         totalReferences.coerceAtLeast(0)
                     ),

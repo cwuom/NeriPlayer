@@ -403,8 +403,9 @@ internal fun LocalScanPreviewScreen(
                                         phaseElapsedSeconds,
                                         phaseElapsedSeconds
                                     )
-                                    LocalAudioScanPhase.TRAVERSING -> stringResource(
-                                        R.string.local_playlist_scan_progress_traversing,
+                                    LocalAudioScanPhase.TRAVERSING -> pluralStringResource(
+                                        R.plurals.local_playlist_scan_progress_traversing,
+                                        scanProgress.visitedDirectories,
                                         scanProgress.visitedDirectories,
                                         scanProgress.discoveredSongs
                                     )

@@ -36,9 +36,7 @@
     <string name="onboarding_platforms_no_login_desc">Without a signed-in platform, search, playlists, and playback resources may be restricted. You can go back and connect one now, or continue and sign in later from settings.</string>
     <string name="onboarding_platforms_no_login_continue">Continue anyway</string>
     <string name="onboarding_platforms_no_login_connect">Go back to connect</string>
-    <string name="onboarding_github_desc">Back up playlists to your own private GitHub repository.</string>
     <string name="onboarding_github_repo_configured">Configured repository: %1$s</string>
-    <string name="onboarding_github_hint">GitHub sync is optional too, and you can finish it later in settings.</string>
     <string name="onboarding_backup_restore_title">Backup &amp; restore</string>
     <string name="onboarding_backup_restore_desc">Choose GitHub or WebDAV automatic sync, or sync manually whenever you want.</string>
     <string name="onboarding_backup_restore_github_title">GitHub Auto Sync</string>
@@ -62,7 +60,6 @@
     <string name="onboarding_enhanced_blur_prompt_not_now">Leave off</string>
     <string name="onboarding_complete_hint">After the preference steps, the learning guide will show you easy-to-miss feature entry points.</string>
     <string name="onboarding_action_next">Continue</string>
-    <string name="onboarding_action_enter_app">Start using</string>
     <string name="onboarding_platform_action_connect">Connect</string>
     <string name="onboarding_platform_action_manage">Manage</string>
     <string name="onboarding_platform_action_logout">Sign out</string>

@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Storage & Cache -->
-    <string name="settings_storage">Storage &amp; Cache</string>
     <string name="settings_cache_limit">Cache Limit</string>
     <string name="settings_clear_cache">Clear</string>
     <string name="settings_clear_cache_desc">Free up space</string>
     <string name="settings_cache_empty">Cache is empty</string>
-    <string name="settings_clear_complete">Cleared</string>
-    <string name="settings_storage_used">Storage Used</string>
-    <string name="settings_cache_desc">Manage cache</string>
     <string name="settings_confirm_clear_cache">Clear cache?</string>
     <string name="settings_clear_cache_warning">This will delete selected cache files and free up disk space.</string>
     <string name="settings_select_cache_types">Select cache types to clear:</string>
@@ -16,12 +12,7 @@
     <string name="settings_audio_cache_desc">Cached music files</string>
     <string name="settings_image_cache">Image Cache</string>
     <string name="settings_image_cache_desc">Covers, avatars, etc.</string>
-    <string name="storage_details_title">Storage Details</string>
-    <string name="storage_details_subtitle">Actual space used by directories:</string>
-    <string name="storage_details_loading">Calculating directory usage, please wait…</string>
     <string name="storage_details_total">Total</string>
-    <string name="storage_details_warning_title">⚠️ System Settings Inaccurate?</string>
-    <string name="storage_details_warning_message">If system shows much more than here, it\'s an Android cache issue.\n\nSolutions:\n1. Restart device\n2. Wait for system update\n3. Open system settings</string>
     <string name="storage_open_system_settings">Open System Settings</string>
     <string name="storage_open_system_settings_failed">Unable to open system settings</string>
     <string name="storage_clear_type_size">%1$s, currently about %2$s</string>
@@ -53,7 +44,6 @@
     <string name="storage_type_legacy_migration_files">Legacy Migration Files</string>
     <string name="storage_type_database">Room Database and Indexes</string>
     <string name="storage_type_app_data">App Data</string>
-    <string name="storage_type_error">Error</string>
     <string name="storage_desc_audio_cache">Audio segments cached during playback and safe to stream again</string>
     <string name="storage_desc_image_cache">Covers, avatars, and blurred background images that can be loaded again</string>
     <string name="storage_desc_download_staging">Incomplete downloads, resume metadata, and HLS checkpoints</string>
@@ -76,7 +66,6 @@
     <string name="storage_desc_database">Room database and WAL/SHM files; platform cache pages are apportioned above, while core data is never removed by cache cleanup</string>
     <string name="storage_desc_app_data">Core playlists, favorites, settings, and auth data</string>
     <string name="cache_clear_complete">Cache cleared</string>
-    <string name="settings_cache_manage">Manage cache</string>
     <string name="settings_storage_cache">Storage &amp; Cache</string>
     <string name="settings_storage_expand">Cache size, cleanup, and storage use</string>
     <string name="settings_cache_notice">Set to 0 MB to disable cache, or move the slider to the end for unlimited. Restart required after changing the limit.</string>
@@ -91,7 +80,9 @@
     <string name="storage_scan_stage_finalize">Preparing usage details</string>
     <string name="storage_scan_refresh">Scan again</string>
     <string name="storage_cleanable_total">Cleanable cache</string>
-    <string name="storage_details_files_summary">%1$s · %2$d files</string>
-    <string name="storage_details_cache_record_count">%1$d Room cache entries</string>
+    <plurals name="storage_details_cache_record_count">
+        <item quantity="one">%1$d Room cache entry</item>
+        <item quantity="other">%1$d Room cache entries</item>
+    </plurals>
     <string name="storage_details_empty">No measurable files found yet</string>
 </resources>

@@ -2,10 +2,8 @@
 <resources>
     <!-- Settings / General -->
     <string name="settings_title">设置</string>
-    <string name="settings_search_title">搜索设置</string>
     <string name="settings_search_hint">搜索设置</string>
     <string name="settings_search_empty">没有匹配的设置</string>
-    <string name="settings_search_result_context">%1$s · %2$s</string>
     <string name="settings_general">通用</string>
     <string name="settings_general_desc">语言、触感和全局行为</string>
     <string name="settings_accounts_desc">管理网易云、哔哩哔哩和 YouTube 登录状态</string>
@@ -14,7 +12,6 @@
     <string name="settings_bypass_proxy">绕过系统代理</string>
     <string name="settings_bypass_proxy_desc">应用内网络请求不走系统代理</string>
     <string name="settings_restart_hint">修改后可能需要重启应用以获得最佳效果</string>
-    <string name="settings_expand_network">网络连接与代理选项</string>
     <string name="settings_about_desc">版本信息、项目主页和开发者模式</string>
     <string name="settings_always_record_logs">始终记录日志</string>
     <string name="settings_always_record_logs_desc">持续写入运行日志</string>
@@ -33,10 +30,6 @@
     <string name="settings_ui_scale_dpi">UI 缩放 (DPI)</string>
     <string name="settings_ui_scale_current">当前: %sx (默认 1.00x)</string>
     <string name="settings_ui_scale_global_desc">全局调整应用界面密度和文字缩放</string>
-    <string name="settings_expand_login">登录方式与账号状态</string>
-    <string name="settings_expand_personalization">首页、显示与个性化偏好</string>
-    <string name="settings_expand_download">下载任务与本地文件管理</string>
-    <string name="settings_expand_backup">歌单备份与恢复</string>
     <string name="settings_bilibili">哔哩哔哩</string>
     <string name="settings_netease">网易云音乐</string>
     <string name="settings_qq_music">QQ 音乐</string>
@@ -47,9 +40,6 @@
     <string name="settings_auto_show_keyboard_desc">输入框出现时自动聚焦并尝试打开软键盘</string>
     <string name="settings_always_use_new_tab_style">始终使用新版 TAB 样式</string>
     <string name="settings_always_use_new_tab_style_desc">无背景图时也使用新版 TAB 样式</string>
-    <string name="settings_home_cards">首页栏目</string>
-    <string name="settings_home_cards_desc">可分别关闭首页栏目，全部关闭后首页会隐藏</string>
-    <string name="settings_home_cards_desc_international">国际化开启后，这里的开关会切换为 YouTube Music 首页栏目</string>
     <string name="settings_home_card_ytmusic_guess_you_like_desc">控制“猜你喜欢”歌曲推荐</string>
     <string name="settings_home_card_ytmusic_daily_discover_desc">控制“每日发现”歌曲推荐</string>
     <string name="settings_home_card_ytmusic_more_recommendations_desc">控制更多 YouTube Music 推荐与歌单栏目</string>
@@ -59,7 +49,6 @@
     <string name="settings_home_card_netease_radar_desc">显示私人雷达、雷达歌单、每日推荐和私人 FM</string>
     <string name="settings_home_card_netease_recommended">推荐歌单</string>
     <string name="settings_home_card_netease_recommended_desc">显示为你推荐、每日推荐、精品、热门和 ACG 歌单</string>
-    <string name="settings_home_card_netease_login_required">登录网易云后会加入每日推荐和私人 FM 等个性化源</string>
     <string name="settings_personalization_start_section">启动与输入</string>
     <string name="settings_personalization_start_section_desc">设置默认入口和键盘弹出</string>
     <string name="settings_personalization_home_section">首页栏目</string>
@@ -81,7 +70,6 @@
     <string name="settings_playback_section_behavior_desc">控制播放状态、进度记忆和断连处理</string>
     <string name="settings_playback_section_audio_output">音频输出</string>
     <string name="settings_playback_section_audio_output_desc">调整响度、声道、USB 与音频焦点</string>
-    <string name="settings_playback_section_transitions">过渡效果</string>
     <string name="settings_lyrics_floating_section">悬浮词幕</string>
     <string name="settings_lyrics_floating_section_desc">管理悬浮歌词的显示方式和外观</string>
     <string name="settings_lyrics_source_section">歌词服务</string>
@@ -159,7 +147,6 @@
     <string name="settings_usb_exclusive_player_state">播放器状态</string>
     <string name="settings_usb_exclusive_player_playing">正在播放</string>
     <string name="settings_usb_exclusive_player_idle">暂停或空闲</string>
-    <string name="settings_usb_exclusive_runtime">Native 运行信息</string>
     <string name="settings_usb_exclusive_error">最近错误</string>
     <string name="settings_usb_exclusive_source_player">播放器 PCM</string>
     <string name="settings_usb_exclusive_source_tone">独占测试音</string>
@@ -262,8 +249,6 @@
     <string name="settings_allow_mixed_playback_desc">不占用音频焦点，允许与其他应用同时播放</string>
     <string name="settings_preempt_audio_focus">预抢占音频焦点</string>
     <string name="settings_preempt_audio_focus_desc">打开主界面且未播放时提前占用音频焦点，让耳机线控更容易唤起本应用</string>
-    <string name="settings_lyrics_blur">歌词模糊</string>
-    <string name="settings_lyrics_font_size">歌词字体大小</string>
     <string name="settings_lyrics_cover_lyric_font_size">封面页歌词字体</string>
     <string name="settings_lyrics_cover_translation_font_size">封面页翻译字体</string>
     <string name="settings_lyrics_page_lyric_font_size">歌词页歌词字体</string>
@@ -278,7 +263,6 @@
     <string name="settings_lyrics_lyric_font_size">歌词字号</string>
     <string name="settings_lyrics_translation_font_size">翻译字号</string>
     <string name="settings_lyrics_translation_sample">示例翻译：the moonlight stays with you</string>
-    <string name="settings_lyrics_font_current">当前：%d%%</string>
     <string name="settings_lyrics_sample">示例歌词：昨夜小楼又东风</string>
     <string name="settings_custom_background">自定义背景图</string>
     <string name="settings_background_change">点击更换</string>
@@ -290,7 +274,6 @@
     <string name="settings_download_expand">下载目录、保存格式与任务管理</string>
     <string name="settings_download_progress">下载进度</string>
     <string name="settings_download_songs_count" formatted="false">%d/%d 首歌曲</string>
-    <string name="settings_downloading">正在下载: %s</string>
     <string name="settings_download_manager">下载管理</string>
     <string name="settings_download_directory">下载目录</string>
     <string name="settings_download_directory_desc">歌曲、歌词和封面会保存到这里</string>
@@ -326,9 +309,6 @@
     <string name="settings_storage_cache_clear_section">缓存清理</string>
     <string name="settings_storage_cache_clear_section_desc">查看占用并清理可再生缓存</string>
     <string name="settings_download_directory_default_label">应用私有目录</string>
-    <string name="settings_download_directory_custom_label">自定义目录</string>
-    <string name="settings_download_directory_internal_storage">内部存储</string>
-    <string name="settings_download_directory_sd_card">SD 卡</string>
     <string name="settings_download_directory_selected">下载目录已更新</string>
     <string name="settings_download_directory_reset_done">已恢复默认下载目录</string>
     <string name="settings_download_directory_pick_failed">选择下载目录失败：%1$s</string>
@@ -374,33 +354,18 @@
     <string name="settings_configured">已配置</string>
     <string name="settings_not_configured">未配置</string>
     <string name="settings_configure">配置</string>
-    <string name="settings_close">关闭</string>
     <string name="settings_about">关于</string>
     <string name="settings_version">版本</string>
-    <string name="settings_debug_enabled">已开启调试模式</string>
-    <string name="settings_debug_mode_on">调试模式已开启</string>
     <string name="settings_build_time">编译时间</string>
     <string name="settings_dolby">杜比全景声</string>
-    <string name="language_simplified_chinese">简体中文</string>
-    <string name="language_english">英语</string>
-    <string name="language_follow_system">跟随系统</string>
     <string name="language_display_chinese">简体中文</string>
     <string name="language_display_english">英语 / English</string>
     <string name="language_display_system">跟随系统 / Follow system</string>
     <string name="language_setting_title">语言</string>
     <string name="language_select_title">选择语言</string>
-    <string name="language_restart_title">重启应用</string>
-    <string name="language_restart_message">语言已更改，需要重启应用以完全生效。</string>
-    <string name="language_restart_now">立即重启</string>
-    <string name="language_restart_later">稍后</string>
-    <string name="language_restart_title_bilingual">重启应用 / Restart app</string>
-    <string name="language_restart_message_bilingual">语言已更改，需要重启应用以完全生效。\nLanguage changed. Restart the app to apply it completely.</string>
-    <string name="language_restart_now_bilingual">立即重启 / Restart now</string>
-    <string name="language_restart_later_bilingual">稍后 / Later</string>
     <string name="settings_color_picker_hint">长按颜色或点击 × 可删除自定义颜色</string>
     <string name="settings_phone_number_hint">+86 手机号</string>
     <string name="settings_resend_code_countdown">重新获取(%ds)</string>
-    <string name="settings_empty_placeholder">(空)</string>
     <string name="settings_saved_cookie_continue">继续登录并刷新</string>
     <string name="settings_saved_cookie_logout">退出登录</string>
     <string name="settings_android12_required">需要 Android 12+</string>

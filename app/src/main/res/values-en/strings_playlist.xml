@@ -2,14 +2,10 @@
 <resources>
     <!-- Playlist -->
     <string name="playlist_title">Playlist</string>
-    <string name="playlist_current">Current Playlist</string>
     <string name="playlist_create">New Playlist</string>
     <string name="playlist_create_name">New Playlist Name</string>
-    <string name="playlist_rename">Rename Playlist</string>
-    <string name="playlist_delete">Delete Playlist</string>
     <string name="playlist_detail">Playlist Details</string>
     <string name="playlist_local_detail">Local Playlist Details</string>
-    <string name="playlist_favorite">Favorite Playlists</string>
     <string name="playlist_no_favorite">No Favorites</string>
     <string name="playlist_count">Playlist Count</string>
     <string name="playlist_add_to">Add to Playlist</string>
@@ -19,24 +15,17 @@
     <string name="playlist_import_desc">Restore from backup</string>
     <string name="playlist_export_success">Export Successful</string>
     <string name="playlist_export_failed">Export Failed</string>
-    <string name="playlist_import_success">Import Successful</string>
     <string name="playlist_import_failed">Import Failed</string>
     <string name="playlist_export_progress">Export Progress</string>
     <string name="playlist_import_progress">Import Progress</string>
-    <string name="playlist_exporting">Exporting playlists…</string>
     <string name="playlist_importing">Importing playlists…</string>
     <string name="playlist_import_complete">Import Complete!</string>
     <string name="playlist_export_to_local">Export to Local</string>
-    <string name="playlist_play_in_order">Play in Order</string>
-    <string name="playlist_playback_mode">Playback Mode</string>
     <string name="playlist_mode_order">Order Mode</string>
     <string name="playlist_mode_shuffle">Shuffle Mode</string>
     <string name="playlist_mode_repeat_off">Repeat Off</string>
     <string name="playlist_mode_repeat_all">Repeat All</string>
     <string name="playlist_mode_repeat_one">Repeat One</string>
-    <string name="playlist_all_songs">All Songs</string>
-    <string name="playlist_song_count_format" formatted="false">%1$d songs · %2$s</string>
-    <string name="playlist_export_to">Export to Playlist</string>
     <string name="playlist_create_and_export">Create and Export</string>
     <string name="playlist_create_and_add">Create and Add</string>
     <string name="playlist_batch_export_confirm_title">Confirm Export</string>

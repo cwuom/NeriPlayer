@@ -24,7 +24,6 @@
     <string name="action_hide">隐藏</string>
     <string name="action_expand">展开</string>
     <string name="action_collapse">收起</string>
-    <string name="action_more">更多</string>
     <string name="action_clear">清空</string>
     <string name="action_paste">粘贴</string>
     <string name="action_select">选择</string>
@@ -39,24 +38,17 @@
     <string name="action_copy_song_info">复制歌曲信息</string>
     <string name="action_details">详情</string>
     <string name="action_confirm_clear">确认清除</string>
-    <string name="action_later">稍后</string>
     <string name="action_unfavorite">取消收藏</string>
     <string name="action_favorite_playlist">收藏歌单</string>
 
     <!-- Common Text & Formats -->
-    <string name="common_all">全部</string>
     <string name="common_clear_all">全部清空</string>
     <string name="common_delete_selected">删除所选</string>
-    <string name="common_delete_selected_songs">删除所选歌曲</string>
-    <string name="common_download_selected">下载选中歌曲</string>
     <string name="common_more_options">更多选项</string>
     <string name="common_more_actions">更多操作</string>
     <string name="common_version">版本</string>
     <string name="common_build_time">编译时间</string>
-    <string name="common_update_now">立即更新</string>
     <string name="common_coming_soon">敬请期待</string>
-    <string name="common_not_implemented">暂未实现</string>
-    <string name="common_other_modes">其他模式</string>
     <string name="common_drag_handle">拖拽手柄</string>
     <string name="common_album_detail">专辑详情</string>
     <string name="color_hue">色相 Hue</string>
@@ -73,7 +65,6 @@
     <string name="common_youtube">YouTube</string>
     <string name="common_github">GitHub</string>
     <string name="common_label_value_format">%1$s - %2$s</string>
-    <string name="common_percent_int">%1$d%%</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">返回</string>
@@ -96,6 +87,5 @@
     <string name="cd_open_current_playback_source">定位当前歌单</string>
     <string name="cd_queue_quick_actions">播放队列快捷操作</string>
     <string name="cd_close">关闭</string>
-    <string name="cd_recent">最近播放</string>
     <string name="cd_app_background">应用背景</string>
 </resources>

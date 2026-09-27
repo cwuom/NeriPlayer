@@ -123,11 +123,7 @@ private const val YOUTUBE_PLAYER_TV_USER_AGENT =
 private const val YOUTUBE_PLAYER_TV_DOWNGRADED_CLIENT_VERSION = "5.20260114"
 private const val YOUTUBE_PLAYER_TV_DOWNGRADED_USER_AGENT =
     "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"
-private const val YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_ID = "21"
 private const val YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME = "ANDROID_MUSIC"
-private const val YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_VERSION = "8.15.51"
-private const val YOUTUBE_PLAYER_ANDROID_MUSIC_USER_AGENT =
-    "com.google.android.apps.youtube.music/8.15.51 (Linux; U; Android 14) gzip"
 private const val YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
@@ -4964,12 +4960,6 @@ class YouTubeMusicPlaybackRepository(
             repeat(16) {
                 append(alphabet[Random.nextInt(alphabet.length)])
             }
-        }
-    }
-
-    private fun findRequired(source: String, vararg patterns: String): String {
-        return findOptional(source, *patterns).ifBlank {
-            throw IOException("YouTube bootstrap parse failed: ${patterns.firstOrNull().orEmpty()}")
         }
     }
 

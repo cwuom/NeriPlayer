@@ -133,8 +133,9 @@ fun DownloadManagerScreen(
                 deletedCount,
                 deletedCount
             )
-            deletedCount > 0 -> stringResource(
-                R.string.local_files_delete_downloaded_partial,
+            deletedCount > 0 -> pluralStringResource(
+                R.plurals.local_files_delete_downloaded_partial,
+                deletedCount,
                 deletedCount,
                 failedCount
             )

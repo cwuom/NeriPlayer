@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.catalog
 
 import android.content.Context
+import androidx.core.content.edit
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal object DownloadedSongDeleteFailureDismissalStore {
@@ -18,7 +19,7 @@ internal object DownloadedSongDeleteFailureDismissalStore {
     fun write(context: Context, dismissed: Boolean) {
         runCatching {
             context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .edit().putBoolean(DISMISSED_KEY, dismissed).apply()
+                .edit { putBoolean(DISMISSED_KEY, dismissed) }
         }.onFailure { error ->
             NPLogger.w(TAG, "保存删除失败横幅状态失败: ${error.message}", error)
         }

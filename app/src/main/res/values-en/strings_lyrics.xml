@@ -3,14 +3,12 @@
     <!-- Lyrics -->
     <string name="lyrics_title">Lyrics</string>
     <string name="lyrics_no_lyrics">No Lyrics</string>
-    <string name="lyrics_blur">Blur</string>
     <string name="lyrics_blur_effect">Lyrics Blur</string>
     <string name="lyrics_blur_desc">Blur inactive lines</string>
     <string name="lyrics_blur_low_cost_hint">Below Android 12 uses a low-cost effect and looks weaker</string>
     <string name="lyrics_blur_amount">Blur Intensity</string>
     <string name="lyrics_blur_current">Current Blur: %.2f</string>
     <string name="lyrics_font_size">Lyrics Font Size</string>
-    <string name="lyrics_offset">Lyrics Offset</string>
     <string name="lyrics_adjust_offset">Adjust Lyrics Offset</string>
     <string name="lyrics_adjust_behavior">Adjust Lyrics Behavior</string>
     <string name="lyrics_translation_use_phonetic">Show phonetics</string>
@@ -26,7 +24,6 @@
     <string name="lyrics_offset_hint">Swipe right to advance lyrics, swipe left to delay</string>
     <string name="lyrics_unknown_song">Unknown Song</string>
     <string name="lyrics_unknown_artist">Unknown Artist</string>
-    <string name="lyrics_favorite_playlist">My Favorites</string>
     <string name="lyrics_favorited">Favorited</string>
     <string name="lyrics_favorite">Favorite</string>
     <string name="lyrics_more_options">More Options</string>
@@ -35,7 +32,6 @@
     <string name="lyric_share_copy_lyrics">Copy Lyrics</string>
     <string name="lyric_share_song">Share Song</string>
     <string name="lyric_share_card">Lyric Card</string>
-    <string name="lyric_share_copied">Lyrics copied</string>
     <string name="lyric_share_card_failed">Unable to create lyric card</string>
     <string name="lyrics_previous">Previous</string>
     <string name="lyrics_pause">Pause</string>
@@ -45,9 +41,6 @@
     <string name="lyrics_timer">Timer</string>
     <string name="lyrics_back_to_cover">Back to Cover</string>
     <string name="lyrics_add_to_playlist">Add to Playlist</string>
-    <string name="lyrics_bluetooth_device">Bluetooth Device</string>
-    <string name="lyrics_wired_headset">Wired Headset</string>
-    <string name="lyrics_phone_speaker">Phone Speaker</string>
     <string name="lyrics_original">Original</string>
     <string name="lyrics_translation">Translation</string>
     <string name="lyrics_romanized">Romanized</string>

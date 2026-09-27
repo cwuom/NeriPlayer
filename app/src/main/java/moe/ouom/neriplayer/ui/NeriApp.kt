@@ -302,6 +302,7 @@ import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 
 private val navigationGson: Gson by lazy(LazyThreadSafetyMode.PUBLICATION) { Gson() }
 private val EmptyLauncherShortcutRequestFlow =
@@ -1356,8 +1357,8 @@ internal fun resolveCoverSeedWarmupDelayMillis(
 private fun NowPlayingAccentBackdrop(
     coverUrl: String?,
     isDark: Boolean,
-    songKey: String? = null,
     modifier: Modifier = Modifier,
+    songKey: String? = null,
     refreshKey: Int = 0,
     offlineMode: Boolean = false,
     onAccentChanged: (String?) -> Unit = {}
@@ -1479,7 +1480,6 @@ private fun Modifier.managedProcessingRevealGesture(
             var previousPosition = down.position
             var totalX = 0f
             var totalY = 0f
-            var expanded = false
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Final)
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -1487,14 +1487,13 @@ private fun Modifier.managedProcessingRevealGesture(
                 totalX += position.x - previousPosition.x
                 totalY += position.y - previousPosition.y
                 previousPosition = position
-                if (change.pressed && !expanded && shouldExpandManagedProcessingBannerFromDrag(
+                if (change.pressed && shouldExpandManagedProcessingBannerFromDrag(
                         startY = down.position.y,
                         totalX = totalX,
                         totalY = totalY,
                         edgePx = edgePx,
                         thresholdPx = thresholdPx
                     )) {
-                    expanded = true
                     change.consume()
                     onExpand()
                     break
@@ -2351,7 +2350,7 @@ private fun NeriAppContent(
         if (!themeRevealActive) {
             return@LaunchedEffect
         }
-        delay(THEME_REVEAL_WATCHDOG_DELAY_MILLIS)
+        delay(THEME_REVEAL_WATCHDOG_DELAY_MILLIS.milliseconds)
         finishThemeReveal(activeThemeRevealToken)
     }
 

@@ -4,35 +4,33 @@
     <string name="download_title">下载管理</string>
     <string name="download_manager">下载管理器</string>
     <string name="download_to_local">下载到本地</string>
-    <string name="download_selected_songs">下载所选歌曲</string>
     <string name="download_selected_videos">下载选中视频</string>
     <string name="download_progress">下载进度</string>
     <string name="download_failed">下载失败</string>
     <string name="download_failed_tasks_summary">这些歌曲已停止自动重试，可点击歌曲旁的按钮再次尝试</string>
-    <string name="download_cancelled">下载已取消</string>
     <string name="download_no_tasks">暂无下载任务</string>
     <string name="download_loading_tasks">正在读取下载任务…</string>
     <string name="download_loading_tasks_recovering">暂时无法读取下载任务，正在重试…</string>
     <string name="download_clearing_tasks">正在停止并清空下载任务…</string>
     <string name="download_clear_background_cleanup">下载任务已清空，后台正在清理临时文件…</string>
-    <string name="download_clearing_tasks_with_progress">正在清空下载任务: %1$d%% (%2$d 项)</string>
+    <plurals name="download_clearing_tasks_with_progress">
+        <item quantity="other">正在清空下载任务: %1$d%% (%2$d 项)</item>
+    </plurals>
     <string name="download_clear_phase_preparing">准备中</string>
     <string name="download_clear_phase_cancelling">停止下载中</string>
     <string name="download_clear_phase_cleaning">清理临时文件中</string>
     <string name="download_clear_phase_purging">整理记录中</string>
     <string name="download_clear_stage_progress">阶段 %1$d/%2$d</string>
-    <string name="download_clear_item_progress">已处理 %1$d/%2$d 个文件</string>
+    <plurals name="download_clear_item_progress">
+        <item quantity="other">已处理 %1$d/%2$d 个文件</item>
+    </plurals>
     <string name="download_clear_item_progress_scanning">正在扫描待清理文件…</string>
     <string name="download_clear_item_progress_pending">待扫描清理文件数量</string>
     <string name="download_clear_item_progress_empty">没有发现待清理文件</string>
-    <string name="download_empty">暂无已下载歌曲</string>
     <string name="download_desc">管理下载任务和本地文件</string>
-    <string name="download_manage_desc">管理音乐下载和本地文件</string>
-    <string name="download_expand_hint">下载任务与本地文件管理</string>
     <string name="download_select_hint">选择歌曲后点击下载按钮开始下载</string>
     <string name="downloaded">已下载</string>
     <string name="downloaded_songs">已下载歌曲</string>
-    <string name="download_songs_display">下载的歌曲会显示在这里</string>
     <string name="download_clear_completed">清空任务</string>
     <string name="download_clear_failed_tasks">清空失败任务</string>
     <string name="download_clear_confirm_title">清除下载任务</string>
@@ -75,8 +73,6 @@
     <string name="download_batch_failed_song">批量下载失败: %1$s - %2$s</string>
     <string name="download_batch_failed">批量下载失败: %s</string>
     <string name="download_lyrics_matched">使用匹配的歌词保存: %s</string>
-    <string name="download_lyrics_api">从API获取翻译歌词保存: %s</string>
-    <string name="download_local_file">本地文件</string>
     <string name="download_manager_title">下载管理</string>
     <string name="download_manager_subtitle">管理音乐下载和本地文件</string>
     <string name="download_scan_local">扫描本地音乐</string>
@@ -95,7 +91,6 @@
     <string name="download_play">播放</string>
     <string name="download_delete">删除</string>
     <string name="download_cancelled_message">下载已取消</string>
-    <string name="download_failed_message">下载失败</string>
     <string name="download_execution_notification_channel">下载任务</string>
     <string name="download_execution_notification_title">下载中</string>
     <string name="download_execution_notification_content">后台正在处理下载任务</string>
@@ -103,11 +98,6 @@
     <string name="download_execution_notification_progress_with_percentage" formatted="false">已完成 %1$d/%2$d · 剩余 %3$d 首 · 总进度 %4$d%%</string>
     <string name="download_execution_notification_current_detail">正在下载：%1$s · %2$s</string>
     <string name="download_execution_notification_current_unknown">正在下载：%s</string>
-    <string name="download_progress_format" formatted="false">下载进度: %1$d/%2$d</string>
     <string name="download_progress_with_percentage" formatted="false">下载进度: %1$d/%2$d · %3$d%%</string>
-    <string name="download_current_song">正在下载: %s</string>
     <string name="download_overall_progress">总体进度: %d%%</string>
-    <string name="download_current_file_progress" formatted="false">当前歌曲: %1$d%%</string>
-    <string name="download_current_file_progress_detail" formatted="false">当前歌曲: %1$d%%</string>
-    <string name="download_progress_file_label">%1$d%% - %2$s</string>
 </resources>

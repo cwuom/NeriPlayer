@@ -45,9 +45,9 @@ import android.hardware.usb.UsbManager
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaMetadata
-import android.net.Uri
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -65,6 +65,7 @@ import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.scale
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -241,7 +242,7 @@ internal fun isLocalCoverReference(reference: String?): Boolean {
 
 internal fun coverReferenceFileName(reference: String?): String? {
     val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return null
-    val parsedSegment = runCatching { Uri.parse(normalized).lastPathSegment }
+    val parsedSegment = runCatching { normalized.toUri().lastPathSegment }
         .getOrNull()
     val rawSegment = parsedSegment
         ?.takeIf(String::isNotBlank)

@@ -1079,8 +1079,9 @@ internal fun LocalPlaylistDetailModernContent(
                         text = {
                             Text(
                                 if (deletesDownloadedSongs) {
-                                    stringResource(
-                                        R.string.local_files_delete_downloaded_confirm,
+                                    pluralStringResource(
+                                        R.plurals.local_files_delete_downloaded_confirm,
+                                        count,
                                         count
                                     )
                                 } else {
@@ -1120,8 +1121,9 @@ internal fun LocalPlaylistDetailModernContent(
                                                     )
                                                 }
                                                 result.deletedCount > 0 -> {
-                                                    composeResources.getString(
-                                                        R.string.local_files_delete_downloaded_partial,
+                                                    composeResources.getQuantityString(
+                                                        R.plurals.local_files_delete_downloaded_partial,
+                                                        result.deletedCount,
                                                         result.deletedCount,
                                                         result.notDeletedCount
                                                     )

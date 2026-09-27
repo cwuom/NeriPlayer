@@ -2,14 +2,10 @@
 <resources>
     <!-- Playlist -->
     <string name="playlist_title">歌单</string>
-    <string name="playlist_current">当前歌单</string>
     <string name="playlist_create">新建歌单</string>
     <string name="playlist_create_name">新建歌单名称</string>
-    <string name="playlist_rename">重命名歌单</string>
-    <string name="playlist_delete">删除歌单</string>
     <string name="playlist_detail">歌单详情</string>
     <string name="playlist_local_detail">本地歌单详情</string>
-    <string name="playlist_favorite">收藏歌单</string>
     <string name="playlist_no_favorite">暂无收藏的歌单</string>
     <string name="playlist_count">当前歌单数量</string>
     <string name="playlist_add_to">添加到歌单</string>
@@ -19,24 +15,17 @@
     <string name="playlist_import_desc">从备份文件恢复歌单</string>
     <string name="playlist_export_success">导出成功</string>
     <string name="playlist_export_failed">导出失败</string>
-    <string name="playlist_import_success">导入成功</string>
     <string name="playlist_import_failed">导入失败</string>
     <string name="playlist_export_progress">导出进度</string>
     <string name="playlist_import_progress">导入进度</string>
-    <string name="playlist_exporting">正在导出歌单…</string>
     <string name="playlist_importing">正在导入歌单…</string>
     <string name="playlist_import_complete">导入完成！</string>
     <string name="playlist_export_to_local">导出到本地歌单</string>
-    <string name="playlist_play_in_order">顺序播放</string>
-    <string name="playlist_playback_mode">播放模式</string>
     <string name="playlist_mode_order">顺序模式</string>
     <string name="playlist_mode_shuffle">随机模式</string>
     <string name="playlist_mode_repeat_off">循环关闭</string>
     <string name="playlist_mode_repeat_all">列表循环</string>
     <string name="playlist_mode_repeat_one">单曲循环</string>
-    <string name="playlist_all_songs">全部歌曲</string>
-    <string name="playlist_song_count_format" formatted="false">%1$d 首 · %2$s</string>
-    <string name="playlist_export_to">导出到歌单</string>
     <string name="playlist_create_and_export">新建并导出</string>
     <string name="playlist_create_and_add">新建并添加</string>
     <string name="playlist_batch_export_confirm_title">确认导出</string>

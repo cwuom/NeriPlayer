@@ -36,9 +36,7 @@
     <string name="onboarding_platforms_no_login_desc">没有登录任何平台可能导致搜索、歌单和播放资源访问受限。你可以现在返回连接，也可以继续，之后再到设置中登录。</string>
     <string name="onboarding_platforms_no_login_continue">仍然继续</string>
     <string name="onboarding_platforms_no_login_connect">返回连接</string>
-    <string name="onboarding_github_desc">把歌单备份到你自己的 GitHub 私有仓库</string>
     <string name="onboarding_github_repo_configured">已配置仓库：%1$s</string>
-    <string name="onboarding_github_hint">GitHub 同步也是可选项，稍后仍可在设置里继续配置</string>
     <string name="onboarding_backup_restore_title">备份与恢复</string>
     <string name="onboarding_backup_restore_desc">选择 GitHub 或 WebDAV 自动同步，也可以随时手动同步</string>
     <string name="onboarding_backup_restore_github_title">GitHub 自动同步</string>
@@ -62,7 +60,6 @@
     <string name="onboarding_enhanced_blur_prompt_not_now">暂不开启</string>
     <string name="onboarding_complete_hint">完成习惯设置后会进入学习引导，帮助你了解容易错过的功能入口</string>
     <string name="onboarding_action_next">继续</string>
-    <string name="onboarding_action_enter_app">开始使用</string>
     <string name="onboarding_platform_action_connect">连接</string>
     <string name="onboarding_platform_action_manage">管理</string>
     <string name="onboarding_platform_action_logout">退登</string>

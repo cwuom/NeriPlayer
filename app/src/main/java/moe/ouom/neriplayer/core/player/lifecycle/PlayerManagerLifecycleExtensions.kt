@@ -2017,32 +2017,6 @@ private fun PlayerManager.handleUsbExclusivePlaybackSettingChanged(enabled: Bool
     }
 }
 
-private fun PlayerManager.stopInactivePlayerBeforeUsbExclusiveRelease(reason: String) {
-    if (!isPlayerInitialized()) return
-    val mediaItemCount = player.mediaItemCount
-    if (mediaItemCount <= 0 || player.currentMediaItem == null) return
-    val positionMs = player.currentPosition.coerceAtLeast(0L)
-    NPLogger.i(
-        "NERI-UsbExclusive",
-        "stop inactive player before USB release: reason=$reason positionMs=$positionMs"
-    )
-    runCatching {
-        player.playWhenReady = false
-        player.stop()
-    }.onFailure { error ->
-        NPLogger.w(
-            "NERI-UsbExclusive",
-            "stop inactive player before USB release failed: reason=$reason",
-            error
-        )
-    }
-    _isPlayingFlow.value = false
-    _playWhenReadyFlow.value = false
-    _playbackPositionMs.value = positionMs
-    stopProgressUpdates()
-    scheduleStatePersist(positionMs = positionMs, shouldResumePlayback = false)
-}
-
 private fun PlayerManager.activateUsbExclusivePlaybackRoute(
     reason: String,
     waitForSystemRelease: Boolean = true
@@ -3939,11 +3913,6 @@ private fun String.isRecoverableUsbExclusiveNativeTransferFailure(): Boolean {
 private fun String.isUsbExclusiveFirstCompletionTimeout(): Boolean {
     return usbExclusiveErrorCode() == UsbExclusiveErrorCode.TransferFirstCompletionTimeout ||
         contains("event_loop_first_completion_timeout", ignoreCase = true)
-}
-
-private fun String.isLifecycleForegroundRecoveryReason(): Boolean {
-    return startsWith("foreground_recovery:lifecycle", ignoreCase = true) ||
-        startsWith("foreground_stalled:lifecycle", ignoreCase = true)
 }
 
 private fun PlayerManager.toUsbAudioDevice(device: AudioDeviceInfo): AudioDevice {

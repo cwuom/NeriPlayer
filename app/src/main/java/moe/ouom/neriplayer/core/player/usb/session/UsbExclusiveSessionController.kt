@@ -1512,9 +1512,9 @@ object UsbExclusiveSessionController {
             if (current.runtimeReport.booleanField("running") == true) {
                 return false
             }
-            current to outputFormat
+            outputFormat
         }
-        val (currentState, outputFormat) = commandState
+        val outputFormat = commandState
         val reconfigured = UsbExclusiveNativeBridge.reconfigurePlayerPcmOutput(
             handle = handle,
             sampleRate = outputFormat.sampleRate,
@@ -2046,7 +2046,6 @@ object UsbExclusiveSessionController {
     }
 
     private fun drainPendingPlayerPcmStopIfNeeded() {
-        val reason = pendingPlayerPcmStopReason ?: return
         val closeRequest = sessionLock.withLock {
             val pendingReason = pendingPlayerPcmStopReason ?: return
             val shouldBlockOpen = pendingPlayerPcmStopShouldBlockOpen
@@ -2075,7 +2074,6 @@ object UsbExclusiveSessionController {
     }
 
     private fun drainPendingPlayerPcmOpenBlockIfNeeded() {
-        val pendingBlock = pendingPlayerPcmOpenBlock ?: return
         sessionLock.withLock {
             val block = pendingPlayerPcmOpenBlock ?: return
             pendingPlayerPcmOpenBlock = null

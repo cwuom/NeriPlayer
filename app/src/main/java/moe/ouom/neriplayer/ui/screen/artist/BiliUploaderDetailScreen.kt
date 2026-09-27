@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -508,15 +509,16 @@ private fun BiliUploaderHeaderCard(
                 AssistChip(
                     onClick = {},
                     label = {
-                        Text(stringResource(R.string.bili_uploader_video_count, videoCount))
+                        Text(pluralStringResource(R.plurals.bili_uploader_video_count, videoCount, videoCount))
                     }
                 )
                 AssistChip(
                     onClick = {},
                     label = {
                         Text(
-                            stringResource(
-                                R.string.bili_uploader_collection_count,
+                            pluralStringResource(
+                                R.plurals.bili_uploader_collection_count,
+                                collectionCount,
                                 collectionCount
                             )
                         )
@@ -525,7 +527,7 @@ private fun BiliUploaderHeaderCard(
                 AssistChip(
                     onClick = {},
                     label = {
-                        Text(stringResource(R.string.bili_uploader_series_count, seriesCount))
+                        Text(pluralStringResource(R.plurals.bili_uploader_series_count, seriesCount, seriesCount))
                     }
                 )
             }
@@ -703,7 +705,7 @@ private fun BiliUploaderContentRow(
                 overflow = TextOverflow.Ellipsis
             )
             val subtitle = content.description.ifBlank {
-                stringResource(R.string.bili_uploader_content_count, content.total)
+                pluralStringResource(R.plurals.bili_uploader_content_count, content.total, content.total)
             }
             Text(
                 text = subtitle,

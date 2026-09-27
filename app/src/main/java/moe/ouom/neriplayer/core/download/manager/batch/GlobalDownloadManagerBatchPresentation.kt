@@ -1132,7 +1132,7 @@ internal fun GlobalDownloadManager.requestCancellationOperationSnapshot(
     songKey: String,
     snapshotAtMs: Long = System.currentTimeMillis(),
     knownOperationId: String? = null
-): Unit {
+) {
     val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return
     val normalizedSnapshotAtMs = snapshotAtMs.coerceAtLeast(0L)
     val snapshotCutoff = cancellationOperationSnapshotCutoffs.putIfAbsent(

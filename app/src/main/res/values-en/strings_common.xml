@@ -24,7 +24,6 @@
     <string name="action_hide">Hide</string>
     <string name="action_expand">Expand</string>
     <string name="action_collapse">Collapse</string>
-    <string name="action_more">More</string>
     <string name="action_clear">Clear</string>
     <string name="action_paste">Paste</string>
     <string name="action_select">Select</string>
@@ -39,24 +38,17 @@
     <string name="action_copy_song_info">Copy Song Info</string>
     <string name="action_details">Details</string>
     <string name="action_confirm_clear">Confirm Clear</string>
-    <string name="action_later">Later</string>
     <string name="action_unfavorite">Unfavorite</string>
     <string name="action_favorite_playlist">Favorite Playlist</string>
 
     <!-- Common Text & Formats -->
-    <string name="common_all">All</string>
     <string name="common_clear_all">Clear All</string>
     <string name="common_delete_selected">Delete Selected</string>
-    <string name="common_delete_selected_songs">Delete Selected Songs</string>
-    <string name="common_download_selected">Download Selected</string>
     <string name="common_more_options">More Options</string>
     <string name="common_more_actions">More Actions</string>
     <string name="common_version">Version</string>
     <string name="common_build_time">Build Time</string>
-    <string name="common_update_now">Update Now</string>
     <string name="common_coming_soon">Coming Soon</string>
-    <string name="common_not_implemented">Not Implemented</string>
-    <string name="common_other_modes">Other Modes</string>
     <string name="common_drag_handle">Drag Handle</string>
     <string name="common_album_detail">Album Details</string>
     <string name="color_hue">Hue</string>
@@ -73,7 +65,6 @@
     <string name="common_youtube">YouTube</string>
     <string name="common_github">GitHub</string>
     <string name="common_label_value_format">%1$s - %2$s</string>
-    <string name="common_percent_int">%1$d%%</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">Back</string>
@@ -96,6 +87,5 @@
     <string name="cd_open_current_playback_source">Locate Current Playlist</string>
     <string name="cd_queue_quick_actions">Queue Quick Actions</string>
     <string name="cd_close">Close</string>
-    <string name="cd_recent">Recent Plays</string>
     <string name="cd_app_background">App background</string>
 </resources>

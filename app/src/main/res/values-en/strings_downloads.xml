@@ -4,35 +4,35 @@
     <string name="download_title">Downloads</string>
     <string name="download_manager">Download Manager</string>
     <string name="download_to_local">Download</string>
-    <string name="download_selected_songs">Download Selected</string>
     <string name="download_selected_videos">Download Selected</string>
     <string name="download_progress">Download Progress</string>
     <string name="download_failed">Download Failed</string>
     <string name="download_failed_tasks_summary">These downloads have stopped retrying automatically. Use the button beside a song to try again.</string>
-    <string name="download_cancelled">Download Cancelled</string>
     <string name="download_no_tasks">No Download Tasks</string>
     <string name="download_loading_tasks">Reading download tasks…</string>
     <string name="download_loading_tasks_recovering">Unable to read download tasks. Retrying…</string>
     <string name="download_clearing_tasks">Stopping and clearing download tasks…</string>
     <string name="download_clear_background_cleanup">Download tasks cleared; temporary files are being cleaned in the background…</string>
-    <string name="download_clearing_tasks_with_progress">Clearing download tasks: %1$d%% (%2$d items)</string>
+    <plurals name="download_clearing_tasks_with_progress">
+        <item quantity="one">Clearing download tasks: %1$d%% (%2$d item)</item>
+        <item quantity="other">Clearing download tasks: %1$d%% (%2$d items)</item>
+    </plurals>
     <string name="download_clear_phase_preparing">Preparing</string>
     <string name="download_clear_phase_cancelling">Stopping downloads</string>
     <string name="download_clear_phase_cleaning">Cleaning temporary files</string>
     <string name="download_clear_phase_purging">Finalizing records</string>
     <string name="download_clear_stage_progress">Phase %1$d/%2$d</string>
-    <string name="download_clear_item_progress">Processed %1$d/%2$d files</string>
+    <plurals name="download_clear_item_progress">
+        <item quantity="one">Processed %1$d/%2$d file</item>
+        <item quantity="other">Processed %1$d/%2$d files</item>
+    </plurals>
     <string name="download_clear_item_progress_scanning">Scanning files to clean…</string>
     <string name="download_clear_item_progress_pending">Cleanup file count pending</string>
     <string name="download_clear_item_progress_empty">No files to clean</string>
-    <string name="download_empty">No Downloads</string>
     <string name="download_desc">Manage downloads</string>
-    <string name="download_manage_desc">Manage downloads</string>
-    <string name="download_expand_hint">Downloads and local files</string>
     <string name="download_select_hint">Select songs and tap download button</string>
     <string name="downloaded">Downloaded</string>
     <string name="downloaded_songs">Downloaded Songs</string>
-    <string name="download_songs_display">Downloaded songs will appear here</string>
     <string name="download_clear_completed">Clear Tasks</string>
     <string name="download_clear_failed_tasks">Clear Failed Tasks</string>
     <string name="download_clear_confirm_title">Clear Download Tasks</string>
@@ -75,8 +75,6 @@
     <string name="download_batch_failed_song">Batch download failed: %1$s - %2$s</string>
     <string name="download_batch_failed">Batch download failed: %s</string>
     <string name="download_lyrics_matched">Saved with matched lyrics: %s</string>
-    <string name="download_lyrics_api">Saved with translated lyrics from API: %s</string>
-    <string name="download_local_file">Local File</string>
     <string name="download_manager_title">Download Manager</string>
     <string name="download_manager_subtitle">Manage downloads</string>
     <string name="download_scan_local">Scan Local Music</string>
@@ -95,7 +93,6 @@
     <string name="download_play">Play</string>
     <string name="download_delete">Delete</string>
     <string name="download_cancelled_message">Download cancelled</string>
-    <string name="download_failed_message">Download failed</string>
     <string name="download_execution_notification_channel">Downloads</string>
     <string name="download_execution_notification_title">Downloading</string>
     <string name="download_execution_notification_content">Download tasks are running in the background</string>
@@ -103,11 +100,6 @@
     <string name="download_execution_notification_progress_with_percentage" formatted="false">Completed %1$d/%2$d · %3$d remaining · %4$d%% overall</string>
     <string name="download_execution_notification_current_detail">Downloading: %1$s · %2$s</string>
     <string name="download_execution_notification_current_unknown">Downloading: %s</string>
-    <string name="download_progress_format" formatted="false">Download progress: %1$d/%2$d</string>
     <string name="download_progress_with_percentage" formatted="false">Download progress: %1$d/%2$d · %3$d%%</string>
-    <string name="download_current_song">Downloading: %s</string>
     <string name="download_overall_progress">Overall progress: %d%%</string>
-    <string name="download_current_file_progress" formatted="false">Current song: %1$d%%</string>
-    <string name="download_current_file_progress_detail" formatted="false">Current song: %1$d%%</string>
-    <string name="download_progress_file_label">%1$d%% - %2$s</string>
 </resources>
