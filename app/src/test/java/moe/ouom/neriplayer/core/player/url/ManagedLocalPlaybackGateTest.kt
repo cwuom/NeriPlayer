@@ -80,8 +80,8 @@ class ManagedLocalPlaybackGateTest {
         assertTrue(errorBody.contains("currentUrl = currentUrl"))
         assertTrue(errorBody.contains("allowLocalSongRecovery = isLocalFileMissingRecovery"))
         assertTrue(
-            errorBody.contains("!isLocalFileMissingRecovery &&\n" +
-                "                    shouldResumeAfterRecovery")
+            Regex("!isLocalFileMissingRecovery &&\\n\\s+shouldResumeAfterRecovery")
+                .containsMatchIn(errorBody)
         )
     }
 

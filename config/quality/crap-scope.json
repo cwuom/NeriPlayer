@@ -111,7 +111,9 @@
     "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsBackgroundStage.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsResolution.kt",
     "moe/ouom/neriplayer/listentogether/session/ListenTogetherControllerLinkOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/PlayerManagerListenTogetherLinkPlaybackPort.kt"
+    "moe/ouom/neriplayer/listentogether/session/PlayerManagerListenTogetherLinkPlaybackPort.kt",
+    "moe/ouom/neriplayer/core/player/playback/PlaybackStatsOwner.kt",
+    "moe/ouom/neriplayer/core/player/playback/PlaybackStatsWritePort.kt"
   ],
   "method_scopes": [
     {
@@ -145,7 +147,97 @@
         "requestUsbExclusiveLoudPlaybackConfirmation$app$default",
         "confirmUsbExclusiveLoudPlayback$app",
         "cancelUsbExclusiveLoudPlayback$app",
-        "currentUsbExclusiveLoudPlaybackSnapshot"
+        "currentUsbExclusiveLoudPlaybackSnapshot",
+        "setCurrentSongForPlayback$app",
+        "publishCurrentSong",
+        "syncChangedSongOutputs",
+        "currentSongLocalPlaylistId",
+        "persistPreviousSongProgress",
+        "syncPlaybackStatsPlayingState$app",
+        "drainPlaybackStatsPersistJobBlocking$app",
+        "flushPlaybackStatsBlockingImpl$app",
+        "flushPlaybackStatsAsyncImpl$app"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/player/PlayerManager.kt",
+      "class": "moe.ouom.neriplayer.core.player.PlayerManagerKt",
+      "methods": [
+        "previousSongForLongFormProgress",
+        "localPlaylistIdForSong"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/player/lifecycle/PlayerManagerLifecycleExtensions.kt",
+      "class": "moe.ouom.neriplayer.core.player.lifecycle.PlayerManagerLifecycleExtensionsKt",
+      "methods": [
+        "initializeImpl",
+        "beginInitialization",
+        "initializationIgnoreReason",
+        "prepareInitializationSession",
+        "applyInitialPlaybackPreferences",
+        "initializeLyriconIfEnabled",
+        "initializeLyriconWhenNeeded",
+        "initializePlaybackEngine",
+        "createPlaybackDataSourceFactory",
+        "shouldUsePlaybackMediaCache",
+        "shouldEnableFloatPlaybackOutput",
+        "createCachedPlaybackDataSourceFactory",
+        "observePlaybackSettings",
+        "completeInitialization",
+        "initialAudioDeviceDescription",
+        "rollbackInitialization",
+        "releasePlayerAfterFailedInitialization",
+        "rollbackInitializationStep",
+        "finishInitializationAttempt",
+        "releaseImpl",
+        "logPlaybackReleaseBegin",
+        "cancelJobForRelease",
+        "preparePlaybackRelease",
+        "stopPlaybackForRelease",
+        "releaseUsbSessionsAndJobs",
+        "releaseMediaJobsAndLyrics",
+        "releasePlayerEngine",
+        "releasePlayerIfInitialized",
+        "closeConditionalHttpFactory",
+        "releasePlaybackScopes",
+        "clearPlaybackStateAfterRelease",
+        "finishPlaybackRelease"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/player/playback/PlayerManagerPlaybackExtensions.kt",
+      "class": "moe.ouom.neriplayer.core.player.playback.PlayerManagerPlaybackExtensionsKt",
+      "methods": [
+        "handleTrackEndedIfNeededImpl",
+        "currentTrackEndKey",
+        "admitTrackEnd",
+        "acceptTrackEndIdentity",
+        "isDuplicateTrackEnd",
+        "acceptTrackEndTiming",
+        "seekToImpl",
+        "logSeekRequested",
+        "acceptSeekCommand",
+        "allowsLocalRoomSeek",
+        "preparePlaybackSeek",
+        "shouldRefreshYouTubeUrlForSeek",
+        "knownSeekDuration",
+        "rememberYouTubeSeekPosition",
+        "applyPendingSeekPosition",
+        "applyPlaybackSeek",
+        "seekPlayerIfReady",
+        "syncSeekOutputs",
+        "refreshPlaybackUrlAfterSeek",
+        "seekRefreshReason",
+        "maybePersistPlaybackStatsProgress"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/player/playback/TrackEndDeduplication.kt",
+      "class": "moe.ouom.neriplayer.core.player.playback.TrackEndDeduplicationKt",
+      "methods": [
+        "trackEndKeyForSong",
+        "shouldSkipDuplicateTrackEnd"
       ]
     },
     {

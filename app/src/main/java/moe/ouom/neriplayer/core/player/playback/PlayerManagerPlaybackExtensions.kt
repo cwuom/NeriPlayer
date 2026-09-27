@@ -56,6 +56,8 @@ import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingPauseAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingPlayAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingSeekAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolveSeekExecutionAction
+import moe.ouom.neriplayer.core.player.policy.pending.PendingSeekAction
+import moe.ouom.neriplayer.core.player.policy.pending.SeekExecutionAction
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.progress.LONG_FORM_PLAYBACK_MIN_DURATION_MS
@@ -1474,41 +1476,54 @@ internal fun PlayerManager.playImpl(
 }
 
 internal fun PlayerManager.handleTrackEndedIfNeededImpl(source: String) {
-    val currentKey = trackEndDeduplicationKey(
-        mediaId = player.currentMediaItem?.mediaId,
-        fallbackSongKey = _currentSongFlow.value?.stableKey()
+    val currentKey = currentTrackEndKey()
+    if (!admitTrackEnd(source, currentKey)) return
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "开始处理曲目结束事件: source=$source, key=$currentKey, index=$currentIndex, queueSize=${currentPlaylist.size}"
     )
-    val isRepeatOne = repeatModeSetting == Player.REPEAT_MODE_ONE
-    if (
-        !isRepeatOne &&
-        !shouldHandleTrackEnd(lastHandledKey = lastHandledTrackEndKey, currentKey = currentKey)
-    ) {
+    playbackStatsOwner.onTrackEnded(writesEnabled = initialized)
+    handleTrackEnded()
+}
+
+private fun PlayerManager.currentTrackEndKey(): String =
+    trackEndKeyForSong(player.currentMediaItem?.mediaId, _currentSongFlow.value)
+
+private fun PlayerManager.admitTrackEnd(source: String, currentKey: String): Boolean {
+    if (!acceptTrackEndIdentity(source, currentKey)) return false
+    return acceptTrackEndTiming(source, currentKey)
+}
+
+private fun PlayerManager.acceptTrackEndIdentity(source: String, currentKey: String): Boolean {
+    if (isDuplicateTrackEnd(currentKey)) {
         NPLogger.d(
             "NERI-PlayerManager",
             "忽略重复的曲目结束事件: source=$source, key=$currentKey"
         )
-        return
+        return false
     }
+    return true
+}
+
+private fun PlayerManager.isDuplicateTrackEnd(currentKey: String): Boolean =
+    shouldSkipDuplicateTrackEnd(
+        repeatOne = repeatModeSetting == Player.REPEAT_MODE_ONE,
+        lastHandledKey = lastHandledTrackEndKey,
+        currentKey = currentKey
+    )
+
+private fun PlayerManager.acceptTrackEndTiming(source: String, currentKey: String): Boolean {
     val now = SystemClock.elapsedRealtime()
     if (now - lastTrackEndHandledAtMs < 500L) {
         NPLogger.d(
             "NERI-PlayerManager",
             "忽略过近的曲目结束事件: source=$source, key=$currentKey, delta=${now - lastTrackEndHandledAtMs}ms"
         )
-        return
+        return false
     }
     lastHandledTrackEndKey = currentKey
     lastTrackEndHandledAtMs = now
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "开始处理曲目结束事件: source=$source, key=$currentKey, index=$currentIndex, queueSize=${currentPlaylist.size}"
-    )
-    persistPlaybackStatsSnapshotAsync(
-        synchronized(playbackStatsTracker) {
-            playbackStatsTracker.onTrackEnded()
-        }
-    )
-    handleTrackEnded()
+    return true
 }
 
 internal fun PlayerManager.pauseImpl(
@@ -1762,85 +1777,158 @@ internal fun PlayerManager.seekToImpl(
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
 ) {
     ensureInitialized()
-    if (!initialized) return
-    if (commandSource == PlaybackCommandSource.LOCAL && shouldBlockLocalRoomControl(commandSource)) return
+    if (!acceptSeekCommand(commandSource)) return
     val resolvedPositionMs = positionMs.coerceAtLeast(0L)
     playbackPositionGeneration += 1L
+    logSeekRequested(resolvedPositionMs, commandSource)
+    val preparedSeek = preparePlaybackSeek(resolvedPositionMs)
+    applyPlaybackSeek(resolvedPositionMs, commandSource, preparedSeek)
+    refreshPlaybackUrlAfterSeek(resolvedPositionMs, commandSource, preparedSeek)
+}
+
+private fun PlayerManager.logSeekRequested(positionMs: Long, commandSource: PlaybackCommandSource) {
     NPLogger.d(
         "NERI-PlayerManager",
-        "seekTo requested: positionMs=$resolvedPositionMs, source=$commandSource, currentSong=${_currentSongFlow.value?.name}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
+        "seekTo requested: positionMs=$positionMs, source=$commandSource, currentSong=${_currentSongFlow.value?.name}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
     )
+}
+
+private fun PlayerManager.acceptSeekCommand(commandSource: PlaybackCommandSource): Boolean {
+    if (!initialized) return false
+    return allowsLocalRoomSeek(commandSource)
+}
+
+private fun PlayerManager.allowsLocalRoomSeek(commandSource: PlaybackCommandSource): Boolean =
+    !shouldBlockLocalRoomControl(commandSource)
+
+private data class PreparedPlaybackSeek(
+    val song: SongItem?,
+    val durationMs: Long,
+    val expeditedYouTubeRecovery: Boolean,
+    val executionAction: SeekExecutionAction,
+    val pendingAction: PendingSeekAction
+)
+
+private fun PlayerManager.preparePlaybackSeek(positionMs: Long): PreparedPlaybackSeek {
     val currentSong = _currentSongFlow.value
     val currentUrl = _currentMediaUrl.value
     val currentPositionMs = player.currentPosition.coerceAtLeast(0L)
-    val knownDurationMs = maxOf(
-        player.duration.coerceAtLeast(0L),
-        currentSong?.durationMs?.coerceAtLeast(0L) ?: 0L
-    )
+    val knownDurationMs = knownSeekDuration(currentSong)
     val shouldExpediteYouTubeSeekRecovery =
         YouTubeSeekRefreshPolicy.shouldUseExpeditedRecoveryAfterSeek(
             song = currentSong,
             currentUrl = currentUrl,
             previousPositionMs = currentPositionMs,
-            targetPositionMs = resolvedPositionMs,
+            targetPositionMs = positionMs,
             durationMs = knownDurationMs
         )
-    val shouldRefreshYouTubeUrlBeforeSeek =
-        YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(currentSong, currentUrl) ||
-            shouldExpediteYouTubeSeekRecovery
+    val shouldRefreshYouTubeUrlBeforeSeek = shouldRefreshYouTubeUrlForSeek(
+        currentSong,
+        currentUrl,
+        shouldExpediteYouTubeSeekRecovery
+    )
     val pendingLoadActive = isPendingMediaLoadActive()
     // 正在装载新媒体时交给现有 pending-load 流程，避免替旧媒体启动一条并行刷新
     val seekExecutionAction = resolveSeekExecutionAction(
         pendingLoadActive = pendingLoadActive,
         urlRefreshRequested = shouldRefreshYouTubeUrlBeforeSeek
     )
-    if (shouldRefreshYouTubeUrlBeforeSeek) {
-        rememberPendingSeekPosition(resolvedPositionMs)
-        expeditedYouTubeSeekRecoveryPending = shouldExpediteYouTubeSeekRecovery
+    rememberYouTubeSeekPosition(
+        positionMs,
+        shouldRefreshYouTubeUrlBeforeSeek,
+        shouldExpediteYouTubeSeekRecovery
+    )
+    val pendingSeekAction = resolvePendingSeekAction(
+        pendingLoadActive = pendingLoadActive,
+        requestedPositionMs = positionMs
+    )
+    applyPendingSeekPosition(pendingSeekAction)
+    return PreparedPlaybackSeek(
+        song = currentSong,
+        durationMs = knownDurationMs,
+        expeditedYouTubeRecovery = shouldExpediteYouTubeSeekRecovery,
+        executionAction = seekExecutionAction,
+        pendingAction = pendingSeekAction
+    )
+}
+
+private fun shouldRefreshYouTubeUrlForSeek(
+    song: SongItem?,
+    currentUrl: String?,
+    expeditedRecovery: Boolean
+): Boolean {
+    if (expeditedRecovery) return true
+    return YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(song, currentUrl)
+}
+
+private fun PlayerManager.knownSeekDuration(song: SongItem?): Long =
+    maxOf(player.duration, song?.durationMs ?: 0L).coerceAtLeast(0L)
+
+private fun PlayerManager.rememberYouTubeSeekPosition(
+    positionMs: Long,
+    refreshUrl: Boolean,
+    expeditedRecovery: Boolean
+) {
+    if (refreshUrl) {
+        rememberPendingSeekPosition(positionMs)
+        expeditedYouTubeSeekRecoveryPending = expeditedRecovery
     } else {
         clearPendingSeekPosition()
     }
-    val pendingSeekAction = resolvePendingSeekAction(
-        pendingLoadActive = pendingLoadActive,
-        requestedPositionMs = resolvedPositionMs
-    )
+}
+
+private fun PlayerManager.applyPendingSeekPosition(pendingSeekAction: PendingSeekAction) {
     pendingSeekAction.pendingSeekPositionMs?.let(::rememberPendingSeekPosition)
     pendingMediaLoadPositionMs = pendingSeekAction.exposedPositionMs
-    if (seekExecutionAction.seekPlayerNow) {
-        player.seekTo(resolvedPositionMs)
-    }
-    if (lyriconEnabled) {
-        LyriconManager.setPosition(resolvedPositionMs)
-    }
-    updateExternalBluetoothLyricLine(resolvedPositionMs)
-    synchronized(playbackStatsTracker) {
-        playbackStatsTracker.onManualSeek(resolvedPositionMs)
-    }
-    _playbackPositionMs.value = resolvedPositionMs
+}
+
+private fun PlayerManager.applyPlaybackSeek(
+    positionMs: Long,
+    commandSource: PlaybackCommandSource,
+    preparedSeek: PreparedPlaybackSeek
+) {
+    seekPlayerIfReady(positionMs, preparedSeek.executionAction)
+    syncSeekOutputs(positionMs)
     persistLongFormPlaybackProgress(
-        song = currentSong,
-        positionMs = resolvedPositionMs,
-        durationMs = knownDurationMs
+        song = preparedSeek.song,
+        positionMs = positionMs,
+        durationMs = preparedSeek.durationMs
     )
     scheduleStatePersist(
-        positionMs = pendingSeekAction.persistPositionMs,
+        positionMs = preparedSeek.pendingAction.persistPositionMs,
         shouldResumePlayback = shouldResumePlaybackSnapshot()
     )
     emitPlaybackCommand(
         type = "SEEK",
         source = commandSource,
-        positionMs = resolvedPositionMs,
+        positionMs = positionMs,
         currentIndex = currentIndex
     )
-    if (seekExecutionAction.refreshUrlInBackground) {
+}
+
+private fun PlayerManager.seekPlayerIfReady(positionMs: Long, action: SeekExecutionAction) {
+    if (action.seekPlayerNow) player.seekTo(positionMs)
+}
+
+private fun PlayerManager.syncSeekOutputs(positionMs: Long) {
+    if (lyriconEnabled) {
+        LyriconManager.setPosition(positionMs)
+    }
+    updateExternalBluetoothLyricLine(positionMs)
+    playbackStatsOwner.onManualSeek(positionMs)
+    _playbackPositionMs.value = positionMs
+}
+
+private fun PlayerManager.refreshPlaybackUrlAfterSeek(
+    positionMs: Long,
+    commandSource: PlaybackCommandSource,
+    preparedSeek: PreparedPlaybackSeek
+) {
+    if (preparedSeek.executionAction.refreshUrlInBackground) {
         refreshCurrentSongUrl(
-            resumePositionMs = resolvedPositionMs,
+            resumePositionMs = positionMs,
             allowFallback = false,
-            reason = if (shouldExpediteYouTubeSeekRecovery) {
-                "youtube_seek_expedited_url_refresh"
-            } else {
-                "youtube_seek_url_refresh"
-            },
+            reason = seekRefreshReason(preparedSeek.expeditedYouTubeRecovery),
             bypassCooldown = true,
             resumePlaybackAfterRefresh = shouldResumePlaybackSnapshot(),
             resumedPlaybackCommandSource = commandSource,
@@ -1848,6 +1936,9 @@ internal fun PlayerManager.seekToImpl(
         )
     }
 }
+
+private fun seekRefreshReason(expedited: Boolean): String =
+    if (expedited) "youtube_seek_expedited_url_refresh" else "youtube_seek_url_refresh"
 
 internal fun PlayerManager.nextImpl(
     force: Boolean = false,
@@ -2240,11 +2331,9 @@ internal fun PlayerManager.startProgressUpdates() {
                 nowElapsedRealtimeMs - lastStatsUpdateAtMs >= PLAYBACK_PROGRESS_STATS_UPDATE_INTERVAL_MS
             ) {
                 lastStatsUpdateAtMs = nowElapsedRealtimeMs
-                val progressStatsSnapshot = consumePlaybackStatsProgress(positionMs)
-                if (progressStatsSnapshot != null) {
+                if (playbackStatsOwner.onProgress(positionMs, writesEnabled = initialized)) {
                     markTrackEndHandledForStatsFallback()
                 }
-                persistPlaybackStatsSnapshotAsync(progressStatsSnapshot)
                 maybePersistPlaybackStatsProgress()
             }
             delay(updateIntervalMs)
@@ -2292,21 +2381,8 @@ private fun PlayerManager.maybePersistLongFormPlaybackProgress(positionMs: Long)
     )
 }
 
-private fun PlayerManager.consumePlaybackStatsProgress(positionMs: Long): PlaybackStatsSnapshot? {
-    return synchronized(playbackStatsTracker) {
-        playbackStatsTracker.onPlaybackProgress(positionMs)
-    }
-}
-
 private fun PlayerManager.maybePersistPlaybackStatsProgress() {
-    val snapshot = synchronized(playbackStatsTracker) {
-        if (playbackStatsTracker.shouldFlushPeriodically()) {
-            playbackStatsTracker.flushPeriodic()
-        } else {
-            null
-        }
-    }
-    persistPlaybackStatsSnapshotAsync(snapshot)
+    playbackStatsOwner.flushPeriodic(writesEnabled = initialized)
 }
 
 internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolean = false) {
