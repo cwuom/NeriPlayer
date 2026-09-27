@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotFocused
@@ -155,6 +156,10 @@ class CommentSheetTest {
         composeRule.onNodeWithText(context.getString(R.string.comment_copy)).performClick()
         composeRule.onNodeWithText(state.value.comments.single().content).performTouchInput { longClick() }
         composeRule.onNodeWithText(context.getString(R.string.comment_reply)).performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            composeRule.onNodeWithTag("comment-draft").fetchSemanticsNode()
+                .config[SemanticsProperties.Focused]
+        }
         composeRule.onNodeWithTag("comment-draft").assertIsFocused()
         waitForKeyboardVisibility(true)
         composeRule.runOnIdle { visible.value = false; sheetFocused.set(false) }
