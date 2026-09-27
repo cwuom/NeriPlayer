@@ -96,7 +96,13 @@
     "moe/ouom/neriplayer/core/player/media/LocalPlaybackMediaResolver.kt",
     "moe/ouom/neriplayer/core/player/media/PlaybackMediaItemFactory.kt",
     "moe/ouom/neriplayer/core/player/usb/confirmation/UsbExclusiveLoudPlaybackConfirmationOwner.kt",
-    "moe/ouom/neriplayer/core/player/usb/confirmation/UsbExclusiveLoudPlaybackSnapshotSource.kt"
+    "moe/ouom/neriplayer/core/player/usb/confirmation/UsbExclusiveLoudPlaybackSnapshotSource.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsLoadPolicy.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsLoadOwner.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsLoadSources.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsFastStage.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsBackgroundStage.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsResolution.kt"
   ],
   "method_scopes": [
     {
@@ -539,8 +545,8 @@
       "class": "moe.ouom.neriplayer.ui.screen.NowPlayingScreenKt",
       "methods": [
         "NowPlayingScreen",
-        "NowPlayingScreen$lambda$185$0$0$1",
-        "NowPlayingScreen$lambda$185$0$0$1$17"
+        "NowPlayingScreen$lambda$148$0$0$1",
+        "NowPlayingScreen$lambda$148$0$0$1$17"
       ]
     }
   ]
