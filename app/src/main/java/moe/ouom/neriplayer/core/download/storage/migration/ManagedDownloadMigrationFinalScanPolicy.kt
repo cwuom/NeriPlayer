@@ -2,16 +2,28 @@ package moe.ouom.neriplayer.core.download.storage.migration
 
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
-import moe.ouom.neriplayer.core.download.storage.migration.recovery.mergePersistedMigrationTargetNames
+import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournal
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 
-internal fun migrationExpectedAudioFileNames(
-    persistedTargetNames: Map<String, String>,
-    currentTargetNames: Map<String, String>
-): Set<String> = mergePersistedMigrationTargetNames(
-    listOf(persistedTargetNames, currentTargetNames)
-).values.filter { name ->
-    name.substringAfterLast('.', "").lowercase() in audioExtensions
-}.toSet()
+internal fun migrationExpectedCatalogAudioFileNames(
+    journal: ManagedMigrationReplacementJournal
+): Set<String> {
+    val metadataAudioNames = journal.cleanupReceipts.asSequence()
+        .filter { receipt -> receipt.sourceSubdirectory == null }
+        .mapNotNull { receipt ->
+            ManagedDownloadTreeNaming.metadataAudioName(receipt.targetEntry.name)
+        }
+        .toSet()
+    // 已删除源不再有清理收据，裸音频在 SAF 目录也不是可发布的下载条目
+    return journal.cleanupReceipts.asSequence()
+        .filter { receipt ->
+            receipt.sourceSubdirectory == null &&
+                receipt.sourceName.substringAfterLast('.', "").lowercase() in audioExtensions
+        }
+        .map { receipt -> receipt.targetEntry.logicalName }
+        .filter(metadataAudioNames::contains)
+        .toSet()
+}
 
 internal fun shouldRetryAfterMigrationFinalScan(
     outcome: ManagedLibraryRefreshOutcome,

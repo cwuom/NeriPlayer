@@ -892,14 +892,15 @@ class ManagedDownloadMigrationWorker(
                 useDefaultRootWhenDirectoryUriMissing = true
             )
             // 目标文件校验不保证每首歌都已经发布到 catalog
-            val minimumSongCount = maxOf(
-                minimumSourceEntryCount,
-                checkpointStore.readMinimumAudioCount(migrationWorkId)
-            )
-            val expectedAudioFileNames = migrationExpectedAudioFileNames(
-                persistedTargetNames = persistedTargetNames,
-                currentTargetNames = checkpointStore.readTargetNames(migrationWorkId)
-            )
+            val finalJournal = checkpointStore.readReplacementJournal()
+            val expectedAudioFileNames = finalJournal
+                ?.let(::migrationExpectedCatalogAudioFileNames)
+                .orEmpty()
+            val minimumSongCount = if (finalJournal == null) {
+                minimumSourceEntryCount
+            } else {
+                expectedAudioFileNames.size
+            }
             var finalScanOutcome: ManagedLibraryRefreshOutcome? = null
             for (attempt in 1..MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS) {
                 if (!checkpointStore.isRequestCurrent(migrationWorkId)) {

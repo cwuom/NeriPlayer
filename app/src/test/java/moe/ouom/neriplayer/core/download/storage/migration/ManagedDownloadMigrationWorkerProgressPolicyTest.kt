@@ -975,7 +975,7 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
-    fun `committed receipt audio count ignores metadata and sidecars`() {
+    fun `committed receipts identify catalog audio and exclude bare or deleted sources`() {
         val target = ManagedDownloadStorage.StoredEntry(
             name = "track.mp3",
             reference = "content://target/track",
@@ -1019,6 +1019,41 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertEquals(1, committedMigrationAudioReceiptCount(journal))
         assertTrue(committedMigrationReceiptsMeetAudioMinimum(journal, 1))
         assertFalse(committedMigrationReceiptsMeetAudioMinimum(journal, 2))
+        val expectedNames = migrationExpectedCatalogAudioFileNames(journal)
+        assertEquals(setOf("track.mp3"), expectedNames)
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = "content://target",
+                    songCount = 10,
+                    audioFileNames = setOf("existing.mp3")
+                ),
+                expectedRootKey = "content://target",
+                minimumSongCount = expectedNames.size,
+                expectedAudioFileNames = expectedNames
+            )
+        )
+
+        val metadataLess = journal.copy(
+            cleanupReceipts = journal.cleanupReceipts.filterNot { receipt ->
+                receipt.sourceName.endsWith(".npmeta.json")
+            }
+        )
+        assertEquals(emptySet<String>(), migrationExpectedCatalogAudioFileNames(metadataLess))
+        assertFalse(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published("content://target", 0),
+                expectedRootKey = "content://target",
+                minimumSongCount = migrationExpectedCatalogAudioFileNames(metadataLess).size
+            )
+        )
+
+        val deleted = journal.copy(
+            cleanupReceipts = emptyList(),
+            targetNamesByReference = mapOf("content://source/audio" to "track.mp3"),
+            deletedSourceAudioCount = 1
+        )
+        assertEquals(emptySet<String>(), migrationExpectedCatalogAudioFileNames(deleted))
     }
 
     @Test
@@ -1119,32 +1154,6 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
                 ManagedLibraryRefreshOutcome.Failed("provider unavailable"),
                 expectedRootKey = targetRoot,
                 minimumSongCount = 1
-            )
-        )
-    }
-
-    @Test
-    fun `replacement worker retains migrated audio names from the old checkpoint`() {
-        val targetRoot = "content://provider/tree/target"
-        val expectedNames = migrationExpectedAudioFileNames(
-            persistedTargetNames = mapOf(
-                "content://source/audio" to "RoundTrip.mp3",
-                "content://source/cover" to "RoundTrip.jpg"
-            ),
-            currentTargetNames = emptyMap()
-        )
-
-        assertEquals(setOf("RoundTrip.mp3"), expectedNames)
-        assertTrue(
-            shouldRetryAfterMigrationFinalScan(
-                ManagedLibraryRefreshOutcome.Published(
-                    rootKey = targetRoot,
-                    songCount = 10,
-                    audioFileNames = setOf("Existing.mp3")
-                ),
-                expectedRootKey = targetRoot,
-                minimumSongCount = 1,
-                expectedAudioFileNames = expectedNames
             )
         )
     }
