@@ -79,7 +79,31 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/ui/AppPlaybackVisualOwner.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/AppThemeRevealCapture.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/AppGlobalDialogs.kt",
-            "app/src/main/java/moe/ouom/neriplayer/ui/AppStatusBanners.kt"
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppStatusBanners.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryMigrationSnapshot.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryMigrationRecovery.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPresentation.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryController.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryApplyOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPreparationOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectorySelectionOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryResetOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryGuardOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPendingOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectorySwitchOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryLocalState.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryStateSync.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryActions.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsNavigationState.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsQualityPresentation.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsAboutInteractions.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsBackupTransferController.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsAccountAuthController.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsAccountStatusContent.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsBackgroundAppearanceController.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsStoragePageController.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsHomeStartPresentation.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsScreen.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

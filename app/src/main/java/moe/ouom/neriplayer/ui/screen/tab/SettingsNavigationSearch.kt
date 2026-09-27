@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -60,6 +61,8 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsPageGroupCard
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHomePageGroups
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsSearchEntry
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
@@ -89,6 +92,56 @@ internal fun shouldShowActiveGlassScene(
     selectedPage: SettingsPage?,
     activePage: SettingsPage?
 ): Boolean = isolated || selectedPage == activePage
+
+internal fun settingsHomeSelectedPage(page: SettingsPage?): SettingsPage? =
+    page?.backTargetPage() ?: page
+
+internal fun LazyListScope.settingsHomePageItems(navigation: SettingsNavigationState) {
+    settingsHomeSearchFieldItem(navigation)
+    settingsHomeSearchResultsItem(navigation)
+    settingsHomePageGroupItems(navigation)
+}
+
+private fun LazyListScope.settingsHomeSearchFieldItem(navigation: SettingsNavigationState) {
+    item(key = "settings_search_field") {
+        SettingsSearchField(
+            query = navigation.searchQueryState.value,
+            onQueryChange = { navigation.searchQueryState.value = it }
+        )
+    }
+}
+
+private fun LazyListScope.settingsHomeSearchResultsItem(navigation: SettingsNavigationState) {
+    if (navigation.searchQueryState.value.isBlank()) return
+    item(key = "settings_search_results") {
+        SettingsSearchResultsCard(
+            results = navigation.searchResults,
+            onResultClick = navigation::selectSearchResult
+        )
+    }
+}
+
+private fun LazyListScope.settingsHomePageGroupItems(navigation: SettingsNavigationState) {
+    SettingsHomePageGroups.forEachIndexed { groupIndex, pages ->
+        item(key = "settings_group_$groupIndex") {
+            MiuixSettingsPageGroupCard(
+                pages = pages,
+                onPageClick = { page -> navigation.activePage = page },
+                selectedPage = settingsHomeSelectedPage(navigation.activePage),
+                modifier = Modifier.animateItem()
+            )
+        }
+    }
+}
+
+@Composable
+internal fun SettingsPageScaffold(
+    page: SettingsPage?,
+    home: @Composable () -> Unit,
+    detail: @Composable (SettingsPage) -> Unit
+) {
+    if (page == null) home() else detail(page)
+}
 
 @Composable
 internal fun SettingsPageHost(
