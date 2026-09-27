@@ -109,7 +109,9 @@
     "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsLoadSources.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsFastStage.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsBackgroundStage.kt",
-    "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsResolution.kt"
+    "moe/ouom/neriplayer/ui/screen/NowPlayingLyricsResolution.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherControllerLinkOwner.kt",
+    "moe/ouom/neriplayer/listentogether/session/PlayerManagerListenTogetherLinkPlaybackPort.kt"
   ],
   "method_scopes": [
     {
