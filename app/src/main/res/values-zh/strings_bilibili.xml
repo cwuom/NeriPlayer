@@ -17,8 +17,4 @@
     <string name="bili_loading_favorites">正在加载收藏夹内容…</string>
     <string name="bili_load_failed">加载失败: %s</string>
     <string name="bili_get_parts_failed">获取分 P 失败</string>
-    <string name="bili_download_progress_format" formatted="false">下载进度: %d/%d</string>
-    <string name="bili_downloading_current">正在下载: %s</string>
-    <string name="bili_overall_progress">总体进度: %d%%</string>
-    <string name="bili_current_file_progress" formatted="false">当前文件: %d%% (%d KB/s)</string>
 </resources>

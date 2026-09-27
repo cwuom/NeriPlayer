@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.core.download.manager.batch
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.shouldKeepCancellationCleanup
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
 import moe.ouom.neriplayer.core.download.manager.admission.openDownloadAdmissionTicketOrNull
@@ -1133,7 +1132,7 @@ internal fun GlobalDownloadManager.requestCancellationOperationSnapshot(
     songKey: String,
     snapshotAtMs: Long = System.currentTimeMillis(),
     knownOperationId: String? = null
-): Unit {
+) {
     val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return
     val normalizedSnapshotAtMs = snapshotAtMs.coerceAtLeast(0L)
     val snapshotCutoff = cancellationOperationSnapshotCutoffs.putIfAbsent(

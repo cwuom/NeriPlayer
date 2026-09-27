@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -38,6 +37,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -622,7 +622,7 @@ internal fun PlaylistModernVisualColorsProvider(
             coverUrl = coverUrl,
             offlineMode = offlineMode
         )
-    val overscrollOffset = remember { mutableStateOf(0f) }
+    val overscrollOffset = remember { mutableFloatStateOf(0f) }
     val overscrollBackdrop = remember(overscrollOffset, visualColors.background) {
         AdvancedGlassOverscrollBackdrop(
             color = visualColors.background,

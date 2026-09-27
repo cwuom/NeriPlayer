@@ -79,15 +79,13 @@ class ManagedTemporaryWriteJournalTest {
                 nonce = "1023456789abcdef"
             )
         )
-        try {
+        lease.use {
             assertTrue(
                 ManagedTemporaryWriteArtifacts.isActiveSafWrite(
                     parentUri = parentUri.toString(),
                     displayName = lease.displayName
                 )
             )
-        } finally {
-            lease.close()
         }
         assertFalse(
             ManagedTemporaryWriteArtifacts.isActiveSafWrite(

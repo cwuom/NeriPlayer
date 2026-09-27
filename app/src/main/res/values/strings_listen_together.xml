@@ -131,7 +131,6 @@
     <string name="settings_listen_together_server_input_label">服务器地址</string>
     <string name="settings_listen_together_server_input_placeholder">示例：https://example.com，留空使用内置默认服务器</string>
     <string name="settings_listen_together_server_input_invalid">服务器地址格式无效，请输入完整的 http:// 或 https:// 地址</string>
-    <string name="listen_together_invite_server_invalid">邀请中的服务器地址无效，无法加入该房间</string>
     <string name="listen_together_error_room_id_length">房间 ID 需要为 %1$d 位</string>
     <string name="listen_together_error_room_id_chars">房间 ID 仅支持大写字母和数字</string>
     <string name="listen_together_error_user_uuid_required">用户 UUID 不能为空</string>

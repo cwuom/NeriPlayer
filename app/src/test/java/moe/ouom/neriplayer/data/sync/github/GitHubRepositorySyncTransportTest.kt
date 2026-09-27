@@ -175,7 +175,7 @@ class GitHubRepositorySyncTransportTest {
         )
     }
 
-    private data class CapturedRequest(
+    private class CapturedRequest(
         val method: String,
         val url: HttpUrl,
         val headers: Headers,
@@ -194,12 +194,12 @@ class GitHubRepositorySyncTransportTest {
                 headers = request.headers,
                 body = readBodyBytes(request)
             )
-            val response = check(responses.isNotEmpty()) { "Unexpected request: ${request.url}" }
+            check(responses.isNotEmpty()) { "Unexpected request: ${request.url}" }
             return responses.removeFirst().toResponse(request)
         }
     }
 
-    private data class StubResponse(
+    private class StubResponse(
         val code: Int,
         val body: ByteArray,
         val contentType: String

@@ -7,10 +7,8 @@
     <string name="debug_mode_opened">Debug Mode Opened</string>
     <string name="debug_hide">Hide Debug Mode</string>
     <string name="debug_select_platform">Select platform or hide debug</string>
-    <string name="debug_search">Search Debug</string>
     <string name="debug_search_api">Multi-platform Search API Debug</string>
     <string name="debug_search_probe">Multi-platform Search Probe</string>
-    <string name="debug_netease">NetEase Debug</string>
     <string name="debug_netease_api">NetEase API Debug</string>
     <string name="debug_netease_probe">NetEase API Probe</string>
     <string name="debug_bili_api">Bilibili API Debug</string>
@@ -33,7 +31,6 @@
     <string name="debug_usb_exclusive_empty">No data</string>
     <string name="debug_copy_all">Copy All</string>
     <string name="debug_call_all_copy">Call all and copy to clipboard</string>
-    <string name="debug_copied">Copied to Clipboard</string>
     <string name="debug_bili_probe_title">Bilibili API Probe</string>
     <string name="debug_bili_api_desc">Search / Info / Stats / Stream / Favorites</string>
     <string name="debug_netease_api_desc">Account / Playlists / Song URL / Lyrics</string>
@@ -61,12 +58,7 @@
     <string name="debug_youtube_probe_status_success_generic">%1$s succeeded: %2$s</string>
     <string name="debug_youtube_probe_status_failed_generic">%1$s failed: %2$s</string>
     <string name="debug_youtube_probe_status_copied_raw">Raw JSON copied to clipboard</string>
-    <string name="debug_youtube_probe_status_loading_home">Requesting YouTube Music Home Feed…</string>
-    <string name="debug_youtube_probe_status_loading_library">Requesting YouTube Music library…</string>
-    <string name="debug_youtube_probe_status_home_failed">Home Feed request failed: %1$s</string>
-    <string name="debug_youtube_probe_status_library_failed">Library request failed: %1$s</string>
     <string name="debug_youtube_probe_status_auth_cleared">YouTube auth cleared. Subsequent requests will use anonymous mode</string>
-    <string name="debug_youtube_probe_preview_empty">Home Feed / library debug summary will appear here.</string>
     <string name="debug_youtube_probe_summary_empty">The parsed probe summary will appear here.</string>
     <string name="debug_youtube_probe_raw_empty">The raw JSON response will appear here.</string>
     <string name="debug_youtube_probe_copy_raw">Copy Raw JSON</string>
@@ -76,9 +68,6 @@
     <string name="debug_youtube_probe_auth_logged_in">YouTube sign-in detected | State: %1$s | Cookie keys: %2$d</string>
     <string name="debug_youtube_probe_auth_state_missing">Missing</string>
     <string name="debug_youtube_probe_auth_state_valid">Valid</string>
-    <string name="debug_youtube_probe_home_preview_empty">Home Feed returned no sections</string>
-    <string name="debug_youtube_probe_home_preview_item">%1$d. %2$s | items=%3$d | songs=%4$d | collections=%5$d</string>
-    <string name="debug_youtube_probe_library_preview_count">Library playlist count: %1$d</string>
     <string name="debug_view_logs">View App Logs</string>
     <string name="debug_view_logs_desc">View, copy and export runtime logs</string>
     <string name="debug_test_exception">Test Exception Handler</string>
@@ -131,7 +120,6 @@
     <string name="debug_subscribed_playlists">Subscribed Playlists Only</string>
     <string name="debug_liked_playlist_id">Liked Playlist ID Only</string>
     <string name="debug_lyric_sample">Lyrics Only (33894312)</string>
-    <string name="debug_preview_hint">(No preview, try clicking buttons above~)</string>
     <string name="debug_search_desc">Enter keyword, click platform button to call search API and copy raw JSON result to clipboard.</string>
     <string name="debug_search_keyword_label">Search Keyword</string>
     <string name="debug_search_netease">Search NetEase</string>
@@ -165,16 +153,6 @@
     <string name="debug_network_error">Network/Server error: %s</string>
     <string name="debug_all_api_calling">Calling all APIs…</string>
     <string name="debug_all_api_ok">OK, all APIs called and copied to clipboard</string>
-    <string name="probe_keyword_empty">Error: Keyword cannot be empty</string>
-    <string name="probe_searching" formatted="false">Searching [%s]: %s …</string>
-    <string name="probe_search_complete">OK, [%s] search complete and copied</string>
-    <string name="probe_call_failed">Call/parse failed: %s</string>
-    <string name="probe_calling">Calling: %s …</string>
-    <string name="probe_copied">Copied to clipboard: %s</string>
-    <string name="probe_network_error">Network/server error: %s</string>
-    <string name="probe_all_calling">Calling all APIs…</string>
-    <string name="probe_all_complete">OK, all APIs called and copied</string>
     <string name="probe_invalid_avid">Please enter valid avid (number) in BV field</string>
-    <string name="probe_page_not_found">Cannot find page %d</string>
     <string name="test_exception_message">This is a test exception to verify exception handler functionality</string>
 </resources>

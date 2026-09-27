@@ -152,9 +152,7 @@ internal fun intervalsForBiliVideoSkipCid(
     cid: Long
 ): List<BiliVideoSkipInterval> {
     if (cid <= 0L) return emptyList()
-    val matchingRule = rules.asSequence()
-        .filter { rule -> rule.target.cid == cid }
-        .singleOrNull()
+    val matchingRule = rules.singleOrNull { rule -> rule.target.cid == cid }
     return matchingRule
         ?.takeUnless { it.isDeleted }
         ?.intervals
@@ -180,9 +178,7 @@ internal fun intervalsForBiliVideoSkipPlayback(
         return cidIntervals
     }
     val normalizedBvid = fallbackBvid?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
-    val matchingRule = rules.asSequence()
-        .filter { rule -> rule.target.bvid == normalizedBvid }
-        .singleOrNull()
+    val matchingRule = rules.singleOrNull { rule -> rule.target.bvid == normalizedBvid }
     return matchingRule
         ?.takeUnless { it.isDeleted }
         ?.intervals

@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProvide
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class DownloadDirectoryAvailabilityTest {
     @Test
@@ -104,7 +105,7 @@ class DownloadDirectoryAvailabilityTest {
         val availability = resolveDownloadDirectoryAvailability(
             directoryUri = "content://provider/tree/root",
             isRootResolvable = {
-                delay(250L)
+                delay(250.milliseconds)
                 true
             },
             timeoutMs = 25L

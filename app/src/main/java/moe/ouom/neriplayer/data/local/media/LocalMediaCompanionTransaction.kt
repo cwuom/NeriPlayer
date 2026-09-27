@@ -351,7 +351,7 @@ private fun durableCompanionFile(record: LocalMetadataRecoveryRecord, prefix: St
         FileOutputStream(file).use { it.write(bytes); it.fd.sync() }
     }
 
-private data class CompanionSnapshot(val identity: String, val bytes: ByteArray)
+private class CompanionSnapshot(val identity: String, val bytes: ByteArray)
 
 private fun companionSnapshot(context: Context, reference: String): CompanionSnapshot {
     val descriptor = companionFile(reference)?.let { ParcelFileDescriptor.open(it, ParcelFileDescriptor.MODE_READ_ONLY) }

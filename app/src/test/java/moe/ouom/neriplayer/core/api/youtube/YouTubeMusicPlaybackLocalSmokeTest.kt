@@ -43,7 +43,7 @@ class YouTubeMusicPlaybackLocalSmokeTest {
             val summarySuffix = responseSummary.takeIf(String::isNotBlank)
                 ?.let { " summary=${it.take(120)}" }
                 .orEmpty()
-            return "#$order +${startedAtMs}ms ${kind.uppercase()} ${code} ${durationMs}ms ${host}${path}$clientSuffix$playabilitySuffix$summarySuffix"
+            return "#$order +${startedAtMs}ms ${kind.uppercase()} $code ${durationMs}ms ${host}${path}$clientSuffix$playabilitySuffix$summarySuffix"
         }
     }
 

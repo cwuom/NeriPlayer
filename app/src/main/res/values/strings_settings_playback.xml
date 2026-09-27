@@ -41,7 +41,6 @@
     <string name="settings_audio_quality_high">高</string>
     <string name="settings_audio_quality_medium">中</string>
     <string name="settings_audio_quality_low">低</string>
-    <string name="settings_haptic_feedback">触感反馈</string>
     <string name="settings_motion">动效设置</string>
     <string name="settings_motion_general_section">动效总开关</string>
     <string name="settings_motion_general_section_desc">控制歌词和界面的动效能力</string>

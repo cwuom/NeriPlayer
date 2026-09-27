@@ -5,7 +5,6 @@ import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperati
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.CancellationBoundary
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.DownloadBatchIdentity
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.DownloadBatchRecoverySnapshot
-import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.DownloadBatchNetworkPolicy
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.BatchMemberMutation
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.BatchMemberBinding
 import android.content.Context

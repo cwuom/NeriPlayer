@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Local Playlists & Files -->
-    <string name="local_title">本地</string>
     <string name="local_files">本地文件</string>
     <string name="local_files_manual_added">手动添加</string>
     <string name="local_files_downloaded">已下载</string>
     <string name="local_files_delete_downloaded_title">删除已下载歌曲</string>
-    <string name="local_files_delete_downloaded_confirm">确定要删除 %d 首已下载歌曲及其本地文件吗？此操作无法撤销。</string>
-    <string name="local_files_delete_downloaded_partial">已删除 %1$d 首下载文件；%2$d 首未删除</string>
+    <plurals name="local_files_delete_downloaded_confirm">
+        <item quantity="other">确定要删除 %d 首已下载歌曲及其本地文件吗？此操作无法撤销。</item>
+    </plurals>
+    <plurals name="local_files_delete_downloaded_partial">
+        <item quantity="other">已删除 %1$d 首下载文件；%2$d 首未删除</item>
+    </plurals>
     <string name="local_files_delete_downloaded_failed">未能删除下载文件，下载记录已保留</string>
     <string name="local_playlist_scan_mode_title">选择扫描方式</string>
     <string name="local_playlist_scan_mode_message">授权文件夹只扫描你选择的文件夹及其子文件夹；全局扫描会读取设备音乐库。</string>
@@ -16,14 +19,15 @@
     <string name="local_playlist_scan_preserve_existing">扫描结果无效，已保留现有本地文件列表</string>
     <string name="local_playlist_scan_preview_title">预览本地文件</string>
     <string name="local_playlist_scan_preview_search">搜索本地文件</string>
-    <string name="local_playlist_scan_preview_apply">导入所选歌曲</string>
     <string name="local_playlist_scan_filter_metadata">隐藏无元数据歌曲</string>
     <string name="local_playlist_scan_filter_existing">忽略已添加歌曲</string>
     <string name="local_playlist_scan_filter_duplicates">按元信息去重</string>
     <string name="local_playlist_scan_metadata_empty">没有带元数据的本地音频</string>
     <string name="local_playlist_scan_existing_empty">没有未添加的本地音频</string>
     <string name="local_playlist_scan_filtered_empty">没有符合筛选条件的本地音频</string>
-    <string name="local_playlist_scan_progress_traversing">已访问 %1$d 个目录，发现 %2$d 首歌曲</string>
+    <plurals name="local_playlist_scan_progress_traversing">
+        <item quantity="other">已访问 %1$d 个目录，发现 %2$d 首歌曲</item>
+    </plurals>
     <string name="local_playlist_scan_progress_building">正在建立歌曲索引（%1$d/%2$d）</string>
     <string name="local_playlist_scan_progress_metadata">正在整理元信息（%1$d/%2$d）</string>
     <string name="local_playlist_import_audio_no_new">没有新的本地音频需要导入</string>
@@ -55,7 +59,6 @@
     <string name="local_playlist_sync_search">搜索可同步歌曲</string>
     <string name="local_playlist_sync_empty">没有可同步的歌曲</string>
     <string name="local_playlist_export_to">导出到歌单</string>
-    <string name="local_playlist_import_audio">导入本地音频</string>
     <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d 首 · 播放 %3$s 次</string>
     <string name="local_playlist_duration_loading">正在读取时长</string>
     <string name="local_artist_total_duration" formatted="false">%1$s · %2$d 首</string>

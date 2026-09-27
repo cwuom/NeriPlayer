@@ -1596,16 +1596,13 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 "filePath",
                 "audio_reference",
                 "audioReference"
-            )
-                .asSequence()
-                .mapNotNull { key ->
-                    row.opt(key)
-                        ?.takeUnless { value -> value == JSONObject.NULL }
-                        ?.toString()
-                        ?.trim()
-                        ?.takeIf(String::isNotBlank)
-                }
-                .firstOrNull()
+            ).firstNotNullOfOrNull { key ->
+                row.opt(key)
+                    ?.takeUnless { value -> value == JSONObject.NULL }
+                    ?.toString()
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+            }
         }
 
         private fun cursorString(cursor: Cursor, columnName: String): String? {

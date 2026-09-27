@@ -7,10 +7,8 @@
     <string name="debug_mode_opened">已开启调试模式</string>
     <string name="debug_hide">隐藏调试模式</string>
     <string name="debug_select_platform">选择要调试的平台或隐藏调试模式</string>
-    <string name="debug_search">搜索调试</string>
     <string name="debug_search_api">多平台搜索接口调试</string>
     <string name="debug_search_probe">多平台搜索接口探针</string>
-    <string name="debug_netease">网易云调试</string>
     <string name="debug_netease_api">网易云接口调试</string>
     <string name="debug_netease_probe">网易云接口调试</string>
     <string name="debug_bili_api">哔哩哔哩接口调试</string>
@@ -33,7 +31,6 @@
     <string name="debug_usb_exclusive_empty">暂无数据</string>
     <string name="debug_copy_all">复制全部</string>
     <string name="debug_call_all_copy">一键调用全部并复制到剪贴板</string>
-    <string name="debug_copied">已复制到剪贴板</string>
     <string name="debug_bili_probe_title">哔哩哔哩接口探针</string>
     <string name="debug_bili_api_desc">搜索 / 取封面简介 / 统计 / 取流 / 收藏夹</string>
     <string name="debug_netease_api_desc">账户 / 歌单 / 歌曲 URL / 歌词</string>
@@ -61,12 +58,7 @@
     <string name="debug_youtube_probe_status_success_generic">%1$s 成功：%2$s</string>
     <string name="debug_youtube_probe_status_failed_generic">%1$s 失败：%2$s</string>
     <string name="debug_youtube_probe_status_copied_raw">已复制原始 JSON 到剪贴板</string>
-    <string name="debug_youtube_probe_status_loading_home">正在请求 YouTube Music Home Feed…</string>
-    <string name="debug_youtube_probe_status_loading_library">正在请求 YouTube Music 媒体库…</string>
-    <string name="debug_youtube_probe_status_home_failed">Home Feed 请求失败：%1$s</string>
-    <string name="debug_youtube_probe_status_library_failed">媒体库请求失败：%1$s</string>
     <string name="debug_youtube_probe_status_auth_cleared">已清空 YouTube 鉴权，后续请求将使用匿名模式</string>
-    <string name="debug_youtube_probe_preview_empty">这里会显示 Home Feed / 媒体库测试摘要。</string>
     <string name="debug_youtube_probe_summary_empty">这里会显示本次 probe 的摘要信息。</string>
     <string name="debug_youtube_probe_raw_empty">这里会显示原始 JSON 返回结果。</string>
     <string name="debug_youtube_probe_copy_raw">复制原始 JSON</string>
@@ -76,9 +68,6 @@
     <string name="debug_youtube_probe_auth_logged_in">当前已读取 YouTube 登录态 | 状态：%1$s | Cookie Key 数：%2$d</string>
     <string name="debug_youtube_probe_auth_state_missing">缺失</string>
     <string name="debug_youtube_probe_auth_state_valid">有效</string>
-    <string name="debug_youtube_probe_home_preview_empty">Home Feed 返回为空</string>
-    <string name="debug_youtube_probe_home_preview_item">%1$d. %2$s | 条目=%3$d | 歌曲=%4$d | 集合=%5$d</string>
-    <string name="debug_youtube_probe_library_preview_count">媒体库歌单数量：%1$d</string>
     <string name="debug_view_logs">查看应用日志</string>
     <string name="debug_view_logs_desc">查看、复制和导出本次运行的日志</string>
     <string name="debug_test_exception">测试异常处理器</string>
@@ -131,7 +120,6 @@
     <string name="debug_subscribed_playlists">仅 我收藏的歌单</string>
     <string name="debug_liked_playlist_id">仅 我喜欢的音乐 歌单ID</string>
     <string name="debug_lyric_sample">仅 歌词(33894312)</string>
-    <string name="debug_preview_hint">(暂无预览,先点上面的按钮试试~)</string>
     <string name="debug_search_desc">输入关键词,点击平台按钮将真实请求搜索接口,并把原始 JSON 结果复制到剪贴板。</string>
     <string name="debug_search_keyword_label">搜索关键词</string>
     <string name="debug_search_netease">搜索网易云</string>
@@ -165,16 +153,6 @@
     <string name="debug_network_error">网络/服务器异常:%s</string>
     <string name="debug_all_api_calling">正在调用所有接口…</string>
     <string name="debug_all_api_ok">OK,所有接口已调用完成并复制到剪贴板</string>
-    <string name="probe_keyword_empty">错误：关键词不能为空</string>
-    <string name="probe_searching" formatted="false">正在搜索 [%s]：%s …</string>
-    <string name="probe_search_complete">OK，[%s] 搜索完成并复制到剪贴板</string>
-    <string name="probe_call_failed">调用/解析失败：%s</string>
-    <string name="probe_calling">调用中：%s …</string>
-    <string name="probe_copied">已复制到剪贴板：%s</string>
-    <string name="probe_network_error">网络/服务器异常：%s</string>
-    <string name="probe_all_calling">正在调用所有接口…</string>
-    <string name="probe_all_complete">OK，所有接口已调用完成并复制到剪贴板</string>
     <string name="probe_invalid_avid">请输入有效 avid（数字）到 BV 输入框</string>
-    <string name="probe_page_not_found">找不到第 %d P</string>
     <string name="test_exception_message">这是一个测试异常,用于验证异常处理器的功能</string>
 </resources>

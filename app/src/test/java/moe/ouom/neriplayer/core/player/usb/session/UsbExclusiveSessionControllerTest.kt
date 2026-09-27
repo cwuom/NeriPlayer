@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.player.usb.session
 
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UsbExclusiveSessionControllerTest {

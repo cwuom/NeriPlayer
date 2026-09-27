@@ -38,7 +38,6 @@ import moe.ouom.neriplayer.listentogether.control.buildListenTogetherForwardedCo
 import moe.ouom.neriplayer.listentogether.control.controlledPlaybackCommandTypes
 import moe.ouom.neriplayer.listentogether.control.controllerHeartbeatRecoveryTypes
 import moe.ouom.neriplayer.listentogether.control.nextListenTogetherEventId
-import moe.ouom.neriplayer.listentogether.control.passivePositionUpdateTypes
 import moe.ouom.neriplayer.listentogether.control.requestControlEventTypes
 import moe.ouom.neriplayer.listentogether.control.trackBoundRequestControlEventTypes
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
@@ -85,7 +84,6 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherControlResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherInitialSnapshot
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState

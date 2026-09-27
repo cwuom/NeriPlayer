@@ -136,7 +136,6 @@ import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
@@ -224,7 +223,6 @@ fun LyricsScreen(
         PlayerManager.currentQueueDisplaySnapshot()
     }
     val displayedQueueItems = queueDisplayState.items
-    val displayedQueue = remember(displayedQueueItems) { displayedQueueItems.map { it.song } }
     val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()

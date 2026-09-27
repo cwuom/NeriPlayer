@@ -32,6 +32,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
+import kotlin.time.Duration.Companion.milliseconds
 
 class DownloadedSongMissingReferenceProbeTest {
     @Test
@@ -146,7 +147,7 @@ class DownloadedSongMissingReferenceProbeTest {
             val count = active.incrementAndGet()
             peak.accumulateAndGet(count, ::maxOf)
             try {
-                delay(1L)
+                delay(1.milliseconds)
                 StorageLookupResult.Missing
             } finally {
                 active.decrementAndGet()
@@ -217,7 +218,7 @@ class DownloadedSongMissingReferenceProbeTest {
         verify(resolver).query(eq(uri), any(), isNull(), isNull(), isNull())
         verify(cursor).close()
         verify(resolver, never()).openInputStream(any())
-        verify(resolver, never()).openFileDescriptor(any(), any<String>())
+        verify(resolver, never()).openFileDescriptor(any(), any())
     }
 
     private fun found(reference: String): StorageLookupResult<StorageStat> = StorageLookupResult.Found(

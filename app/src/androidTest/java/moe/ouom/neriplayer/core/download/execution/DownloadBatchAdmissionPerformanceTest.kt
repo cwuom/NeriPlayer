@@ -8,7 +8,6 @@ import androidx.room.RoomDatabase
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.UUID
-import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -373,7 +372,7 @@ class DownloadBatchAdmissionPerformanceTest {
         val name = "download-admission-${UUID.randomUUID()}"
         val queries = QueryCounters()
         val db = Room.databaseBuilder(context, NeriUserDataDatabase::class.java, name)
-            .setQueryCallback(queries, Executor { it.run() })
+            .setQueryCallback(queries, { it.run() })
             .build()
         try {
             db.downloadBatchDao().findMaxGeneration()

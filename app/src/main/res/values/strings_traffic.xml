@@ -13,12 +13,7 @@
     <string name="settings_mobile_data_bili_audio_quality">哔哩哔哩流量音质</string>
     <string name="settings_mobile_data_downgrade_quality">流量降级音质</string>
     <string name="settings_mobile_data_downgrade_quality_desc">移动流量或漫游播放时自动使用更省流量的音质</string>
-    <string name="settings_mobile_data_downgrade_quality_off">关闭</string>
-    <string name="settings_mobile_data_downgrade_quality_low">低</string>
-    <string name="settings_mobile_data_downgrade_quality_medium">中</string>
-    <string name="settings_mobile_data_downgrade_quality_high">高</string>
     <string name="traffic_stats_overview">流量统计</string>
-    <string name="traffic_stats_empty">暂无流量统计</string>
     <string name="traffic_period_empty">当前时间范围内还没有流量统计</string>
     <string name="traffic_wifi">WIFI</string>
     <string name="traffic_mobile">移动流量</string>

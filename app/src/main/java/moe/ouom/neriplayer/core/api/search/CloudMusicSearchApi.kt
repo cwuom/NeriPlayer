@@ -140,9 +140,9 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
         val lyricJson = executeRequest(lyricUrl) as String
         val lyricResponse = json.decodeFromString<CloudMusicLyricResponse>(lyricJson)
         return Pair(
-            lyricResponse.yrc?.lyric?.takeIf { !it.isNullOrBlank() }
+            lyricResponse.yrc?.lyric?.takeIf(String::isNotBlank)
                 ?: lyricResponse.lrc?.lyric?.let(::normalizeLegacyLrcTimestamps),
-            lyricResponse.ytlrc?.lyric?.takeIf { !it.isNullOrBlank() }
+            lyricResponse.ytlrc?.lyric?.takeIf(String::isNotBlank)
                 ?: lyricResponse.tlyric?.lyric?.let(::normalizeLegacyLrcTimestamps)
         )
     }

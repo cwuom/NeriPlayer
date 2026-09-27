@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.player.url
 
-import android.net.Uri
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo

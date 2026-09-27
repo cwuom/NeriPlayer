@@ -260,7 +260,7 @@ internal class ManagedDownloadMigrationFinalizer(
             error = outcomesByIndex.values
                 .mapNotNull(MetadataRewriteOutcome::error)
                 .firstOrNull { error -> !error.retryable }
-                ?: outcomesByIndex.values.mapNotNull(MetadataRewriteOutcome::error).firstOrNull()
+                ?: outcomesByIndex.values.firstNotNullOfOrNull(MetadataRewriteOutcome::error)
         )
     }
 

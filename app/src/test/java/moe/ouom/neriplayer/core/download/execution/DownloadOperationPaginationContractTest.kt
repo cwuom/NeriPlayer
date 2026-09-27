@@ -1,10 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomReadStore
-import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.persistence.markCoreCommittedImpl
 import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
-import moe.ouom.neriplayer.core.download.execution.state.planDownloadRetry
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

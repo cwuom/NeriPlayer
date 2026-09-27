@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.operation.content
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingAudioWritesFromRoot
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.readTemporaryDirectoryEntries
 import moe.ouom.neriplayer.core.download.storage.operation.requireCompleteMigrationDirectoryScan
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
@@ -21,7 +20,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
@@ -31,11 +29,9 @@ import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
-import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationNamePlan
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationTargetIndexBuilder
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationTargetIndex
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournal
-import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementPlan
 import moe.ouom.neriplayer.core.download.storage.migration.plan.StoredWriteResult
 import moe.ouom.neriplayer.core.download.storage.migration.recovery.mergePersistedMigrationReplacementPlan
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
@@ -49,7 +45,6 @@ import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.model.displayName
 import java.io.File
 import java.io.InputStream
 import java.io.IOException

@@ -10,7 +10,6 @@
     <string name="log_clear">Clear</string>
     <string name="log_no_file">No log files found</string>
     <string name="log_cannot_read">Cannot read log file</string>
-    <string name="log_view_hint">View app logs</string>
     <string name="log_enable_hint">Please enable file logging in settings</string>
     <string name="crash_log_title">Crash Logs</string>
     <string name="crash_log_desc">View app crash records</string>

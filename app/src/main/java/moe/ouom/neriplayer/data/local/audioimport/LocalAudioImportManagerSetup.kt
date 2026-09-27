@@ -653,13 +653,11 @@ internal fun LocalAudioImportManager.buildKnownSidecarReferencesForSongs(
 
         fun find(kind: LyricSidecarKind): String? {
             val names = lyricSidecarNames(baseName, kind)
-            return indexes.asSequence()
-                .mapNotNull { directoryIndex ->
-                    names.firstNotNullOfOrNull { name ->
-                        directoryIndex.filesByName[name.lowercase()]
-                    }
+            return indexes.firstNotNullOfOrNull { directoryIndex ->
+                names.firstNotNullOfOrNull { name ->
+                    directoryIndex.filesByName[name.lowercase()]
                 }
-                .firstOrNull()
+            }
         }
 
         val metadataReference =

@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.host.executePumpCandidateIsolated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -27,7 +28,7 @@ class DownloadExecutionPumpIsolationTest {
                         DownloadExecutionResult.Accepted
                     }
                 }
-            ).map { it.await() }
+            ).awaitAll()
         }
 
         assertEquals(DownloadExecutionResult.Cancelled, results[0])

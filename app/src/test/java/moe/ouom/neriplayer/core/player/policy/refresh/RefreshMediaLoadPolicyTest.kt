@@ -372,7 +372,7 @@ class RefreshMediaLoadPolicyTest {
 
     @Test
     fun `stale refresh resolver cannot update duration before apply`() {
-        var current = false
+        val current = false
         var durationUpdated = false
         val sink = RefreshResolverSideEffects(RefreshSideEffectGate { current })
 
@@ -384,7 +384,7 @@ class RefreshMediaLoadPolicyTest {
 
     @Test
     fun `stale refresh resolver cannot emit error before apply`() {
-        var current = false
+        val current = false
         var errorEmitted = false
         val sink = RefreshResolverSideEffects(RefreshSideEffectGate { current })
 
@@ -396,7 +396,7 @@ class RefreshMediaLoadPolicyTest {
 
     @Test
     fun `stale refresh resolver cannot trigger local cache scan before apply`() {
-        var current = false
+        val current = false
         var scanned = false
         val sink = RefreshResolverSideEffects(RefreshSideEffectGate { current })
 
@@ -438,7 +438,7 @@ class RefreshMediaLoadPolicyTest {
 
     @Test
     fun `refresh persist mutation executes inside ownership gate`() = runBlocking {
-        var current = false
+        val current = false
         var persisted = false
         val gate = RefreshSideEffectGate { current }
 

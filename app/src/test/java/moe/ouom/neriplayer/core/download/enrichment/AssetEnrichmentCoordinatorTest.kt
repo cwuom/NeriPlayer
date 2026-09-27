@@ -13,6 +13,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -22,6 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import kotlin.time.Duration.Companion.milliseconds
 
 class AssetEnrichmentCoordinatorTest {
     @Test
@@ -68,8 +70,8 @@ class AssetEnrichmentCoordinatorTest {
                 returned.complete(result)
             }
             try {
-                withTimeout(2_000) { callbackEntered.await() }
-                val result = kotlinx.coroutines.withTimeoutOrNull(1_000) { returned.await() }
+                withTimeout(2_000.milliseconds) { callbackEntered.await() }
+                val result = kotlinx.coroutines.withTimeoutOrNull(1_000.milliseconds) { returned.await() }
                 assertEquals("cancel mode=$cancelMode must return while callback remains blocked",
                     !cancelMode.endsWith("join"), result)
                 assertTrue("before-start" in coordinator.activeOperationIds())
@@ -81,7 +83,7 @@ class AssetEnrichmentCoordinatorTest {
                 assertEquals(1, coordinator.availableCapacity())
             } finally {
                 callbackRelease.countDown()
-                withTimeout(2_000) { caller.join() }
+                withTimeout(2_000.milliseconds) { caller.join() }
                 coordinator.cancelAllAndJoin()
                 scope.cancel()
             }
@@ -189,7 +191,7 @@ class AssetEnrichmentCoordinatorTest {
                 callbackStarted.complete(Unit)
                 release.await(5, java.util.concurrent.TimeUnit.SECONDS)
             }) {}
-            withTimeout(2_000) { callbackStarted.await() }
+            withTimeout(2_000.milliseconds) { callbackStarted.await() }
             assertFalse(coordinator.awaitCompletion(listOf("callback"), 10))
             assertEquals(0, coordinator.availableCapacity())
             assertTrue(old === coordinator.tryEnqueue("callback") {})
@@ -222,11 +224,11 @@ class AssetEnrichmentCoordinatorTest {
                 }
             }
             assertEquals(waveSize, jobs.count { it != null })
-            withTimeout(2_000) { allStarted.await() }
+            withTimeout(2_000.milliseconds) { allStarted.await() }
             assertEquals(waveSize, started.get())
             assertEquals(null, coordinator.tryEnqueue("wave-overflow") {})
             release.complete(Unit)
-            jobs.filterNotNull().forEach { it.join() }
+            jobs.filterNotNull().joinAll()
             assertTrue(coordinator.awaitCompletion((0 until waveSize).map { "wave-$it" }, 2_000))
             assertEquals(0, coordinator.activeCount())
         } finally {
@@ -263,7 +265,7 @@ class AssetEnrichmentCoordinatorTest {
         assertTrue(duplicate.isActive)
         assertEquals(1, runs.get())
         release.complete(Unit)
-        withTimeout(2_000L) { duplicate.join() }
+        withTimeout(2_000.milliseconds) { duplicate.join() }
         assertTrue(coordinator.awaitCompletion(listOf("operation"), 2_000))
         assertEquals(1, runs.get())
         assertEquals(1, completionCount.get())
@@ -281,12 +283,12 @@ class AssetEnrichmentCoordinatorTest {
             coordinator.enqueue("operation-$index") {
                 val now = active.incrementAndGet()
                 peak.updateAndGet { previous -> maxOf(previous, now) }
-                delay(20L)
+                delay(20.milliseconds)
                 active.decrementAndGet()
             }
         }
 
-        jobs.forEach { it.join() }
+        jobs.joinAll()
         assertEquals(2, peak.get())
         scope.cancel()
     }
@@ -299,7 +301,7 @@ class AssetEnrichmentCoordinatorTest {
 
         val job = coordinator.enqueue(
             operationId = "slow-operation",
-            block = { delay(200L) },
+            block = { delay(200.milliseconds) },
             onTimeout = { error -> timeout.set(error) }
         )
 
@@ -332,10 +334,10 @@ class AssetEnrichmentCoordinatorTest {
             onTimeout = { throw callbackFailure },
             onCompletion = { error -> completionError.set(error) }
         ) {
-            delay(200L)
+            delay(200.milliseconds)
         }
 
-        withTimeout(2_000L) { job.join() }
+        withTimeout(2_000.milliseconds) { job.join() }
         assertTrue(job.isCompleted)
         assertTrue(!job.isCancelled)
         assertTrue(coordinator.awaitCompletion(listOf("timeout-callback-failure"), 2_000))
@@ -376,13 +378,13 @@ class AssetEnrichmentCoordinatorTest {
         }
 
         try {
-            delay(150L)
+            delay(150.milliseconds)
             assertTrue(queuedJob.isActive)
             assertEquals(null, timeout.get())
             assertEquals(0, queuedRuns.get())
 
             releasePermit.complete(Unit)
-            withTimeout(2_000L) { queuedJob.join() }
+            withTimeout(2_000.milliseconds) { queuedJob.join() }
             assertTrue(coordinator.awaitCompletion(listOf("queued-operation"), 2_000))
             assertEquals(null, timeout.get())
             assertFalse(queuedJob.isCancelled)
@@ -390,7 +392,7 @@ class AssetEnrichmentCoordinatorTest {
             assertFalse("queued-operation" in coordinator.activeOperationIds())
         } finally {
             releasePermit.complete(Unit)
-            withTimeout(2_000L) { blockingJob.join() }
+            withTimeout(2_000.milliseconds) { blockingJob.join() }
             scope.cancel()
         }
     }
@@ -408,14 +410,14 @@ class AssetEnrichmentCoordinatorTest {
             }
         }
 
-        withTimeout(2_000L) { caller.join() }
-        withTimeout(2_000L) { started.await() }
+        withTimeout(2_000.milliseconds) { caller.join() }
+        withTimeout(2_000.milliseconds) { started.await() }
         assertTrue(caller.isCompleted)
         assertEquals(1, coordinator.activeCount())
         release.complete(Unit)
-        withTimeout(2_000L) {
+        withTimeout(2_000.milliseconds) {
             while (coordinator.activeCount() != 0) {
-                delay(10L)
+                delay(10.milliseconds)
             }
         }
         assertEquals(0, coordinator.activeCount())
@@ -433,13 +435,13 @@ class AssetEnrichmentCoordinatorTest {
             release.await()
         }
 
-        withTimeout(2_000L) { started.await() }
+        withTimeout(2_000.milliseconds) { started.await() }
         assertTrue(coordinator.hasActiveJobs.value)
         release.complete(Unit)
-        withTimeout(2_000L) { job.join() }
-        withTimeout(2_000L) {
+        withTimeout(2_000.milliseconds) { job.join() }
+        withTimeout(2_000.milliseconds) {
             while (coordinator.hasActiveJobs.value) {
-                delay(10L)
+                delay(10.milliseconds)
             }
         }
         assertTrue(!coordinator.hasActiveJobs.value)
@@ -471,13 +473,13 @@ class AssetEnrichmentCoordinatorTest {
                 onCompletion = { releases.incrementAndGet() },
                 block = block
             )
-            withTimeout(2_000L) { job.join() }
+            withTimeout(2_000.milliseconds) { job.join() }
             assertTrue(coordinator.awaitCompletion(listOf(operationId), 2_000))
             assertEquals("operation=$operationId", 1, releases.get())
         }
 
         assertReleasedOnce("completed") {}
-        assertReleasedOnce("timed-out") { delay(200L) }
+        assertReleasedOnce("timed-out") { delay(200.milliseconds) }
         assertReleasedOnce("failed") { error("asset failure") }
 
         val cancellationStarted = CompletableDeferred<Unit>()
@@ -489,9 +491,9 @@ class AssetEnrichmentCoordinatorTest {
             cancellationStarted.complete(Unit)
             awaitCancellation()
         }
-        withTimeout(2_000L) { cancellationStarted.await() }
+        withTimeout(2_000.milliseconds) { cancellationStarted.await() }
         assertTrue(coordinator.cancel("cancelled"))
-        withTimeout(2_000L) { cancelledJob.join() }
+        withTimeout(2_000.milliseconds) { cancelledJob.join() }
         assertTrue(coordinator.awaitCompletion(listOf("cancelled"), 2_000))
         assertEquals(1, cancellationReleases.get())
         assertEquals(1, ignoredFailures.get())
@@ -511,17 +513,17 @@ class AssetEnrichmentCoordinatorTest {
             }
         }
 
-        withTimeout(2_000L) {
+        withTimeout(2_000.milliseconds) {
             while (coordinator.activeOperationIds().size != 2) {
-                delay(10L)
+                delay(10.milliseconds)
             }
         }
         assertEquals(setOf("cancel-one", "cancel-two"), coordinator.activeOperationIds())
         assertEquals(2, coordinator.cancelAll("clear requested"))
         jobs.forEach { job -> job.cancelAndJoin() }
-        withTimeout(2_000L) {
+        withTimeout(2_000.milliseconds) {
             while (coordinator.activeCount() != 0) {
-                delay(10L)
+                delay(10.milliseconds)
             }
         }
         assertTrue(coordinator.activeOperationIds().isEmpty())
@@ -541,14 +543,14 @@ class AssetEnrichmentCoordinatorTest {
                 try {
                     awaitCancellation()
                 } finally {
-                    withContext(NonCancellable) { delay(20L) }
+                    withContext(NonCancellable) { delay(20.milliseconds) }
                 }
             }
         }
 
-        withTimeout(2_000L) {
+        withTimeout(2_000.milliseconds) {
             while (started.get() != jobs.size) {
-                delay(10L)
+                delay(10.milliseconds)
             }
         }
         assertTrue(
@@ -572,9 +574,9 @@ class AssetEnrichmentCoordinatorTest {
             }
         }
 
-        withTimeout(2_000L) {
+        withTimeout(2_000.milliseconds) {
             while (coordinator.activeOperationIds().size != jobs.size) {
-                delay(10L)
+                delay(10.milliseconds)
             }
         }
         assertTrue(
@@ -606,18 +608,18 @@ class AssetEnrichmentCoordinatorTest {
             release.await()
         }
 
-        withTimeout(2_000L) { started.await() }
+        withTimeout(2_000.milliseconds) { started.await() }
         assertEquals(0, coordinator.availableCapacity())
         assertEquals(null, coordinator.tryEnqueue("bounded-overflow") {})
         assertEquals(setOf("bounded-first"), coordinator.activeOperationIds())
 
         release.complete(Unit)
-        withTimeout(2_000L) { first?.join() }
+        withTimeout(2_000.milliseconds) { first?.join() }
         assertTrue(coordinator.awaitCompletion(listOf("bounded-first"), 2_000))
         assertEquals(1, coordinator.availableCapacity())
         val resumed = coordinator.tryEnqueue("bounded-resumed") {}
         assertTrue(resumed != null)
-        withTimeout(2_000L) { resumed?.join() }
+        withTimeout(2_000.milliseconds) { resumed?.join() }
         scope.cancel()
     }
 
@@ -640,7 +642,7 @@ class AssetEnrichmentCoordinatorTest {
             regularStarted.complete(Unit)
             regularRelease.await()
         }
-        withTimeout(2_000L) { regularStarted.await() }
+        withTimeout(2_000.milliseconds) { regularStarted.await() }
 
         val overflow = coordinator.tryEnqueue(
             operationId = "manual-overflow",
@@ -649,7 +651,7 @@ class AssetEnrichmentCoordinatorTest {
             overflowStarted.complete(Unit)
             overflowRelease.await()
         }
-        withTimeout(2_000L) { overflowStarted.await() }
+        withTimeout(2_000.milliseconds) { overflowStarted.await() }
         assertTrue(coordinator.isActive("regular"))
         assertTrue(coordinator.isActive("manual-overflow"))
         assertEquals(2, coordinator.activeCount())
@@ -662,20 +664,20 @@ class AssetEnrichmentCoordinatorTest {
         )
 
         regularRelease.complete(Unit)
-        withTimeout(2_000L) { regular?.join() }
+        withTimeout(2_000.milliseconds) { regular?.join() }
         assertTrue(coordinator.awaitCompletion(listOf("regular"), 2_000))
         assertEquals(1, coordinator.availableCapacity())
         val refill = coordinator.tryEnqueue("normal-refill") {
             refillStarted.complete(Unit)
             refillRelease.await()
         }
-        withTimeout(2_000L) { refillStarted.await() }
+        withTimeout(2_000.milliseconds) { refillStarted.await() }
         assertEquals(2, coordinator.activeCount())
 
         refillRelease.complete(Unit)
         overflowRelease.complete(Unit)
-        withTimeout(2_000L) {
-            listOfNotNull(refill, overflow).forEach { job -> job.join() }
+        withTimeout(2_000.milliseconds) {
+            listOfNotNull(refill, overflow).joinAll()
         }
         assertTrue(coordinator.awaitCompletion(listOf("normal-refill", "manual-overflow"), 2_000))
         assertFalse(coordinator.isActive("manual-overflow"))

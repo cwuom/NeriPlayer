@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.core.download.manager.batch
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.buildDownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactFinalized
 import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRetryable

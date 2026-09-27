@@ -246,13 +246,10 @@ private fun legacyLocalCandidateMatches(
     val hasComparableMetadata =
         expectedTitles.isNotEmpty() && expectedArtists.isNotEmpty() &&
             actualTitles.isNotEmpty() && actualArtists.isNotEmpty()
-    if (hasComparableMetadata &&
+    return !(hasComparableMetadata &&
         (expectedTitles.intersect(actualTitles).isEmpty() ||
             expectedArtists.intersect(actualArtists).isEmpty())
-    ) {
-        return false
-    }
-    return true
+    )
 }
 
 private fun downloadedSongRemoteIdentity(song: DownloadedSong) =

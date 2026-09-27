@@ -111,15 +111,15 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
                 if (!isFinalizedDownloadedMetadata(metadata)) {
                     return@mapNotNull null
                 }
-                val finalizedAudio = audioEntriesByLogicalName[candidate.audioName]
+                val hasFinalizedAudio = audioEntriesByLogicalName[candidate.audioName]
                     .orEmpty()
-                    .firstOrNull { audio ->
+                    .any { audio ->
                         !audio.isPendingAudioWrite &&
                             audio.sizeKnown &&
                             audio.sizeBytes > 0L &&
                             metadata.audioFileName?.trim() == audio.logicalName
                     }
-                    ?: return@mapNotNull null
+                if (!hasFinalizedAudio) return@mapNotNull null
                 CollisionIdentity(stableKey, operationId) to
                     FinalizedCollisionCandidate(audioName = candidate.audioName)
             }

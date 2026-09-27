@@ -1103,7 +1103,7 @@ class BiliClient(
                 )
             )
             val result = parseFavFolderListResult(jo.optJSONObject("data") ?: JSONObject())
-            expectedCount = result.count.takeIf { it > 0 } ?: out.size + result.folders.size
+            expectedCount = result.count.takeIf { it > 0 } ?: (out.size + result.folders.size)
             if (result.folders.isEmpty()) break
 
             out += result.folders

@@ -14,6 +14,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
+import kotlin.time.Duration.Companion.milliseconds
 
 class FileStorageBackendTest {
     @Test
@@ -215,7 +216,7 @@ class FileStorageBackendTest {
                         releaseFirstWriter.await()
                     }
                 }
-                withTimeout(5_000L) { firstWriterEntered.await() }
+                withTimeout(5_000.milliseconds) { firstWriterEntered.await() }
 
                 val second = async(Dispatchers.Default) {
                     secondWriterStarted.complete(Unit)
@@ -224,13 +225,13 @@ class FileStorageBackendTest {
                         output.write("second".toByteArray())
                     }
                 }
-                withTimeout(5_000L) { secondWriterStarted.await() }
-                delay(100L)
+                withTimeout(5_000.milliseconds) { secondWriterStarted.await() }
+                delay(100.milliseconds)
                 assertFalse(secondWriterEntered.isCompleted)
 
                 releaseFirstWriter.complete(Unit)
-                val firstResult = withTimeout(5_000L) { first.await() }
-                val secondResult = withTimeout(5_000L) { second.await() }
+                val firstResult = withTimeout(5_000.milliseconds) { first.await() }
+                val secondResult = withTimeout(5_000.milliseconds) { second.await() }
                 assertTrue(firstResult is StorageWriteResult.Written)
                 assertTrue(secondResult is StorageWriteResult.Written)
                 assertTrue(secondWriterEntered.isCompleted)
@@ -266,7 +267,7 @@ class FileStorageBackendTest {
                         releaseWriter.await()
                     }
                 }
-                withTimeout(5_000L) { writerEntered.await() }
+                withTimeout(5_000.milliseconds) { writerEntered.await() }
 
                 val deleteStarted = CompletableDeferred<Unit>()
                 val delete = async(Dispatchers.Default) {
@@ -275,15 +276,15 @@ class FileStorageBackendTest {
                         TrustedManagedRef(StorageReference.FileRef("song.mp3"))
                     )
                 }
-                withTimeout(5_000L) { deleteStarted.await() }
-                delay(100L)
+                withTimeout(5_000.milliseconds) { deleteStarted.await() }
+                delay(100.milliseconds)
                 assertFalse(delete.isCompleted)
 
                 releaseWriter.complete(Unit)
-                assertTrue(withTimeout(5_000L) { writer.await() } is StorageWriteResult.Written)
+                assertTrue(withTimeout(5_000.milliseconds) { writer.await() } is StorageWriteResult.Written)
                 assertEquals(
                     StorageMutationResult.Deleted,
-                    withTimeout(5_000L) { delete.await() }
+                    withTimeout(5_000.milliseconds) { delete.await() }
                 )
                 assertFalse(root.resolve("song.mp3").exists())
             } finally {
@@ -307,7 +308,7 @@ class FileStorageBackendTest {
                         releaseWriter.await()
                     }
                 }
-                withTimeout(5_000L) { writerEntered.await() }
+                withTimeout(5_000.milliseconds) { writerEntered.await() }
 
                 val renameStarted = CompletableDeferred<Unit>()
                 val rename = async(Dispatchers.Default) {
@@ -317,14 +318,14 @@ class FileStorageBackendTest {
                         "renamed.mp3"
                     )
                 }
-                withTimeout(5_000L) { renameStarted.await() }
-                delay(100L)
+                withTimeout(5_000.milliseconds) { renameStarted.await() }
+                delay(100.milliseconds)
                 assertFalse(rename.isCompleted)
 
                 releaseWriter.complete(Unit)
-                assertTrue(withTimeout(5_000L) { writer.await() } is StorageWriteResult.Written)
+                assertTrue(withTimeout(5_000.milliseconds) { writer.await() } is StorageWriteResult.Written)
                 assertTrue(
-                    withTimeout(5_000L) { rename.await() } is StorageRenameResult.Renamed
+                    withTimeout(5_000.milliseconds) { rename.await() } is StorageRenameResult.Renamed
                 )
                 assertTrue(root.resolve("renamed.mp3").isFile)
                 assertFalse(root.resolve("song.mp3").exists())

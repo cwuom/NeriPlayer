@@ -22,6 +22,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadFullDeletePerformanceTest {
@@ -80,7 +81,7 @@ class ManagedDownloadFullDeletePerformanceTest {
     }
 
     @Test
-    fun publicFullDeleteFinishesThousandSongsAndDurableCleanupWithinFiveSeconds() = runBlocking<Unit> {
+    fun publicFullDeleteFinishesThousandSongsAndDurableCleanupWithinFiveSeconds() = runBlocking {
         GlobalDownloadManager.startupRecoveryMutex.withLock {
             GlobalDownloadManager.pendingDownloadRecoverySlot.withLock {
                 val fixture = seedLibrary()
@@ -90,7 +91,7 @@ class ManagedDownloadFullDeletePerformanceTest {
                 try {
                     GlobalDownloadManager.publishDownloadedSongs(context, fixture.songs, persistCatalog = false)
                     val startedAt = SystemClock.elapsedRealtime()
-                    val result = withTimeout(30_000) {
+                    val result = withTimeout(30_000.milliseconds) {
                         GlobalDownloadManager.deleteDownloadedSongsWithResult(context, fixture.songs, true)
                     }
                     val elapsedMs = SystemClock.elapsedRealtime() - startedAt

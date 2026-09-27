@@ -38,6 +38,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadStorageMigrationInstrumentedTest {
@@ -595,7 +596,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
             if (workInfo != null && workInfo.state.isFinished) {
                 return workInfo
             }
-            delay(100L)
+            delay(100.milliseconds)
         }
         throw AssertionError("migration worker did not finish within 30000ms")
     }
@@ -780,7 +781,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
         }.toString()
     }
 
-    private data class PrivateFixture(
+    private class PrivateFixture(
         val audio: File,
         val metadata: File,
         val cover: File,

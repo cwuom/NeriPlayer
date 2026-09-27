@@ -2,7 +2,6 @@
 <resources>
     <!-- Local Media -->
     <plurals name="local_files_delete_downloaded_success">
-        <item quantity="one">已删除 %d 首已下载歌曲及其本地文件</item>
         <item quantity="other">已删除 %d 首已下载歌曲及其本地文件</item>
     </plurals>
     <plurals name="local_files_delete_downloaded_cleanup_pending">

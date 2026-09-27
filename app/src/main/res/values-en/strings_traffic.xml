@@ -13,12 +13,7 @@
     <string name="settings_mobile_data_bili_audio_quality">Bilibili mobile data quality</string>
     <string name="settings_mobile_data_downgrade_quality">Mobile data downgrade quality</string>
     <string name="settings_mobile_data_downgrade_quality_desc">Automatically use a lower traffic quality on mobile data or roaming</string>
-    <string name="settings_mobile_data_downgrade_quality_off">Off</string>
-    <string name="settings_mobile_data_downgrade_quality_low">Low</string>
-    <string name="settings_mobile_data_downgrade_quality_medium">Medium</string>
-    <string name="settings_mobile_data_downgrade_quality_high">High</string>
     <string name="traffic_stats_overview">Traffic Stats</string>
-    <string name="traffic_stats_empty">No traffic stats yet</string>
     <string name="traffic_period_empty">No traffic stats in this period yet</string>
     <string name="traffic_wifi">Wi-Fi</string>
     <string name="traffic_mobile">Mobile data</string>

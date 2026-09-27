@@ -41,7 +41,6 @@
     <string name="settings_audio_quality_high">High</string>
     <string name="settings_audio_quality_medium">Medium</string>
     <string name="settings_audio_quality_low">Low</string>
-    <string name="settings_haptic_feedback">Haptic Feedback</string>
     <string name="settings_motion">Motion Settings</string>
     <string name="settings_motion_general_section">Motion Controls</string>
     <string name="settings_motion_general_section_desc">Control lyric and interface motion.</string>

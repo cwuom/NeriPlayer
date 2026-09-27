@@ -24,5 +24,4 @@
     <string name="stats_song_first_played">首次播放</string>
     <string name="stats_song_total_listen">累计收听</string>
     <string name="stats_song_play_count_label">播放次数</string>
-    <string name="stats_song_no_record">暂无播放记录</string>
 </resources>

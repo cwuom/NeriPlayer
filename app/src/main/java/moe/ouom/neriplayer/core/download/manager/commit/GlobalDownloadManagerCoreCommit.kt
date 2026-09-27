@@ -13,7 +13,6 @@ import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRep
 import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRetryable
 import moe.ouom.neriplayer.core.download.manager.recovery.resolveCoreRecoveryAudioCandidate
 import moe.ouom.neriplayer.core.download.manager.runtime.publishDownloadStage
-import moe.ouom.neriplayer.core.download.manager.runtime.withSongExecutionLock
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.policy.resolvePostCoreEnrichmentTaskStatus
@@ -22,7 +21,6 @@ import moe.ouom.neriplayer.core.download.policy.shouldPublishCoreCommit
 import moe.ouom.neriplayer.core.download.policy.shouldSchedulePostCoreEnrichmentRetry
 import android.content.Context
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState

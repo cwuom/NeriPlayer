@@ -703,7 +703,7 @@ internal suspend fun AudioDownloadManager.transferAndCommitDownloadAttempt(
                 "operationId=$effectiveOperationId, attemptId=$attemptId"
         )
     } else if (!coreTransferReleaseDispatched) {
-        coreTransferReleaseDispatched = GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(
+        GlobalDownloadManager.wakeDownloadExecutionPumpAfterCoreCommit(
             context = context,
             operationId = effectiveOperationId,
             attemptId = attemptId,

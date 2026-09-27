@@ -7,6 +7,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class DownloadTransferWatchdogTest {
     @Test
@@ -25,10 +26,10 @@ class DownloadTransferWatchdogTest {
             nowNs = { nowNs }
         )
         val failure = try {
-            withTimeout(1_000L) {
+            withTimeout(1_000.milliseconds) {
                 val transfer = async {
                     watchdog.run(permit) {
-                        delay(500L)
+                        delay(500.milliseconds)
                     }
                 }
                 yield()
@@ -61,7 +62,7 @@ class DownloadTransferWatchdogTest {
             staleAfterNs = 10L,
             nowNs = { nowNs }
         )
-        val result = withTimeout(1_000L) {
+        val result = withTimeout(1_000.milliseconds) {
             val transfer = async {
                 watchdog.run(permit) { "done" }
             }

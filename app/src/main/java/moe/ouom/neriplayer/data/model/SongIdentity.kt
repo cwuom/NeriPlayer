@@ -27,6 +27,7 @@ package moe.ouom.neriplayer.data.model
 import android.content.Context
 import android.net.Uri
 import android.os.Parcelable
+import androidx.core.net.toUri
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
@@ -154,7 +155,7 @@ private fun localVisualFileName(song: SongItem): String? {
         ?.takeIf(String::isNotBlank)
         ?: return null
     val pathSegment = runCatching {
-        Uri.parse(rawReference).lastPathSegment
+        rawReference.toUri().lastPathSegment
     }.getOrNull()
     return (pathSegment ?: rawReference.substringAfterLast('/'))
         .let(Uri::decode)

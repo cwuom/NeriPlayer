@@ -649,11 +649,13 @@ fun DownloadProgressScreen(
                                 stringResource(R.string.download_clear_background_cleanup)
 
                             effectiveIsClearing -> effectiveClearProgress?.let { progress ->
-                                stringResource(
-                                    R.string.download_clearing_tasks_with_progress,
+                                val itemCount = presentedClearProgress?.affectedItemCount
+                                    ?: progress.affectedItemCount
+                                pluralStringResource(
+                                    R.plurals.download_clearing_tasks_with_progress,
+                                    itemCount,
                                     progress.displayPercentage,
-                                    presentedClearProgress?.affectedItemCount
-                                        ?: progress.affectedItemCount
+                                    itemCount
                                 )
                             } ?: stringResource(R.string.download_clearing_tasks)
 
@@ -1001,8 +1003,9 @@ private fun DownloadClearProgressSummary(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = stringResource(
-                R.string.download_clearing_tasks_with_progress,
+            text = pluralStringResource(
+                R.plurals.download_clearing_tasks_with_progress,
+                progress.affectedItemCount,
                 progress.displayPercentage,
                 progress.affectedItemCount
             ) + " · " + stringResource(phaseResource),
@@ -1027,8 +1030,9 @@ private fun DownloadClearProgressSummary(
         )
         Text(
             text = if (progress.totalItemCount > 0) {
-                stringResource(
-                    R.string.download_clear_item_progress,
+                pluralStringResource(
+                    R.plurals.download_clear_item_progress,
+                    progress.totalItemCount,
                     progress.completedItemCount,
                     progress.totalItemCount
                 )

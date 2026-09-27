@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackServiceIdleShutdownCoordinatorTest {
@@ -21,7 +22,7 @@ class PlaybackServiceIdleShutdownCoordinatorTest {
         )
 
         coordinator.refresh()
-        advanceTimeBy(1_000L)
+        advanceTimeBy(1_000.milliseconds)
         runCurrent()
 
         assertEquals(7, stoppedStartId)
@@ -40,13 +41,13 @@ class PlaybackServiceIdleShutdownCoordinatorTest {
         )
 
         coordinator.refresh()
-        advanceTimeBy(500L)
+        advanceTimeBy(500.milliseconds)
         startId = 2
-        advanceTimeBy(500L)
+        advanceTimeBy(500.milliseconds)
         runCurrent()
         assertEquals(null, stoppedStartId)
 
-        advanceTimeBy(1_000L)
+        advanceTimeBy(1_000.milliseconds)
         runCurrent()
         assertEquals(2, stoppedStartId)
     }
@@ -66,7 +67,7 @@ class PlaybackServiceIdleShutdownCoordinatorTest {
         coordinator.refresh()
         eligible = false
         coordinator.refresh()
-        advanceTimeBy(1_000L)
+        advanceTimeBy(1_000.milliseconds)
         runCurrent()
 
         assertEquals(0, shutdownCount)
@@ -84,13 +85,13 @@ class PlaybackServiceIdleShutdownCoordinatorTest {
         )
 
         coordinator.refresh()
-        advanceTimeBy(500L)
+        advanceTimeBy(500.milliseconds)
         coordinator.updateDelayMs(2_000L)
-        advanceTimeBy(1_500L)
+        advanceTimeBy(1_500.milliseconds)
         runCurrent()
         assertEquals(0, shutdownCount)
 
-        advanceTimeBy(500L)
+        advanceTimeBy(500.milliseconds)
         runCurrent()
         assertEquals(1, shutdownCount)
     }
@@ -108,7 +109,7 @@ class PlaybackServiceIdleShutdownCoordinatorTest {
 
         coordinator.refresh()
         coordinator.updateDelayMs(0L)
-        advanceTimeBy(2_000L)
+        advanceTimeBy(2_000.milliseconds)
         runCurrent()
 
         assertEquals(0, shutdownCount)
@@ -126,9 +127,9 @@ class PlaybackServiceIdleShutdownCoordinatorTest {
         )
 
         coordinator.refresh()
-        advanceTimeBy(500L)
+        advanceTimeBy(500.milliseconds)
         coordinator.updateDelayMs(1_000L)
-        advanceTimeBy(500L)
+        advanceTimeBy(500.milliseconds)
         runCurrent()
 
         assertEquals(1, shutdownCount)

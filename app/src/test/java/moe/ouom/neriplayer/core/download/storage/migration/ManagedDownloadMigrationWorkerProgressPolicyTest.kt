@@ -1142,7 +1142,7 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
                 migrationProgressFromWorkData(migrationProgressToWorkData(progress))
             )
         }
-        listOf<String?>(null, "").forEach { currentFileName ->
+        listOf(null, "").forEach { currentFileName ->
             val progress = progress(0.5f).copy(currentFileName = currentFileName)
             assertEquals(
                 progress,

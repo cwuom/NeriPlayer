@@ -13,6 +13,7 @@ import kotlinx.coroutines.yield
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.milliseconds
 
 class YouTubeJsSolveQueueTest {
 
@@ -89,7 +90,7 @@ class YouTubeJsSolveQueueTest {
         assertTrue(holderInside.await(5, TimeUnit.SECONDS))
 
         val waiter = Thread {
-            runCatching { queue.withNewestFirst { Unit } }
+            runCatching { queue.withNewestFirst {} }
                 .onFailure { waiterFailure = it }
             waiterFinished.countDown()
         }
@@ -161,7 +162,7 @@ class YouTubeJsSolveQueueTest {
                 order.add("canceled")
             }
         }
-        withTimeout(1_000L) {
+        withTimeout(1_000.milliseconds) {
             while (queue.waitingCountForTest() < 2) yield()
         }
         canceled.cancelAndJoin()
@@ -171,7 +172,7 @@ class YouTubeJsSolveQueueTest {
                 order.add("latest")
             }
         }
-        withTimeout(1_000L) {
+        withTimeout(1_000.milliseconds) {
             while (queue.waitingCountForTest() < 2) yield()
         }
         releaseHolder.countDown()

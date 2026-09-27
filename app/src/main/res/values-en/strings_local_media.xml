@@ -1,13 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Local Playlists & Files -->
-    <string name="local_title">Local</string>
     <string name="local_files">Local Files</string>
     <string name="local_files_manual_added">Manually Added</string>
     <string name="local_files_downloaded">Downloaded</string>
     <string name="local_files_delete_downloaded_title">Delete Downloaded Songs</string>
-    <string name="local_files_delete_downloaded_confirm">Delete %d downloaded songs and their local files? This cannot be undone.</string>
-    <string name="local_files_delete_downloaded_partial">Deleted %1$d downloaded songs and their local files; %2$d were not deleted</string>
+    <plurals name="local_files_delete_downloaded_confirm">
+        <item quantity="one">Delete %d downloaded song and its local file? This cannot be undone.</item>
+        <item quantity="other">Delete %d downloaded songs and their local files? This cannot be undone.</item>
+    </plurals>
+    <plurals name="local_files_delete_downloaded_partial">
+        <item quantity="one">Deleted %1$d downloaded song and its local file; %2$d not deleted</item>
+        <item quantity="other">Deleted %1$d downloaded songs and their local files; %2$d not deleted</item>
+    </plurals>
     <string name="local_files_delete_downloaded_failed">Could not delete the downloaded files. Their download records remain.</string>
     <string name="local_playlist_scan_mode_title">Choose Scan Mode</string>
     <string name="local_playlist_scan_mode_message">Authorized folder scans only the selected folder and its subfolders. Global scan reads the device music library.</string>
@@ -16,14 +21,16 @@
     <string name="local_playlist_scan_preserve_existing">Invalid scan result. Kept the existing Local Files list.</string>
     <string name="local_playlist_scan_preview_title">Preview Local Files</string>
     <string name="local_playlist_scan_preview_search">Search local files</string>
-    <string name="local_playlist_scan_preview_apply">Import Selected Songs</string>
     <string name="local_playlist_scan_filter_metadata">Hide tracks without metadata</string>
     <string name="local_playlist_scan_filter_existing">Ignore added tracks</string>
     <string name="local_playlist_scan_filter_duplicates">Deduplicate by metadata</string>
     <string name="local_playlist_scan_metadata_empty">No local audio with metadata</string>
     <string name="local_playlist_scan_existing_empty">No unadded local audio</string>
     <string name="local_playlist_scan_filtered_empty">No local audio matches the filters</string>
-    <string name="local_playlist_scan_progress_traversing">Visited %1$d folders, found %2$d songs</string>
+    <plurals name="local_playlist_scan_progress_traversing">
+        <item quantity="one">Visited %1$d folder; songs found: %2$d</item>
+        <item quantity="other">Visited %1$d folders; songs found: %2$d</item>
+    </plurals>
     <string name="local_playlist_scan_progress_building">Building song index (%1$d/%2$d)</string>
     <string name="local_playlist_scan_progress_metadata">Finalizing metadata (%1$d/%2$d)</string>
     <string name="local_playlist_import_audio_no_new">No new local tracks to import</string>
@@ -55,7 +62,6 @@
     <string name="local_playlist_sync_search">Search syncable songs</string>
     <string name="local_playlist_sync_empty">No songs available to sync.</string>
     <string name="local_playlist_export_to">Export to Playlist</string>
-    <string name="local_playlist_import_audio">Import Local Audio</string>
     <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d songs · %3$s plays</string>
     <string name="local_playlist_duration_loading">Reading duration</string>
     <string name="local_artist_total_duration" formatted="false">%1$s · %2$d songs</string>

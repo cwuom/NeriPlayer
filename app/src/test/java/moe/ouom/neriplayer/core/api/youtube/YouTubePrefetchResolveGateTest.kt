@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class YouTubePrefetchResolveGateTest {
 
@@ -35,7 +36,7 @@ class YouTubePrefetchResolveGateTest {
 
         // 名额还被占着, 只有提升能让这条解析立刻开跑
         waiterPromotion.complete(Unit)
-        assertEquals("waiter", withTimeout(5_000) { waiter.await() })
+        assertEquals("waiter", withTimeout(5_000.milliseconds) { waiter.await() })
         assertFalse(holder.isCompleted)
 
         releaseHolder.complete(Unit)
@@ -58,7 +59,7 @@ class YouTubePrefetchResolveGateTest {
         holderInside.await()
 
         val promoted = CompletableDeferred<Unit>().apply { complete(Unit) }
-        assertEquals("now", withTimeout(5_000) { gate.withPrefetchSlot(promoted) { "now" } })
+        assertEquals("now", withTimeout(5_000.milliseconds) { gate.withPrefetchSlot(promoted) { "now" } })
 
         releaseHolder.complete(Unit)
         holder.await()
@@ -88,7 +89,7 @@ class YouTubePrefetchResolveGateTest {
 
         releaseHolder.complete(Unit)
         holder.await()
-        withTimeout(5_000) { waiter.await() }
+        withTimeout(5_000.milliseconds) { waiter.await() }
 
         assertEquals(listOf("holder", "waiter"), order.toList())
         assertEquals(1, gate.availablePermitsForTest())

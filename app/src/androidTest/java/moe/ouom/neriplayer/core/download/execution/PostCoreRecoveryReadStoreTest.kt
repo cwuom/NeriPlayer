@@ -7,7 +7,6 @@ import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.Executor
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -88,7 +87,7 @@ class PostCoreRecoveryReadStoreTest {
         for (size in listOf(128, 1024, 4096)) {
             val queries = CopyOnWriteArrayList<String>()
             val db = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
-                .setQueryCallback({ sql, _ -> queries += sql }, Executor { it.run() }).build()
+                .setQueryCallback({ sql, _ -> queries += sql }, { it.run() }).build()
             try {
                 val dao = db.downloadOperationDao()
                 DownloadExecutionRoomStore.upsert(context, DownloadExecutionRequest(
@@ -152,7 +151,7 @@ class PostCoreRecoveryReadStoreTest {
     fun mobileTailPriorityAndRetryBarrierPreserveSelectionSemantics() = runBlocking {
         val queries = CopyOnWriteArrayList<String>()
         val db = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
-            .setQueryCallback({ sql, _ -> queries += sql }, Executor { it.run() }).build()
+            .setQueryCallback({ sql, _ -> queries += sql }, { it.run() }).build()
         try {
             val dao = db.downloadOperationDao()
             DownloadExecutionRoomStore.upsert(context, DownloadExecutionRequest(

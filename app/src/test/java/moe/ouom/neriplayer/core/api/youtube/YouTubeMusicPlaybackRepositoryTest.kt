@@ -34,6 +34,7 @@ import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
 
 class YouTubeMusicPlaybackRepositoryTest {
 
@@ -74,7 +75,7 @@ class YouTubeMusicPlaybackRepositoryTest {
         override suspend fun warmSession() {
             warmSessionCount += 1
             if (warmSessionDelayMs > 0L) {
-                delay(warmSessionDelayMs)
+                delay(warmSessionDelayMs.milliseconds)
             }
         }
 
@@ -89,7 +90,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             return try {
                 val token = gvsTokenResultGate?.await() ?: run {
                     if (delayMs > 0L) {
-                        delay(delayMs)
+                        delay(delayMs.milliseconds)
                     }
                     if (queuedTokens.isEmpty()) {
                         null
@@ -264,7 +265,7 @@ class YouTubeMusicPlaybackRepositoryTest {
         )
 
         val cipherResolver = object : YouTubeStreamingCipherResolver {
-            override fun resolveSignature(encryptedSignature: String): String? {
+            override fun resolveSignature(encryptedSignature: String): String {
                 assertEquals("encrypted-signature", encryptedSignature)
                 return "decoded-signature"
             }
@@ -329,7 +330,7 @@ class YouTubeMusicPlaybackRepositoryTest {
                 cipherResolver = cipherResolver
             )
         }
-        delay(20L)
+        delay(20.milliseconds)
         job.cancelAndJoin()
 
         assertTrue(resolverCancelled)
@@ -797,7 +798,7 @@ class YouTubeMusicPlaybackRepositoryTest {
 
             assertTrue(firstPlayerRequestEntered.await(2, TimeUnit.SECONDS))
 
-            val playableAudio = withTimeout(2_000L) {
+            val playableAudio = withTimeout(2_000.milliseconds) {
                 playbackRepository.getBestPlayableAudio(
                     videoId = "download-video",
                     preferredQualityOverride = "very_high",
@@ -1013,7 +1014,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             val playback = async(Dispatchers.Default) {
                 playbackRepository.getBestPlayableAudio(videoId = "deferred-sts-video")
             }
-            val playableAudio = withTimeout(1_500L) { playback.await() }
+            val playableAudio = withTimeout(1_500.milliseconds) { playback.await() }
 
             assertNotNull(playableAudio)
             assertEquals("https://example.com/audio-deferred.m4a", playableAudio?.url)
@@ -1633,7 +1634,7 @@ class YouTubeMusicPlaybackRepositoryTest {
         val previousLocale = Locale.getDefault()
         Locale.setDefault(Locale.US)
         val playableAudio = try {
-            withTimeout(1_000L) {
+            withTimeout(1_000.milliseconds) {
                 playbackRepository.getBestPlayableAudio(
                     videoId = "demo-video",
                     forceRefresh = true
@@ -1657,9 +1658,9 @@ class YouTubeMusicPlaybackRepositoryTest {
             playerClientIds
         )
         try {
-            withTimeout(1_000L) {
+            withTimeout(1_000.milliseconds) {
                 while (poTokenProvider.gvsTokenCalls.get() == 0) {
-                    delay(10L)
+                    delay(10.milliseconds)
                 }
             }
             assertEquals(1, poTokenProvider.gvsTokenCalls.get())
@@ -1667,9 +1668,9 @@ class YouTubeMusicPlaybackRepositoryTest {
         } finally {
             gvsTokenResultGate.complete("late-po-token")
         }
-        withTimeout(1_000L) {
+        withTimeout(1_000.milliseconds) {
             while (poTokenProvider.gvsTokenCompletions.get() == 0) {
-                delay(10L)
+                delay(10.milliseconds)
             }
         }
         assertEquals(1, poTokenProvider.gvsTokenCompletions.get())
@@ -3287,7 +3288,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             poTokenProvider = poTokenProvider
         )
 
-        val playableAudio = withTimeout(1_200L) {
+        val playableAudio = withTimeout(1_200.milliseconds) {
             playbackRepository.getBestPlayableAudio(
                 videoId = "demo-video",
                 forceRefresh = false
@@ -4011,7 +4012,7 @@ class YouTubeMusicPlaybackRepositoryTest {
         )
 
         val startedAtMs = System.currentTimeMillis()
-        withTimeout(500L) {
+        withTimeout(500.milliseconds) {
             playbackRepository.warmBootstrap()
         }
 
@@ -4085,9 +4086,9 @@ class YouTubeMusicPlaybackRepositoryTest {
 
         val warmTask = async(Dispatchers.IO) { playbackRepository.warmBootstrap() }
         assertTrue(bootstrapEntered.await(2, TimeUnit.SECONDS))
-        withTimeout(1_000L) {
+        withTimeout(1_000.milliseconds) {
             while (poTokenProvider.warmSessionCount == 0) {
-                delay(10L)
+                delay(10.milliseconds)
             }
         }
         releaseBootstrap.countDown()
@@ -4730,7 +4731,7 @@ class YouTubeMusicPlaybackRepositoryTest {
                 calls.add("prewarm:$encryptedSignature/$obfuscatedThrottlingParameter")
             }
 
-            override fun resolveSignature(encryptedSignature: String): String? {
+            override fun resolveSignature(encryptedSignature: String): String {
                 calls.add("signature")
                 return "decoded-signature"
             }
@@ -4793,7 +4794,7 @@ class YouTubeMusicPlaybackRepositoryTest {
                 prewarmed.add("$encryptedSignature/$obfuscatedThrottlingParameter")
             }
 
-            override fun resolveSignature(encryptedSignature: String): String? = "decoded"
+            override fun resolveSignature(encryptedSignature: String): String = "decoded"
 
             override fun resolveStreamingUrl(url: String): String {
                 // 解不出 n 的候选用空串表示不可用, 解析要继续往下一个候选走
@@ -4889,7 +4890,7 @@ class YouTubeMusicPlaybackRepositoryTest {
         )
 
         val cipherResolver = object : YouTubeStreamingCipherResolver {
-            override fun resolveSignature(encryptedSignature: String): String? = "decoded"
+            override fun resolveSignature(encryptedSignature: String): String = "decoded"
             override fun resolveStreamingUrl(url: String): String = ""
         }
 

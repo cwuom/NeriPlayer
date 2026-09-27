@@ -582,7 +582,7 @@ internal fun copyDrawableToOwnedBitmap(
     height: Int,
     config: Bitmap.Config
 ): Bitmap {
-    val bitmap = Bitmap.createBitmap(width, height, config)
+    val bitmap = createBitmap(width, height, config)
     val originalBounds = Rect(drawable.bounds)
     return try {
         drawable.setBounds(0, 0, width, height)

@@ -39,7 +39,6 @@ import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationReco
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.MobileDataDownloadBatchIdentity
 import android.content.Context
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
@@ -56,7 +55,6 @@ import moe.ouom.neriplayer.core.download.execution.state.ARTIFACT_LEASE_CONTENDE
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 

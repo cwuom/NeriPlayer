@@ -12,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SleepTimerManagerTest {
@@ -47,7 +48,7 @@ class SleepTimerManagerTest {
             manager.timerState.value.mode
         )
         nowMs = 60_000L
-        advanceTimeBy(60_000)
+        advanceTimeBy(60_000.milliseconds)
         runCurrent()
 
         assertFalse(timerExpired)
@@ -67,7 +68,7 @@ class SleepTimerManagerTest {
 
         manager.startCountdown(minutes = 1)
         nowMs = 60_000L
-        advanceTimeBy(60_000)
+        advanceTimeBy(60_000.milliseconds)
         runCurrent()
 
         assertTrue(timerExpired)
@@ -84,9 +85,9 @@ class SleepTimerManagerTest {
         )
 
         manager.startCountdown(minutes = 1, finishCurrentOnExpiry = true)
-        advanceTimeBy(1_000)
+        advanceTimeBy(1_000.milliseconds)
         nowMs = 60_000L
-        advanceTimeBy(1_000)
+        advanceTimeBy(1_000.milliseconds)
         runCurrent()
 
         assertEquals(SleepTimerMode.FINISH_CURRENT, manager.timerState.value.mode)

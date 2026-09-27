@@ -20,7 +20,6 @@ import moe.ouom.neriplayer.data.local.database.store.TrafficStatsRoomStore
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
-import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 import java.io.File
 
 class TrafficStatsRepository private constructor(

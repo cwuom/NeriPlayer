@@ -535,7 +535,7 @@ private fun StorageUsageItemRow(item: StorageUsageItem) {
             )
             Text(
                 text = item.countDescription ?: item.databaseRecordCount?.let { recordCount ->
-                    stringResource(R.string.storage_details_cache_record_count, recordCount)
+                    pluralStringResource(R.plurals.storage_details_cache_record_count, recordCount, recordCount)
                 } ?: pluralStringResource(
                     R.plurals.storage_details_file_count,
                     item.fileCount,

@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerStartupHistoryRecorderTest {
@@ -49,10 +50,10 @@ class PlayerStartupHistoryRecorderTest {
         }
 
         currentSong.value = nextSong
-        advanceTimeBy(699L)
+        advanceTimeBy(699.milliseconds)
         assertEquals(emptyList<SongItem>(), recorded)
 
-        advanceTimeBy(1L)
+        advanceTimeBy(1.milliseconds)
         runCurrent()
         job.cancel()
 
@@ -76,13 +77,13 @@ class PlayerStartupHistoryRecorderTest {
         }
 
         currentSong.value = firstSong
-        advanceTimeBy(300L)
+        advanceTimeBy(300.milliseconds)
         currentSong.value = secondSong
-        advanceTimeBy(700L)
+        advanceTimeBy(700.milliseconds)
         runCurrent()
         assertEquals(emptyList<SongItem>(), recorded)
 
-        advanceTimeBy(700L)
+        advanceTimeBy(700.milliseconds)
         runCurrent()
         job.cancel()
 
@@ -106,7 +107,7 @@ class PlayerStartupHistoryRecorderTest {
 
         runCurrent()
         currentSong.value = initialSong.copy(customName = "Updated title")
-        advanceTimeBy(700L)
+        advanceTimeBy(700.milliseconds)
         runCurrent()
         job.cancel()
 
@@ -131,7 +132,7 @@ class PlayerStartupHistoryRecorderTest {
 
         runCurrent()
         currentSong.value = nextSong
-        advanceTimeBy(700L)
+        advanceTimeBy(700.milliseconds)
         runCurrent()
         job.cancel()
 

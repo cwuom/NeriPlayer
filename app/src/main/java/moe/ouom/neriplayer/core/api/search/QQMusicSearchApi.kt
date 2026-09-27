@@ -60,9 +60,6 @@ import java.util.Base64
 
 @Serializable private data class QQMusicArtist(val name: String)
 
-@Serializable private data class QQMusicDetailContainer(
-    @SerialName("songinfo") val songInfo: QQMusicDetailResponse
-)
 @Serializable private data class QQMusicDetailResponse(val data: QQMusicDetailData?)
 @Serializable private data class QQMusicDetailData(@SerialName("track_info") val trackInfo: QQMusicTrackInfo?)
 @Serializable private data class QQMusicTrackInfo(

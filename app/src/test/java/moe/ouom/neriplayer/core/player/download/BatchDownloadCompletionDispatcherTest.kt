@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class BatchDownloadCompletionDispatcherTest {
 
@@ -43,7 +44,7 @@ class BatchDownloadCompletionDispatcherTest {
             }
             dispatchFourCallbacks()
 
-            withTimeout(5_000L) {
+            withTimeout(5_000.milliseconds) {
                 firstWaveStarted.await()
             }
             assertEquals(2, startedCount.get())

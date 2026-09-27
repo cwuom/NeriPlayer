@@ -22,6 +22,7 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadPartialReplayCatalogTest {
@@ -57,7 +58,7 @@ class ManagedDownloadPartialReplayCatalogTest {
         withFixture { fixture ->
             assertTrue(fixture.audio.delete())
             assertTrue(fixture.receipt.delete())
-            val result = withTimeout(20_000) {
+            val result = withTimeout(20_000.milliseconds) {
                 GlobalDownloadManager.deleteDownloadedSongsWithResult(context, listOf(fixture.song), true)
             }
             assertEquals(listOf(fixture.song), result.deletedSongs)
@@ -119,8 +120,8 @@ class ManagedDownloadPartialReplayCatalogTest {
                             assertTrue(PersistentDownloadClearFenceStore.clear(context))
                         }
                     }
-                    withTimeout(20_000) {
-                        while (GlobalDownloadManager.deferredFullDeleteRecoveryScheduled.get()) delay(25)
+                    withTimeout(20_000.milliseconds) {
+                        while (GlobalDownloadManager.deferredFullDeleteRecoveryScheduled.get()) delay(25.milliseconds)
                     }
                     GlobalDownloadManager.clearPersistedDownloadClearProgress(context)
                     GlobalDownloadManager.finishReleasedTaskClearState(context)

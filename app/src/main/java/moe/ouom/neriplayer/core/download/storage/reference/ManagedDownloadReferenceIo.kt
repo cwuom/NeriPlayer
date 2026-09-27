@@ -323,17 +323,19 @@ internal object ManagedDownloadReferenceIo {
                 if (!it.moveToFirst()) return AccessObservation(AccessResult.Missing, null)
             }
             try {
-                context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
+                    ?: return AccessObservation(
+                        AccessResult.ProviderFailure(
+                            IllegalStateException("provider returned null file descriptor")
+                        ),
+                        null
+                    )
+                descriptor.use {
                     return AccessObservation(
                         result = AccessResult.Accessible,
-                        sizeBytes = descriptor.statSize.takeIf { it >= 0L }
+                        sizeBytes = it.statSize.takeIf { size -> size >= 0L }
                     )
-                } ?: return AccessObservation(
-                    AccessResult.ProviderFailure(
-                        IllegalStateException("provider returned null file descriptor")
-                    ),
-                    null
-                )
+                }
             } catch (_: SecurityException) {
                 return AccessObservation(AccessResult.PermissionLost, null)
             } catch (error: CancellationException) {

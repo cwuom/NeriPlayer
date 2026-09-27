@@ -24,5 +24,4 @@
     <string name="stats_song_first_played">First played</string>
     <string name="stats_song_total_listen">Total listened</string>
     <string name="stats_song_play_count_label">Play count</string>
-    <string name="stats_song_no_record">No playback record yet</string>
 </resources>

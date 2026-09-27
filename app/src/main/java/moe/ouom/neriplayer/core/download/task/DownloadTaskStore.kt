@@ -824,10 +824,6 @@ internal class DownloadTaskStore(
         return applied
     }
 
-    private fun isClearPresentationActive(): Boolean {
-        return synchronized(mutationLock) { activeClearPresentation != null }
-    }
-
     private fun List<DownloadTask>.replaceAt(
         index: Int,
         task: DownloadTask

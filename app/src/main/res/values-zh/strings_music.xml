@@ -1,26 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Music Info -->
-    <string name="music_unknown_song">未知歌曲</string>
     <string name="music_unknown_artist">未知艺术家</string>
     <string name="music_get_info">获取歌曲信息</string>
     <string name="music_get_detail_failed">获取详情失败</string>
-    <string name="music_no_playback_url">无法获取播放地址</string>
     <string name="music_edit_info">编辑歌曲信息</string>
     <string name="music_edit_cover">编辑封面</string>
     <string name="music_edit_title">编辑标题</string>
     <string name="music_edit_artist">编辑艺术家</string>
     <string name="music_cover_url">封面链接</string>
     <string name="music_cover_url_hint">输入封面图片链接</string>
-    <string name="music_search_cover">搜索封面</string>
     <string name="music_auto_fill">自动填充</string>
-    <string name="music_auto_fill_hint">从搜索结果自动填充信息</string>
     <string name="music_auto_fill_custom_title">自定义歌曲名</string>
     <string name="music_auto_fill_custom_title_hint">输入用于自动填充搜索的歌曲名</string>
     <string name="music_save_changes">保存修改</string>
-    <string name="music_info_saved">歌曲信息已保存</string>
     <string name="music_select_result">选择搜索结果</string>
-    <string name="music_manual_edit">手动编辑</string>
     <string name="music_edit_lyrics">编辑歌词</string>
     <string name="music_auto_fill_select">选择填充项</string>
     <string name="music_auto_fill_lyrics">填充歌词</string>

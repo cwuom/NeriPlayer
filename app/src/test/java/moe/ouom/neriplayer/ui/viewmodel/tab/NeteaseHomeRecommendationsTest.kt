@@ -7,7 +7,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlin.coroutines.coroutineContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -367,7 +366,7 @@ class NeteaseHomeRecommendationsTest {
         var active = 0
         var maxActive = 0
         var completed = 0
-        val loads = HomeSectionLoadGroup.values().map { group ->
+        val loads = HomeSectionLoadGroup.entries.map { group ->
             async {
                 coordinator.load(
                     group = group,

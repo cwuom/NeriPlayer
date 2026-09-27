@@ -18,6 +18,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class ManagedDownloadMetadataReadWorkersTest {
     @Test
@@ -32,7 +33,7 @@ class ManagedDownloadMetadataReadWorkersTest {
             calls.incrementAndGet()
             peak.accumulateAndGet(active.incrementAndGet(), ::maxOf)
             try {
-                delay(2L)
+                delay(2.milliseconds)
                 ManagedMetadataReadResult.Missing
             } finally {
                 active.decrementAndGet()
@@ -56,7 +57,7 @@ class ManagedDownloadMetadataReadWorkersTest {
             workers += requireNotNull(currentCoroutineContext()[Job])
             peak.accumulateAndGet(active.incrementAndGet(), ::maxOf)
             try {
-                delay(2L)
+                delay(2.milliseconds)
                 ManagedMetadataReadResult.Missing
             } finally {
                 active.decrementAndGet()
@@ -82,7 +83,7 @@ class ManagedDownloadMetadataReadWorkersTest {
             }
         }
         try {
-            assertEquals(true, withTimeoutOrNull(2_000L) { nextChunkReached.await(); true })
+            assertEquals(true, withTimeoutOrNull(2_000.milliseconds) { nextChunkReached.await(); true })
         } finally {
             releaseSlowRead.complete(Unit)
         }
@@ -102,7 +103,7 @@ class ManagedDownloadMetadataReadWorkersTest {
         val result = readDownloadedAudioMetadataWithWorkers(entries, fullLibraryDelete = true) { current ->
             val index = entries.indexOf(current)
             calls += current.reference
-            delay((entries.size - index) * 2L)
+            delay(((entries.size - index) * 2L).milliseconds)
             expected[index]
         }
 
@@ -117,7 +118,7 @@ class ManagedDownloadMetadataReadWorkersTest {
         val last = first.copy(name = "last receipt")
         val result = readDownloadedAudioMetadataWithWorkers(listOf(first, last), fullLibraryDelete = true) {
             if (it == first) {
-                delay(10L)
+                delay(10.milliseconds)
                 ManagedMetadataReadResult.Missing
             } else {
                 ManagedMetadataReadResult.Unavailable(SecurityException("denied"))

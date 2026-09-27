@@ -77,7 +77,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_14_15
         )
 
-        try {
+        migrated.use {
             assertEquals(1L, migrated.longFor("SELECT COUNT(*) FROM local_playlist"))
             assertEquals(1L, migrated.longFor("SELECT COUNT(*) FROM track"))
             assertEquals(1L, migrated.longFor("SELECT COUNT(*) FROM playlist_member"))
@@ -118,8 +118,6 @@ class NeriUserDataDatabaseMigrationTest {
                         "WHERE key = 'local_playlist_cutover_state'"
                 )
             )
-        } finally {
-            migrated.close()
         }
     }
 
@@ -143,7 +141,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_14_15
         )
 
-        try {
+        migrated.use {
             assertEquals(
                 1L,
                 migrated.longFor(
@@ -158,8 +156,6 @@ class NeriUserDataDatabaseMigrationTest {
                         "WHERE name = 'romanized_lyric_path'"
                 )
             )
-        } finally {
-            migrated.close()
         }
     }
 
@@ -192,7 +188,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
-        try {
+        migrated.use {
             assertEquals(
                 1L,
                 migrated.longFor(
@@ -253,8 +249,6 @@ class NeriUserDataDatabaseMigrationTest {
                         "WHERE stable_key = '1|__local_files__|/song.flac'"
                 )
             )
-        } finally {
-            migrated.close()
         }
     }
 
@@ -303,7 +297,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
-        try {
+        migrated.use {
             fun merged(songId: Long, audioName: String): JSONObject {
                 val stableKey = "$songId|__local_files__|/music/$audioName"
                 val payload = JSONObject(
@@ -325,8 +319,6 @@ class NeriUserDataDatabaseMigrationTest {
             assertTrue(completed.getBoolean("downloadFinalized"))
             assertFalse(merged(7124L, "unfinished.flac").getBoolean("downloadFinalized"))
             assertFalse(merged(7125L, "unknown.flac").getBoolean("downloadFinalized"))
-        } finally {
-            migrated.close()
         }
     }
 
@@ -361,7 +353,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
-        try {
+        migrated.use {
             val payload = JSONObject(
                 migrated.stringFor(
                     "SELECT payload_json FROM legacy_download_upgrade_payload " +
@@ -372,8 +364,6 @@ class NeriUserDataDatabaseMigrationTest {
             assertEquals(1, entries.length())
             assertEquals("song.flac", entries.getJSONObject(0).getString("name"))
             assertEquals("/song.flac", entries.getJSONObject(0).getString("reference"))
-        } finally {
-            migrated.close()
         }
     }
 
@@ -387,7 +377,7 @@ class NeriUserDataDatabaseMigrationTest {
             false,
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
-        try {
+        migrated.use {
             assertEquals(
                 1L,
                 migrated.longFor(
@@ -413,8 +403,6 @@ class NeriUserDataDatabaseMigrationTest {
                 )
             }
             migrated.execSQL("DROP TABLE legacy_download_upgrade_payload")
-        } finally {
-            migrated.close()
         }
 
         val reopened = helper.runMigrationsAndValidate(
@@ -422,7 +410,7 @@ class NeriUserDataDatabaseMigrationTest {
             16,
             true
         )
-        try {
+        reopened.use {
             assertEquals(
                 0L,
                 reopened.longFor(
@@ -431,8 +419,6 @@ class NeriUserDataDatabaseMigrationTest {
                         "'legacy_download_upgrade_payload'"
                 )
             )
-        } finally {
-            reopened.close()
         }
     }
 
@@ -469,7 +455,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
-        try {
+        migrated.use {
             val payload = JSONObject(
                 migrated.stringFor(
                     "SELECT payload_json FROM legacy_download_upgrade_payload " +
@@ -517,8 +503,6 @@ class NeriUserDataDatabaseMigrationTest {
                 assertEquals(20L, candidate.getLong("file_size"))
                 assertEquals("sha256:second", candidate.getString("content_hash"))
             }
-        } finally {
-            migrated.close()
         }
     }
 
@@ -565,7 +549,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
-        try {
+        migrated.use {
             val exactPayload = JSONObject(
                 migrated.stringFor(
                     "SELECT payload_json FROM legacy_download_upgrade_payload " +
@@ -592,8 +576,6 @@ class NeriUserDataDatabaseMigrationTest {
                 ambiguousPayload.getJSONObject("download_snapshot_metadata")
                     .getString("audio_name")
             )
-        } finally {
-            migrated.close()
         }
     }
 
@@ -628,7 +610,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
-        try {
+        migrated.use {
             assertEquals(
                 1L,
                 migrated.longFor(
@@ -644,8 +626,6 @@ class NeriUserDataDatabaseMigrationTest {
             )
             assertFalse(payload.has("legacyConflicts"))
             assertTrue(payload.getJSONObject("downloaded_song_catalog").has("file_path"))
-        } finally {
-            migrated.close()
         }
     }
 
@@ -676,7 +656,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
-        try {
+        migrated.use {
             val payload = JSONObject(
                 migrated.stringFor(
                     "SELECT payload_json FROM legacy_download_upgrade_payload " +
@@ -689,8 +669,6 @@ class NeriUserDataDatabaseMigrationTest {
                     .getJSONObject(0)
                     .getString("reason")
             )
-        } finally {
-            migrated.close()
         }
     }
 
@@ -714,7 +692,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
-        try {
+        migrated.use {
             assertEquals(
                 1L,
                 migrated.longFor(
@@ -722,8 +700,6 @@ class NeriUserDataDatabaseMigrationTest {
                         "WHERE stable_key LIKE 'legacy:download_snapshot_metadata:%'"
                 )
             )
-        } finally {
-            migrated.close()
         }
     }
 
@@ -761,7 +737,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
-        try {
+        migrated.use {
             val payload = JSONObject(
                 migrated.stringFor(
                     "SELECT payload_json FROM legacy_download_upgrade_payload " +
@@ -773,8 +749,6 @@ class NeriUserDataDatabaseMigrationTest {
                 "/existing/song.flac",
                 payload.getJSONObject("downloaded_song_catalog").getString("file_path")
             )
-        } finally {
-            migrated.close()
         }
     }
 
@@ -813,7 +787,7 @@ class NeriUserDataDatabaseMigrationTest {
         )
         val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
 
-        try {
+        migrated.use {
             assertTrue(
                 "v15 large migration took ${elapsedMs}ms",
                 elapsedMs <= LARGE_FIXTURE_MIGRATION_MAX_MS
@@ -852,8 +826,6 @@ class NeriUserDataDatabaseMigrationTest {
                 }
             }
             assertEquals(LARGE_FIXTURE_ROW_COUNT, verifiedPayloadCount)
-        } finally {
-            migrated.close()
         }
     }
 
@@ -862,13 +834,11 @@ class NeriUserDataDatabaseMigrationTest {
         val name = "migration-v17-to-v18-${System.nanoTime()}"
         helper.createDatabase(name, 17).close()
         val migrated = helper.runMigrationsAndValidate(name, 18, true, NeriUserDataDatabase.MIGRATION_17_18)
-        try {
+        migrated.use {
             assertEquals(1L, migrated.longFor(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' " +
                     "AND name = 'index_download_operation_recovery_cursor'"
             ))
-        } finally {
-            migrated.close()
         }
     }
 
@@ -901,7 +871,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_16_17
         )
 
-        try {
+        migrated.use {
             assertEquals("song-v16", migrated.stringFor(
                 "SELECT stable_key FROM download_operation WHERE operation_id = 'op-v16'"
             ))
@@ -915,8 +885,6 @@ class NeriUserDataDatabaseMigrationTest {
                 "SELECT COUNT(*) FROM pragma_table_info('download_operation') " +
                     "WHERE name IN ('batch_id', 'batch_generation')"
             ))
-        } finally {
-            migrated.close()
         }
     }
 
@@ -933,7 +901,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_17_18
         )
 
-        try {
+        migrated.use {
             assertEquals(
                 0L,
                 migrated.longFor(
@@ -956,8 +924,6 @@ class NeriUserDataDatabaseMigrationTest {
                         "WHERE name IN ('host_process_token', 'host_admitted_at_ms')"
                 )
             )
-        } finally {
-            migrated.close()
         }
     }
 
@@ -999,7 +965,7 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_17_18
         )
 
-        try {
+        migrated.use {
             val payload = JSONObject(
                 migrated.stringFor(
                     "SELECT payload_json FROM legacy_download_upgrade_payload " +
@@ -1028,8 +994,6 @@ class NeriUserDataDatabaseMigrationTest {
                         "WHERE type = 'table' AND name = 'download_host_admission'"
                 )
             )
-        } finally {
-            migrated.close()
         }
     }
 

@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
 import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadScanDeleteSafetyTest {
@@ -89,7 +90,7 @@ class ManagedDownloadScanDeleteSafetyTest {
         }
     }
 
-    @Test fun scannedCatalogKeepsExplicitOpaqueCoverBeforeFullDelete() = runBlocking<Unit> {
+    @Test fun scannedCatalogKeepsExplicitOpaqueCoverBeforeFullDelete() = runBlocking {
         val fixture = deletionFixture()
         val previousSongs = GlobalDownloadManager.downloadedSongsMutable.value
         try {
@@ -108,14 +109,14 @@ class ManagedDownloadScanDeleteSafetyTest {
         }
     }
 
-    @Test fun largeLibraryForcedScansAndFullDeletePreserveIdentityAndForeignFiles() = runBlocking<Unit> {
+    @Test fun largeLibraryForcedScansAndFullDeletePreserveIdentityAndForeignFiles() = runBlocking {
         GlobalDownloadManager.startupRecoveryMutex.withLock {
             GlobalDownloadManager.pendingDownloadRecoverySlot.withLock {
-                withTimeout(15_000) {
+                withTimeout(15_000.milliseconds) {
                     while (GlobalDownloadManager.finalizedCoverRepairActive.get() ||
                         GlobalDownloadManager.catalogReconcileJob?.isActive == true ||
                         GlobalDownloadManager.refreshJob?.isActive == true
-                    ) delay(25)
+                    ) delay(25.milliseconds)
                 }
                 GlobalDownloadManager.catalogReconcileJob?.cancelAndJoin()
                 val previousSongs = GlobalDownloadManager.downloadedSongsMutable.value
@@ -169,11 +170,11 @@ class ManagedDownloadScanDeleteSafetyTest {
         }
     }
 
-    private suspend fun awaitFixtureDeleteSettled() = withTimeout(300_000) {
+    private suspend fun awaitFixtureDeleteSettled() = withTimeout(300_000.milliseconds) {
         while (GlobalDownloadManager.isDownloadedSongDeletionActive() ||
             PersistentDownloadedSongDeleteIntentStore.hasPending(context) ||
             GlobalDownloadManager.isDownloadClearFenceActive(context)
-        ) delay(50)
+        ) delay(50.milliseconds)
     }
 
     @Test fun unavailableMetadataPreservesPublishedSnapshotUntilRetry() = runBlocking {
@@ -241,7 +242,7 @@ class ManagedDownloadScanDeleteSafetyTest {
         }
     }
 
-    @Test fun fullDeleteWaitsForCompletionCallbackAndPreservesForeignFiles() = runBlocking<Unit> {
+    @Test fun fullDeleteWaitsForCompletionCallbackAndPreservesForeignFiles() = runBlocking {
         val fixture = deletionFixture()
         val orphanMetadata = seed("orphan")
         val orphanAudio = requireNotNull(root.findFile("orphan.mp3"))
@@ -262,16 +263,16 @@ class ManagedDownloadScanDeleteSafetyTest {
             val deletion = async {
                 GlobalDownloadManager.deleteDownloadedSongsWithResult(context, listOf(fixture.song), true)
             }
-            delay(300)
+            delay(300.milliseconds)
             assertFalse("delete result must wait for physical cleanup", deletion.isCompleted)
             assertEquals("physical executor must wait for callback settlement", 0, counts().getInt("deleteCalls"))
             assertTrue(fixture.audio.exists())
             val deletionStartedAt = System.nanoTime()
             callbackRelease.countDown()
-            val result = withTimeout(20_000) { deletion.await() }
+            val result = withTimeout(20_000.milliseconds) { deletion.await() }
             assertFalse(result.physicalCleanupPending)
             assertTrue(result.failedSongs.isEmpty())
-            assertTrue(withTimeout(20_000) { GlobalDownloadManager.awaitAllDownloadedSongDeletions() })
+            assertTrue(withTimeout(20_000.milliseconds) { GlobalDownloadManager.awaitAllDownloadedSongDeletions() })
             assertFalse(fixture.audio.exists())
             assertFalse(fixture.metadata.exists())
             assertFalse(fixture.cover.exists())
@@ -288,7 +289,7 @@ class ManagedDownloadScanDeleteSafetyTest {
         }
     }
 
-    @Test fun durableExactSidecarsReplayWithoutAudioMetadataOrCatalog() = runBlocking<Unit> {
+    @Test fun durableExactSidecarsReplayWithoutAudioMetadataOrCatalog() = runBlocking {
         val previousProgress = GlobalDownloadManager.downloadedSongDeleteProgressMutable.value
         try {
         GlobalDownloadManager.startupRecoveryMutex.withLock {
@@ -563,7 +564,7 @@ class ManagedDownloadScanDeleteSafetyTest {
         fixture.foreign.forEach { assertTrue("foreign must survive: ${it.uri}", it.exists()) }
     }
 
-    @Test fun fullDeleteWithUnknownPendingDoesNotRepublishPhysicallyDeletedSong() = runBlocking<Unit> {
+    @Test fun fullDeleteWithUnknownPendingDoesNotRepublishPhysicallyDeletedSong() = runBlocking {
         GlobalDownloadManager.startupRecoveryMutex.withLock {
             val fixture = deletionFixture()
             val temporary = requireNotNull(root.findFile(".tmp"))
@@ -576,7 +577,7 @@ class ManagedDownloadScanDeleteSafetyTest {
             val previousReconcile = GlobalDownloadManager.catalogReconcileJob
             try {
                 GlobalDownloadManager.publishDownloadedSongs(context, listOf(fixture.song), persistCatalog = false)
-                val result = withTimeout(20_000) {
+                val result = withTimeout(20_000.milliseconds) {
                     GlobalDownloadManager.deleteDownloadedSongsWithResult(context, listOf(fixture.song), true)
                 }
                 assertEquals(listOf(fixture.song), result.deletedSongs)
@@ -591,7 +592,7 @@ class ManagedDownloadScanDeleteSafetyTest {
                 assertEquals(DownloadedSongDeletePhase.FAILED,
                     GlobalDownloadManager.downloadedSongDeleteProgressMutable.value?.phase)
                 assertTrue(GlobalDownloadManager.downloadedSongsMutable.value.isEmpty())
-                withTimeout(20_000) { GlobalDownloadManager.reloadDownloadedSongs(context, forceRefresh = true) }
+                withTimeout(20_000.milliseconds) { GlobalDownloadManager.reloadDownloadedSongs(context, forceRefresh = true) }
                 assertTrue("refresh cannot resurrect the physically deleted song", GlobalDownloadManager.downloadedSongsMutable.value.isEmpty())
                 fixture.foreign.forEach { assertTrue("foreign must survive: ${it.uri}", it.exists()) }
                 assertTrue(unknownPending.delete())
@@ -612,7 +613,7 @@ class ManagedDownloadScanDeleteSafetyTest {
         }
     }
 
-    private fun catalogCoverDelete(full: Boolean, receipt: String = "valid") = runBlocking<Unit> {
+    private fun catalogCoverDelete(full: Boolean, receipt: String = "valid") = runBlocking {
         val fixture = deletionFixture()
         val foreignCover = fixture.foreign.first()
         val stale = fixture.song.copy(coverPath = if (receipt == "alias")

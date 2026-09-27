@@ -28,7 +28,6 @@
     <string name="library_tab_local">Local</string>
     <string name="library_tab_favorite">Favorites</string>
     <string name="library_tab_netease">Netease</string>
-    <string name="library_tab_netease_playlist">Netease - Playlists</string>
     <string name="library_tab_netease_album">Netease - Albums</string>
     <string name="library_tab_youtube_music">YouTube Music</string>
     <string name="library_tab_bilibili">Bilibili</string>
@@ -60,8 +59,6 @@
     <string name="library_youtube_music_copy_browse_id">Copy Browse ID</string>
     <string name="library_youtube_music_copy_playlist_id">Copy Playlist ID</string>
     <string name="library_favorite_source_format" formatted="false">%d songs · %s</string>
-    <string name="library_favorite_sort_mode_title">Favorite Playlist Order</string>
-    <string name="library_favorite_sort_mode_desc">Long press a playlist to enter sorting mode, then drag the handle</string>
     <string name="library_title">Library</string>
     <string name="library_coming_soon">Coming Soon</string>
     <string name="library_recent_played">Recent Plays</string>
@@ -88,10 +85,22 @@
     <string name="bili_uploader_tab_collections">Collections</string>
     <string name="bili_uploader_tab_series">Series</string>
     <string name="bili_uploader_mid">UID %1$d</string>
-    <string name="bili_uploader_video_count">%1$d videos</string>
-    <string name="bili_uploader_collection_count">%1$d collections</string>
-    <string name="bili_uploader_series_count">%1$d series</string>
-    <string name="bili_uploader_content_count">%1$d videos</string>
+    <plurals name="bili_uploader_video_count">
+        <item quantity="one">%1$d video</item>
+        <item quantity="other">%1$d videos</item>
+    </plurals>
+    <plurals name="bili_uploader_collection_count">
+        <item quantity="one">%1$d collection</item>
+        <item quantity="other">%1$d collections</item>
+    </plurals>
+    <plurals name="bili_uploader_series_count">
+        <item quantity="one">%1$d series</item>
+        <item quantity="other">%1$d series</item>
+    </plurals>
+    <plurals name="bili_uploader_content_count">
+        <item quantity="one">%1$d video</item>
+        <item quantity="other">%1$d videos</item>
+    </plurals>
     <string name="bili_uploader_videos_empty">No videos</string>
     <string name="bili_uploader_collections_empty">No collections</string>
     <string name="bili_uploader_series_empty">No series</string>
@@ -101,8 +110,6 @@
     <string name="recent_title">Recent</string>
     <string name="recent_no_history">No Recent Plays</string>
     <string name="recent_clear">Clear</string>
-    <string name="recent_just_now">Just Now</string>
-    <string name="favorite_title">Favorites</string>
     <string name="favorite_add">Favorite</string>
     <string name="favorite_remove">Unfavorite</string>
     <string name="favorite_success">Favorited</string>

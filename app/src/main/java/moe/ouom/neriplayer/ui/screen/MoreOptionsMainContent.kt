@@ -389,7 +389,6 @@ private fun LyricsAndAlbumActions(
     if (!isNeteaseAlbumNavigationSource(song)) return
 
     val albumName = neteaseAlbumDisplayName(song)
-    val context = LocalContext.current
     val composeResources = LocalResources.current
     var albumResolveRequest by remember(song) { mutableIntStateOf(0) }
     var resolvingAlbum by remember(song) { mutableStateOf(false) }

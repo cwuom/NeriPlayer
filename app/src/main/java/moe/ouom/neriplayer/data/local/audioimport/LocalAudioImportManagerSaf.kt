@@ -124,10 +124,7 @@ internal suspend fun LocalAudioImportManager.collectFolderCandidatesWithDocument
             visitedDirectories = visitedDirectoryCount
         )
         val children = queryFolderChildren(context, directoryUri)
-        if (children == null) {
-            failed++
-            error("Unable to query children for $directoryUri")
-        }
+            ?: error("Unable to query children for $directoryUri")
         val coversChildren = children
             .firstOrNull { it.isDirectory && it.displayName.equals("Covers", ignoreCase = true) }
             ?.let { queryFolderChildren(context, it.documentUri) }

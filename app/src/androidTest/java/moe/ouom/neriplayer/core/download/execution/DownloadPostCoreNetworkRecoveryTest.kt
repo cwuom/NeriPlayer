@@ -32,6 +32,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class DownloadPostCoreNetworkRecoveryTest {
@@ -68,9 +69,9 @@ class DownloadPostCoreNetworkRecoveryTest {
                     GlobalDownloadManager.resumePostCoreDownloadsAfterProgressRestore(
                         context, requireNotNull(GlobalDownloadManager.downloadAdmissionGate.openTicketOrNull())
                     )
-                    withTimeout(5_000L) {
+                    withTimeout(5_000.milliseconds) {
                         while (AudioDownloadManager.isDownloadPausedForNetworkPolicy(request.song.stableKey())) {
-                            delay(20L)
+                            delay(20.milliseconds)
                         }
                     }
                 } finally {
@@ -165,8 +166,8 @@ class DownloadPostCoreNetworkRecoveryTest {
                 val before = requireNotNull(dao.find(old.operationId))
                 val recovery = async { GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl(context) }
                 try {
-                    withTimeout(5_000L) {
-                        while (dao.find(old.operationId) == before) delay(20L)
+                    withTimeout(5_000.milliseconds) {
+                        while (dao.find(old.operationId) == before) delay(20.milliseconds)
                     }
                     assertFalse(release.isCompleted)
                 } finally {

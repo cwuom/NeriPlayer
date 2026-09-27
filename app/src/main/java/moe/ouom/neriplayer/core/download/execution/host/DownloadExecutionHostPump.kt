@@ -8,7 +8,6 @@ import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecution
 import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
@@ -45,7 +44,7 @@ internal suspend fun DefaultDownloadExecutionHost.collectPumpCandidates(
     var roomQueryNs = 0L
     var cursor = afterCursor
     var exhausted = false
-    var pendingRequests = ArrayDeque<DownloadExecutionRequest>().apply {
+    val pendingRequests = ArrayDeque<DownloadExecutionRequest>().apply {
         pendingPage?.requests?.forEach(::addLast)
     }
     var pendingContinuationCursor = pendingPage?.continuationCursor

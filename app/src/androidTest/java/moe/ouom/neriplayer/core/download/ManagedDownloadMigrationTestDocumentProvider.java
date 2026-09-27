@@ -11,7 +11,7 @@ import android.os.DeadObjectException;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
-import android.provider.OpenableColumns;
+import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -19,7 +19,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -96,14 +95,14 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     }
 
     @Override
-    public String getType(Uri uri) {
+    public String getType(@NonNull Uri uri) {
         Node node = nodeFor(documentId(uri));
         return node == null ? null : node.mimeType;
     }
 
     @Override
     public Cursor query(
-        Uri uri,
+        @NonNull Uri uri,
         String[] projection,
         String selection,
         String[] selectionArgs,
@@ -170,7 +169,7 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     }
 
     @Override
-    public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+    public ParcelFileDescriptor openFile(@NonNull Uri uri, @NonNull String mode) throws FileNotFoundException {
         Node node = nodeFor(documentId(uri));
         if (node == null || node.directory) {
             throw new FileNotFoundException("Unknown migration fixture document: " + uri);
@@ -221,18 +220,18 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
     }
 
     @Override
-    public Uri insert(Uri uri, ContentValues values) {
+    public Uri insert(@NonNull Uri uri, ContentValues values) {
         return null;
     }
 
     @Override
-    public int delete(Uri uri, String selection, String[] selectionArgs) {
+    public int delete(@NonNull Uri uri, String selection, String[] selectionArgs) {
         return deleteDocument(documentId(uri)) ? 1 : 0;
     }
 
     @Override
     public int update(
-        Uri uri,
+        @NonNull Uri uri,
         ContentValues values,
         String selection,
         String[] selectionArgs
@@ -249,13 +248,15 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             DocumentsContract.Document.COLUMN_LAST_MODIFIED
         );
         if (lastModified != null && !node.directory) {
-            backingFile(node.id).setLastModified(lastModified);
+            if (!backingFile(node.id).setLastModified(lastModified)) {
+                return 0;
+            }
         }
         return 1;
     }
 
     @Override
-    public Bundle call(String method, String arg, Bundle extras) {
+    public Bundle call(@NonNull String method, String arg, Bundle extras) {
         if (NO_MEDIA_RENAME.equals(method)) {
             noMediaRenameMode = arg;
             return Bundle.EMPTY;
@@ -485,11 +486,9 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             String column = columns[index];
             if (DocumentsContract.Document.COLUMN_DOCUMENT_ID.equals(column)) {
                 row[index] = node.id;
-            } else if (DocumentsContract.Document.COLUMN_DISPLAY_NAME.equals(column)
-                || OpenableColumns.DISPLAY_NAME.equals(column)) {
+            } else if (DocumentsContract.Document.COLUMN_DISPLAY_NAME.equals(column)) {
                 row[index] = node.displayName;
-            } else if (DocumentsContract.Document.COLUMN_MIME_TYPE.equals(column)
-                || MediaStore.MediaColumns.MIME_TYPE.equals(column)) {
+            } else if (DocumentsContract.Document.COLUMN_MIME_TYPE.equals(column)) {
                 row[index] = node.mimeType;
             } else if (DocumentsContract.Document.COLUMN_FLAGS.equals(column)) {
                 row[index] = node.directory
@@ -499,8 +498,7 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
                     : DocumentsContract.Document.FLAG_SUPPORTS_WRITE |
                         DocumentsContract.Document.FLAG_SUPPORTS_DELETE |
                         DocumentsContract.Document.FLAG_SUPPORTS_RENAME;
-            } else if (DocumentsContract.Document.COLUMN_SIZE.equals(column)
-                || OpenableColumns.SIZE.equals(column)) {
+            } else if (DocumentsContract.Document.COLUMN_SIZE.equals(column)) {
                 row[index] = file == null ? 0L : file.length();
             } else if (DocumentsContract.Document.COLUMN_LAST_MODIFIED.equals(column)
                 || MediaStore.MediaColumns.DATE_MODIFIED.equals(column)) {
@@ -518,7 +516,7 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
                     children.add(node);
                 }
             }
-            Collections.sort(children, Comparator.comparing(node -> node.displayName));
+            children.sort(Comparator.comparing(node -> node.displayName));
             children.sort(Comparator.comparing(node -> node.id.equals(lastQueriedChildId)));
             return children;
         }
@@ -568,7 +566,10 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
             }
             NODES.remove(documentId);
             if (!node.directory) {
-                backingFile(node.id).delete();
+                File file = backingFile(node.id);
+                if (file.exists() && !file.delete()) {
+                    throw new IllegalStateException("Unable to delete migration fixture file: " + node.id);
+                }
             }
             return true;
         }
@@ -661,7 +662,9 @@ public final class ManagedDownloadMigrationTestDocumentProvider extends ContentP
                 deleteRecursively(child);
             }
         }
-        file.delete();
+        if (!file.delete()) {
+            throw new IllegalStateException("Unable to delete migration fixture file: " + file);
+        }
     }
 
     private static boolean isChildDocumentsUri(Uri uri) {

@@ -16,7 +16,6 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.parseDownload
 import moe.ouom.neriplayer.core.download.storage.operation.content.promotePendingAudio
 import moe.ouom.neriplayer.core.download.storage.operation.content.sealAudioPublicationReceipt
 import moe.ouom.neriplayer.core.download.storage.operation.content.readTextInternal
-import moe.ouom.neriplayer.core.download.storage.operation.content.resolveRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.resolveSnapshotForIndexedLookup
 import moe.ouom.neriplayer.core.download.storage.operation.content.resolveTrustedManagedReferences
 import moe.ouom.neriplayer.core.download.storage.operation.content.updateSnapshotCacheAfterStoredEntryWrite
@@ -75,8 +74,6 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageConfidence
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.stableKey
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject

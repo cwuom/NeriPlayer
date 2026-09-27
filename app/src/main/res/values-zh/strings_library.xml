@@ -28,7 +28,6 @@
     <string name="library_tab_local">本地</string>
     <string name="library_tab_favorite">收藏</string>
     <string name="library_tab_netease">网易云</string>
-    <string name="library_tab_netease_playlist">网易云 - 歌单</string>
     <string name="library_tab_netease_album">网易云 - 专辑</string>
     <string name="library_tab_youtube_music">YouTube</string>
     <string name="library_tab_bilibili">哔哩哔哩</string>
@@ -60,8 +59,6 @@
     <string name="library_youtube_music_copy_browse_id">复制 Browse ID</string>
     <string name="library_youtube_music_copy_playlist_id">复制 Playlist ID</string>
     <string name="library_favorite_source_format" formatted="false">%d首 · %s</string>
-    <string name="library_favorite_sort_mode_title">收藏歌单排序</string>
-    <string name="library_favorite_sort_mode_desc">长按歌单进入排序，拖动右侧手柄调整顺序</string>
     <string name="library_title">媒体库</string>
     <string name="library_coming_soon">敬请期待</string>
     <string name="library_recent_played">最近播放</string>
@@ -88,10 +85,18 @@
     <string name="bili_uploader_tab_collections">合集</string>
     <string name="bili_uploader_tab_series">系列</string>
     <string name="bili_uploader_mid">UID %1$d</string>
-    <string name="bili_uploader_video_count">%1$d 个投稿</string>
-    <string name="bili_uploader_collection_count">%1$d 个合集</string>
-    <string name="bili_uploader_series_count">%1$d 个系列</string>
-    <string name="bili_uploader_content_count">%1$d 个视频</string>
+    <plurals name="bili_uploader_video_count">
+        <item quantity="other">%1$d 个投稿</item>
+    </plurals>
+    <plurals name="bili_uploader_collection_count">
+        <item quantity="other">%1$d 个合集</item>
+    </plurals>
+    <plurals name="bili_uploader_series_count">
+        <item quantity="other">%1$d 个系列</item>
+    </plurals>
+    <plurals name="bili_uploader_content_count">
+        <item quantity="other">%1$d 个视频</item>
+    </plurals>
     <string name="bili_uploader_videos_empty">暂无投稿</string>
     <string name="bili_uploader_collections_empty">暂无合集</string>
     <string name="bili_uploader_series_empty">暂无系列</string>
@@ -101,8 +106,6 @@
     <string name="recent_title">最近播放</string>
     <string name="recent_no_history">暂无最近播放</string>
     <string name="recent_clear">清空最近播放</string>
-    <string name="recent_just_now">刚刚</string>
-    <string name="favorite_title">收藏</string>
     <string name="favorite_add">收藏</string>
     <string name="favorite_remove">取消收藏</string>
     <string name="favorite_success">收藏成功</string>

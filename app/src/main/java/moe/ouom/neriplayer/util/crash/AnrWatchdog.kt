@@ -117,7 +117,7 @@ internal object AnrWatchdog {
             if (traceCopied == null) {
                 output.write("No trace stream is available\n".toByteArray(Charsets.UTF_8))
             } else if (traceCopied) {
-                output.write("\n\n[Trace truncated at ${MAX_EXIT_TRACE_BYTES} bytes]\n".toByteArray(Charsets.UTF_8))
+                output.write("\n\n[Trace truncated at $MAX_EXIT_TRACE_BYTES bytes]\n".toByteArray(Charsets.UTF_8))
             }
             output.fd.sync()
         }

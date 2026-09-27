@@ -47,8 +47,6 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirecto
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.stableKey
 import java.io.File
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
@@ -324,8 +322,7 @@ internal fun ManagedDownloadStorage.findMetadataByDirectLookup(
                     children: Collection<QueriedTreeChild>
                 ): StoredEntry? = children.asSequence()
                     .filterNot(QueriedTreeChild::isDirectory)
-                    .filter { child -> child.name == metadataName }
-                    .firstOrNull()
+                    .firstOrNull { child -> child.name == metadataName }
                     ?.toStoredEntry()
                     ?: children.asSequence()
                         .filterNot(QueriedTreeChild::isDirectory)

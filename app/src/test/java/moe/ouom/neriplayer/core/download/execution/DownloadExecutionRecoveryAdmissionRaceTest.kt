@@ -12,7 +12,6 @@ import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecution
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
-import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationJournal
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
@@ -83,7 +82,7 @@ class DownloadExecutionRecoveryAdmissionRaceTest : DownloadExecutionHostTestSupp
         val occupancyReads = AtomicInteger()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 executed.add(request.operationId)
                 if (request.operationId == firstId && failedOnce.compareAndSet(false, true)) {
                     check(allowFailure.await(5, TimeUnit.SECONDS))

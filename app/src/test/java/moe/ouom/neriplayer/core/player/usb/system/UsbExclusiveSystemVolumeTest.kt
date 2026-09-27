@@ -50,7 +50,7 @@ class UsbExclusiveSystemVolumeTest {
             UsbExclusiveSystemVolumeBridge.updateSessionVolumeFraction(0.75f)
             UsbExclusiveSystemVolumeBridge.updateSessionVolumeFraction(0f)
 
-            assertEquals(listOf<Float?>(null, 0.75f, 0f), delivered)
+            assertEquals(listOf(null, 0.75f, 0f), delivered)
         } finally {
             UsbExclusiveSystemVolumeBridge.unsubscribe(subscription)
             UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()

@@ -187,7 +187,7 @@ private object AdvancedGlassRuntimeShaderBackend {
             setFloatUniform(InvertMaskUniform, if (invertMask) 1f else 0f)
         }
 
-        private data class AdvancedGlassRegionUniforms(
+        private class AdvancedGlassRegionUniforms(
             val count: Int,
             val bounds: FloatArray,
             val cornerRadii: FloatArray

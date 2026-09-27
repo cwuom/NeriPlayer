@@ -8,7 +8,6 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
-import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
 import java.util.Locale
 

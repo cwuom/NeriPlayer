@@ -46,7 +46,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 @Composable
 internal fun SettingsTrafficManagementSection() {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val dailyStats by AppContainer.trafficStatsRepo.dailyStatsFlow.collectAsState()
     val highRiskPromptEnabled by AppContainer.settingsRepo.mobileDataHighRiskPromptEnabledFlow

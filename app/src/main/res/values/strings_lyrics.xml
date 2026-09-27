@@ -3,14 +3,12 @@
     <!-- Lyrics -->
     <string name="lyrics_title">歌词</string>
     <string name="lyrics_no_lyrics">暂无歌词</string>
-    <string name="lyrics_blur">歌词模糊</string>
     <string name="lyrics_blur_effect">歌词模糊效果</string>
     <string name="lyrics_blur_desc">为非当前行歌词添加景深模糊</string>
     <string name="lyrics_blur_low_cost_hint">低于 Android 12 使用低开销方案，效果较弱</string>
     <string name="lyrics_blur_amount">模糊强度</string>
     <string name="lyrics_blur_current">当前模糊度: %.2f</string>
     <string name="lyrics_font_size">歌词字体大小</string>
-    <string name="lyrics_offset">歌词偏移调整</string>
     <string name="lyrics_adjust_offset">调整歌词偏移</string>
     <string name="lyrics_adjust_behavior">调整歌词行为</string>
     <string name="lyrics_translation_use_phonetic">音译显示</string>
@@ -26,7 +24,6 @@
     <string name="lyrics_offset_hint">向右滑动歌词快进，向左滑动歌词延后</string>
     <string name="lyrics_unknown_song">未知歌曲</string>
     <string name="lyrics_unknown_artist">未知艺术家</string>
-    <string name="lyrics_favorite_playlist">我喜欢的音乐</string>
     <string name="lyrics_favorited">已收藏</string>
     <string name="lyrics_favorite">收藏</string>
     <string name="lyrics_more_options">更多选项</string>
@@ -35,7 +32,6 @@
     <string name="lyric_share_copy_lyrics">复制歌词</string>
     <string name="lyric_share_song">分享歌曲</string>
     <string name="lyric_share_card">歌词卡片</string>
-    <string name="lyric_share_copied">歌词已复制</string>
     <string name="lyric_share_card_failed">歌词卡片生成失败</string>
     <string name="lyrics_previous">上一首</string>
     <string name="lyrics_pause">暂停</string>
@@ -45,9 +41,6 @@
     <string name="lyrics_timer">定时器</string>
     <string name="lyrics_back_to_cover">返回封面</string>
     <string name="lyrics_add_to_playlist">添加到歌单</string>
-    <string name="lyrics_bluetooth_device">蓝牙设备</string>
-    <string name="lyrics_wired_headset">有线耳机</string>
-    <string name="lyrics_phone_speaker">手机扬声器</string>
     <string name="lyrics_original">原文</string>
     <string name="lyrics_translation">翻译</string>
     <string name="lyrics_romanized">罗马字</string>

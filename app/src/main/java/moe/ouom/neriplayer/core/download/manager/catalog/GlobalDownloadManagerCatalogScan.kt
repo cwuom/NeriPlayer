@@ -4,7 +4,6 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadArtifactRemovalResult
 import moe.ouom.neriplayer.core.download.ManagedDownloadSongDeletePlan
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.buildDownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.upsertDownloadedSongCatalog
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile

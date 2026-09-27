@@ -131,7 +131,6 @@
     <string name="settings_listen_together_server_input_label">Server Address</string>
     <string name="settings_listen_together_server_input_placeholder">Leave empty to use the built-in default server</string>
     <string name="settings_listen_together_server_input_invalid">Invalid server address. Enter a full http:// or https:// address.</string>
-    <string name="listen_together_invite_server_invalid">The invite contains an invalid server address, so this room cannot be joined.</string>
     <string name="listen_together_error_room_id_length">Room ID length must be %1$d.</string>
     <string name="listen_together_error_room_id_chars">Room ID only supports uppercase letters and digits.</string>
     <string name="listen_together_error_user_uuid_required">User UUID is required.</string>

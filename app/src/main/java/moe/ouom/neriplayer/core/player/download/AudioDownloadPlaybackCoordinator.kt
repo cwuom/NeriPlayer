@@ -16,7 +16,6 @@ import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadRefere
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import android.os.Looper
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.net.URI
@@ -165,10 +164,9 @@ internal class AudioDownloadPlaybackCoordinator(
                     configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
                 )
             }
-            .mapNotNull { reference ->
+            .firstNotNullOfOrNull { reference ->
                 resolveReboundDownloadedPlaybackUri(context, reference)
             }
-            .firstOrNull()
     }
 
     suspend fun resolvePermittedLocalPlaybackUri(

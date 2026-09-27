@@ -25,74 +25,30 @@ package moe.ouom.neriplayer.data.local.media
 
 
 import android.content.Context
-import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.os.ParcelFileDescriptor
 import android.os.SystemClock
-import android.provider.MediaStore
-import android.provider.OpenableColumns
-import android.provider.DocumentsContract
-import android.system.Os
-import androidx.core.content.FileProvider
-import androidx.documentfile.provider.DocumentFile
 import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
-import com.kyant.taglib.TagLib
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
-import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
-import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
-import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.stableKey as songStableKey
-import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.io.readBytesLimited
-import moe.ouom.neriplayer.util.media.NERI_ORIGINAL_LYRICS_METADATA_KEY
-import moe.ouom.neriplayer.util.media.NERI_ROMANIZED_LYRICS_METADATA_KEY
 import moe.ouom.neriplayer.util.media.mergeLyricsForExternalPlayers
-import moe.ouom.neriplayer.util.media.standardLyricsMetadataKeys
-import moe.ouom.neriplayer.util.media.translatedLyricsMetadataKeys
 import moe.ouom.neriplayer.util.network.isFileInsideDirectory
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileNotFoundException
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.IOException
-import java.io.InputStream
 import java.io.RandomAccessFile
-import java.text.Normalizer
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
-import java.net.URLConnection
-import java.security.MessageDigest
 import java.util.LinkedHashMap
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.math.max
-import androidx.core.net.toUri
-import okhttp3.Request
 
 object LocalMediaSupport {
     internal const val TAG = "LocalMediaSupport"

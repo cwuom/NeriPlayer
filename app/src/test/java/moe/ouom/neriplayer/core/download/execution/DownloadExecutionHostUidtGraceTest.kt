@@ -14,12 +14,12 @@ import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecution
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
-import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class DownloadExecutionHostUidtGraceTest : DownloadExecutionHostTestSupport() {
     @Test
@@ -42,7 +42,7 @@ class DownloadExecutionHostUidtGraceTest : DownloadExecutionHostTestSupport() {
         val releaseSlow = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 if (request.operationId == slow.operationId) {
                     graceExpired.set(true)
                     slowStarted.complete(Unit)
@@ -62,7 +62,7 @@ class DownloadExecutionHostUidtGraceTest : DownloadExecutionHostTestSupport() {
         val pump = async { host.pump(context) }
         try {
             withContext(Dispatchers.Default) {
-                withTimeout(2_000L) {
+                withTimeout(2_000.milliseconds) {
                     slowStarted.await()
                     waitingStarted.await()
                 }
@@ -92,7 +92,7 @@ class DownloadExecutionHostUidtGraceTest : DownloadExecutionHostTestSupport() {
         val releaseThird = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 started.getValue(request.operationId).complete(Unit)
                 when (request.operationId) {
                     requests[1].operationId, requests[2].operationId -> releaseSlow.await()
@@ -111,7 +111,7 @@ class DownloadExecutionHostUidtGraceTest : DownloadExecutionHostTestSupport() {
         val pump = async { host.pump(context) }
         try {
             withContext(Dispatchers.Default) {
-                withTimeout(2_000L) {
+                withTimeout(2_000.milliseconds) {
                     requests.subList(1, 4).forEach { started.getValue(it.operationId).await() }
                     releaseThird.complete(Unit)
                     started.getValue(requests[4].operationId).await()
@@ -146,7 +146,7 @@ class DownloadExecutionHostUidtGraceTest : DownloadExecutionHostTestSupport() {
         val maximumActive = AtomicInteger()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 maximumActive.accumulateAndGet(active.incrementAndGet(), ::maxOf)
                 try {
                     started.getValue(request.operationId).complete(Unit)
@@ -169,10 +169,10 @@ class DownloadExecutionHostUidtGraceTest : DownloadExecutionHostTestSupport() {
         val pump = async { host.pump(context) }
         try {
             withContext(Dispatchers.Default) {
-                withTimeout(2_000L) {
+                withTimeout(2_000.milliseconds) {
                     requests.drop(1).forEach { started.getValue(it.operationId).await() }
                     graceExpired.set(true)
-                    delay(100L)
+                    delay(100.milliseconds)
                     assertFalse(started.getValue(requests[0].operationId).isCompleted)
                     assertEquals(3, active.get())
                     releaseOne.complete(Unit)
@@ -208,7 +208,7 @@ class DownloadExecutionHostUidtGraceTest : DownloadExecutionHostTestSupport() {
         val waitingStarted = AtomicBoolean(false)
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 if (request.operationId == slow.operationId) {
                     slowStarted.complete(Unit)
                     releaseSlow.await()
@@ -232,10 +232,10 @@ class DownloadExecutionHostUidtGraceTest : DownloadExecutionHostTestSupport() {
         val pump = async { host.pump(context) }
         try {
             withContext(Dispatchers.Default) {
-                withTimeout(2_000L) {
+                withTimeout(2_000.milliseconds) {
                     slowStarted.await()
                     graceRechecked.await()
-                    delay(100L)
+                    delay(100.milliseconds)
                 }
             }
             assertEquals(2, graceReads.get())

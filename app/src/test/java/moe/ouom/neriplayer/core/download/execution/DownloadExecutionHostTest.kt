@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
@@ -15,36 +14,24 @@ import moe.ouom.neriplayer.core.download.execution.host.transferLaneOccupancy
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
 import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
-import android.content.Context
-import android.content.SharedPreferences
 import android.os.Build
-import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
-import androidx.work.ListenableWorker
-import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
-import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrace
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.mockito.Answers
-import org.mockito.ArgumentMatchers.anyBoolean
-import org.mockito.ArgumentMatchers.anyInt
-import org.mockito.ArgumentMatchers.anyString
-import org.mockito.Mockito.`when`
-import org.mockito.Mockito.mock
+import kotlin.time.Duration.Companion.milliseconds
 
 
 class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
@@ -252,7 +239,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         var executions = 0
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, restoredRequest ->
+            entryPoint = { _, restoredRequest ->
                 assertEquals(request.operationId, restoredRequest.operationId)
                 executions++
                 DownloadExecutionResult.Accepted
@@ -277,7 +264,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         store.save(context, request)
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 DownloadExecutionResult.Retry
             },
             sdkInt = 28
@@ -299,7 +286,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         store.save(context, request)
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 DownloadExecutionResult.Accepted
             },
             sdkInt = 28,
@@ -332,7 +319,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         val laterStarted = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 val result = if (request.operationId == failed.operationId) {
                     laterStarted.await()
                     DownloadExecutionResult.Failed(IllegalStateException("transient"))
@@ -375,11 +362,11 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         val executed = java.util.concurrent.ConcurrentLinkedQueue<String>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 executed.add(request.operationId)
                 if (admittedCount.incrementAndGet() == window) admittedWindow.complete(Unit)
                 if (request.operationId == requests.first().operationId) {
-                    withTimeout(5_000) { admittedWindow.await() }
+                    withTimeout(5_000.milliseconds) { admittedWindow.await() }
                     DownloadExecutionResult.Retry
                 } else {
                     firstFailed.await()
@@ -418,7 +405,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         val releaseThird = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 when (request.operationId) {
                     requests[0].operationId -> {
                         firstCompleted.complete(Unit)
@@ -453,7 +440,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         val pump = async { host.pump(context) }
         try {
             withContext(Dispatchers.Default) {
-                withTimeout(2_000L) {
+                withTimeout(2_000.milliseconds) {
                     firstCompleted.await()
                     slowStarted.await()
                     thirdStarted.await()
@@ -493,7 +480,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
             val release = CompletableDeferred<Unit>()
             val host = DefaultDownloadExecutionHost(
                 operationStore = store,
-                entryPoint = DownloadOperationEntryPoint { _, request ->
+                entryPoint = { _, request ->
                     started.getValue(request.operationId).complete(Unit)
                     release.await()
                     DownloadExecutionResult.Accepted
@@ -505,7 +492,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
             val pump = async { host.pump(context) }
             try {
                 withContext(Dispatchers.Default) {
-                    withTimeout(2_000L) {
+                    withTimeout(2_000.milliseconds) {
                         started.values.forEach { signal -> signal.await() }
                     }
                 }
@@ -533,7 +520,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         val executed = mutableListOf<String>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, candidate ->
+            entryPoint = { _, candidate ->
                 executed += candidate.operationId
                 DownloadExecutionResult.Accepted
             },
@@ -586,7 +573,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         lateinit var host: DefaultDownloadExecutionHost
         host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+            entryPoint = { entryContext, request ->
                 if (request.operationId == requests[2].operationId) {
                     // 测试入口不经过真实网络 permit，先等待两个物理槽位完成交接
                     firstCommitted.await()
@@ -636,7 +623,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         val pump = async { host.pump(context) }
         try {
             withContext(Dispatchers.Default) {
-                withTimeout(2_000L) {
+                withTimeout(2_000.milliseconds) {
                     firstCommitted.await()
                     secondCommitted.await()
                     // 前两首仍在后处理，第三首必须在释放传输槽位后进入
@@ -677,7 +664,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         lateinit var host: DefaultDownloadExecutionHost
         host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+            entryPoint = { entryContext, request ->
                 if (request.operationId == first.operationId) {
                     val refreshedAttemptId = 19L
                     journal.forceRequest(first.copy(attemptId = refreshedAttemptId))
@@ -726,7 +713,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
 
         val pump = async { host.pump(context) }
         withContext(Dispatchers.Default) {
-            withTimeout(2_000L) {
+            withTimeout(2_000.milliseconds) {
                 firstCommitted.await()
                 secondStarted.await()
             }
@@ -760,7 +747,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         lateinit var host: DefaultDownloadExecutionHost
         host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+            entryPoint = { entryContext, request ->
                 when (request.operationId) {
                     first.operationId -> {
                         assertNotNull(
@@ -809,7 +796,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         }
         try {
             withContext(Dispatchers.Default) {
-                withTimeout(2_000L) {
+                withTimeout(2_000.milliseconds) {
                     assertEquals(DownloadExecutionPumpResult.Completed, host.pump(context))
                     secondStarted.await()
                 }
@@ -851,7 +838,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         lateinit var host: DefaultDownloadExecutionHost
         host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+            entryPoint = { entryContext, request ->
                 when (request.operationId) {
                     first.operationId -> {
                         val token = checkNotNull(
@@ -913,7 +900,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         assertEquals(0, delegate.hostAdmissionReleaseCount)
 
         withContext(Dispatchers.Default) {
-            withTimeout(2_000L) {
+            withTimeout(2_000.milliseconds) {
                 assertEquals(DownloadExecutionPumpResult.Completed, host.pump(context))
                 secondStarted.await()
             }
@@ -938,7 +925,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         lateinit var host: DefaultDownloadExecutionHost
         host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 finish.await()
                 DownloadExecutionResult.Accepted
@@ -1017,7 +1004,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         lateinit var host: DefaultDownloadExecutionHost
         host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 finish.await()
                 DownloadExecutionResult.Accepted
@@ -1083,7 +1070,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         lateinit var host: DefaultDownloadExecutionHost
         host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { entryContext, request ->
+            entryPoint = { entryContext, request ->
                 val ownerToken = checkNotNull(
                     host.onTransferStarted(
                         context = entryContext,
@@ -1127,7 +1114,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         val pump = async { host.pump(context) }
         try {
             withContext(Dispatchers.Default) {
-                withTimeout(2_000L) {
+                withTimeout(2_000.milliseconds) {
                     secondStarted.await()
                 }
             }
@@ -1157,7 +1144,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
         val executed = mutableListOf<String>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 executed += request.operationId
                 DownloadExecutionResult.Accepted
             },

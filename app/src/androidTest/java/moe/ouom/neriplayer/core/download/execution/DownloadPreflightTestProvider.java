@@ -9,11 +9,13 @@ import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
+import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -62,10 +64,10 @@ public final class DownloadPreflightTestProvider extends ContentProvider {
     }
 
     @Override
-    public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+    public ParcelFileDescriptor openFile(@NonNull Uri uri, @NonNull String mode) throws FileNotFoundException {
         opens.incrementAndGet();
         if (delayMs > 0L) SystemClock.sleep(delayMs);
-        File file = new File(getContext().getCacheDir(), "download-preflight-fixture.mp3");
+        File file = new File(Objects.requireNonNull(getContext()).getCacheDir(), "download-preflight-fixture.mp3");
         if (!file.exists()) {
             try (FileOutputStream stream = new FileOutputStream(file)) {
                 stream.write(1);
@@ -96,7 +98,10 @@ public final class DownloadPreflightTestProvider extends ContentProvider {
                 result.putInt("maxReferenceQueries", maximum);
                 break;
             case "cleanup":
-                new File(getContext().getCacheDir(), "download-preflight-fixture.mp3").delete();
+                File fixture = new File(Objects.requireNonNull(getContext()).getCacheDir(), "download-preflight-fixture.mp3");
+                if (fixture.exists() && !fixture.delete()) {
+                    throw new IllegalStateException("cannot delete preflight fixture");
+                }
                 delayMs = 0L;
                 break;
             default:
@@ -106,11 +111,11 @@ public final class DownloadPreflightTestProvider extends ContentProvider {
     }
 
     @Override
-    public String getType(Uri uri) { return "audio/mpeg"; }
+    public String getType(@NonNull Uri uri) { return "audio/mpeg"; }
     @Override
-    public Uri insert(Uri uri, ContentValues values) { return null; }
+    public Uri insert(@NonNull Uri uri, ContentValues values) { return null; }
     @Override
-    public int delete(Uri uri, String selection, String[] selectionArgs) { return 0; }
+    public int delete(@NonNull Uri uri, String selection, String[] selectionArgs) { return 0; }
     @Override
-    public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) { return 0; }
+    public int update(@NonNull Uri uri, ContentValues values, String selection, String[] selectionArgs) { return 0; }
 }

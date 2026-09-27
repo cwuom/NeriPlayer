@@ -13,6 +13,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class ManagedLibraryFastIndexMutatorTest {
     @Test
@@ -128,8 +129,8 @@ class ManagedLibraryFastIndexMutatorTest {
         val secondKey = keyInShard(shard, excluded = setOf(firstKey))
         val locks = ManagedLibraryFastIndexMutationLocks()
         val storage = FakeShardStorage().apply {
-            beforeRead = { delay(10L) }
-            beforeWrite = { delay(10L) }
+            beforeRead = { delay(10.milliseconds) }
+            beforeWrite = { delay(10.milliseconds) }
         }
         val mutator = ManagedLibraryFastIndexMutator(
             generatedAtMs = { 42L },
@@ -173,7 +174,7 @@ class ManagedLibraryFastIndexMutatorTest {
         }
         val mutator = ManagedLibraryFastIndexMutator(generatedAtMs = { 42L })
 
-        val results = withTimeout(1_000L) {
+        val results = withTimeout(1_000.milliseconds) {
             listOf(FILE_ROOT, SAF_ROOT).map { rootIdentity ->
                 async {
                     mutator.upsertCompleteEntry(
@@ -331,8 +332,8 @@ class ManagedLibraryFastIndexMutatorTest {
 
     private class FakeShardStorage : ManagedLibraryFastIndexShardStorage {
         private val payloads = ConcurrentHashMap<ShardKey, String>()
-        val reads = Collections.synchronizedList(mutableListOf<ShardKey>())
-        val writes = Collections.synchronizedList(mutableListOf<ShardKey>())
+        val reads: MutableList<ShardKey> = Collections.synchronizedList(mutableListOf<ShardKey>())
+        val writes: MutableList<ShardKey> = Collections.synchronizedList(mutableListOf<ShardKey>())
         val readFailures = ConcurrentHashMap<ShardKey, Throwable>()
         val writeFailures = ConcurrentHashMap<ShardKey, Throwable>()
         var beforeRead: suspend (ShardKey) -> Unit = {}

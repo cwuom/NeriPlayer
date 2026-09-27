@@ -22,6 +22,7 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
+import kotlin.time.Duration.Companion.milliseconds
 
 class ManagedDownloadReferenceIoTest {
     @Test
@@ -157,22 +158,22 @@ class ManagedDownloadReferenceIoTest {
                     releaseWriter.await()
                 }
             }
-            withTimeout(5_000L) { writerEntered.await() }
+            withTimeout(5_000.milliseconds) { writerEntered.await() }
 
             val deleteStarted = CompletableDeferred<Unit>()
             val delete = async(Dispatchers.Default) {
                 deleteStarted.complete(Unit)
                 ManagedDownloadReferenceIo.deleteFileReference(root.resolve("song.mp3"))
             }
-            withTimeout(5_000L) { deleteStarted.await() }
-            delay(100L)
+            withTimeout(5_000.milliseconds) { deleteStarted.await() }
+            delay(100.milliseconds)
             assertFalse(delete.isCompleted)
 
             releaseWriter.complete(Unit)
-            withTimeout(5_000L) { writer.await() }
+            withTimeout(5_000.milliseconds) { writer.await() }
             assertEquals(
                 ManagedDownloadReferenceIo.DeleteResult.Deleted,
-                withTimeout(5_000L) { delete.await() }
+                withTimeout(5_000.milliseconds) { delete.await() }
             )
             assertFalse(root.resolve("song.mp3").exists())
         } finally {

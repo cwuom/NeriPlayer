@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.data.local.media
 
 import com.kyant.taglib.Picture
-import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -579,19 +578,5 @@ class LocalMediaMetadataWritePolicyTest {
 
         assertFalse(verified)
         assertEquals(1, readAttempts)
-    }
-
-    private fun editableLocalSong(fileName: String, mediaUri: String): SongItem {
-        return SongItem(
-            id = 1L,
-            name = "Song",
-            artist = "Artist",
-            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
-            albumId = 0L,
-            durationMs = 1_000L,
-            coverUrl = null,
-            mediaUri = mediaUri,
-            localFileName = fileName
-        )
     }
 }

@@ -9,7 +9,6 @@ import android.provider.MediaStore
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey as songStableKey
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
@@ -306,8 +305,7 @@ internal fun LocalMediaSupport.resolveCoverReferenceByPriorityImpl(
     fallbackReference: String? = null
 ): String? {
     return sequenceOf(sidecarReference, embeddedReference, fallbackReference)
-        .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-        .firstOrNull()
+        .firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotBlank) }
 }
 
 internal fun LocalMediaSupport.resolveNearbyCoverUriImpl(context: Context, song: SongItem): String? {

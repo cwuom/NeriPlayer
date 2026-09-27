@@ -29,16 +29,11 @@
     <string name="sync_auto">自动同步</string>
     <string name="sync_now">立即同步</string>
     <string name="sync_not_synced">尚未同步</string>
-    <string name="sync_success">同步成功</string>
-    <string name="sync_failed">同步失败</string>
     <string name="sync_upload_failed">上传失败</string>
-    <string name="sync_send_failed">发送失败</string>
     <string name="sync_send_cancelled">已取消发送</string>
     <string name="sync_initial_uploaded">初始数据已上传</string>
     <string name="sync_history_frequency">播放历史更新频率</string>
     <string name="sync_after_play">每次播放后立即同步</string>
-    <string name="sync_configured">已配置</string>
-    <string name="sync_not_configured">未配置</string>
     <string name="sync_config">配置</string>
     <string name="sync_clear_config">清除配置</string>
     <string name="sync_repo_name">仓库名称</string>
@@ -52,12 +47,8 @@
     <string name="sync_data_saver_warning_confirm">继续切换</string>
     <string name="sync_diff_failed">差异分析失败</string>
     <string name="sync_analysis_progress">分析进度</string>
-    <string name="backup_title">备份与恢复</string>
-    <string name="backup_expand_hint">歌单备份与恢复</string>
-    <string name="backup_no_playlist_data">备份文件中没有歌单数据</string>
     <string name="backup_import_failed">歌单导入失败</string>
     <string name="backup_export_failed">歌单导出失败</string>
-    <string name="backup_restore_title">备份与恢复</string>
     <string name="sync_config_desc">点击配置 Token 和仓库</string>
     <string name="sync_auto_desc">修改后自动同步到 GitHub</string>
     <string name="sync_last_time">上次同步: %s</string>
@@ -107,7 +98,6 @@
     <string name="webdav_sync_channel_name">WebDAV同步</string>
     <string name="webdav_sync_channel_desc">WebDAV同步状态通知</string>
     <string name="webdav_sync_failed_title">WebDAV 同步失败</string>
-    <string name="backup_no_playlists">备份文件中没有歌单数据</string>
     <string name="settings_current_playlist">当前歌单</string>
     <string name="settings_export_playlist">导出歌单</string>
     <string name="settings_import_playlist">导入歌单</string>

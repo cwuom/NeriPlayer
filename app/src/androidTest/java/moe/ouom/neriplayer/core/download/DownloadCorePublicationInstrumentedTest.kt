@@ -56,6 +56,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class DownloadCorePublicationInstrumentedTest {
@@ -558,13 +559,13 @@ class DownloadCorePublicationInstrumentedTest {
     }
 
     private suspend fun awaitConcurrentCatalogReadersIdle() {
-        withTimeout(15_000L) {
+        withTimeout(15_000.milliseconds) {
             while (
                 GlobalDownloadManager.finalizedCoverRepairActive.get() ||
                     GlobalDownloadManager.catalogReconcileJob?.isActive == true ||
                     GlobalDownloadManager.refreshJob?.isActive == true
             ) {
-                delay(25L)
+                delay(25.milliseconds)
             }
         }
     }

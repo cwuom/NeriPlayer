@@ -6,7 +6,6 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadSta
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadExecutionAttemptState
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.HlsResumeState
 import android.content.Context
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer

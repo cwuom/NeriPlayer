@@ -1231,8 +1231,8 @@ class LocalMediaSupportTest {
     fun `findNearbyLyricFiles keeps Lyrics directory priority over source fallback`() {
         val sourceDir = tempFolder.newFolder("nearby-lyrics-priority")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
-        val original = File(sourceDir, "song.txt").apply { writeText("source original") }
-        val translated = File(sourceDir, "song_trans.txt").apply { writeText("source translation") }
+        File(sourceDir, "song.txt").writeText("source original")
+        File(sourceDir, "song_trans.txt").writeText("source translation")
         val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
         File(lyricsDir, "song.lrc").writeText("nested original")
         File(lyricsDir, "song_trans.lrc").writeText("nested translation")

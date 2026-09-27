@@ -26,7 +26,7 @@ class LegacyJsonCleanupCoordinatorTest {
 
     private fun isolatedContext(): Context {
         val files = temporaryFolder.newFolder("files")
-        return object : ContextWrapper(ApplicationProvider.getApplicationContext<Context>()) {
+        return object : ContextWrapper(ApplicationProvider.getApplicationContext()) {
             override fun getApplicationContext(): Context = this
             override fun getFilesDir(): File = files
         }
