@@ -28,7 +28,6 @@ package moe.ouom.neriplayer.core.player
 
 import android.app.Application
 import android.content.Context
-import android.media.AudioDeviceCallback
 import android.os.Looper
 import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
@@ -114,11 +113,11 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.command.LocalRoomControlRestriction
+import moe.ouom.neriplayer.core.player.policy.command.resolveLocalRoomControlRestriction
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshInFlightController
 import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
-import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationCoordinator
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationSnapshot
-import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationToken
 import moe.ouom.neriplayer.core.player.prefetch.GenericUrlPrefetchCache
 import moe.ouom.neriplayer.core.player.prefetch.PlaybackDemandArbiter
 import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
@@ -210,6 +209,16 @@ import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlayback
 import moe.ouom.neriplayer.core.player.usb.recovery.PlayerManagerUsbExclusiveLivenessPort
 import moe.ouom.neriplayer.core.player.usb.recovery.PlayerManagerUsbInterruptedPlaybackPort
 import moe.ouom.neriplayer.core.player.usb.recovery.UsbExclusiveLivenessOwner
+import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbSinkRoutePort
+import moe.ouom.neriplayer.core.player.usb.route.UsbSinkRouteOwner
+import moe.ouom.neriplayer.core.player.usb.route.UsbRouteTransitionOwner
+import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbSystemAudioRoutePort
+import moe.ouom.neriplayer.core.player.usb.route.UsbSystemAudioRouteOwner
+import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbPlaybackRoutePort
+import moe.ouom.neriplayer.core.player.usb.route.UsbPlaybackRouteOwner
+import moe.ouom.neriplayer.core.player.usb.route.AndroidUsbPlaybackNativeRoutePort
+import moe.ouom.neriplayer.core.player.audio.route.AudioDeviceRouteOwner
+import moe.ouom.neriplayer.core.player.audio.route.PlayerManagerAudioDeviceRoutePort
 import moe.ouom.neriplayer.core.player.usb.recovery.UsbInterruptedPlaybackIntent
 import moe.ouom.neriplayer.core.player.usb.recovery.UsbInterruptedPlaybackOwner
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -340,7 +349,7 @@ object PlayerManager {
     internal var playbackStartupWatchdogJob: Job? = null
     @Volatile
     internal var playbackStartupWatchdogToken = 0L
-    internal var bluetoothDisconnectPauseJob: Job? = null
+    internal var audioDeviceRouteOwner = AudioDeviceRouteOwner(mainScope, PlayerManagerAudioDeviceRoutePort)
     @Volatile
     internal var audioRouteMuteRestoreVolume: Float? = null
     @Volatile
@@ -354,28 +363,31 @@ object PlayerManager {
     internal var playbackSoundPersistJob: Job? = null
     internal var playbackSoundApplyJob: Job? = null
     internal var lastRequiresPcmAudioProcessing: Boolean? = null
-    internal val usbAudioSinkReconfigurationCoordinator =
-        UsbAudioSinkReconfigurationCoordinator()
-    internal var usbExclusiveSystemAudioReleaseJob: Job? = null
-    internal var usbExclusiveSystemAudioResumeJob: Job? = null
-    internal var usbExclusiveSystemAudioWatchdogJob: Job? = null
-    internal var usbExclusiveToggleTransitionJob: Job? = null
-    @Volatile
-    internal var usbExclusiveSystemAudioReleaseInProgress = false
-    @Volatile
-    internal var usbExclusiveToggleTransitionActive = false
-    @Volatile
-    internal var usbExclusiveToggleTransitionReason = ""
-    internal var usbExclusiveRecoveryJob: Job? = null
-    internal var usbExclusiveOpenGatePlaybackJob: Job? = null
-    internal var usbExclusiveRecoveryAttempts = 0
+    internal var usbSinkRouteOwner = UsbSinkRouteOwner(
+        mainScope,
+        PlayerManagerUsbSinkRoutePort,
+        SystemClock::elapsedRealtime
+    )
+    internal var usbRouteTransitionOwner = UsbRouteTransitionOwner(
+        mainScope,
+        onToggleTimeout = { reason -> markUsbExclusivePlaybackPreparing(false, reason) }
+    )
+    internal var usbSystemAudioRouteOwner = UsbSystemAudioRouteOwner(
+        usbRouteTransitionOwner,
+        usbSinkRouteOwner,
+        PlayerManagerUsbSystemAudioRoutePort,
+        SystemClock::elapsedRealtime
+    )
+    internal var usbPlaybackRouteOwner = UsbPlaybackRouteOwner(
+        mainScope,
+        usbRouteTransitionOwner,
+        usbSinkRouteOwner,
+        usbSystemAudioRouteOwner,
+        PlayerManagerUsbPlaybackRoutePort,
+        AndroidUsbPlaybackNativeRoutePort
+    )
     internal val usbExclusiveInterruptedPlaybackIntent: UsbInterruptedPlaybackIntent?
         get() = usbInterruptedPlaybackOwner.intent
-    @Volatile
-    internal var usbExclusiveRouteGeneration = 0L
-    @Volatile
-    internal var pendingUsbExclusivePreferenceReconfigure = false
-    internal var lastUsbExclusiveAudioSinkReconfigureAtMs = 0L
     internal var pendingPlaybackSoundConfig: PlaybackSoundConfig? = null
     internal var neteaseQualityRefreshJob: Job? = null
     internal var youtubeQualityRefreshJob: Job? = null
@@ -639,7 +651,6 @@ object PlayerManager {
 
     internal val _currentAudioDevice = MutableStateFlow<AudioDevice?>(null)
     val currentAudioDeviceFlow: StateFlow<AudioDevice?> = _currentAudioDevice
-    internal var audioDeviceCallback: AudioDeviceCallback? = null
 
     @Volatile
     internal var externalBluetoothLyricsSongKey: String? = null
@@ -1529,7 +1540,7 @@ object PlayerManager {
     internal fun rejectUsbExclusiveToggleControl(): Boolean {
         NPLogger.w(
             "NERI-PlayerManager",
-            "rejectUsbExclusiveToggleControl(): reason=$usbExclusiveToggleTransitionReason, stack=[${debugStackHint()}]"
+            "rejectUsbExclusiveToggleControl(): reason=${usbRouteTransitionOwner.toggleReason}, stack=[${debugStackHint()}]"
         )
         postPlayerEvent(
             PlayerEvent.ShowError(
@@ -1540,54 +1551,39 @@ object PlayerManager {
     }
 
     fun beginUsbExclusiveToggleTransitionFromUi(targetEnabled: Boolean): Boolean {
-        if (usbExclusiveToggleTransitionActive) {
+        if (usbRouteTransitionOwner.toggleActive) {
             rejectUsbExclusiveToggleControl()
             return false
         }
-        usbExclusiveToggleTransitionActive = true
-        usbExclusiveToggleTransitionReason = if (targetEnabled) {
-            "usb_exclusive_enabled"
-        } else {
-            "usb_exclusive_disabled"
-        }
-        markUsbExclusivePlaybackPreparing(true, usbExclusiveToggleTransitionReason)
-        usbExclusiveToggleTransitionJob?.cancel()
-        val pendingReason = usbExclusiveToggleTransitionReason
-        usbExclusiveToggleTransitionJob = mainScope.launch {
-            delay(8_000L)
-            if (usbExclusiveToggleTransitionActive && usbExclusiveToggleTransitionReason == pendingReason) {
-                NPLogger.w(
-                    "NERI-UsbExclusive",
-                    "unlock stale USB toggle transition before settings flow update: reason=$pendingReason"
-                )
-                usbExclusiveToggleTransitionActive = false
-                usbExclusiveToggleTransitionReason = ""
-                markUsbExclusivePlaybackPreparing(false, "usb_toggle_ui_timeout:$pendingReason")
-            }
-        }
+        usbRouteTransitionOwner.beginUiToggle(targetEnabled)
+        markUsbExclusivePlaybackPreparing(true, usbRouteTransitionOwner.toggleReason)
         return true
     }
 
     internal fun shouldBlockLocalRoomControl(commandSource: PlaybackCommandSource): Boolean {
         if (commandSource != PlaybackCommandSource.LOCAL) return false
-        if (usbExclusiveToggleTransitionActive) {
-            return rejectUsbExclusiveToggleControl()
-        }
-        if (!isListenTogetherActive()) return false
-        val room = activeListenTogetherRoomState()
-        if (room?.roomStatus == "controller_offline" && !isCurrentUserControllerInListenTogether()) {
-            return rejectListenTogetherControl(
-                R.string.listen_together_error_controller_offline,
-                debugReason = "local_control_blocked:controller_offline"
-            )
-        }
-        if (room?.settings?.allowMemberControl == false && !isCurrentUserControllerInListenTogether()) {
-            return rejectListenTogetherControl(
-                R.string.listen_together_error_member_control_disabled,
-                debugReason = "local_control_blocked:member_control_disabled"
-            )
-        }
-        return false
+        if (usbRouteTransitionOwner.toggleActive) return rejectUsbExclusiveToggleControl()
+        return rejectRoomControlRestriction()
+    }
+
+    private fun rejectRoomControlRestriction(): Boolean {
+        val restriction = localRoomControlRestriction()
+        val message = restriction.errorResId ?: return false
+        return rejectListenTogetherControl(message, restriction.debugReason)
+    }
+
+    private fun localRoomControlRestriction(): LocalRoomControlRestriction {
+        if (!isListenTogetherActive()) return LocalRoomControlRestriction.NONE
+        return activeRoomControlRestriction()
+    }
+
+    private fun activeRoomControlRestriction(): LocalRoomControlRestriction {
+        val room = activeListenTogetherRoomState() ?: return LocalRoomControlRestriction.NONE
+        return resolveLocalRoomControlRestriction(
+            room.roomStatus,
+            room.settings.allowMemberControl,
+            isCurrentUserControllerInListenTogether()
+        )
     }
 
     internal fun shouldBlockLocalSongSwitch(song: SongItem, commandSource: PlaybackCommandSource): Boolean {
@@ -1706,47 +1702,11 @@ object PlayerManager {
         )
     }
 
-    internal fun beginUsbAudioSinkReconfiguration(
-        reason: String
-    ): UsbAudioSinkReconfigurationToken {
-        val start = usbAudioSinkReconfigurationCoordinator.begin(reason)
-        start.supersededJob?.cancel()
-        return start.token
-    }
-
-    internal fun installUsbAudioSinkReconfiguration(
-        requestToken: UsbAudioSinkReconfigurationToken,
-        job: Job
-    ): Boolean {
-        return usbAudioSinkReconfigurationCoordinator.install(requestToken, job)
-    }
-
-    internal fun finishUsbAudioSinkReconfiguration(
-        requestToken: UsbAudioSinkReconfigurationToken,
-        job: Job
-    ) {
-        usbAudioSinkReconfigurationCoordinator.complete(requestToken, job)
-    }
-
-    internal fun isLatestUsbAudioSinkReconfiguration(
-        requestToken: UsbAudioSinkReconfigurationToken
-    ): Boolean {
-        return usbAudioSinkReconfigurationCoordinator.isLatest(requestToken)
-    }
-
-    internal fun abandonUsbAudioSinkReconfiguration(
-        requestToken: UsbAudioSinkReconfigurationToken
-    ) {
-        usbAudioSinkReconfigurationCoordinator.abandonIfUninstalled(requestToken)
-    }
-
     internal fun usbAudioSinkReconfigurationSnapshot():
-        UsbAudioSinkReconfigurationSnapshot {
-        return usbAudioSinkReconfigurationCoordinator.snapshot()
-    }
+        UsbAudioSinkReconfigurationSnapshot = usbSinkRouteOwner.snapshot()
 
     internal fun cancelUsbAudioSinkReconfiguration() {
-        usbAudioSinkReconfigurationCoordinator.invalidate()?.cancel()
+        usbSinkRouteOwner.cancel()
     }
 
     fun changeCurrentPlaybackQuality(optionKey: String) {

@@ -178,7 +178,24 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherListenerWatchdogOwner.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/AppUsbExclusiveSettingsActions.kt",
             "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherConnectionRecoveryOwner.kt",
-            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherConnectionRecoveryPolicy.kt"
+            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherConnectionRecoveryPolicy.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/lifecycle/PlayerManagerLifecycleExtensions.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/UsbRouteTransitionOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/UsbSinkRouteOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/UsbSinkRoutePolicy.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/PlayerManagerUsbSinkRoutePort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/PlayerManagerUsbRoutePlayerSnapshot.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/UsbSystemAudioRouteOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/UsbSystemAudioRoutePolicy.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/PlayerManagerUsbSystemAudioRoutePort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/UsbPlaybackRouteOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/UsbPlaybackRoutePolicy.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/UsbPlaybackNativeRoutePort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/route/PlayerManagerUsbPlaybackRoutePort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/audio/route/AudioDeviceRouteOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/audio/route/AudioDeviceRoutePolicy.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/audio/route/PlayerManagerAudioDeviceRoutePort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/policy/command/LocalRoomControlRestriction.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

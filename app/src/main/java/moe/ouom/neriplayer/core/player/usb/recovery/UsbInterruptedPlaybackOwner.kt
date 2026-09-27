@@ -88,6 +88,27 @@ internal class UsbInterruptedPlaybackOwner(
             state.reportedPlaying
     }
 
+    fun rememberAfterNativeFailure(reason: String, positionMs: Long): Boolean {
+        val queueIndex = queueIndexForInterruption()
+        val shouldKeepIntent = shouldKeepIntentAfterNativeFailure()
+        if (shouldKeepIntent && queueIndex != null) {
+            remember(reason, queueIndex, positionMs)
+            return true
+        }
+        if (shouldKeepIntent) {
+            val state = port.snapshot()
+            NPLogger.w(
+                "NERI-UsbExclusive",
+                "drop USB interrupted playback intent because the current queue item is unavailable: " +
+                    "reason=$reason currentIndex=${state.currentIndex} queueSize=${state.queueSize}"
+            )
+            return false
+        }
+        clear("native_failure_idle:$reason")
+        port.updateResumeRequested(false)
+        return false
+    }
+
     fun remember(reason: String, queueIndex: Int, positionMs: Long) {
         val state = port.snapshot()
         if (queueIndex !in 0 until state.queueSize) return

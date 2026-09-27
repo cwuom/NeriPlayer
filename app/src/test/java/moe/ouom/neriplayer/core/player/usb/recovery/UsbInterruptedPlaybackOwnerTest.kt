@@ -175,6 +175,29 @@ class UsbInterruptedPlaybackOwnerTest {
         assertNull(owner.queueIndexForInterruption())
     }
 
+    @Test
+    fun `native failure saves only a live and addressable playback intent`() = runTest {
+        val port = RecordingPort()
+        val owner = UsbInterruptedPlaybackOwner(backgroundScope, port, nowElapsedMs = { 5L })
+        assertTrue(owner.rememberAfterNativeFailure("transport_failed", 88L))
+        assertEquals(88L, owner.intent?.positionMs)
+
+        port.currentSnapshot = port.currentSnapshot.copy(
+            resumeRequested = false, playJobActive = false, playWhenReady = false,
+            isPlaying = false, reportedPlayWhenReady = false, reportedPlaying = false
+        )
+        assertFalse(owner.rememberAfterNativeFailure("idle", 99L))
+        assertNull(owner.intent)
+        assertEquals(false, port.resumeRequests.last())
+
+        port.currentSnapshot = port.currentSnapshot.copy(
+            resumeRequested = true, queueSize = 1, currentIndex = 8,
+            currentIndexMatchesCurrentSong = false, currentSongQueueIndex = -1
+        )
+        assertFalse(owner.rememberAfterNativeFailure("missing_queue", 100L))
+        assertNull(owner.intent)
+    }
+
     private class RecordingPort : UsbInterruptedPlaybackPort {
         var currentSnapshot = UsbInterruptedPlaybackSnapshot(
             usbEnabled = true,

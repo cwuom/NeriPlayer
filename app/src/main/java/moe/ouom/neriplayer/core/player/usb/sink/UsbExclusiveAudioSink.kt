@@ -1779,7 +1779,7 @@ internal class UsbExclusiveAudioSink(
 
     private fun shouldHoldSystemAudioForUsbReleaseBarrier(): Boolean {
         return !PlayerManager.usbExclusivePlaybackEnabled &&
-            PlayerManager.usbExclusiveSystemAudioReleaseInProgress
+            PlayerManager.usbRouteTransitionOwner.systemAudioReleaseInProgress
     }
 
     private fun holdSystemAudioUntilUsbRelease(reason: String) {

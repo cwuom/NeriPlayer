@@ -155,7 +155,23 @@
     "moe/ouom/neriplayer/ui/screen/tab/SettingsScreen.kt",
     "moe/ouom/neriplayer/ui/AppUsbExclusiveSettingsActions.kt",
     "moe/ouom/neriplayer/listentogether/session/ListenTogetherConnectionRecoveryOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/ListenTogetherConnectionRecoveryPolicy.kt"
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherConnectionRecoveryPolicy.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/UsbRouteTransitionOwner.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/UsbSinkRouteOwner.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/UsbSinkRoutePolicy.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/PlayerManagerUsbSinkRoutePort.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/PlayerManagerUsbRoutePlayerSnapshot.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/UsbSystemAudioRouteOwner.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/UsbSystemAudioRoutePolicy.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/PlayerManagerUsbSystemAudioRoutePort.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/UsbPlaybackRouteOwner.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/UsbPlaybackRoutePolicy.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/UsbPlaybackNativeRoutePort.kt",
+    "moe/ouom/neriplayer/core/player/usb/route/PlayerManagerUsbPlaybackRoutePort.kt",
+    "moe/ouom/neriplayer/core/player/audio/route/AudioDeviceRouteOwner.kt",
+    "moe/ouom/neriplayer/core/player/audio/route/AudioDeviceRoutePolicy.kt",
+    "moe/ouom/neriplayer/core/player/audio/route/PlayerManagerAudioDeviceRoutePort.kt",
+    "moe/ouom/neriplayer/core/player/policy/command/LocalRoomControlRestriction.kt"
   ],
   "method_scopes": [
     {
@@ -235,7 +251,20 @@
         "flushPlaybackStatsBlockingImpl$app",
         "flushPlaybackStatsAsyncImpl$app",
         "getUsbExclusiveAppInForeground$app",
-        "getUsbExclusiveInterruptedPlaybackIntent$app"
+        "getUsbExclusiveInterruptedPlaybackIntent$app",
+        "getUsbRouteTransitionOwner$app",
+        "getUsbSinkRouteOwner$app",
+        "getUsbSystemAudioRouteOwner$app",
+        "getUsbPlaybackRouteOwner$app",
+        "getAudioDeviceRouteOwner$app",
+        "rejectUsbExclusiveToggleControl$app",
+        "beginUsbExclusiveToggleTransitionFromUi",
+        "shouldBlockLocalRoomControl$app",
+        "localRoomControlRestriction",
+        "rejectRoomControlRestriction",
+        "activeRoomControlRestriction",
+        "usbAudioSinkReconfigurationSnapshot$app",
+        "cancelUsbAudioSinkReconfiguration$app"
       ]
     },
     {
@@ -282,28 +311,24 @@
         "releasePlaybackScopes",
         "clearPlaybackStateAfterRelease",
         "finishPlaybackRelease",
+        "handleAudioBecomingNoisyImpl",
+        "handleUsbExclusivePlaybackSettingChanged",
         "handleUsbExclusivePreferencesChanged",
-        "handleUsbExclusivePreferencesChangedOnMain",
-        "shouldApplyUsbExclusivePreferenceChange",
-        "applyUsbExclusivePreferenceChange",
-        "applyActiveUsbExclusivePreferenceChange",
+        "retryUsbExclusivePlayback",
+        "scheduleUsbExclusiveTransportRecovery",
+        "markUsbExclusiveNativePathActive",
+        "tryRecoverUsbExclusivePlaybackAfterNativeTransferFailure",
+        "stopPlaybackAfterUsbExclusiveNativeFailure",
+        "prepareUsbExclusiveRouteForManualPlayback",
         "updateUsbExclusiveForegroundState",
         "recoverUsbExclusivePlaybackOnForeground",
+        "recoverUsbExclusivePlaybackIfUnhealthy",
         "cancelUsbExclusiveRecovery",
         "resumeInterruptedUsbExclusivePlaybackIfNeeded",
         "scheduleUsbExclusivePlaybackResumeAfterDeviceAttach",
-        "shouldKeepPlaybackIntentAfterUsbNativeFailure",
-        "rememberUsbExclusiveInterruptedPlaybackIntent",
         "clearUsbExclusiveInterruptedPlaybackIntent",
-        "currentQueueIndexForUsbExclusiveInterruptedPlayback",
         "applyUsbExclusivePlaybackPolicy",
-        "prepareUsbExclusivePolicyRoute",
-        "prepareEnabledUsbExclusivePolicyRoute",
-        "applyScheduledUsbExclusivePolicy",
-        "applyCurrentUsbExclusivePolicy",
-        "applyPreferredUsbAudioDevice",
-        "logPreferredUsbAudioDeviceResult",
-        "scheduleUsbSinkAfterPolicyIfRequested"
+        "scheduleUsbAudioSinkReconfiguration"
       ]
     },
     {
@@ -495,7 +520,8 @@
         "updateSoftwareFloatConversionState",
         "closeNative",
         "closeNativeHandleIfOpen",
-        "releaseSystemSoundGuardIfDisabled"
+        "releaseSystemSoundGuardIfDisabled",
+        "shouldHoldSystemAudioForUsbReleaseBarrier"
       ]
     },
     {

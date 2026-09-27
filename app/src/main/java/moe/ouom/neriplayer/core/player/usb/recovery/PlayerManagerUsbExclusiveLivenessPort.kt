@@ -23,7 +23,7 @@ internal object PlayerManagerUsbExclusiveLivenessPort : UsbExclusiveLivenessPort
         return UsbExclusiveLivenessSnapshot(
             playbackEnabled = playbackEnabled,
             playerInitialized = initialized,
-            routeGeneration = PlayerManager.usbExclusiveRouteGeneration,
+            routeGeneration = PlayerManager.usbRouteTransitionOwner.generation,
             transportActive = PlayerManager.isTransportActiveWithoutInitialization(),
             playerPositionMs = player.positionMs,
             playerState = player.state,
@@ -109,8 +109,7 @@ internal object PlayerManagerUsbExclusiveLivenessPort : UsbExclusiveLivenessPort
     }
 
     override fun markForegroundStable() {
-        PlayerManager.usbExclusiveToggleTransitionActive = false
-        PlayerManager.usbExclusiveToggleTransitionReason = ""
+        PlayerManager.usbRouteTransitionOwner.clearToggle()
         PlayerManager.markUsbExclusivePlaybackPreparing(false, "usb_foreground_stable")
     }
 
