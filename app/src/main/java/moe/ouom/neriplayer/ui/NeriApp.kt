@@ -39,13 +39,9 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -137,7 +133,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -228,8 +223,6 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneLayer
-import moe.ouom.neriplayer.ui.effect.glass.DRAWER_BACKGROUND_SINK_FRACTION
-import moe.ouom.neriplayer.ui.effect.glass.DRAWER_RECESSED_CONTENT_SCALE
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassSceneZIndex
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassVisibilitySceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
@@ -308,95 +301,12 @@ private val navigationGson: Gson by lazy(LazyThreadSafetyMode.PUBLICATION) { Gso
 private val EmptyLauncherShortcutRequestFlow =
     MutableStateFlow<LauncherShortcutRequest?>(null)
 private const val LAUNCHER_SHORTCUT_PLAYLIST_READY_TIMEOUT_MS = 5000L
-private val MAIN_TAB_ROUTES = listOf(
-    Destinations.Home.route,
-    Destinations.Explore.route,
-    Destinations.Library.route,
-    Destinations.Settings.route,
-    Destinations.Debug.route
-)
-private val TRANSPARENT_MAIN_TAB_DETAIL_ROUTES = setOf(
-    Destinations.PlaylistDetail.route,
-    Destinations.NeteaseAlbumDetail.route,
-    Destinations.NeteaseArtistDetail.route,
-    Destinations.BiliPlaylistDetail.route,
-    Destinations.BiliUploaderDetail.route,
-    Destinations.YouTubeMusicCreatorDetail.route,
-    Destinations.YouTubeMusicPlaylistDetail.route,
-    Destinations.LocalPlaylistDetail.route,
-    Destinations.Recent.route,
-    Destinations.PlaybackStats.route,
-    Destinations.DownloadManager.route,
-    Destinations.DownloadProgress.route
-)
-private val DEBUG_NAVIGATION_DEPTH_BY_ROUTE = mapOf(
-    Destinations.Debug.route to 0,
-    Destinations.DebugListenTogether.route to 1,
-    Destinations.DebugUsbExclusive.route to 1,
-    Destinations.DebugYouTube.route to 1,
-    Destinations.DebugBili.route to 1,
-    Destinations.DebugNetease.route to 1,
-    Destinations.DebugSearch.route to 1,
-    Destinations.DebugLogsList.route to 1,
-    Destinations.DebugCrashLogsList.route to 1,
-    Destinations.DebugLogViewer.route to 2
-)
-private val DEBUG_MAIN_TAB_CHILD_ROUTES = DEBUG_NAVIGATION_DEPTH_BY_ROUTE
-    .filterValues { depth -> depth > 0 }
-    .keys
-
-private fun transparentNavigationDepth(route: String?): Int {
-    val debugDepth = DEBUG_NAVIGATION_DEPTH_BY_ROUTE[route]
-    if (debugDepth != null) return debugDepth
-    return when {
-        route == Destinations.NeteaseAlbumDetail.route ||
-            route == Destinations.YouTubeMusicPlaylistDetail.route ||
-            route == Destinations.DownloadProgress.route -> 2
-        route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES -> 1
-        else -> 0
-    }
-}
-
-internal fun shouldUseInstantBiliUploaderPlaylistTransition(
-    initialRoute: String?,
-    targetRoute: String?
-): Boolean {
-    return (initialRoute == Destinations.BiliUploaderDetail.route &&
-        targetRoute == Destinations.BiliPlaylistDetail.route) ||
-        (initialRoute == Destinations.BiliPlaylistDetail.route &&
-            targetRoute == Destinations.BiliUploaderDetail.route)
-}
-
-internal const val MAIN_TAB_DETAIL_OPEN_DURATION_MS = 220
-internal const val MAIN_TAB_DETAIL_CLOSE_DURATION_MS = 240
-internal const val DRAWER_DETAIL_OPEN_DURATION_MS = 300
-internal const val DRAWER_DETAIL_CLOSE_DURATION_MS = 280
 internal const val MAIN_TAB_LAYER_Z_INDEX = 0f
 internal const val NAV_HOST_LAYER_Z_INDEX = 1f
 internal const val MINI_PLAYER_OVERLAY_Z_INDEX = 2f
 private const val MANAGED_LIBRARY_PROCESSING_Z_INDEX = 3f
 private val MANAGED_LIBRARY_PROCESSING_REVEAL_EDGE = 96.dp
 private val MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD = 24.dp
-private const val DRAWER_ROOT_RETAIN_ALPHA = 0.999f
-internal const val DEBUG_NAVIGATION_OPEN_DURATION_MS = 220
-internal const val DEBUG_NAVIGATION_CLOSE_DURATION_MS = 240
-internal enum class MainTabDetailHandoff {
-    OPEN_DETAIL,
-    RETURN_TO_TAB
-}
-
-internal enum class MainTabBackgroundMotion {
-    NONE,
-    COHERENT_EXIT,
-    DRAWER_SINK
-}
-
-internal data class MainTabBackgroundTransform(
-    val translationYFraction: Float,
-    val scale: Float,
-    val alpha: Float
-)
-
 internal fun shouldExpandManagedProcessingBannerFromDrag(
     startY: Float,
     totalX: Float,
@@ -406,63 +316,6 @@ internal fun shouldExpandManagedProcessingBannerFromDrag(
 ): Boolean = startY <= edgePx &&
     totalY >= thresholdPx &&
     totalY > abs(totalX)
-
-internal fun resolveMainTabTransitionDirection(
-    initialRoute: String?,
-    targetRoute: String?
-): Int? {
-    val initialIndex = MAIN_TAB_ROUTES.indexOf(initialRoute).takeIf { it >= 0 } ?: return null
-    val targetIndex = MAIN_TAB_ROUTES.indexOf(targetRoute).takeIf { it >= 0 } ?: return null
-    if (initialIndex == targetIndex) return null
-    return if (targetIndex > initialIndex) 1 else -1
-}
-
-internal fun shouldDispatchMainTabNavigation(
-    currentRoute: String?,
-    pendingRoute: String?,
-    targetRoute: String
-): Boolean = pendingRoute != targetRoute &&
-    (currentRoute != targetRoute || pendingRoute != null)
-
-internal fun shouldAcceptObservedMainTabRoute(
-    observedRoute: String?,
-    pendingRoute: String?
-): Boolean = observedRoute != null &&
-    observedRoute in MAIN_TAB_ROUTES &&
-    (pendingRoute == null || pendingRoute == observedRoute)
-
-internal fun shouldUseAdvancedGlassNavigationHandoff(
-    visibleRoutes: Collection<String?>
-): Boolean {
-    val routes = visibleRoutes.filterNotNull().toSet()
-    return routes.size > 1 && routes.any { it !in MAIN_TAB_ROUTES }
-}
-
-internal fun resolveMainTabDetailHandoff(
-    initialRoute: String?,
-    targetRoute: String?
-): MainTabDetailHandoff? {
-    if (initialRoute == null || targetRoute == null) return null
-    val initialIsMainTab = initialRoute in MAIN_TAB_ROUTES
-    val targetIsMainTab = targetRoute in MAIN_TAB_ROUTES
-    return when {
-        initialIsMainTab && targetRoute in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES ->
-            MainTabDetailHandoff.OPEN_DETAIL
-        initialRoute in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES && targetIsMainTab ->
-            MainTabDetailHandoff.RETURN_TO_TAB
-        else -> null
-    }
-}
-
-internal fun resolveDebugNavigationTransitionDirection(
-    initialRoute: String?,
-    targetRoute: String?
-): Int? {
-    val initialDepth = DEBUG_NAVIGATION_DEPTH_BY_ROUTE[initialRoute] ?: return null
-    val targetDepth = DEBUG_NAVIGATION_DEPTH_BY_ROUTE[targetRoute] ?: return null
-    if (initialDepth == targetDepth) return null
-    return if (targetDepth > initialDepth) 1 else -1
-}
 
 internal data class BottomBarLayoutInsets(
     val navContentBottomPadding: Dp,
@@ -486,350 +339,6 @@ internal fun resolveBottomBarLayoutInsets(
         screenBottomInset = reservedMiniPlayerHeight,
         miniPlayerBottomPadding = 0.dp
     )
-}
-
-internal fun resolveMainTabBackgroundMotion(
-    route: String?,
-    coherentFeedbackEnabled: Boolean
-): MainTabBackgroundMotion = when {
-    route in DEBUG_MAIN_TAB_CHILD_ROUTES && coherentFeedbackEnabled ->
-        MainTabBackgroundMotion.COHERENT_EXIT
-    route in DEBUG_MAIN_TAB_CHILD_ROUTES -> MainTabBackgroundMotion.DRAWER_SINK
-    route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES && coherentFeedbackEnabled ->
-        MainTabBackgroundMotion.COHERENT_EXIT
-    route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES -> MainTabBackgroundMotion.DRAWER_SINK
-    else -> MainTabBackgroundMotion.NONE
-}
-
-internal fun resolveMainTabBackgroundTransform(
-    motion: MainTabBackgroundMotion,
-    progress: Float
-): MainTabBackgroundTransform {
-    val normalizedProgress = progress.coerceIn(0f, 1f)
-    return when (motion) {
-        MainTabBackgroundMotion.NONE -> MainTabBackgroundTransform(
-            translationYFraction = 0f,
-            scale = 1f,
-            alpha = 1f
-        )
-        MainTabBackgroundMotion.COHERENT_EXIT -> MainTabBackgroundTransform(
-            translationYFraction = -normalizedProgress,
-            scale = 1f,
-            alpha = 1f
-        )
-        MainTabBackgroundMotion.DRAWER_SINK -> MainTabBackgroundTransform(
-            translationYFraction = DRAWER_BACKGROUND_SINK_FRACTION * normalizedProgress,
-            scale = 1f - (1f - DRAWER_RECESSED_CONTENT_SCALE) * normalizedProgress,
-            alpha = 1f
-        )
-    }
-}
-
-internal fun resolveMainTabBackgroundMotionDurationMillis(
-    targetProgress: Float,
-    coherentFeedbackEnabled: Boolean,
-    debugSceneVisible: Boolean
-): Int = when {
-    debugSceneVisible && coherentFeedbackEnabled && targetProgress > 0f ->
-        DEBUG_NAVIGATION_OPEN_DURATION_MS
-    debugSceneVisible && coherentFeedbackEnabled -> DEBUG_NAVIGATION_CLOSE_DURATION_MS
-    coherentFeedbackEnabled && targetProgress > 0f -> MAIN_TAB_DETAIL_OPEN_DURATION_MS
-    coherentFeedbackEnabled -> MAIN_TAB_DETAIL_CLOSE_DURATION_MS
-    targetProgress > 0f -> DRAWER_DETAIL_OPEN_DURATION_MS
-    else -> DRAWER_DETAIL_CLOSE_DURATION_MS
-}
-
-internal fun mainTabDetailContentOffsetEasing(): Easing = FastOutSlowInEasing
-
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTransition(
-    coherentFeedbackEnabled: Boolean = true
-): EnterTransition {
-    val initialRoute = initialState.destination.route
-    val targetRoute = targetState.destination.route
-    val direction = resolveMainTabTransitionDirection(
-        initialRoute = initialRoute,
-        targetRoute = targetRoute
-    )
-    if (direction != null) {
-        return EnterTransition.None
-    }
-    val debugDirection = resolveDebugNavigationTransitionDirection(
-        initialRoute = initialRoute,
-        targetRoute = targetRoute
-    )
-    if (debugDirection != null) {
-        return if (coherentFeedbackEnabled) {
-            debugNavigationEnterTransition(debugDirection)
-        } else {
-            fadeIn(
-                initialAlpha = DRAWER_ROOT_RETAIN_ALPHA,
-                animationSpec = tween(
-                    durationMillis = if (debugDirection > 0) {
-                        DRAWER_DETAIL_OPEN_DURATION_MS
-                    } else {
-                        DRAWER_DETAIL_CLOSE_DURATION_MS
-                    },
-                    easing = mainTabDetailContentOffsetEasing()
-                )
-            )
-        }
-    }
-    return if (
-        resolveMainTabDetailHandoff(initialRoute, targetRoute) ==
-        MainTabDetailHandoff.RETURN_TO_TAB && coherentFeedbackEnabled
-    ) {
-        slideInVertically(
-            animationSpec = tween(
-                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        ) { fullHeight -> -fullHeight }
-    } else {
-        EnterTransition.None
-    }
-}
-
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransition(
-    coherentFeedbackEnabled: Boolean = true
-): ExitTransition {
-    val initialRoute = initialState.destination.route
-    val targetRoute = targetState.destination.route
-    val direction = resolveMainTabTransitionDirection(
-        initialRoute = initialRoute,
-        targetRoute = targetRoute
-    )
-    if (direction != null) {
-        return ExitTransition.None
-    }
-    val debugDirection = resolveDebugNavigationTransitionDirection(
-        initialRoute = initialRoute,
-        targetRoute = targetRoute
-    )
-    if (debugDirection != null) {
-        return if (coherentFeedbackEnabled) {
-            debugNavigationExitTransition(debugDirection)
-        } else {
-            ExitTransition.KeepUntilTransitionsFinished
-        }
-    }
-    return if (
-        resolveMainTabDetailHandoff(initialRoute, targetRoute) ==
-        MainTabDetailHandoff.OPEN_DETAIL && coherentFeedbackEnabled
-    ) {
-        slideOutVertically(
-            animationSpec = tween(
-                durationMillis = MAIN_TAB_DETAIL_OPEN_DURATION_MS,
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        ) { fullHeight -> -fullHeight }
-    } else {
-        ExitTransition.None
-    }
-}
-
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailEnterTransition(
-    coherentFeedbackEnabled: Boolean = true
-): EnterTransition {
-    if (
-        shouldUseInstantBiliUploaderPlaylistTransition(
-            initialRoute = initialState.destination.route,
-            targetRoute = targetState.destination.route
-        )
-    ) {
-        return EnterTransition.None
-    }
-    val durationMillis = if (coherentFeedbackEnabled) {
-        MAIN_TAB_DETAIL_OPEN_DURATION_MS
-    } else {
-        DRAWER_DETAIL_OPEN_DURATION_MS
-    }
-    return if (coherentFeedbackEnabled) {
-        slideInVertically(
-            animationSpec = tween(
-                durationMillis = durationMillis,
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        ) { fullHeight -> fullHeight }
-    } else {
-        fadeIn(
-            initialAlpha = DRAWER_ROOT_RETAIN_ALPHA,
-            animationSpec = tween(
-                durationMillis = durationMillis,
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        )
-    }
-}
-
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailExitTransition(
-    coherentFeedbackEnabled: Boolean = true
-): ExitTransition {
-    if (
-        shouldUseInstantBiliUploaderPlaylistTransition(
-            initialRoute = initialState.destination.route,
-            targetRoute = targetState.destination.route
-        )
-    ) {
-        return ExitTransition.None
-    }
-    val handoff = resolveMainTabDetailHandoff(
-        initialRoute = initialState.destination.route,
-        targetRoute = targetState.destination.route
-    )
-    return if (!coherentFeedbackEnabled) {
-        ExitTransition.KeepUntilTransitionsFinished
-    } else if (handoff == MainTabDetailHandoff.RETURN_TO_TAB) {
-        slideOutVertically(
-            animationSpec = tween(
-                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        ) { fullHeight -> fullHeight }
-    } else {
-        slideOutVertically(
-            animationSpec = tween(
-                durationMillis = MAIN_TAB_DETAIL_OPEN_DURATION_MS,
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        ) { fullHeight -> -fullHeight }
-    }
-}
-
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopEnterTransition(
-    coherentFeedbackEnabled: Boolean = true
-): EnterTransition {
-    if (
-        shouldUseInstantBiliUploaderPlaylistTransition(
-            initialRoute = initialState.destination.route,
-            targetRoute = targetState.destination.route
-        )
-    ) {
-        return EnterTransition.None
-    }
-    return if (coherentFeedbackEnabled) {
-        slideInVertically(
-            animationSpec = tween(
-                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        ) { fullHeight -> -fullHeight }
-    } else {
-        fadeIn(
-            initialAlpha = DRAWER_ROOT_RETAIN_ALPHA,
-            animationSpec = tween(
-                durationMillis = DRAWER_DETAIL_CLOSE_DURATION_MS,
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        )
-    }
-}
-
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopExitTransition(
-    coherentFeedbackEnabled: Boolean = true
-): ExitTransition {
-    if (
-        shouldUseInstantBiliUploaderPlaylistTransition(
-            initialRoute = initialState.destination.route,
-            targetRoute = targetState.destination.route
-        )
-    ) {
-        return ExitTransition.None
-    }
-    return if (coherentFeedbackEnabled) {
-        slideOutVertically(
-            animationSpec = tween(
-                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        ) { fullHeight -> fullHeight }
-    } else {
-        ExitTransition.KeepUntilTransitionsFinished
-    }
-}
-
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.debugNavigationEnterTransition(
-    coherentFeedbackEnabled: Boolean = true
-): EnterTransition {
-    val direction = resolveDebugNavigationTransitionDirection(
-        initialRoute = initialState.destination.route,
-        targetRoute = targetState.destination.route
-    ) ?: return EnterTransition.None
-    return if (coherentFeedbackEnabled) {
-        debugNavigationEnterTransition(direction)
-    } else {
-        fadeIn(
-            initialAlpha = DRAWER_ROOT_RETAIN_ALPHA,
-            animationSpec = tween(
-                durationMillis = if (direction > 0) {
-                    DRAWER_DETAIL_OPEN_DURATION_MS
-                } else {
-                    DRAWER_DETAIL_CLOSE_DURATION_MS
-                },
-                easing = mainTabDetailContentOffsetEasing()
-            )
-        )
-    }
-}
-
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.debugNavigationExitTransition(
-    coherentFeedbackEnabled: Boolean = true
-): ExitTransition {
-    val direction = resolveDebugNavigationTransitionDirection(
-        initialRoute = initialState.destination.route,
-        targetRoute = targetState.destination.route
-    ) ?: return ExitTransition.None
-    return if (coherentFeedbackEnabled) {
-        debugNavigationExitTransition(direction)
-    } else {
-        ExitTransition.KeepUntilTransitionsFinished
-    }
-}
-
-private fun debugNavigationEnterTransition(direction: Int): EnterTransition {
-    return slideInVertically(
-        animationSpec = tween(debugNavigationDurationMs(direction))
-    ) { fullHeight -> direction * fullHeight }
-}
-
-private fun debugNavigationExitTransition(direction: Int): ExitTransition {
-    return slideOutVertically(
-        animationSpec = tween(debugNavigationDurationMs(direction))
-    ) { fullHeight -> -direction * fullHeight }
-}
-
-private fun debugNavigationDurationMs(direction: Int): Int {
-    return if (direction > 0) {
-        DEBUG_NAVIGATION_OPEN_DURATION_MS
-    } else {
-        DEBUG_NAVIGATION_CLOSE_DURATION_MS
-    }
-}
-
-internal fun resolveMainStartDestination(
-    preferredRoute: String?,
-    showHomeTab: Boolean,
-    devModeEnabled: Boolean
-): String {
-    return when (preferredRoute) {
-        Destinations.Home.route -> if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
-        Destinations.Explore.route -> Destinations.Explore.route
-        Destinations.Library.route -> Destinations.Library.route
-        Destinations.Settings.route -> Destinations.Settings.route
-        Destinations.Debug.route -> if (devModeEnabled) Destinations.Debug.route else if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
-        else -> if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
-    }
-}
-
-internal fun shouldApplyPersistedStartupDestination(
-    awaitingPersistedRoute: Boolean,
-    currentRoute: String?,
-    initialFallbackRoute: String,
-    resolvedPersistedRoute: String?
-): Boolean {
-    return awaitingPersistedRoute &&
-        currentRoute == initialFallbackRoute &&
-        resolvedPersistedRoute != null &&
-        resolvedPersistedRoute != currentRoute
 }
 
 private fun SongItem?.resolveUiCoverSource(context: Context): String? {
@@ -2688,62 +2197,30 @@ private fun NeriAppContent(
                     add(currentRoute)
                 }
             }
-            val currentBackgroundMotion = resolveMainTabBackgroundMotion(
-                route = currentRoute,
+            val mainTabMotionTarget = resolveMainTabNavigationMotionTarget(
+                currentRoute = currentRoute,
+                visibleRoutes = visibleNavigationRoutes,
                 coherentFeedbackEnabled = coherentFeedbackEnabled
             )
-            val mainTabBackgroundMotion = if (
-                currentBackgroundMotion != MainTabBackgroundMotion.NONE
-            ) {
-                currentBackgroundMotion
-            } else {
-                visibleNavigationRoutes.firstNotNullOfOrNull { route ->
-                    resolveMainTabBackgroundMotion(
-                        route = route,
-                        coherentFeedbackEnabled = coherentFeedbackEnabled
-                    ).takeUnless { it == MainTabBackgroundMotion.NONE }
-                } ?: MainTabBackgroundMotion.NONE
-            }
             var mainTabDetailContentHeightPx by remember {
                 mutableIntStateOf(0)
             }
-            val mainTabBackgroundTargetProgress = if (
-                currentBackgroundMotion == MainTabBackgroundMotion.NONE
-            ) {
-                0f
-            } else {
-                1f
-            }
-            val debugSceneVisible = visibleNavigationRoutes.any { route ->
-                route in DEBUG_MAIN_TAB_CHILD_ROUTES
-            }
             val mainTabBackgroundProgress by animateFloatAsState(
-                targetValue = mainTabBackgroundTargetProgress,
+                targetValue = mainTabMotionTarget.targetProgress,
                 animationSpec = tween(
                     durationMillis = resolveMainTabBackgroundMotionDurationMillis(
-                        targetProgress = mainTabBackgroundTargetProgress,
+                        targetProgress = mainTabMotionTarget.targetProgress,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
-                        debugSceneVisible = debugSceneVisible
+                        debugSceneVisible = mainTabMotionTarget.debugSceneVisible
                     ),
                     easing = mainTabDetailContentOffsetEasing()
                 ),
                 label = "main_tab_detail_content_handoff"
             )
-            val mainTabBackgroundTransform = resolveMainTabBackgroundTransform(
-                motion = mainTabBackgroundMotion,
+            val mainTabNavigationMotion = resolveMainTabNavigationMotionState(
+                backgroundMotion = mainTabMotionTarget.backgroundMotion,
                 progress = mainTabBackgroundProgress
             )
-            val mainTabLayerTransform = if (
-                mainTabBackgroundMotion == MainTabBackgroundMotion.COHERENT_EXIT
-            ) {
-                mainTabBackgroundTransform
-            } else {
-                MainTabBackgroundTransform(
-                    translationYFraction = 0f,
-                    scale = 1f,
-                    alpha = 1f
-                )
-            }
             val effectiveStartDestination = remember(
                 currentDefaultStartDestination,
                 showHomeTab,
@@ -3159,17 +2636,17 @@ private fun NeriAppContent(
                 content: @Composable () -> Unit
             ) {
                 val applyExternalDrawerMotion =
-                    mainTabBackgroundMotion == MainTabBackgroundMotion.DRAWER_SINK
+                    mainTabNavigationMotion.backgroundMotion == MainTabBackgroundMotion.DRAWER_SINK
                 RenderNavigationScene(
                     revealTopFraction = revealTopFraction,
                     contentTranslationYFraction = contentTranslationYFraction +
                         if (applyExternalDrawerMotion) {
-                            mainTabBackgroundTransform.translationYFraction
+                            mainTabNavigationMotion.backgroundTransform.translationYFraction
                         } else {
                             0f
                         },
                     contentScale = contentScale * if (applyExternalDrawerMotion) {
-                        mainTabBackgroundTransform.scale
+                        mainTabNavigationMotion.backgroundTransform.scale
                     } else {
                         1f
                     },
@@ -4064,16 +3541,16 @@ private fun NeriAppContent(
                                                 IntOffset(
                                                     x = 0,
                                                     y = (
-                                                        mainTabLayerTransform
+                                                        mainTabNavigationMotion.tabLayerTransform
                                                             .translationYFraction *
                                                             mainTabDetailContentHeightPx
                                                     ).roundToInt()
                                                 )
                                             }
                                             .graphicsLayer {
-                                                scaleX = mainTabLayerTransform.scale
-                                                scaleY = mainTabLayerTransform.scale
-                                                alpha = mainTabLayerTransform.alpha
+                                                scaleX = mainTabNavigationMotion.tabLayerTransform.scale
+                                                scaleY = mainTabNavigationMotion.tabLayerTransform.scale
+                                                alpha = mainTabNavigationMotion.tabLayerTransform.alpha
                                                 transformOrigin = TransformOrigin.Center
                                             }
                                             .zIndex(MAIN_TAB_LAYER_Z_INDEX),

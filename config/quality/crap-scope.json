@@ -16,7 +16,8 @@
     "moe/ouom/neriplayer/ui/onboarding/StartupBackupRestoreStep.kt",
     "moe/ouom/neriplayer/ui/screen/tab/ExploreSearchResultRows.kt",
     "moe/ouom/neriplayer/ui/screen/tab/ExploreBrowseContent.kt",
-    "moe/ouom/neriplayer/ui/screen/tab/ExploreGlassPillSurface.kt"
+    "moe/ouom/neriplayer/ui/screen/tab/ExploreGlassPillSurface.kt",
+    "moe/ouom/neriplayer/ui/MainTabNavigationMotion.kt"
   ],
   "method_scopes": [
     {
