@@ -48,6 +48,8 @@
     "moe/ouom/neriplayer/core/api/youtube/YouTubePlaybackManifestPoToken.kt",
     "moe/ouom/neriplayer/core/api/youtube/YouTubePlaybackDependencies.kt",
     "moe/ouom/neriplayer/core/api/youtube/YouTubePlaybackHttpPolicy.kt",
+    "moe/ouom/neriplayer/core/player/persistence/PlayerManagerQueueCommandExtensions.kt",
+    "moe/ouom/neriplayer/core/player/persistence/PlayerQueueEditOwner.kt",
     "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusivePcmWriter.kt",
     "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveSinkVolumeOwner.kt",
     "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveTransportStartPolicy.kt",
