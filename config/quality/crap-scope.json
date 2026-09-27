@@ -35,13 +35,20 @@
     "moe/ouom/neriplayer/core/player/service/AndroidUsbExclusiveKeepAlivePort.kt",
     "moe/ouom/neriplayer/core/player/service/UsbExclusiveMediaSessionVolumeRouter.kt",
     "moe/ouom/neriplayer/core/player/service/AndroidUsbExclusiveVolumeRoutingPort.kt",
-    "moe/ouom/neriplayer/core/api/youtube/YouTubeStreamingCipherResolution.kt"
+    "moe/ouom/neriplayer/core/api/youtube/YouTubeStreamingCipherResolution.kt",
+    "moe/ouom/neriplayer/core/api/youtube/YouTubePlayerRequestComposer.kt"
   ],
   "method_scopes": [
     {
       "source": "moe/ouom/neriplayer/core/api/youtube/YouTubeMusicPlaybackRepository.kt",
       "class": "moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository",
-      "methods": ["createStreamingCipherResolver"]
+      "methods": [
+        "createStreamingCipherResolver",
+        "postPlayerRequest",
+        "playerRequestSignatureTimestamp",
+        "logWebRemixPlayerRequest",
+        "selectPlayerResponseRoot"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/core/api/bili/BiliClient.kt",

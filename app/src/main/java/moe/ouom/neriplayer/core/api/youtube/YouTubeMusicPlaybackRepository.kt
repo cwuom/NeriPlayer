@@ -31,8 +31,6 @@ import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.Locale
-import java.util.TimeZone
-import kotlin.random.Random
 import kotlin.jvm.Volatile
 import androidx.annotation.VisibleForTesting
 import java.util.concurrent.ConcurrentHashMap
@@ -71,14 +69,11 @@ import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
-import moe.ouom.neriplayer.data.platform.youtube.resolveAuthorizationHeader
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import moe.ouom.neriplayer.core.logging.NPLogger
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import okio.Buffer
 import org.json.JSONArray
 import org.json.JSONObject
@@ -90,60 +85,8 @@ import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 
-private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID = "67"
-private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME = "WEB_REMIX"
-private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_VERSION = "1.20260403.09.00"
-private const val YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_ID = "62"
-private const val YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME = "WEB_CREATOR"
-private const val YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_VERSION = "1.20260114.05.00"
-private const val YOUTUBE_PLAYER_VISIONOS_CLIENT_ID = "101"
-private const val YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME = "VISIONOS"
-private const val YOUTUBE_PLAYER_VISIONOS_CLIENT_VERSION = "0.1"
-private const val YOUTUBE_PLAYER_VISIONOS_USER_AGENT =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
-        "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
-private const val YOUTUBE_PLAYER_ANDROID_VR_CLIENT_ID = "28"
-private const val YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME = "ANDROID_VR"
-private const val YOUTUBE_PLAYER_ANDROID_VR_CLIENT_VERSION = "1.65.10"
-private const val YOUTUBE_PLAYER_ANDROID_VR_USER_AGENT =
-    "com.google.android.apps.youtube.vr.oculus/1.65.10 " +
-        "(Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
 // 预热请求本身已经由单例合并, 首播不应再额外等待调度窗口
 private const val YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS = 0L
-private const val YOUTUBE_PLAYER_TV_CLIENT_ID = "7"
-private const val YOUTUBE_PLAYER_TV_CLIENT_NAME = "TVHTML5"
-private const val YOUTUBE_PLAYER_TV_CLIENT_VERSION = "7.20260114.12.00"
-private const val YOUTUBE_PLAYER_TV_USER_AGENT =
-    "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold " +
-        "(unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)"
-private const val YOUTUBE_PLAYER_TV_DOWNGRADED_CLIENT_VERSION = "5.20260114"
-private const val YOUTUBE_PLAYER_TV_DOWNGRADED_USER_AGENT =
-    "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"
-private const val YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME = "ANDROID_MUSIC"
-private const val YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
-private const val YOUTUBE_PLAYER_WEB_REMIX_ACCEPT_HEADER =
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp," +
-        "image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
-private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_FORM_FACTOR = "UNKNOWN_FORM_FACTOR"
-private const val YOUTUBE_PLAYER_WEB_REMIX_PLAYER_TYPE = "UNIPLAYER"
-private const val YOUTUBE_PLAYER_WEB_REMIX_UI_THEME = "USER_INTERFACE_THEME_LIGHT"
-private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_SCREEN = "WATCH_FULL_SCREEN"
-private const val YOUTUBE_PLAYER_WEB_REMIX_CONNECTION_TYPE = "CONN_CELLULAR_4G"
-private const val YOUTUBE_PLAYER_WEB_REMIX_SCREEN_WIDTH_POINTS = 771
-private const val YOUTUBE_PLAYER_WEB_REMIX_SCREEN_HEIGHT_POINTS = 897
-private const val YOUTUBE_PLAYER_WEB_REMIX_SCREEN_PIXEL_DENSITY = 1
-private const val YOUTUBE_PLAYER_WEB_REMIX_SCREEN_DENSITY_FLOAT = 1.375
-private const val YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_WIDTH = 2048
-private const val YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_HEIGHT = 1152
-private const val YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_AVAILABLE_WIDTH = 2048
-private const val YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_AVAILABLE_HEIGHT = 1104
-private const val YOUTUBE_PLAYER_WEB_REMIX_INNER_WIDTH = 757
-private const val YOUTUBE_PLAYER_WEB_REMIX_COLOR_DEPTH = 32
-private const val YOUTUBE_PLAYER_WEB_REMIX_BROWSER_CONNECTION = 31
-private const val YOUTUBE_PLAYER_WEB_REMIX_HISTORY_LENGTH = 5
-private const val YOUTUBE_PLAYER_PLAYBACK_LACT_MILLISECONDS = "9"
 // 首播更看重尽快落到可播链路, 别在 fallback 前白等太久的 PO token
 private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
 // 普通播放不为低概率的后续候选逐个启动 EJS, 失败后尽快交给 TVHTML5
@@ -157,7 +100,6 @@ private const val MAX_CONCURRENT_PREFETCH_RESOLVES = 1
 private const val RATE_LIMIT_BACKOFF_BASE_MS = 500L
 private const val RATE_LIMIT_BACKOFF_MAX_MS = 5_000L
 
-private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
 private const val YOUTUBE_PLAYBACK_DIAG_PREFIX = "[YT-DIAG-20260530]"
 
 
@@ -467,14 +409,6 @@ class YouTubePlaybackBootstrapCoordinator {
     internal val loadMutex = Mutex()
 }
 
-private data class YouTubeWebRemixRequestMetadata(
-    val originalUrl: String,
-    val watchUrl: String,
-    val playlistId: String,
-    val cpn: String,
-    val clientScreenNonce: String
-)
-
 private data class CachedPlayableAudio(
     val audio: YouTubePlayableAudio,
     val cachedAtMs: Long,
@@ -549,32 +483,6 @@ private data class PlayerAudioResolution(
     val playableAudio: YouTubePlayableAudio? = null,
     val metadata: YouTubeAudioMetadata? = null
 )
-
-private data class YouTubePlayerClientProfile(
-    val clientId: String,
-    val clientName: String,
-    val clientVersion: String,
-    val userAgent: String,
-    val endpointPath: String,
-    val responseField: String? = null,
-    val platform: String = "MOBILE",
-    val clientScreen: String = "WATCH",
-    val deviceMake: String? = null,
-    val deviceModel: String? = null,
-    val osName: String? = null,
-    val osVersion: String? = null,
-    val androidSdkVersion: Int? = null,
-    val wrapPlayerRequest: Boolean = false,
-    val supportsAuthenticatedContext: Boolean = true,
-    val includeUserAgentInContext: Boolean = false,
-    val includeSignatureTimestamp: Boolean = true
-)
-
-private fun YouTubePlayerClientProfile.requiresGvsPoToken(): Boolean {
-    return clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME ||
-        clientName == YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME ||
-        clientName == YOUTUBE_PLAYER_TV_CLIENT_NAME
-}
 
 private enum class YouTubeMusicPlaybackQuality {
     LOW,
@@ -2888,21 +2796,6 @@ class YouTubeMusicPlaybackRepository(
             .build()
     }
 
-    private fun buildBootstrapRequestAuth(
-        auth: YouTubeAuthBundle,
-        bootstrap: YouTubePlaybackBootstrap,
-        origin: String = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
-    ): YouTubeAuthBundle {
-        return auth.copy(
-            cookieHeader = bootstrap.cookieHeader,
-            cookies = emptyMap(),
-            authorization = auth.authorization,
-            xGoogAuthUser = bootstrap.sessionIndex,
-            origin = origin,
-            userAgent = bootstrap.userAgent.ifBlank { auth.userAgent }
-        ).normalized(savedAt = auth.savedAt)
-    }
-
     private fun postPlayerRequest(
         videoId: String,
         auth: YouTubeAuthBundle,
@@ -2911,284 +2804,54 @@ class YouTubeMusicPlaybackRepository(
         requestLocale: YouTubeMusicRequestLocale
     ): JSONObject {
         val startedAtMs = System.currentTimeMillis()
-        val requestUrl = resolvePlayerRequestUrl(profile, bootstrap, videoId)
-        val origin = resolvePlayerRequestOrigin(profile)
-        val clientVersion = resolvePlayerClientVersion(profile, bootstrap)
-        val userAgent = resolvePlayerRequestUserAgent(profile, bootstrap)
-        val requestAuth = if (profile.supportsAuthenticatedContext) {
-            buildBootstrapRequestAuth(
-                auth = auth,
-                bootstrap = bootstrap,
-                origin = origin
-            )
-        } else {
-            YouTubeAuthBundle(origin = origin, userAgent = userAgent)
-        }
-        val webRemixMetadata = if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) {
-            buildWebRemixRequestMetadata(videoId)
-        } else {
-            null
-        }
-        val signatureTimestamp = if (profile.includeSignatureTimestamp) {
-            resolveYouTubeSignatureTimestamp(
-                bootstrapTimestamp = bootstrap.signatureTimestamp,
-                cachedTimestamp = signatureTimestampCache[bootstrap.playerJsUrl]
-            )
-        } else {
-            null
-        }
-        val body = buildPlayerRequestBody(
+        val signatureTimestamp = playerRequestSignatureTimestamp(profile, bootstrap)
+        val prepared = YouTubePlayerRequestComposer.compose(
             videoId = videoId,
-            profile = profile,
+            auth = auth,
             bootstrap = bootstrap,
+            profile = profile,
             requestLocale = requestLocale,
-            clientVersion = clientVersion,
-            userAgent = userAgent,
-            webRemixMetadata = webRemixMetadata,
             signatureTimestamp = signatureTimestamp
         )
-        val requestHeaders = linkedMapOf(
-            "User-Agent" to userAgent,
-            "Accept-Language" to requestLocale.acceptLanguage,
-            "Content-Type" to "application/json",
-            "X-Goog-Visitor-Id" to bootstrap.visitorData,
-            "X-YouTube-Client-Name" to profile.clientId,
-            "X-YouTube-Client-Version" to clientVersion
-        )
-        if (profile.supportsAuthenticatedContext) {
-            requestHeaders["Cookie"] = bootstrap.cookieHeader
-            requestHeaders["X-Goog-AuthUser"] = requestAuth.resolveXGoogAuthUser(
-                fallback = bootstrap.sessionIndex
-            )
-        }
-        if (profile.clientName != "WEB_REMIX") {
-            requestHeaders["X-Goog-Api-Format-Version"] = YOUTUBE_PLAYER_API_FORMAT_VERSION
-        }
-        requestHeaders["Origin"] = origin
-        if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) {
-            requestHeaders["X-YouTube-Bootstrap-Logged-In"] = requestAuth.hasLoginCookies().toString()
-            NPLogger.d(
-                "YouTubeMusicPlayback",
-                "WEB_REMIX request context: videoId=$videoId, locale=${requestLocale.gl}/${requestLocale.hl}, originalUrl=${webRemixMetadata?.originalUrl.orEmpty()}, referer=${webRemixMetadata?.watchUrl.orEmpty()}, remoteHost=${bootstrap.remoteHost.ifBlank { "<blank>" }}, signatureTimestamp=$signatureTimestamp, clientVersion=$clientVersion"
-            )
-        }
-        requestHeaders["Referer"] = webRemixMetadata?.watchUrl ?: "$origin/"
-
-        if (profile.supportsAuthenticatedContext) {
-            val userSessionId = bootstrap.userSessionId.takeIf { bootstrap.loggedIn }.orEmpty()
-            requestAuth.resolveAuthorizationHeader(origin = origin, userSessionId = userSessionId)
-                .takeIf { it.isNotBlank() }
-                ?.let {
-                    requestHeaders["Authorization"] = it
-                    requestHeaders["X-Origin"] = origin
-                }
-        }
-        if (profile.clientName == YOUTUBE_PLAYER_TV_CLIENT_NAME) {
-            bootstrap.delegatedSessionId
-                .takeIf { it.isNotBlank() }
-                ?.let { requestHeaders["X-Goog-PageId"] = it }
-            if (bootstrap.loggedIn) {
-                requestHeaders["X-Youtube-Bootstrap-Logged-In"] = "true"
-            }
-        }
-
-        val request = Request.Builder()
-            .url(requestUrl)
-            .apply {
-                requestHeaders.forEach { (name, value) ->
-                    header(name, value)
-                }
-            }
-            .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
-            .build()
-
-        val root = executeJson(request)
+        logWebRemixPlayerRequest(videoId, requestLocale, profile, bootstrap, signatureTimestamp, prepared)
+        val root = executeJson(prepared.request)
         NPLogger.d(
             "YouTubeMusicPlayback",
-            "postPlayerRequest ok: videoId=$videoId, client=${profile.clientName}, clientVersion=$clientVersion, elapsedMs=${playbackElapsedMs(startedAtMs)}"
+            "postPlayerRequest ok: videoId=$videoId, client=${profile.clientName}, clientVersion=${prepared.clientVersion}, elapsedMs=${playbackElapsedMs(startedAtMs)}"
         )
-        return profile.responseField
-            ?.let { root.optJSONObject(it) ?: root }
-            ?: root
+        return selectPlayerResponseRoot(root, profile.responseField)
     }
 
-    private fun buildPlayerRequestBody(
+    private fun playerRequestSignatureTimestamp(
+        profile: YouTubePlayerClientProfile,
+        bootstrap: YouTubePlaybackBootstrap
+    ): Int? {
+        if (!profile.includeSignatureTimestamp) return null
+        return resolveYouTubeSignatureTimestamp(
+            bootstrapTimestamp = bootstrap.signatureTimestamp,
+            cachedTimestamp = signatureTimestampCache[bootstrap.playerJsUrl]
+        )
+    }
+
+    private fun logWebRemixPlayerRequest(
         videoId: String,
-        profile: YouTubePlayerClientProfile,
-        bootstrap: YouTubePlaybackBootstrap,
         requestLocale: YouTubeMusicRequestLocale,
-        clientVersion: String,
-        userAgent: String,
-        webRemixMetadata: YouTubeWebRemixRequestMetadata? = null,
-        signatureTimestamp: Int? = null
-    ): JSONObject {
-        val clientContext = JSONObject()
-            .put("clientName", profile.clientName)
-            .put("clientVersion", clientVersion)
-            .put("platform", profile.platform)
-            .put("hl", requestLocale.hl)
-            .put("gl", requestLocale.gl)
-            .put("utcOffsetMinutes", utcOffsetMinutes())
-        if (profile.clientScreen.isNotBlank()) {
-            clientContext.put("clientScreen", profile.clientScreen)
-        }
-        if (bootstrap.visitorData.isNotBlank()) {
-            clientContext.put("visitorData", bootstrap.visitorData)
-        }
-        if (profile.includeUserAgentInContext && userAgent.isNotBlank()) {
-            clientContext.put("userAgent", ensureGfeUserAgent(userAgent))
-        }
-        if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME && userAgent.isNotBlank()) {
-            // WEB_REMIX 需要更接近浏览器 watch 页的 client 上下文, 避免退回到风险更高的移动端直链
-            clientContext.put("deviceMake", "")
-            clientContext.put("deviceModel", "")
-            clientContext.put("userAgent", ensureGfeUserAgent(userAgent))
-            clientContext.put("browserName", resolveBrowserName(userAgent))
-            clientContext.put("browserVersion", resolveBrowserVersion(userAgent))
-            clientContext.put("timeZone", currentTimeZoneId())
-            clientContext.put("originalUrl", webRemixMetadata?.originalUrl.orEmpty())
-            clientContext.put("acceptHeader", YOUTUBE_PLAYER_WEB_REMIX_ACCEPT_HEADER)
-            clientContext.put("clientFormFactor", YOUTUBE_PLAYER_WEB_REMIX_CLIENT_FORM_FACTOR)
-            clientContext.put("playerType", YOUTUBE_PLAYER_WEB_REMIX_PLAYER_TYPE)
-            clientContext.put("userInterfaceTheme", YOUTUBE_PLAYER_WEB_REMIX_UI_THEME)
-            clientContext.put("connectionType", YOUTUBE_PLAYER_WEB_REMIX_CONNECTION_TYPE)
-            clientContext.put("screenWidthPoints", YOUTUBE_PLAYER_WEB_REMIX_SCREEN_WIDTH_POINTS)
-            clientContext.put("screenHeightPoints", YOUTUBE_PLAYER_WEB_REMIX_SCREEN_HEIGHT_POINTS)
-            clientContext.put("screenPixelDensity", YOUTUBE_PLAYER_WEB_REMIX_SCREEN_PIXEL_DENSITY)
-            clientContext.put("screenDensityFloat", YOUTUBE_PLAYER_WEB_REMIX_SCREEN_DENSITY_FLOAT)
-            clientContext.put(
-                "tvAppInfo",
-                JSONObject().put("livingRoomAppMode", "LIVING_ROOM_APP_MODE_UNSPECIFIED")
-            )
-            val configInfo = JSONObject()
-            bootstrap.appInstallData.takeIf { it.isNotBlank() }?.let {
-                configInfo.put("appInstallData", it)
-            }
-            bootstrap.coldConfigData.takeIf { it.isNotBlank() }?.let {
-                configInfo.put("coldConfigData", it)
-            }
-            bootstrap.coldHashData.takeIf { it.isNotBlank() }?.let {
-                configInfo.put("coldHashData", it)
-            }
-            bootstrap.hotHashData.takeIf { it.isNotBlank() }?.let {
-                configInfo.put("hotHashData", it)
-            }
-            clientContext.put("configInfo", configInfo)
-            bootstrap.rolloutToken.takeIf { it.isNotBlank() }?.let {
-                clientContext.put("rolloutToken", it)
-            }
-            bootstrap.deviceExperimentId.takeIf { it.isNotBlank() }?.let {
-                clientContext.put("deviceExperimentId", it)
-            }
-            bootstrap.remoteHost.takeIf { it.isNotBlank() }?.let { remoteHost ->
-                clientContext.put("remoteHost", remoteHost)
-            }
-        }
-        profile.deviceMake?.let { clientContext.put("deviceMake", it) }
-        profile.deviceModel?.let { clientContext.put("deviceModel", it) }
-        profile.osName?.let { clientContext.put("osName", it) }
-        profile.osVersion?.let { clientContext.put("osVersion", it) }
-        profile.androidSdkVersion?.let { clientContext.put("androidSdkVersion", it) }
-
-        val requestContext = JSONObject()
-            .put("useSsl", true)
-            .put("internalExperimentFlags", JSONArray())
-            .put("consistencyTokenJars", JSONArray())
-
-        val context = JSONObject()
-            .put("client", clientContext)
-            .put("request", requestContext)
-            .put("user", JSONObject().put("lockedSafetyMode", false))
-        webRemixMetadata?.let { metadata ->
-            context.put("clientScreenNonce", metadata.clientScreenNonce)
-            context.put("clickTracking", JSONObject().put("clickTrackingParams", ""))
-            context.put("adSignalsInfo", buildWebRemixAdSignalsInfo())
-        }
-
-        return JSONObject()
-            .put("context", context)
-            .apply {
-                if (signatureTimestamp != null || webRemixMetadata != null) {
-                    put(
-                        "playbackContext",
-                        buildPlayerPlaybackContext(
-                            refererUrl = webRemixMetadata?.originalUrl,
-                            signatureTimestamp = signatureTimestamp
-                        )
-                    )
-                }
-                webRemixMetadata?.let { metadata ->
-                    put("cpn", metadata.cpn)
-                    put("captionParams", JSONObject())
-                    put("playlistId", metadata.playlistId)
-                }
-                if (profile.wrapPlayerRequest) {
-                    put(
-                        "playerRequest",
-                        JSONObject()
-                            .put("videoId", videoId)
-                            .put("contentCheckOk", true)
-                            .put("racyCheckOk", true)
-                    )
-                    put("disablePlayerResponse", false)
-                } else {
-                    put("videoId", videoId)
-                    put("contentCheckOk", true)
-                    put("racyCheckOk", true)
-                }
-            }
-    }
-
-    private fun resolvePlayerRequestOrigin(profile: YouTubePlayerClientProfile): String {
-        return if (profile.clientName == "WEB_REMIX") YOUTUBE_MUSIC_ORIGIN else YOUTUBE_WEB_ORIGIN
-    }
-
-    private fun resolvePlayerRequestUrl(
         profile: YouTubePlayerClientProfile,
         bootstrap: YouTubePlaybackBootstrap,
-        videoId: String
-    ): String {
-        val baseUrl = if (profile.clientName == "WEB_REMIX") {
-            "$YOUTUBE_MUSIC_ORIGIN/youtubei/v1/${profile.endpointPath}"
-        } else {
-            "$YOUTUBE_WEB_ORIGIN/youtubei/v1/${profile.endpointPath}"
-        }
-        return buildString {
-            append(baseUrl)
-            append("?prettyPrint=false")
-            if (profile.clientName != "WEB_REMIX") {
-                append("&id=")
-                append(videoId)
-            }
-            append("&key=")
-            append(bootstrap.apiKey)
-            if (profile.responseField != null) {
-                append("&fields=")
-                append(profile.responseField)
-            }
+        signatureTimestamp: Int?,
+        prepared: PreparedYouTubePlayerRequest
+    ) {
+        if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) {
+            NPLogger.d(
+                "YouTubeMusicPlayback",
+                "WEB_REMIX request context: videoId=$videoId, locale=${requestLocale.gl}/${requestLocale.hl}, originalUrl=${prepared.webRemixOriginalUrl}, referer=${prepared.webRemixWatchUrl}, remoteHost=${bootstrap.remoteHost.ifBlank { "<blank>" }}, signatureTimestamp=$signatureTimestamp, clientVersion=${prepared.clientVersion}"
+            )
         }
     }
 
-    private fun resolvePlayerClientVersion(
-        profile: YouTubePlayerClientProfile,
-        bootstrap: YouTubePlaybackBootstrap
-    ): String {
-        return if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) {
-            bootstrap.webRemixClientVersion.ifBlank { profile.clientVersion }
-        } else {
-            profile.clientVersion
-        }
-    }
-
-    private fun resolvePlayerRequestUserAgent(
-        profile: YouTubePlayerClientProfile,
-        bootstrap: YouTubePlaybackBootstrap
-    ): String {
-        return if (profile.clientName == "WEB_REMIX") {
-            bootstrap.userAgent.ifBlank { profile.userAgent }
-        } else {
-            profile.userAgent
-        }
+    private fun selectPlayerResponseRoot(root: JSONObject, responseField: String?): JSONObject {
+        if (responseField == null) return root
+        return root.optJSONObject(responseField) ?: root
     }
 
     private fun resolvePlayerJavaScriptUrl(rawUrl: String): String {
@@ -3840,86 +3503,6 @@ class YouTubeMusicPlaybackRepository(
         )
     }
 
-    private fun playerClientProfiles(
-        sourcePreference: YouTubePlaybackSourcePreference,
-        isAuthenticated: Boolean
-    ): List<YouTubePlayerClientProfile> {
-        val profiles = mapOf(
-            YouTubePlayerClientSource.VISION_OS to YouTubePlayerClientProfile(
-                clientId = YOUTUBE_PLAYER_VISIONOS_CLIENT_ID,
-                clientName = YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME,
-                clientVersion = YOUTUBE_PLAYER_VISIONOS_CLIENT_VERSION,
-                userAgent = YOUTUBE_PLAYER_VISIONOS_USER_AGENT,
-                endpointPath = "player",
-                platform = "MOBILE",
-                deviceMake = "Apple",
-                deviceModel = "RealityDevice14,1",
-                osName = "visionOS",
-                osVersion = "1.3.21O771",
-                supportsAuthenticatedContext = false,
-                includeSignatureTimestamp = false
-            ),
-            YouTubePlayerClientSource.ANDROID_VR to YouTubePlayerClientProfile(
-                clientId = YOUTUBE_PLAYER_ANDROID_VR_CLIENT_ID,
-                clientName = YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME,
-                clientVersion = YOUTUBE_PLAYER_ANDROID_VR_CLIENT_VERSION,
-                userAgent = YOUTUBE_PLAYER_ANDROID_VR_USER_AGENT,
-                endpointPath = "player",
-                platform = "MOBILE",
-                deviceMake = "Oculus",
-                deviceModel = "Quest 3",
-                osName = "Android",
-                osVersion = "12L",
-                androidSdkVersion = 32,
-                supportsAuthenticatedContext = false,
-                includeUserAgentInContext = true,
-                includeSignatureTimestamp = false
-            ),
-            YouTubePlayerClientSource.WEB_REMIX to YouTubePlayerClientProfile(
-                clientId = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID,
-                clientName = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME,
-                clientVersion = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_VERSION,
-                userAgent = YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT,
-                endpointPath = "player",
-                platform = "DESKTOP",
-                clientScreen = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_SCREEN,
-                osName = "Windows",
-                osVersion = "10.0"
-            ),
-            YouTubePlayerClientSource.TV_HTML5 to YouTubePlayerClientProfile(
-                clientId = YOUTUBE_PLAYER_TV_CLIENT_ID,
-                clientName = YOUTUBE_PLAYER_TV_CLIENT_NAME,
-                clientVersion = YOUTUBE_PLAYER_TV_CLIENT_VERSION,
-                userAgent = YOUTUBE_PLAYER_TV_USER_AGENT,
-                endpointPath = "player",
-                platform = "TV",
-                includeUserAgentInContext = true
-            ),
-            YouTubePlayerClientSource.WEB_CREATOR to YouTubePlayerClientProfile(
-                clientId = YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_ID,
-                clientName = YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME,
-                clientVersion = YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_VERSION,
-                userAgent = YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT,
-                endpointPath = "player",
-                platform = "DESKTOP",
-                osName = "Windows",
-                osVersion = "10.0"
-            ),
-            YouTubePlayerClientSource.TV_HTML5_LEGACY to YouTubePlayerClientProfile(
-                clientId = YOUTUBE_PLAYER_TV_CLIENT_ID,
-                clientName = YOUTUBE_PLAYER_TV_CLIENT_NAME,
-                clientVersion = YOUTUBE_PLAYER_TV_DOWNGRADED_CLIENT_VERSION,
-                userAgent = YOUTUBE_PLAYER_TV_DOWNGRADED_USER_AGENT,
-                endpointPath = "player",
-                platform = "TV"
-            )
-        )
-        return resolveYouTubePlayerClientOrder(
-            preference = sourcePreference,
-            preferAuthenticatedWebPlayback = isAuthenticated
-        ).map(profiles::getValue)
-    }
-
     private suspend fun resolvePreferredQualityKey(preferredQualityOverride: String?): String {
         return preferredQualityOverride
             ?.takeIf { it.isNotBlank() }
@@ -4203,131 +3786,6 @@ class YouTubeMusicPlaybackRepository(
         return YouTubeMusicLocaleResolver.requestCandidates(
             preferredLocale = currentPlayerRequestLocale()
         )
-    }
-
-    private fun utcOffsetMinutes(): Int {
-        return TimeZone.getDefault().getOffset(System.currentTimeMillis()) / (60 * 1000)
-    }
-
-    private fun currentTimeZoneId(): String = TimeZone.getDefault().id
-
-    private fun buildWebRemixRequestMetadata(videoId: String): YouTubeWebRemixRequestMetadata {
-        val playlistId = "RDAMVM$videoId"
-        val watchUrl = buildWebRemixWatchUrl(videoId, playlistId)
-        return YouTubeWebRemixRequestMetadata(
-            originalUrl = "$YOUTUBE_MUSIC_ORIGIN/",
-            watchUrl = watchUrl,
-            playlistId = playlistId,
-            cpn = generateRequestNonce(),
-            clientScreenNonce = generateRequestNonce()
-        )
-    }
-
-    private fun buildWebRemixWatchUrl(videoId: String, playlistId: String): String {
-        return buildString {
-            append(YOUTUBE_MUSIC_ORIGIN)
-            append("/watch?v=")
-            append(URLEncoder.encode(videoId, Charsets.UTF_8.name()))
-            append("&list=")
-            append(URLEncoder.encode(playlistId, Charsets.UTF_8.name()))
-        }
-    }
-
-    private fun buildPlayerPlaybackContext(
-        refererUrl: String?,
-        signatureTimestamp: Int?
-    ): JSONObject {
-        val contentPlaybackContext = JSONObject()
-            .put("html5Preference", "HTML5_PREF_WANTS")
-            .put("lactMilliseconds", YOUTUBE_PLAYER_PLAYBACK_LACT_MILLISECONDS)
-            .put("autonavState", "STATE_OFF")
-            .put("autoCaptionsDefaultOn", false)
-            .put("mdxContext", JSONObject())
-            .put("vis", 10)
-        refererUrl?.takeIf { it.isNotBlank() }?.let {
-            contentPlaybackContext.put("referer", it)
-        }
-        signatureTimestamp?.let { contentPlaybackContext.put("signatureTimestamp", it) }
-        return JSONObject()
-            .put("contentPlaybackContext", contentPlaybackContext)
-            .put(
-                "devicePlaybackCapabilities",
-                JSONObject()
-                    .put("supportsVp9Encoding", true)
-                    .put("supportXhr", true)
-            )
-    }
-
-    private fun buildWebRemixAdSignalsInfo(): JSONObject {
-        val params = listOf(
-            "dt" to System.currentTimeMillis().toString(),
-            "flash" to "0",
-            "frm" to "0",
-            "u_tz" to utcOffsetMinutes().toString(),
-            "u_his" to YOUTUBE_PLAYER_WEB_REMIX_HISTORY_LENGTH.toString(),
-            "u_h" to YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_HEIGHT.toString(),
-            "u_w" to YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_WIDTH.toString(),
-            "u_ah" to YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_AVAILABLE_HEIGHT.toString(),
-            "u_aw" to YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_AVAILABLE_WIDTH.toString(),
-            "u_cd" to YOUTUBE_PLAYER_WEB_REMIX_COLOR_DEPTH.toString(),
-            "bc" to YOUTUBE_PLAYER_WEB_REMIX_BROWSER_CONNECTION.toString(),
-            "bih" to YOUTUBE_PLAYER_WEB_REMIX_SCREEN_HEIGHT_POINTS.toString(),
-            "biw" to YOUTUBE_PLAYER_WEB_REMIX_INNER_WIDTH.toString(),
-            "brdim" to "0,0,0,0,${YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_WIDTH},0," +
-                "${YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_AVAILABLE_WIDTH}," +
-                "${YOUTUBE_PLAYER_WEB_REMIX_VIEWPORT_AVAILABLE_HEIGHT}," +
-                "${YOUTUBE_PLAYER_WEB_REMIX_SCREEN_WIDTH_POINTS}," +
-                YOUTUBE_PLAYER_WEB_REMIX_SCREEN_HEIGHT_POINTS,
-            "vis" to "1",
-            "wgl" to "true",
-            "ca_type" to "image"
-        )
-        return JSONObject().put(
-            "params",
-            JSONArray().apply {
-                params.forEach { (key, value) ->
-                    put(
-                        JSONObject()
-                            .put("key", key)
-                            .put("value", value)
-                    )
-                }
-            }
-        )
-    }
-
-    private fun resolveBrowserName(userAgent: String): String {
-        val lowerCaseUserAgent = userAgent.lowercase(Locale.US)
-        return when {
-            "edg/" in lowerCaseUserAgent -> "Edge"
-            "chrome/" in lowerCaseUserAgent -> "Chrome"
-            "firefox/" in lowerCaseUserAgent -> "Firefox"
-            else -> "Chrome"
-        }
-    }
-
-    private fun resolveBrowserVersion(userAgent: String): String {
-        val patterns = listOf("Edg/([\\d.]+)", "Chrome/([\\d.]+)", "Firefox/([\\d.]+)")
-        return patterns.firstNotNullOfOrNull { pattern ->
-            Regex(pattern).find(userAgent)?.groupValues?.getOrNull(1)
-        }.orEmpty()
-    }
-
-    private fun ensureGfeUserAgent(userAgent: String): String {
-        return if (userAgent.contains("gzip(gfe)")) {
-            userAgent
-        } else {
-            "$userAgent,gzip(gfe)"
-        }
-    }
-
-    private fun generateRequestNonce(): String {
-        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-        return buildString(16) {
-            repeat(16) {
-                append(alphabet[Random.nextInt(alphabet.length)])
-            }
-        }
     }
 
     private fun findOptional(source: String, vararg patterns: String): String {
