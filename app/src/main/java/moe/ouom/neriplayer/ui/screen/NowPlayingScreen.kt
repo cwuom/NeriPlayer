@@ -45,15 +45,12 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
@@ -80,7 +77,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -92,7 +88,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -101,25 +96,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Comment
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
-import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Save
@@ -135,9 +123,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -149,9 +135,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -160,15 +144,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -197,7 +178,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -247,15 +227,12 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.forSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
-import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -274,17 +251,11 @@ import moe.ouom.neriplayer.data.settings.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.LyricSourcePreference
-import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.data.settings.LyricFontScalePage
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
-import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
-import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.settings.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -319,9 +290,6 @@ import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.theme.LocalNeriTargetColorScheme
-import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
-import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
-import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricEdgeFadeHeight
@@ -332,18 +300,12 @@ import moe.ouom.neriplayer.ui.component.lyrics.resolvePreferredLyricContent
 import moe.ouom.neriplayer.ui.component.lyrics.resolveStoredLyricText
 import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialogContent
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
-import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -354,12 +316,6 @@ import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
-import org.burnoutcrew.reorderable.ItemPosition
-import org.burnoutcrew.reorderable.ReorderableItem
-import org.burnoutcrew.reorderable.SpringDragCancelledAnimation
-import org.burnoutcrew.reorderable.detectReorder
-import org.burnoutcrew.reorderable.rememberReorderableLazyListState
-import org.burnoutcrew.reorderable.reorderable
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -379,7 +335,6 @@ private val PlaybackActionToolbarSmallSlotThreshold = 40.dp
 private val NowPlayingMainControlsMinimumSpacing = 4.dp
 private val NowPlayingFeedbackExtraBottomPadding = 24.dp
 private val EditSongInfoFeedbackControlClearance = 72.dp
-private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
 internal data class NowPlayingCoverFrame(
     val coverUrl: String,
@@ -4298,257 +4253,6 @@ fun VolumeControlSheetContent() {
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
-    }
-}
-
-@Composable
-fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
-    LyricBehaviorSheet(
-        song = song,
-        hasPhoneticLyrics = false,
-        onDismiss = onDismiss
-    )
-}
-
-@Composable
-fun LyricBehaviorSheet(
-    song: SongItem,
-    hasTranslationLyrics: Boolean = true,
-    hasPhoneticLyrics: Boolean,
-    onDismiss: () -> Unit
-) {
-    var currentOffset by remember { mutableLongStateOf(song.userLyricOffsetMs) }
-    val scope = rememberCoroutineScope()
-    val settingsRepo = remember { AppContainer.settingsRepo }
-    val showLyricTranslation by settingsRepo.showLyricTranslationFlow.collectAsStateWithLifecycle(initialValue = true)
-    val lyricTranslationUsePhonetic by settingsRepo
-        .lyricTranslationUsePhoneticFlow
-        .collectAsStateWithLifecycle(initialValue = false)
-    val sliderMinOffset = minOf(MIN_LYRIC_DEFAULT_OFFSET_MS, currentOffset)
-    val sliderMaxOffset = maxOf(MAX_LYRIC_DEFAULT_OFFSET_MS, currentOffset)
-    val sliderSteps = (((sliderMaxOffset - sliderMinOffset) / LYRIC_DEFAULT_OFFSET_STEP_MS).toInt() - 1)
-        .coerceAtLeast(0)
-    val phoneticSwitchEnabled = showLyricTranslation && hasPhoneticLyrics
-    val phoneticSwitchChecked = showLyricTranslation && lyricTranslationUsePhonetic && hasPhoneticLyrics
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .bottomSheetDragBlocker()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-            .windowInsetsPadding(WindowInsets.navigationBars),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(stringResource(R.string.lyrics_adjust_behavior), style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-
-        ListItem(
-            headlineContent = {
-                Text(
-                    stringResource(
-                        if (!hasTranslationLyrics && hasPhoneticLyrics) R.string.lyrics_secondary_mode_phonetic
-                        else R.string.settings_show_lyric_translation
-                    )
-                )
-            },
-            supportingContent = {
-                Text(
-                    stringResource(
-                        if (!hasTranslationLyrics && hasPhoneticLyrics) R.string.lyrics_phonetic_only_desc
-                        else R.string.settings_show_lyric_translation_desc
-                    )
-                )
-            },
-            trailingContent = {
-                Switch(
-                    checked = showLyricTranslation,
-                    onCheckedChange = { enabled ->
-                        scope.launch { settingsRepo.setShowLyricTranslation(enabled) }
-                    }
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .clickable {
-                    scope.launch { settingsRepo.setShowLyricTranslation(!showLyricTranslation) }
-                }
-        )
-
-        if (hasTranslationLyrics) ListItem(
-            headlineContent = { Text(stringResource(R.string.lyrics_translation_use_phonetic)) },
-            supportingContent = {
-                Text(
-                    when {
-                        !showLyricTranslation ->
-                            stringResource(R.string.lyrics_translation_use_phonetic_requires_translation)
-                        !hasPhoneticLyrics ->
-                            stringResource(R.string.lyrics_translation_use_phonetic_unavailable)
-                        else -> stringResource(R.string.lyrics_translation_use_phonetic_desc)
-                    }
-                )
-            },
-            trailingContent = {
-                Switch(
-                    checked = phoneticSwitchChecked,
-                    onCheckedChange = { enabled ->
-                        if (hasPhoneticLyrics) {
-                            scope.launch { settingsRepo.setLyricTranslationUsePhonetic(enabled) }
-                        }
-                    },
-                    enabled = phoneticSwitchEnabled
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(enabled = phoneticSwitchEnabled) {
-                    scope.launch {
-                        settingsRepo.setLyricTranslationUsePhonetic(!phoneticSwitchChecked)
-                    }
-                }
-        )
-
-        Spacer(Modifier.height(16.dp))
-        Text(stringResource(R.string.lyrics_adjust_offset), style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "${if (currentOffset > 0) "+" else ""}${currentOffset} ms",
-            style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
-            color = when {
-                currentOffset > 0 -> Color(0xFF388E3C) // 快了 绿色
-                currentOffset < 0 -> MaterialTheme.colorScheme.error // 慢了 红色
-                else -> LocalContentColor.current
-            }
-        )
-        Text(stringResource(R.string.lyrics_offset_hint), style = MaterialTheme.typography.bodySmall)
-
-        Slider(
-            value = currentOffset.toFloat(),
-            onValueChange = {
-                currentOffset = ((it / LyricOffsetStepMsFloat).roundToInt() *
-                    LYRIC_DEFAULT_OFFSET_STEP_MS)
-            },
-            onValueChangeFinished = {
-                scope.launch {
-                    PlayerManager.updateUserLyricOffset(song, currentOffset)
-                }
-            },
-            valueRange = sliderMinOffset.toFloat()..sliderMaxOffset.toFloat(),
-            steps = sliderSteps
-        )
-        Spacer(Modifier.height(16.dp))
-        HapticTextButton(onClick = onDismiss) {
-            Text(stringResource(R.string.action_done))
-        }
-    }
-}
-
-@Composable
-fun LyricFontSizeSheet(
-    currentLyricScale: Float,
-    currentTranslationScale: Float,
-    onLyricScaleCommit: (Float) -> Unit,
-    onTranslationScaleCommit: (Float) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var lyricSliderValue by remember {
-        mutableFloatStateOf(normalizeLyricFontScale(currentLyricScale))
-    }
-    var translationSliderValue by remember {
-        mutableFloatStateOf(normalizeLyricFontScale(currentTranslationScale))
-    }
-
-    LaunchedEffect(currentLyricScale) {
-        lyricSliderValue = normalizeLyricFontScale(currentLyricScale)
-    }
-
-    LaunchedEffect(currentTranslationScale) {
-        translationSliderValue = normalizeLyricFontScale(currentTranslationScale)
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .bottomSheetDragBlocker()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-            .windowInsetsPadding(WindowInsets.navigationBars),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(stringResource(R.string.lyrics_font_size), style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.settings_lyrics_font_scale_hint),
-            style = MaterialTheme.typography.bodySmall
-        )
-
-        SheetLyricFontScaleSlider(
-            title = stringResource(R.string.settings_lyrics_lyric_font_size),
-            currentScale = lyricSliderValue,
-            onScaleChange = { lyricSliderValue = it },
-            onScaleCommit = { onLyricScaleCommit(normalizeLyricFontScale(lyricSliderValue)) },
-            sampleText = stringResource(R.string.nowplaying_lyrics_sample),
-            sampleBaseSizeSp = 18f
-        )
-        SheetLyricFontScaleSlider(
-            title = stringResource(R.string.settings_lyrics_translation_font_size),
-            currentScale = translationSliderValue,
-            onScaleChange = { translationSliderValue = it },
-            onScaleCommit = {
-                onTranslationScaleCommit(normalizeLyricFontScale(translationSliderValue))
-            },
-            sampleText = stringResource(R.string.settings_lyrics_translation_sample),
-            sampleBaseSizeSp = 14f
-        )
-
-        Spacer(Modifier.height(16.dp))
-        HapticTextButton(onClick = {
-            onLyricScaleCommit(normalizeLyricFontScale(lyricSliderValue))
-            onTranslationScaleCommit(normalizeLyricFontScale(translationSliderValue))
-            onDismiss()
-        }) {
-            Text(stringResource(R.string.action_done))
-        }
-    }
-}
-
-@Composable
-private fun SheetLyricFontScaleSlider(
-    title: String,
-    currentScale: Float,
-    onScaleChange: (Float) -> Unit,
-    onScaleCommit: () -> Unit,
-    sampleText: String,
-    sampleBaseSizeSp: Float
-) {
-    Column(Modifier.fillMaxWidth()) {
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Text(
-            text = "${(currentScale * 100).roundToInt()}%",
-            style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
-        Slider(
-            value = currentScale,
-            onValueChange = onScaleChange,
-            onValueChangeFinished = onScaleCommit,
-            valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
-            steps = 10
-        )
-        Text(
-            text = sampleText,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
-            textAlign = TextAlign.Center,
-            fontSize = scaledLyricFontSize(sampleBaseSizeSp, currentScale).sp
-        )
     }
 }
 
