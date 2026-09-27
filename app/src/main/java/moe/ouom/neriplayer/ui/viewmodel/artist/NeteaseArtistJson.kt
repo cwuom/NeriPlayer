@@ -1,21 +1,18 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.util.json.mapObjectsNotNull
 import org.json.JSONArray
 import org.json.JSONObject
 
 internal fun parseNeteaseArtistSummaries(array: JSONArray?): List<NeteaseArtistSummary> {
     if (array == null) return emptyList()
-    val artists = ArrayList<NeteaseArtistSummary>(array.length())
-    for (index in 0 until array.length()) {
-        val obj = array.optJSONObject(index) ?: continue
+    return array.mapObjectsNotNull { obj ->
         val id = obj.optLong("id", 0L)
         val name = obj.optString("name", "").trim()
-        if (id > 0L && name.isNotBlank()) {
-            artists.add(NeteaseArtistSummary(id = id, name = name))
-        }
+        if (id <= 0L || name.isBlank()) return@mapObjectsNotNull null
+        NeteaseArtistSummary(id = id, name = name)
     }
-    return artists
 }
 
 internal fun parseNeteaseArtistsFromSongJson(song: JSONObject?): List<NeteaseArtistSummary> {

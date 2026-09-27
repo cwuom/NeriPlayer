@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.settings
 
-import moe.ouom.neriplayer.util.units.MINUTE_MS
+import moe.ouom.neriplayer.util.units.minute
 
 const val DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES = 60
 
@@ -13,6 +13,6 @@ object PlaybackServiceIdleShutdownPreference {
     }
 
     fun delayMs(minutes: Int): Long {
-        return normalize(minutes).toLong() * MINUTE_MS
+        return normalize(minutes).minute
     }
 }

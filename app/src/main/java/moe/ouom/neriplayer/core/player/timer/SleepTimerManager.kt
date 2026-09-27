@@ -33,7 +33,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.util.units.MINUTE_MS
+import moe.ouom.neriplayer.util.units.minute
+import moe.ouom.neriplayer.util.units.second
 
 /**
  * 定时器模式
@@ -86,7 +87,7 @@ class SleepTimerManager(
         finishCurrentOnExpiry: Boolean = false
     ) {
         cancel(notifyStateChanged = false)
-        val totalMillis = minutes.coerceAtLeast(0).toLong() * MINUTE_MS
+        val totalMillis = minutes.coerceAtLeast(0).minute
         val timerMode = if (finishCurrentOnExpiry) {
             SleepTimerMode.COUNTDOWN_FINISH_CURRENT
         } else {
@@ -105,7 +106,7 @@ class SleepTimerManager(
         timerJob = scope.launch {
             var remaining = totalMillis
             while (isActive && remaining > 0L) {
-                delay(min(1000L, remaining))
+                delay(min(1.second, remaining))
                 remaining = (deadlineMs - nowMsProvider()).coerceAtLeast(0L)
                 _timerState.value = _timerState.value.copy(remainingMillis = remaining)
             }

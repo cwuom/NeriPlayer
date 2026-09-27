@@ -5,5 +5,17 @@ internal const val MINUTE_MS = 60 * SECOND_MS
 private const val HOUR_MS = 60 * MINUTE_MS
 internal const val DAY_MS = 24 * HOUR_MS
 
+internal val Int.second: Long
+    get() = toLong() * SECOND_MS
+
+internal val Int.minute: Long
+    get() = toLong() * MINUTE_MS
+
+internal val Int.hour: Long
+    get() = toLong() * HOUR_MS
+
+internal val Int.day: Long
+    get() = toLong() * DAY_MS
+
 internal const val MEBIBYTE_BYTES = 1_024L * 1_024L
 internal const val GIBIBYTE_BYTES = 1_024L * MEBIBYTE_BYTES

@@ -26,6 +26,7 @@ import moe.ouom.neriplayer.core.comment.model.SongComment
 import moe.ouom.neriplayer.core.comment.repository.CommentRepository
 import moe.ouom.neriplayer.core.comment.repository.commentRepositoryFor
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.collections.mergeDistinctBy
 import moe.ouom.neriplayer.util.concurrent.RequestGeneration
 
 /**
@@ -107,15 +108,7 @@ internal fun mergeComments(
 ): List<SongComment> {
     if (incoming.isEmpty()) return existing
     if (existing.isEmpty()) return incoming.distinctBy { it.id }
-    val seen = HashSet<String>(existing.size + incoming.size)
-    val merged = ArrayList<SongComment>(existing.size + incoming.size)
-    for (comment in existing) {
-        if (seen.add(comment.id)) merged += comment
-    }
-    for (comment in incoming) {
-        if (seen.add(comment.id)) merged += comment
-    }
-    return merged
+    return existing.mergeDistinctBy(incoming) { it.id }
 }
 
 /**

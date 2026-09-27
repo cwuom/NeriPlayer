@@ -7,6 +7,22 @@ import org.junit.Test
 class NeteaseSearchSongParserTest {
 
     @Test
+    fun `mixed song arrays preserve valid order and retain business field validation`() {
+        val songs = parseNeteaseSearchSongs(
+            """{"code":200,"result":{"songs":[
+                null, 7, "text", [],
+                {"id":0,"name":"invalid id"},
+                {"id":9,"name":"   "},
+                {"id":2,"name":"second"},
+                {"id":1,"name":"first"}
+            ]}}"""
+        )
+
+        assertEquals(listOf(2L, 1L), songs.map { it.id })
+        assertEquals(listOf("second", "first"), songs.map { it.name })
+    }
+
+    @Test
     fun `search parser preserves album id and netease source metadata`() {
         val raw = """
             {

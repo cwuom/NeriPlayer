@@ -6,6 +6,7 @@ import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
+import moe.ouom.neriplayer.util.collections.mergeDistinctBy
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -101,20 +102,12 @@ internal fun appendUniqueNeteaseHomeSongs(
     limit: Int
 ): List<SongItem> {
     if (limit <= 0) return emptyList()
-    val merged = ArrayList<SongItem>(limit)
-    val seen = LinkedHashSet<String>()
     fun keyOf(song: SongItem): String {
         return song.audioId
             ?.takeIf { it.isNotBlank() }
             ?: "${song.channelId}:${song.id}:${song.name}"
     }
-    (current.asSequence() + next.asSequence()).forEach { song ->
-        if (merged.size >= limit) return@forEach
-        if (seen.add(keyOf(song))) {
-            merged.add(song)
-        }
-    }
-    return merged
+    return current.mergeDistinctBy(next, limit = limit, keySelector = ::keyOf)
 }
 
 internal fun parseNeteaseHomeSongs(raw: String, limit: Int = Int.MAX_VALUE): List<SongItem> {
