@@ -43,8 +43,8 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Run unit tests and lint
-        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --warning-mode all --stacktrace
+      - name: Run unit tests, CRAP gate and lint
+        run: ./gradlew :app:verifyCrap :app:lintDebug --warning-mode all --stacktrace
 
       - name: Upload Gradle test reports
         if: always()
@@ -55,6 +55,7 @@ jobs:
             **/build/reports/tests/**
             **/build/test-results/**/*.xml
             **/build/reports/lint-results-debug.html
+            **/build/reports/crap/**
           if-no-files-found: ignore
 
   listen-together-tests:

@@ -17,6 +17,34 @@ import org.junit.Test
 class StorageUsageSummaryTest {
 
     @Test
+    fun everyCacheSelectionRoutesToItsOwner() {
+        val none = StorageCacheClearOptions(audioCache = false, imageCache = false)
+        assertFalse(none.hasSelection)
+        assertFalse(none.needsPlayerCacheClear)
+        assertFalse(none.needsExtraCacheClear)
+        assertFalse(none.hasPlatformCacheSelection)
+        val selections = listOf(
+            Triple(none.copy(audioCache = true), true, false),
+            Triple(none.copy(imageCache = true), true, false),
+            Triple(none.copy(downloadStaging = true), false, false),
+            Triple(none.copy(sharedMedia = true), false, false),
+            Triple(none.copy(lyricsCache = true), false, false),
+            Triple(none.copy(neteasePlaylistCache = true), false, true),
+            Triple(none.copy(biliFavoriteCache = true), false, true),
+            Triple(none.copy(biliArchiveCache = true), false, true),
+            Triple(none.copy(youtubePlaylistCache = true), false, true),
+            Triple(none.copy(logFiles = true), false, false),
+            Triple(none.copy(crashLogs = true), false, false)
+        )
+        selections.forEach { (options, playerOwned, platformOwned) ->
+            assertTrue(options.hasSelection)
+            assertEquals(playerOwned, options.needsPlayerCacheClear)
+            assertEquals(!playerOwned, options.needsExtraCacheClear)
+            assertEquals(platformOwned, options.hasPlatformCacheSelection)
+        }
+    }
+
+    @Test
     fun selectedPlatformCacheRequiresExtraCleanup() {
         val options = StorageCacheClearOptions(
             audioCache = false,
@@ -132,6 +160,31 @@ class StorageUsageSummaryTest {
     }
 
     @Test
+    fun downloadLibraryDeduplicatesFallbackIdentitiesAndExcludesMarkers() {
+        val referenced = storedEntry("a.m4a", 5).copy(localFilePath = "/songs/a.m4a")
+        val mediaOnly = storedEntry("b.m4a", 7).copy(reference = "", localFilePath = "/songs/b.m4a")
+        val nameOnly = storedEntry("fallback.m4a", -2).copy(reference = "", mediaUri = "")
+        val usage = managedDownloadLibraryUsage(
+            audioEntries = listOf(
+                referenced,
+                referenced.copy(name = "duplicate", mediaUri = "different", sizeBytes = 900),
+                mediaOnly,
+                mediaOnly.copy(reference = " ", name = "duplicate", sizeBytes = 900),
+                nameOnly,
+                nameOnly.copy(sizeBytes = 900),
+                storedEntry("folder", 900).copy(isDirectory = true),
+                storedEntry(".nomedia", 900)
+            ),
+            lyricEntries = emptyList(),
+            coverEntries = emptyList(),
+            metadataEntries = emptyList()
+        )
+
+        assertEquals(FileStats(12, 3), usage.audioFiles)
+        assertEquals(listOf(File("/songs/a.m4a"), File("/songs/b.m4a")), usage.localFiles)
+    }
+
+    @Test
     fun databaseAttributionDoesNotDoubleCountDownloadIndexPages() {
         val attribution = normalizeDatabaseStorageAttribution(
             platformCacheStats = mapOf(
@@ -151,6 +204,8 @@ class StorageUsageSummaryTest {
         } + attribution.downloadIndexStorageStats.allocatedPageBytes
 
         assertEquals(1_000L, attributedBytes)
+        assertEquals(466L, attribution.platformCacheStats.getValue("netease").allocatedPageBytes)
+        assertEquals(534L, attribution.downloadIndexStorageStats.allocatedPageBytes)
         assertEquals(
             0L,
             databaseUsageStats(
@@ -158,6 +213,23 @@ class StorageUsageSummaryTest {
                 attributedDatabaseBytes = attributedBytes
             ).sizeBytes
         )
+    }
+
+    @Test
+    fun databaseAttributionPreservesUnallocatedAndWithinBudgetStats() {
+        val index = DownloadIndexStorageStats(4, 40)
+        val platform = mapOf("netease" to PlatformPlaylistCacheStorageStats(2, 30))
+        val withinBudget = normalizeDatabaseStorageAttribution(platform, index, 100)
+        val unknownPhysicalSize = normalizeDatabaseStorageAttribution(platform, index, 0)
+        val empty = normalizeDatabaseStorageAttribution(emptyMap(), DownloadIndexStorageStats.Empty, 100)
+
+        assertEquals(platform, withinBudget.platformCacheStats)
+        assertEquals(index, withinBudget.downloadIndexStorageStats)
+        assertEquals(withinBudget, unknownPhysicalSize)
+        assertEquals(emptyMap<String, PlatformPlaylistCacheStorageStats>(), empty.platformCacheStats)
+        assertEquals(0L, empty.downloadIndexStorageStats.allocatedPageBytes)
+        assertEquals(FileStats(0, 1), databaseUsageStats(FileStats(100, 1), 200))
+        assertEquals(FileStats(100, 1), databaseUsageStats(FileStats(100, 1), -10))
     }
 
     @Test

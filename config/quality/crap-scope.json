@@ -1,0 +1,5 @@
+{
+  "source_patterns": [
+    "moe/ouom/neriplayer/data/storage/Storage*.kt"
+  ]
+}

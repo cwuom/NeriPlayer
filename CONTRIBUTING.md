@@ -777,6 +777,20 @@ adb logcat | grep NeriPlayer
    新增设备或 Compose UI 测试放到 `app/src/androidTest/`。
 9. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
 
+CRAP 质量门禁与职责拆分：
+
+```bash
+./gradlew :app:verifyCrap
+```
+
+此任务使用 Debug JVM 的 JaCoCo 覆盖率，列出所有 app 方法中 CRAP > 8 的条目；
+`config/quality/crap-scope.json` 覆盖的完整源文件中，任意方法 CRAP > 9 即失败。
+`:app:check` 和 Android CI 均执行门禁；完整评分和范围报告位于
+`app/build/reports/crap/`，口径与依赖见 [质量检查说明](tools_pub/quality/README.md)。
+存储统计由 `StorageUsageScanner` 通过数据源接口采集快照，`StorageUsagePresenter`
+只读取快照和字符串资源；`StorageCacheCleaner` 通过文件和平台清理端口执行操作，Room 和全局服务访问集中在
+`StorageUsageAndroid.kt`。新增组件应保持这个单向依赖，并纳入完整文件门禁。
+
 当前已有测试覆盖的重点包括：
 
 - YouTube 登录、Cookie 轮换、匿名会话、挑战解析、PoToken、播放解析、Range/Seek 策略与预取

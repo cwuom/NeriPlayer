@@ -1,7 +1,11 @@
 @file:Suppress("UnstableApiUsage")
 
 import com.android.build.api.variant.FilterConfiguration
+import com.android.build.api.artifact.ScopedArtifact
+import com.android.build.api.variant.ScopedArtifacts
 import org.gradle.api.tasks.testing.Test
+import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import java.util.UUID
 
 plugins {
@@ -89,6 +93,10 @@ android {
 
     buildTypes {
         val releaseSigningConfig = signingConfigs.getByName("release")
+
+        debug {
+            enableUnitTestCoverage = true
+        }
 
         release {
             isMinifyEnabled = true
@@ -222,6 +230,90 @@ tasks.withType<Test>().configureEach {
         "youtubeSmokeCookieFile",
         System.getProperty("youtubeSmokeCookieFile") ?: ""
     )
+}
+
+abstract class ProjectCoverageReport : JacocoReport() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val projectJars: ListProperty<RegularFile>
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val projectDirectories: ListProperty<Directory>
+}
+
+val crapExecutionData = providers.provider {
+    tasks.named<Test>("testDebugUnitTest").get()
+        .extensions.getByType<JacocoTaskExtension>().destinationFile
+        ?: throw GradleException("Debug JVM coverage destination is missing")
+}
+
+val verifyCrapExecutionData = tasks.register("verifyCrapExecutionData") {
+    dependsOn("testDebugUnitTest")
+    doLast {
+        val executionFile = crapExecutionData.get()
+        if (!executionFile.isFile || executionFile.length() == 0L) {
+            throw GradleException("Missing or empty coverage execution data: $executionFile")
+        }
+    }
+}
+
+val crapCoverageReport = tasks.register<ProjectCoverageReport>("crapCoverageReport") {
+    group = "verification"
+    description = "Collect coverage for all app Kotlin and Java classes."
+    dependsOn(verifyCrapExecutionData)
+    executionData.setFrom(crapExecutionData)
+    classDirectories.from(projectJars, projectDirectories)
+    sourceDirectories.from(layout.projectDirectory.dir("src/main/java"))
+    reports {
+        xml.required.set(true)
+        xml.outputLocation.set(layout.buildDirectory.file("reports/crap/coverage.xml"))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/crap/coverage"))
+    }
+}
+
+androidComponents.onVariants(androidComponents.selector().withBuildType("debug")) { variant ->
+    variant.artifacts.forScope(ScopedArtifacts.Scope.PROJECT)
+        .use(crapCoverageReport)
+        .toGet(
+            ScopedArtifact.CLASSES,
+            ProjectCoverageReport::projectJars,
+            ProjectCoverageReport::projectDirectories
+        )
+}
+
+val crapToolTests = tasks.register<Exec>("crapToolTests") {
+    group = "verification"
+    workingDir(rootProject.projectDir)
+    commandLine("python3", "-B", "-m", "unittest", "discover", "-s", "tools_pub/quality", "-p", "test_*.py")
+}
+
+val crapReport = tasks.register<Exec>("crapReport") {
+    group = "verification"
+    description = "List all app method scores and every CRAP score greater than 8."
+    dependsOn(crapCoverageReport, crapToolTests)
+    workingDir(rootProject.projectDir)
+    commandLine(
+        "python3", "-B", "tools_pub/quality/crap_report.py",
+        "--xml", layout.buildDirectory.file("reports/crap/coverage.xml").get().asFile,
+        "--source-root", layout.projectDirectory.dir("src/main/java").asFile,
+        "--scope", rootProject.file("config/quality/crap-scope.json"),
+        "--output", layout.buildDirectory.dir("reports/crap").get().asFile,
+        "--report-only"
+    )
+}
+
+val verifyCrap = tasks.register<Exec>("verifyCrap") {
+    group = "verification"
+    description = "Fail if any method in the refactored source scope has CRAP greater than 9."
+    dependsOn(crapReport)
+    workingDir(rootProject.projectDir)
+    commandLine(crapReport.get().commandLine.dropLast(1))
+}
+
+tasks.named("check") {
+    dependsOn(verifyCrap)
 }
 
 ksp {
