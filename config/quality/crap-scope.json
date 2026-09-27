@@ -49,7 +49,9 @@
     "moe/ouom/neriplayer/ui/screen/NowPlayingTrackIdentity.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingCoverActionToolbar.kt",
     "moe/ouom/neriplayer/ui/screen/NowPlayingCoverControlsPlacement.kt",
-    "moe/ouom/neriplayer/ui/screen/NowPlayingCoverLyrics.kt"
+    "moe/ouom/neriplayer/ui/screen/NowPlayingCoverLyrics.kt",
+    "moe/ouom/neriplayer/core/api/youtube/YouTubeMusicProtocolModels.kt",
+    "moe/ouom/neriplayer/core/api/youtube/YouTubeMusicResponseParser.kt"
   ],
   "method_scopes": [
     {
