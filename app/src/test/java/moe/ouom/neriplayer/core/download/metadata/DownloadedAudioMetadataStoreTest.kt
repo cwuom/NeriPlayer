@@ -15,6 +15,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.json.JSONObject
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class DownloadedAudioMetadataStoreTest {
 
@@ -61,7 +62,7 @@ class DownloadedAudioMetadataStoreTest {
         ) { reference ->
             val current = inFlight.incrementAndGet()
             maximumInFlight.updateAndGet { previous -> maxOf(previous, current) }
-            delay(20L)
+            delay(20.milliseconds)
             inFlight.decrementAndGet()
             reference
         }

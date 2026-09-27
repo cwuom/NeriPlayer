@@ -13,6 +13,7 @@ import org.junit.Test
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class YouTubePrefetchRunnerTest {
@@ -57,7 +58,7 @@ class YouTubePrefetchRunnerTest {
         val runner = YouTubePrefetchRunner(task = task, maxConcurrency = 1)
 
         val job = runner.launch(this, listOf("a", "b", "c"))
-        advanceTimeBy(1)
+        advanceTimeBy(1.milliseconds)
         job.cancel(CancellationException("test cancellation"))
         advanceUntilIdle()
 
@@ -72,16 +73,16 @@ class YouTubePrefetchRunnerTest {
     ) : YouTubePrefetchTask {
         private val active = AtomicInteger(0)
         val maxConcurrencyObserved = AtomicInteger(0)
-        val started = Collections.synchronizedList(mutableListOf<String>())
-        val finished = Collections.synchronizedList(mutableListOf<String>())
-        val failed = Collections.synchronizedList(mutableListOf<String>())
+        val started: MutableList<String> = Collections.synchronizedList(mutableListOf<String>())
+        val finished: MutableList<String> = Collections.synchronizedList(mutableListOf<String>())
+        val failed: MutableList<String> = Collections.synchronizedList(mutableListOf<String>())
 
         override suspend fun prefetch(videoId: String) {
             started.add(videoId)
             val now = active.incrementAndGet()
             maxConcurrencyObserved.updateAndGet { max(it, now) }
             try {
-                delay(delayMs)
+                delay(delayMs.milliseconds)
                 if (videoId in failingVideoIds) {
                     failed.add(videoId)
                     error("boom")

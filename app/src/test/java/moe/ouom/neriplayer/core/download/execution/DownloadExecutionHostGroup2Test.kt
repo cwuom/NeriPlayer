@@ -6,17 +6,12 @@ import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearOwnership
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHost
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
-import moe.ouom.neriplayer.core.download.execution.host.enqueueDeferredSchedule
 import moe.ouom.neriplayer.core.download.execution.host.resolveClaimFailureResult
 import moe.ouom.neriplayer.core.download.execution.host.resolveExecutionCancellationResult
-import moe.ouom.neriplayer.core.download.execution.host.triggerDeferredSchedules
-import moe.ouom.neriplayer.core.download.execution.host.tryAcquireHostAdmission
-import moe.ouom.neriplayer.core.download.execution.host.withDeferredSchedulingLock
 import moe.ouom.neriplayer.core.download.execution.notification.DOWNLOAD_EXECUTION_NOTIFICATION_ID
 import moe.ouom.neriplayer.core.download.execution.notification.isLegacyDownloadExecutionNotificationId
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
@@ -35,21 +30,14 @@ import moe.ouom.neriplayer.core.download.execution.worker.shouldScheduleWifiBoun
 import moe.ouom.neriplayer.core.download.execution.worker.toWorkerResult
 import moe.ouom.neriplayer.core.download.execution.worker.wifiBoundDownloadWakeExistingWorkPolicy
 import moe.ouom.neriplayer.core.download.execution.worker.wifiBoundDownloadWakeHandoffRearmPolicy
-import android.content.Context
-import android.content.SharedPreferences
 import android.os.Build
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.ListenableWorker
-import java.io.File
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrace
@@ -59,12 +47,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.mockito.Answers
-import org.mockito.ArgumentMatchers.anyBoolean
-import org.mockito.ArgumentMatchers.anyInt
-import org.mockito.ArgumentMatchers.anyString
-import org.mockito.Mockito.`when`
-import org.mockito.Mockito.mock
 
 
 class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
@@ -85,7 +67,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
             requests.forEach { request -> store.save(context, request) }
             val host = DefaultDownloadExecutionHost(
                 operationStore = store,
-                entryPoint = DownloadOperationEntryPoint { _, _ ->
+                entryPoint = { _, _ ->
                     DownloadExecutionResult.Accepted
                 },
                 sdkInt = 28,
@@ -161,7 +143,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         val executedOperationIds = mutableListOf<String>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 executedOperationIds += request.operationId
                 DownloadExecutionResult.Accepted
             },
@@ -199,7 +181,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         val executedOperationIds = mutableListOf<String>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 executedOperationIds += request.operationId
                 DownloadExecutionResult.Accepted
             },
@@ -413,7 +395,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
             journal.forceState(request.operationId, state, updatedAtMs = 1L)
             val host = DefaultDownloadExecutionHost(
                 operationStore = store,
-                entryPoint = DownloadOperationEntryPoint { _, _ ->
+                entryPoint = { _, _ ->
                     error("terminal operation must not enter the entry point")
                 },
                 sdkInt = 28
@@ -430,7 +412,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         val store = DownloadExecutionOperationStore { testJournal }
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 DownloadExecutionResult.AlreadyHandled
             },
             sdkInt = 28
@@ -636,7 +618,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         var executions = 0
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 executions++
                 DownloadExecutionResult.Accepted
             },
@@ -670,7 +652,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         val release = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 release.await()
                 DownloadExecutionResult.Accepted
@@ -721,7 +703,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         val finish = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 finish.await()
                 DownloadExecutionResult.Accepted
@@ -753,7 +735,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         val finish = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 finish.await()
                 DownloadExecutionResult.Accepted
@@ -785,7 +767,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         val finish = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 finish.await()
                 DownloadExecutionResult.Accepted
@@ -815,7 +797,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         store.save(context, request)
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, restoredRequest ->
+            entryPoint = { _, restoredRequest ->
                 assertEquals(request.operationId, restoredRequest.operationId)
                 assertEquals(request.attemptId, restoredRequest.attemptId)
                 DownloadExecutionResult.Retry
@@ -841,7 +823,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         store.save(context, request)
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 DownloadExecutionResult.NetworkPolicyWaiting
             },
             sdkInt = 28
@@ -867,7 +849,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
             store.save(context, request)
             val host = DefaultDownloadExecutionHost(
                 operationStore = store,
-                entryPoint = DownloadOperationEntryPoint { _, _ ->
+                entryPoint = { _, _ ->
                     testJournal.forceRequest(request.copy(requiresWifiNetwork = false))
                     DownloadExecutionResult.NetworkPolicyWaiting
                 },
@@ -899,7 +881,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         var receivedAttemptId: Long? = null
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, request ->
+            entryPoint = { _, request ->
                 receivedAttemptId = request.attemptId
                 DownloadExecutionResult.Accepted
             },
@@ -931,7 +913,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         var executions = 0
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 executions++
                 DownloadExecutionResult.Accepted
             },
@@ -964,7 +946,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         var executions = 0
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 executions++
                 DownloadExecutionResult.Accepted
             },
@@ -1031,7 +1013,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         var executions = 0
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 executions++
                 DownloadExecutionResult.Accepted
             },
@@ -1113,7 +1095,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
             }
             val host = DefaultDownloadExecutionHost(
                 operationStore = store,
-                entryPoint = DownloadOperationEntryPoint { _, _ ->
+                entryPoint = { _, _ ->
                     executions++
                     DownloadExecutionResult.Accepted
                 },
@@ -1154,7 +1136,7 @@ class DownloadExecutionHostGroup2Test : DownloadExecutionHostTestSupport() {
         var executions = 0
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 executions++
                 DownloadExecutionResult.Accepted
             },

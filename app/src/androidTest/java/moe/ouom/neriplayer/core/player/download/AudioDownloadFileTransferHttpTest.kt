@@ -77,7 +77,7 @@ class AudioDownloadFileTransferHttpTest {
 
     @Test
     fun previousAttemptWithoutStrongValidatorRestartsFromZero() = runBlocking {
-        listOf<String?>(null, "W/\"v1\"").forEach { etag ->
+        listOf(null, "W/\"v1\"").forEach { etag ->
             withFixture(etag = etag) { fixture ->
                 fixture.seedPreviousAttempt(ByteArray(CHUNK_BYTES) { 0x7f }, etag)
                 fixture.download()

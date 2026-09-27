@@ -54,7 +54,7 @@ class ManagedDownloadMigrationCopyWorkerTest {
         val closeFailure = IOException("close failed")
         val reader = failingCloseReader(closeFailure)
 
-        val thrown = try {
+        val thrown = runCatching {
             reader.readOrThrow(
                 context = context,
                 entry = entry("audio.mp3", "source-audio", 4L),
@@ -62,10 +62,7 @@ class ManagedDownloadMigrationCopyWorkerTest {
             ) {
                 throw cancellation
             }
-            null
-        } catch (error: CancellationException) {
-            error
-        }
+        }.exceptionOrNull()
 
         assertSame(cancellation, thrown)
         assertTrue(cancellation.suppressed.contains(closeFailure))
@@ -77,7 +74,7 @@ class ManagedDownloadMigrationCopyWorkerTest {
         val closeFailure = IOException("close failed")
         val reader = failingCloseReader(closeFailure)
 
-        val thrown = try {
+        val thrown = runCatching {
             reader.readOrThrow(
                 context = context,
                 entry = entry("audio.mp3", "source-audio", 4L),
@@ -85,10 +82,7 @@ class ManagedDownloadMigrationCopyWorkerTest {
             ) {
                 throw permanent
             }
-            null
-        } catch (error: ManagedDownloadMigrationException) {
-            error
-        }
+        }.exceptionOrNull()
 
         assertSame(permanent, thrown)
         assertTrue(permanent.suppressed.contains(closeFailure))
@@ -294,7 +288,7 @@ class ManagedDownloadMigrationCopyWorkerTest {
             createdNew = false,
             sourceAuthoritative = false
         )
-        val results = listOf<StorageLookupResult<StorageStat>>(
+        val results = listOf(
             StorageLookupResult.Missing,
             StorageLookupResult.PermissionLost,
             StorageLookupResult.ProviderFailure(IllegalStateException("provider")),

@@ -13,6 +13,7 @@ import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsProvider;
+import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -107,7 +108,8 @@ public final class ManagedDownloadDelayedDocumentsProvider extends DocumentsProv
     }
 
     @Override
-    public ContentProviderResult[] applyBatch(ArrayList<ContentProviderOperation> operations)
+    @NonNull
+    public ContentProviderResult[] applyBatch(@NonNull ArrayList<ContentProviderOperation> operations)
         throws OperationApplicationException {
         batchCalls.incrementAndGet();
         if (rejectBatch) throw new UnsupportedOperationException("fixture rejects batch calls");

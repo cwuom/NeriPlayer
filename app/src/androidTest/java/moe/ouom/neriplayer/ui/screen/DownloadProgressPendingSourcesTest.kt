@@ -24,6 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class DownloadProgressPendingSourcesTest {
@@ -40,14 +41,14 @@ class DownloadProgressPendingSourcesTest {
                         .distinctUntilChanged().collect { changes.send(it) }
                 }
                 try {
-                    assertEquals(listOf(request.operationId), withTimeout(5_000) {
+                    assertEquals(listOf(request.operationId), withTimeout(5_000.milliseconds) {
                         changes.receive().map { it.operationId }
                     })
                     DownloadExecutionRoomStore.updateState(context, request.operationId, "FINALIZED", database = database)
-                    assertTrue(withTimeout(5_000) { changes.receive() }.isEmpty())
+                    assertTrue(withTimeout(5_000.milliseconds) { changes.receive() }.isEmpty())
                     assertTrue(readDurablePendingDownloadSongKeys(context, database).isEmpty())
                     DownloadExecutionRoomStore.upsert(context, request.copy(operationId = "replacement"), "QUEUED", database = database)
-                    assertEquals(listOf("replacement"), withTimeout(5_000) {
+                    assertEquals(listOf("replacement"), withTimeout(5_000.milliseconds) {
                         changes.receive().map { it.operationId }
                     })
                 } finally {

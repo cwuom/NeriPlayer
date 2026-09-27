@@ -1,32 +1,17 @@
 package moe.ouom.neriplayer.core.player.download
 
-import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
-import moe.ouom.neriplayer.core.player.engine.datasource.ChunkRequestIOException
-import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import okhttp3.Request
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.Response
-import okio.Timeout
-import okio.Buffer
-import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import java.io.ByteArrayInputStream
-import java.io.File
 import java.io.IOException
-import java.net.SocketException
-import java.net.UnknownHostException
-import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 
@@ -437,9 +422,6 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
 
     @Test
     fun `network policy pause keeps unrelated batch state and gates working file mutations`() {
-        val managerSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
-        ).readText()
         val pauseSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerFacadePlayback.kt"
         ).readText()

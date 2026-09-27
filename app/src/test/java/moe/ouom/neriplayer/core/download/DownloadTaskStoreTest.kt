@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.manager.batch.removeDownloadTasks
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.DownloadTask
 import moe.ouom.neriplayer.core.download.model.DownloadTaskSummary

@@ -1,7 +1,5 @@
 package moe.ouom.neriplayer.listentogether
 
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.listentogether.compat.buildTrackFinishedLegacyFallbackEvent
 import moe.ouom.neriplayer.listentogether.compat.isListenTogetherMemberControlTargetCurrent

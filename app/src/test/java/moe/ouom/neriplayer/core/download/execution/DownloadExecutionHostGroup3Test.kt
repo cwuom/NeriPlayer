@@ -1,9 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
-import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHost
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.host.canScheduleDownloadOperation
@@ -13,39 +10,17 @@ import moe.ouom.neriplayer.core.download.execution.host.reserveTransferSlot
 import moe.ouom.neriplayer.core.download.execution.host.resolveConcurrentExecutionResult
 import moe.ouom.neriplayer.core.download.execution.host.shouldBlockHostReschedule
 import moe.ouom.neriplayer.core.download.execution.host.shouldHandleHostStop
-import moe.ouom.neriplayer.core.download.execution.host.stopInternal
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
-import android.content.Context
-import android.content.SharedPreferences
-import android.os.Build
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.ListenableWorker
-import java.io.File
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
-import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrace
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.mockito.Answers
-import org.mockito.ArgumentMatchers.anyBoolean
-import org.mockito.ArgumentMatchers.anyInt
-import org.mockito.ArgumentMatchers.anyString
-import org.mockito.Mockito.`when`
-import org.mockito.Mockito.mock
 
 
 class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
@@ -211,7 +186,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
         val release = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 release.await()
                 DownloadExecutionResult.Accepted
@@ -248,7 +223,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
         val release = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 release.await()
                 DownloadExecutionResult.Accepted
@@ -293,7 +268,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
         lateinit var host: DefaultDownloadExecutionHost
         host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { entryContext, entryRequest ->
+            entryPoint = { entryContext, entryRequest ->
                 started.complete(Unit)
                 allowTransfer.await()
                 assertEquals(
@@ -344,7 +319,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
         val finish = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 finish.await()
                 DownloadExecutionResult.Accepted
@@ -390,7 +365,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
         val finish = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 finish.await()
                 DownloadExecutionResult.Accepted
@@ -438,7 +413,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
         var executions = 0
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 executions++
                 DownloadExecutionResult.Accepted
             },
@@ -482,7 +457,7 @@ class DownloadExecutionHostGroup3Test : DownloadExecutionHostTestSupport() {
         testJournal.forceState(request.operationId, "DEGRADED_COMPLETE", updatedAtMs = 1L)
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 DownloadExecutionResult.UserActionRequired
             },
             sdkInt = 28

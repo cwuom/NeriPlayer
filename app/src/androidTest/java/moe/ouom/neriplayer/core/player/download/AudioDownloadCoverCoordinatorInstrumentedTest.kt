@@ -187,7 +187,7 @@ class AudioDownloadCoverCoordinatorInstrumentedTest {
         return Outcome(reference, requests, committed, mimeType, fileName)
     }
 
-    private data class Outcome(
+    private class Outcome(
         val reference: AudioCachedCoverReference?,
         val requests: Int,
         val committed: ByteArray?,

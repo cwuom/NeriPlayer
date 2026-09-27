@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.core.download
 
 import android.content.Context
 import android.content.ContentResolver
-import android.net.Uri
 import java.io.FileNotFoundException
 import java.nio.file.Files
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup

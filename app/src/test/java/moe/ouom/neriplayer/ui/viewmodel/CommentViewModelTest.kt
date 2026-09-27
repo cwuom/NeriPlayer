@@ -28,6 +28,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 评论 ViewModel 的单元测试。
@@ -100,12 +101,12 @@ class CommentViewModelTest {
             if (delayMs > 0L) {
                 if (swallowCancellation) {
                     try {
-                        delay(delayMs)
+                        delay(delayMs.milliseconds)
                     } catch (cancellation: CancellationException) {
                         throw IOException("cancelled but reported as failure", cancellation)
                     }
                 } else {
-                    delay(delayMs)
+                    delay(delayMs.milliseconds)
                 }
             }
             failure?.let { throw it }
@@ -121,19 +122,19 @@ class CommentViewModelTest {
 
         override suspend fun setLiked(source: CommentSource, commentId: String, liked: Boolean) {
             likes += commentId to liked
-            delay(likeDelayMs)
+            delay(likeDelayMs.milliseconds)
             likeFailure?.let { throw it }
         }
 
         override suspend fun sendComment(source: CommentSource, content: String, target: CommentReplyTarget?) {
             sends += content to target
-            delay(sendDelayMs)
+            delay(sendDelayMs.milliseconds)
             sendFailure?.let { throw it }
         }
 
         override suspend fun loadReplies(source: CommentSource, rootId: String, page: Int, pageSize: Int, cursor: String?): CommentPage {
             replyRequests += rootId to cursor
-            delay(delayMs)
+            delay(delayMs.milliseconds)
             replyFailure?.let { throw it }
             return replyPages[page] ?: CommentPage(emptyList(), page, pageSize, 0L, false)
         }
@@ -149,11 +150,11 @@ class CommentViewModelTest {
         val vm = CommentViewModel().apply { repositoryFactory = { repository } }
         try {
             vm.onSourceChanged(source(repository.platform, 1L))
-            advanceTimeBy(100L)
+            advanceTimeBy(100.milliseconds)
             assertEquals(listOf("cached"), vm.uiState.value.comments.map { it.id })
             assertEquals(CommentListStatus.SUCCESS, vm.uiState.value.status)
             assertFalse(vm.uiState.value.isRefreshing)
-            advanceTimeBy(950L)
+            advanceTimeBy(950.milliseconds)
             assertFalse(vm.uiState.value.isRefreshing)
             advanceUntilIdle()
             assertEquals(listOf(true), repository.forceRefreshes)
@@ -173,9 +174,9 @@ class CommentViewModelTest {
         val vm = CommentViewModel().apply { repositoryFactory = { repository } }
         try {
             vm.onSourceChanged(source(repository.platform, 1L))
-            advanceTimeBy(100L)
+            advanceTimeBy(100.milliseconds)
             assertFalse(vm.uiState.value.isRefreshing)
-            advanceTimeBy(950L)
+            advanceTimeBy(950.milliseconds)
             assertTrue(vm.uiState.value.isRefreshing)
             advanceUntilIdle()
             assertFalse(vm.uiState.value.isRefreshing)
@@ -213,13 +214,13 @@ class CommentViewModelTest {
         val vm = CommentViewModel().apply { repositoryFactory = { repository } }
         try {
             vm.onSourceChanged(source(repository.platform, 1L))
-            advanceTimeBy(1_050L)
+            advanceTimeBy(1_050.milliseconds)
             assertFalse(vm.uiState.value.isRefreshing)
             assertEquals("new", vm.uiState.value.nextCursor)
             vm.onSheetHidden()
             repository.pages[1] = cached.copy(comments = listOf(cached.comments.single().copy(likeCount = 42L)))
             vm.onSourceChanged(source(repository.platform, 1L))
-            advanceTimeBy(1_050L)
+            advanceTimeBy(1_050.milliseconds)
             assertTrue(vm.uiState.value.isRefreshing)
             advanceUntilIdle()
             assertEquals(42L, vm.uiState.value.comments.single().likeCount)
@@ -238,7 +239,7 @@ class CommentViewModelTest {
         val vm = CommentViewModel().apply { repositoryFactory = { repository } }
         try {
             vm.onSourceChanged(source(repository.platform, 1L))
-            advanceTimeBy(1_050L)
+            advanceTimeBy(1_050.milliseconds)
             assertTrue(vm.uiState.value.isRefreshing)
             repository.cachedPage = null
             repository.pages[1] = pageOf(1, listOf("new-song"), repository.platform)
@@ -262,7 +263,7 @@ class CommentViewModelTest {
         val vm = CommentViewModel().apply { repositoryFactory = { repository } }
         try {
             vm.onSourceChanged(source(repository.platform, 1L))
-            advanceTimeBy(100L)
+            advanceTimeBy(100.milliseconds)
             vm.updateDraft("typing while checking")
             vm.toggleLike("1")
             vm.loadMore()
@@ -385,7 +386,7 @@ class CommentViewModelTest {
         vm.toggleReplies("1")
         vm.updateDraft("old draft")
         vm.sendComment()
-        advanceTimeBy(100L)
+        advanceTimeBy(100.milliseconds)
         vm.onSourceChanged(source(repository.platform, 2L))
         vm.updateDraft("new draft")
         advanceUntilIdle()
@@ -404,7 +405,7 @@ class CommentViewModelTest {
         advanceUntilIdle()
         vm.updateDraft("draft")
         vm.sendComment()
-        advanceTimeBy(100L)
+        advanceTimeBy(100.milliseconds)
         vm.onSheetHidden()
         vm.onSourceChanged(source)
         advanceUntilIdle()
@@ -446,7 +447,7 @@ class CommentViewModelTest {
         assertEquals(CommentSort.HOT, vm.uiState.value.sort)
         repository.delayMs = 1_000L
         vm.loadMore()
-        advanceTimeBy(100L)
+        advanceTimeBy(100.milliseconds)
         repository.pages[1] = pageOf(1, listOf("newest"), CommentPlatform.NETEASE, hasMore = true)
             .copy(nextCursor = "1700000000000")
         vm.selectSort(CommentSort.NEWEST)
@@ -512,7 +513,7 @@ class CommentViewModelTest {
         advanceUntilIdle()
         repository.delayMs = 1_000L
         vm.selectSort(CommentSort.NEWEST)
-        advanceTimeBy(100)
+        advanceTimeBy(100.milliseconds)
         vm.selectSort(CommentSort.RECOMMENDED)
         repository.pages[1] = pageOf(1, listOf("recommended"), CommentPlatform.NETEASE)
         advanceUntilIdle()
@@ -532,7 +533,7 @@ class CommentViewModelTest {
         advanceUntilIdle()
         vm.toggleLike("1")
         vm.toggleLike("1")
-        advanceTimeBy(100L)
+        advanceTimeBy(100.milliseconds)
         assertFalse(vm.uiState.value.comments.single().isLiked)
         assertEquals(setOf("1"), vm.uiState.value.likingIds)
         advanceUntilIdle()
@@ -578,7 +579,7 @@ class CommentViewModelTest {
         vm.onSourceChanged(source(CommentPlatform.NETEASE, 1L))
         advanceUntilIdle()
         vm.toggleLike("1")
-        advanceTimeBy(100L)
+        advanceTimeBy(100.milliseconds)
         vm.onSourceChanged(source(CommentPlatform.NETEASE, 2L))
         advanceUntilIdle()
         assertFalse(vm.uiState.value.comments.single().isLiked)
@@ -698,7 +699,7 @@ class CommentViewModelTest {
         }
 
         viewModel.onSourceChanged(source(CommentPlatform.NETEASE, 1L))
-        advanceTimeBy(100L)
+        advanceTimeBy(100.milliseconds)
         // 歌曲在请求飞行途中被切走
         viewModel.onSourceChanged(source(CommentPlatform.BILIBILI, 2L))
         advanceUntilIdle()
@@ -1042,11 +1043,11 @@ class CommentViewModelTest {
         val viewModel = CommentViewModel().apply { repositoryFactory = { repository } }
 
         viewModel.onSourceChanged(source(CommentPlatform.NETEASE, 11L))
-        advanceTimeBy(100L)
+        advanceTimeBy(100.milliseconds)
 
         // 刷新会取消上一次首屏请求, 此时新请求还在途中
         viewModel.refresh()
-        advanceTimeBy(50L)
+        advanceTimeBy(50.milliseconds)
 
         assertEquals(CommentListStatus.LOADING, viewModel.uiState.value.status)
         assertNull(viewModel.uiState.value.error)
@@ -1069,7 +1070,7 @@ class CommentViewModelTest {
         val viewModel = CommentViewModel().apply { repositoryFactory = { repository } }
 
         viewModel.onSourceChanged(source(CommentPlatform.BILIBILI, 22L))
-        advanceTimeBy(100L)
+        advanceTimeBy(100.milliseconds)
         viewModel.onSheetHidden()
         advanceUntilIdle()
 

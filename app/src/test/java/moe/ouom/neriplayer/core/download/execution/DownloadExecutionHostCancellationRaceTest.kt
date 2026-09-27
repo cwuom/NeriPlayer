@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
@@ -61,7 +60,7 @@ class DownloadExecutionHostCancellationRaceTest {
         val started = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 awaitCancellation()
             },
@@ -113,7 +112,7 @@ class DownloadExecutionHostCancellationRaceTest {
         val finish = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
-            entryPoint = DownloadOperationEntryPoint { _, _ ->
+            entryPoint = { _, _ ->
                 started.complete(Unit)
                 finish.await()
                 DownloadExecutionResult.Accepted

@@ -109,12 +109,11 @@ class BgEffectPainterRenderTest {
                 comparison.outlierPixelRatio <= MaxOutlierPixelRatio
         )
 
-        val initialDirectImage = directImage
         awaitDraws(directView) {
             configurePainter(directPainter, UpdatedAnimTime)
         }
         val updatedDirectImage = composeRule.onNodeWithTag(DirectTag).captureToImage()
-        val changedPixelRatio = changedPixelRatio(initialDirectImage, updatedDirectImage)
+        val changedPixelRatio = changedPixelRatio(directImage, updatedDirectImage)
 
         assertTrue(
             "RuntimeShader uniforms did not update through Canvas drawing: changed=$changedPixelRatio",

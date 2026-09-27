@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.resource
 
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
@@ -11,12 +12,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class DownloadTransferPermitRegistryTest {
 
     @Test
     fun `eight configured slots report active and progressing transfers`() = runBlocking {
-        var nowNs = 0L
+        val nowNs = 0L
         val registry = DownloadTransferPermitRegistry(
             maxParallelism = 8,
             nowNs = { nowNs }
@@ -25,7 +27,7 @@ class DownloadTransferPermitRegistryTest {
         val permits = coroutineScope {
             (0 until 8).map { index ->
                 async { registry.acquire("operation-$index", configuredParallelism = 8) }
-            }.map { it.await() }
+            }.awaitAll()
         }
         permits.forEach { permit ->
             permit.markNetworkIoStarted()
@@ -49,7 +51,7 @@ class DownloadTransferPermitRegistryTest {
         val firstManual = async(start = CoroutineStart.UNDISPATCHED) {
             registry.acquire("manual-one", allowSingleOverflow = true)
         }
-        val firstManualPermit = withTimeout(1_000L) { firstManual.await() }
+        val firstManualPermit = withTimeout(1_000.milliseconds) { firstManual.await() }
         val secondManual = async(start = CoroutineStart.UNDISPATCHED) {
             registry.acquire("manual-two", allowSingleOverflow = true)
         }
@@ -60,7 +62,7 @@ class DownloadTransferPermitRegistryTest {
         assertEquals(listOf("manual-two"), registry.snapshot().waitingOwners)
 
         base.release()
-        val secondManualPermit = withTimeout(1_000L) { secondManual.await() }
+        val secondManualPermit = withTimeout(1_000.milliseconds) { secondManual.await() }
         assertEquals(2, registry.snapshot().permitCount)
         firstManualPermit.release()
         secondManualPermit.release()
@@ -80,12 +82,12 @@ class DownloadTransferPermitRegistryTest {
         yield()
 
         assertTrue(registry.promoteWaitingOperation("operation-id"))
-        val manualPermit = withTimeout(1_000L) { manual.await() }
+        val manualPermit = withTimeout(1_000.milliseconds) { manual.await() }
         assertFalse(normal.isCompleted)
         assertEquals(2, registry.snapshot().permitCount)
 
         base.release()
-        val normalPermit = withTimeout(1_000L) { normal.await() }
+        val normalPermit = withTimeout(1_000.milliseconds) { normal.await() }
         manualPermit.release()
         normalPermit.release()
     }
@@ -105,7 +107,7 @@ class DownloadTransferPermitRegistryTest {
 
         second.cancelAndJoin()
         first.release()
-        val thirdPermit = withTimeout(1_000L) { third.await() }
+        val thirdPermit = withTimeout(1_000.milliseconds) { third.await() }
         assertEquals("third", thirdPermit.ownerKey)
         thirdPermit.release()
         assertEquals(0, registry.snapshot().waitingCount)
@@ -127,7 +129,7 @@ class DownloadTransferPermitRegistryTest {
             }
             first.release()
 
-            val replacementPermit = withTimeout(1_000L) { replacement.await() }
+            val replacementPermit = withTimeout(1_000.milliseconds) { replacement.await() }
             assertEquals("same-owner", replacementPermit.ownerKey)
             replacementPermit.release()
             assertEquals(0, registry.snapshot().waitingCount)
@@ -150,7 +152,7 @@ class DownloadTransferPermitRegistryTest {
             first.close()
             waiters.filterIndexed { index, _ -> index % 2 == 1 }
                 .forEach { waiter ->
-                    val permit = withTimeout(1_000L) { waiter.await() }
+                    val permit = withTimeout(1_000.milliseconds) { waiter.await() }
                     permit.close()
                 }
             assertEquals(0, registry.snapshot().permitCount)
@@ -170,7 +172,7 @@ class DownloadTransferPermitRegistryTest {
 
         val updated = registry.updateConfiguredParallelism(2, reason = "user_setting")
         assertEquals(2, updated.effectiveParallelism)
-        val secondPermit = withTimeout(1_000L) { second.await() }
+        val secondPermit = withTimeout(1_000.milliseconds) { second.await() }
         assertEquals("second", secondPermit.ownerKey)
 
         first.release()
@@ -193,7 +195,7 @@ class DownloadTransferPermitRegistryTest {
         assertEquals(listOf("third"), lowered.waitingOwners)
 
         first.release()
-        val thirdPermit = withTimeout(1_000L) { third.await() }
+        val thirdPermit = withTimeout(1_000.milliseconds) { third.await() }
         assertEquals(setOf("second", "third"), registry.snapshot().heldPermitOwners)
 
         second.release()
@@ -267,7 +269,7 @@ class DownloadTransferPermitRegistryTest {
         assertFalse(waiting.isCompleted)
 
         first.release()
-        val second = withTimeout(1_000L) { waiting.await() }
+        val second = withTimeout(1_000.milliseconds) { waiting.await() }
         assertEquals("core-waiter", second.ownerKey)
         second.release()
         assertEquals(0, registry.snapshot().permitCount)

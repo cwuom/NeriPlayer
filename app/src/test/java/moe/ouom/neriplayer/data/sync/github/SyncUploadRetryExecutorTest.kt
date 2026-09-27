@@ -12,7 +12,7 @@ class SyncUploadRetryExecutorTest {
     fun `skips upload when merged state has no meaningful change`() = runTest {
         var uploadCalled = false
 
-        val result = SyncUploadRetryExecutor.execute<Int, String, String>(
+        val result = SyncUploadRetryExecutor.execute(
             initialRemote = 1,
             initialVersion = "v1",
             initialRemoteChangedDuringSync = false,
@@ -39,7 +39,7 @@ class SyncUploadRetryExecutorTest {
         var uploadAttempts = 0
         var refetchCount = 0
 
-        val result = SyncUploadRetryExecutor.execute<Int, String, String>(
+        val result = SyncUploadRetryExecutor.execute(
             initialRemote = 1,
             initialVersion = "v1",
             initialRemoteChangedDuringSync = false,
@@ -76,7 +76,7 @@ class SyncUploadRetryExecutorTest {
     fun `stops immediately on non conflict failure`() = runTest {
         var refetchCalled = false
 
-        val result = SyncUploadRetryExecutor.execute<Int, String, String>(
+        val result = SyncUploadRetryExecutor.execute(
             initialRemote = 1,
             initialVersion = "v1",
             initialRemoteChangedDuringSync = false,
@@ -99,7 +99,7 @@ class SyncUploadRetryExecutorTest {
     fun `fails after conflict retry budget exhausted`() = runTest {
         var refetchCount = 0
 
-        val result = SyncUploadRetryExecutor.execute<Int, String, String>(
+        val result = SyncUploadRetryExecutor.execute(
             initialRemote = 1,
             initialVersion = "v1",
             initialRemoteChangedDuringSync = false,

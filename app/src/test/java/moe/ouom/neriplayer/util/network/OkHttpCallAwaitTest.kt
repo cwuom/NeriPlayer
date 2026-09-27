@@ -11,7 +11,6 @@ import okhttp3.Response
 import okio.Timeout
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
 @OptIn(ExperimentalCoroutinesApi::class)

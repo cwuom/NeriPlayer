@@ -1,10 +1,5 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.notification.DOWNLOAD_EXECUTION_NOTIFICATION_ID
-import moe.ouom.neriplayer.core.download.execution.notification.DownloadExecutionNotificationController
-import moe.ouom.neriplayer.core.download.execution.notification.buildDownloadExecutionNotification
-import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
-import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

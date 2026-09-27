@@ -10,7 +10,8 @@ import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
-import android.provider.OpenableColumns;
+import androidx.annotation.NonNull;
+
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.File;
@@ -118,13 +119,13 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     }
 
     @Override
-    public String getType(Uri uri) {
+    public String getType(@NonNull Uri uri) {
         return mimeTypeFor(documentId(uri));
     }
 
     @Override
     public Cursor query(
-        Uri uri,
+        @NonNull Uri uri,
         String[] projection,
         String selection,
         String[] selectionArgs,
@@ -161,7 +162,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     }
 
     @Override
-    public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+    public ParcelFileDescriptor openFile(@NonNull Uri uri, @NonNull String mode) throws FileNotFoundException {
         if (METADATA_ID.equals(documentId(uri))) {
             File file = metadataFile();
             if (!mode.contains("w") && !file.isFile()) {
@@ -221,22 +222,22 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     }
 
     @Override
-    public Uri insert(Uri uri, ContentValues values) {
+    public Uri insert(@NonNull Uri uri, ContentValues values) {
         return null;
     }
 
     @Override
-    public int delete(Uri uri, String selection, String[] selectionArgs) {
+    public int delete(@NonNull Uri uri, String selection, String[] selectionArgs) {
         return deleteDocumentById(documentId(uri)) ? 1 : 0;
     }
 
     @Override
-    public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
+    public int update(@NonNull Uri uri, ContentValues values, String selection, String[] selectionArgs) {
         return 0;
     }
 
     @Override
-    public Bundle call(String method, String arg, Bundle extras) {
+    public Bundle call(@NonNull String method, String arg, Bundle extras) {
         if (CONFIGURE_LARGE_SCAN.equals(method)) {
             int count = extras == null ? 1 : extras.getInt(COUNT_EXTRA, 1);
             configuredAudioCount = Math.max(1, count);
@@ -439,16 +440,13 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             String column = columns[index];
             if (DocumentsContract.Document.COLUMN_DOCUMENT_ID.equals(column)) {
                 row[index] = documentId;
-            } else if (DocumentsContract.Document.COLUMN_DISPLAY_NAME.equals(column)
-                || OpenableColumns.DISPLAY_NAME.equals(column)) {
+            } else if (DocumentsContract.Document.COLUMN_DISPLAY_NAME.equals(column)) {
                 row[index] = displayNameFor(documentId);
-            } else if (DocumentsContract.Document.COLUMN_MIME_TYPE.equals(column)
-                || MediaStore.MediaColumns.MIME_TYPE.equals(column)) {
+            } else if (DocumentsContract.Document.COLUMN_MIME_TYPE.equals(column)) {
                 row[index] = mimeTypeFor(documentId);
             } else if (DocumentsContract.Document.COLUMN_FLAGS.equals(column)) {
                 row[index] = isDirectory(documentId) ? DIRECTORY_FLAGS : 0;
-            } else if (DocumentsContract.Document.COLUMN_SIZE.equals(column)
-                || OpenableColumns.SIZE.equals(column)) {
+            } else if (DocumentsContract.Document.COLUMN_SIZE.equals(column)) {
                 row[index] = contentFor(documentId).length;
             } else if (DocumentsContract.Document.COLUMN_LAST_MODIFIED.equals(column)
                 || MediaStore.MediaColumns.DATE_MODIFIED.equals(column)) {
@@ -671,14 +669,14 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     private void resetLyricsFixtures() {
         restoreLyricsFixtures();
-        metadataFile().delete();
+        deleteFixtureFile(metadataFile());
     }
 
     private void clearLyricsFixtures() {
         lyricDocuments.clear();
-        lyricFile(ORIGINAL_ID).delete();
-        lyricFile(TRANSLATED_ID).delete();
-        lyricFile(ROMANIZED_ID).delete();
+        deleteFixtureFile(lyricFile(ORIGINAL_ID));
+        deleteFixtureFile(lyricFile(TRANSLATED_ID));
+        deleteFixtureFile(lyricFile(ROMANIZED_ID));
     }
 
     private void restoreLyricsFixtures() {
@@ -686,15 +684,20 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         lyricDocuments.add(ORIGINAL_ID);
         lyricDocuments.add(TRANSLATED_ID);
         lyricDocuments.add(ROMANIZED_ID);
-        lyricFile(ORIGINAL_ID).delete();
-        lyricFile(TRANSLATED_ID).delete();
-        lyricFile(ROMANIZED_ID).delete();
+        deleteFixtureFile(lyricFile(ORIGINAL_ID));
+        deleteFixtureFile(lyricFile(TRANSLATED_ID));
+        deleteFixtureFile(lyricFile(ROMANIZED_ID));
+    }
+
+    private static void deleteFixtureFile(File file) {
+        if (file.exists() && !file.delete()) {
+            throw new IllegalStateException("Unable to delete lyric fixture file: " + file);
+        }
     }
 
     private static byte[] buildWaveContent() {
         int sampleRate = 8_000;
-        int sampleCount = sampleRate;
-        int dataSize = sampleCount * 2;
+        int dataSize = sampleRate * 2;
         ByteBuffer bytes = ByteBuffer.allocate(44 + dataSize).order(ByteOrder.LITTLE_ENDIAN);
         bytes.put(new byte[] { 82, 73, 70, 70 });
         bytes.putInt(36 + dataSize);
@@ -709,7 +712,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         bytes.putShort((short) 16);
         bytes.put(new byte[] { 100, 97, 116, 97 });
         bytes.putInt(dataSize);
-        for (int index = 0; index < sampleCount; index++) {
+        for (int index = 0; index < sampleRate; index++) {
             bytes.putShort((short) 0);
         }
         return bytes.array();

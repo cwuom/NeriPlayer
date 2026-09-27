@@ -833,7 +833,7 @@ class ManagedDownloadReferenceDeleteExecutorTest {
                 StorageMutationResult.Deleted
             },
             contentReferenceBatchDeleteOperation = { _, batch ->
-                batch.mapIndexed { index, _ ->
+                List(batch.size) { index ->
                     if (index % 3 == 0) {
                         StorageMutationResult.ProviderFailure(
                             IllegalStateException("batch rejected")

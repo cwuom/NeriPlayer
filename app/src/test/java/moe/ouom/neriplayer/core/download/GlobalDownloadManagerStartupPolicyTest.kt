@@ -42,20 +42,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
-import moe.ouom.neriplayer.core.download.policy.recoveryOperationIdsForKeys
 import moe.ouom.neriplayer.core.download.policy.shouldRecoverDownloadCandidateWithBatch
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
@@ -63,6 +56,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
+import kotlin.time.Duration.Companion.milliseconds
 
 
 class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolicyTestSupport() {
@@ -384,7 +378,7 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
                 operation = "read blocked operation",
                 timeoutMs = 20L
             ) {
-                delay(100L)
+                delay(100.milliseconds)
                 "unreachable"
             }
         }.exceptionOrNull()
@@ -1020,7 +1014,7 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
         val job = launch {
             cancel(CancellationException("cancel all download tasks"))
             rollbackResult = runNonCancellableDownloadRollback {
-                delay(1)
+                delay(1.milliseconds)
                 executed = true
                 "rolled-back"
             }

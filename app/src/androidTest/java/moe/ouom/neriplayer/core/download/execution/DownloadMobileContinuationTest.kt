@@ -32,6 +32,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class DownloadMobileContinuationTest {
@@ -76,7 +77,7 @@ class DownloadMobileContinuationTest {
             )
 
             assertTrue(GlobalDownloadManager.continueDownloadsOnMobileDataAndWake(context, confirmation, db))
-            val persistentPump = withTimeout(10_000L) {
+            val persistentPump = withTimeout(10_000.milliseconds) {
                 var selected: WorkInfo? = null
                 while (selected == null) {
                     val currentWork = workManager.getWorkInfosForUniqueWork(
@@ -90,7 +91,7 @@ class DownloadMobileContinuationTest {
                         // 离线确认可以接管启动恢复已经登记的同一个持久任务
                         beforeWork[work.id]?.state?.isFinished == false && !work.state.isFinished
                     }
-                    if (selected == null) delay(25L)
+                    if (selected == null) delay(25.milliseconds)
                 }
                 selected
             }

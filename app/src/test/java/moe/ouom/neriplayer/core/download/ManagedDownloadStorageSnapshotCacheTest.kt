@@ -1466,7 +1466,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
         val clearStarted = CountDownLatch(1)
         val releaseClear = CountDownLatch(1)
         val clearFinished = CountDownLatch(1)
-        val events = Collections.synchronizedList(mutableListOf<String>())
+        val events: MutableList<String> = Collections.synchronizedList(mutableListOf<String>())
 
         override suspend fun restore(
             expectedKey: String?

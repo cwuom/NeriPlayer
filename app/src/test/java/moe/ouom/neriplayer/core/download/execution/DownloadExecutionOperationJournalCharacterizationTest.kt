@@ -1,12 +1,10 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.tryAcquireHostAdmission
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationJournal
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionPumpCursor
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionPumpPage
-import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomCancellationStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.persistence.resolveDownloadOperationState
 import moe.ouom.neriplayer.core.download.execution.persistence.shouldRestartOperation
@@ -291,7 +289,7 @@ class DownloadExecutionOperationJournalCharacterizationTest {
 
     @Test
     fun `raw lookup stays lightweight while reusable lookup validates its payload`() {
-        var directory = java.io.File(System.getProperty("user.dir") ?: ".")
+        val directory = java.io.File(System.getProperty("user.dir") ?: ".")
         val sourceFile = generateSequence(directory) { it.parentFile }
             .map {
                 java.io.File(

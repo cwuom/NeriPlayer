@@ -11,6 +11,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class YouTubeChallengeRaceTest {
@@ -78,7 +79,7 @@ class YouTubeChallengeRaceTest {
     @Test
     fun awaitFirstChallengeSuccess_returnsNullAfterAllCandidatesCompleteWithoutValue() = runTest {
         val newPipe = async {
-            delay(10L)
+            delay(10.milliseconds)
             ChallengeCandidateResult<String>(
                 source = "NEWPIPE",
                 value = null,
@@ -86,7 +87,7 @@ class YouTubeChallengeRaceTest {
             )
         }
         val ejs = async {
-            delay(20L)
+            delay(20.milliseconds)
             ChallengeCandidateResult<String>(
                 source = "EJS_FALLBACK",
                 value = null,

@@ -1,15 +1,10 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHost
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtJobCompletionGate
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtStopAction
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtStopCoordinator
-import moe.ouom.neriplayer.core.download.execution.uidt.UidtStopCoordinators
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtStopRequest
 import moe.ouom.neriplayer.core.download.execution.uidt.sealUidtCompletionGates
-import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import android.content.Context
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue

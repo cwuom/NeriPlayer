@@ -20,6 +20,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import kotlin.time.Duration.Companion.milliseconds
 
 class LocalMediaTargetedRecoveryTest {
     @get:Rule
@@ -134,7 +135,7 @@ class LocalMediaTargetedRecoveryTest {
         }
         secondRequested.await()
         try {
-            assertEquals("other written", withTimeout(5_000L) { write(other) { "other written" } })
+            assertEquals("other written", withTimeout(5_000.milliseconds) { write(other) { "other written" } })
         } finally {
             release.complete(Unit)
         }

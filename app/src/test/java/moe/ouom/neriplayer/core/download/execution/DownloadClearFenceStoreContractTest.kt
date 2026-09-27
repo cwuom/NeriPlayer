@@ -1,9 +1,5 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearFenceReleaseResult
-import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearFenceStore
-import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearOwnership
-import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

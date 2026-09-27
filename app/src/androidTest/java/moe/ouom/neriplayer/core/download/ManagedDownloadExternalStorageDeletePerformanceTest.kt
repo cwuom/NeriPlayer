@@ -39,6 +39,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 /** 仅在模拟器创建专属目录，计时覆盖真实 ExternalStorageProvider 和公开删除入口 */
 @RunWith(AndroidJUnit4::class)
@@ -52,7 +53,7 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
     private var configuredFixture = false
 
     @Before
-    fun createIsolatedExternalStorageFixture() = runBlocking<Unit> {
+    fun createIsolatedExternalStorageFixture() = runBlocking {
         check(Build.HARDWARE in setOf("ranchu", "goldfish")) {
             "this benchmark must run on an emulator, hardware=${Build.HARDWARE}"
         }
@@ -151,7 +152,7 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
     }
 
     @Test
-    fun publicFullDeleteHidesThousandSongsWithinFiveSecondsAndPhysicallyRemovesAll() = runBlocking<Unit> {
+    fun publicFullDeleteHidesThousandSongsWithinFiveSecondsAndPhysicallyRemovesAll() = runBlocking {
         GlobalDownloadManager.startupRecoveryMutex.withLock {
             GlobalDownloadManager.pendingDownloadRecoverySlot.withLock {
                 configureFixtureRoot()
@@ -189,11 +190,11 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
                     assertEquals(1_000, GlobalDownloadManager.downloadedSongsMutable.value.size)
                     val startedAt = SystemClock.elapsedRealtime()
                     val deletion = async(Dispatchers.IO) {
-                        withTimeout(60_000) {
+                        withTimeout(60_000.milliseconds) {
                             GlobalDownloadManager.deleteDownloadedSongsWithResult(context, songs, true)
                         }
                     }
-                    withTimeout(5_000) {
+                    withTimeout(5_000.milliseconds) {
                         GlobalDownloadManager.downloadedSongsMutable.first { it.isEmpty() }
                     }
                     val hiddenMs = SystemClock.elapsedRealtime() - startedAt
@@ -226,7 +227,7 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
     }
 
     @Test
-    fun publicForcedRefreshConfirmsExternallyDeletedAudioAndSidecarDirectory() = runBlocking<Unit> {
+    fun publicForcedRefreshConfirmsExternallyDeletedAudioAndSidecarDirectory() = runBlocking {
         GlobalDownloadManager.startupRecoveryMutex.withLock {
             GlobalDownloadManager.pendingDownloadRecoverySlot.withLock {
                 configureFixtureRoot()
@@ -300,7 +301,7 @@ class ManagedDownloadExternalStorageDeletePerformanceTest {
         }
     }
 
-    private suspend fun awaitInitialDownloadWork() = withTimeout(60_000) {
+    private suspend fun awaitInitialDownloadWork() = withTimeout(60_000.milliseconds) {
         GlobalDownloadManager.initialize(context)
         GlobalDownloadManager.startupProgressRestoreReady.await()
         // ready 只代表任务进度已恢复，初始目录扫描仍在这个锁内继续执行

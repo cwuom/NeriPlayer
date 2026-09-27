@@ -197,7 +197,7 @@ class ManagedTemporaryWriteArtifactsTest {
         )
 
         requireNotNull(lease)
-        try {
+        lease.use {
             assertTrue(lease.displayName.endsWith(".pending.json"))
             assertTrue(
                 ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
@@ -205,8 +205,6 @@ class ManagedTemporaryWriteArtifactsTest {
                     target = target
                 )
             )
-        } finally {
-            lease.close()
         }
     }
 
@@ -283,7 +281,7 @@ class ManagedTemporaryWriteArtifactsTest {
             nonce = "fad3561f8d7246d8"
         )
         requireNotNull(lease)
-        try {
+        lease.use {
             assertTrue(
                 ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
                     displayName = "${lease.displayName} (1)",
@@ -302,8 +300,6 @@ class ManagedTemporaryWriteArtifactsTest {
                     target = target
                 )
             )
-        } finally {
-            lease.close()
         }
     }
 
@@ -399,7 +395,7 @@ class ManagedTemporaryWriteArtifactsTest {
                 + "493e2c83-40cc-4f4e-9d50-6794d61cd81a.pending"
         )
         val newLease = ManagedTemporaryWriteArtifacts.acquire(newOperationTarget)
-        try {
+        newLease.use {
             assertTrue(
                 ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
                     displayName = newLease.displayName,
@@ -412,8 +408,6 @@ class ManagedTemporaryWriteArtifactsTest {
                     target = oldOperationTarget
                 )
             )
-        } finally {
-            newLease.close()
         }
     }
 

@@ -679,7 +679,7 @@ class NowPlayingScreenTest {
                 "play_button",
                 "player_next"
             ),
-            NowPlayingLyricsSharedTransitionElement.values().map { it.key }.toSet()
+            NowPlayingLyricsSharedTransitionElement.entries.map { it.key }.toSet()
         )
     }
 

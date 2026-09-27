@@ -1,9 +1,5 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.manager.batch.cancelDownloadTasksDurably
-import moe.ouom.neriplayer.core.download.manager.batch.requestDownloadTaskCancellation
-import moe.ouom.neriplayer.core.download.manager.catalog.buildManagedDownloadDeletePlans
-import moe.ouom.neriplayer.core.download.manager.catalog.deleteDownloadedSongsOnIo
 import moe.ouom.neriplayer.core.download.policy.runBoundedDownloadCancellationCleanup
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.delay
@@ -12,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class DownloadTaskBatchCancellationPolicyTest {
     @Test
@@ -27,7 +24,7 @@ class DownloadTaskBatchCancellationPolicyTest {
             val active = activeWorkers.incrementAndGet()
             maximumWorkers.updateAndGet { current -> maxOf(current, active) }
             try {
-                delay(5L)
+                delay(5.milliseconds)
                 completedItems.incrementAndGet()
             } finally {
                 activeWorkers.decrementAndGet()

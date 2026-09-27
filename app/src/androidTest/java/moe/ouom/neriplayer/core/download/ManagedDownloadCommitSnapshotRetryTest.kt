@@ -33,6 +33,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadCommitSnapshotRetryTest {
@@ -120,7 +121,7 @@ class ManagedDownloadCommitSnapshotRetryTest {
             val beforeQueries = counters().getInt("count")
             setQueryFault("null")
             val result = try {
-                withTimeout(15_000L) { runCatching { commit(working) } }
+                withTimeout(15_000.milliseconds) { runCatching { commit(working) } }
             } finally {
                 setQueryFault(null)
             }
@@ -265,8 +266,8 @@ class ManagedDownloadCommitSnapshotRetryTest {
                 runCatching { commit(working, commitContext) }
             }
             try {
-                withTimeout(5_000L) {
-                    while (gate.entered.count != 0L) delay(5L)
+                withTimeout(5_000.milliseconds) {
+                    while (gate.entered.count != 0L) delay(5.milliseconds)
                 }
                 assertTrue("the commit scan must have captured its revision before the gate", gate.captureObserved.get())
                 assertEquals(gate.capturedRevision.get(), ManagedDownloadStorage.snapshotCacheStore.snapshotRevision())
@@ -276,7 +277,7 @@ class ManagedDownloadCommitSnapshotRetryTest {
             } finally {
                 gate.release.countDown()
             }
-            withTimeout(15_000L) { committing.await() }
+            withTimeout(15_000.milliseconds) { committing.await() }
         }
 
         fun setQueryFault(fault: String?) {

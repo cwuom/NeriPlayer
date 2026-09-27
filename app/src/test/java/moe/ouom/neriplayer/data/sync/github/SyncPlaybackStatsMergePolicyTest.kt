@@ -245,7 +245,7 @@ class SyncPlaybackStatsMergePolicyTest {
 
     @Test
     fun `trimStats keeps deterministic ascending identityKey on ties at boundary`() {
-        val high = (1..(SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS - 1)).map { i ->
+        val high = (1 until SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS).map { i ->
             trackStat(identityKey = "high-$i", firstPlayedAt = 1L, lastPlayedAt = 1_000L + i)
         }
         val tieKept = trackStat(identityKey = "tie-a", firstPlayedAt = 1L, lastPlayedAt = 50L)

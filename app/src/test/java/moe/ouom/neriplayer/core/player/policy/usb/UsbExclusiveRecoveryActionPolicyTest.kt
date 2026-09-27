@@ -229,7 +229,7 @@ class UsbExclusiveRecoveryActionPolicyTest {
                 UsbExclusiveRecoveryActionAckStatus.HandleClosing,
                 UsbExclusiveRecoveryActionAckStatus.NoPending
             ),
-            UsbExclusiveRecoveryActionAckStatus.values().toList()
+            UsbExclusiveRecoveryActionAckStatus.entries
         )
     }
 

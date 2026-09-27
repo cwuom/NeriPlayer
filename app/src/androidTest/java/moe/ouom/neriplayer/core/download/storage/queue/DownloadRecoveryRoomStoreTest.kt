@@ -20,8 +20,6 @@ import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.state.DOWNLOAD_RETRY_BASE_DELAY_MS
-import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.model.SongItem
@@ -30,10 +28,10 @@ import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 
@@ -678,7 +676,7 @@ class DownloadRecoveryRoomStoreTest : DownloadRecoveryRoomStoreTestSupport() {
             val roomDispatcher = Dispatchers.Default.limitedParallelism(1)
 
             val operationIds = withContext(roomDispatcher) {
-                withTimeout(15_000L) {
+                withTimeout(15_000.milliseconds) {
                     store.upsertPendingDownloadQueue(
                         songs = listOf(largeSong, normalSong),
                         userInitiated = true
@@ -690,7 +688,7 @@ class DownloadRecoveryRoomStoreTest : DownloadRecoveryRoomStoreTestSupport() {
             val normalOperationId = operationIds[1]
 
             val snapshots = withContext(roomDispatcher) {
-                withTimeout(15_000L) {
+                withTimeout(15_000.milliseconds) {
                     DownloadExecutionRoomStore.readOperationSnapshots(
                         context = context,
                         operationIds = operationIds,
@@ -709,7 +707,7 @@ class DownloadRecoveryRoomStoreTest : DownloadRecoveryRoomStoreTestSupport() {
             )
 
             val operations = withContext(roomDispatcher) {
-                withTimeout(15_000L) {
+                withTimeout(15_000.milliseconds) {
                     DownloadExecutionRoomStore.findReadableOperationsBySongKeys(
                         context = context,
                         songKeys = listOf(largeSong.stableKey(), normalSong.stableKey()),
@@ -731,7 +729,7 @@ class DownloadRecoveryRoomStoreTest : DownloadRecoveryRoomStoreTestSupport() {
             )
 
             val refreshedOperationIds = withContext(roomDispatcher) {
-                withTimeout(15_000L) {
+                withTimeout(15_000.milliseconds) {
                     store.upsertPendingDownloadQueue(
                         songs = listOf(largeSong, normalSong),
                         userInitiated = true
@@ -755,7 +753,7 @@ class DownloadRecoveryRoomStoreTest : DownloadRecoveryRoomStoreTestSupport() {
             val songs = List(901) { index ->
                 song(80_000L + index, "batch-page-$index")
             }
-            val operationIds = songs.mapIndexed { index, _ -> "batch-page-$index" }
+            val operationIds = List(songs.size) { index -> "batch-page-$index" }
             for (index in songs.indices) {
                 DownloadExecutionRoomStore.upsert(
                     context = context,

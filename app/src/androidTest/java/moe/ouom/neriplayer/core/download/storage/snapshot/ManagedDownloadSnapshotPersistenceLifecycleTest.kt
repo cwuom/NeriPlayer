@@ -30,6 +30,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadSnapshotPersistenceLifecycleTest {
@@ -213,7 +214,7 @@ class ManagedDownloadSnapshotPersistenceLifecycleTest {
         repeat(2) { assertSnapshot(replacement, checkNotNull(coldRestore("root-a"))) }
     }
 
-    private suspend fun awaitPersistence() = withTimeout(10_000L) {
+    private suspend fun awaitPersistence() = withTimeout(10_000.milliseconds) {
         while (true) {
             val pending = scopeJob.children.toList()
             if (pending.isEmpty()) return@withTimeout

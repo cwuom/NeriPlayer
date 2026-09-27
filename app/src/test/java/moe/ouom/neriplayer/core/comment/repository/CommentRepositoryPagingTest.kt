@@ -31,6 +31,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CommentRepositoryPagingTest {
@@ -233,7 +234,7 @@ class CommentRepositoryPagingTest {
         )
         val vm = CommentViewModel().apply { repositoryFactory = { BiliCommentRepository { client } } }
         try {
-            withTimeout(5_000L) {
+            withTimeout(5_000.milliseconds) {
                 vm.onSourceChanged(biliSource())
                 vm.uiState.first { it.status == CommentListStatus.SUCCESS }
                 vm.loadMore()
@@ -262,7 +263,7 @@ class CommentRepositoryPagingTest {
     ) {
         val vm = CommentViewModel().apply { repositoryFactory = { repository } }
         try {
-            withTimeout(5_000L) {
+            withTimeout(5_000.milliseconds) {
                 vm.onSourceChanged(source)
                 vm.uiState.first { it.status == CommentListStatus.SUCCESS }
                 vm.loadMore()

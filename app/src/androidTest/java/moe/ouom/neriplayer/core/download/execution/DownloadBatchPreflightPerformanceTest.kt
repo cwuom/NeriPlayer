@@ -137,7 +137,7 @@ class DownloadBatchPreflightPerformanceTest {
     ) {
         val runId = UUID.randomUUID().toString()
         val firstId = SystemClock.elapsedRealtimeNanos()
-        val songs = modes.mapIndexed { index, _ -> SongItem(
+        val songs = List(modes.size) { index -> SongItem(
             id = firstId + index, name = "preflight-$runId-$index", artist = "fixture",
             album = "netease", albumId = 0L, durationMs = 1_000L, coverUrl = null
         ) }

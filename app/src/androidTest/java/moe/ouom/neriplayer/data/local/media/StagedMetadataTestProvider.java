@@ -9,6 +9,7 @@ import android.os.ParcelFileDescriptor;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
+import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -27,7 +28,7 @@ public final class StagedMetadataTestProvider extends ContentProvider {
     private boolean failNextWrite;
 
     @Override
-    public Bundle call(String method, String arg, Bundle extras) {
+    public Bundle call(@NonNull String method, String arg, Bundle extras) {
         if ("failNextWrite".equals(method)) {
             failNextWrite = true;
             return new Bundle();
@@ -41,13 +42,13 @@ public final class StagedMetadataTestProvider extends ContentProvider {
     }
 
     @Override
-    public String getType(Uri uri) {
+    public String getType(@NonNull Uri uri) {
         return "audio/mp4";
     }
 
     @Override
     public Cursor query(
-        Uri uri,
+        @NonNull Uri uri,
         String[] projection,
         String selection,
         String[] selectionArgs,
@@ -76,7 +77,7 @@ public final class StagedMetadataTestProvider extends ContentProvider {
     }
 
     @Override
-    public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+    public ParcelFileDescriptor openFile(@NonNull Uri uri, @NonNull String mode) throws FileNotFoundException {
         File file = backingFile();
         if ("rw".equals(mode)) {
             throw new FileNotFoundException("The provider does not support direct rw access");
@@ -101,8 +102,8 @@ public final class StagedMetadataTestProvider extends ContentProvider {
         }
         if (mode.contains("w") && failNextWrite) {
             failNextWrite = false;
-            try (java.io.FileOutputStream ignored = new java.io.FileOutputStream(file)) {
-                // 模拟 truncate 后写入失败，让生产回滚保留 RESTORING
+            try {
+                new java.io.FileOutputStream(file).close();
             } catch (IOException error) {
                 throw new FileNotFoundException(error.getMessage());
             }
@@ -117,18 +118,18 @@ public final class StagedMetadataTestProvider extends ContentProvider {
     }
 
     @Override
-    public Uri insert(Uri uri, ContentValues values) {
+    public Uri insert(@NonNull Uri uri, ContentValues values) {
         return null;
     }
 
     @Override
-    public int delete(Uri uri, String selection, String[] selectionArgs) {
+    public int delete(@NonNull Uri uri, String selection, String[] selectionArgs) {
         return backingFile().delete() ? 1 : 0;
     }
 
     @Override
     public int update(
-        Uri uri,
+        @NonNull Uri uri,
         ContentValues values,
         String selection,
         String[] selectionArgs
