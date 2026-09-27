@@ -5,7 +5,8 @@
     "moe/ouom/neriplayer/data/settings/PlaybackSettingsSection.kt",
     "moe/ouom/neriplayer/core/api/bili/BiliCommentApi.kt",
     "moe/ouom/neriplayer/core/api/bili/BiliCookieSession.kt",
-    "moe/ouom/neriplayer/core/api/bili/BiliRequestSupport.kt"
+    "moe/ouom/neriplayer/core/api/bili/BiliRequestSupport.kt",
+    "moe/ouom/neriplayer/ui/screen/tab/HomeContinueSection.kt"
   ],
   "method_scopes": [
     {

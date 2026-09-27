@@ -72,6 +72,39 @@ class HomeScreenMappingTest {
     }
 
     @Test
+    fun `home cover candidates accept each cover source and ignore blank references`() {
+        val base = DownloadedSong(
+            id = 1L,
+            name = "song",
+            artist = "artist",
+            album = "album",
+            filePath = "/music/song.mp3",
+            fileSize = 1L,
+            downloadTime = 1L
+        )
+        val candidates = homeLocalFilesCoverCandidates(
+            listOf(
+                base.copy(id = 1L, customCoverUrl = "content://custom"),
+                base.copy(id = 2L, coverPath = "/music/cover.jpg"),
+                base.copy(id = 3L, coverUrl = "https://example.com/cover.jpg"),
+                base.copy(id = 4L),
+                base.copy(id = 5L, customCoverUrl = "   ")
+            )
+        )
+
+        assertEquals(listOf(1L, 2L, 3L), candidates.map(SongItem::id))
+    }
+
+    @Test
+    fun `continue cover prefers resolved cover then usable persisted cover`() {
+        assertEquals("content://fresh", selectContinueCoverUrl("content://fresh", "file://old"))
+        assertEquals("file://old", selectContinueCoverUrl(" ", "file://old"))
+        assertEquals("file://old", selectContinueCoverUrl(null, "file://old"))
+        assertEquals(null, selectContinueCoverUrl(null, " "))
+        assertEquals(null, selectContinueCoverUrl(null, null))
+    }
+
+    @Test
     fun continueSectionStaysMountedWhileUsageRepositoryLoads() {
         assertTrue(
             shouldShowHomeContinueSection(

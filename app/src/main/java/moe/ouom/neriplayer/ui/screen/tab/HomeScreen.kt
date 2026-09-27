@@ -31,7 +31,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -62,7 +61,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Radar
@@ -95,7 +93,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.graphics.Color
@@ -104,10 +101,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -122,17 +117,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
-import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
 import moe.ouom.neriplayer.data.playlist.usage.buildLocalPlaylistUsageLookup
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
@@ -153,7 +144,6 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
-import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
@@ -168,14 +158,6 @@ import kotlin.math.ceil
 import kotlin.math.min
 import java.util.Locale
 
-private const val HomeContinueHorizontalPaddingDp = 8f
-private const val HomeContinueCardSpacingDp = 12f
-private const val HomeContinueCardMaxWidthDp = 140f
-private const val HomeContinueEntryLimit = 12
-private const val HomeLocalPlaylistCoverCandidateLimit = 24
-private const val HomeDownloadedCoverSourceLimit = 64
-private const val HomeContinueThreeSlotWidthDp = 300f
-private const val HomeContinueTabletWidthDp = 600f
 private const val HomeScrollKeyContinueHeader = "home:continue:header"
 private const val HomeScrollKeyContinueContent = "home:continue:content"
 private const val HomeScrollKeyYtGuess = "home:ytmusic:guess"
@@ -190,45 +172,6 @@ private const val HomeScrollKeyYtEmptyFeedError = "home:ytmusic:empty-feed:error
 private const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-playlists"
 private const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
 private const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
-
-internal fun shouldShowHomeContinueSection(
-    showContinueCard: Boolean,
-    usageLoaded: Boolean,
-    hasUsage: Boolean
-): Boolean = showContinueCard && (!usageLoaded || hasUsage)
-
-internal fun resolveHomeContinuePagerPage(savedPage: Int, pageCount: Int): Int {
-    return savedPage.coerceIn(0, pageCount.coerceAtLeast(1) - 1)
-}
-
-internal fun shouldResolveHomeContinueLocalCoverFallback(
-    persistedCoverUrl: String?,
-    localPlaylist: LocalPlaylist?
-): Boolean = localPlaylist != null && shouldValidateHomeContinueCoverReference(persistedCoverUrl)
-
-internal fun shouldValidateHomeContinueCoverReference(
-    persistedCoverUrl: String?
-): Boolean {
-    val normalized = persistedCoverUrl?.trim().orEmpty()
-    return normalized.isEmpty() ||
-        (!normalized.startsWith("http://", ignoreCase = true) &&
-            !normalized.startsWith("https://", ignoreCase = true))
-}
-
-internal fun homeLocalFilesCoverCandidates(
-    downloadedSongs: List<DownloadedSong>
-): List<SongItem> {
-    return downloadedSongs.asSequence()
-        .take(HomeDownloadedCoverSourceLimit)
-        .filter { song ->
-            !song.customCoverUrl.isNullOrBlank() ||
-                !song.coverPath.isNullOrBlank() ||
-                !song.coverUrl.isNullOrBlank()
-        }
-        .take(HomeLocalPlaylistCoverCandidateLimit)
-        .map(DownloadedSong::toPlaybackSongItem)
-        .toList()
-}
 
 private fun homeNeteaseSongSectionKey(group: String, source: NeteaseHomeSongSource): String {
     return "home:netease:$group:${source.name.lowercase(Locale.ROOT)}"
@@ -1985,196 +1928,6 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
 }
 
 @Composable
-private fun ContinueSection(
-    items: List<UsageEntry>,
-    localPlaylistLookup: Map<Long, LocalPlaylist>,
-    localFilesCoverCandidates: List<SongItem>,
-    onClick: (UsageEntry) -> Unit,
-    savedPage: Int,
-    onPageChanged: (Int) -> Unit,
-    offlineMode: Boolean,
-    modifier: Modifier = Modifier
-) {
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        val cardsPerPage = remember(maxWidth) {
-            resolveHomeContinueCardsPerPage(maxWidth.value)
-        }
-        val cardWidth = remember(maxWidth, cardsPerPage) {
-            resolveHomeContinueCardWidthDp(
-                containerWidthDp = maxWidth.value,
-                cardsPerPage = cardsPerPage
-            ).dp
-        }
-        val pageCount = remember(items.size, cardsPerPage) {
-            ceil(items.size / cardsPerPage.toFloat()).toInt().coerceAtLeast(1)
-        }
-        val initialPage = remember(savedPage, pageCount) {
-            resolveHomeContinuePagerPage(savedPage, pageCount)
-        }
-        val pagerState = rememberPagerState(
-            initialPage = initialPage,
-            pageCount = { pageCount }
-        )
-        LaunchedEffect(pagerState.currentPage) {
-            onPageChanged(pagerState.currentPage)
-        }
-
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clipToBounds()
-        ) { page ->
-            Box(Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = HomeContinueHorizontalPaddingDp.dp),
-                    horizontalArrangement = Arrangement.spacedBy(HomeContinueCardSpacingDp.dp)
-                ) {
-                    repeat(cardsPerPage) { slot ->
-                        val entry = items.getOrNull(page * cardsPerPage + slot)
-                        if (entry == null) {
-                            Spacer(Modifier.width(cardWidth))
-                        } else {
-                            val localPlaylist = if (
-                                entry.source == PlaylistUsageRepository.SOURCE_LOCAL
-                            ) {
-                                localPlaylistLookup[entry.id]
-                            } else {
-                                null
-                            }
-                            ContinueCard(
-                                entry = entry,
-                                localPlaylist = localPlaylist,
-                                localFilesCoverCandidates = localFilesCoverCandidates,
-                                onClick = { onClick(entry) },
-                                onRemove = {
-                                    AppContainer.launchBackgroundIo {
-                                        AppContainer.playlistUsageRepo.removeEntry(
-                                            entry.id,
-                                            entry.source,
-                                            entry.subtype
-                                        )
-                                    }
-                                },
-                                offlineMode = offlineMode,
-                                modifier = Modifier.width(cardWidth)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ContinueCard(
-    entry: UsageEntry,
-    localPlaylist: LocalPlaylist?,
-    localFilesCoverCandidates: List<SongItem>,
-    onClick: () -> Unit,
-    onRemove: () -> Unit,
-    offlineMode: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val view = androidx.compose.ui.platform.LocalView.current
-    var showMenu by remember { mutableStateOf(false) }
-    val displayName = remember(entry.id, entry.name, entry.source, configuration) {
-        SystemLocalPlaylists.resolve(entry.id, entry.name, context)?.currentName ?: entry.name
-    }
-    val shouldResolveLocalCover = shouldResolveHomeContinueLocalCoverFallback(
-        persistedCoverUrl = entry.picUrl,
-        localPlaylist = localPlaylist
-    )
-    val resolvedLocalCoverUrl = if (shouldResolveLocalCover) {
-        val playlist = requireNotNull(localPlaylist)
-        rememberPlaylistDisplayCoverUrl(
-            playlist = playlist,
-            additionalCoverCandidates = if (playlist.id == LocalFilesPlaylist.SYSTEM_ID) {
-                localFilesCoverCandidates
-            } else {
-                emptyList()
-            },
-            preferredCoverUrl = entry.picUrl
-        )
-    } else {
-        null
-    }
-    val coverUrl = resolvedLocalCoverUrl
-        ?.takeIf { it.isNotBlank() }
-        ?: entry.picUrl?.takeIf { it.isNotBlank() }
-
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = {
-                    view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                    showMenu = true
-                }
-            )
-    ) {
-        AsyncImage(
-            model = fastScrollableImageRequest(
-                context = context,
-                data = coverUrl,
-                sizePx = 384,
-                offlineMode = offlineMode
-            ),
-            contentDescription = displayName,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp))
-        )
-        Column(modifier = Modifier.padding(6.dp)) {
-            Text(
-                text = displayName,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall
-            )
-            Text(
-                text = pluralStringResource(
-                    R.plurals.home_song_count_format,
-                    entry.trackCount,
-                    entry.trackCount
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-        }
-
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false }
-        ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.continue_playing_remove)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.DeleteForever,
-                        contentDescription = null
-                    )
-                },
-                onClick = {
-                    showMenu = false
-                    onRemove()
-                }
-            )
-        }
-    }
-}
-
-@Composable
 private fun ResponsiveSongPagerList(
     songs: List<SongItem>,
     onSongClick: (List<SongItem>, Int) -> Unit,
@@ -2234,30 +1987,6 @@ private fun ResponsiveSongPagerList(
             }
         }
     }
-}
-
-internal fun resolveHomeContinueCardsPerPage(containerWidthDp: Float): Int {
-    val preferredMinimumSlots = if (containerWidthDp >= HomeContinueThreeSlotWidthDp) 3 else 2
-    val availableWidth = (containerWidthDp - HomeContinueHorizontalPaddingDp * 2f)
-        .coerceAtLeast(0f)
-    val slotsNeededToAvoidSlack = ceil(
-        (availableWidth + HomeContinueCardSpacingDp) /
-            (HomeContinueCardMaxWidthDp + HomeContinueCardSpacingDp)
-    ).toInt()
-    val tabletMinimumSlots = if (containerWidthDp >= HomeContinueTabletWidthDp) 4 else 0
-    return maxOf(preferredMinimumSlots, tabletMinimumSlots, slotsNeededToAvoidSlack, 1)
-}
-
-internal fun resolveHomeContinueCardWidthDp(
-    containerWidthDp: Float,
-    cardsPerPage: Int
-): Float {
-    val slots = cardsPerPage.coerceAtLeast(1)
-    val availableWidth = containerWidthDp -
-        HomeContinueHorizontalPaddingDp * 2f -
-        HomeContinueCardSpacingDp * (slots - 1)
-    return (availableWidth / slots)
-        .coerceAtLeast(0f)
 }
 
 internal fun buildHomeSongInfo(song: SongItem): String {
