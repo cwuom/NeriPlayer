@@ -55,11 +55,14 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     )
     private val privateDirectories = mutableListOf<File>()
     private var previousDirectoryUri: String? = null
+    private var previousMigrationRequestId: String? = null
     private var migrationWorkId: String? = null
 
     @Before
     fun resetMigrationFixture() {
         previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+        previousMigrationRequestId = ManagedDownloadMigrationCheckpointStore(appContext)
+            .readRequest()?.workId
         appContext.contentResolver.call(
             providerRootUri,
             ManagedDownloadMigrationTestDocumentProvider.RESET,
@@ -72,20 +75,22 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     @After
     fun restoreMigrationFixture() = runBlocking {
         try {
-            migrationWorkId?.let { workId ->
+            val checkpointStore = ManagedDownloadMigrationCheckpointStore(appContext)
+            val workId = (migrationWorkId ?: checkpointStore.readRequest()?.workId)
+                ?.takeUnless { it == previousMigrationRequestId }
+            workId?.let { id ->
                 val workManager = WorkManager.getInstance(appContext)
-                val uuid = UUID.fromString(workId)
+                val uuid = UUID.fromString(id)
                 if (workManager.getWorkInfoById(uuid).get()?.state?.isFinished == false) {
                     workManager.cancelWorkById(uuid).result.get(5, TimeUnit.SECONDS)
                 }
                 // 取消请求完成后仍需等待 doWork 释放迁移会话
                 withTimeout(MIGRATION_WORKER_STOP_TIMEOUT_MS) {
-                    while (ManagedDownloadStorage.migrationProgressSession.isOwner(workId)) {
+                    while (ManagedDownloadStorage.migrationProgressSession.isOwner(id)) {
                         delay(50.milliseconds)
                     }
                 }
-                val cleared = ManagedDownloadMigrationCheckpointStore(appContext)
-                    .clearCompletedIfCurrent(workId, listOf(workId))
+                val cleared = checkpointStore.clearCompletedIfCurrent(id, listOf(id))
                 if (cleared == true) {
                     val processing = ManagedLibraryProcessingCoordinator.state.value
                     if (processing.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE) {

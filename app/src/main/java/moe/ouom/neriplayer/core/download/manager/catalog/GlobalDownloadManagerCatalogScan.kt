@@ -10,6 +10,8 @@ import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.batch.isFullLibraryDeleteCancellationSettled
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshPreserveReason
 import moe.ouom.neriplayer.core.download.model.remoteSourceStableKeyOrNull
@@ -43,6 +45,7 @@ import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildTok
 import moe.ouom.neriplayer.core.download.reconcile.EmptyScanDecision
 import moe.ouom.neriplayer.core.download.reconcile.EmptyScanObservation
 import moe.ouom.neriplayer.core.download.reconcile.ScanConfidence
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.ManagedDownloadMigrationCheckpointStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.model.SongItem
@@ -92,7 +95,17 @@ internal fun GlobalDownloadManager.requestLocalScanLocked(
                 LegacyJsonCleanupScheduler.scheduleQuarantineRecovery(context)
             }
             val retryState = ManagedLibraryProcessingCoordinator.state.value
-            if (shouldCompleteProcessingAfterCatalogPublish(retryState)) {
+            val migrationRequestActive = if (
+                retryState is ManagedLibraryProcessingState.WaitingForRetry &&
+                    retryState.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE
+            ) {
+                runCatching {
+                    ManagedDownloadMigrationCheckpointStore(context).readRequest()?.autoResume == true
+                }.getOrDefault(true)
+            } else {
+                false
+            }
+            if (shouldCompleteProcessingAfterCatalogPublish(retryState, migrationRequestActive)) {
                 retryState.operationId?.let { operationId ->
                     if (latestOutcome is ManagedLibraryRefreshOutcome.Published) {
                         ManagedLibraryProcessingCoordinator.complete(context, operationId)

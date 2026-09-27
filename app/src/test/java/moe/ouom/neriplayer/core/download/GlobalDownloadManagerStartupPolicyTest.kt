@@ -1079,14 +1079,15 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
     }
 
     @Test
-    fun `scan completion only releases legacy upgrade processing`() {
+    fun `scan completion retains migration ownership but settles direct directory retries`() {
         assertTrue(
             GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
                 ManagedLibraryProcessingState.Running(
                     operationId = "legacy",
                     reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
                     phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
-                )
+                ),
+                migrationRequestActive = false
             )
         )
         assertFalse(
@@ -1095,7 +1096,8 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
                     operationId = "legacy",
                     reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
                     phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE
-                )
+                ),
+                migrationRequestActive = false
             )
         )
         assertFalse(
@@ -1104,7 +1106,8 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
                     operationId = "legacy",
                     reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
                     phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE
-                )
+                ),
+                migrationRequestActive = false
             )
         )
         assertFalse(
@@ -1113,7 +1116,8 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
                     operationId = "migration",
                     reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
                     phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
-                )
+                ),
+                migrationRequestActive = true
             )
         )
         assertFalse(
@@ -1122,7 +1126,18 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
                     operationId = "migration",
                     reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
                     phase = ManagedLibraryProcessingPhase.WAITING_FOR_RETRY
-                )
+                ),
+                migrationRequestActive = true
+            )
+        )
+        assertTrue(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.WaitingForRetry(
+                    operationId = "direct-change",
+                    reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+                    phase = ManagedLibraryProcessingPhase.WAITING_FOR_RETRY
+                ),
+                migrationRequestActive = false
             )
         )
     }

@@ -80,14 +80,17 @@ internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
 }
 
 internal fun GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublishImpl(
-    state: ManagedLibraryProcessingState
+    state: ManagedLibraryProcessingState,
+    migrationRequestActive: Boolean
 ): Boolean {
-    // 目录切换由发起者校验目标后结束，扫描器只负责旧库升级的完成信号
+    // 迁移由 Worker 校验目标后结束，直接切换目录的等待态可由后续扫描收敛
     return when (state) {
         is ManagedLibraryProcessingState.Running ->
             state.phase == ManagedLibraryProcessingPhase.REBUILDING_INDEX &&
                 state.reason == ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE
-        is ManagedLibraryProcessingState.WaitingForRetry,
+        is ManagedLibraryProcessingState.WaitingForRetry ->
+            state.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE &&
+                !migrationRequestActive
         ManagedLibraryProcessingState.Idle -> false
     }
 }

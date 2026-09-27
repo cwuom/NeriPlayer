@@ -994,11 +994,11 @@ class ManagedDownloadMigrationWorker(
                 directoryUri = toDirectoryUri,
                 useDefaultRootWhenDirectoryUriMissing = true
             )
-            // 音频已迁移时至少应有一首发布到 catalog，其余数量由目标校验保证
+            // 目标文件校验不保证每首歌都已经发布到 catalog
             val minimumSongCount = maxOf(
                 minimumSourceEntryCount,
                 checkpointStore.readMinimumAudioCount(migrationWorkId)
-            ).coerceAtMost(1)
+            )
             var finalScanOutcome: ManagedLibraryRefreshOutcome? = null
             for (attempt in 1..MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS) {
                 if (!checkpointStore.isRequestCurrent(migrationWorkId)) {

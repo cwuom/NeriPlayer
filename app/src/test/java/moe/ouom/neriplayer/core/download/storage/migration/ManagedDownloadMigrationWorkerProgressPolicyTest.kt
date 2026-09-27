@@ -1063,6 +1063,26 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         )
         assertTrue(
             shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = targetRoot,
+                    songCount = 1
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 2
+            )
+        )
+        assertFalse(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = targetRoot,
+                    songCount = 2
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 2
+            )
+        )
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
                 ManagedLibraryRefreshOutcome.Preserved(
                     ManagedLibraryRefreshPreserveReason.INCOMPLETE_ROOT_ENUMERATION
                 ),
