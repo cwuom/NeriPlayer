@@ -1,0 +1,319 @@
+package moe.ouom.neriplayer.core.player.service
+
+import android.app.Notification
+import android.content.Intent
+import android.media.AudioAttributes
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.widget.PlaybackWidgetState
+import moe.ouom.neriplayer.widget.playbackWidgetPresentationChanged
+import moe.ouom.neriplayer.widget.shouldPartiallyUpdatePlaybackWidgetProgress
+
+internal data class PlaybackNotificationSnapshot(
+    val songKey: String?,
+    val title: String,
+    val text: String,
+    val isTransportActive: Boolean,
+    val isPlaybackControlPlaying: Boolean,
+    val isAudioRouteMuted: Boolean,
+    val isFavorite: Boolean,
+    val requiresInteractiveFavoriteConfirmation: Boolean,
+    val largeIconReady: Boolean,
+    val coverSource: String?,
+    val statusBarLyricState: StatusBarLyricNotificationState,
+    val floatingLyricsEnabled: Boolean,
+)
+
+internal data class PlaybackMetadataSnapshot(
+    val songKey: String?,
+    val title: String,
+    val artist: String,
+    val album: String?,
+    val displayTitle: String,
+    val displaySubtitle: String,
+    val displayDescription: String?,
+    val durationMs: Long,
+    val coverSource: String?,
+    val largeIconReady: Boolean,
+)
+
+internal fun resolveServicePlaybackState(snapshot: PlaybackServicePlaybackSnapshot): Int = when {
+    snapshot.buffering -> PlaybackState.STATE_BUFFERING
+    snapshot.transportActive -> PlaybackState.STATE_PLAYING
+    !snapshot.playerSongPresent && snapshot.song != null && snapshot.roomPlaying ->
+        PlaybackState.STATE_BUFFERING
+    else -> PlaybackState.STATE_PAUSED
+}
+
+internal fun servicePlaybackPositionMs(snapshot: PlaybackServicePlaybackSnapshot): Long =
+    if (!snapshot.playerSongPresent && snapshot.song != null) snapshot.roomPositionMs
+    else snapshot.playerPositionMs
+
+internal fun servicePlaybackSpeed(state: Int, snapshot: PlaybackServicePlaybackSnapshot): Float =
+    if (state == PlaybackState.STATE_PLAYING) snapshot.playbackSpeed else 0.0f
+
+internal fun mediaSessionPlaybackActions(): Long =
+    PlaybackState.ACTION_PLAY or
+        PlaybackState.ACTION_PAUSE or
+        PlaybackState.ACTION_PLAY_PAUSE or
+        PlaybackState.ACTION_SKIP_TO_NEXT or
+        PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+        PlaybackState.ACTION_SEEK_TO
+
+internal fun serviceFavoriteControlFingerprint(canToggleFavorite: Boolean, favorite: Boolean): Int = when {
+    !canToggleFavorite -> 0
+    favorite -> 2
+    else -> 1
+}
+
+private data class PreparedServiceNotification(
+    val snapshot: PlaybackNotificationSnapshot,
+    val renderInputs: PlaybackServiceNotificationRenderInputs,
+)
+
+internal class PlaybackServicePresentationOwner(
+    private val source: PlaybackServicePresentationSource,
+    private val port: PlaybackServicePresentationPort,
+    private val artwork: PlaybackArtworkOwner,
+    private val scope: CoroutineScope,
+) {
+    private val playbackStateThrottler = MediaSessionPlaybackStateThrottler()
+    private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
+    private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
+    private var lastWidgetState: PlaybackWidgetState? = null
+    private var favoriteSongKeys: Set<String> = emptySet()
+
+    fun initializeSession(callback: MediaSession.Callback) = port.initializeSession(callback)
+
+    fun sessionOrNull(): MediaSession? = port.sessionOrNull()
+
+    fun audioAttributes(): AudioAttributes = port.audioAttributes()
+
+    fun releaseSessionAfterForegroundFailure(reason: String) = port.releaseSessionAfterForegroundFailure(reason)
+
+    fun releaseSessionForDestroy() = port.releaseSessionForDestroy()
+
+    fun buildBootstrapNotification(): Notification = port.buildBootstrapNotification()
+
+    fun buildNotification(
+        lyricState: StatusBarLyricNotificationState,
+        floatingLyricsEnabled: Boolean,
+    ): Notification = port.buildNotification(withShareUrl(prepareNotification(lyricState, floatingLyricsEnabled).renderInputs))
+
+    fun dispatchMediaButtonIntent(intent: Intent?) = port.dispatchMediaButtonIntent(intent)
+
+    fun invalidateMetadataSnapshot() {
+        lastMetadataSnapshot = null
+    }
+
+    fun resetFavoriteSongKeys() {
+        favoriteSongKeys = emptySet()
+    }
+
+    fun applyFloatingLyricsExternalAction(currentEnabled: Boolean, legacyHideAction: Boolean) {
+        val target = resolveFloatingLyricsExternalTargetEnabled(currentEnabled, legacyHideAction)
+        scope.launch { persistFloatingLyricsEnabled(target) }
+    }
+
+    private suspend fun persistFloatingLyricsEnabled(enabled: Boolean) {
+        runCatching { source.setFloatingLyricsEnabled(enabled) }
+            .onFailure { NPLogger.e("NERI-APS", "Failed to persist floating lyrics toggle from external surface", it) }
+    }
+
+    fun refreshFavoriteSongKeys(): Boolean {
+        val previous = favoriteSongKeys
+        val updated = source.favoriteSongKeys()
+        favoriteSongKeys = updated
+        return hasCurrentSongFavoriteStateChanged(
+            currentSongKey = source.playback().song?.stableKey(),
+            previousFavoriteSongKeys = previous,
+            updatedFavoriteSongKeys = updated,
+        )
+    }
+
+    fun canToggleFavorite(song: SongItem?): Boolean = shouldAllowExternalFavoriteToggle(
+        localPlaylistsReady = source.localPlaylistsReady(),
+        hasCurrentSong = song != null,
+        requiresInteractiveConfirmation = requiresInteractiveFavoriteConfirmation(song),
+    )
+
+    fun updateNotification(
+        force: Boolean,
+        foregroundStarted: Boolean,
+        lyricState: StatusBarLyricNotificationState,
+        floatingLyricsEnabled: Boolean,
+    ) {
+        if (!foregroundStarted) return
+        val prepared = prepareNotification(lyricState, floatingLyricsEnabled)
+        if (!force && prepared.snapshot == lastNotificationSnapshot) return
+        lastNotificationSnapshot = prepared.snapshot
+        port.publishNotification(withShareUrl(prepared.renderInputs))
+        updateWidget(force = false, floatingLyricsEnabled = floatingLyricsEnabled)
+    }
+
+    private fun withShareUrl(inputs: PlaybackServiceNotificationRenderInputs): PlaybackServiceNotificationRenderInputs =
+        inputs.copy(shareUrl = inputs.song?.let(source::shareUrl))
+
+    private fun prepareNotification(
+        lyricState: StatusBarLyricNotificationState,
+        floatingLyricsEnabled: Boolean,
+    ): PreparedServiceNotification {
+        val playback = source.playback()
+        val song = playback.song
+        val artworkSnapshot = artwork.snapshotFor(song)
+        val text = notificationText(song)
+        val favorite = isFavoriteSong(song)
+        val interactiveFavorite = requiresInteractiveFavoriteConfirmation(song)
+        val snapshot = serviceNotificationSnapshot(
+            song = song,
+            text = text,
+            transportActive = playback.transportActive,
+            playbackControlPlaying = playback.playbackControlPlaying,
+            audioRouteMuted = playback.audioRouteMuted,
+            isFavorite = favorite,
+            interactiveFavorite = interactiveFavorite,
+            artwork = artworkSnapshot,
+            lyricState = lyricState,
+            floatingLyricsEnabled = floatingLyricsEnabled,
+        )
+        val renderInputs = PlaybackServiceNotificationRenderInputs(
+            song = song,
+            text = text,
+            audioRouteMuted = playback.audioRouteMuted,
+            playbackControlPlaying = playback.playbackControlPlaying,
+            favorite = favorite,
+            interactiveFavorite = interactiveFavorite,
+            floatingLyricsEnabled = floatingLyricsEnabled,
+            lyricState = lyricState,
+            artwork = artworkSnapshot.notificationBitmap,
+            shareUrl = null,
+        )
+        return PreparedServiceNotification(snapshot, renderInputs)
+    }
+
+    fun updateWidget(force: Boolean, floatingLyricsEnabled: Boolean) {
+        if (!port.hasInstalledWidgets()) return
+        val playback = source.playback()
+        val state = widgetState(playback, floatingLyricsEnabled)
+        if (!shouldUpdateServicePlaybackWidget(force, lastWidgetState, state)) return
+        lastWidgetState = state
+        port.publishWidget(state, artwork.snapshotFor(playback.song).notificationBitmap)
+    }
+
+    fun updateWidgetProgress(floatingLyricsEnabled: Boolean) {
+        if (!port.hasInstalledWidgets()) return
+        val state = widgetState(source.playback(), floatingLyricsEnabled)
+        if (playbackWidgetPresentationChanged(lastWidgetState, state)) {
+            updateWidget(force = true, floatingLyricsEnabled = floatingLyricsEnabled)
+            return
+        }
+        if (!shouldPartiallyUpdatePlaybackWidgetProgress(lastWidgetState, state)) return
+        port.publishWidgetProgress(state)
+    }
+
+    fun updateMetadata() {
+        val song = source.playback().song
+        val artworkSnapshot = artwork.observe(song)
+        val metadataInputs = source.metadata()
+        val text = serviceMetadataText(
+            song = song,
+            payload = metadataInputs.payload,
+            audioDeviceType = metadataInputs.audioDeviceType,
+            forceSendLyrics = metadataInputs.forceSendLyrics,
+        )
+        val snapshot = serviceMetadataSnapshot(song, text, artworkSnapshot)
+        if (snapshot == lastMetadataSnapshot) return
+        lastMetadataSnapshot = snapshot
+        port.setMetadata(serviceMediaMetadata(snapshot, artworkSnapshot))
+    }
+
+    fun updatePlaybackState(force: Boolean, floatingLyricsEnabled: Boolean) {
+        val playback = source.playback()
+        val state = resolveServicePlaybackState(playback)
+        val positionMs = servicePlaybackPositionMs(playback)
+        val speed = servicePlaybackSpeed(state, playback)
+        val song = playback.song
+        val favorite = isFavoriteSong(song)
+        val canToggleFavorite = canToggleFavorite(song)
+        val fingerprint = buildMediaSessionControlFingerprint(
+            favoriteControlFingerprint = serviceFavoriteControlFingerprint(canToggleFavorite, favorite),
+            floatingLyricsEnabled = floatingLyricsEnabled,
+        )
+        val nowMs = port.elapsedRealtime()
+        if (!playbackStateThrottler.shouldDispatch(state, positionMs, speed, fingerprint, nowMs, force)) return
+        port.setPlaybackState(buildPlaybackState(state, positionMs, speed, favorite, canToggleFavorite, floatingLyricsEnabled))
+        playbackStateThrottler.recordDispatch(state, positionMs, speed, fingerprint, nowMs)
+    }
+
+    private fun notificationText(song: SongItem?): String {
+        val timer = source.timer()
+        return serviceNotificationText(song, timer.state, timer.remaining, port::localizedString)
+    }
+
+    private fun isFavoriteSong(song: SongItem?): Boolean =
+        song != null && song.stableKey() in favoriteSongKeys
+
+    private fun requiresInteractiveFavoriteConfirmation(song: SongItem?): Boolean =
+        shouldUseInteractiveFavoriteIntent(
+            localPlaylistsReady = source.localPlaylistsReady(),
+            hasCurrentSong = song != null,
+            isFavorite = isFavoriteSong(song),
+            isLocalSong = song?.let(source::isLocalSong) == true,
+        )
+
+    private fun widgetState(
+        playback: PlaybackServicePlaybackSnapshot,
+        floatingLyricsEnabled: Boolean,
+    ): PlaybackWidgetState {
+        val song = playback.song
+        return servicePlaybackWidgetState(ServiceWidgetInputs(
+            song = song,
+            playerSongPresent = playback.playerSongPresent,
+            playerPositionMs = playback.playerPositionMs,
+            roomPositionMs = playback.roomPositionMs,
+            buffering = playback.buffering,
+            transportActive = playback.transportActive,
+            roomPlaying = playback.roomPlaying,
+            favorite = isFavoriteSong(song),
+            canToggleFavorite = canToggleFavorite(song),
+            floatingLyricsEnabled = floatingLyricsEnabled,
+            artwork = artwork.snapshotFor(song),
+            labels = port.widgetLabels(),
+        ))
+    }
+
+    private fun buildPlaybackState(
+        state: Int,
+        positionMs: Long,
+        speed: Float,
+        favorite: Boolean,
+        canToggleFavorite: Boolean,
+        floatingLyricsEnabled: Boolean,
+    ): PlaybackState {
+        val builder = PlaybackState.Builder()
+            .setActions(mediaSessionPlaybackActions())
+            .setState(state, positionMs, speed)
+        if (canToggleFavorite) builder.addCustomAction(favoriteCustomAction(favorite))
+        builder.addCustomAction(floatingLyricsCustomAction(floatingLyricsEnabled))
+        return builder.build()
+    }
+
+    private fun favoriteCustomAction(favorite: Boolean): PlaybackState.CustomAction =
+        PlaybackState.CustomAction.Builder(
+            AudioPlayerService.ACTION_TOGGLE_FAV,
+            port.localizedString(favoriteActionTitle(favorite), null),
+            favoriteActionIcon(favorite),
+        ).build()
+
+    private fun floatingLyricsCustomAction(enabled: Boolean): PlaybackState.CustomAction =
+        PlaybackState.CustomAction.Builder(
+            AudioPlayerService.ACTION_TOGGLE_FLOATING_LYRICS,
+            port.localizedString(floatingLyricsActionTitle(enabled), null),
+            floatingLyricsActionIcon(enabled),
+        ).build()
+}
