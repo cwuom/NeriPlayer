@@ -49,14 +49,7 @@
 
 namespace neri::usb::exclusive {
 
-std::atomic<int64_t> g_nextNativeStreamGeneration { 1 };
-std::atomic<int64_t> g_nextRecoveryActionId { 1 };
 
-bool closeHandleInternal(const std::shared_ptr<UsbExclusiveHandle>& handle);
-void latchTerminalRecoveryAction(
-    UsbExclusiveHandle* handle,
-    neri::usb::UsbRuntimeRecoveryAction action
-);
 bool reconfigureOpenedPlayerPcmOutput(
     UsbExclusiveHandle* handle,
     int sampleRate,
@@ -94,93 +87,8 @@ bool shouldLogRepeatedError(int consecutiveErrors) {
         consecutiveErrors == kEventLoopConsecutiveErrorLimit;
 }
 
-void requestDeviceStop(UsbExclusiveHandle* handle, bool detachBroadcastConfirmed) {
-    if (handle == nullptr) {
-        return;
-    }
-    std::lock_guard<std::mutex> submitGuard(handle->transfer.transferSubmitLock);
-    if (detachBroadcastConfirmed) {
-        handle->recovery.detachBroadcastConfirmed.store(true);
-    }
-    handle->recovery.deviceOnline.store(false);
-    handle->player.focusMuted.store(true);
-    handle->player.playbackEnabled.store(false);
-    handle->player.playerPaused.store(false);
-    handle->recovery.stopRequested.store(true);
-    latchTerminalRecoveryAction(
-        handle,
-        neri::usb::UsbRuntimeRecoveryAction::StopPreserveIntent
-    );
-}
-
-void requestNoDeviceStop(UsbExclusiveHandle* handle) {
-    if (handle == nullptr) {
-        return;
-    }
-    handle->recovery.noDeviceObserved.store(true);
-    requestDeviceStop(handle, false);
-}
-
 const char* libusbErrName(int rc) {
     return libusb_error_name(rc);
-}
-
-void clearError(UsbExclusiveHandle* handle) {
-    if (handle == nullptr) return;
-    std::lock_guard<std::mutex> guard(handle->recovery.lock);
-    handle->recovery.lastError.clear();
-}
-
-void setError(UsbExclusiveHandle* handle, const char* error) {
-    if (handle == nullptr) return;
-    std::lock_guard<std::mutex> guard(handle->recovery.lock);
-    handle->recovery.lastError = error != nullptr ? error : "unknown";
-}
-
-void setError(UsbExclusiveHandle* handle, const std::string& error) {
-    setError(handle, error.c_str());
-}
-
-std::string getErrorCopy(UsbExclusiveHandle* handle) {
-    if (handle == nullptr) return "invalid_handle";
-    std::lock_guard<std::mutex> guard(handle->recovery.lock);
-    return handle->recovery.lastError;
-}
-
-void assignNewNativeStreamGeneration(UsbExclusiveHandle* handle) {
-    if (handle == nullptr) {
-        return;
-    }
-    handle->recovery.nativeStreamGeneration = g_nextNativeStreamGeneration.fetch_add(1);
-    handle->recovery.recoveryActionLatch.reset(handle->recovery.nativeStreamGeneration);
-}
-
-void latchTerminalRecoveryAction(
-    UsbExclusiveHandle* handle,
-    neri::usb::UsbRuntimeRecoveryAction action
-) {
-    if (handle == nullptr ||
-        (action != neri::usb::UsbRuntimeRecoveryAction::FreshOpen &&
-            action != neri::usb::UsbRuntimeRecoveryAction::StopPreserveIntent)) {
-        return;
-    }
-    handle->recovery.recoveryActionLatch.latch(
-        action,
-        g_nextRecoveryActionId.fetch_add(1)
-    );
-}
-
-void markTransportFailed(UsbExclusiveHandle* handle) {
-    if (handle == nullptr) {
-        return;
-    }
-    handle->recovery.transportFailed.store(true);
-    latchTerminalRecoveryAction(
-        handle,
-        handle->recovery.deviceOnline.load()
-            ? neri::usb::UsbRuntimeRecoveryAction::FreshOpen
-            : neri::usb::UsbRuntimeRecoveryAction::StopPreserveIntent
-    );
 }
 
 std::string runtimeCandidateId(const UsbExclusiveHandle* handle) {
@@ -341,19 +249,6 @@ int64_t signedFeedbackRatePpm(
     return rateQ32 < nominalRateQ32 ? -signedMagnitude : signedMagnitude;
 }
 
-neri::usb::UsbRecoveryActionAckStatus acknowledgeRecoveryAction(
-    UsbExclusiveHandle* handle,
-    int64_t actionGeneration,
-    int64_t actionId
-) {
-    return handle != nullptr
-        ? handle->recovery.recoveryActionLatch.acknowledge(
-            actionGeneration,
-            actionId,
-            handle->recovery.closing.load()
-        )
-        : neri::usb::UsbRecoveryActionAckStatus::NoPending;
-}
 
 
 } // namespace neri::usb::exclusive
@@ -453,15 +348,7 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
         const bool terminalFailure = holder->recovery.transportFailed.load() ||
             !holder->recovery.deviceOnline.load() || feedbackTerminalFailure;
         if (terminalFailure) {
-            if (feedbackTerminalFailure && !holder->recovery.transportFailed.load()) {
-                markTransportFailed(holder.get());
-            }
-            latchTerminalRecoveryAction(
-                holder.get(),
-                holder->recovery.deviceOnline.load()
-                    ? neri::usb::UsbRuntimeRecoveryAction::FreshOpen
-                    : neri::usb::UsbRuntimeRecoveryAction::StopPreserveIntent
-            );
+            refreshTerminalRecoveryAction(holder.get(), feedbackTerminalFailure);
         }
         const neri::usb::UsbRecoveryActionSnapshot recovery =
             holder->recovery.recoveryActionLatch.snapshot();
@@ -813,52 +700,6 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
     } catch (...) {
         LOGE("nativeRuntimeReport unknown exception");
         return env->NewStringUTF("native_runtime_report_unavailable");
-    }
-}
-
-extern "C"
-JNIEXPORT jstring JNICALL
-Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeAcknowledgeRecoveryAction(
-    JNIEnv* env,
-    jclass /*clazz*/,
-    jlong handleValue,
-    jlong actionGeneration,
-    jlong actionId
-) {
-    try {
-        const auto holder = acquireHandle(handleValue);
-        const neri::usb::UsbRecoveryActionAckStatus status = acknowledgeRecoveryAction(
-            holder.get(),
-            static_cast<int64_t>(actionGeneration),
-            static_cast<int64_t>(actionId)
-        );
-        if (holder == nullptr) {
-            LOGW(
-                "nativeAcknowledgeRecoveryAction ignored invalid handle=%lld status=%s",
-                static_cast<long long>(handleValue),
-                neri::usb::usbRecoveryActionAckStatusName(status)
-            );
-        } else {
-            LOGI(
-                "nativeAcknowledgeRecoveryAction: handle=%lld generation=%lld "
-                "actionId=%lld status=%s",
-                static_cast<long long>(handleValue),
-                static_cast<long long>(actionGeneration),
-                static_cast<long long>(actionId),
-                neri::usb::usbRecoveryActionAckStatusName(status)
-            );
-        }
-        return env->NewStringUTF(neri::usb::usbRecoveryActionAckStatusName(status));
-    } catch (const std::exception& error) {
-        LOGE("nativeAcknowledgeRecoveryAction exception: %s", error.what());
-        return env->NewStringUTF(neri::usb::usbRecoveryActionAckStatusName(
-            neri::usb::UsbRecoveryActionAckStatus::NoPending
-        ));
-    } catch (...) {
-        LOGE("nativeAcknowledgeRecoveryAction unknown exception");
-        return env->NewStringUTF(neri::usb::usbRecoveryActionAckStatusName(
-            neri::usb::UsbRecoveryActionAckStatus::NoPending
-        ));
     }
 }
 

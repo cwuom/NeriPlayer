@@ -65,6 +65,11 @@ void assignNewNativeStreamGeneration(UsbExclusiveHandle* handle);
 void requestDeviceStop(UsbExclusiveHandle* handle, bool detachBroadcastConfirmed);
 void requestNoDeviceStop(UsbExclusiveHandle* handle);
 void markTransportFailed(UsbExclusiveHandle* handle);
+void latchTerminalRecoveryAction(
+    UsbExclusiveHandle* handle,
+    neri::usb::UsbRuntimeRecoveryAction action
+);
+void refreshTerminalRecoveryAction(UsbExclusiveHandle* handle, bool feedbackTerminalFailure);
 int64_t steadyClockNanoseconds();
 int exponentialBackoffMs(int consecutiveErrors);
 timeval timeoutFromMilliseconds(int timeoutMs);
