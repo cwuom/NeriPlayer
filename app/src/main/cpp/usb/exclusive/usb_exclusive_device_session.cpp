@@ -1411,4 +1411,47 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
     }
 }
 
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeReconfigurePlayerPcmOutput(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong handleValue,
+    jint sampleRate,
+    jint channelCount,
+    jint bitsPerSample,
+    jint subslotBytes
+) {
+    static_cast<void>(env);
+    const auto holder = acquireHandle(handleValue);
+    if (holder == nullptr) {
+        LOGW(
+            "nativeReconfigurePlayerPcmOutput rejected: invalid handle=%lld",
+            static_cast<long long>(handleValue)
+        );
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> apiGuard(holder->apiLock);
+    std::string error;
+    if (!reconfigureOpenedPlayerPcmOutput(
+            holder.get(),
+            sampleRate,
+            channelCount,
+            bitsPerSample,
+            subslotBytes,
+            &error
+        )) {
+        if (!error.empty()) {
+            setError(holder.get(), error);
+            LOGW(
+                "nativeReconfigurePlayerPcmOutput failed: handle=%lld error=%s",
+                static_cast<long long>(handleValue),
+                error.c_str()
+            );
+        }
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
 } // namespace neri::usb::exclusive

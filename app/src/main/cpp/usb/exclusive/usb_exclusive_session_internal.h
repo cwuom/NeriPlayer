@@ -81,6 +81,29 @@ bool stopStreamingInternal(UsbExclusiveHandle* handle);
 int activateBufferedIsoReserveTransfers(UsbExclusiveHandle* handle);
 int64_t queuedPlayerReplayFrames(const UsbExclusiveHandle* handle);
 void clearPlayerReplayState(UsbExclusiveHandle* handle);
+bool preserveCancelledPlayerFrames(
+    UsbExclusiveHandle* handle,
+    TransferUserData* userData,
+    const uint8_t* payload,
+    size_t payloadCapacity,
+    int64_t completedPrefixFrames
+);
+void settlePreparedPlayerFrames(
+    UsbExclusiveHandle* handle,
+    TransferUserData* userData,
+    int64_t completedFrames
+);
+void settlePreparedPlayerFrames(
+    UsbExclusiveHandle* handle,
+    TransferUserData* userData,
+    bool completed
+);
+bool fillPlayerTransfer(
+    UsbExclusiveHandle* handle,
+    TransferUserData* userData,
+    uint8_t* buffer,
+    size_t transferSize
+);
 
 int targetIsoTransferCount(const UsbExclusiveHandle* handle, int requestedDurationMs);
 int setStreamingAlternateLocked(

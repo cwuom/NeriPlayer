@@ -662,112 +662,6 @@ int applyIsoPacketLengths(
     return totalAssigned;
 }
 
-void subtractAtomicFloorZero(std::atomic<int64_t>& value, int64_t amount) {
-    int64_t current = value.load();
-    while (true) {
-        const int64_t updated = std::max<int64_t>(0, current - amount);
-        if (value.compare_exchange_weak(current, updated)) {
-            return;
-        }
-    }
-}
-
-int64_t queuedPlayerReplayFrames(const UsbExclusiveHandle* handle) {
-    if (handle == nullptr || handle->device.frameBytes <= 0) {
-        return 0;
-    }
-    return static_cast<int64_t>(
-        handle->player.playerReplayBuffer.queuedBytes() / static_cast<size_t>(handle->device.frameBytes)
-    );
-}
-
-void clearPlayerReplayState(UsbExclusiveHandle* handle) {
-    if (handle == nullptr) {
-        return;
-    }
-    handle->player.playerReplayBuffer.clear();
-    handle->player.nextPlayerSequence.store(1);
-    handle->player.preserveCancelledPlayerFrames.store(false);
-    handle->player.playerReplayFailed.store(false);
-}
-
-bool preserveCancelledPlayerFrames(
-    UsbExclusiveHandle* handle,
-    TransferUserData* userData,
-    const libusb_transfer* transfer,
-    int64_t completedPrefixFrames
-) {
-    if (handle == nullptr || userData == nullptr || transfer == nullptr ||
-        userData->queuedPlayerFrames <= 0) {
-        return false;
-    }
-    const int slot = userData->slot;
-    if (slot < 0 || slot >= static_cast<int>(handle->transfer.transferBuffers.size()) ||
-        handle->device.frameBytes <= 0 || userData->playerSequence == 0) {
-        handle->player.playerReplayFailed.store(true);
-        return false;
-    }
-    const int64_t queuedFrames = userData->queuedPlayerFrames;
-    const int64_t completedFrames = std::clamp<int64_t>(
-        completedPrefixFrames,
-        0,
-        queuedFrames
-    );
-    const int64_t replayFrames = queuedFrames - completedFrames;
-    const size_t replayOffset = static_cast<size_t>(completedFrames) *
-        static_cast<size_t>(handle->device.frameBytes);
-    const size_t replayBytes = static_cast<size_t>(replayFrames) *
-        static_cast<size_t>(handle->device.frameBytes);
-    const auto& buffer = handle->transfer.transferBuffers[static_cast<size_t>(slot)];
-    if (replayOffset + replayBytes > buffer.size() || transfer->buffer == nullptr ||
-        (replayBytes > 0 && !handle->player.playerReplayBuffer.push(
-            userData->playerSequence,
-            transfer->buffer + replayOffset,
-            replayBytes
-        ))) {
-        handle->player.playerReplayFailed.store(true);
-        return false;
-    }
-    userData->queuedPlayerFrames = 0;
-    userData->playerSequence = 0;
-    subtractAtomicFloorZero(handle->player.stagedPlayerFrames, queuedFrames);
-    if (completedFrames > 0) {
-        handle->player.completedAudioFrames.fetch_add(completedFrames);
-    }
-    return true;
-}
-
-void settlePreparedPlayerFrames(
-    UsbExclusiveHandle* handle,
-    TransferUserData* userData,
-    int64_t completedFrames
-) {
-    if (handle == nullptr || userData == nullptr || userData->queuedPlayerFrames <= 0) {
-        return;
-    }
-    const int64_t frames = userData->queuedPlayerFrames;
-    userData->queuedPlayerFrames = 0;
-    userData->playerSequence = 0;
-    subtractAtomicFloorZero(handle->player.stagedPlayerFrames, frames);
-    const int64_t boundedCompletedFrames = std::clamp<int64_t>(completedFrames, 0, frames);
-    if (boundedCompletedFrames > 0) {
-        handle->player.completedAudioFrames.fetch_add(boundedCompletedFrames);
-    }
-    const int64_t droppedFrames = frames - boundedCompletedFrames;
-    if (droppedFrames > 0) {
-        handle->player.pcmPipeline.addDroppedFrames(droppedFrames);
-    }
-}
-
-void settlePreparedPlayerFrames(
-    UsbExclusiveHandle* handle,
-    TransferUserData* userData,
-    bool completed
-) {
-    const int64_t queuedFrames = userData != nullptr ? userData->queuedPlayerFrames : 0;
-    settlePreparedPlayerFrames(handle, userData, completed ? queuedFrames : 0);
-}
-
 bool refillTransfer(
     UsbExclusiveHandle* handle,
     libusb_transfer* transfer
@@ -788,53 +682,12 @@ bool refillTransfer(
     }
 
     if (handle->transfer.streamSource.load() == StreamSource::PlayerPcm) {
-        const auto transferSize = static_cast<size_t>(transferBytes);
-        if ((userData != nullptr && userData->forceSilence) ||
-            handle->player.playerStartupPreroll.fillSilenceIfNeeded(
-                buffer.data(),
-                transferSize,
-                handle->device.frameBytes
-            )) {
-            if (userData != nullptr && userData->forceSilence) {
-                std::memset(buffer.data(), 0, transferSize);
-            }
-            if (userData != nullptr) {
-                userData->queuedPlayerFrames = 0;
-                userData->playerSequence = 0;
-            }
-            return true;
-        }
-        const bool renderPlayerPcm = handle->player.playbackEnabled.load() &&
-            handle->recovery.deviceOnline.load() &&
-            !handle->player.focusMuted.load();
-        const size_t replayBytes = renderPlayerPcm
-            ? handle->player.playerReplayBuffer.read(buffer.data(), transferSize)
-            : 0;
-        const size_t pipelineBytes = handle->player.pcmPipeline.fill(
-            buffer.data() + replayBytes,
-            transferSize - replayBytes,
-            renderPlayerPcm
-        );
-        const size_t playerBytes = replayBytes + pipelineBytes;
-        if (playerBytes > 0) {
-            handle->player.pcmPipeline.applyTransportStartRamp(buffer.data(), playerBytes);
-        }
-        if (userData != nullptr) {
-            const int64_t queuedFrames = static_cast<int64_t>(
-                playerBytes / static_cast<size_t>(std::max(1, handle->device.frameBytes))
-            );
-            userData->queuedPlayerFrames = queuedFrames;
-            userData->playerSequence = queuedFrames > 0
-                ? handle->player.nextPlayerSequence.fetch_add(1)
-                : 0;
-            handle->player.stagedPlayerFrames.fetch_add(queuedFrames);
-        }
+        return fillPlayerTransfer(handle, userData, buffer.data(), static_cast<size_t>(transferBytes));
+    }
+    if (userData != nullptr && userData->forceSilence) {
+        std::memset(buffer.data(), 0, static_cast<size_t>(transferBytes));
     } else {
-        if (userData != nullptr && userData->forceSilence) {
-            std::memset(buffer.data(), 0, static_cast<size_t>(transferBytes));
-        } else {
-            fillToneBuffer(handle, buffer.data(), static_cast<size_t>(transferBytes));
-        }
+        fillToneBuffer(handle, buffer.data(), static_cast<size_t>(transferBytes));
     }
     return true;
 }
@@ -1001,13 +854,18 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept {
         const int64_t completedPacketPrefixFrames = handle->device.frameBytes > 0
             ? completedPacketPrefixBytes / handle->device.frameBytes
             : 0;
+        const size_t payloadCapacity = userData->slot >= 0 &&
+                userData->slot < static_cast<int>(handle->transfer.transferBuffers.size())
+            ? handle->transfer.transferBuffers[static_cast<size_t>(userData->slot)].size()
+            : 0;
         const bool replayedCancelledFrames =
             transferCancelled &&
             handle->player.preserveCancelledPlayerFrames.load() &&
             preserveCancelledPlayerFrames(
                 handle,
                 userData,
-                transfer,
+                transfer->buffer,
+                payloadCapacity,
                 completedPacketPrefixFrames
             );
         if (!replayedCancelledFrames) {

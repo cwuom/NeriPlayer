@@ -67,6 +67,7 @@ add_library(
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_device_selection.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_device_session.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_transfer_run.cpp
+    ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_pcm_playback.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_recovery_action_latch.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_runtime_report_v2.cpp
     ${NERI_USB_FEEDBACK_DIR}/usb_explicit_feedback_engine.cpp
