@@ -81,7 +81,7 @@
                         android:maxLines="1"
                         android:text="@string/widget_playback_ready"
                         android:textColor="@color/widget_text_secondary"
-                        android:textSize="10sp" />
+                        android:textSize="11sp" />
 
                     <TextView
                         android:id="@+id/widget_title"
@@ -104,16 +104,16 @@
                         android:maxLines="1"
                         android:text="@string/widget_playback_idle_subtitle"
                         android:textColor="@color/widget_text_secondary"
-                        android:textSize="10sp" />
+                        android:textSize="11sp" />
                 </LinearLayout>
             </RelativeLayout>
 
             <RelativeLayout
                 android:id="@+id/widget_progress_row"
                 android:layout_width="match_parent"
-                android:layout_height="12dp"
+                android:layout_height="14dp"
                 android:layout_alignParentBottom="true"
-                android:layout_marginBottom="10dp">
+                android:layout_marginBottom="6dp">
 
                 <Chronometer
                     android:id="@+id/widget_elapsed"
@@ -124,7 +124,7 @@
                     android:includeFontPadding="false"
                     android:text="@string/widget_playback_zero_time"
                     android:textColor="@color/widget_text_muted"
-                    android:textSize="10sp" />
+                    android:textSize="11sp" />
 
                 <ProgressBar
                     android:id="@+id/widget_progress"
@@ -150,7 +150,7 @@
                     android:includeFontPadding="false"
                     android:text="@string/widget_playback_zero_time"
                     android:textColor="@color/widget_text_muted"
-                    android:textSize="10sp" />
+                    android:textSize="11sp" />
             </RelativeLayout>
 
         </RelativeLayout>
