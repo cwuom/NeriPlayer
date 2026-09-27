@@ -171,7 +171,9 @@
     "moe/ouom/neriplayer/core/player/audio/route/AudioDeviceRouteOwner.kt",
     "moe/ouom/neriplayer/core/player/audio/route/AudioDeviceRoutePolicy.kt",
     "moe/ouom/neriplayer/core/player/audio/route/PlayerManagerAudioDeviceRoutePort.kt",
-    "moe/ouom/neriplayer/core/player/policy/command/LocalRoomControlRestriction.kt"
+    "moe/ouom/neriplayer/core/player/policy/command/LocalRoomControlRestriction.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherRoomSocketEventOwner.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherSocketControlResultOwner.kt"
   ],
   "method_scopes": [
     {
@@ -645,6 +647,7 @@
       "methods": [
         "<init>",
         "getRoomState",
+        "start",
         "updateSession",
         "resetForSessionChange",
         "openSessionRoom",
@@ -657,13 +660,20 @@
         "recordWebSocketMessage",
         "applyForwardedControllerRequestLocally",
         "connectWebSocket",
+        "receiveSocketEnvelope$app",
+        "noteSocketMessageClock",
+        "closeRoomLocally",
         "disconnectWebSocket",
         "handleWebSocketControlSendFailure",
-        "shouldDeferIncomingStateForLocalTrackFinish",
         "trySendTrackFinishedLegacyFallback",
         "sendPing",
         "noteOutboundSync"
       ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
+      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$connectWebSocket$1",
+      "methods": ["<init>", "onMessage"]
     },
     {
       "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
@@ -702,6 +712,22 @@
         "beginMembershipRecovery",
         "rejoinRoom",
         "membershipRecoveryFailed"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
+      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$roomSocketEventOwner$1",
+      "methods": [
+        "<init>", "session", "room", "accept", "updateNotice", "applyToPlayer",
+        "publishControllerHeartbeat", "pauseClosedRoomPlayback", "closeRoomLocally"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
+      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$socketControlResultOwner$1",
+      "methods": [
+        "<init>", "currentUserUuid", "currentRoom", "accept", "isController",
+        "applyToPlayer", "setLastError", "trySendTrackFinishedLegacyFallback"
       ]
     }
   ]

@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.util.units.SECOND_MS
 
@@ -32,6 +33,7 @@ internal interface ListenTogetherLinkSessionPort {
     fun sessionState(): ListenTogetherSessionState
     fun roomState(): ListenTogetherRoomState?
     fun publish(event: ListenTogetherEvent, reason: String, noteSync: Boolean): Boolean
+    fun publishControllerHeartbeat(reason: String)
 }
 
 internal interface ListenTogetherLinkPlaybackPort {
@@ -192,6 +194,30 @@ internal class ListenTogetherControllerLinkOwner(
         val stableKey = matchingCurrentStableKey(roomState) ?: return
         resolveAndPublish(stableKey, reason)
     }
+
+    fun onLinkRequested(message: ListenTogetherSocketEnvelope) {
+        val snapshot = session.sessionState()
+        if (!isController(snapshot)) return
+        val stableKey = message.requestTrackStableKey ?: message.track?.stableKey ?: return
+        NPLogger.d(TAG, "onLinkRequested(): stableKey=$stableKey, requester=${message.causedBy?.userUuid}")
+        resolveAndPublish(stableKey, "request:${message.causedBy?.userUuid}")
+    }
+
+    fun onResolvedStreamUrlChanged(url: String?) {
+        val streamUrl = normalizedDirectStreamUrl(url) ?: return
+        val snapshot = session.sessionState()
+        if (!hasConnectedSharingRoom(snapshot)) return
+        val stableKey = currentStableKey()
+        NPLogger.d(TAG, "onResolvedStreamUrlChanged(): roomId=${snapshot.roomId}, stableKey=$stableKey, url=${streamUrl.take(128)}")
+        if (stableKey.isNullOrBlank()) {
+            session.publishControllerHeartbeat("stream_url_resolved")
+        } else {
+            resolveAndPublish(stableKey, "stream_url_resolved")
+        }
+    }
+
+    private fun hasConnectedSharingRoom(snapshot: ListenTogetherSessionState): Boolean =
+        !snapshot.roomId.isNullOrBlank() && controllerRoomWithSharing() != null
 
     private fun publishReadyIfPossible(
         stableKey: String,

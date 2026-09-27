@@ -12,6 +12,8 @@ import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
 import moe.ouom.neriplayer.listentogether.network.ws.ListenTogetherWebSocketClient
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherAppliedEvent
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherControlResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherMember
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
@@ -88,7 +90,7 @@ class ListenTogetherSessionManagerVersionGateTest {
             playbackState = "playing",
             basePositionMs = 2_000L
         )
-        manager.handleSocketRoomStateForTest(
+        manager.receiveSocketEnvelope(
             ListenTogetherSocketEnvelope(
                 type = "room_state_updated",
                 state = freshSocketState,
@@ -144,7 +146,7 @@ class ListenTogetherSessionManagerVersionGateTest {
             playbackState = "playing",
             basePositionMs = 2_000L
         )
-        manager.handleSocketRoomStateForTest(
+        manager.receiveSocketEnvelope(
             ListenTogetherSocketEnvelope(
                 type = "room_state_updated",
                 state = freshSocketState,
@@ -205,6 +207,44 @@ class ListenTogetherSessionManagerVersionGateTest {
 
         assertNull(manager.roomState.value)
         assertNull(manager.sessionState.value.roomId)
+    }
+
+    @Test
+    fun `socket ingress isolates room errors and closes only the active room`() = runBlocking {
+        val manager = ListenTogetherSessionManager(
+            api = ListenTogetherApi(clientForState(roomState(1L, track("netease:one", "one"), "paused", 0L), 0L)),
+            webSocketClient = ListenTogetherWebSocketClient(OkHttpClient())
+        )
+        manager.joinRoom(BASE_URL, ROOM_ID, USER_UUID, "Tester", joinSecret = JOIN_SECRET)
+
+        manager.receiveSocketEnvelope(ListenTogetherSocketEnvelope(
+            type = "error", roomId = "other_room", message = "foreign error"
+        ))
+        assertNull(manager.sessionState.value.lastError)
+
+        manager.receiveSocketEnvelope(ListenTogetherSocketEnvelope(
+            type = "error", roomId = ROOM_ID, message = "temporary failure"
+        ))
+        assertEquals("temporary failure", manager.sessionState.value.lastError)
+        manager.receiveSocketEnvelope(ListenTogetherSocketEnvelope(type = "np_pong", roomId = ROOM_ID, nowMs = 1_000L))
+        assertNull(manager.sessionState.value.lastError)
+        manager.receiveSocketEnvelope(ListenTogetherSocketEnvelope(type = "pong", roomId = ROOM_ID))
+        manager.receiveSocketEnvelope(ListenTogetherSocketEnvelope(type = "welcome", roomId = ROOM_ID, nowMs = 2_000L))
+        manager.receiveSocketEnvelope(ListenTogetherSocketEnvelope(
+            type = "ack", roomId = ROOM_ID,
+            result = ListenTogetherControlResponse(
+                ok = true,
+                applied = ListenTogetherAppliedEvent(type = "ACK", nowMs = 3_000L)
+            )
+        ))
+        assertNull(manager.sessionState.value.lastError)
+        manager.receiveSocketEnvelope(ListenTogetherSocketEnvelope(
+            type = "room_closed", roomId = ROOM_ID, message = "controller_left"
+        ))
+        assertNull(manager.roomState.value)
+        assertNull(manager.sessionState.value.roomId)
+        assertEquals("controller_left", manager.sessionState.value.roomNotice)
+        assertNull(manager.sessionState.value.lastError)
     }
 
     private fun clientForState(
@@ -304,17 +344,6 @@ class ListenTogetherSessionManagerVersionGateTest {
             .message("OK")
             .body(responseBody.toResponseBody("application/json".toMediaType()))
             .build()
-    }
-
-    private fun ListenTogetherSessionManager.handleSocketRoomStateForTest(
-        message: ListenTogetherSocketEnvelope
-    ) {
-        val method = ListenTogetherSessionManager::class.java.getDeclaredMethod(
-            "handleSocketRoomState",
-            ListenTogetherSocketEnvelope::class.java
-        )
-        method.isAccessible = true
-        method.invoke(this, message)
     }
 
     private fun roomState(

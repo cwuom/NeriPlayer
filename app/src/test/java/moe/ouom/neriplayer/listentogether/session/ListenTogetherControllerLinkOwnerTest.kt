@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -300,6 +301,75 @@ class ListenTogetherControllerLinkOwnerTest {
         assertTrue(session.sent.isEmpty())
     }
 
+    @Test
+    fun `link request resolves only a controller target with a stable key`() = runTest {
+        val session = FakeSession(role = "controller", room = roomState(controller = "host"))
+        val playback = FakePlayback(song = song).apply {
+            resolution = ShareableListenTogetherStreamResolution(listOf("https://audio.test/track"), false)
+        }
+        val owner = owner(session, playback) { 1_000L }
+        owner.onLinkRequested(ListenTogetherSocketEnvelope(type = "link_requested"))
+        owner.onLinkRequested(ListenTogetherSocketEnvelope(type = "link_requested", requestTrackStableKey = "other"))
+        runCurrent()
+        assertTrue(session.sent.isEmpty())
+
+        owner.onLinkRequested(ListenTogetherSocketEnvelope(type = "link_requested", requestTrackStableKey = track.stableKey))
+        runCurrent()
+        assertEquals(listOf("LINK_READY"), session.sent.map { it.type })
+
+        session.sent.clear()
+        owner.onLinkRequested(ListenTogetherSocketEnvelope(type = "link_requested", track = track))
+        runCurrent()
+        assertEquals(listOf("LINK_READY"), session.sent.map { it.type })
+
+        session.sent.clear()
+        session.snapshot = session.snapshot.copy(userUuid = "listener", role = "listener")
+        owner.onLinkRequested(ListenTogetherSocketEnvelope(type = "link_requested", requestTrackStableKey = track.stableKey))
+        runCurrent()
+        assertTrue(session.sent.isEmpty())
+    }
+
+    @Test
+    fun `resolved media url triggers the current controller link or heartbeat fallback`() = runTest {
+        val session = FakeSession(role = "controller", room = roomState(controller = "host"))
+        session.snapshot = session.snapshot.copy(roomId = "room")
+        val playback = FakePlayback(song = song).apply {
+            resolution = ShareableListenTogetherStreamResolution(listOf("https://audio.test/track"), false)
+        }
+        val owner = owner(session, playback) { 1_000L }
+        owner.onResolvedStreamUrlChanged(null)
+        owner.onResolvedStreamUrlChanged("content://media/track")
+        assertTrue(session.sent.isEmpty())
+
+        owner.onResolvedStreamUrlChanged("https://audio.test/track")
+        runCurrent()
+        assertEquals(listOf("LINK_READY"), session.sent.map { it.type })
+
+        session.sent.clear()
+        session.snapshot = session.snapshot.copy(roomId = null)
+        owner.onResolvedStreamUrlChanged("https://audio.test/track")
+        assertTrue(session.sent.isEmpty())
+        session.snapshot = session.snapshot.copy(roomId = "room")
+        session.room = session.room.copy(settings = session.room.settings.copy(shareAudioLinks = false))
+        owner.onResolvedStreamUrlChanged("https://audio.test/track")
+        assertTrue(session.sent.isEmpty())
+        session.room = session.room.copy(settings = session.room.settings.copy(shareAudioLinks = true))
+        session.snapshot = session.snapshot.copy(userUuid = "listener", role = "listener")
+        owner.onResolvedStreamUrlChanged("https://audio.test/track")
+        assertTrue(session.sent.isEmpty())
+        session.snapshot = session.snapshot.copy(userUuid = "host", role = "controller")
+
+        session.sent.clear()
+        playback.song = null
+        owner.onResolvedStreamUrlChanged("https://audio.test/track")
+        assertEquals(listOf("stream_url_resolved"), session.heartbeatReasons)
+
+        session.heartbeatReasons.clear()
+        session.snapshot = session.snapshot.copy(connectionState = ListenTogetherConnectionState.DISCONNECTED)
+        owner.onResolvedStreamUrlChanged("https://audio.test/track")
+        assertTrue(session.heartbeatReasons.isEmpty())
+    }
+
     private fun TestScope.owner(
         session: FakeSession,
         playback: FakePlayback,
@@ -327,6 +397,7 @@ class ListenTogetherControllerLinkOwnerTest {
         var room: ListenTogetherRoomState
     ) : ListenTogetherLinkSessionPort {
         val sent = mutableListOf<ListenTogetherEvent>()
+        val heartbeatReasons = mutableListOf<String>()
         var snapshot = ListenTogetherSessionState(
             userUuid = if (role == "controller") "host" else "listener",
             role = role,
@@ -340,6 +411,10 @@ class ListenTogetherControllerLinkOwnerTest {
         override fun publish(event: ListenTogetherEvent, reason: String, noteSync: Boolean): Boolean {
             sent += event
             return true
+        }
+
+        override fun publishControllerHeartbeat(reason: String) {
+            heartbeatReasons += reason
         }
     }
 
