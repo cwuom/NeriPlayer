@@ -155,6 +155,35 @@ class UsbExclusiveAudioSinkTest {
         assertEquals(listOf("recovery", "resume"), calls)
     }
 
+    @Test
+    fun `native backpressure observation tolerates queue progress without an active native route`() {
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(null)
+        val sink = UsbExclusiveAudioSink(
+            context = context,
+            fallbackSink = mock(AudioSink::class.java),
+            observeSystemVolume = false,
+            nativeUsbAudioDeviceAvailable = { false }
+        )
+
+        val record = UsbExclusiveAudioSink::class.java.getDeclaredMethod(
+            "recordBenignNativeBackpressure",
+            java.lang.Long.TYPE, Integer.TYPE, Integer.TYPE, String::class.java
+        ).apply { isAccessible = true }
+        record.invoke(sink, 1_000L, 8, 0, backpressureReport(4))
+        val attempts = UsbExclusiveAudioSink::class.java
+            .getDeclaredField("nativeBackpressureSoftRestartAttempts")
+            .apply { isAccessible = true }
+        attempts.setInt(sink, 1)
+        record.invoke(sink, 1_500L, 8, 0, backpressureReport(5))
+        assertEquals(0, attempts.getInt(sink))
+    }
+
+    private fun backpressureReport(completedTransfers: Int): String =
+        "source=player_pcm pcmLevel=288000/288000 pcmFreeBytes=0 " +
+            "completedTransfers=$completedTransfers inFlight=8 running=true transportFailed=false"
+
     private fun rawPcmFormat(): Format = Format.Builder()
         .setSampleMimeType(MimeTypes.AUDIO_RAW)
         .setSampleRate(44_100)

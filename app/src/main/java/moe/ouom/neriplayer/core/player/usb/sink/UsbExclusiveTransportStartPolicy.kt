@@ -2,6 +2,26 @@ package moe.ouom.neriplayer.core.player.usb.sink
 
 import kotlin.math.min
 
+internal enum class UsbExclusivePreWriteResult {
+    Ready,
+    RecoveryScheduled,
+    TransportFailed
+}
+
+internal fun prepareUsbExclusiveNativeWrite(
+    executePendingRecovery: () -> Boolean,
+    resumeTransport: () -> Boolean
+): UsbExclusivePreWriteResult {
+    if (executePendingRecovery()) {
+        return UsbExclusivePreWriteResult.RecoveryScheduled
+    }
+    return if (resumeTransport()) {
+        UsbExclusivePreWriteResult.Ready
+    } else {
+        UsbExclusivePreWriteResult.TransportFailed
+    }
+}
+
 internal fun shouldStartUsbExclusiveNativeTransport(
     hasQueuedPcm: Boolean,
     queuedFrames: Long,

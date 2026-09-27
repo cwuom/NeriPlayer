@@ -40,9 +40,40 @@
     "moe/ouom/neriplayer/core/player/service/PlaybackServicePresentationOwner.kt",
     "moe/ouom/neriplayer/core/player/service/PlaybackServicePresentationSource.kt",
     "moe/ouom/neriplayer/core/player/service/AndroidPlaybackServicePresentationPort.kt",
-    "moe/ouom/neriplayer/core/api/youtube/YouTubePlayerResponseParsers.kt"
+    "moe/ouom/neriplayer/core/api/youtube/YouTubePlayerResponseParsers.kt",
+    "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusivePcmWriter.kt",
+    "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveSinkVolumeOwner.kt",
+    "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveTransportStartPolicy.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveAudioSink.kt",
+      "class": "moe.ouom.neriplayer.core.player.usb.sink.UsbExclusiveAudioSink",
+      "methods": [
+        "<init>",
+        "setNativeHandle",
+        "setUsingNative",
+        "syncVolumeRoute",
+        "getVolume",
+        "setVolume",
+        "release",
+        "nativeWriteSnapshot",
+        "writeNative",
+        "nativeWriteSizeForAvailablePcmSpace",
+        "prepareDirectScratch",
+        "refreshRuntimeAfterStalledWrite",
+        "recordBenignNativeBackpressure",
+        "recoverFromSustainedBackpressure",
+        "clearNativeBackpressureState",
+        "ensureUrgentAudioThreadPriority",
+        "effectiveNativeVolume",
+        "applyEffectiveNativeVolume",
+        "updateSoftwareFloatConversionState",
+        "closeNative",
+        "closeNativeHandleIfOpen",
+        "releaseSystemSoundGuardIfDisabled"
+      ]
+    },
     {
       "source": "moe/ouom/neriplayer/core/api/youtube/YouTubeMusicPlaybackRepository.kt",
       "class": "moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository",
