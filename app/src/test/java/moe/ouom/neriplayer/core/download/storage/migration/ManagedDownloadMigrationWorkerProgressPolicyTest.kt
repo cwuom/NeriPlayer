@@ -1124,6 +1124,32 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
+    fun `replacement worker retains migrated audio names from the old checkpoint`() {
+        val targetRoot = "content://provider/tree/target"
+        val expectedNames = migrationExpectedAudioFileNames(
+            persistedTargetNames = mapOf(
+                "content://source/audio" to "RoundTrip.mp3",
+                "content://source/cover" to "RoundTrip.jpg"
+            ),
+            currentTargetNames = emptyMap()
+        )
+
+        assertEquals(setOf("RoundTrip.mp3"), expectedNames)
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = targetRoot,
+                    songCount = 10,
+                    audioFileNames = setOf("Existing.mp3")
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1,
+                expectedAudioFileNames = expectedNames
+            )
+        )
+    }
+
+    @Test
     fun `first progress is published immediately`() {
         val progress = progress(0.1f)
 

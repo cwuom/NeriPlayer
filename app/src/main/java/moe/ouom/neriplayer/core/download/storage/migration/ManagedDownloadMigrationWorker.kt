@@ -63,7 +63,6 @@ import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirector
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE
-import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import kotlin.math.roundToInt
@@ -344,17 +343,6 @@ internal fun shouldAbortSupersededMigrationWorker(
     // 正常入队会把请求 UUID 用作 WorkManager ID，两个 UUID 不一致就说明旧 Worker 已被替换
     return persistedUuid != null && activeUuid != null
 }
-
-internal fun shouldRetryAfterMigrationFinalScan(
-    outcome: ManagedLibraryRefreshOutcome,
-    expectedRootKey: String?,
-    minimumSongCount: Int,
-    expectedAudioFileNames: Set<String> = emptySet()
-): Boolean = outcome !is ManagedLibraryRefreshOutcome.Published ||
-    expectedRootKey == null ||
-    outcome.rootKey != expectedRootKey ||
-    outcome.songCount < minimumSongCount ||
-    !outcome.audioFileNames.containsAll(expectedAudioFileNames)
 
 internal fun migrationProgressCheckpointIds(
     currentWorkId: String,
@@ -908,10 +896,10 @@ class ManagedDownloadMigrationWorker(
                 minimumSourceEntryCount,
                 checkpointStore.readMinimumAudioCount(migrationWorkId)
             )
-            val expectedAudioFileNames = checkpointStore.readTargetNames(migrationWorkId)
-                .values
-                .filter { name -> name.substringAfterLast('.', "").lowercase() in audioExtensions }
-                .toSet()
+            val expectedAudioFileNames = migrationExpectedAudioFileNames(
+                persistedTargetNames = persistedTargetNames,
+                currentTargetNames = checkpointStore.readTargetNames(migrationWorkId)
+            )
             var finalScanOutcome: ManagedLibraryRefreshOutcome? = null
             for (attempt in 1..MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS) {
                 if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
