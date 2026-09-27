@@ -49,6 +49,84 @@
 
 namespace neri::usb::exclusive {
 
+static neri::usb::IsoTransferWindowPlan isoTransferWindowPlan(int intervalsPerSecond) {
+    const int baselineDurationMs = intervalsPerSecond > 1000
+        ? kHighSpeedTargetInFlightMs
+        : kFullSpeedTargetInFlightMs;
+    return neri::usb::planIsoTransferWindow(
+        intervalsPerSecond,
+        baselineDurationMs,
+        kMaximumPcmRingDurationMs
+    );
+}
+
+static int targetIsoTransferCount(
+    const UsbExclusiveHandle* handle,
+    int requestedDurationMs
+) {
+    if (handle == nullptr) {
+        return kExplicitFeedbackAudioTransferCount;
+    }
+    return neri::usb::isoTransferTargetCount(
+        handle->device.explicitFeedbackEnabled,
+        handle->transfer.intervalsPerSecond,
+        handle->transfer.packetsPerTransfer,
+        requestedDurationMs,
+        handle->transfer.baseTransferCount,
+        handle->transfer.transferCount
+    );
+}
+
+bool configureTransferPlan(UsbExclusiveHandle* handle) {
+    if (handle == nullptr) {
+        return false;
+    }
+    const UsbDeviceState& device = handle->device;
+    UsbTransferState& transfer = handle->transfer;
+    transfer.intervalsPerSecond = computeIntervalsPerSecond(
+        device.usbSpeed,
+        device.endpointInterval
+    );
+    const neri::usb::IsoTransferWindowPlan transferWindow =
+        device.explicitFeedbackEnabled
+            ? neri::usb::planIsoTransferWindow(
+                transfer.intervalsPerSecond,
+                kExplicitFeedbackPacketsPerTransfer,
+                kExplicitFeedbackAudioTransferCount,
+                kMaximumPcmRingDurationMs
+            )
+            : isoTransferWindowPlan(transfer.intervalsPerSecond);
+    transfer.packetsPerTransfer = device.explicitFeedbackEnabled
+        ? kExplicitFeedbackPacketsPerTransfer
+        : transferWindow.packetsPerTransfer;
+    transfer.baseTransferCount = device.explicitFeedbackEnabled
+        ? kExplicitFeedbackAudioTransferCount
+        : transferWindow.baselineTransferCount;
+    transfer.transferCount = device.explicitFeedbackEnabled
+        ? transfer.baseTransferCount
+        : transferWindow.reserveTransferCount;
+    transfer.targetTransferCount.store(transfer.baseTransferCount);
+    transfer.bytesPerUsbFrame = computeMaxPacketBytes(
+        device.sampleRate,
+        transfer.intervalsPerSecond,
+        std::max(1, device.frameBytes),
+        device.endpointMaxPacketBytes
+    );
+    if (transfer.bytesPerUsbFrame <= 0) {
+        return false;
+    }
+    transfer.transferBytes = (device.explicitFeedbackEnabled
+        ? device.endpointMaxPacketBytes
+        : transfer.bytesPerUsbFrame) * transfer.packetsPerTransfer;
+    transfer.packetScheduler.configure(
+        device.sampleRate,
+        transfer.intervalsPerSecond,
+        device.frameBytes
+    );
+    transfer.lastTransferBytes.store(0);
+    return true;
+}
+
 int64_t steadyClockNanoseconds() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()
@@ -1470,6 +1548,53 @@ bool stopStreamingInternal(UsbExclusiveHandle* handle) {
         handle->recovery.transportFailed.load() ? 1 : 0
     );
     return true;
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeConfigurePlayerTransferWindow(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong handleValue,
+    jint durationMs
+) {
+    static_cast<void>(env);
+    const auto holder = acquireHandle(handleValue);
+    if (holder == nullptr) {
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> apiGuard(holder->apiLock);
+    if (holder->recovery.closing.load() || holder->device.devh == nullptr) {
+        return JNI_FALSE;
+    }
+    const int requestedDurationMs = std::clamp(
+        static_cast<int>(durationMs),
+        kMinimumPcmRingDurationMs,
+        kMaximumPcmRingDurationMs
+    );
+    holder->transfer.targetTransferCount.store(targetIsoTransferCount(
+        holder.get(),
+        requestedDurationMs
+    ));
+    int activatedTransfers = 0;
+    const int targetTransferCount = std::min<int>(
+        holder->transfer.targetTransferCount.load(),
+        static_cast<int>(holder->transfer.transfers.size())
+    );
+    if (holder->transfer.inFlightTransfers.load() < targetTransferCount &&
+        !holder->recovery.transportFailed.load()) {
+        activatedTransfers = activateBufferedIsoReserveTransfers(holder.get());
+    }
+    LOGI(
+        "nativeConfigurePlayerTransferWindow: handle=%lld durationMs=%d "
+        "targetTransfers=%d activeTransfers=%d activated=%d",
+        static_cast<long long>(handleValue),
+        requestedDurationMs,
+        holder->transfer.targetTransferCount.load(),
+        holder->transfer.inFlightTransfers.load(),
+        activatedTransfers
+    );
+    return JNI_TRUE;
 }
 
 } // namespace neri::usb::exclusive

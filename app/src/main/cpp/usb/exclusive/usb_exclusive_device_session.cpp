@@ -52,34 +52,6 @@ void markInterfaceTransitionLocked() {
     g_lastInterfaceTransitionAt = std::chrono::steady_clock::now();
 }
 
-neri::usb::IsoTransferWindowPlan isoTransferWindowPlan(int intervalsPerSecond) {
-    const int baselineDurationMs = intervalsPerSecond > 1000
-        ? kHighSpeedTargetInFlightMs
-        : kFullSpeedTargetInFlightMs;
-    return neri::usb::planIsoTransferWindow(
-        intervalsPerSecond,
-        baselineDurationMs,
-        kMaximumPcmRingDurationMs
-    );
-}
-
-int targetIsoTransferCount(
-    const UsbExclusiveHandle* handle,
-    int requestedDurationMs
-) {
-    if (handle == nullptr) {
-        return kExplicitFeedbackAudioTransferCount;
-    }
-    return neri::usb::isoTransferTargetCount(
-        handle->device.explicitFeedbackEnabled,
-        handle->transfer.intervalsPerSecond,
-        handle->transfer.packetsPerTransfer,
-        requestedDurationMs,
-        handle->transfer.baseTransferCount,
-        handle->transfer.transferCount
-    );
-}
-
 bool negotiateUac1SampleRate(
     libusb_device_handle* deviceHandle,
     uint8_t endpointAddress,
@@ -817,51 +789,13 @@ bool reconfigureOpenedPlayerPcmOutput(
     handle->device.endpointFeedback = selection.feedback;
     handle->device.completeAudioFunctionClaim = selection.completeClaimPlan;
     handle->device.negotiatedSampleRate = negotiatedSampleRate;
-    handle->transfer.intervalsPerSecond = computeIntervalsPerSecond(
-        handle->device.usbSpeed,
-        handle->device.endpointInterval
-    );
-    const neri::usb::IsoTransferWindowPlan transferWindow =
-        handle->device.explicitFeedbackEnabled
-            ? neri::usb::planIsoTransferWindow(
-                handle->transfer.intervalsPerSecond,
-                kExplicitFeedbackPacketsPerTransfer,
-                kExplicitFeedbackAudioTransferCount,
-                kMaximumPcmRingDurationMs
-            )
-            : isoTransferWindowPlan(handle->transfer.intervalsPerSecond);
-    handle->transfer.packetsPerTransfer = handle->device.explicitFeedbackEnabled
-        ? kExplicitFeedbackPacketsPerTransfer
-        : transferWindow.packetsPerTransfer;
-    handle->transfer.baseTransferCount = handle->device.explicitFeedbackEnabled
-        ? kExplicitFeedbackAudioTransferCount
-        : transferWindow.baselineTransferCount;
-    handle->transfer.transferCount = handle->device.explicitFeedbackEnabled
-        ? handle->transfer.baseTransferCount
-        : transferWindow.reserveTransferCount;
-    handle->transfer.targetTransferCount.store(handle->transfer.baseTransferCount);
-    handle->transfer.bytesPerUsbFrame = computeMaxPacketBytes(
-        handle->device.sampleRate,
-        handle->transfer.intervalsPerSecond,
-        std::max(1, handle->device.frameBytes),
-        handle->device.endpointMaxPacketBytes
-    );
-    if (handle->transfer.bytesPerUsbFrame <= 0) {
+    if (!configureTransferPlan(handle)) {
         parkStreamingAlternate(handle, "reconfigure_capacity_failed");
         if (error != nullptr) {
             *error = "reconfigure_endpoint_capacity_too_small";
         }
         return false;
     }
-    handle->transfer.transferBytes = (handle->device.explicitFeedbackEnabled
-        ? handle->device.endpointMaxPacketBytes
-        : handle->transfer.bytesPerUsbFrame) * handle->transfer.packetsPerTransfer;
-    handle->transfer.packetScheduler.configure(
-        handle->device.sampleRate,
-        handle->transfer.intervalsPerSecond,
-        handle->device.frameBytes
-    );
-    handle->transfer.lastTransferBytes.store(0);
     assignNewNativeStreamGeneration(handle);
     if (!parkStreamingAlternate(handle, "reconfigure_ready")) {
         if (error != nullptr) {
@@ -1279,51 +1213,13 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
             }
         }
 
-        const int frameBytes = std::max(1, handle->device.frameBytes);
-        handle->transfer.intervalsPerSecond = computeIntervalsPerSecond(
-            handle->device.usbSpeed,
-            handle->device.endpointInterval
-        );
-        const neri::usb::IsoTransferWindowPlan transferWindow =
-            handle->device.explicitFeedbackEnabled
-                ? neri::usb::planIsoTransferWindow(
-                    handle->transfer.intervalsPerSecond,
-                    kExplicitFeedbackPacketsPerTransfer,
-                    kExplicitFeedbackAudioTransferCount,
-                    kMaximumPcmRingDurationMs
-                )
-                : isoTransferWindowPlan(handle->transfer.intervalsPerSecond);
-        handle->transfer.packetsPerTransfer = handle->device.explicitFeedbackEnabled
-            ? kExplicitFeedbackPacketsPerTransfer
-            : transferWindow.packetsPerTransfer;
-        handle->transfer.baseTransferCount = handle->device.explicitFeedbackEnabled
-            ? kExplicitFeedbackAudioTransferCount
-            : transferWindow.baselineTransferCount;
-        handle->transfer.transferCount = handle->device.explicitFeedbackEnabled
-            ? handle->transfer.baseTransferCount
-            : transferWindow.reserveTransferCount;
-        handle->transfer.targetTransferCount.store(handle->transfer.baseTransferCount);
-        handle->transfer.bytesPerUsbFrame = computeMaxPacketBytes(
-            handle->device.sampleRate,
-            handle->transfer.intervalsPerSecond,
-            frameBytes,
-            handle->device.endpointMaxPacketBytes
-        );
-        if (handle->transfer.bytesPerUsbFrame <= 0) {
+        if (!configureTransferPlan(handle.get())) {
             const std::string error = "endpoint_capacity_too_small";
             rememberLastOpenError(error);
             setError(handle.get(), error);
             closeHandleInternal(handle);
             return 0L;
         }
-        handle->transfer.transferBytes = (handle->device.explicitFeedbackEnabled
-            ? handle->device.endpointMaxPacketBytes
-            : handle->transfer.bytesPerUsbFrame) * handle->transfer.packetsPerTransfer;
-        handle->transfer.packetScheduler.configure(
-            handle->device.sampleRate,
-            handle->transfer.intervalsPerSecond,
-            handle->device.frameBytes
-        );
         const int idleAltRc = setStreamingAlternateLocked(
             handle.get(),
             0,

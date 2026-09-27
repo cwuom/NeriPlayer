@@ -110,7 +110,7 @@ bool fillPlayerTransfer(
     size_t transferSize
 );
 
-int targetIsoTransferCount(const UsbExclusiveHandle* handle, int requestedDurationMs);
+bool configureTransferPlan(UsbExclusiveHandle* handle);
 int setStreamingAlternateLocked(
     UsbExclusiveHandle* handle,
     int interfaceNumber,

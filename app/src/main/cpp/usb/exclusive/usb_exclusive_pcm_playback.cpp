@@ -232,53 +232,6 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
 
 extern "C"
 JNIEXPORT jboolean JNICALL
-Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeConfigurePlayerTransferWindow(
-    JNIEnv* env,
-    jclass /*clazz*/,
-    jlong handleValue,
-    jint durationMs
-) {
-    static_cast<void>(env);
-    const auto holder = acquireHandle(handleValue);
-    if (holder == nullptr) {
-        return JNI_FALSE;
-    }
-    std::lock_guard<std::mutex> apiGuard(holder->apiLock);
-    if (holder->recovery.closing.load() || holder->device.devh == nullptr) {
-        return JNI_FALSE;
-    }
-    const int requestedDurationMs = std::clamp(
-        static_cast<int>(durationMs),
-        kMinimumPcmRingDurationMs,
-        kMaximumPcmRingDurationMs
-    );
-    holder->transfer.targetTransferCount.store(targetIsoTransferCount(
-        holder.get(),
-        requestedDurationMs
-    ));
-    int activatedTransfers = 0;
-    const int targetTransferCount = std::min<int>(
-        holder->transfer.targetTransferCount.load(),
-        static_cast<int>(holder->transfer.transfers.size())
-    );
-    if (holder->transfer.inFlightTransfers.load() < targetTransferCount &&
-        !holder->recovery.transportFailed.load()) {
-        activatedTransfers = activateBufferedIsoReserveTransfers(holder.get());
-    }
-    LOGI(
-        "nativeConfigurePlayerTransferWindow: handle=%lld durationMs=%d "
-        "targetTransfers=%d activeTransfers=%d activated=%d",
-        static_cast<long long>(handleValue),
-        requestedDurationMs,
-        holder->transfer.targetTransferCount.load(),
-        holder->transfer.inFlightTransfers.load(),
-        activatedTransfers
-    );
-    return JNI_TRUE;
-}
-
-extern "C"
-JNIEXPORT jboolean JNICALL
 Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativePreparePlayerPcm(
     JNIEnv* env,
     jclass /*clazz*/,
