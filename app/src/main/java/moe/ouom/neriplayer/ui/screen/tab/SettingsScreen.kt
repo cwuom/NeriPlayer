@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.screen.tab
  * Created: 2025/8/8
  */
 
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -46,7 +45,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.NonRestartableComposable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,7 +52,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -63,13 +60,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.ThemeMode
-import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
@@ -77,9 +67,8 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
-import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.ui.AppSettingsHostBindings
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
-import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.PlaybackServiceIdleShutdownSetting
@@ -110,179 +99,49 @@ import moe.ouom.neriplayer.ui.feedback.AppFeedback
 @Composable
 @NonRestartableComposable
 @Suppress("AssignedValueIsNeverRead")
-fun SettingsScreen(
+internal fun SettingsScreen(
     listState: LazyListState,
-    dynamicColor: Boolean,
-    onDynamicColorChange: (Boolean) -> Unit,
-    isDarkTheme: Boolean,
-    themeMode: ThemeMode,
-    onThemeToggleRequest: (Offset, Float) -> Unit,
-    onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit,
-    preferredQuality: String,
-    onQualityChange: (String) -> Unit,
-    youtubePreferredQuality: String,
-    onYouTubeQualityChange: (String) -> Unit,
-    biliPreferredQuality: String,
-    onBiliQualityChange: (String) -> Unit,
-    mobileDataFollowDefaultAudioQuality: Boolean,
-    onMobileDataFollowDefaultAudioQualityChange: (Boolean) -> Unit,
-    mobileDataNeteaseAudioQuality: String,
-    onMobileDataNeteaseAudioQualityChange: (String) -> Unit,
-    mobileDataYouTubeAudioQuality: String,
-    onMobileDataYouTubeAudioQualityChange: (String) -> Unit,
-    mobileDataBiliAudioQuality: String,
-    onMobileDataBiliAudioQualityChange: (String) -> Unit,
-    devModeEnabled: Boolean,
-    onDevModeChange: (Boolean) -> Unit,
-    seedColorHex: String,
-    onSeedColorChange: (String) -> Unit,
-    themeColorPalette: List<String>,
-    onAddColorToPalette: (String) -> Unit,
-    onRemoveColorFromPalette: (String) -> Unit,
-    themePaletteStyle: String,
-    onThemePaletteStyleChange: (String) -> Unit,
-    themeColorSpec: String,
-    onThemeColorSpecChange: (String) -> Unit,
-    lyricBlurEnabled: Boolean,
-    onLyricBlurEnabledChange: (Boolean) -> Unit,
-    lyricBlurAmount: Float,
-    onLyricBlurAmountChange: (Float) -> Unit,
-    cloudMusicLyricDefaultOffsetMs: Long,
-    onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
-    qqMusicLyricDefaultOffsetMs: Long,
-    onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
-    kugouLyricDefaultOffsetMs: Long,
-    onKugouLyricDefaultOffsetMsChange: (Long) -> Unit,
-    lrclibLyricDefaultOffsetMs: Long,
-    onLrclibLyricDefaultOffsetMsChange: (Long) -> Unit,
-    amllTtmlLyricDefaultOffsetMs: Long,
-    onAmllTtmlLyricDefaultOffsetMsChange: (Long) -> Unit,
-    onResetAllLyricDefaultOffsets: () -> Unit,
-    floatingLyricsPreferences: FloatingLyricsPreferences,
-    onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
-    advancedBlurEnabled: Boolean,
-    onAdvancedBlurEnabledChange: (Boolean) -> Unit,
-    enhancedAdvancedBlurEnabled: Boolean,
-    onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
-    enhancedAdvancedBlurRadiusDp: Float,
-    onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit,
-    advancedBlurQuality: AdvancedBlurQuality,
-    onAdvancedBlurQualityChange: (AdvancedBlurQuality) -> Unit,
-    nowPlayingAudioReactiveEnabled: Boolean,
-    onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
-    nowPlayingDynamicBackgroundEnabled: Boolean,
-    onNowPlayingDynamicBackgroundEnabledChange: (Boolean) -> Unit,
-    nowPlayingCoverBlurBackgroundEnabled: Boolean,
-    onNowPlayingCoverBlurBackgroundEnabledChange: (Boolean) -> Unit,
-    nowPlayingCoverBlurAmount: Float,
-    onNowPlayingCoverBlurAmountChange: (Float) -> Unit,
-    nowPlayingCoverBlurDarken: Float,
-    onNowPlayingCoverBlurDarkenChange: (Float) -> Unit,
-    lyricFontScales: LyricFontScales,
-    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
-    uiDensityScale: Float,
-    onUiDensityScaleChange: (Float) -> Unit,
-    bypassProxy: Boolean,
-    onBypassProxyChange: (Boolean) -> Unit,
-    backgroundImageUri: String?,
-    onBackgroundImageChange: (Uri?) -> Unit,
-    downloadDirectoryUri: String?,
-    downloadFileNameTemplate: String?,
-    onDownloadDirectoryUriChange: (String?, String?) -> Unit,
-    onDownloadFileNameTemplateChange: (String?) -> Unit,
-    backgroundImageBlur: Float,
-    onBackgroundImageBlurChange: (Float) -> Unit,
-    onBackgroundImageBlurChangeFinished: (Float) -> Unit,
-    backgroundImageAlpha: Float,
-    onBackgroundImageAlphaChange: (Float) -> Unit,
-    onBackgroundImageAlphaChangeFinished: (Float) -> Unit,
-    defaultStartDestination: String,
-    onDefaultStartDestinationChange: (String) -> Unit,
-    showHomeContinueCard: Boolean,
-    onShowHomeContinueCardChange: (Boolean) -> Unit,
-    showHomeTrendingCard: Boolean,
-    onShowHomeTrendingCardChange: (Boolean) -> Unit,
-    showHomeRadarCard: Boolean,
-    onShowHomeRadarCardChange: (Boolean) -> Unit,
-    showHomeRecommendedCard: Boolean,
-    onShowHomeRecommendedCardChange: (Boolean) -> Unit,
-    homeHasRecentUsage: Boolean,
-    playbackFadeIn: Boolean,
-    onPlaybackFadeInChange: (Boolean) -> Unit,
-    playbackCrossfadeNext: Boolean,
-    onPlaybackCrossfadeNextChange: (Boolean) -> Unit,
-    sleepTimerFinishCurrentOnExpiry: Boolean,
-    onSleepTimerFinishCurrentOnExpiryChange: (Boolean) -> Unit,
-    playbackFadeInDurationMs: Long,
-    onPlaybackFadeInDurationMsChange: (Long) -> Unit,
-    playbackFadeOutDurationMs: Long,
-    onPlaybackFadeOutDurationMsChange: (Long) -> Unit,
-    playbackCrossfadeInDurationMs: Long,
-    onPlaybackCrossfadeInDurationMsChange: (Long) -> Unit,
-    playbackCrossfadeOutDurationMs: Long,
-    onPlaybackCrossfadeOutDurationMsChange: (Long) -> Unit,
-    playbackVolumeNormalizationEnabled: Boolean,
-    onPlaybackVolumeNormalizationEnabledChange: (Boolean) -> Unit,
-    playbackHighResolutionOutputEnabled: Boolean,
-    onPlaybackHighResolutionOutputEnabledChange: (Boolean) -> Unit,
-    playbackVolumeBalance: Float,
-    onPlaybackVolumeBalanceChange: (Float) -> Unit,
-    keepLastPlaybackProgress: Boolean,
-    onKeepLastPlaybackProgressChange: (Boolean) -> Unit,
-    rememberLongFormPlaybackProgress: Boolean,
-    onRememberLongFormPlaybackProgressChange: (Boolean) -> Unit,
-    keepPlaybackModeState: Boolean,
-    onKeepPlaybackModeStateChange: (Boolean) -> Unit,
-    neteaseAutoSourceSwitch: Boolean,
-    onNeteaseAutoSourceSwitchChange: (Boolean) -> Unit,
-    neteaseLocalSourceFallback: Boolean,
-    onNeteaseLocalSourceFallbackChange: (Boolean) -> Unit,
-    stopOnBluetoothDisconnect: Boolean,
-    onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
-    usbExclusivePlayback: Boolean,
-    onUsbExclusivePlaybackChange: (Boolean) -> Unit,
-    allowMixedPlayback: Boolean,
-    onAllowMixedPlaybackChange: (Boolean) -> Unit,
-    preemptAudioFocus: Boolean,
-    onPreemptAudioFocusChange: (Boolean) -> Unit,
-    onNavigateToDownloadManager: () -> Unit,
-    maxCacheSizeBytes: Long,
-    onMaxCacheSizeBytesChange: (Long) -> Unit,
-    onClearCacheClick: (StorageCacheClearOptions) -> Unit,
-    onBeforeLanguageRestart: () -> Unit,
-    onLanguageChanged: (LanguageManager.Language) -> Unit,
+    bindings: AppSettingsHostBindings,
+    onNavigateToDownloadManager: () -> Unit
 ) {
+    val appearanceState = bindings.state.appearance
+    val lyricsState = bindings.state.lyrics
+    val playbackState = bindings.state.playback
+    val otherState = bindings.state.other
+    val appearanceActions = bindings.appearanceActions
+    val lyricsActions = bindings.lyricsActions
+    val qualityActions = bindings.qualityActions
+    val playbackActions = bindings.playbackActions
+    val usbActions = bindings.usbActions
+    val homeActions = bindings.homeActions
+    val storageActions = bindings.storageActions
+    val environment = bindings.environment
+    val repository = bindings.repository
+    val listenTogether = bindings.listenTogether
+
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val scope = rememberCoroutineScope()
     val autoSettingsRepository = remember(context) { AutoSettingsRepository(context) }
-    val listenTogetherPreferences = AppContainer.listenTogetherPreferences
-    val listenTogetherApi = AppContainer.listenTogetherApi
-    val listenTogetherSessionManager = AppContainer.listenTogetherSessionManager
     val listenTogetherSettings = rememberSettingsListenTogetherController(
-        preferences = listenTogetherPreferences,
-        api = listenTogetherApi,
-        sessionManager = listenTogetherSessionManager,
+        preferences = listenTogether.preferences,
+        api = listenTogether.api,
+        sessionManager = listenTogether.sessionManager,
         onMessage = { AppFeedback.showToast(context = context, message = it) }
     )
     val backgroundImageDraft = rememberSettingsBackgroundImageDraft(
-        imageUri = backgroundImageUri,
-        committedBlur = backgroundImageBlur,
-        committedAlpha = backgroundImageAlpha
+        imageUri = appearanceState.visualBackground.backgroundImageUri,
+        committedBlur = appearanceState.visualBackground.backgroundImageBlur,
+        committedAlpha = environment.backgroundImageAlpha
     )
-
-    val internationalEnabled by AppContainer.settingsRepo.internationalizationEnabledFlow
-        .collectAsState(initial = false)
-    val usbExclusivePreferences by AppContainer.settingsRepo.usbExclusivePreferencesFlow
-        .collectAsState(initial = UsbExclusivePreferences())
 
     EnforceNowPlayingBackgroundExclusion(
         NowPlayingBackgroundExclusionPort(
-            coverBlurEnabled = nowPlayingCoverBlurBackgroundEnabled,
-            dynamicEnabled = nowPlayingDynamicBackgroundEnabled,
-            reactiveEnabled = nowPlayingAudioReactiveEnabled,
-            onDynamicChange = onNowPlayingDynamicBackgroundEnabledChange,
-            onReactiveChange = onNowPlayingAudioReactiveEnabledChange
+            coverBlurEnabled = appearanceState.nowPlayingVisual.nowPlayingCoverBlurBackgroundEnabled,
+            dynamicEnabled = appearanceState.nowPlayingVisual.nowPlayingDynamicBackgroundEnabled,
+            reactiveEnabled = appearanceState.nowPlayingVisual.nowPlayingAudioReactiveEnabled,
+            onDynamicChange = appearanceActions.onNowPlayingDynamicBackgroundEnabledChange,
+            onReactiveChange = appearanceActions.onNowPlayingAudioReactiveEnabledChange
         )
     )
 
@@ -308,42 +167,42 @@ fun SettingsScreen(
     var inlineMsg by remember { mutableStateOf<String?>(null) }
     val accountAuth = rememberSettingsAccountAuthController { inlineMsg = it }
     
-    val backupTransfer = rememberSettingsBackupTransferController(onBeforeLanguageRestart)
+    val backupTransfer = rememberSettingsBackupTransferController(environment.onBeforeLanguageRestart)
 
     fun showSettingsMessage(message: String) {
         AppFeedback.show(context = context, message = message)
     }
 
     val downloadDirectorySettings = rememberDownloadDirectorySettingsController(
-        downloadDirectoryUri = downloadDirectoryUri,
-        onDownloadDirectoryUriChange = onDownloadDirectoryUriChange,
+        downloadDirectoryUri = otherState.storage.downloadDirectoryUri,
+        onDownloadDirectoryUriChange = storageActions.onDownloadDirectoryUriChange,
         onInlineMessageChange = { inlineMsg = it },
         onShowMessage = ::showSettingsMessage
     )
 
     val pickBackgroundImage = rememberSettingsBackgroundImagePicker(
-        BackgroundImagePickerPort(backgroundImageUri, onBackgroundImageChange)
+        BackgroundImagePickerPort(appearanceState.visualBackground.backgroundImageUri, appearanceActions.onBackgroundImageChange)
     )
 
     val qualityPresentation = rememberSettingsQualityPresentation(
         context = context,
-        neteaseValue = preferredQuality,
-        youtubeValue = youtubePreferredQuality,
-        biliValue = biliPreferredQuality,
-        mobileNeteaseValue = mobileDataNeteaseAudioQuality,
-        mobileYouTubeValue = mobileDataYouTubeAudioQuality,
-        mobileBiliValue = mobileDataBiliAudioQuality
+        neteaseValue = playbackState.defaultAudioQuality.preferredQuality,
+        youtubeValue = playbackState.defaultAudioQuality.youtubePreferredQuality,
+        biliValue = playbackState.defaultAudioQuality.biliPreferredQuality,
+        mobileNeteaseValue = playbackState.mobileAudioQuality.mobileDataNeteaseAudioQuality,
+        mobileYouTubeValue = playbackState.mobileAudioQuality.mobileDataYouTubeAudioQuality,
+        mobileBiliValue = playbackState.mobileAudioQuality.mobileDataBiliAudioQuality
     )
 
     val homeStartPresentation = rememberSettingsHomeStartPresentation(
         resources = composeResources,
-        configuredDestination = defaultStartDestination,
-        internationalEnabled = internationalEnabled,
-        showTrending = showHomeTrendingCard,
-        showRadar = showHomeRadarCard,
-        showRecommended = showHomeRecommendedCard,
-        showContinue = showHomeContinueCard,
-        hasRecentUsage = homeHasRecentUsage
+        configuredDestination = environment.defaultStartDestination,
+        internationalEnabled = otherState.internationalizationEnabled,
+        showTrending = otherState.homeCards.showHomeTrendingCard,
+        showRadar = otherState.homeCards.showHomeRadarCard,
+        showRecommended = otherState.homeCards.showHomeRecommendedCard,
+        showContinue = otherState.homeCards.showHomeContinueCard,
+        hasRecentUsage = environment.homeHasRecentUsage
     )
     val homeStartAvailable = homeStartPresentation.available
     val homeCardCopy = homeStartPresentation.copy
@@ -352,9 +211,9 @@ fun SettingsScreen(
     val navigation = rememberSettingsNavigationState(
         context = context,
         listState = listState,
-        dynamicColor = dynamicColor,
-        mobileDataFollowDefaultAudioQuality = mobileDataFollowDefaultAudioQuality,
-        backgroundImageUri = backgroundImageUri
+        dynamicColor = appearanceState.theme.dynamicColorEnabled,
+        mobileDataFollowDefaultAudioQuality = playbackState.defaultAudioQuality.mobileDataFollowDefaultAudioQuality,
+        backgroundImageUri = appearanceState.visualBackground.backgroundImageUri
     )
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage
@@ -381,8 +240,8 @@ fun SettingsScreen(
         ) {
             Text(stringResource(R.string.settings_title))
             ThemeModeActionButton(
-                isDarkTheme = isDarkTheme,
-                onToggleRequest = onThemeToggleRequest
+                isDarkTheme = environment.isDarkTheme,
+                onToggleRequest = environment.onThemeToggleRequest
             )
         }
     }
@@ -457,7 +316,7 @@ fun SettingsScreen(
                                 highlightPulse = settingsHighlightPulse,
                                 onHighlightFinished = onSettingsHighlightFinished
                             ),
-                            onLanguageChanged = onLanguageChanged
+                            onLanguageChanged = environment.onLanguageChanged
                         )
                         ListItem(
                             modifier = Modifier.settingsHighlightTarget(
@@ -482,12 +341,8 @@ fun SettingsScreen(
                             },
                             trailingContent = {
                                 MiuixSettingsSwitch(
-                                    checked = internationalEnabled,
-                                    onCheckedChange = { enabled ->
-                                        scope.launch {
-                                            AppContainer.settingsRepo.setInternationalizationEnabled(enabled)
-                                        }
-                                    }
+                                    checked = otherState.internationalizationEnabled,
+                                    onCheckedChange = appearanceActions.onInternationalizationEnabledChange
                                 )
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -510,7 +365,7 @@ fun SettingsScreen(
                                 Text(
                                     stringResource(
                                         R.string.settings_ui_scale_current,
-                                        "%.2f".format(uiDensityScale)
+                                        "%.2f".format(appearanceState.visualBackground.uiDensityScale)
                                     )
                                 )
                             },
@@ -529,9 +384,9 @@ fun SettingsScreen(
                             description = stringResource(R.string.settings_theme_mode_desc)
                         )
                         ThemeModeSelectorListItem(
-                            isDarkTheme = isDarkTheme,
-                            themeMode = themeMode,
-                            onThemeModeRequest = onThemeModeRequest,
+                            isDarkTheme = environment.isDarkTheme,
+                            themeMode = environment.themeMode,
+                            onThemeModeRequest = environment.onThemeModeRequest,
                             modifier = Modifier.settingsHighlightTarget(
                                 targetId = "manual:theme_mode",
                                 highlightTargetId = settingsHighlightTargetId,
@@ -540,9 +395,9 @@ fun SettingsScreen(
                             )
                         )
                         ThemeAutoModeListItem(
-                            themeMode = themeMode,
-                            isDarkTheme = isDarkTheme,
-                            onThemeModeRequest = onThemeModeRequest
+                            themeMode = environment.themeMode,
+                            isDarkTheme = environment.isDarkTheme,
+                            onThemeModeRequest = environment.onThemeModeRequest
                         )
                     }
                     miuixSettingsSectionCardItem(key = "${selectedPage.name}:dynamic_color") {
@@ -560,16 +415,16 @@ fun SettingsScreen(
                                 )
                             },
                             trailingContent = {
-                                MiuixSettingsSwitch(checked = dynamicColor, onCheckedChange = onDynamicColorChange)
+                                MiuixSettingsSwitch(checked = appearanceState.theme.dynamicColorEnabled, onCheckedChange = appearanceActions.onDynamicColorChange)
                             },
                             highlightTargetId = settingsHighlightTargetId,
                             highlightPulse = settingsHighlightPulse,
                             onHighlightFinished = onSettingsHighlightFinished,
-                            onClick = { onDynamicColorChange(!dynamicColor) }
+                            onClick = { appearanceActions.onDynamicColorChange(!appearanceState.theme.dynamicColorEnabled) }
                         )
-                        LazyAnimatedVisibility(visible = !dynamicColor) {
+                        LazyAnimatedVisibility(visible = !appearanceState.theme.dynamicColorEnabled) {
                             ThemeSeedListItem(
-                                seedColorHex = seedColorHex,
+                                seedColorHex = appearanceState.theme.themeSeedColor,
                                 onClick = { showColorPickerDialog = true },
                                 highlightTargetId = settingsHighlightTargetId,
                                 highlightPulse = settingsHighlightPulse,
@@ -585,8 +440,8 @@ fun SettingsScreen(
                     }
                     miuixSettingsSectionCardItem(key = "${selectedPage.name}:palette_style") {
                         ThemePaletteStyleSelector(
-                            selectedStyle = themePaletteStyle,
-                            onStyleChange = onThemePaletteStyleChange,
+                            selectedStyle = appearanceState.theme.themePaletteStyleValue,
+                            onStyleChange = appearanceActions.onThemePaletteStyleChange,
                             modifier = Modifier.settingsHighlightTarget(
                                 targetId = "manual:theme_palette_style",
                                 highlightTargetId = settingsHighlightTargetId,
@@ -597,8 +452,8 @@ fun SettingsScreen(
                     }
                     miuixSettingsSectionCardItem(key = "${selectedPage.name}:color_spec") {
                         ThemeColorSpecSelector(
-                            selectedSpec = themeColorSpec,
-                            onSpecChange = onThemeColorSpecChange,
+                            selectedSpec = appearanceState.visualBlur.themeColorSpecValue,
+                            onSpecChange = appearanceActions.onThemeColorSpecChange,
                             modifier = Modifier.settingsHighlightTarget(
                                 targetId = "manual:theme_color_spec",
                                 highlightTargetId = settingsHighlightTargetId,
@@ -631,7 +486,7 @@ fun SettingsScreen(
                     }
                     item(key = "${selectedPage.name}:card:1") {
                         SettingsPersonalizationHomeCard(
-                            internationalEnabled = internationalEnabled,
+                            internationalEnabled = otherState.internationalizationEnabled,
                             homeTrendingLabelRes = homeCardCopy.trendingLabelRes,
                             homeRadarLabelRes = homeCardCopy.radarLabelRes,
                             homeRecommendedLabelRes = homeCardCopy.recommendedLabelRes,
@@ -639,14 +494,14 @@ fun SettingsScreen(
                             homeRadarSupportingRes = homeCardCopy.radarSupportingRes,
                             homeRecommendedSupportingRes = homeCardCopy.recommendedSupportingRes,
                             homeStartAvailable = homeStartAvailable,
-                            showHomeContinueCard = showHomeContinueCard,
-                            onShowHomeContinueCardChange = onShowHomeContinueCardChange,
-                            showHomeTrendingCard = showHomeTrendingCard,
-                            onShowHomeTrendingCardChange = onShowHomeTrendingCardChange,
-                            showHomeRadarCard = showHomeRadarCard,
-                            onShowHomeRadarCardChange = onShowHomeRadarCardChange,
-                            showHomeRecommendedCard = showHomeRecommendedCard,
-                            onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
+                            showHomeContinueCard = otherState.homeCards.showHomeContinueCard,
+                            onShowHomeContinueCardChange = homeActions.onShowHomeContinueCardChange,
+                            showHomeTrendingCard = otherState.homeCards.showHomeTrendingCard,
+                            onShowHomeTrendingCardChange = homeActions.onShowHomeTrendingCardChange,
+                            showHomeRadarCard = otherState.homeCards.showHomeRadarCard,
+                            onShowHomeRadarCardChange = homeActions.onShowHomeRadarCardChange,
+                            showHomeRecommendedCard = otherState.homeCards.showHomeRecommendedCard,
+                            onShowHomeRecommendedCardChange = homeActions.onShowHomeRecommendedCardChange,
                             highlightTargetId = settingsHighlightTargetId,
                             highlightPulse = settingsHighlightPulse,
                             onHighlightFinished = onSettingsHighlightFinished
@@ -664,7 +519,7 @@ fun SettingsScreen(
                     item(key = "${selectedPage.name}:card:3") {
                         SettingsPersonalizationControlsCard(
                             autoSettingsRepository = autoSettingsRepository,
-                            settingsRepository = AppContainer.settingsRepo,
+                            settingsRepository = repository,
                             scope = scope,
                             highlightTargetId = settingsHighlightTargetId,
                             highlightPulse = settingsHighlightPulse,
@@ -673,7 +528,7 @@ fun SettingsScreen(
                     }
                     item(key = "${selectedPage.name}:card:4") {
                         SettingsPersonalizationBackgroundCard(
-                            backgroundImageUri = backgroundImageUri,
+                            backgroundImageUri = appearanceState.visualBackground.backgroundImageUri,
                             onPickBackgroundImage = {
                                 pickBackgroundImage()
                             },
@@ -681,9 +536,9 @@ fun SettingsScreen(
                                 scope.launch {
                                     BackgroundImageStorage.deleteManagedBackground(
                                         context = context,
-                                        uriString = backgroundImageUri
+                                        uriString = appearanceState.visualBackground.backgroundImageUri
                                     )
-                                    onBackgroundImageChange(null)
+                                    appearanceActions.onBackgroundImageChange(null)
                                 }
                             },
                             pendingBackgroundImageBlur = backgroundImageDraft.blur,
@@ -691,16 +546,16 @@ fun SettingsScreen(
                                 backgroundImageDraft.blur = it
                             },
                             onBackgroundImageBlurCommit = {
-                                onBackgroundImageBlurChange(backgroundImageDraft.blur)
-                                onBackgroundImageBlurChangeFinished(backgroundImageDraft.blur)
+                                appearanceActions.onBackgroundImageBlurChange(backgroundImageDraft.blur)
+                                appearanceActions.onBackgroundImageBlurChangeFinished(backgroundImageDraft.blur)
                             },
                             pendingBackgroundImageAlpha = backgroundImageDraft.alpha,
                             onPendingBackgroundImageAlphaChange = {
                                 backgroundImageDraft.alpha = it
-                                onBackgroundImageAlphaChange(it)
+                                appearanceActions.onBackgroundImageAlphaChange(it)
                             },
                             onBackgroundImageAlphaCommit = {
-                                onBackgroundImageAlphaChangeFinished(backgroundImageDraft.alpha)
+                                appearanceActions.onBackgroundImageAlphaChangeFinished(backgroundImageDraft.alpha)
                             },
                             highlightTargetId = settingsHighlightTargetId,
                             highlightPulse = settingsHighlightPulse,
@@ -719,35 +574,35 @@ fun SettingsScreen(
                                 showHeader = false,
                                 autoSettingsRepository = autoSettingsRepository,
                                 scope = scope,
-                                advancedBlurEnabled = advancedBlurEnabled,
-                                onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
-                                enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
+                                advancedBlurEnabled = appearanceState.visualBlur.advancedBlurEnabled,
+                                onAdvancedBlurEnabledChange = appearanceActions.onAdvancedBlurEnabledChange,
+                                enhancedAdvancedBlurEnabled = appearanceState.visualBlur.enhancedAdvancedBlurEnabled,
                                 onEnhancedAdvancedBlurEnabledChange =
-                                    onEnhancedAdvancedBlurEnabledChange,
-                                enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
+                                    appearanceActions.onEnhancedAdvancedBlurEnabledChange,
+                                enhancedAdvancedBlurRadiusDp = appearanceState.visualBlur.enhancedAdvancedBlurRadiusDp,
                                 onEnhancedAdvancedBlurRadiusDpChange =
-                                    onEnhancedAdvancedBlurRadiusDpChange,
-                                advancedBlurQuality = advancedBlurQuality,
-                                onAdvancedBlurQualityChange = onAdvancedBlurQualityChange,
-                                nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
+                                    appearanceActions.onEnhancedAdvancedBlurRadiusDpChange,
+                                advancedBlurQuality = appearanceState.visualBlur.advancedBlurQuality,
+                                onAdvancedBlurQualityChange = appearanceActions.onAdvancedBlurQualityChange,
+                                nowPlayingAudioReactiveEnabled = appearanceState.nowPlayingVisual.nowPlayingAudioReactiveEnabled,
                                 onNowPlayingAudioReactiveEnabledChange =
-                                    onNowPlayingAudioReactiveEnabledChange,
+                                    appearanceActions.onNowPlayingAudioReactiveEnabledChange,
                                 nowPlayingDynamicBackgroundEnabled =
-                                    nowPlayingDynamicBackgroundEnabled,
+                                    appearanceState.nowPlayingVisual.nowPlayingDynamicBackgroundEnabled,
                                 onNowPlayingDynamicBackgroundEnabledChange =
-                                    onNowPlayingDynamicBackgroundEnabledChange,
+                                    appearanceActions.onNowPlayingDynamicBackgroundEnabledChange,
                                 nowPlayingCoverBlurBackgroundEnabled =
-                                    nowPlayingCoverBlurBackgroundEnabled,
+                                    appearanceState.nowPlayingVisual.nowPlayingCoverBlurBackgroundEnabled,
                                 onNowPlayingCoverBlurBackgroundEnabledChange =
-                                    onNowPlayingCoverBlurBackgroundEnabledChange,
-                                nowPlayingCoverBlurAmount = nowPlayingCoverBlurAmount,
-                                onNowPlayingCoverBlurAmountChange = onNowPlayingCoverBlurAmountChange,
-                                nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
-                                onNowPlayingCoverBlurDarkenChange = onNowPlayingCoverBlurDarkenChange,
-                                lyricBlurEnabled = lyricBlurEnabled,
-                                onLyricBlurEnabledChange = onLyricBlurEnabledChange,
-                                lyricBlurAmount = lyricBlurAmount,
-                                onLyricBlurAmountChange = onLyricBlurAmountChange,
+                                    appearanceActions.onNowPlayingCoverBlurBackgroundEnabledChange,
+                                nowPlayingCoverBlurAmount = appearanceState.nowPlayingVisual.nowPlayingCoverBlurAmount,
+                                onNowPlayingCoverBlurAmountChange = appearanceActions.onNowPlayingCoverBlurAmountChange,
+                                nowPlayingCoverBlurDarken = appearanceState.nowPlayingVisual.nowPlayingCoverBlurDarken,
+                                onNowPlayingCoverBlurDarkenChange = appearanceActions.onNowPlayingCoverBlurDarkenChange,
+                                lyricBlurEnabled = lyricsState.lyricPresentation.lyricBlurEnabled,
+                                onLyricBlurEnabledChange = lyricsActions.onLyricBlurEnabledChange,
+                                lyricBlurAmount = lyricsState.lyricPresentation.lyricBlurAmount,
+                                onLyricBlurAmountChange = lyricsActions.onLyricBlurAmountChange,
                                 cardIndex = cardIndex,
                                 highlightTargetId = settingsHighlightTargetId,
                                 highlightPulse = settingsHighlightPulse,
@@ -766,37 +621,37 @@ fun SettingsScreen(
                                 onExpandedChange = {},
                                 showHeader = false,
                                 autoSettingsRepository = autoSettingsRepository,
-                                settingsRepository = AppContainer.settingsRepo,
+                                settingsRepository = repository,
                                 scope = scope,
-                                floatingLyricsPreferences = floatingLyricsPreferences,
-                                onFloatingLyricsPreferencesChange = onFloatingLyricsPreferencesChange,
+                                floatingLyricsPreferences = lyricsState.lyricPresentation.floatingLyricsPreferences,
+                                onFloatingLyricsPreferencesChange = lyricsActions.onFloatingLyricsPreferencesChange,
                                 lyricsAppearanceContent = {
                                     SettingsLyricsAppearanceContent(
                                         autoSettingsRepository = autoSettingsRepository,
                                         scope = scope,
-                                        lyricFontScales = lyricFontScales,
-                                        onLyricFontScaleChange = onLyricFontScaleChange,
+                                        lyricFontScales = lyricsState.lyricPresentation.lyricFontScales,
+                                        onLyricFontScaleChange = lyricsActions.onLyricFontScaleChange,
                                         highlightTargetId = settingsHighlightTargetId,
                                         highlightPulse = settingsHighlightPulse,
                                         onHighlightFinished = onSettingsHighlightFinished
                                     )
                                 },
-                                cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
+                                cloudMusicLyricDefaultOffsetMs = lyricsState.lyricOffsets.cloudMusicLyricDefaultOffsetMs,
                                 onCloudMusicLyricDefaultOffsetMsChange =
-                                    onCloudMusicLyricDefaultOffsetMsChange,
-                                qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
+                                    lyricsActions.onCloudMusicLyricDefaultOffsetMsChange,
+                                qqMusicLyricDefaultOffsetMs = lyricsState.lyricOffsets.qqMusicLyricDefaultOffsetMs,
                                 onQqMusicLyricDefaultOffsetMsChange =
-                                    onQqMusicLyricDefaultOffsetMsChange,
-                                kugouLyricDefaultOffsetMs = kugouLyricDefaultOffsetMs,
+                                    lyricsActions.onQqMusicLyricDefaultOffsetMsChange,
+                                kugouLyricDefaultOffsetMs = lyricsState.lyricOffsets.kugouLyricDefaultOffsetMs,
                                 onKugouLyricDefaultOffsetMsChange =
-                                    onKugouLyricDefaultOffsetMsChange,
-                                lrclibLyricDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
+                                    lyricsActions.onKugouLyricDefaultOffsetMsChange,
+                                lrclibLyricDefaultOffsetMs = lyricsState.lyricOffsets.lrclibLyricDefaultOffsetMs,
                                 onLrclibLyricDefaultOffsetMsChange =
-                                    onLrclibLyricDefaultOffsetMsChange,
-                                amllTtmlLyricDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
+                                    lyricsActions.onLrclibLyricDefaultOffsetMsChange,
+                                amllTtmlLyricDefaultOffsetMs = lyricsState.lyricOffsets.amllTtmlLyricDefaultOffsetMs,
                                 onAmllTtmlLyricDefaultOffsetMsChange =
-                                    onAmllTtmlLyricDefaultOffsetMsChange,
-                                onResetAllLyricDefaultOffsets = onResetAllLyricDefaultOffsets,
+                                    lyricsActions.onAmllTtmlLyricDefaultOffsetMsChange,
+                                onResetAllLyricDefaultOffsets = lyricsActions.onResetAllLyricDefaultOffsets,
                                 cardIndex = cardIndex,
                                 highlightTargetId = settingsHighlightTargetId,
                                 highlightPulse = settingsHighlightPulse,
@@ -819,12 +674,12 @@ fun SettingsScreen(
                                 )
                             },
                             trailingContent = {
-                                MiuixSettingsSwitch(checked = bypassProxy, onCheckedChange = onBypassProxyChange)
+                                MiuixSettingsSwitch(checked = otherState.storage.bypassProxy, onCheckedChange = storageActions.onBypassProxyChange)
                             },
                             highlightTargetId = settingsHighlightTargetId,
                             highlightPulse = settingsHighlightPulse,
                             onHighlightFinished = onSettingsHighlightFinished,
-                            onClick = { onBypassProxyChange(!bypassProxy) }
+                            onClick = { storageActions.onBypassProxyChange(!otherState.storage.bypassProxy) }
                         )
                     }
                 },
@@ -839,49 +694,49 @@ fun SettingsScreen(
                                 showHeader = false,
                                 autoSettingsRepository = autoSettingsRepository,
                                 scope = scope,
-                                playbackFadeIn = playbackFadeIn,
-                                onPlaybackFadeInChange = onPlaybackFadeInChange,
-                                playbackCrossfadeNext = playbackCrossfadeNext,
-                                onPlaybackCrossfadeNextChange = onPlaybackCrossfadeNextChange,
-                                sleepTimerFinishCurrentOnExpiry = sleepTimerFinishCurrentOnExpiry,
+                                playbackFadeIn = playbackState.playbackFade.playbackFadeIn,
+                                onPlaybackFadeInChange = playbackActions.onPlaybackFadeInChange,
+                                playbackCrossfadeNext = playbackState.playbackFade.playbackCrossfadeNext,
+                                onPlaybackCrossfadeNextChange = playbackActions.onPlaybackCrossfadeNextChange,
+                                sleepTimerFinishCurrentOnExpiry = playbackState.playbackContinuity.sleepTimerFinishCurrentOnExpiry,
                                 onSleepTimerFinishCurrentOnExpiryChange =
-                                    onSleepTimerFinishCurrentOnExpiryChange,
-                                playbackFadeInDurationMs = playbackFadeInDurationMs,
-                                onPlaybackFadeInDurationMsChange = onPlaybackFadeInDurationMsChange,
-                                playbackFadeOutDurationMs = playbackFadeOutDurationMs,
-                                onPlaybackFadeOutDurationMsChange = onPlaybackFadeOutDurationMsChange,
-                                playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
+                                    playbackActions.onSleepTimerFinishCurrentOnExpiryChange,
+                                playbackFadeInDurationMs = playbackState.playbackFade.playbackFadeInDurationMs,
+                                onPlaybackFadeInDurationMsChange = playbackActions.onPlaybackFadeInDurationMsChange,
+                                playbackFadeOutDurationMs = playbackState.playbackFade.playbackFadeOutDurationMs,
+                                onPlaybackFadeOutDurationMsChange = playbackActions.onPlaybackFadeOutDurationMsChange,
+                                playbackCrossfadeInDurationMs = playbackState.playbackFade.playbackCrossfadeInDurationMs,
                                 onPlaybackCrossfadeInDurationMsChange =
-                                    onPlaybackCrossfadeInDurationMsChange,
-                                playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
+                                    playbackActions.onPlaybackCrossfadeInDurationMsChange,
+                                playbackCrossfadeOutDurationMs = playbackState.playbackOutput.playbackCrossfadeOutDurationMs,
                                 onPlaybackCrossfadeOutDurationMsChange =
-                                    onPlaybackCrossfadeOutDurationMsChange,
-                                playbackVolumeNormalizationEnabled = playbackVolumeNormalizationEnabled,
+                                    playbackActions.onPlaybackCrossfadeOutDurationMsChange,
+                                playbackVolumeNormalizationEnabled = playbackState.playbackOutput.playbackVolumeNormalizationEnabled,
                                 onPlaybackVolumeNormalizationEnabledChange =
-                                    onPlaybackVolumeNormalizationEnabledChange,
+                                    playbackActions.onPlaybackVolumeNormalizationEnabledChange,
                                 playbackHighResolutionOutputEnabled =
-                                    playbackHighResolutionOutputEnabled,
+                                    playbackState.playbackOutput.playbackHighResolutionOutputEnabled,
                                 onPlaybackHighResolutionOutputEnabledChange =
-                                    onPlaybackHighResolutionOutputEnabledChange,
-                                playbackVolumeBalance = playbackVolumeBalance,
-                                onPlaybackVolumeBalanceChange = onPlaybackVolumeBalanceChange,
-                                keepLastPlaybackProgress = keepLastPlaybackProgress,
-                                onKeepLastPlaybackProgressChange = onKeepLastPlaybackProgressChange,
-                                rememberLongFormPlaybackProgress = rememberLongFormPlaybackProgress,
+                                    playbackActions.onPlaybackHighResolutionOutputEnabledChange,
+                                playbackVolumeBalance = playbackState.playbackOutput.playbackVolumeBalance,
+                                onPlaybackVolumeBalanceChange = playbackActions.onPlaybackVolumeBalanceChange,
+                                keepLastPlaybackProgress = playbackState.playbackContinuity.keepLastPlaybackProgress,
+                                onKeepLastPlaybackProgressChange = playbackActions.onKeepLastPlaybackProgressChange,
+                                rememberLongFormPlaybackProgress = playbackState.playbackContinuity.rememberLongFormPlaybackProgress,
                                 onRememberLongFormPlaybackProgressChange =
-                                    onRememberLongFormPlaybackProgressChange,
-                                keepPlaybackModeState = keepPlaybackModeState,
-                                onKeepPlaybackModeStateChange = onKeepPlaybackModeStateChange,
-                                stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
-                                onStopOnBluetoothDisconnectChange = onStopOnBluetoothDisconnectChange,
-                                usbExclusivePlayback = usbExclusivePlayback,
+                                    playbackActions.onRememberLongFormPlaybackProgressChange,
+                                keepPlaybackModeState = playbackState.playbackContinuity.keepPlaybackModeState,
+                                onKeepPlaybackModeStateChange = playbackActions.onKeepPlaybackModeStateChange,
+                                stopOnBluetoothDisconnect = playbackState.playbackContinuity.stopOnBluetoothDisconnect,
+                                onStopOnBluetoothDisconnectChange = playbackActions.onStopOnBluetoothDisconnectChange,
+                                usbExclusivePlayback = playbackState.playbackOutput.usbExclusivePlayback,
                                 onUsbExclusiveSettingsClick = {
                                     navigation.activePage = SettingsPage.UsbExclusive
                                 },
-                                allowMixedPlayback = allowMixedPlayback,
-                                onAllowMixedPlaybackChange = onAllowMixedPlaybackChange,
-                                preemptAudioFocus = preemptAudioFocus,
-                                onPreemptAudioFocusChange = onPreemptAudioFocusChange,
+                                allowMixedPlayback = playbackState.playbackSources.allowMixedPlayback,
+                                onAllowMixedPlaybackChange = playbackActions.onAllowMixedPlaybackChange,
+                                preemptAudioFocus = playbackState.playbackSources.preemptAudioFocus,
+                                onPreemptAudioFocusChange = playbackActions.onPreemptAudioFocusChange,
                                 cardIndex = cardIndex,
                                 highlightTargetId = settingsHighlightTargetId,
                                 highlightPulse = settingsHighlightPulse,
@@ -894,76 +749,21 @@ fun SettingsScreen(
                 SettingsPage.UsbExclusive to {
                     item(key = "${selectedPage.name}:content") {
                         UsbExclusiveSettingsSection(
-                            usbExclusivePlayback = usbExclusivePlayback,
-                            onUsbExclusivePlaybackChange = onUsbExclusivePlaybackChange,
-                            preferences = usbExclusivePreferences,
-                            onDeviceKeyChange = { deviceKey ->
-                                scope.launch {
-                                    AppContainer.settingsRepo.setUsbExclusiveDeviceKey(deviceKey)
-                                }
-                            },
-                            onSampleRateModeChange = { mode ->
-                                scope.launch {
-                                    AppContainer.settingsRepo.setUsbExclusiveSampleRateMode(mode)
-                                }
-                            },
-                            onBitDepthModeChange = { mode ->
-                                scope.launch {
-                                    AppContainer.settingsRepo.setUsbExclusiveBitDepthMode(mode)
-                                }
-                            },
-                            onBitPerfectChange = { enabled ->
-                                scope.launch {
-                                    AppContainer.settingsRepo.setUsbExclusiveBitPerfect(enabled)
-                                }
-                            },
-                            onBufferProfileChange = { profile ->
-                                scope.launch {
-                                    AppContainer.settingsRepo.setUsbExclusiveBufferProfile(profile)
-                                }
-                            },
-                            onUnsupportedFormatPolicyChange = { policy ->
-                                scope.launch {
-                                    AppContainer.settingsRepo
-                                        .setUsbExclusiveUnsupportedFormatPolicy(policy)
-                                }
-                            },
-                            onSampleRateCompatibilityChange = { enabled ->
-                                scope.launch {
-                                    AppContainer.settingsRepo
-                                        .setUsbExclusiveSampleRateCompatibility(enabled)
-                                }
-                            },
-                            onBitDepthCompatibilityChange = { enabled ->
-                                scope.launch {
-                                    AppContainer.settingsRepo
-                                        .setUsbExclusiveBitDepthCompatibility(enabled)
-                                }
-                            },
-                            onChannelCompatibilityChange = { enabled ->
-                                scope.launch {
-                                    AppContainer.settingsRepo
-                                        .setUsbExclusiveChannelCompatibility(enabled)
-                                }
-                            },
-                            onForegroundBufferMsChange = { bufferMs ->
-                                scope.launch {
-                                    AppContainer.settingsRepo
-                                        .setUsbExclusiveForegroundBufferMs(bufferMs)
-                                }
-                            },
-                            onBackgroundBufferMsChange = { bufferMs ->
-                                scope.launch {
-                                    AppContainer.settingsRepo
-                                        .setUsbExclusiveBackgroundBufferMs(bufferMs)
-                                }
-                            },
-                            onVolumeRiskThresholdDbfsChange = { thresholdDbfs ->
-                                scope.launch {
-                                    AppContainer.settingsRepo
-                                        .setUsbExclusiveVolumeRiskThresholdDbfs(thresholdDbfs)
-                                }
-                            },
+                            usbExclusivePlayback = playbackState.playbackOutput.usbExclusivePlayback,
+                            onUsbExclusivePlaybackChange = playbackActions.onUsbExclusivePlaybackChange,
+                            preferences = playbackState.usbExclusivePreferences,
+                            onDeviceKeyChange = usbActions.onDeviceKeyChange,
+                            onSampleRateModeChange = usbActions.onSampleRateModeChange,
+                            onBitDepthModeChange = usbActions.onBitDepthModeChange,
+                            onBitPerfectChange = usbActions.onBitPerfectChange,
+                            onBufferProfileChange = usbActions.onBufferProfileChange,
+                            onUnsupportedFormatPolicyChange = usbActions.onUnsupportedFormatPolicyChange,
+                            onSampleRateCompatibilityChange = usbActions.onSampleRateCompatibilityChange,
+                            onBitDepthCompatibilityChange = usbActions.onBitDepthCompatibilityChange,
+                            onChannelCompatibilityChange = usbActions.onChannelCompatibilityChange,
+                            onForegroundBufferMsChange = usbActions.onForegroundBufferMsChange,
+                            onBackgroundBufferMsChange = usbActions.onBackgroundBufferMsChange,
+                            onVolumeRiskThresholdDbfsChange = usbActions.onVolumeRiskThresholdDbfsChange,
                             modifier = Modifier.animateItem()
                         )
                     }
@@ -972,7 +772,7 @@ fun SettingsScreen(
                 SettingsPage.PlaybackSource to {
                     miuixSettingsSectionCardItem(key = "${selectedPage.name}:content") {
                         YouTubePlaybackSourceSetting(
-                            repository = AppContainer.settingsRepo,
+                            repository = repository,
                             highlightTargetId = settingsHighlightTargetId,
                             highlightPulse = settingsHighlightPulse,
                             onHighlightFinished = onSettingsHighlightFinished
@@ -993,15 +793,15 @@ fun SettingsScreen(
                             },
                             trailingContent = {
                                 MiuixSettingsSwitch(
-                                    checked = neteaseLocalSourceFallback,
-                                    onCheckedChange = onNeteaseLocalSourceFallbackChange
+                                    checked = playbackState.playbackSources.neteaseLocalSourceFallback,
+                                    onCheckedChange = playbackActions.onNeteaseLocalSourceFallbackChange
                                 )
                             },
                             highlightTargetId = settingsHighlightTargetId,
                             highlightPulse = settingsHighlightPulse,
                             onHighlightFinished = onSettingsHighlightFinished,
                             onClick = {
-                                onNeteaseLocalSourceFallbackChange(!neteaseLocalSourceFallback)
+                                playbackActions.onNeteaseLocalSourceFallbackChange(!playbackState.playbackSources.neteaseLocalSourceFallback)
                             }
                         )
                         AutoSettingsListItem(
@@ -1020,15 +820,15 @@ fun SettingsScreen(
                             },
                             trailingContent = {
                                 MiuixSettingsSwitch(
-                                    checked = neteaseAutoSourceSwitch,
-                                    onCheckedChange = onNeteaseAutoSourceSwitchChange
+                                    checked = playbackState.playbackSources.neteaseAutoSourceSwitch,
+                                    onCheckedChange = playbackActions.onNeteaseAutoSourceSwitchChange
                                 )
                             },
                             highlightTargetId = settingsHighlightTargetId,
                             highlightPulse = settingsHighlightPulse,
                             onHighlightFinished = onSettingsHighlightFinished,
                             onClick = {
-                                onNeteaseAutoSourceSwitchChange(!neteaseAutoSourceSwitch)
+                                playbackActions.onNeteaseAutoSourceSwitchChange(!playbackState.playbackSources.neteaseAutoSourceSwitch)
                             }
                         )
                     }
@@ -1042,28 +842,28 @@ fun SettingsScreen(
                             onExpandedChange = {},
                             showHeader = false,
                             qualityLabel = qualityPresentation.neteaseLabel,
-                            preferredQuality = preferredQuality,
-                            onQualityChange = onQualityChange,
+                            preferredQuality = playbackState.defaultAudioQuality.preferredQuality,
+                            onQualityChange = qualityActions.onQualityChange,
                             youtubeQualityLabel = qualityPresentation.youtubeLabel,
-                            youtubePreferredQuality = youtubePreferredQuality,
-                            onYouTubeQualityChange = onYouTubeQualityChange,
+                            youtubePreferredQuality = playbackState.defaultAudioQuality.youtubePreferredQuality,
+                            onYouTubeQualityChange = qualityActions.onYouTubeQualityChange,
                             biliQualityLabel = qualityPresentation.biliLabel,
-                            biliPreferredQuality = biliPreferredQuality,
-                            onBiliQualityChange = onBiliQualityChange,
-                            mobileDataFollowDefaultAudioQuality = mobileDataFollowDefaultAudioQuality,
+                            biliPreferredQuality = playbackState.defaultAudioQuality.biliPreferredQuality,
+                            onBiliQualityChange = qualityActions.onBiliQualityChange,
+                            mobileDataFollowDefaultAudioQuality = playbackState.defaultAudioQuality.mobileDataFollowDefaultAudioQuality,
                             onMobileDataFollowDefaultAudioQualityChange =
-                                onMobileDataFollowDefaultAudioQualityChange,
+                                qualityActions.onMobileDataFollowDefaultAudioQualityChange,
                             mobileDataNeteaseQualityLabel = qualityPresentation.mobileNeteaseLabel,
                             mobileDataNeteaseAudioQuality = qualityPresentation.mobileNeteaseValue,
                             onMobileDataNeteaseAudioQualityChange =
-                                onMobileDataNeteaseAudioQualityChange,
+                                qualityActions.onMobileDataNeteaseAudioQualityChange,
                             mobileDataYouTubeQualityLabel = qualityPresentation.mobileYouTubeLabel,
                             mobileDataYouTubeAudioQuality = qualityPresentation.mobileYouTubeValue,
                             onMobileDataYouTubeAudioQualityChange =
-                                onMobileDataYouTubeAudioQualityChange,
+                                qualityActions.onMobileDataYouTubeAudioQualityChange,
                             mobileDataBiliQualityLabel = qualityPresentation.mobileBiliLabel,
                             mobileDataBiliAudioQuality = qualityPresentation.mobileBiliValue,
-                            onMobileDataBiliAudioQualityChange = onMobileDataBiliAudioQualityChange,
+                            onMobileDataBiliAudioQualityChange = qualityActions.onMobileDataBiliAudioQualityChange,
                             showQualityDialog = showQualityDialog,
                             onShowQualityDialogChange = { showQualityDialog = it },
                             showYouTubeQualityDialog = showYouTubeQualityDialog,
@@ -1092,18 +892,18 @@ fun SettingsScreen(
                 SettingsPage.Storage to {
                     settingsStoragePageItems(
                         directory = downloadDirectorySettings,
-                        downloadDirectoryUri = downloadDirectoryUri,
-                        downloadFileNameTemplate = downloadFileNameTemplate,
-                        onDownloadFileNameTemplateChange = onDownloadFileNameTemplateChange,
-                        maxCacheSizeBytes = maxCacheSizeBytes,
-                        onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
+                        downloadDirectoryUri = otherState.storage.downloadDirectoryUri,
+                        downloadFileNameTemplate = otherState.storage.downloadFileNameTemplate,
+                        onDownloadFileNameTemplateChange = storageActions.onDownloadFileNameTemplateChange,
+                        maxCacheSizeBytes = otherState.storage.maxCacheSizeBytes,
+                        onMaxCacheSizeBytesChange = storageActions.onMaxCacheSizeBytesChange,
                         onOpenStorageDetails = {
                             navigation.activePage = SettingsPage.StorageCacheDetails
                             storageDetailsController.requestRefresh()
                         },
                         storageDetails = storageDetailsController.details,
                         selection = storageSelection,
-                        onClearCacheClick = onClearCacheClick,
+                        onClearCacheClick = storageActions.onClearCacheClick,
                         highlightTargetId = settingsHighlightTargetId,
                         highlightPulse = settingsHighlightPulse,
                         onHighlightFinished = onSettingsHighlightFinished
@@ -1179,8 +979,8 @@ fun SettingsScreen(
                 SettingsPage.About to {
                     miuixSettingsSectionCardItem("${selectedPage.name}:content") {
                         SettingsAboutPageContent(
-                            devModeEnabled = devModeEnabled,
-                            onDevModeChange = onDevModeChange,
+                            devModeEnabled = appearanceState.theme.devModeEnabled,
+                            onDevModeChange = appearanceActions.onDevModeChange,
                             onInlineMessageChange = { inlineMsg = it },
                             onShowMessage = ::showSettingsMessage
                         )
@@ -1206,18 +1006,18 @@ fun SettingsScreen(
         onShowDefaultStartDestinationDialogChange = { showDefaultStartDestinationDialog = it },
         homeStartAvailable = homeStartAvailable,
         effectiveDefaultStartDestination = effectiveDefaultStartDestination,
-        onDefaultStartDestinationChange = onDefaultStartDestinationChange,
+        onDefaultStartDestinationChange = homeActions.onDefaultStartDestinationChange,
         showColorPickerDialog = showColorPickerDialog,
         onShowColorPickerDialogChange = { showColorPickerDialog = it },
-        seedColorHex = seedColorHex,
-        themeColorPalette = themeColorPalette,
-        onSeedColorChange = onSeedColorChange,
-        onAddColorToPalette = onAddColorToPalette,
-        onRemoveColorFromPalette = onRemoveColorFromPalette,
+        seedColorHex = appearanceState.theme.themeSeedColor,
+        themeColorPalette = appearanceState.theme.themeColorPalette,
+        onSeedColorChange = appearanceActions.onSeedColorChange,
+        onAddColorToPalette = appearanceActions.onAddColorToPalette,
+        onRemoveColorFromPalette = appearanceActions.onRemoveColorFromPalette,
         showDpiDialog = showDpiDialog,
         onShowDpiDialogChange = { showDpiDialog = it },
-        uiDensityScale = uiDensityScale,
-        onUiDensityScaleChange = onUiDensityScaleChange
+        uiDensityScale = appearanceState.visualBackground.uiDensityScale,
+        onUiDensityScaleChange = appearanceActions.onUiDensityScaleChange
     )
 
     SettingsListenTogetherDialogs(listenTogetherSettings)

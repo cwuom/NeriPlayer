@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 
 internal data class AppThemeSettingsState(
     val dynamicColorEnabled: Boolean,
@@ -132,12 +133,14 @@ internal data class AppPlaybackSettingsState(
     val playbackContinuity: AppPlaybackContinuitySettingsState,
     val playbackSources: AppPlaybackSourcesSettingsState,
     val defaultAudioQuality: AppDefaultAudioQualitySettingsState,
-    val mobileAudioQuality: AppMobileAudioQualitySettingsState
+    val mobileAudioQuality: AppMobileAudioQualitySettingsState,
+    val usbExclusivePreferences: UsbExclusivePreferences
 )
 
 internal data class AppOtherSettingsState(
     val homeCards: AppHomeCardsSettingsState,
-    val storage: AppStorageSettingsState
+    val storage: AppStorageSettingsState,
+    val internationalizationEnabled: Boolean
 )
 
 private data class AppPlaybackSettingsCore(
@@ -314,11 +317,18 @@ internal fun appSettingsRouteStateFlow(repo: SettingsRepository): Flow<AppSettin
     ) { fade, output, continuity, sources, quality ->
         AppPlaybackSettingsCore(fade, output, continuity, sources, quality)
     }
-    val playback = combine(playbackCore, mobileAudioQualitySettingsFlow(repo)) { core, mobile ->
-        AppPlaybackSettingsState(core.fade, core.output, core.continuity, core.sources, core.quality, mobile)
+    val playback = combine(
+        playbackCore, mobileAudioQualitySettingsFlow(repo), repo.usbExclusivePreferencesFlow
+    ) { core, mobile, usbPreferences ->
+        AppPlaybackSettingsState(
+            core.fade, core.output, core.continuity, core.sources, core.quality,
+            mobile, usbPreferences
+        )
     }
-    val other = combine(homeCardsSettingsFlow(repo), storageSettingsFlow(repo)) { homeCards, storage ->
-        AppOtherSettingsState(homeCards, storage)
+    val other = combine(
+        homeCardsSettingsFlow(repo), storageSettingsFlow(repo), repo.internationalizationEnabledFlow
+    ) { homeCards, storage, internationalizationEnabled ->
+        AppOtherSettingsState(homeCards, storage, internationalizationEnabled)
     }
     return combine(appearance, lyrics, playback, other) { appearance, lyrics, playback, other ->
         AppSettingsRouteState(appearance, lyrics, playback, other)
@@ -411,7 +421,8 @@ internal fun initialAppSettingsRouteState(
             mobileDataNeteaseAudioQuality = startupPlaybackPreferences.mobileDataNeteaseAudioQuality,
             mobileDataYouTubeAudioQuality = startupPlaybackPreferences.mobileDataYouTubeAudioQuality,
             mobileDataBiliAudioQuality = startupPlaybackPreferences.mobileDataBiliAudioQuality
-        )
+        ),
+        usbExclusivePreferences = UsbExclusivePreferences()
     ),
     other = AppOtherSettingsState(
         homeCards = AppHomeCardsSettingsState(
@@ -425,6 +436,7 @@ internal fun initialAppSettingsRouteState(
             downloadDirectoryUri = null,
             downloadFileNameTemplate = null,
             maxCacheSizeBytes = startupPlaybackPreferences.maxCacheSizeBytes
-        )
+        ),
+        internationalizationEnabled = false
     )
 )

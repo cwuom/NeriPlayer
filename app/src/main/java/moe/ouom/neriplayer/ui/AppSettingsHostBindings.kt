@@ -1,7 +1,11 @@
 package moe.ouom.neriplayer.ui
 
 import androidx.compose.ui.geometry.Offset
+import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
+import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
+import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
 import moe.ouom.neriplayer.util.platform.LanguageManager
 
 internal class AppSettingsHostEnvironment(
@@ -18,12 +22,21 @@ internal class AppSettingsHostEnvironment(
 )
 
 internal class AppSettingsHostBindings(
+    val repository: SettingsRepository,
+    val listenTogether: AppSettingsListenTogetherDependencies,
     val state: AppSettingsRouteState,
     val appearanceActions: AppAppearanceSettingsActions,
     val lyricsActions: AppLyricSettingsActions,
     val qualityActions: AppAudioQualitySettingsActions,
     val playbackActions: AppPlaybackSettingsActions,
+    val usbActions: AppUsbExclusiveSettingsActions,
     val homeActions: AppHomeSettingsActions,
     val storageActions: AppStorageSettingsActions,
     val environment: AppSettingsHostEnvironment
+)
+
+internal class AppSettingsListenTogetherDependencies(
+    val preferences: ListenTogetherPreferences,
+    val api: ListenTogetherApi,
+    val sessionManager: ListenTogetherSessionManager
 )

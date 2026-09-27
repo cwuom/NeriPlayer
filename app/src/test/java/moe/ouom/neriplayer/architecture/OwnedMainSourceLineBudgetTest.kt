@@ -175,7 +175,8 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/ui/NowPlayingBlurEffectOwner.kt",
             "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherSocketHealthOwner.kt",
             "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherHeartbeatOwner.kt",
-            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherListenerWatchdogOwner.kt"
+            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherListenerWatchdogOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/AppUsbExclusiveSettingsActions.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

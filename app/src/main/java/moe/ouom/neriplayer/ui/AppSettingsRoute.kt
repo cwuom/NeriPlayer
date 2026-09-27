@@ -5,6 +5,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
@@ -35,6 +36,12 @@ internal fun AppSettingsRoute(
     )
     SettingsHostScreen(
         bindings = AppSettingsHostBindings(
+            repository = repo,
+            listenTogether = AppSettingsListenTogetherDependencies(
+                preferences = AppContainer.listenTogetherPreferences,
+                api = AppContainer.listenTogetherApi,
+                sessionManager = AppContainer.listenTogetherSessionManager
+            ),
             state = settingsState,
             appearanceActions = rememberAppAppearanceSettingsActions(
                 repo, scope, onBackgroundImageAlphaPreview
@@ -44,6 +51,7 @@ internal fun AppSettingsRoute(
             ),
             qualityActions = rememberAppAudioQualitySettingsActions(repo, scope),
             playbackActions = rememberAppPlaybackSettingsActions(repo, scope),
+            usbActions = rememberAppUsbExclusiveSettingsActions(repo, scope),
             homeActions = rememberAppHomeSettingsActions(repo, scope),
             storageActions = rememberAppStorageSettingsActions(
                 repo, scope, cacheClearOwner, snackbarHostState

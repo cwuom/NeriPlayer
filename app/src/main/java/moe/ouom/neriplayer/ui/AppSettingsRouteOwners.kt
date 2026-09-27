@@ -163,6 +163,14 @@ internal fun rememberAppPlaybackSettingsActions(
 }
 
 @Composable
+internal fun rememberAppUsbExclusiveSettingsActions(
+    repo: SettingsRepository,
+    scope: CoroutineScope
+): AppUsbExclusiveSettingsActions = remember(repo to scope) {
+    AppUsbExclusiveSettingsActions(repo, scope)
+}
+
+@Composable
 internal fun rememberAppHomeSettingsActions(
     repo: SettingsRepository,
     scope: CoroutineScope

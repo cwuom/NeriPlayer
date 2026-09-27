@@ -25,6 +25,10 @@ internal class AppAppearanceSettingsActions(
 ) {
     val onDynamicColorChange: (Boolean) -> Unit = { scope.launch { repo.setDynamicColor(it) } }
 
+    val onInternationalizationEnabledChange: (Boolean) -> Unit = { enabled ->
+        scope.launch { repo.setInternationalizationEnabled(enabled) }
+    }
+
     val onSeedColorChange: (String) -> Unit = { hex ->
             scope.launch { repo.setThemeSeedColor(hex) }
         }
