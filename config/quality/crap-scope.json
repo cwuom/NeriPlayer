@@ -84,7 +84,15 @@
     "moe/ouom/neriplayer/ui/screen/tab/SettingsAboutInteractions.kt",
     "moe/ouom/neriplayer/ui/screen/tab/SettingsBackupTransferController.kt",
     "moe/ouom/neriplayer/ui/screen/tab/SettingsAccountAuthController.kt",
-    "moe/ouom/neriplayer/ui/screen/tab/SettingsAccountStatusContent.kt"
+    "moe/ouom/neriplayer/ui/screen/tab/SettingsAccountStatusContent.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditSheet.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditOwner.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditPolicy.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditDialogs.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditLyricsSources.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditRestoreSources.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditSave.kt",
+    "moe/ouom/neriplayer/ui/screen/NowPlayingSongEditSearchSheet.kt"
   ],
   "method_scopes": [
     {
