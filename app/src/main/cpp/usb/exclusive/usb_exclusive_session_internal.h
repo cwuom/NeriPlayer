@@ -65,6 +65,22 @@ void assignNewNativeStreamGeneration(UsbExclusiveHandle* handle);
 void requestDeviceStop(UsbExclusiveHandle* handle, bool detachBroadcastConfirmed);
 void requestNoDeviceStop(UsbExclusiveHandle* handle);
 void markTransportFailed(UsbExclusiveHandle* handle);
+int64_t steadyClockNanoseconds();
+int exponentialBackoffMs(int consecutiveErrors);
+timeval timeoutFromMilliseconds(int timeoutMs);
+bool shouldLogRepeatedError(int consecutiveErrors);
+
+void interruptUsbEventHandler(UsbExclusiveHandle* handle);
+bool shouldStopTransferSubmission(const UsbExclusiveHandle* handle);
+const char* sourceName(StreamSource source);
+bool feedbackTransfersOutstanding(const UsbExclusiveHandle* handle);
+bool streamTransfersOutstanding(const UsbExclusiveHandle* handle);
+void freeTransfers(UsbExclusiveHandle* handle);
+bool startStreamingSafely(UsbExclusiveHandle* handle, StreamSource source) noexcept;
+bool stopStreamingInternal(UsbExclusiveHandle* handle);
+int activateBufferedIsoReserveTransfers(UsbExclusiveHandle* handle);
+int64_t queuedPlayerReplayFrames(const UsbExclusiveHandle* handle);
+void clearPlayerReplayState(UsbExclusiveHandle* handle);
 
 int targetIsoTransferCount(const UsbExclusiveHandle* handle, int requestedDurationMs);
 int setStreamingAlternateLocked(
