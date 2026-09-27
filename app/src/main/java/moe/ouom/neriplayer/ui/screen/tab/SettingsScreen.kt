@@ -126,13 +126,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -144,8 +141,6 @@ import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
-import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProbeResult
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationPolicy
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadDirectoryChangeDecision
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
@@ -265,61 +260,11 @@ import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
-import java.io.IOException
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
-internal const val DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS = 3_000L
 private const val MIGRATION_CHECKPOINT_RETRY_DELAY_MS = 1_000L
 private const val MIGRATION_SNAPSHOT_READ_RETRY_LIMIT = 3
-
-private val downloadDirectoryPreflightScope =
-    CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-/**
- * 在独立的 IO 子协程执行只读目录探测，避免缓慢的 DocumentsProvider
- * 把设置协程拖过界面可接受的等待时间
- */
-internal suspend fun <T> runDownloadDirectoryPreflight(
-    timeoutMs: Long = DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS,
-    block: suspend () -> T
-): Result<T>? {
-    val probe = downloadDirectoryPreflightScope.async {
-        try {
-            Result.success(block())
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            Result.failure(error)
-        }
-    }
-    return try {
-        withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
-            probe.await()
-        }
-    } finally {
-        if (!probe.isCompleted) {
-            probe.cancel()
-        }
-    }
-}
-
-private fun wrapDirectoryProviderFailure(
-    error: Throwable
-): ManagedDownloadRootProviderException {
-    return error as? ManagedDownloadRootProviderException
-        ?: ManagedDownloadRootProviderException(
-            reference = "configured-root",
-            cause = error
-        )
-}
-
-private fun directoryProbeTimeoutFailure(timeoutMs: Long): ManagedDownloadRootProviderException {
-    return ManagedDownloadRootProviderException(
-        reference = "configured-root",
-        cause = IOException("download directory probe timed out after ${timeoutMs}ms")
-    )
-}
 
 private data class PendingDownloadDirectoryChange(
     val previousUri: String?,
@@ -363,14 +308,6 @@ internal fun resolveDownloadDirectoryProcessingPresentation(
         showMigration = hasMigrationWork && !usesSharedProcessing,
         usesSharedProcessing = usesSharedProcessing
     )
-}
-
-internal sealed interface DownloadDirectoryAvailability {
-    data object Available : DownloadDirectoryAvailability
-    data object Unavailable : DownloadDirectoryAvailability
-    data class ProviderFailure(
-        val error: ManagedDownloadRootProviderException
-    ) : DownloadDirectoryAvailability
 }
 
 private data class PersistedMigrationUiSnapshot(
@@ -2866,52 +2803,6 @@ private class DownloadDirectorySettingsController(
         )
 }
 
-internal suspend fun resolveDownloadDirectoryPermissionLost(
-    directoryUri: String?,
-    isRootResolvable: suspend () -> Boolean,
-    timeoutMs: Long = DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS
-): Boolean {
-    return when (
-        resolveDownloadDirectoryAvailability(
-            directoryUri = directoryUri,
-            isRootResolvable = isRootResolvable,
-            timeoutMs = timeoutMs
-        )
-    ) {
-        DownloadDirectoryAvailability.Available -> false
-        DownloadDirectoryAvailability.Unavailable -> true
-        is DownloadDirectoryAvailability.ProviderFailure -> false
-    }
-}
-
-internal suspend fun resolveDownloadDirectoryAvailability(
-    directoryUri: String?,
-    isRootResolvable: suspend () -> Boolean,
-    timeoutMs: Long = DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS
-): DownloadDirectoryAvailability {
-    if (directoryUri.isNullOrBlank()) {
-        return DownloadDirectoryAvailability.Available
-    }
-    val probeResult = runDownloadDirectoryPreflight(timeoutMs) {
-        isRootResolvable()
-    } ?: return DownloadDirectoryAvailability.ProviderFailure(
-        directoryProbeTimeoutFailure(timeoutMs)
-    )
-    return probeResult.fold(
-        onSuccess = { resolvable ->
-            if (resolvable) {
-                DownloadDirectoryAvailability.Available
-            } else {
-                DownloadDirectoryAvailability.Unavailable
-            }
-        },
-        onFailure = { error ->
-            DownloadDirectoryAvailability.ProviderFailure(
-                wrapDirectoryProviderFailure(error)
-            )
-        }
-    )
-}
 
 private fun directoryProbeRetryMessage(resources: android.content.res.Resources): String {
     return resources.getString(R.string.managed_library_processing_retry)
@@ -2921,13 +2812,6 @@ private fun directoryProbeFailureLog(error: Throwable?): String {
     return error?.let { "errorType=${it::class.java.simpleName}" } ?: "errorType=timeout"
 }
 
-private suspend fun probeConfiguredDownloadRoot(context: Context): Boolean {
-    return when (val result = ManagedDownloadStorage.probeStorageRoot(context)) {
-        ManagedDownloadRootProbeResult.Accessible -> true
-        ManagedDownloadRootProbeResult.Unavailable -> false
-        is ManagedDownloadRootProbeResult.ProviderFailure -> throw result.error
-    }
-}
 
 @Composable
 private fun rememberDownloadDirectorySettingsController(

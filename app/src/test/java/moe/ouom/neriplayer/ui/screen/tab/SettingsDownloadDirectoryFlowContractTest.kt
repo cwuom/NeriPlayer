@@ -210,8 +210,12 @@ class SettingsDownloadDirectoryFlowContractTest {
     @Test
     fun `directory preflight has a bounded retryable deadline`() {
         val source = settingsSource()
+        val preflight = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPreflight.kt"
+        ).readText()
 
-        assertTrue(source.contains("DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS = 3_000L"))
+        assertTrue(preflight.contains("DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS = 3_000L"))
+        assertTrue(preflight.contains("runDownloadDirectoryPreflight"))
         assertTrue(source.contains("runDownloadDirectoryPreflight"))
         assertTrue(source.contains("status=retryable"))
         assertTrue(source.contains("RELEASE_PERSISTED_PERMISSION"))

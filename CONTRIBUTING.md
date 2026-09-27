@@ -511,6 +511,8 @@
    `BootstrapSettingsSnapshot`、`ThemePreferenceSnapshot` 或 `PlaybackPreferenceSnapshot`。
 5. UI 入口通常放在 `SettingsScreen.kt` 对应 `SettingsPage` 或
    `ui/screen/tab/settings/component/` 下。
+   下载目录的超时探测和 Provider 失败分类集中在
+   `SettingsDownloadDirectoryPreflight.kt`，设置页只消费探测结果。
 6. 新增或改名设置时，同步补齐中英文字符串、`SettingsSearchIndex.kt`
    搜索关键词、设置页可见性/过滤测试和 `AutoSettingsGeneratedTest`。
 7. 设置控制 Activity alias、播放服务、系统入口或启动前行为时，必须同时验证
