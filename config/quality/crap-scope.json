@@ -115,7 +115,10 @@
     "moe/ouom/neriplayer/listentogether/session/ListenTogetherControllerLinkOwner.kt",
     "moe/ouom/neriplayer/listentogether/session/PlayerManagerListenTogetherLinkPlaybackPort.kt",
     "moe/ouom/neriplayer/core/player/playback/PlaybackStatsOwner.kt",
-    "moe/ouom/neriplayer/core/player/playback/PlaybackStatsWritePort.kt"
+    "moe/ouom/neriplayer/core/player/playback/PlaybackStatsWritePort.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherRoomStateOwner.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherSessionProjection.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherPendingEvents.kt"
   ],
   "method_scopes": [
     {
@@ -663,6 +666,36 @@
         "NowPlayingScreen",
         "NowPlayingScreen$lambda$148$0$0$1",
         "NowPlayingScreen$lambda$148$0$0$1$17"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
+      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager",
+      "methods": [
+        "<init>",
+        "getRoomState",
+        "updateSession",
+        "resetForSessionChange",
+        "openSessionRoom",
+        "finishSessionRoomActivation",
+        "logSessionUpdate",
+        "retainCurrentMembershipCredential",
+        "applySessionRoomState",
+        "acceptRoomState",
+        "onRoomStateCommitted",
+        "recordWebSocketMessage",
+        "applyForwardedControllerRequestLocally"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
+      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$roomStateOwner$1",
+      "methods": [
+        "<init>",
+        "onRoomActivated",
+        "onCommitted",
+        "onPositionSupplement",
+        "onSocketMessageAccepted"
       ]
     }
   ]
