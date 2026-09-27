@@ -134,6 +134,8 @@ import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherJ
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomCreation
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherUserUuid
+import moe.ouom.neriplayer.util.units.MINUTE_MS
+import moe.ouom.neriplayer.util.units.SECOND_MS
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -3537,15 +3539,15 @@ class ListenTogetherSessionManager(
     companion object {
         private const val TAG = "NERI-ListenTogether"
         private const val PLAYING_DRIFT_FORCE_SYNC_MS = 2_500L
-        private const val HEARTBEAT_DRIFT_FORCE_SYNC_MS = 5_000L
+        private const val HEARTBEAT_DRIFT_FORCE_SYNC_MS = 5 * SECOND_MS
         private const val PAUSED_DRIFT_FORCE_SYNC_MS = 800L
         private const val TRACK_SWITCH_FORCE_SYNC_MS = 500L
         private const val TRACK_SWITCH_GRACE_PERIOD_MS = 800L
-        private const val CONTROLLER_GRACE_PERIOD_MS = 10 * 60 * 1000L
-        private const val HEARTBEAT_STATE_RECHECK_INTERVAL_MS = 10_000L
-        internal const val LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS = 20_000L
-        private const val FOREGROUND_SOCKET_PROBE_TIMEOUT_MS = 5_000L
-        private const val LINK_REQUEST_THROTTLE_MS = 4_000L
+        private const val CONTROLLER_GRACE_PERIOD_MS = 10 * MINUTE_MS
+        private const val HEARTBEAT_STATE_RECHECK_INTERVAL_MS = 10 * SECOND_MS
+        internal const val LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS = 20 * SECOND_MS
+        private const val FOREGROUND_SOCKET_PROBE_TIMEOUT_MS = 5 * SECOND_MS
+        private const val LINK_REQUEST_THROTTLE_MS = 4 * SECOND_MS
         private const val CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS = 1_200L
         private const val COALESCED_LOCAL_CONTROL_WINDOW_MS = 100L
         private val COALESCED_LOCAL_CONTROL_EVENT_TYPES = setOf(
@@ -3554,24 +3556,24 @@ class ListenTogetherSessionManager(
             "PLAYBACK_MODE",
             "REQUEST_PLAYBACK_MODE"
         )
-        private const val SYNC_WATCHDOG_INTERVAL_MS = 8_000L
-        private const val LISTENER_WEB_SOCKET_SILENCE_TIMEOUT_MS = 45_000L
-        private const val LISTENER_STATE_REPAIR_MIN_INTERVAL_MS = 30_000L
-        private const val LISTENER_PLAYBACK_STALL_TIMEOUT_MS = 8_000L
-        private const val LISTENER_PLAYBACK_STALL_RECOVERY_COOLDOWN_MS = 12_000L
-        private const val PENDING_MEMBER_CONTROL_REQUEST_RETRY_INTERVAL_MS = 3_000L
-        private const val PENDING_MEMBER_CONTROL_REQUEST_TTL_MS = 18_000L
+        private const val SYNC_WATCHDOG_INTERVAL_MS = 8 * SECOND_MS
+        private const val LISTENER_WEB_SOCKET_SILENCE_TIMEOUT_MS = 45 * SECOND_MS
+        private const val LISTENER_STATE_REPAIR_MIN_INTERVAL_MS = 30 * SECOND_MS
+        private const val LISTENER_PLAYBACK_STALL_TIMEOUT_MS = 8 * SECOND_MS
+        private const val LISTENER_PLAYBACK_STALL_RECOVERY_COOLDOWN_MS = 12 * SECOND_MS
+        private const val PENDING_MEMBER_CONTROL_REQUEST_RETRY_INTERVAL_MS = 3 * SECOND_MS
+        private const val PENDING_MEMBER_CONTROL_REQUEST_TTL_MS = 18 * SECOND_MS
         private const val PENDING_MEMBER_CONTROL_REQUEST_MAX_ATTEMPTS = 4
         private const val PENDING_MEMBER_SEEK_SATISFIED_DRIFT_MS = 1_500L
-        private const val TRACK_FINISHED_LEGACY_FALLBACK_TTL_MS = 15_000L
+        private const val TRACK_FINISHED_LEGACY_FALLBACK_TTL_MS = 15 * SECOND_MS
         private const val CONTROLLER_PLAYBACK_RESOLUTION_POLL_MS = 200L
         private const val CONTROLLER_PLAYBACK_RESOLUTION_POLL_COUNT = 40
-        private const val CONTROLLER_LINK_RESOLUTION_RETRY_DELAY_MS = 2_000L
+        private const val CONTROLLER_LINK_RESOLUTION_RETRY_DELAY_MS = 2 * SECOND_MS
         private const val CONTROLLER_LINK_RESOLUTION_ATTEMPTS = 3
         private const val SOFT_SYNC_MIN_DRIFT_MS = 600L
         private const val SOFT_SYNC_FAST_DRIFT_MS = 1_500L
         private const val SOFT_SYNC_RECHECK_INTERVAL_MS = 500L
-        private const val CLOCK_SYNC_MAX_RTT_MS = 30_000L
-        private const val UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS = 2_000L
+        private const val CLOCK_SYNC_MAX_RTT_MS = 30 * SECOND_MS
+        private const val UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS = 2 * SECOND_MS
     }
 }

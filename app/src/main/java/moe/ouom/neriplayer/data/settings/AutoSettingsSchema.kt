@@ -1544,7 +1544,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "max_cache_size_bytes",
             type = SettingValueType.Long,
-            defaultLong = 1024L * 1024L * 1024L,
+            defaultLong = CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES,
             order = 40,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly

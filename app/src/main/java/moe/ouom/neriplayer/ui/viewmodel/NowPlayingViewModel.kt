@@ -50,7 +50,7 @@ import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistsFromSongDetail
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.R
-import java.util.concurrent.atomic.AtomicLong
+import moe.ouom.neriplayer.util.concurrent.RequestGeneration
 
 private const val YOUTUBE_MUSIC_CREATOR_SEARCH_LIMIT = 8
 
@@ -101,7 +101,7 @@ data class ManualSearchState(
 class NowPlayingViewModel : ViewModel() {
 
     private val searchRequestCoordinator = ManualSearchRequestCoordinator()
-    private val originalInfoRequestId = AtomicLong(0L)
+    private val originalInfoRequests = RequestGeneration()
     private var searchJob: Job? = null
     private var nextSearchSessionId = 0L
     private var activeSearchSessionId = 0L
@@ -539,7 +539,7 @@ class NowPlayingViewModel : ViewModel() {
     )
 
     fun fetchOriginalInfo(context: Context, originalSong: SongItem, onResult: (Boolean, OriginalSongInfo?, String) -> Unit) {
-        val requestId = originalInfoRequestId.incrementAndGet()
+        val request = originalInfoRequests.advance()
         viewModelScope.launch {
             try {
                 val isBili = originalSong.album.startsWith(
@@ -567,7 +567,7 @@ class NowPlayingViewModel : ViewModel() {
                         song = originalSong,
                         coverFallbackUrl = coverFallbackUrl
                     )
-                    if (originalInfoRequestId.get() == requestId) {
+                    if (request.isCurrent) {
                         onResult(true, info, context.getString(R.string.music_restore_success))
                     }
                 } else if (isBili) {
@@ -584,7 +584,7 @@ class NowPlayingViewModel : ViewModel() {
                         coverUrl = coverUrl,
                         shouldClearLyrics = true  // B站音源应该清除歌词
                     )
-                    if (originalInfoRequestId.get() == requestId) {
+                    if (request.isCurrent) {
                         onResult(true, info, context.getString(R.string.music_restore_success))
                     }
                 } else {
@@ -604,13 +604,13 @@ class NowPlayingViewModel : ViewModel() {
                         lyric = songDetails.lyric,  // 保存原始歌词
                         translatedLyric = songDetails.translatedLyric  // 保存原始翻译歌词
                     )
-                    if (originalInfoRequestId.get() == requestId) {
+                    if (request.isCurrent) {
                         onResult(true, info, context.getString(R.string.music_restore_success))
                     }
                 }
             } catch (e: Exception) {
                 NPLogger.e("NowPlayingViewModel", "获取原始信息失败", e)
-                if (originalInfoRequestId.get() == requestId) {
+                if (request.isCurrent) {
                     onResult(false, null, context.getString(R.string.music_restore_failed))
                 }
             }

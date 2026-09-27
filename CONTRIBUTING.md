@@ -29,6 +29,8 @@
   - 面向用户和新贡献者，说明项目定位、能力边界、安装构建、同步与隐私。
 - `CONTRIBUTING.md` / `CONTRIBUTING_EN.md`
   - 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。
+- [`docs/kotlin-helpers.md`](docs/kotlin-helpers.md)
+  - 说明请求代次、单位、播放器读取和协程结果等辅助工具的用法与边界。
 - `app/src/main/cpp/README.md`
   - 说明 NeriPlayer 自有 Native 源码的替代授权范围、第三方排除项和
     外部贡献所需的显式双授权声明。

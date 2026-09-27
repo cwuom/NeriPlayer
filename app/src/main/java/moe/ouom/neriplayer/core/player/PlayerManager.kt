@@ -817,12 +817,12 @@ object PlayerManager {
     internal fun persistCurrentLongFormPlaybackProgress() {
         val song = _currentSongFlow.value ?: return
         val playerPositionMs = if (isPlayerInitialized()) {
-            runCatching { player.currentPosition.coerceAtLeast(0L) }.getOrDefault(0L)
+            player.currentPositionMsOrZero
         } else {
             0L
         }
         val playerDurationMs = if (isPlayerInitialized()) {
-            runCatching { player.duration.coerceAtLeast(0L) }.getOrDefault(0L)
+            player.durationMsOrZero
         } else {
             0L
         }

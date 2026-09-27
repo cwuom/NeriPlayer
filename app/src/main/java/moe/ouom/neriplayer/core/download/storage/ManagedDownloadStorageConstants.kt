@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.download.storage
 
+import moe.ouom.neriplayer.util.units.DAY_MS
+import moe.ouom.neriplayer.util.units.MINUTE_MS
+import moe.ouom.neriplayer.util.units.SECOND_MS
+
 internal const val ROOT_DIR_NAME = "NeriPlayer"
 internal const val COVER_SUBDIRECTORY = "Covers"
 internal const val LYRIC_SUBDIRECTORY = "Lyrics"
@@ -10,7 +14,7 @@ internal const val DOWNLOAD_STAGING_FILE_PREFIX = "npdl_"
 internal const val DOWNLOAD_STAGING_FILE_SUFFIX = ".download"
 internal const val DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX = ".hls.json"
 internal const val DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX = ".resume.json"
-internal const val DOWNLOAD_STAGING_MAX_AGE_MS = 7L * 24L * 60L * 60L * 1000L
+internal const val DOWNLOAD_STAGING_MAX_AGE_MS = 7 * DAY_MS
 internal const val PENDING_AUDIO_WRITE_MARKER = ".npdl_pending"
 internal const val NO_MEDIA_FILE_NAME = ".nomedia"
 internal const val SNAPSHOT_CACHE_FILE_NAME = "managed_download_snapshot_v1.json"
@@ -21,9 +25,9 @@ internal const val CANCELLED_DOWNLOAD_KEYS_VERSION = 1
 internal const val SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS = 1_200L
 internal const val TREE_ROOT_CACHE_VALIDATE_INTERVAL_MS = 1_500L
 internal const val TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS = 2_000L
-internal const val TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = 60_000L
-internal const val FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = 60_000L
-internal const val SAF_PARENT_DOCUMENT_CACHE_VALIDATE_INTERVAL_MS = 30_000L
+internal const val TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = MINUTE_MS
+internal const val FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = MINUTE_MS
+internal const val SAF_PARENT_DOCUMENT_CACHE_VALIDATE_INTERVAL_MS = 30 * SECOND_MS
 internal const val MIGRATION_PROGRESS_EMIT_INTERVAL_MS = 150L
 @Suppress("SpellCheckingInspection")
 internal const val METADATA_SUFFIX = ".npmeta.json"

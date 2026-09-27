@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.util.units.MINUTE_MS
 
 /**
  * 定时器模式
@@ -85,7 +86,7 @@ class SleepTimerManager(
         finishCurrentOnExpiry: Boolean = false
     ) {
         cancel(notifyStateChanged = false)
-        val totalMillis = minutes.coerceAtLeast(0).toLong() * 60_000L
+        val totalMillis = minutes.coerceAtLeast(0).toLong() * MINUTE_MS
         val timerMode = if (finishCurrentOnExpiry) {
             SleepTimerMode.COUNTDOWN_FINISH_CURRENT
         } else {

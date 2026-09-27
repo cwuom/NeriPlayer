@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherLeaveRoomReques
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherLeaveRoomResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherStateResponse
+import moe.ouom.neriplayer.util.units.MEBIBYTE_BYTES
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -19,7 +20,7 @@ import okhttp3.ResponseBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
-private const val LISTEN_TOGETHER_MAX_HTTP_RESPONSE_BYTES = 2L * 1024L * 1024L
+private const val LISTEN_TOGETHER_MAX_HTTP_RESPONSE_BYTES = 2 * MEBIBYTE_BYTES
 
 data class ListenTogetherServerTestResult(
     val ok: Boolean,

@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadRefere
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.util.time.elapsedMillisSince
 import java.io.File
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
@@ -345,7 +346,7 @@ internal fun ManagedDownloadStorage.readLyricsBundleFromManagedRootFast(
         hasTranslatedSidecar = values[LyricKind.TRANSLATED]?.second == true,
         hasRomanizedSidecar = values[LyricKind.ROMANIZED]?.second == true
     )
-    val elapsedMs = (System.nanoTime() - startedAtNs) / 1_000_000L
+    val elapsedMs = elapsedMillisSince(startedAtNs)
     if (elapsedMs >= FAST_LYRICS_SLOW_LOG_MS) {
         NPLogger.d(
             "ManagedDownloadLyricsPerf",

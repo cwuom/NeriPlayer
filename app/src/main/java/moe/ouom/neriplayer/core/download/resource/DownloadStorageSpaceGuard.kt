@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.resource
 
 import android.os.StatFs
 import android.system.Os
+import moe.ouom.neriplayer.util.units.MEBIBYTE_BYTES
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -299,8 +300,8 @@ internal class DownloadStorageSpaceGuard(
     }
 
     companion object {
-        const val DEFAULT_MINIMUM_FREE_BYTES = 16L * 1024L * 1024L
-        const val DEFAULT_UNKNOWN_RESERVATION_BYTES = 8L * 1024L * 1024L
+        const val DEFAULT_MINIMUM_FREE_BYTES = 16 * MEBIBYTE_BYTES
+        const val DEFAULT_UNKNOWN_RESERVATION_BYTES = 8 * MEBIBYTE_BYTES
         val global: DownloadStorageSpaceGuard by lazy { DownloadStorageSpaceGuard() }
     }
 }

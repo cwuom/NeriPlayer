@@ -77,6 +77,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.util.units.DAY_MS
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -795,7 +796,7 @@ object GlobalDownloadManager {
         return this.reconcilePendingDownloadsBeforeMigrationDetailedImpl(context, sourceDirectoryUri, directoryMutationLeaseOwned)
     }
 
-    internal const val TERMINAL_OPERATION_RETENTION_MS = 7L * 24L * 60L * 60L * 1_000L
+    internal const val TERMINAL_OPERATION_RETENTION_MS = 7 * DAY_MS
     internal const val TERMINAL_OPERATION_PRUNE_LIMIT = 64
 
     internal data class PendingDownloadRecoveryPlan(

@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.util.time.elapsedMillisSince
 import org.json.JSONObject
 import java.util.Locale
 
@@ -636,7 +637,7 @@ internal class DownloadedAudioMetadataStore(
     }
 
     private fun elapsedMs(startedAtNs: Long): Long {
-        return ((System.nanoTime() - startedAtNs) / 1_000_000L).coerceAtLeast(0L)
+        return elapsedMillisSince(startedAtNs).coerceAtLeast(0L)
     }
 
     private fun buildMetadataPayload(

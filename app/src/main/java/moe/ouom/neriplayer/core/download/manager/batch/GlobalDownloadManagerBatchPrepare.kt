@@ -55,6 +55,7 @@ import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
+import moe.ouom.neriplayer.util.time.elapsedMillisSince
 
 
 internal fun GlobalDownloadManager.startBatchDownload(
@@ -81,7 +82,7 @@ internal fun GlobalDownloadManager.startBatchDownload(
     // 先分配 UI id，但不发布卡片。批次和成员必须先在同一条 Room 事务中落盘，避免出现只有内存总数的短暂批次
     val batchPresentationId = batchDownloadPresentationIdGenerator.incrementAndGet()
     fun logStartupPhase(phase: String, count: Int) {
-        val elapsedMs = ((System.nanoTime() - startupStartedAtNs) / 1_000_000L).coerceAtLeast(0L)
+        val elapsedMs = elapsedMillisSince(startupStartedAtNs).coerceAtLeast(0L)
         NPLogger.d(
             TAG,
             "批量下载阶段: presentationId=$batchPresentationId, phase=$phase, " +

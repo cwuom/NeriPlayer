@@ -2,14 +2,16 @@ package moe.ouom.neriplayer.core.player.service
 
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 
 internal fun PlayerManager.suspendPlaybackForServiceRestart(reason: String) {
     if (!isPlayerInitialized() || currentSongFlow.value == null) return
     val shouldResume = isTransportActiveWithoutInitialization()
-    val positionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
-        .getOrDefault(playbackPositionFlow.value.coerceAtLeast(0L))
+    val positionMs = player.currentPositionMsOr(
+        playbackPositionFlow.value.coerceAtLeast(0L)
+    )
 
     playbackRequestToken += 1L
     playJob?.cancel()

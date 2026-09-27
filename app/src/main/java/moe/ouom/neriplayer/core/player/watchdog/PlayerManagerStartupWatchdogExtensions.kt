@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
@@ -84,8 +85,9 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
     val watchdogToken = playbackStartupWatchdogToken + 1L
     playbackStartupWatchdogToken = watchdogToken
     playbackStartupWatchdogJob?.cancel()
-    val startPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
-        .getOrDefault(_playbackPositionMs.value.coerceAtLeast(0L))
+    val startPositionMs = player.currentPositionMsOr(
+        _playbackPositionMs.value.coerceAtLeast(0L)
+    )
     val startedAtMs = SystemClock.elapsedRealtime()
     val earlyTimeoutMs = startupEarlyWatchdogTimeoutMs(timeoutMs)
 

@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
+import moe.ouom.neriplayer.util.time.elapsedMillisSince
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
 internal fun ManagedDownloadStorage.initializeImpl(context: Context) {
@@ -209,7 +210,7 @@ internal suspend fun ManagedDownloadStorage.hasMigratableDownloadsImpl(
                 "lyricEntries=${refresh.lyricEntries.size} " +
                 "sidecarEnumerationRequired=$sidecarEnumerationRequired " +
                 "managedEntriesPresent=$hasManagedEntries " +
-                "elapsedMs=${(System.nanoTime() - startedAtNanos) / 1_000_000L}"
+                "elapsedMs=${elapsedMillisSince(startedAtNanos)}"
         )
         hasManagedEntries
     } catch (error: CancellationException) {
@@ -219,7 +220,7 @@ internal suspend fun ManagedDownloadStorage.hasMigratableDownloadsImpl(
             TAG,
             "migration_preflight stage=presence_scan status=failed " +
                 "errorType=${error::class.java.simpleName} " +
-                "elapsedMs=${(System.nanoTime() - startedAtNanos) / 1_000_000L}"
+                "elapsedMs=${elapsedMillisSince(startedAtNanos)}"
         )
         throw error
     }
@@ -259,7 +260,7 @@ internal suspend fun ManagedDownloadStorage.hasActualDirectoryEntriesImpl(
                 "rootEntries=${refresh.entries.size} " +
                 "ignoredSelfRows=$ignoredSelfRows " +
                 "nonEmpty=$hasActualEntries " +
-                "elapsedMs=${(System.nanoTime() - startedAtNanos) / 1_000_000L}"
+                "elapsedMs=${elapsedMillisSince(startedAtNanos)}"
         )
         hasActualEntries
     } catch (error: CancellationException) {
@@ -269,7 +270,7 @@ internal suspend fun ManagedDownloadStorage.hasActualDirectoryEntriesImpl(
             TAG,
             "migration_preflight stage=target_non_empty status=failed " +
                 "errorType=${error::class.java.simpleName} " +
-                "elapsedMs=${(System.nanoTime() - startedAtNanos) / 1_000_000L}"
+                "elapsedMs=${elapsedMillisSince(startedAtNanos)}"
         )
         throw error
     }

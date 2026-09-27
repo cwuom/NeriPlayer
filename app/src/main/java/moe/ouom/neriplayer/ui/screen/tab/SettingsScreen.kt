@@ -197,6 +197,7 @@ import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoin
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
 import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.util.time.elapsedMillisSince
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
@@ -3463,7 +3464,7 @@ private fun rememberDownloadDirectorySettingsController(
                             "DownloadDirectoryPreflight",
                             "directory_preflight stage=source_presence status=complete " +
                                 "present=$present " +
-                                "elapsedMs=${(System.nanoTime() - startedAtNanos) / 1_000_000L}"
+                                "elapsedMs=${elapsedMillisSince(startedAtNanos)}"
                         )
                     }
                 },
@@ -3474,7 +3475,7 @@ private fun rememberDownloadDirectorySettingsController(
                             "DownloadDirectoryPreflight",
                             "directory_preflight stage=target_presence status=complete " +
                                 "present=$present " +
-                                "elapsedMs=${(System.nanoTime() - startedAtNanos) / 1_000_000L}"
+                                "elapsedMs=${elapsedMillisSince(startedAtNanos)}"
                         )
                     }
                 },
@@ -3486,9 +3487,7 @@ private fun rememberDownloadDirectorySettingsController(
                                 "DownloadDirectoryPreflight",
                                 "directory_preflight stage=target_non_empty status=complete " +
                                     "nonEmpty=$nonEmpty " +
-                                    "elapsedMs=${
-                                        (System.nanoTime() - startedAtNanos) / 1_000_000L
-                                    }"
+                                    "elapsedMs=${elapsedMillisSince(startedAtNanos)}"
                             )
                         }
                 }
@@ -3512,7 +3511,7 @@ private fun rememberDownloadDirectorySettingsController(
             "DownloadDirectoryPreflight",
             "directory_preflight stage=decision status=complete direction=$direction " +
                 "decision=$directoryChangeDecision " +
-                "elapsedMs=${(System.nanoTime() - preflightStartedAtNanos) / 1_000_000L}"
+                "elapsedMs=${elapsedMillisSince(preflightStartedAtNanos)}"
         )
         when (directoryChangeDecision) {
             ManagedDownloadDirectoryChangeDecision.APPLY_DIRECTLY -> {
@@ -3685,9 +3684,7 @@ private fun rememberDownloadDirectorySettingsController(
                             "DownloadDirectoryPreflight",
                             "directory_preflight stage=source_availability status=complete " +
                                 "availability=${availability::class.java.simpleName} " +
-                                "elapsedMs=${
-                                    (System.nanoTime() - availabilityStartedAtNanos) / 1_000_000L
-                                }"
+                                "elapsedMs=${elapsedMillisSince(availabilityStartedAtNanos)}"
                         )
                         when (availability) {
                             DownloadDirectoryAvailability.Available -> {

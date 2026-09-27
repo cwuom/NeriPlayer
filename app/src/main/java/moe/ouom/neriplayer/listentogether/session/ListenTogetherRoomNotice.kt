@@ -2,9 +2,10 @@ package moe.ouom.neriplayer.listentogether.session
 
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.util.units.MINUTE_MS
 import java.util.concurrent.TimeUnit
 
-private const val DEFAULT_CONTROLLER_GRACE_PERIOD_MS = 10 * 60 * 1000L
+private const val DEFAULT_CONTROLLER_GRACE_PERIOD_MS = 10 * MINUTE_MS
 
 internal fun normalizeListenTogetherRoomClosureReason(reason: String?): String? {
     val normalizedReason = reason?.trim()?.takeIf { it.isNotEmpty() } ?: return null

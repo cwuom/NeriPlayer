@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
@@ -95,7 +96,7 @@ import moe.ouom.neriplayer.core.player.policy.audio.shouldConfirmBluetoothDiscon
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
 import moe.ouom.neriplayer.core.player.policy.command.shouldResumeSilentlyForListenTogetherNoisyPause
-import moe.ouom.neriplayer.core.player.policy.offload.requiresPcmAudioProcessing
+import moe.ouom.neriplayer.core.player.policy.offload.pcmAudioRequirements
 import moe.ouom.neriplayer.core.player.policy.offload.shouldUpdateAudioOffloadForReactiveChange
 import moe.ouom.neriplayer.core.player.policy.pending.shouldAcceptPlayerCallback
 import moe.ouom.neriplayer.core.player.policy.pending.shouldExposePlayerCallbackState
@@ -159,8 +160,7 @@ private const val MEDIA_CACHE_DIRECTORY_NAME = "media_cache"
 
 private fun PlayerManager.logPlaybackStateTransition(event: String) {
     val playerSnapshot = if (isPlayerInitialized()) {
-        val positionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
-            .getOrDefault(-1L)
+        val positionMs = player.currentPositionMsOr(-1L)
         val bufferedMs = runCatching { player.totalBufferedDuration }
             .getOrDefault(-1L)
         "state=${playbackStateName(player.playbackState)}, " +
@@ -1594,7 +1594,7 @@ internal fun PlayerManager.ensureInitializedImpl() {
 
 internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
     if (!isPlayerInitialized()) return
-    val requiresPcmProcessing = requiresPcmAudioProcessing(
+    val pcmRequirements = pcmAudioRequirements(
         usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled,
         playbackSpeed = playbackSoundConfig.speed,
         playbackPitch = playbackSoundConfig.pitch,
@@ -1607,6 +1607,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
         audioSource = _currentPlaybackAudioInfo.value?.source,
         listenTogetherPlaybackRate = listenTogetherSyncPlaybackRate,
     )
+    val requiresPcmProcessing = pcmRequirements.isNotEmpty()
     if (lastRequiresPcmAudioProcessing == requiresPcmProcessing) return
     lastRequiresPcmAudioProcessing = requiresPcmProcessing
 
@@ -1624,7 +1625,8 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
         .build()
     NPLogger.i(
         "NERI-PlayerManager",
-        "audio offload preference updated: enabled=${!requiresPcmProcessing} reason=$reason"
+        "audio offload preference updated: enabled=${!requiresPcmProcessing} " +
+            "reason=$reason pcmRequirements=${pcmRequirements.joinToString()}"
     )
 }
 

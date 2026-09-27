@@ -437,7 +437,7 @@ class SettingsRepository(private val context: Context) {
     val maxCacheSizeBytesFlow: Flow<Long> =
         dataStoreSettingFlow {
             CacheSizePolicy.normalizeCacheSizeBytes(
-                it[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: (1024L * 1024 * 1024)
+                it[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES
             )
         }
 

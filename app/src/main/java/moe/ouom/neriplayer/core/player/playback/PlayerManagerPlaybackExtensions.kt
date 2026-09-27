@@ -20,6 +20,8 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.LocalPlaylistPlaybackSource
+import moe.ouom.neriplayer.core.player.currentPositionMsOrZero
+import moe.ouom.neriplayer.core.player.durationMsOrZero
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.clearUsbExclusiveInterruptedPlaybackIntent
@@ -513,8 +515,8 @@ private fun PlayerManager.handleListenTogetherTrackFinishedIfNeeded(): Boolean {
 
 private fun PlayerManager.resolvedTrackFinishPositionMs(): Long {
     val songDurationMs = _currentSongFlow.value?.durationMs?.takeIf { it > 0L } ?: 0L
-    val playerDurationMs = runCatching { player.duration.takeIf { it > 0L } ?: 0L }.getOrDefault(0L)
-    val playerPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }.getOrDefault(0L)
+    val playerDurationMs = player.durationMsOrZero
+    val playerPositionMs = player.currentPositionMsOrZero
     return maxOf(songDurationMs, playerDurationMs, playerPositionMs)
 }
 

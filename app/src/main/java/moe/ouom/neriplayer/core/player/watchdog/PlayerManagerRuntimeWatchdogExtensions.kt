@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
@@ -77,8 +78,7 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
                 if (requestToken != playbackRequestToken) return@launch
                 if (!shouldWatchRuntimePlayback()) return@launch
 
-                val positionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
-                    .getOrDefault(playbackRuntimeLastProgressPositionMs)
+                val positionMs = player.currentPositionMsOr(playbackRuntimeLastProgressPositionMs)
                 if (
                     PlaybackRuntimeStallPolicy.hasPositionAdvanced(
                         currentPositionMs = positionMs,
