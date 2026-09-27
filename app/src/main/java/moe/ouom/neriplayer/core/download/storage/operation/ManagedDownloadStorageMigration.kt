@@ -2,12 +2,10 @@ package moe.ouom.neriplayer.core.download.storage.operation
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.operation.content.backendReference
-import moe.ouom.neriplayer.core.download.storage.operation.content.createDefaultRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.deleteTrustedReference
 import moe.ouom.neriplayer.core.download.storage.operation.content.forgetDeletedReferencesFromCaches
 import moe.ouom.neriplayer.core.download.storage.operation.content.normalizeDirectoryUri
 import moe.ouom.neriplayer.core.download.storage.operation.content.parseDownloadedAudioMetadataBatch
-import moe.ouom.neriplayer.core.download.storage.operation.content.resolveRoot
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata

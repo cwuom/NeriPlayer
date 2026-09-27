@@ -1,9 +1,5 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.manager.batch.*
-import moe.ouom.neriplayer.core.download.manager.catalog.*
-import moe.ouom.neriplayer.core.download.manager.commit.*
-import moe.ouom.neriplayer.core.download.manager.facade.*
 import moe.ouom.neriplayer.core.download.model.*
 import moe.ouom.neriplayer.core.download.storage.facade.*
 import moe.ouom.neriplayer.core.download.storage.operation.*
@@ -37,7 +33,6 @@ import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
-import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult

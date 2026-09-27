@@ -2,10 +2,8 @@ package moe.ouom.neriplayer.core.download.manager.batch
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.admission.isWifiBoundNetworkPolicyStillRequired
 import moe.ouom.neriplayer.core.download.manager.admission.mutateWifiBoundNetworkPolicyIfStillRequired
-import moe.ouom.neriplayer.core.download.manager.admission.promoteWaitingStorageMutationsForRecovery
 import moe.ouom.neriplayer.core.download.manager.catalog.cancelScheduledDownloadedSongsCatalogPersist
 import moe.ouom.neriplayer.core.download.manager.catalog.persistConfirmedEmptyDownloadedSongsCatalog
 import moe.ouom.neriplayer.core.download.manager.catalog.persistDownloadedSongsCatalog
@@ -17,12 +15,10 @@ import moe.ouom.neriplayer.core.download.manager.commit.cleanupCancelledPendingD
 import moe.ouom.neriplayer.core.download.manager.runtime.awaitSongCancellationSettled
 import moe.ouom.neriplayer.core.download.manager.runtime.scheduleWifiBoundDownloadWakeTasks
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
-import moe.ouom.neriplayer.core.download.manager.runtime.withSongExecutionLock
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.DownloadTask
 import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
 import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
-import moe.ouom.neriplayer.core.download.model.applyWaitingNetworkStatus
 import moe.ouom.neriplayer.core.download.policy.DOWNLOAD_CLEAR_HARD_DEADLINE_MS
 import moe.ouom.neriplayer.core.download.policy.DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS
 import moe.ouom.neriplayer.core.download.policy.DownloadAdmissionGate
@@ -62,10 +58,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClear
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearProgressStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 

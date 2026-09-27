@@ -3,7 +3,6 @@
 package moe.ouom.neriplayer.core.player.persistence
 
 import android.app.Application
-import android.content.Context
 import android.os.SystemClock
 import androidx.media3.common.Player
 import com.google.gson.reflect.TypeToken

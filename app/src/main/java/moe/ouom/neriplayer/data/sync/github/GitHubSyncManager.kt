@@ -53,12 +53,9 @@ import moe.ouom.neriplayer.data.sync.model.SyncConflict
 import moe.ouom.neriplayer.data.sync.model.SyncData
 import moe.ouom.neriplayer.data.sync.model.SyncBiliVideoSkipMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist
-import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
-import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncResult

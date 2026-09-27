@@ -17,7 +17,6 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioM
 import android.content.Context
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
@@ -38,7 +37,6 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.backend.cleanupTerminalTemporaryWrites
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.model.displayName
 import java.io.File
 import java.util.UUID
 import org.json.JSONObject

@@ -15,7 +15,6 @@ import moe.ouom.neriplayer.core.download.manager.runtime.executionResultForOpera
 import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadOperation
 import moe.ouom.neriplayer.core.download.manager.runtime.reopenMissingPostCoreArtifactForFreshTransfer
 import moe.ouom.neriplayer.core.download.manager.runtime.startDownloadConfirmed
-import moe.ouom.neriplayer.core.download.manager.runtime.withSongExecutionLock
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.resolveDownloadPreserveStaging
 import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery

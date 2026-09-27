@@ -28,7 +28,6 @@ import android.content.res.Configuration
 import android.os.Build
 import android.webkit.WebView
 import androidx.work.Configuration as WorkConfiguration
-import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager

@@ -5,7 +5,6 @@ import android.content.Context
 import android.net.Uri
 import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
-import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import moe.ouom.neriplayer.util.media.NERI_ORIGINAL_LYRICS_METADATA_KEY

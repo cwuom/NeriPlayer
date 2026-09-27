@@ -27,11 +27,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.SystemClock
 import com.google.gson.Gson
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
-import com.google.gson.reflect.TypeToken
-import com.google.gson.stream.JsonReader
-import com.google.gson.stream.JsonToken
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,19 +37,14 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
-import moe.ouom.neriplayer.data.local.audioimport.localSongNewestFirstComparator
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomShadowImportStatus
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
-import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.localMediaUri
@@ -67,30 +57,18 @@ import moe.ouom.neriplayer.data.local.playlist.sync.addNeteasePlaylistSongIdsInB
 import moe.ouom.neriplayer.data.local.playlist.sync.classifyNeteasePlaylistAddFailures
 import moe.ouom.neriplayer.data.local.playlist.sync.parseNeteaseRemotePlaylists
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
-import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.data.model.toSyncableRemoteSongOrNull
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
-import moe.ouom.neriplayer.data.sync.CoverUrlMapper
-import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
-import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
-import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
-import org.json.JSONObject
 import java.io.File
 import java.io.IOException
-import java.io.StringReader
-import java.security.MessageDigest
 import java.util.LinkedHashSet
-import java.util.Locale
 
 data class LocalPlaylistSongAddResult(
     val addedSongs: List<SongItem>

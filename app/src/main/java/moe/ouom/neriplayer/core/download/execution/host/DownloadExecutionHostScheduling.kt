@@ -6,7 +6,6 @@ import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecution
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost.BackendOwner
 import android.content.Context
 import android.os.Build
-import kotlinx.coroutines.Deferred
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
 import moe.ouom.neriplayer.data.model.stableKey

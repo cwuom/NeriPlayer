@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.api.youtube
 
-import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking

@@ -34,7 +34,6 @@ import moe.ouom.neriplayer.util.media.standardLyricsMetadataKeys
 import moe.ouom.neriplayer.util.media.translatedLyricsMetadataKeys
 import org.json.JSONObject
 import java.io.File
-import java.io.IOException
 import java.util.Locale
 
 /** 音频内嵌标签写入结果, 用于区分"可重试的失败"与"容器天生不支持标签" */

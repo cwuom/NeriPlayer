@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.download.manager.catalog
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.buildDownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.batch.persistBatchMemberProgress
 import moe.ouom.neriplayer.core.download.manager.batch.updateBatchDownloadPresentationProgress

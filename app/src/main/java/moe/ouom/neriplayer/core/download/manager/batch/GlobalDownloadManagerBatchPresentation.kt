@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.core.download.manager.batch
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.shouldKeepCancellationCleanup
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
 import moe.ouom.neriplayer.core.download.manager.admission.openDownloadAdmissionTicketOrNull

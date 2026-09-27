@@ -17,7 +17,6 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_INDEX_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
@@ -34,8 +33,6 @@ import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexShardWrite
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryIndexEntry
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.stableKey
 import java.io.File
 import java.io.IOException
 import java.util.Locale

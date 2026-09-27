@@ -44,8 +44,6 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRe
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.stableKey
 import java.io.FileDescriptor
 import java.io.FileOutputStream
 import java.io.File

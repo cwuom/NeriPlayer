@@ -8,7 +8,6 @@ import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecution
 import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace

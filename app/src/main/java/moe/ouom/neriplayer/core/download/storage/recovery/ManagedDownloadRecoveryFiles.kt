@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.recovery
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.manager.batch.clearPendingDownloadQueue
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking

@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.tryAcquireHostAdmission
 import moe.ouom.neriplayer.core.download.execution.recovery.CLEARED_ARTIFACT_RECOVERY_STOP_STATES
 import android.content.Context
 import androidx.room.withTransaction

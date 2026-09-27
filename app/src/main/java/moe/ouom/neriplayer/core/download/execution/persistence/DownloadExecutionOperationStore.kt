@@ -2,8 +2,6 @@ package moe.ouom.neriplayer.core.download.execution.persistence
 
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
-import moe.ouom.neriplayer.core.download.execution.host.tryAcquireHostAdmission
-import moe.ouom.neriplayer.core.download.execution.host.tryAcquireHostAdmissionSuspending
 import moe.ouom.neriplayer.core.download.execution.state.DownloadOperationStateTransitions
 import android.content.Context
 import kotlinx.coroutines.Dispatchers

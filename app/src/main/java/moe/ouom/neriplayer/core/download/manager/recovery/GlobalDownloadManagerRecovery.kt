@@ -23,7 +23,6 @@ import moe.ouom.neriplayer.core.download.manager.catalog.buildSongFromDurableMet
 import moe.ouom.neriplayer.core.download.manager.catalog.hasBlockingActiveDownloadOperationsForRecovery
 import moe.ouom.neriplayer.core.download.manager.catalog.waitForActiveDownloadJobsToSettle
 import moe.ouom.neriplayer.core.download.manager.catalog.waitForQueuedTasksToAttachToBatch
-import moe.ouom.neriplayer.core.download.manager.commit.cleanupCancelledPendingDownloadArtifacts
 import moe.ouom.neriplayer.core.download.manager.commit.finalizeCompletedDownload
 import moe.ouom.neriplayer.core.download.manager.commit.isDownloadMetadataPostProcessingEnabled
 import moe.ouom.neriplayer.core.download.manager.commit.publishFinalizedDownload
@@ -36,7 +35,6 @@ import moe.ouom.neriplayer.core.download.manager.runtime.removeObsoleteWaitingNe
 import moe.ouom.neriplayer.core.download.manager.runtime.repairDownloadedCoverIfMissing
 import moe.ouom.neriplayer.core.download.manager.runtime.shouldSkipDownload
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
-import moe.ouom.neriplayer.core.download.manager.runtime.withSongExecutionLock
 import moe.ouom.neriplayer.core.download.model.BatchDownloadPresentationState
 import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
@@ -83,7 +81,6 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val PENDING_AUDIO_RECOVERY_PARALLELISM = 8

@@ -30,7 +30,6 @@ import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
-import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
 internal fun ManagedDownloadStorage.initializeImpl(context: Context) {

@@ -29,7 +29,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.supervisorScope
@@ -39,14 +38,10 @@ import kotlinx.coroutines.selects.select
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
-import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionMetrics
-import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
-import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
-import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.data.model.stableKey
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
