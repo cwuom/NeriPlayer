@@ -25,8 +25,9 @@ def source_index(root):
     return index
 
 
-def scope_sources(root, config):
-    patterns = json.loads(config.read_text(encoding="utf-8"))["source_patterns"]
+def scope_definition(root, config):
+    definition = json.loads(config.read_text(encoding="utf-8"))
+    patterns = definition["source_patterns"]
     if not isinstance(patterns, list) or not patterns:
         raise ValueError("CRAP scope must contain source_patterns")
     sources = set()
@@ -38,15 +39,30 @@ def scope_sources(root, config):
         if not matched:
             raise ValueError(f"Scope pattern matches no sources: {pattern}")
         sources.update(matched)
-    return sources
+    method_scopes = set()
+    for rule in definition.get("method_scopes", []):
+        if not isinstance(rule, dict) or set(rule) != {"source", "class", "methods"}:
+            raise ValueError(f"Invalid method scope: {rule}")
+        source, owner, methods = rule["source"], rule["class"], rule["methods"]
+        if (not isinstance(source, str) or ".." in Path(source).parts or
+                not isinstance(owner, str) or not owner or
+                not isinstance(methods, list) or not methods or
+                any(not isinstance(name, str) or not name for name in methods)):
+            raise ValueError(f"Invalid method scope: {rule}")
+        if not (root / source).is_file() or Path(source).suffix not in {".kt", ".java"}:
+            raise ValueError(f"Method scope source does not exist: {source}")
+        method_scopes.update((source, owner, name) for name in methods)
+    return sources, method_scopes
 
 
 def read_methods(xml, sources, scope):
+    scoped_sources, method_scopes = scope
     report = ET.parse(xml).getroot()
     if report.tag != "report":
         raise ValueError("Expected a JaCoCo report")
     rows = []
     seen_sources = set()
+    seen_method_scopes = set()
     identities = set()
     for package in report.findall("package"):
         for owner in package.findall("class"):
@@ -68,21 +84,28 @@ def read_methods(xml, sources, scope):
                     raise ValueError(f"Duplicate method in coverage report: {identity}")
                 identities.add(identity)
                 seen_sources.add(source)
+                owner_name = owner.attrib["name"].replace("/", ".")
+                method_scope = (source, owner_name, method.attrib["name"])
+                if method_scope in method_scopes:
+                    seen_method_scopes.add(method_scope)
                 rows.append({
                     "source": source,
                     "line": int(method.get("line", "0")),
-                    "class": owner.attrib["name"].replace("/", "."),
+                    "class": owner_name,
                     "method": method.attrib["name"],
                     "descriptor": method.attrib["desc"],
                     "complexity": complexity,
                     "covered_complexity": covered,
                     "coverage": coverage,
                     "crap": score,
-                    "in_scope": source in scope,
+                    "in_scope": source in scoped_sources or method_scope in method_scopes,
                 })
-    missing = scope - seen_sources
+    missing = scoped_sources - seen_sources
     if missing:
         raise ValueError("Scoped sources have no measured methods: " + ", ".join(sorted(missing)))
+    missing_methods = method_scopes - seen_method_scopes
+    if missing_methods:
+        raise ValueError("Method scopes have no measured methods: " + ", ".join(map(str, sorted(missing_methods))))
     return sorted(rows, key=lambda row: (-row["crap"], row["class"], row["method"], row["descriptor"]))
 
 
@@ -103,7 +126,7 @@ def markdown(title, rows):
 
 def run(args):
     sources = source_index(args.source_root)
-    scope = scope_sources(args.source_root, args.scope)
+    scope = scope_definition(args.source_root, args.scope)
     rows = read_methods(args.xml, sources, scope)
     scoped = [row for row in rows if row["in_scope"]]
     listed = [row for row in rows if row["crap"] > REPORT_THRESHOLD]

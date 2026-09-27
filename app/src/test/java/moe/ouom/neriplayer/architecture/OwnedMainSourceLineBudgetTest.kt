@@ -12,7 +12,11 @@ class OwnedMainSourceLineBudgetTest {
         )
         listOf(
             "app/src/main/java/moe/ouom/neriplayer/data/settings/AutoSettingsSchema.kt",
-            "app/src/main/java/moe/ouom/neriplayer/data/settings/PlaybackSettingsSection.kt"
+            "app/src/main/java/moe/ouom/neriplayer/data/settings/PlaybackSettingsSection.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/api/bili/BiliClient.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/api/bili/BiliCommentApi.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/api/bili/BiliCookieSession.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/api/bili/BiliRequestSupport.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

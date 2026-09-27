@@ -26,11 +26,15 @@ CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
 来源：[CRAP 原作者公式](https://www.artima.com/weblogs/viewpost.jsp?thread=215899)、
 [JaCoCo 计数器定义](https://www.jacoco.org/jacoco/trunk/doc/counters.html)。
 
-`config/quality/crap-scope.json` 以完整源文件定义门禁范围，包括原入口和拆出的组件。
+`config/quality/crap-scope.json` 的 `source_patterns` 对已拆出的组件和完整迁移的原文件
+实施整文件门禁。对于还在逐块拆分的原上帝类，`method_scopes` 精确列出本块改动的入口方法、
+构造方法和 Kotlin 默认参数方法；规则匹配不到 JaCoCo 方法时直接报错。其余方法仍进入
+`methods.json` 和 `above-8.md`，但不阻塞本块提交。
 范围内任意方法原始分数严格大于 9 时退出码为 1；分数等于 9 时通过。
 缺少 XML、无效计数器、空范围、范围匹配不到文件或范围文件无被测方法时退出码为 2。
 不使用平均分或历史 baseline 豁免；协程和 lambda 字节码同样保留，只使用 JaCoCo 内置的编译器过滤。
-新增拆分组件应位于已覆盖的文件模式内，或同时更新范围配置。
+新增拆分组件应位于已覆盖的文件模式内，或同时更新范围配置。原文件内受影响的方法也必须
+加入门禁；不能因为其既有分数较高而遗漏改动。
 
 报告器回归测试：
 

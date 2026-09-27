@@ -93,6 +93,30 @@ class CrapReportTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("risk", (self.output / "scope.md").read_text())
 
+    def test_method_scope_gates_changed_method_in_legacy_source(self):
+        self.scope.write_text(json.dumps({
+            "source_patterns": ["Changed.kt"],
+            "method_scopes": [{"source": "Legacy.kt", "class": "example.Legacy",
+                               "methods": ["changed"]}],
+        }))
+        result = self.run_report(method("stable", 1, 1),
+                                 method("changed", 10, 0) + method("untouched", 10, 0))
+        self.assertEqual(1, result.returncode, result.stderr)
+        rows = json.loads((self.output / "methods.json").read_text())
+        self.assertTrue(next(row for row in rows if row["method"] == "changed")["in_scope"])
+        self.assertFalse(next(row for row in rows if row["method"] == "untouched")["in_scope"])
+        self.assertIn("untouched", (self.output / "above-8.md").read_text())
+
+    def test_unmatched_method_scope_is_an_error(self):
+        self.scope.write_text(json.dumps({
+            "source_patterns": ["Changed.kt"],
+            "method_scopes": [{"source": "Legacy.kt", "class": "example.Legacy",
+                               "methods": ["missing"]}],
+        }))
+        result = self.run_report(method("stable", 1, 1), method("other", 1, 1))
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("missing", result.stderr)
+
     def test_missing_xml_is_an_error(self):
         result = self.invoke()
         self.assertEqual(2, result.returncode, result.stderr)
