@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.shouldRetryUsbExclusiveDeferre
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class UsbExclusiveLivenessSnapshot(
     val playbackEnabled: Boolean,
@@ -104,7 +105,7 @@ internal class UsbExclusiveLivenessOwner(
         var elapsedMs = 0L
         val progress = BackgroundAuditProgress()
         for (checkpointMs in BACKGROUND_AUDIT_CHECKPOINTS_MS) {
-            delay((checkpointMs - elapsedMs).coerceAtLeast(0L))
+            delay(((checkpointMs - elapsedMs).coerceAtLeast(0L)).milliseconds)
             elapsedMs = checkpointMs
             val playback = port.snapshot()
             if (!shouldContinueBackgroundAudit(playback, generation)) return
@@ -219,7 +220,7 @@ internal class UsbExclusiveLivenessOwner(
     }
 
     private suspend fun followUpForegroundProbe(reason: String, initial: UsbExclusiveNativeState) {
-        delay(FOREGROUND_STALL_CHECK_MS)
+        delay(FOREGROUND_STALL_CHECK_MS.milliseconds)
         val current = followUpSample(reason) ?: return
         completeForegroundProbe(reason, initial, current)
     }
@@ -359,7 +360,7 @@ internal class UsbExclusiveLivenessOwner(
             ) return native
             retryAttempt += 1
             NPLogger.d("NERI-UsbExclusive", "retry deferred USB runtime refresh: reason=$reason stage=$stage retry=$retryAttempt")
-            delay(USB_EXCLUSIVE_DEFERRED_RUNTIME_REFRESH_RETRY_DELAY_MS)
+            delay(USB_EXCLUSIVE_DEFERRED_RUNTIME_REFRESH_RETRY_DELAY_MS.milliseconds)
         }
     }
 

@@ -62,6 +62,7 @@ import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
+import kotlin.time.Duration.Companion.milliseconds
 
 // 预热请求本身已经由单例合并, 首播不应再额外等待调度窗口
 private const val YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS = 0L
@@ -500,7 +501,7 @@ class YouTubeMusicPlaybackRepository(
                     lateinit var created: Deferred<Unit>
                     created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
                         try {
-                            delay(YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS)
+                            delay(YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS.milliseconds)
                             if (ForegroundWebLoginGuard.isActive) {
                                 NPLogger.d(
                                     "YouTubeMusicPlayback",
@@ -1204,7 +1205,7 @@ class YouTubeMusicPlaybackRepository(
                                 "YouTubeMusicPlayback",
                                 "rate limited (HTTP ${(error as? YouTubeHttpStatusException)?.statusCode}) for $videoId, backoff=${backoffMs}ms"
                             )
-                            delay(backoffMs)
+                            delay(backoffMs.milliseconds)
                         }
                         if (shouldRetryWithFreshBootstrapAfterRequestFailure(
                                 profile = profile,
@@ -1643,7 +1644,6 @@ class YouTubeMusicPlaybackRepository(
         profile, playableAudio, acceptedFromCurrentProfile, preferredQualityKey, preferM4a
     )
 
-    @Suppress("UNUSED_PARAMETER")
     private fun shouldRetryWithFreshBootstrapBeforeFallback(
         profile: YouTubePlayerClientProfile,
         playability: YouTubePlayerPlayabilityStatus,
@@ -1654,7 +1654,6 @@ class YouTubeMusicPlaybackRepository(
         return false
     }
 
-    @Suppress("UNUSED_PARAMETER")
     /** 429/408 可重试, 其余 4xx 表示请求参数不被接受, 强刷 bootstrap 无用 */
     private fun Throwable?.isNonRetryablePlayerClientError(): Boolean {
         val status = (this as? YouTubeHttpStatusException)?.statusCode ?: return false

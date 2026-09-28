@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 
 internal class StartupSyncScheduler(
     context: Context,
@@ -29,7 +30,7 @@ internal class StartupSyncScheduler(
     private val appContext = context.applicationContext
 
     suspend fun scheduleIfNeeded() {
-        delay(StartupSyncPlanner.STARTUP_SYNC_SCHEDULE_DELAY_MS)
+        delay(StartupSyncPlanner.STARTUP_SYNC_SCHEDULE_DELAY_MS.milliseconds)
         if (!isStarted()) {
             return
         }
@@ -52,7 +53,7 @@ internal class StartupSyncScheduler(
             return
         }
         if (plan.webDavStaggerDelayMs > 0L) {
-            delay(plan.webDavStaggerDelayMs)
+            delay(plan.webDavStaggerDelayMs.milliseconds)
             if (!isStarted()) {
                 return
             }

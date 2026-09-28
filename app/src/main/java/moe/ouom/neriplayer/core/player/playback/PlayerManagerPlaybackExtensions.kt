@@ -94,6 +94,7 @@ import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.listentogether.playback.shouldShowListenTogetherPreviewClipNotice
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import kotlin.time.Duration.Companion.milliseconds
 
 private val playbackAutoSkipPolicy = PlaybackAutoSkipPolicy(BiliPlaybackAutoSkipTargets)
 
@@ -396,7 +397,7 @@ internal suspend fun PlayerManager.fadeOutCurrentPlaybackIfNeeded(
             }
             player.volume = (startVolume * (1f - fraction)).coerceAtLeast(0f)
         }
-        delay(stepDelay)
+        delay(stepDelay.milliseconds)
     }
 
     withContext(Dispatchers.Main) {
@@ -443,7 +444,7 @@ internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) 
     val stepDelay = (effectivePlan.fadeDurationMs / steps).coerceAtLeast(1L)
     volumeFadeJob = mainScope.launch {
         repeat(steps) { step ->
-            delay(stepDelay)
+            delay(stepDelay.milliseconds)
             if (!isPlayerInitialized()) return@launch
             player.volume = volumeWhileAudioRouteMuted(
                 ((step + 1).toFloat() / steps).coerceAtMost(1f)
@@ -1717,7 +1718,7 @@ internal fun PlayerManager.startProgressUpdates() {
         while (isActive) {
             val intervalMs = progressUpdateIntervalMs()
             runProgressUpdateTick()
-            delay(intervalMs)
+            delay(intervalMs.milliseconds)
         }
     }
 }

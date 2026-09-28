@@ -287,7 +287,6 @@ private fun ColorPickerItem(
 /** DPI 设置对话框 */
 @SuppressLint("DefaultLocale")
 @Composable
-@Suppress("AssignedValueIsNeverRead")
 internal fun DpiSettingDialog(
     currentScale: Float,
     onDismiss: () -> Unit,

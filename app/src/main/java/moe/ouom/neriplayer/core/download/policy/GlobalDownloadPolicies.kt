@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import kotlin.time.Duration.Companion.milliseconds
 
 internal fun shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount: Int): Boolean {
     return recoveredArtifactCount > 0
@@ -361,7 +362,7 @@ internal suspend fun runDownloadStartupRecoverySafely(
         } catch (error: Throwable) {
             onFailure(error)
             if (attemptIndex + 1 < attemptLimit && retryDelayMs > 0L) {
-                delay(retryDelayMs)
+                delay(retryDelayMs.milliseconds)
             }
         }
     }
@@ -629,7 +630,7 @@ internal suspend fun <T : Any> awaitDownloadClearProviderCleanup(
     timeoutMs: Long
 ): T? {
     require(timeoutMs > 0L) { "timeoutMs must be positive" }
-    return withTimeoutOrNull(timeoutMs) { cleanup.await() }
+    return withTimeoutOrNull(timeoutMs.milliseconds) { cleanup.await() }
 }
 
 internal suspend fun awaitBatchDownloadJobsSettled(
@@ -639,7 +640,7 @@ internal suspend fun awaitBatchDownloadJobsSettled(
     if (jobs.isEmpty()) {
         return true
     }
-    return withTimeoutOrNull(timeoutMs) {
+    return withTimeoutOrNull(timeoutMs.milliseconds) {
         jobs.joinAll()
         true
     } == true

@@ -138,7 +138,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageProcess
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @NonRestartableComposable
-@Suppress("AssignedValueIsNeverRead")
 internal fun SettingsScreen(
     listState: LazyListState,
     bindings: AppSettingsHostBindings,

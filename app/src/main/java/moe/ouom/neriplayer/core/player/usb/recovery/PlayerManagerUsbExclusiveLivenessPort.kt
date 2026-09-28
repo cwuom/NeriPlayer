@@ -45,7 +45,12 @@ internal object PlayerManagerUsbExclusiveLivenessPort : UsbExclusiveLivenessPort
     }
 
     private fun playerSnapshot(initialized: Boolean): PlayerSnapshot {
-        if (!initialized) return PlayerSnapshot(-1L, Player.STATE_IDLE, false, false)
+        if (!initialized) return PlayerSnapshot(
+            positionMs = -1L,
+            state = Player.STATE_IDLE,
+            playWhenReady = false,
+            isPlaying = false
+        )
         val player = PlayerManager.player
         return PlayerSnapshot(
             positionMs = readPlayerPosition(player),

@@ -18,6 +18,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.data.settings.ThemeMode
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 1080
 private const val THEME_REVEAL_STABLE_DRAW_PASSES = 1
@@ -127,7 +128,7 @@ private suspend fun awaitNextDraw(view: View) {
         return
     }
 
-    withTimeoutOrNull(120L) {
+    withTimeoutOrNull(120L.milliseconds) {
         suspendCancellableCoroutine { continuation ->
             val observer = view.viewTreeObserver
             var handled = false

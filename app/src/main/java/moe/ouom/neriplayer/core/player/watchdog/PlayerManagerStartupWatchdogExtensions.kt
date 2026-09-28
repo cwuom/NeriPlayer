@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
+import kotlin.time.Duration.Companion.milliseconds
 
 internal fun PlayerManager.configureActivePlaybackCandidates(
     result: SongUrlResult.Success,
@@ -93,7 +94,7 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
 
     playbackStartupWatchdogJob = mainScope.launch {
         if (earlyTimeoutMs in 1 until timeoutMs) {
-            delay(earlyTimeoutMs)
+            delay(earlyTimeoutMs.milliseconds)
             if (playbackStartupWatchdogToken != watchdogToken) return@launch
             if (requestToken != playbackRequestToken) return@launch
             if (isEarlyStartupPlaybackStalled(startPositionMs)) {
@@ -107,9 +108,9 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
                 recoverPlaybackStartupStall(requestToken)
                 return@launch
             }
-            delay(timeoutMs - earlyTimeoutMs)
+            delay((timeoutMs - earlyTimeoutMs).milliseconds)
         } else {
-            delay(timeoutMs)
+            delay(timeoutMs.milliseconds)
         }
         if (playbackStartupWatchdogToken != watchdogToken) return@launch
         if (requestToken != playbackRequestToken) return@launch

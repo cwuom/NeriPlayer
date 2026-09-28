@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.usb.resolveUsbExclusiveInterruptedPlaybackQueueIndex
 import moe.ouom.neriplayer.core.player.policy.usb.shouldResumeUsbExclusivePlaybackAfterDeviceAttach
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class UsbInterruptedPlaybackIntent(
     val queueIndex: Int,
@@ -195,7 +196,7 @@ internal class UsbInterruptedPlaybackOwner(
 
     private suspend fun retryDeviceReattach(reason: String, requestToken: Long) {
         repeat(DEVICE_REATTACH_RECOVERY_MAX_ATTEMPTS) { attempt ->
-            delay(reattachDelay(attempt))
+            delay((reattachDelay(attempt)).milliseconds)
             val state = currentReattachState(requestToken) ?: return
             if (tryResumeAfterAttach(reason, state)) return
         }

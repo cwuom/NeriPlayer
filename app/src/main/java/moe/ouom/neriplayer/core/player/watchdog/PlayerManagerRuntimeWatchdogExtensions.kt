@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.core.player.policy.progress.PlaybackRuntimeStallPolic
 import moe.ouom.neriplayer.core.player.policy.progress.RuntimePlaybackStallAction
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
 import moe.ouom.neriplayer.core.player.policy.wake.PlaybackTransitionWakeLock
+import kotlin.time.Duration.Companion.milliseconds
 
 internal fun PlayerManager.resetPlaybackRuntimeWatchdog(reason: String) {
     if (playbackRuntimeWatchdogJob?.isActive == true) {
@@ -73,7 +74,7 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
     playbackRuntimeWatchdogJob = mainScope.launch {
         try {
             while (isActive) {
-                delay(PLAYBACK_RUNTIME_STALL_POLL_INTERVAL_MS)
+                delay(PLAYBACK_RUNTIME_STALL_POLL_INTERVAL_MS.milliseconds)
                 if (watchdogToken != playbackRuntimeWatchdogToken) return@launch
                 if (requestToken != playbackRequestToken) return@launch
                 if (!shouldWatchRuntimePlayback()) return@launch

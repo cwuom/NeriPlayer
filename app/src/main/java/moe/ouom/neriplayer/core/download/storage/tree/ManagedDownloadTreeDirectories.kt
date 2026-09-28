@@ -324,7 +324,7 @@ internal class ManagedDownloadTreeDirectories(
                             )
                         }
                         .sortedWith(
-                            compareBy<QueriedTreeChild>(
+                            compareBy(
                                 { if (it.name == subdirectory) 0 else 1 },
                                 { ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(it.name, subdirectory) },
                                 { it.name }
@@ -593,7 +593,7 @@ internal class ManagedDownloadTreeDirectories(
                             subdirectory
                         )
                     }
-                    .sortedWith(compareBy<QueriedTreeChild>(
+                    .sortedWith(compareBy(
                         { if (it.name == subdirectory) 0 else 1 },
                         { ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(it.name, subdirectory) },
                         { it.name }
@@ -710,7 +710,7 @@ internal class ManagedDownloadTreeDirectories(
             .filter(QueriedTreeChild::isDirectory)
             .filter { child -> ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(child.name, displayName) }
             .sortedWith(
-                compareBy<QueriedTreeChild>(
+                compareBy(
                     { if (it.name == displayName) 0 else 1 },
                     { ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(it.name, displayName) },
                     QueriedTreeChild::name

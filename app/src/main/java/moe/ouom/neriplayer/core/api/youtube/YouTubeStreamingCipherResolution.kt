@@ -18,6 +18,7 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val NEWPIPE_FALLBACK_START_DELAY_MS = 40L
 private const val CIPHER_RESOLVE_TIMEOUT_MS = 12_000L
@@ -166,7 +167,7 @@ internal suspend fun <T> awaitFirstChallengeSuccess(
 ): ChallengeCandidateResult<T>? = coroutineScope {
     val pending = candidates.toMutableList()
     while (pending.isNotEmpty()) {
-        val (selected, candidate) = select<Pair<Deferred<ChallengeCandidateResult<T>>, ChallengeCandidateResult<T>>> {
+        val (selected, candidate) = select {
             pending.forEach { deferred ->
                 deferred.onAwait { deferred to it }
             }
@@ -395,7 +396,7 @@ internal class DefaultYouTubeStreamingCipherResolver(
     private suspend fun resolveSignatureWithNewPipe(
         encryptedSignature: String
     ): ChallengeCandidateResult<String> {
-        delay(NEWPIPE_FALLBACK_START_DELAY_MS)
+        delay(NEWPIPE_FALLBACK_START_DELAY_MS.milliseconds)
         val startedAtMs = System.currentTimeMillis()
         val resolved = runCatching {
             newPipeBackend.resolveSignature(videoId, encryptedSignature)
@@ -475,7 +476,7 @@ internal class DefaultYouTubeStreamingCipherResolver(
     }
 
     private suspend fun resolveThrottlingWithNewPipe(url: String): ChallengeCandidateResult<String> {
-        delay(NEWPIPE_FALLBACK_START_DELAY_MS)
+        delay(NEWPIPE_FALLBACK_START_DELAY_MS.milliseconds)
         val startedAtMs = System.currentTimeMillis()
         val candidateUrl = runCatching {
             newPipeBackend.resolveStreamingUrl(videoId, url)
@@ -578,7 +579,7 @@ internal class DefaultYouTubeStreamingCipherResolver(
         ejsCandidate: suspend () -> ChallengeCandidateResult<T>,
         recordNewPipeFailure: () -> Unit
     ): ChallengeRaceOutcome<T>? = coroutineScope {
-        withTimeoutOrNull(CIPHER_RESOLVE_TIMEOUT_MS) {
+        withTimeoutOrNull(CIPHER_RESOLVE_TIMEOUT_MS.milliseconds) {
             val newPipe = if (skipNewPipe) null else async(Dispatchers.Default) { newPipeCandidate() }
             val ejs = if (resolvedPlayerJsUrl.isBlank()) null else async(Dispatchers.IO) { ejsCandidate() }
             val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipe, ejs))

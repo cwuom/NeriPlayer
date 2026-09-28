@@ -385,7 +385,7 @@ void FeedbackInTransferSet::releaseSlotsLocked() {
 void FeedbackInTransferSet::assignError(
     std::string* error,
     const char* value
-) const {
+) {
     if (error != nullptr) {
         *error = value;
     }

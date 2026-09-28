@@ -3,9 +3,6 @@ package moe.ouom.neriplayer.data.playlist.usage
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,7 +76,6 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
     }
 
     private val gson = Gson()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val file = File(app.filesDir, "local_playlist_playback_stats.json")
     private val syncStorage by lazy { SecureTokenStorage(app) }
     private val fallbackCounterDeviceId = "local-playlist-playback-${UUID.randomUUID()}"

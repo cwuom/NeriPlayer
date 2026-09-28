@@ -166,6 +166,7 @@ import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.search.playlistSearchValues
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 
 internal fun isNeteaseCollectionHeaderForRoute(
     header: NeteaseCollectionHeader?,
@@ -292,7 +293,6 @@ fun NeteaseAlbumDetailScreen(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-@Suppress("AssignedValueIsNeverRead")
 fun DetailScreen(
     ui: NeteaseCollectionDetailUiState,
     playlistId: Long,
@@ -517,7 +517,7 @@ fun DetailScreen(
             searchQuery = searchQuery
         )
         if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
-        if (shouldAutoFocus) delay(120)
+        if (shouldAutoFocus) delay(120.milliseconds)
         searchFocusRequester.requestFocus()
         keyboardController?.show()
     }

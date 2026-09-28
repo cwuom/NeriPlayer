@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlin.time.Duration.Companion.milliseconds
 
 internal interface ManagedDownloadSnapshotPersistenceStore {
     suspend fun restore(
@@ -429,7 +430,7 @@ internal class ManagedDownloadSnapshotCacheStore(
         synchronized(snapshotPersistenceLock) {
             snapshotPersistJob?.cancel()
             snapshotPersistJob = scope.launch {
-                delay(SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS)
+                delay(SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS.milliseconds)
                 val clearJob = synchronized(snapshotPersistenceLock) {
                     snapshotClearJob?.takeUnless(Job::isCompleted)
                 }

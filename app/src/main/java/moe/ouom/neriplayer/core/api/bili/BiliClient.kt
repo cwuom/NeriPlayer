@@ -50,6 +50,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * B 站 Web 端 API 客户端
@@ -475,7 +476,7 @@ class BiliClient(
                     TAG,
                     "Play info returned empty audio list, retrying (${attempt + 1}/$EMPTY_AUDIO_RETRY_COUNT): bvid=$bvid cid=$cid"
                 )
-                delay(EMPTY_AUDIO_RETRY_DELAY_MS * (attempt + 1))
+                delay((EMPTY_AUDIO_RETRY_DELAY_MS * (attempt + 1)).milliseconds)
             }
         }
         val html5Info = getPlayInfoByBvid(bvid, cid, buildHtml5FallbackOptions(opts))

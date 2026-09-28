@@ -58,6 +58,7 @@ internal object LocalManagementLineBudget {
             "$MAIN_PACKAGE_ROOT/core/download",
             "$MAIN_PACKAGE_ROOT/core/player/download",
             "$MAIN_PACKAGE_ROOT/data/local",
+            "$MAIN_PACKAGE_ROOT/ui/screen/tab/library",
             "$TEST_PACKAGE_ROOT/core/download",
             "$TEST_PACKAGE_ROOT/core/player/download",
             "$TEST_PACKAGE_ROOT/data/local",
@@ -75,16 +76,15 @@ internal object LocalManagementLineBudget {
             "$MAIN_PACKAGE_ROOT/data/local/media/LocalMediaSupport.kt",
             "$MAIN_PACKAGE_ROOT/data/local/audioimport/LocalAudioImportManager.kt",
             "$MAIN_PACKAGE_ROOT/data/local/playlist/LocalPlaylistRepository.kt",
-            "$MAIN_PACKAGE_ROOT/ui/screen/tab/LibraryScreen.kt",
+            "$MAIN_PACKAGE_ROOT/ui/screen/tab/library/LibraryScreen.kt",
             "$MAIN_PACKAGE_ROOT/ui/screen/playlist/LocalPlaylistDetailScreen.kt",
             "$TEST_PACKAGE_ROOT/ui/screen/playlist/LocalPlaylistDetailMutableValueTest.kt"
         ),
         uiFilePrefixes = listOf(
-            UiFilePrefix("$MAIN_PACKAGE_ROOT/ui/screen/tab", "LibraryScreen"),
             UiFilePrefix("$MAIN_PACKAGE_ROOT/ui/screen/playlist", "LocalPlaylistDetail"),
-            UiFilePrefix("$TEST_PACKAGE_ROOT/ui/screen/tab", "LibraryScreen"),
+            UiFilePrefix("$TEST_PACKAGE_ROOT/ui/screen/tab", "Library"),
             UiFilePrefix("$TEST_PACKAGE_ROOT/ui/screen/playlist", "LocalPlaylistDetail"),
-            UiFilePrefix("$ANDROID_TEST_PACKAGE_ROOT/ui/screen/tab", "LibraryScreen"),
+            UiFilePrefix("$ANDROID_TEST_PACKAGE_ROOT/ui/screen/tab", "Library"),
             UiFilePrefix(
                 "$ANDROID_TEST_PACKAGE_ROOT/ui/screen/playlist",
                 "LocalPlaylistDetail"

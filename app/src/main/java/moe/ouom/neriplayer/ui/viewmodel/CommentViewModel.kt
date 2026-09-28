@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.core.comment.repository.commentRepositoryFor
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.collections.mergeDistinctBy
 import moe.ouom.neriplayer.util.concurrent.RequestGeneration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 评论列表的展示状态。
@@ -492,7 +493,7 @@ internal class CommentViewModel : ViewModel() {
                 if (cached != null && (cached.comments != result.comments || cached.total != result.total ||
                         cached.hasMore != result.hasMore)) {
                     _uiState.update { it.copy(isRefreshing = true) }
-                    delay(CACHE_UPDATE_INDICATION_MS)
+                    delay(CACHE_UPDATE_INDICATION_MS.milliseconds)
                     if (!isActive || !request.isCurrent) return@launch
                 }
 

@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val NETEASE_YD_TOKEN_TAG = "NERI-NeteaseYdToken"
 private const val NETEASE_YD_TOKEN_URL = "https://music.163.com/"
@@ -62,7 +63,7 @@ internal class NeteaseYdDeviceTokenProvider(
             }
 
             requestToken(webView, forComment)
-            val snapshot = withTimeoutOrNull(NETEASE_YD_TOKEN_TIMEOUT_MS) {
+            val snapshot = withTimeoutOrNull(NETEASE_YD_TOKEN_TIMEOUT_MS.milliseconds) {
                 tokenResult.await()
             } ?: NeteaseYdDeviceSnapshot(cookies = readCookieMap())
             NPLogger.d(
@@ -140,7 +141,7 @@ internal class NeteaseYdDeviceTokenProvider(
         webView: WebView,
         pageLoaded: CompletableDeferred<Unit>
     ): Boolean {
-        val loaded = withTimeoutOrNull(NETEASE_YD_PAGE_TIMEOUT_MS) {
+        val loaded = withTimeoutOrNull(NETEASE_YD_PAGE_TIMEOUT_MS.milliseconds) {
             pageLoaded.await()
         } != null
         val cookieMap = readCookieMap()
@@ -167,7 +168,7 @@ internal class NeteaseYdDeviceTokenProvider(
             if (ready) {
                 return true
             }
-            delay(NETEASE_YD_READY_POLL_MS)
+            delay(NETEASE_YD_READY_POLL_MS.milliseconds)
         }
         return false
     }

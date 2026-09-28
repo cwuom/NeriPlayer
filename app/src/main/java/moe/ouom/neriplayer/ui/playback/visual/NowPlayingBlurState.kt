@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 internal class NowPlayingBlurState {
     private var latestSongKey: String? = null
@@ -54,7 +55,7 @@ internal class NowPlayingBlurState {
         }
         loadFailed = false
         if (request.songKey != null || !request.coverUrl.isNullOrBlank()) return
-        delay(PLAYBACK_VISUAL_COVER_GRACE_MS)
+        delay(PLAYBACK_VISUAL_COVER_GRACE_MS.milliseconds)
         if (shouldClearNowPlayingBlurCover(
                 currentSongKey = latestSongKey,
                 requestedCoverUrl = latestCoverUrl,

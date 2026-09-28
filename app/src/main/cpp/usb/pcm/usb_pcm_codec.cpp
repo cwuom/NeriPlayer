@@ -72,7 +72,7 @@ float readEncodedPcmSample(const uint8_t* input, int encoding) {
     const bool bigEndian = isBigEndianEncoding(encoding);
     switch (encoding) {
         case kEncodingPcm8Bit:
-            return (static_cast<int>(input[0]) - 128) / 128.0f;
+            return static_cast<float>(static_cast<int>(input[0]) - 128) / 128.0f;
         case kEncodingPcm16Bit:
         case kEncodingPcm16BitBigEndian: {
             const uint16_t raw = bigEndian
@@ -169,8 +169,8 @@ void writeIntegerPcmSample(
     const float clipped = std::isfinite(sample) ? std::clamp(sample, -1.0f, 1.0f) : 0.0f;
     const int64_t scale = int64_t { 1 } << (validBits - 1);
     const int64_t positiveScale = scale - 1;
-    const int64_t rounded = static_cast<int64_t>(
-        std::llround(static_cast<double>(clipped) * scale)
+    const auto rounded = static_cast<int64_t>(
+        std::llround(static_cast<double>(clipped) * static_cast<double>(scale))
     );
     const int64_t value = std::clamp(rounded, -scale, positiveScale);
     const uint64_t validMask = validBits == 32

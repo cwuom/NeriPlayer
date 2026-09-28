@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 本地播放引用协调器
@@ -210,7 +211,7 @@ internal class AudioDownloadPlaybackCoordinator(
                 }.getOrDefault(true)
             )
         ) {
-            val opened = withTimeoutOrNull(directoryMutationWaitMs) {
+            val opened = withTimeoutOrNull(directoryMutationWaitMs.milliseconds) {
                 ManagedDownloadDirectoryMutationFence.awaitOpen()
                 true
             } == true

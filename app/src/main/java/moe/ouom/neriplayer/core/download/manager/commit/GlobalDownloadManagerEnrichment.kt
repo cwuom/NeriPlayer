@@ -77,6 +77,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
@@ -1244,7 +1245,7 @@ internal fun GlobalDownloadManager.schedulePersistedTerminalTemporaryWriteCleanu
                 return@withLock
             }
             terminalTemporaryWriteCleanupJob = scope.launch cleanupLoop@{
-                delay(TERMINAL_TEMPORARY_WRITE_CLEANUP_COALESCE_MS)
+                delay(TERMINAL_TEMPORARY_WRITE_CLEANUP_COALESCE_MS.milliseconds)
                 var failedAttempt = 0
                 var retryPending = false
                 while (true) {
@@ -1300,7 +1301,7 @@ internal fun GlobalDownloadManager.schedulePersistedTerminalTemporaryWriteCleanu
                                             "delayMs=$retryDelayMs"
                                     )
                                     retryPending = true
-                                    delay(retryDelayMs)
+                                    delay(retryDelayMs.milliseconds)
                                     continue
                                 }
                                 NPLogger.w(
@@ -1490,7 +1491,7 @@ internal suspend fun GlobalDownloadManager.runDownloadedAudioMetadataPostProcess
                             "error=${lastError.javaClass.simpleName}: ${lastError.message}",
                         lastError
                     )
-                    delay(METADATA_POST_PROCESSING_RETRY_DELAY_MS * (attempt + 1))
+                    delay((METADATA_POST_PROCESSING_RETRY_DELAY_MS * (attempt + 1)).milliseconds)
                 }
                 TagPostProcessingAction.PRESERVE_UNFINALIZED -> {
                     val reason = writeResult.exceptionOrNull()?.message

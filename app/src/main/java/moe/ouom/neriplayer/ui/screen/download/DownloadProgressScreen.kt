@@ -88,6 +88,7 @@ import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val INITIAL_DOWNLOAD_PROGRESS_PROBE_ATTEMPTS = 3
 private const val INITIAL_DOWNLOAD_PROGRESS_PROBE_DELAY_MS = 250L
@@ -286,7 +287,7 @@ private suspend fun loadDownloadProgressBootstrapState(
             }
         }
         if (attempt < INITIAL_DOWNLOAD_PROGRESS_PROBE_ATTEMPTS - 1) {
-            delay(INITIAL_DOWNLOAD_PROGRESS_PROBE_DELAY_MS)
+            delay(INITIAL_DOWNLOAD_PROGRESS_PROBE_DELAY_MS.milliseconds)
         }
     }
     return lastSuccessfulState?.let(DownloadProgressBootstrapProbeResult::Resolved)
@@ -349,7 +350,6 @@ private suspend fun readDownloadProgressBootstrapState(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("AssignedValueIsNeverRead")
 fun DownloadProgressScreen(
     onBack: () -> Unit,
     listState: LazyListState
@@ -524,7 +524,7 @@ fun DownloadProgressScreen(
         if (!shouldRecheckBootstrap) return@LaunchedEffect
         var delayMs = DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_INITIAL_DELAY_MS
         while (true) {
-            delay(delayMs)
+            delay(delayMs.milliseconds)
             val nextBootstrapProbeResult = loadDownloadProgressBootstrapState(
                 context,
                 retryEmptyResult = false

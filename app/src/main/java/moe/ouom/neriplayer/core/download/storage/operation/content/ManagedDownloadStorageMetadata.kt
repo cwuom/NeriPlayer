@@ -447,7 +447,7 @@ internal fun ManagedDownloadStorage.buildMigrationTargetIndex(
             .groupBy({ (audioName, _) -> audioName }, { (_, entry) -> entry })
             .mapNotNull { (audioName, entries) ->
                 entries.minWithOrNull(
-                    compareBy<StoredEntry>(
+                    compareBy(
                         { candidate ->
                             ManagedDownloadTreeNaming.metadataNameOrdinal(
                                 candidate.name,

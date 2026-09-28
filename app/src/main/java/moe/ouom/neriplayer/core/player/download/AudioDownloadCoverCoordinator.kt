@@ -14,6 +14,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody
 import java.io.IOException
 import java.io.InputStream
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class AudioCachedCoverReference(
     val reference: String,
@@ -213,7 +214,7 @@ internal class AudioDownloadCoverCoordinator(
                         )
                     }
                     if (retryIndex + 1 < maxAttempts) {
-                        delay(retryDelayMs * (retryIndex + 1))
+                        delay((retryDelayMs * (retryIndex + 1)).milliseconds)
                     }
                 }
                 NPLogger.w(

@@ -75,6 +75,7 @@ import moe.ouom.neriplayer.listentogether.playback.shouldPreferListenTogetherSou
 import moe.ouom.neriplayer.listentogether.playback.shouldSuppressListenTogetherResolverError
 import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
 import java.io.File
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"
 internal const val YOUTUBE_PLAYBACK_PREFER_M4A = false
@@ -1303,7 +1304,7 @@ private suspend fun PlayerManager.resolvePermittedLocalPlaybackWithRetry(
                 "retry=$retryNumber/$LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT, delayMs=$delayMs, " +
                 "resolution=$resolution"
         )
-        delay(delayMs)
+        delay(delayMs.milliseconds)
         resolution = AudioDownloadManager.resolvePermittedLocalPlayback(
             context = application,
             song = song,
@@ -1399,7 +1400,7 @@ private suspend fun resolveIndexedLocalPlaybackWithRetry(
                 "retry=$retryNumber/$LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT, delayMs=$delayMs, " +
                 "resolution=$resolution"
         )
-        delay(delayMs)
+        delay(delayMs.milliseconds)
         resolution = AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, song)
     }
     return resolution

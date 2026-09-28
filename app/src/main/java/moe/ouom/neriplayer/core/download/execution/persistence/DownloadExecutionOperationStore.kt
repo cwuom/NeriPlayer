@@ -907,7 +907,5 @@ internal fun resolveDownloadOperationState(
     requestedState = requestedState
 )
 
-private val CORE_COMMITTED_STATES = DownloadOperationStateTransitions.coreCommittedWireNames
-
 private val RESUMABLE_CORE_EXECUTION_STATES = DownloadOperationStateTransitions
     .resumableCoreWireNames

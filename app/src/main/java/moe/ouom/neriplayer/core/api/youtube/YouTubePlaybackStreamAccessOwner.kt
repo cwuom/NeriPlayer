@@ -15,6 +15,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.Buffer
 import org.json.JSONObject
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
 private const val YOUTUBE_PLAYBACK_DIAG_PREFIX = "[YT-DIAG-20260530]"
@@ -388,7 +389,7 @@ internal class YouTubePlaybackStreamAccessOwner(
 
     private suspend fun awaitPoToken(deferred: Deferred<String?>, timeoutMs: Long?): String? {
         if (timeoutMs == null || deferred.isCompleted) return deferred.await()
-        return withTimeoutOrNull(timeoutMs) { deferred.await() }
+        return withTimeoutOrNull(timeoutMs.milliseconds) { deferred.await() }
     }
 
     private suspend fun resolveWebRemixPoToken(

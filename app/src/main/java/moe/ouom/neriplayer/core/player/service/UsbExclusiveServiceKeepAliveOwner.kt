@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val FOREGROUND_KEEPALIVE_INTERVAL_MS = 5_000L
 private const val BACKGROUND_KEEPALIVE_INTERVAL_MS = 1_000L
@@ -123,7 +124,7 @@ internal class UsbExclusiveServiceKeepAliveOwner(
         loopJob = scope.launch {
             NPLogger.i("NERI-APS", "USB exclusive keepalive started")
             while (true) {
-                delay(usbExclusiveKeepAliveIntervalMs(port.appInForeground()))
+                delay((usbExclusiveKeepAliveIntervalMs(port.appInForeground())).milliseconds)
                 if (!port.playbackActive()) {
                     NPLogger.i("NERI-APS", "USB exclusive keepalive stopped because playback is inactive")
                     resetInactiveBaseline()

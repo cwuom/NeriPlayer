@@ -14,7 +14,7 @@ import moe.ouom.neriplayer.listentogether.control.requestControlEventTypes
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import kotlin.coroutines.coroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 
 internal interface ListenTogetherLocalControlPort {
     fun currentRoomId(): String?
@@ -56,7 +56,7 @@ internal class ListenTogetherLocalControlOwner(
             pendingCoalescedEvents[event.type] = PendingCoalescedControlEvent(event, roomId)
             coalescedJobs.remove(event.type)?.cancel()
             coalescedJobs[event.type] = scope.launch {
-                delay(COALESCING_WINDOW_MS)
+                delay(COALESCING_WINDOW_MS.milliseconds)
                 val pending = coroutineContext[Job]?.let { takeCoalesced(event.type, it) }
                 pending?.let { dispatch(it.event, it.roomId) }
             }

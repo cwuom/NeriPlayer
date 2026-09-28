@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackSoundConfigForEngine
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 
 internal interface PlaybackSoundPort {
     fun lyriconEnabled(): Boolean
@@ -204,7 +205,7 @@ internal class PlaybackSoundOwner(
             previous.customBandLevelsMb != next.customBandLevelsMb ||
             previous.loudnessGainMb != next.loudnessGainMb
         applyJob = mainScope.launch {
-            if (heavyEffectChanged) delay(48L)
+            if (heavyEffectChanged) delay(48L.milliseconds)
             val latest = pendingConfig ?: return@launch
             pendingConfig = null
             mutableState.value = engine.updateConfig(latest)
@@ -215,7 +216,7 @@ internal class PlaybackSoundOwner(
     fun persistConfig(config: PlaybackSoundConfig) {
         persistJob?.cancel()
         persistJob = ioScope.launch {
-            delay(150L)
+            delay(150L.milliseconds)
             port.persistConfig(config)
         }
     }

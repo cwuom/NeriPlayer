@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.util.media.CoverArtColorSample
 import moe.ouom.neriplayer.util.media.normalizeCoverArtColorCacheKey
 import moe.ouom.neriplayer.util.media.adjustedAccentColorArgb
 import moe.ouom.neriplayer.util.media.isRemoteImageSource
+import kotlin.time.Duration.Companion.milliseconds
 
 internal fun SongItem?.resolveUiCoverSource(context: Context): String? {
     return this?.displayCoverUrl(context)
@@ -217,7 +218,7 @@ private suspend fun awaitRetainedPlaybackVisualCoverClear(
     if (!shouldScheduleRetainedPlaybackVisualCoverClear(stateAtStart, requestedCoverUrl)) {
         return false
     }
-    delay(PLAYBACK_VISUAL_COVER_GRACE_MS)
+    delay(PLAYBACK_VISUAL_COVER_GRACE_MS.milliseconds)
     return canClear()
 }
 
@@ -321,7 +322,7 @@ private suspend fun clearBackdropAccentAfterGrace(
     isCurrentRequest: () -> Boolean,
     onSample: (CoverArtColorSample?) -> Unit
 ) {
-    delay(PLAYBACK_COVER_SEED_GRACE_MS)
+    delay(PLAYBACK_COVER_SEED_GRACE_MS.milliseconds)
     if (isCurrentRequest()) onSample(null)
 }
 

@@ -54,6 +54,7 @@ import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
+import kotlin.time.Duration.Companion.milliseconds
 
 data class PlayedEntry(
     val id: Long,
@@ -314,7 +315,7 @@ class PlayHistoryRepository private constructor(
         if (delayMs > 0L) {
             pendingSettledSyncJob?.cancel()
             pendingSettledSyncJob = scope.launch {
-                delay(delayMs)
+                delay(delayMs.milliseconds)
                 triggerAutoSyncNow()
             }
             return

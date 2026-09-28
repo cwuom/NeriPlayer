@@ -33,7 +33,6 @@ import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
 import moe.ouom.neriplayer.listentogether.network.ws.ListenTogetherWebSocketClient
 import moe.ouom.neriplayer.listentogether.network.ws.redactListenTogetherWsUrlForLog
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
-import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.playback.isShareableForListenTogether
 import moe.ouom.neriplayer.listentogether.playback.LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
@@ -107,6 +106,7 @@ import moe.ouom.neriplayer.util.units.SECOND_MS
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 
 class ListenTogetherSessionManager(
     private val api: ListenTogetherApi,
@@ -1046,20 +1046,6 @@ class ListenTogetherSessionManager(
         }
     }
 
-    private fun buildTrackFinishedEvent(
-        command: PlaybackCommand,
-        queue: List<SongItem>,
-        currentSong: SongItem?,
-        positionMs: Long
-    ): ListenTogetherEvent? {
-        return eventFactory.buildTrackFinishedEvent(
-            command = command,
-            queue = queue,
-            currentSong = currentSong,
-            positionMs = positionMs
-        )
-    }
-
     private fun updateSession(baseUrl: String, response: ListenTogetherRoomResponse) {
         val prepared = prepareListenTogetherSessionUpdate(
             baseUrl = baseUrl,
@@ -1412,7 +1398,7 @@ class ListenTogetherSessionManager(
         softSyncRateRecheckJob = mainScope.launch {
             try {
                 while (isActive) {
-                    delay(SOFT_SYNC_RECHECK_INTERVAL_MS)
+                    delay(SOFT_SYNC_RECHECK_INTERVAL_MS.milliseconds)
                     val snapshot = _sessionState.value
                     val state = roomState.value
                     val targetSong = state?.targetSongItem()

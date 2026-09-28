@@ -37,7 +37,7 @@ class TerminalTemporaryWriteCleanupRetryPolicyTest {
         assertTrue(schedulingBody.contains("externalSignalRequiredCount"))
         assertTrue(schedulingBody.contains("delayMsForFailedAttempt"))
         assertTrue(schedulingBody.contains("retryPending = true"))
-        assertTrue(schedulingBody.contains("delay(retryDelayMs)"))
+        assertTrue(schedulingBody.contains("delay(retryDelayMs.milliseconds)"))
         val externalWaitBody = schedulingBody
             .substringAfter("if (retryableFailedCount == 0)")
             .substringBefore("} else {")

@@ -49,6 +49,7 @@ import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.haptic.HapticButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import kotlin.time.Duration.Companion.milliseconds
 
 private val DisclaimerCardShape = RoundedCornerShape(16.dp)
 private val DisclaimerControlShape = RoundedCornerShape(12.dp)
@@ -65,7 +66,7 @@ internal fun StartupDisclaimerContent(
 
     LaunchedEffect(countdown) {
         if (countdown > 0) {
-            delay(1_000L)
+            delay(1_000L.milliseconds)
             countdown--
         }
     }

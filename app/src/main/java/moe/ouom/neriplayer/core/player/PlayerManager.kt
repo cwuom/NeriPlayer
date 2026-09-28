@@ -30,7 +30,6 @@ import android.app.Application
 import android.content.Context
 import android.os.Looper
 import android.os.SystemClock
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -108,8 +107,6 @@ import moe.ouom.neriplayer.core.player.prefetch.prefetchYouTubeQueueWindowImpl
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.policy.command.resolveExoRepeatMode
 import moe.ouom.neriplayer.core.player.policy.command.shouldShowPauseButtonForPlaybackControls
-import moe.ouom.neriplayer.core.player.policy.command.shouldBootstrapPlaybackServiceOnAppLaunch
-import moe.ouom.neriplayer.core.player.policy.command.shouldRunPlaybackServiceInForeground
 import moe.ouom.neriplayer.core.player.playback.applyListenTogetherPlaybackModeImpl
 import moe.ouom.neriplayer.core.player.playback.cancelPendingPauseRequestImpl
 import moe.ouom.neriplayer.core.player.playback.cancelVolumeFadeImpl
@@ -642,7 +639,6 @@ object PlayerManager {
     val currentMediaUrlFlow: StateFlow<String?> = _currentMediaUrl
 
     internal val _currentPlaybackAudioInfo = MutableStateFlow<PlaybackAudioInfo?>(null)
-    @Suppress("unused")
     val currentPlaybackAudioInfoFlow: StateFlow<PlaybackAudioInfo?> = _currentPlaybackAudioInfo
 
     val playbackSoundStateFlow: StateFlow<PlaybackSoundState>
@@ -1642,7 +1638,6 @@ object PlayerManager {
         restoredStateSnapshot = restoredStateSnapshot
     )
 
-    @Suppress("unused")
     suspend fun clearCache(
         clearAudio: Boolean = true,
         clearImage: Boolean = true

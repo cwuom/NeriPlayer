@@ -59,6 +59,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.util.platform.openAppBackgroundSettings
 import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
 import moe.ouom.neriplayer.util.platform.requestIgnoreBatteryOptimizationsCompat
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val USB_STATUS_REFRESH_INTERVAL_MS = 1_000L
 
@@ -89,7 +90,7 @@ internal fun UsbExclusiveSettingsSection(
 
     LaunchedEffect(context) {
         while (currentCoroutineContext().isActive) {
-            delay(USB_STATUS_REFRESH_INTERVAL_MS)
+            delay(USB_STATUS_REFRESH_INTERVAL_MS.milliseconds)
             UsbExclusiveSessionController.refresh(context)
             snapshot = UsbExclusiveDiagnostics.snapshot(context)
         }

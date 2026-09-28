@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.policy
 
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 /** 限制单次进程内清空尝试，持久栅栏交给启动或显式重试继续收敛 */
 internal const val DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS = 6
@@ -35,7 +36,7 @@ internal suspend fun <T> withDownloadClearRoomTimeout(
 ): T {
     require(operation.isNotBlank()) { "operation must not be blank" }
     require(timeoutMs > 0L) { "timeoutMs must be positive" }
-    val result = withTimeoutOrNull(timeoutMs) {
+    val result = withTimeoutOrNull(timeoutMs.milliseconds) {
         DownloadClearRoomValue(block())
     } ?: throw DownloadClearRoomTimeoutException(operation, timeoutMs)
     return result.value

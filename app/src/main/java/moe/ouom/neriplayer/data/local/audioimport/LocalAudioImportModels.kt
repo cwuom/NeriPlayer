@@ -356,7 +356,7 @@ internal fun selectMetadataSidecarReference(
             ManagedDownloadTreeNaming.metadataNameOrdinal(entry.key, audioName) != null
         }
         .minWithOrNull(
-            compareBy<Map.Entry<String, String>>(
+            compareBy(
                 { entry ->
                     ManagedDownloadTreeNaming.metadataNameOrdinal(entry.key, audioName)
                         ?: Int.MAX_VALUE
@@ -916,7 +916,7 @@ internal class MediaStoreSidecarResolver(
                     error("DocumentsProvider returned an incomplete child projection")
                 }
                 var truncated = false
-                val result = buildList<QueriedFolderChild> {
+                val result = buildList {
                     while (cursor.moveToNext()) {
                         if (size >= MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY) {
                             // 旁车索引只服务于快速首屏，巨型目录交给后续按需解析

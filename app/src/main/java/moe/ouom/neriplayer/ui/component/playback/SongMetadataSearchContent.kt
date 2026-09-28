@@ -67,6 +67,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.viewmodel.ManualSearchState
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val PlaybackStartupSearchWaitTimeoutMs = 2_000L
 private const val PlaybackStartupSettleDelayMs = 260L
@@ -125,7 +126,7 @@ fun SongMetadataSearchContent(
 
     LaunchedEffect(songKey, autoShowKeyboard, enabled, isWaitingForPlayback) {
         if (autoShowKeyboard && enabled && !isWaitingForPlayback) {
-            delay(220)
+            delay(220.milliseconds)
             focusRequester.requestFocus()
             keyboardController?.show()
         }
@@ -352,10 +353,10 @@ private fun MetadataSearchResultItem(
 private suspend fun awaitPlaybackStartupSettle(
     shouldDefer: () -> Boolean
 ) {
-    withTimeoutOrNull(PlaybackStartupSearchWaitTimeoutMs) {
+    withTimeoutOrNull(PlaybackStartupSearchWaitTimeoutMs.milliseconds) {
         do {
             snapshotFlow { shouldDefer() }.first { isBusy -> !isBusy }
-            delay(PlaybackStartupSettleDelayMs)
+            delay(PlaybackStartupSettleDelayMs.milliseconds)
         } while (shouldDefer())
     }
 }

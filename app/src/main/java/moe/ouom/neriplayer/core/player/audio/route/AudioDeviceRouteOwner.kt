@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveNoisyRo
 import moe.ouom.neriplayer.core.player.policy.usb.shouldStopUsbExclusivePlaybackForNoisyRoute
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForOutputDisconnect
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class AudioDeviceRouteSnapshot(
     val initialized: Boolean,
@@ -361,8 +362,8 @@ internal class AudioDeviceRouteOwner(
         bluetoothDisconnectPauseJob = scope.launch {
             val sampledRoutesAreBluetooth = mutableListOf<Boolean>()
             repeat(BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT) { sampleIndex ->
-                delay(if (sampleIndex == 0) BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
-                    else BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS)
+                delay((if (sampleIndex == 0) BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
+                    else BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS).milliseconds)
                 val state = port.snapshot()
                 if (!state.stopOnBluetoothDisconnect || !state.isPlaying) {
                     port.restorePlayback("bluetooth_disconnect_canceled:$reason")

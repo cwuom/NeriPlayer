@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal fun GlobalDownloadManager.requestDownloadTaskCancellation(songKeys: Collection<String>): Job? {
@@ -478,7 +479,7 @@ internal suspend fun GlobalDownloadManager.runCancellationConvergence(
                     "songKey=$songKey, attempt=${attemptIndex + 1}"
             )
             cancellationConvergenceDelayMs(attemptIndex + 1)?.let { delayMs ->
-                delay(delayMs)
+                delay(delayMs.milliseconds)
             }
             continue
         }
@@ -584,7 +585,7 @@ internal suspend fun GlobalDownloadManager.runCancellationConvergence(
         }
         val retryDelayMs = cancellationConvergenceDelayMs(attemptIndex + 1)
         if (retryDelayMs != null) {
-            delay(retryDelayMs)
+            delay(retryDelayMs.milliseconds)
         }
     }
     NPLogger.w(
@@ -1340,7 +1341,7 @@ internal fun GlobalDownloadManager.requestAllDownloadTaskCancellation(
                                 stableKeys = clearOwnerStableKeys,
                                 operationIds = clearOperationIds
                             )
-                            delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+                            delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
                             continue
                         }
                         downloadClearVisibility.update(
@@ -1416,7 +1417,7 @@ internal fun GlobalDownloadManager.requestAllDownloadTaskCancellation(
                             stableKeys = clearOwnerStableKeys,
                             operationIds = clearOperationIds
                         )
-                        delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+                        delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
                     }
                 }
             }

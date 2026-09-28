@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationCoo
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationSnapshot
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationToken
 import moe.ouom.neriplayer.core.player.policy.usb.shouldSkipRedundantUsbExclusiveReconfiguration
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class UsbSinkRouteSnapshot(
     val routeGeneration: Long,
@@ -121,7 +122,7 @@ internal class UsbSinkRouteOwner(
         if (deferWhilePlaybackActive(initial, allowWhilePlaybackActive, reason, "before delay")) return false
         val elapsedMs = nowElapsedMs() - lastReconfiguredAtMs
         val cooldownMs = sinkReconfigurationCooldownMs(reason, initial.enabled, bypassCooldown)
-        delay((cooldownMs - elapsedMs).coerceAtLeast(USB_SINK_RECONFIGURE_DEBOUNCE_MS))
+        delay(((cooldownMs - elapsedMs).coerceAtLeast(USB_SINK_RECONFIGURE_DEBOUNCE_MS)).milliseconds)
         return true
     }
 
@@ -189,7 +190,7 @@ internal class UsbSinkRouteOwner(
     ): Boolean {
         if (!coordinator.isLatest(token)) return false
         if (!waitForRelease) return true
-        delay(SYSTEM_AUDIO_RELEASE_DELAY_MS)
+        delay(SYSTEM_AUDIO_RELEASE_DELAY_MS.milliseconds)
         return currentAfterSystemRelease(token, generation, reason)
     }
 
@@ -252,7 +253,7 @@ internal class UsbSinkRouteOwner(
 
     private suspend fun waitForPlaybackToStop() {
         while (port.snapshot().waitForPlaybackToStop()) {
-            delay(SAFE_SWITCH_POLL_MS)
+            delay(SAFE_SWITCH_POLL_MS.milliseconds)
         }
     }
 

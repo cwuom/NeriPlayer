@@ -75,8 +75,8 @@ public class BgEffectPainter {
     private float uLightOffset = 0.1f;
     private float uMusicLevel = 0f;
     private float uBeat = 0f;
-    private float uPointOffset = 0.1f;
-    private float uPointRadiusMulti = 1.0f;
+    private final float uPointOffset = 0.1f;
+    private final float uPointRadiusMulti = 1.0f;
     private float uLevelEase = 0f;
     private float uBeatEase = 0f;
     private float uMotionEase = 0f;

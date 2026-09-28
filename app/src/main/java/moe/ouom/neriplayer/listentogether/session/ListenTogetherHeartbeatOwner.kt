@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import kotlin.time.Duration.Companion.milliseconds
 
 internal interface ListenTogetherHeartbeatPort {
     fun session(): ListenTogetherSessionState
@@ -42,7 +43,7 @@ internal class ListenTogetherHeartbeatOwner(
 
     private suspend fun runHeartbeatLoop() {
         while (kotlinx.coroutines.currentCoroutineContext().isActive) {
-            delay(heartbeatTick())
+            delay((heartbeatTick()).milliseconds)
         }
     }
 

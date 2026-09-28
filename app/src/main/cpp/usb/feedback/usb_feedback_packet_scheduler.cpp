@@ -108,7 +108,7 @@ FeedbackPacketPlan FeedbackPacketScheduler::next() {
     phaseQ32_ = projection.remainderQ32;
     ++scheduledPackets_;
     scheduledFrames_ += projection.totalFrames;
-    const uint32_t frames = static_cast<uint32_t>(projection.totalFrames);
+    const auto frames = static_cast<uint32_t>(projection.totalFrames);
     minimumPacketFrames_ = scheduledPackets_ == 1
         ? frames
         : std::min(minimumPacketFrames_, frames);

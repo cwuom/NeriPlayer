@@ -341,7 +341,7 @@ void appendCandidateRejection(
         return;
     }
     if (!summary->empty()) {
-        *summary += ";";
+        *summary += ';';
     }
     *summary += "iface=" + std::to_string(interfaceNumber) +
         "/alt=" + std::to_string(alternateSetting) + ":" + reason;

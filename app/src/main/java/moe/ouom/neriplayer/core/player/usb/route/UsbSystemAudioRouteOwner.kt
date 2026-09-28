@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.usb.route
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class UsbSystemAudioSnapshot(
     val usbEnabled: Boolean,
@@ -121,7 +122,7 @@ internal class UsbSystemAudioRouteOwner(
             resetAfterNativeCloseTimeout(request, positionMs, closeInFlight)
             return
         }
-        delay(SYSTEM_AUDIO_RELEASE_DELAY_MS)
+        delay(SYSTEM_AUDIO_RELEASE_DELAY_MS.milliseconds)
         resetAfterNativeClosed(request, positionMs)
     }
 
@@ -129,7 +130,7 @@ internal class UsbSystemAudioRouteOwner(
         val startedAtMs = nowElapsedMs()
         while (port.nativeCloseInFlightCount() > 0 &&
             nowElapsedMs() - startedAtMs < NATIVE_CLOSE_WAIT_TIMEOUT_MS) {
-            delay(NATIVE_CLOSE_WAIT_POLL_MS)
+            delay(NATIVE_CLOSE_WAIT_POLL_MS.milliseconds)
         }
         return port.nativeCloseInFlightCount()
     }

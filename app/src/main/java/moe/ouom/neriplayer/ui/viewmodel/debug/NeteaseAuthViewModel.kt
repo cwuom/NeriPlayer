@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import org.json.JSONObject
+import kotlin.time.Duration.Companion.milliseconds
 
 data class NeteaseAuthUiState(
     val phone: String = "",
@@ -117,7 +118,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
             cookieStore.clear()
             cookieRepo.clear()
             clearWebViewLoginState(
-                context = getApplication<Application>(),
+                context = getApplication(),
                 platform = WebLoginPlatform.NETEASE
             )
             _events.tryEmit(
@@ -278,7 +279,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
             var left = 60
             while (left >= 0) {
                 _uiState.value = _uiState.value.copy(countdownSec = left)
-                delay(1000)
+                delay(1000.milliseconds)
                 left--
             }
         }

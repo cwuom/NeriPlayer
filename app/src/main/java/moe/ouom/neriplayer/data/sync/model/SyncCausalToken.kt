@@ -20,7 +20,7 @@ data class SyncCausalToken(
 
     companion object {
         val DETERMINISTIC_COMPARATOR: Comparator<SyncCausalToken> =
-            compareBy<SyncCausalToken>(SyncCausalToken::deviceId)
+            compareBy(SyncCausalToken::deviceId)
                 .thenBy(SyncCausalToken::counter)
     }
 }

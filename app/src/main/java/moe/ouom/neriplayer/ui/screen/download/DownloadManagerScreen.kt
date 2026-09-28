@@ -75,7 +75,6 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("AssignedValueIsNeverRead")
 fun DownloadManagerScreen(
     onBack: () -> Unit,
     onOpenDownloadProgress: () -> Unit,

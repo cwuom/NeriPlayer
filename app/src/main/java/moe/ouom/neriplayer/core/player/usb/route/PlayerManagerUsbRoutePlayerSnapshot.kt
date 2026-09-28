@@ -14,7 +14,16 @@ internal data class UsbRoutePlayerSnapshot(
     val playbackState: Int
 ) {
     companion object {
-        val Uninitialized = UsbRoutePlayerSnapshot(false, false, 0, 0, 0L, false, false, Player.STATE_IDLE)
+        val Uninitialized = UsbRoutePlayerSnapshot(
+            initialized = false,
+            hasMediaItem = false,
+            mediaItemCount = 0,
+            mediaItemIndex = 0,
+            positionMs = 0L,
+            playWhenReady = false,
+            isPlaying = false,
+            playbackState = Player.STATE_IDLE
+        )
     }
 }
 

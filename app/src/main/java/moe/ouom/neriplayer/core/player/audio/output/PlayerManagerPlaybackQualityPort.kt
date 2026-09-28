@@ -29,7 +29,7 @@ internal object PlayerManagerPlaybackQualityPort : PlaybackQualityPort {
     override suspend fun refreshCurrentSong(source: PlaybackAudioSource, reason: String) {
         withContext(Dispatchers.Main) {
             val manager = PlayerManager
-            val song = currentRefreshSongIfSource(source) ?: return@withContext
+            if (currentRefreshSongIfSource(source) == null) return@withContext
             val positionMs = manager.player.currentPosition.coerceAtLeast(0L)
             manager.refreshCurrentSongUrl(
                 resumePositionMs = positionMs,

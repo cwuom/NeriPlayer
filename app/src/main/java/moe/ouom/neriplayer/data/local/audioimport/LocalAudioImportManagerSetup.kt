@@ -30,7 +30,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.util.Locale
-import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.currentCoroutineContext
 
 internal fun LocalAudioImportManager.isLocalSidecarIndexCandidate(name: String): Boolean {
     val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -146,7 +146,7 @@ internal suspend fun LocalAudioImportManager.scanFolderSongsInternal(
     val unknownArtistLabel = context.getString(R.string.music_unknown_artist)
     val quickSongs = buildList {
         traversalResult.candidates.forEachIndexed { index, candidate ->
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
             runCatching {
                 buildQuickFolderScannedSong(
                     candidate = candidate,
@@ -781,7 +781,7 @@ internal suspend fun LocalAudioImportManager.scanExternalStorageFolderWithMediaS
                 force = true
             )
             while (cursor.moveToNext()) {
-                coroutineContext.ensureActive()
+                currentCoroutineContext().ensureActive()
                 scannedRowCount++
                 progress.emit(
                     phase = LocalAudioScanPhase.BUILDING_ENTRIES,

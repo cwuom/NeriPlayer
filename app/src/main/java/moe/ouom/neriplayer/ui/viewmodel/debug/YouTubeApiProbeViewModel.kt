@@ -193,7 +193,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             authRepo.clear()
             client.clearBootstrapCache()
             clearWebViewLoginState(
-                context = getApplication<Application>(),
+                context = getApplication(),
                 platform = WebLoginPlatform.YOUTUBE
             )
             _ui.value = _ui.value.copy(

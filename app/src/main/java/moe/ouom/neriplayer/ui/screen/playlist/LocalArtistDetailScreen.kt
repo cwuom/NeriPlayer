@@ -101,6 +101,7 @@ import moe.ouom.neriplayer.util.format.formatTotalDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.search.playlistSearchValues
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import kotlin.time.Duration.Companion.milliseconds
 
 private fun hasCachedLocalArtistDownload(song: SongItem): Boolean {
     return GlobalDownloadManager.hasDownloadedSongCached(song)
@@ -274,7 +275,7 @@ fun LocalArtistDetailScreen(
 
     LaunchedEffect(showSearch, selectionMode) {
         if (showSearch && !selectionMode && autoShowKeyboard) {
-            delay(120)
+            delay(120.milliseconds)
             searchFocusRequester.requestFocus()
             keyboardController?.show()
         }

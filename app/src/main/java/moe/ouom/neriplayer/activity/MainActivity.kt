@@ -169,6 +169,7 @@ import moe.ouom.neriplayer.util.platform.applyOnePlusHighDensityDisplayCorrectio
 import moe.ouom.neriplayer.util.platform.applyPreferredHighRefreshRate
 import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val STARTUP_SETTINGS_READ_TIMEOUT_MS = 3_000L
 
@@ -191,7 +192,7 @@ private fun GitHubSyncWarningDialog(
     var countdown by remember { mutableIntStateOf(3) }
     LaunchedEffect(Unit) {
         while (countdown > 0) {
-            delay(1000)
+            delay(1000.milliseconds)
             countdown--
         }
     }
@@ -425,7 +426,7 @@ class MainActivity : ComponentActivity() {
                         if (disclaimerAccepted != null && startupOnboardingCompleted != null) {
                             return@LaunchedEffect
                         }
-                        delay(STARTUP_SETTINGS_READ_TIMEOUT_MS)
+                        delay(STARTUP_SETTINGS_READ_TIMEOUT_MS.milliseconds)
                         startupSettingsReadTimedOut = true
                     }
                     var pendingDisclaimerAccepted by rememberSaveable {
@@ -552,7 +553,7 @@ class MainActivity : ComponentActivity() {
                                         STARTUP_LOADING_INDICATOR_DELAY_MILLIS - elapsedMs
                                         ).coerceAtLeast(0L)
                                 if (remainingMs > 0L) {
-                                    delay(remainingMs)
+                                    delay(remainingMs.milliseconds)
                                 }
                                 if (stage == StartupStage.Loading) {
                                     showStartupLoadingIndicator = shouldShowStartupLoadingIndicator(
@@ -591,7 +592,7 @@ class MainActivity : ComponentActivity() {
                                             Lifecycle.State.RESUMED
                                         )
                                     ) {
-                                        delay(100L)
+                                        delay(100L.milliseconds)
                                     }
                                 }
                             ).requestWhenMainReady()
@@ -600,7 +601,7 @@ class MainActivity : ComponentActivity() {
                             if (stage != StartupStage.Main) {
                                 return@LaunchedEffect
                             }
-                            delay(STARTUP_STAGE_CONTENT_DELAY_MILLIS)
+                            delay(STARTUP_STAGE_CONTENT_DELAY_MILLIS.milliseconds)
                             rootLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                                 val warningResult =
                                     startupSyncWarningCoordinator.check(hasShownTokenWarning)
@@ -1334,7 +1335,7 @@ class MainActivity : ComponentActivity() {
     ) {
         externalAudioMetadataHydrationJob?.cancel()
         externalAudioMetadataHydrationJob = lifecycleScope.launch {
-            delay(1200L)
+            delay(1200L.milliseconds)
             if (requestToken != externalAudioRequestToken) {
                 return@launch
             }
@@ -1498,7 +1499,7 @@ class MainActivity : ComponentActivity() {
                         scheduleExternalAudioMetadataHydration(requestToken, firstSong)
                     }
                     // 让播放状态和 mini player 先稳定一帧，再拉起前台服务
-                    delay(16L)
+                    delay(16L.milliseconds)
                     if (requestToken != externalAudioRequestToken) {
                         return@launch
                     }

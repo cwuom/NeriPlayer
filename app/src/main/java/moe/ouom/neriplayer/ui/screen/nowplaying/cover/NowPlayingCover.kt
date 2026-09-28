@@ -76,6 +76,7 @@ import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val NowPlayingCoverImageCrossfadeMs = 220
 private const val NowPlayingCoverFrameCacheLimit = 3
@@ -706,7 +707,7 @@ internal class NowPlayingCoverOwner(
         graceKey = candidate
         if (candidate != null && clearedInput != input) {
             graceJob = scope.launch {
-                delay(nullGraceMs)
+                delay(nullGraceMs.milliseconds)
                 clearRetainedFrameIfCurrent(candidate)
             }
         }

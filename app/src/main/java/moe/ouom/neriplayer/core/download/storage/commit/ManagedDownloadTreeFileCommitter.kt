@@ -5,12 +5,10 @@ import androidx.documentfile.provider.DocumentFile
 import java.io.IOException
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
-import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadTreeFileCommitter(
-    private val treeChildRegistry: ManagedDownloadTreeChildRegistry,
     private val tag: String,
     private val verifyDocumentCommittedLength: (Context, android.net.Uri, Long, String) -> Long
 ) {

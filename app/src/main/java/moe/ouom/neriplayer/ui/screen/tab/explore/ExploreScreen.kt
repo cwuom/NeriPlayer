@@ -180,6 +180,7 @@ import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 private val ExplorePrimaryTabShape = RoundedCornerShape(20.dp)
@@ -300,7 +301,6 @@ private fun youtubeSearchTypeIcon(type: YouTubeExploreSearchType): ImageVector {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
-@Suppress("AssignedValueIsNeverRead")
 fun ExploreScreen(
     gridState: LazyGridState,
     topAppBarState: TopAppBarState,
@@ -570,7 +570,7 @@ fun ExploreScreen(
             vm.search("")
             return@LaunchedEffect
         }
-        delay(SEARCH_INPUT_DEBOUNCE_MS)
+        delay(SEARCH_INPUT_DEBOUNCE_MS.milliseconds)
         val displayQuery = searchQuery.trim()
         if (
             ui.searchKeyword != effectiveSearchKeyword ||

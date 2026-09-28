@@ -94,6 +94,7 @@ import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.widget.playbackWidgetProgressRefreshBucket
+import kotlin.time.Duration.Companion.milliseconds
 
 private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
     source: String,
@@ -115,7 +116,7 @@ private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
             throw e
         } catch (e: Exception) {
             NPLogger.e("NERI-APS", "$source collect failed; restarting", e)
-            delay(SERVICE_FLOW_COLLECTOR_RESTART_DELAY_MS)
+            delay(SERVICE_FLOW_COLLECTOR_RESTART_DELAY_MS.milliseconds)
         }
     }
 }
@@ -951,7 +952,7 @@ class AudioPlayerService : Service() {
     private suspend fun awaitConcurrentPlayerInitialization() {
         repeat(400) {
             if (!PlayerManager.initializationInProgress) return
-            delay(25L)
+            delay(25L.milliseconds)
         }
     }
 
@@ -1603,7 +1604,7 @@ class AudioPlayerService : Service() {
 
     private suspend fun persistTaskRemovedPlaybackState(reason: String): Boolean {
         return runCatching {
-            withTimeout(TASK_REMOVED_STATE_PERSIST_TIMEOUT_MS) {
+            withTimeout(TASK_REMOVED_STATE_PERSIST_TIMEOUT_MS.milliseconds) {
                 PlayerManager.persistStateNow(
                     positionMs = PlayerManager.playbackPositionFlow.value,
                     shouldResumePlayback = false,

@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class ListenTogetherListenerWatchdogSnapshot(
     val session: ListenTogetherSessionState,
@@ -55,7 +56,7 @@ internal class ListenTogetherListenerWatchdogOwner(
 
     private suspend fun runWatchdog() {
         while (kotlinx.coroutines.currentCoroutineContext().isActive) {
-            delay(WATCHDOG_INTERVAL_MS)
+            delay(WATCHDOG_INTERVAL_MS.milliseconds)
             onWatchdogTick(port.snapshot())
         }
     }

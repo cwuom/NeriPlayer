@@ -84,6 +84,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedBut
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.util.format.formatFileSize
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 internal fun StorageCacheDetailsContent(
@@ -191,7 +192,7 @@ private fun StorageScanCard() {
 
     LaunchedEffect(scanStageLabels) {
         while (isActive) {
-            delay(SCAN_STAGE_DURATION_MS)
+            delay(SCAN_STAGE_DURATION_MS.milliseconds)
             activeStage = (activeStage + 1) % scanStageLabels.size
         }
     }

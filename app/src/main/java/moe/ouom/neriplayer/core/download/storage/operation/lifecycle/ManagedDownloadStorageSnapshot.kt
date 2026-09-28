@@ -333,7 +333,7 @@ internal fun ManagedDownloadStorage.findMetadataByDirectLookup(
                             ) != null
                         }
                         .minWithOrNull(
-                            compareBy<QueriedTreeChild>(
+                            compareBy(
                                 {
                                     ManagedDownloadTreeNaming.metadataNameOrdinal(
                                         it.name,
@@ -794,7 +794,7 @@ internal fun ManagedDownloadStorage.findPendingMetadataForAudioBlocking(
                         }
                         .map(ManagedDownloadStoredEntryMapper::fromFile)
                         .minWithOrNull(
-                            compareBy<StoredEntry>(
+                            compareBy(
                                 { entry ->
                                     ManagedDownloadTreeNaming.metadataNameOrdinal(
                                         entry.name,
@@ -825,7 +825,7 @@ internal fun ManagedDownloadStorage.findPendingMetadataForAudioBlocking(
                         }
                         .map(ManagedDownloadStoredEntryMapper::fromTreeChild)
                         .minWithOrNull(
-                            compareBy<StoredEntry>(
+                            compareBy(
                                 { entry ->
                                     ManagedDownloadTreeNaming.metadataNameOrdinal(
                                         entry.name,

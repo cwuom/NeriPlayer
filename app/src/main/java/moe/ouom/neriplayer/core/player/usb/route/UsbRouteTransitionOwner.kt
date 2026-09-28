@@ -6,6 +6,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlin.time.Duration.Companion.milliseconds
 
 internal class UsbRouteTransitionOwner(
     private val scope: CoroutineScope,
@@ -82,7 +83,7 @@ internal class UsbRouteTransitionOwner(
     private fun scheduleToggleTimeout(reason: String, logMessage: String, preparingReason: String) {
         toggleJob?.cancel()
         toggleJob = scope.launch {
-            delay(TOGGLE_TIMEOUT_MS)
+            delay(TOGGLE_TIMEOUT_MS.milliseconds)
             if (!toggleActive || toggleReason != reason) return@launch
             NPLogger.w("NERI-UsbExclusive", "$logMessage: reason=$reason")
             clearToggle()
@@ -149,7 +150,7 @@ internal class UsbRouteTransitionOwner(
         cancelSystemAudioWatchdog()
         lateinit var job: Job
         job = scope.launch(start = CoroutineStart.LAZY) {
-            delay(delayMs)
+            delay(delayMs.milliseconds)
             if (systemAudioWatchdogJob !== job) return@launch
             systemAudioWatchdogJob = null
             block()

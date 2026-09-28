@@ -143,7 +143,6 @@ internal object ManagedDownloadStorage {
         deleteTrustedReference = ::deleteTrustedReference
     )
     internal val treeFileCommitter = ManagedDownloadTreeFileCommitter(
-        treeChildRegistry = treeChildRegistry,
         tag = TAG,
         verifyDocumentCommittedLength = { context, uri, expectedSizeBytes, description ->
             verifyDocumentCommittedLength(

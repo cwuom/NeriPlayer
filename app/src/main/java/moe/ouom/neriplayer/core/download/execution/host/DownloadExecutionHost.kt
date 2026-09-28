@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.util.units.DAY_MS
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.milliseconds
 
 class DefaultDownloadExecutionHost(
     internal val operationStore: DownloadExecutionOperationStore =
@@ -1486,7 +1487,7 @@ class DefaultDownloadExecutionHost(
                     if (transferRunning.isNotEmpty() || sideChannelRunning.isNotEmpty()) {
                         // 任一 operation 完成就继续填充窗口，不等待同一轮其它慢任务
                         val awaitCompletion: suspend () -> Any = {
-                            select<Any> {
+                            select {
                                 transferRunning.forEach { (operationId, execution) ->
                                     execution.onAwait { result ->
                                         PumpExecutionCompletion(
@@ -1517,7 +1518,7 @@ class DefaultDownloadExecutionHost(
                                 transferLaneOccupancy(appContext) < configuredDispatchWindow(appContext)
                         }
                         val completed = if (graceDelayMs != null) {
-                            withTimeoutOrNull(graceDelayMs) { awaitCompletion() } ?: continue
+                            withTimeoutOrNull(graceDelayMs.milliseconds) { awaitCompletion() } ?: continue
                         } else {
                             awaitCompletion()
                         }
@@ -1560,7 +1561,7 @@ class DefaultDownloadExecutionHost(
                         if (queueExhausted && remainingGraceDelayMs != null &&
                             !recoveryRequired.get()
                         ) {
-                            delay(remainingGraceDelayMs)
+                            delay(remainingGraceDelayMs.milliseconds)
                             continue
                         }
                         if (queueExhausted) {
@@ -1602,7 +1603,7 @@ class DefaultDownloadExecutionHost(
                                 transferLaneOccupancy(appContext) < configuredDispatchWindow(appContext)
                         }
                         if (graceDelayMs != null) {
-                            delay(graceDelayMs)
+                            delay(graceDelayMs.milliseconds)
                             continue
                         }
                         if (selection?.hasSchedulableRequest != true) {

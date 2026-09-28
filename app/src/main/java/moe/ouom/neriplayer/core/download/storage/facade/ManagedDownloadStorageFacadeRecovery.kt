@@ -670,10 +670,10 @@ internal suspend fun ManagedDownloadStorage.cleanupCancelledPendingDownloadArtif
                 operationId = operation.operationId
             )
         }
-        val referencesToDelete = cleanupPlans.flatMapTo(linkedSetOf<String>()) { (_, plan) ->
+        val referencesToDelete = cleanupPlans.flatMapTo(linkedSetOf()) { (_, plan) ->
             plan.referencesToDelete
         }
-        val protectedPendingReferences = cleanupPlans.flatMapTo(linkedSetOf<String>()) { (_, plan) ->
+        val protectedPendingReferences = cleanupPlans.flatMapTo(linkedSetOf()) { (_, plan) ->
             plan.protectedReferences
         }
         val deleteReferencesByStableKey = cleanupPlans

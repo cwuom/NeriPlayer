@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val SongTitleBounceInitialDelayMillis = 850L
 private const val SongTitleBounceEndpointDelayMillis = 850L
@@ -95,7 +96,7 @@ private fun BouncingSongTitle(
             pixelsPerSecond = scrollVelocityPxPerSecond
         )
         while (isActive) {
-            delay(SongTitleBounceInitialDelayMillis)
+            delay(SongTitleBounceInitialDelayMillis.milliseconds)
             scrollOffset.animateTo(
                 targetValue = bounceDistancePx.toFloat(),
                 animationSpec = tween(
@@ -103,7 +104,7 @@ private fun BouncingSongTitle(
                     easing = FastOutSlowInEasing
                 )
             )
-            delay(SongTitleBounceEndpointDelayMillis)
+            delay(SongTitleBounceEndpointDelayMillis.milliseconds)
             scrollOffset.animateTo(
                 targetValue = 0f,
                 animationSpec = tween(
@@ -111,7 +112,7 @@ private fun BouncingSongTitle(
                     easing = FastOutSlowInEasing
                 )
             )
-            delay(SongTitleBounceEndpointDelayMillis)
+            delay(SongTitleBounceEndpointDelayMillis.milliseconds)
         }
     }
 

@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val PLAYABLE_BOOTSTRAP_TTL_MS = 10L * 60L * 1000L
 private val BOOTSTRAP_PAGE_ORIGINS = listOf(YOUTUBE_MUSIC_ORIGIN, YOUTUBE_WEB_ORIGIN)
@@ -723,7 +724,7 @@ internal class YouTubePlaybackBootstrapOwner(
                         "YouTubeMusicPlayback",
                         "bootstrap rate limited, backoff=${backoffMs}ms before origin=$origin"
                     )
-                    delay(backoffMs)
+                    delay(backoffMs.milliseconds)
                 }
             }
             val startedAtMs = System.currentTimeMillis()

@@ -49,7 +49,7 @@ import moe.ouom.neriplayer.data.settings.ThemeDefaults
 private val NeriTypography = Typography()
 private const val ThemeColorTransitionDurationMs = 420
 
-internal val LocalNeriTargetColorScheme = staticCompositionLocalOf<ColorScheme> {
+internal val LocalNeriTargetColorScheme = staticCompositionLocalOf {
     lightColorScheme()
 }
 

@@ -716,7 +716,7 @@ internal suspend fun ManagedDownloadStorage.restoreManagedMigrationEntriesFromJo
         return@coroutineScope null
     }
     val sourceEntries = manifest.values.sortedWith(
-        compareBy<ManagedMigrationSourceEntry>(
+        compareBy(
             { it.sourceSubdirectory.orEmpty() },
             { it.sourceName },
             { it.sourceReference }

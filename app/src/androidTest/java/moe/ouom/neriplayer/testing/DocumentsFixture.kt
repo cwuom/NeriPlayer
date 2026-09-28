@@ -84,10 +84,16 @@ internal object DocumentsFixture {
             while (completed.count != 0L && SystemClock.elapsedRealtime() < deadline) {
                 if (confirmPicker) {
                     val now = SystemClock.elapsedRealtime()
-                    val roots = (automation.windows.mapNotNull { it.root } +
-                        listOfNotNull(automation.rootInActiveWindow)).distinctBy { it.windowId }
+                    val activeRoot = automation.rootInActiveWindow
+                    val roots = (listOfNotNull(activeRoot) +
+                        automation.windows.mapNotNull { it.root }).distinctBy { it.windowId }
                     picker@ for (root in roots) {
-                        if (root.packageName?.toString() !in setOf("com.android.documentsui", "com.google.android.documentsui")) continue
+                        // 系统确认弹窗和选择器控件可能共用 android 根节点
+                        val packageName = root.packageName?.toString()
+                        if (packageName !in setOf(
+                                "android", "com.android.documentsui", "com.google.android.documentsui"
+                            )) continue
+                        if (packageName == "android" && root.windowId != activeRoot?.windowId) continue
                         val ids = if (now - selectedAt < 1_000L) listOf("android:id/button1") else listOf(
                             "android:id/button1",
                             "com.android.documentsui:id/action_menu_select",
@@ -105,12 +111,25 @@ internal object DocumentsFixture {
                 completed.await(50, TimeUnit.MILLISECONDS)
             }
             check(completed.count == 0L) {
-                "test directory authorization timed out: $initial, active=${automation.rootInActiveWindow?.packageName}"
+                "test directory authorization timed out: $initial, active=${automation.rootInActiveWindow?.packageName}, " +
+                    "windows=${automation.windows.mapNotNull { it.root?.packageName }.distinct()}, pickerSelected=${selectedAt != 0L}"
             }
             check(resultCode.get() == Activity.RESULT_OK) { "test directory authorization failed: ${response.get()}" }
             return requireNotNull(response.get())
         } finally {
             if (confirmPicker) {
+                if (completed.count != 0L) {
+                    runCatching {
+                        repeat(2) {
+                            if (completed.count != 0L) {
+                                ParcelFileDescriptor.AutoCloseInputStream(
+                                    automation.executeShellCommand("input keyevent 4")
+                                ).use { it.readBytes() }
+                                completed.await(500, TimeUnit.MILLISECONDS)
+                            }
+                        }
+                    }
+                }
                 automation.serviceInfo = automation.serviceInfo.apply { flags = previousFlags }
             }
         }

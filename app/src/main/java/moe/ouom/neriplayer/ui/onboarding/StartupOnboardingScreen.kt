@@ -144,6 +144,7 @@ import moe.ouom.neriplayer.core.startup.permission.StartupMediaPermission
 import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
 import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.ui.theme.background.CustomBackground
+import kotlin.time.Duration.Companion.milliseconds
 
 private enum class StartupStep {
     Language,
@@ -458,7 +459,7 @@ fun StartupOnboardingScreen(
             showNotificationPermissionWarning()
         }
         scope.launch {
-            delay(500L)
+            delay(500L.milliseconds)
             permissionNavigationBlocked = false
         }
     }
@@ -468,7 +469,7 @@ fun StartupOnboardingScreen(
         localMediaPermissionGranted = granted
         permissionRequestActive = false
         scope.launch {
-            delay(500L)
+            delay(500L.milliseconds)
             permissionNavigationBlocked = false
         }
     }
@@ -704,7 +705,7 @@ fun StartupOnboardingScreen(
             val captureView = activity?.window?.decorView?.rootView ?: rootView.rootView
             try {
                 awaitStartupStableDraw(captureView)
-                val snapshot = withTimeoutOrNull(STARTUP_THEME_REVEAL_CAPTURE_TIMEOUT_MILLIS) {
+                val snapshot = withTimeoutOrNull(STARTUP_THEME_REVEAL_CAPTURE_TIMEOUT_MILLIS.milliseconds) {
                     runCatching {
                         captureStartupThemeRevealSnapshot(
                             activity = activity,
@@ -759,7 +760,7 @@ fun StartupOnboardingScreen(
         if (!themeRevealActive) {
             return@LaunchedEffect
         }
-        delay(STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS)
+        delay(STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS.milliseconds)
         finishThemeReveal(activeThemeRevealToken)
     }
     DisposableEffect(lifecycleOwner) {
@@ -1221,7 +1222,7 @@ fun StartupOnboardingScreen(
                             )
                         ) {
                             scope.launch {
-                                delay(180L)
+                                delay(180L.milliseconds)
                                 if (!notificationPermissionGranted) {
                                     showNotificationPermissionWarning()
                                 }
@@ -1800,7 +1801,7 @@ private suspend fun awaitStartupNextDraw(view: View) {
         return
     }
 
-    withTimeoutOrNull(120L) {
+    withTimeoutOrNull(120L.milliseconds) {
         suspendCancellableCoroutine { continuation ->
             val observer = view.viewTreeObserver
             var handled = false

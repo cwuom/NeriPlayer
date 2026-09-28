@@ -305,7 +305,7 @@ internal fun ManagedDownloadStorage.readLyricsBundleFromManagedRootFast(
             }
         }
     )
-    val values = buildMap<LyricKind, Pair<String?, Boolean>> {
+    val values = buildMap {
         if (referenced.hasOriginalSidecar) {
             put(LyricKind.ORIGINAL, referenced.lyric to true)
         }

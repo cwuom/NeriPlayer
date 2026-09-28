@@ -12,6 +12,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playbackVisualKey
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val NOTIFICATION_ARTWORK_SIZE_PX = 256
 private const val MEDIA_ARTWORK_MAX_RETRY_ATTEMPTS = 2
@@ -417,7 +418,7 @@ internal class PlaybackArtworkOwner(
         artworkRetryAttemptCount += 1
         artworkRetryJob?.cancel()
         artworkRetryJob = scope.launch {
-            delay(MEDIA_ARTWORK_RETRY_COOLDOWN_MS)
+            delay(MEDIA_ARTWORK_RETRY_COOLDOWN_MS.milliseconds)
             if (!isCurrentCover(source, songKey)) return@launch
             if (snapshot(songKey).mediaReady) return@launch
             requestLargeIconIfNeeded(source)

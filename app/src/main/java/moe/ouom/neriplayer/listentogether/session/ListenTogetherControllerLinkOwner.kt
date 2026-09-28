@@ -4,7 +4,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.url.ShareableListenTogetherStreamResolution
@@ -28,6 +27,7 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.util.units.SECOND_MS
+import kotlin.time.Duration.Companion.milliseconds
 
 internal interface ListenTogetherLinkSessionPort {
     fun sessionState(): ListenTogetherSessionState
@@ -381,7 +381,7 @@ internal class ListenTogetherControllerLinkOwner(
                 playbackResolutionPending = false
             )
         ) {
-            delay(timing.resolutionRetryDelayMs)
+            delay(timing.resolutionRetryDelayMs.milliseconds)
             return true
         }
         if (shouldPublishControllerLinkUnavailable(
@@ -409,7 +409,7 @@ internal class ListenTogetherControllerLinkOwner(
     private suspend fun awaitPlaybackResolution(stableKey: String): Boolean {
         repeat(timing.playbackResolutionPollCount) {
             if (!isPlaybackResolutionPending(stableKey)) return true
-            delay(timing.playbackResolutionPollMs)
+            delay(timing.playbackResolutionPollMs.milliseconds)
         }
         return !isPlaybackResolutionPending(stableKey)
     }

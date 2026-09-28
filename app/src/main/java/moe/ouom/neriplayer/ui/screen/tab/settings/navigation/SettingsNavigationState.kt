@@ -59,7 +59,7 @@ internal fun settingsSearchResultsState(
 
 @Composable
 private fun rememberInitialSettingsPageState(): MutableState<SettingsPage?> =
-    rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    rememberSaveable { mutableStateOf(null) }
 
 @Composable
 private fun settingsSplitLayout(): Boolean = currentWindowWidthDp() >= 840.dp

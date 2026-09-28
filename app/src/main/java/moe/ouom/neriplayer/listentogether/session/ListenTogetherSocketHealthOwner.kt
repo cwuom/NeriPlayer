@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.listentogether.network.ws.LISTEN_TOGETHER_SOCKET_RESP
 import moe.ouom.neriplayer.listentogether.network.ws.shouldReconnectListenTogetherSocket
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import kotlin.time.Duration.Companion.milliseconds
 
 internal interface ListenTogetherSocketHealthPort {
     fun session(): ListenTogetherSessionState
@@ -151,7 +152,7 @@ internal class ListenTogetherSocketHealthOwner(
         NPLogger.d(TAG, "startSocketKeepAlive()")
         keepAliveJob = scope.launch {
             while (isActive) {
-                delay(keepAliveTick())
+                delay((keepAliveTick()).milliseconds)
             }
         }
     }
@@ -191,7 +192,7 @@ internal class ListenTogetherSocketHealthOwner(
     fun scheduleForegroundProbe(roomId: String?, probeStartedAtElapsedMs: Long) {
         foregroundProbeJob?.cancel()
         foregroundProbeJob = scope.launch {
-            delay(FOREGROUND_PROBE_TIMEOUT_MS)
+            delay(FOREGROUND_PROBE_TIMEOUT_MS.milliseconds)
             val session = port.session()
             if (!shouldReconnectListenTogetherForegroundSocket(
                     reconnectEnabled = port.reconnectEnabled(),

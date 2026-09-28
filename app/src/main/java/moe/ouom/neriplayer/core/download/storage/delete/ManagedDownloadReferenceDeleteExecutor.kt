@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val MEDIA_STORE_DELETE_BATCH_SIZE = 128
 
@@ -175,7 +176,7 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                     unresolvedReferences.isNotEmpty() &&
                     attempt < SAF_DELETE_MAX_ATTEMPTS - 1
                 ) {
-                    delay(SAF_DELETE_RETRY_DELAY_MS * (attempt + 1L))
+                    delay((SAF_DELETE_RETRY_DELAY_MS * (attempt + 1L)).milliseconds)
                 }
             }
             if (unresolvedReferences.isNotEmpty()) {

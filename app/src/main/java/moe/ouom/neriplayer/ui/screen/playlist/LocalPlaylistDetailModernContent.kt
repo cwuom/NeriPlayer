@@ -146,6 +146,7 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.reorderable
+import kotlin.time.Duration.Companion.milliseconds
 
 
 @Composable
@@ -295,7 +296,7 @@ internal fun LocalPlaylistDetailModernContent(
                     searchQuery = searchQuery
                 )
                 if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
-                if (shouldAutoFocus) delay(120)
+                if (shouldAutoFocus) delay(120.milliseconds)
                 searchFocusRequester.requestFocus()
                 keyboardController?.show()
             }

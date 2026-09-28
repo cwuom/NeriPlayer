@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import org.json.JSONTokener
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val YOUTUBE_EJS_WEBVIEW_CACHE_DIRECTORY = "youtube/ejs_webview"
 private const val YOUTUBE_EJS_WEBVIEW_PAGE_FILE_NAME = "session.html"
@@ -279,7 +280,7 @@ internal class YouTubeEjsWebViewFallbackSolver(context: Context) {
             }
         }
         return try {
-            withTimeout(YOUTUBE_EJS_WEBVIEW_PAGE_TIMEOUT_MS) { pageReady.await() }
+            withTimeout(YOUTUBE_EJS_WEBVIEW_PAGE_TIMEOUT_MS.milliseconds) { pageReady.await() }
             Session(playerJsUrl = playerJsUrl, webView = created, rendererDead = rendererDead)
         } catch (error: Throwable) {
             destroyWebView(created)
@@ -302,7 +303,7 @@ internal class YouTubeEjsWebViewFallbackSolver(context: Context) {
             }
         }
         return try {
-            withTimeout(YOUTUBE_EJS_WEBVIEW_EVALUATION_TIMEOUT_MS) { result.await() }
+            withTimeout(YOUTUBE_EJS_WEBVIEW_EVALUATION_TIMEOUT_MS.milliseconds) { result.await() }
                 ?: throw IOException("local EJS WebView returned no result")
         } catch (error: TimeoutCancellationException) {
             throw IOException("local EJS WebView evaluation timed out", error)

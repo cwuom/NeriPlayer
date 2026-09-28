@@ -26,6 +26,7 @@ import moe.ouom.neriplayer.core.download.storage.commit.sameMigrationReplacement
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class ManagedMigrationCopyResult(
     val copiedEntry: CopiedMigrationEntry? = null,
@@ -573,7 +574,7 @@ internal class ManagedDownloadMigrationCopyWorker(
                 )
             }
             if (attempt < MIGRATION_IO_MAX_ATTEMPTS - 1) {
-                delay(MIGRATION_IO_RETRY_DELAY_MS * (attempt + 1))
+                delay((MIGRATION_IO_RETRY_DELAY_MS * (attempt + 1)).milliseconds)
             }
         }
         val cause = checkNotNull(lastError) {

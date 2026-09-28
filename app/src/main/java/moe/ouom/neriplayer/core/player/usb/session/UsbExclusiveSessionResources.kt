@@ -492,13 +492,21 @@ internal class UsbExclusiveSessionResources(
             handle,
             outputFormat.bufferDurationMs
         )
-        if (!bufferConfigured) return PreparedPcmStages(false, false, false)
+        if (!bufferConfigured) return PreparedPcmStages(
+            bufferConfigured = false,
+            transferWindowConfigured = false,
+            prepared = false
+        )
         val transferWindowConfigured = configureTransferWindow(
             handle,
             outputFormat.bufferDurationMs,
             appInForeground
         )
-        if (!transferWindowConfigured) return PreparedPcmStages(true, false, false)
+        if (!transferWindowConfigured) return PreparedPcmStages(
+            bufferConfigured = true,
+            transferWindowConfigured = false,
+            prepared = false
+        )
         val prepared = native.preparePlayerPcm(
             handle = handle,
             inputSampleRate = inputSampleRate,
@@ -508,7 +516,11 @@ internal class UsbExclusiveSessionResources(
                 outputFormat = outputFormat
             )?.encoding ?: inputEncoding
         )
-        return PreparedPcmStages(true, true, prepared)
+        return PreparedPcmStages(
+            bufferConfigured = true,
+            transferWindowConfigured = true,
+            prepared = prepared
+        )
     }
 
     fun rearmPlayerPcm(
@@ -537,7 +549,11 @@ internal class UsbExclusiveSessionResources(
                 appInForeground
             )
         } else {
-            PreparedPcmStages(false, false, false)
+            PreparedPcmStages(
+                bufferConfigured = false,
+                transferWindowConfigured = false,
+                prepared = false
+            )
         }
         native.setPlayerFocusMuted(handle, focusSuppressed)
         return RearmResult(

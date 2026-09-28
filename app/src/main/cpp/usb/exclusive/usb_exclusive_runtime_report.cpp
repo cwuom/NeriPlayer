@@ -437,7 +437,7 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
         std::string claimedInterfaceSummary;
         for (const ClaimedUsbInterface& entry : holder->device.claimedAudioInterfaces) {
             if (!claimedInterfaceSummary.empty()) {
-                claimedInterfaceSummary += ",";
+                claimedInterfaceSummary += ',';
             }
             claimedInterfaceSummary += std::to_string(entry.interfaceNumber);
         }

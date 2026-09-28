@@ -44,7 +44,7 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
 
     fun dismissDownloadedSongDeleteFailure(deleteId: Long) {
         GlobalDownloadManager.dismissDownloadedSongDeleteFailure(
-            getApplication<Application>(), deleteId
+            getApplication(), deleteId
         )
     }
 

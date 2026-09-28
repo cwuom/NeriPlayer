@@ -107,7 +107,7 @@ internal class ManagedDownloadCommitMigrationTargetResolver(
                             } == true
                     }
                     .minWithOrNull(
-                        compareBy<QueriedTreeChild>(
+                        compareBy(
                             { if (it.name.equals(displayName, ignoreCase = true)) 0 else 1 },
                             {
                                 metadataAudioName?.let { audioName ->
@@ -203,7 +203,7 @@ internal class ManagedDownloadCommitMigrationTargetResolver(
                 .mapNotNull { name -> readExistingEntry(File(parent, name)) }
                 .toList()
             val entriesByExactName = entries.associateBy(ManagedDownloadStorage.StoredEntry::name)
-            val metadataCandidates = buildMap<String, MutableList<ManagedDownloadStorage.StoredEntry>> {
+            val metadataCandidates = buildMap {
                 entries.forEach { entry ->
                     ManagedDownloadTreeNaming.metadataAudioName(entry.name)
                         ?.let { audioName ->
@@ -272,7 +272,7 @@ internal class ManagedDownloadCommitMigrationTargetResolver(
                         } == true
                 }
                 .minWithOrNull(
-                    compareBy<ManagedDownloadStorage.StoredEntry>(
+                    compareBy(
                         { entry -> if (entry.name.equals(displayName, ignoreCase = true)) 0 else 1 },
                         { entry ->
                             metadataAudioName?.let { audioName ->

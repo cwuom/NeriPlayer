@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.IOException
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val TAG = "NERI-HomeVM"
 private const val HOME_NETEASE_SONG_LIMIT = 30
@@ -140,7 +141,7 @@ internal class HomeSectionLoadCoordinator(
     maxConcurrentLoadsPerGroup: Int = HOME_SECTION_LOAD_PARALLELISM_PER_GROUP
 ) {
     private val totalSemaphore = Semaphore(maxConcurrentLoads)
-    private val groupSemaphores = HomeSectionLoadGroup.values().associateWith { group ->
+    private val groupSemaphores = HomeSectionLoadGroup.entries.associateWith { group ->
         Semaphore(maxConcurrentLoadsPerGroup)
     }
 
@@ -162,7 +163,7 @@ internal class HomeSectionLoadCoordinator(
                 }
             }.toMutableList()
             while (pending.isNotEmpty()) {
-                select<Unit> {
+                select {
                     pending.forEach { deferred ->
                         deferred.onAwait { result ->
                             pending.remove(deferred)
@@ -438,7 +439,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            delay(HOME_INITIAL_LOAD_DEFER_MS)
+            delay(HOME_INITIAL_LOAD_DEFER_MS.milliseconds)
             if (!homeRecommendationsBootstrapped) {
                 homeRecommendationsBootstrapped = true
                 refreshNeteaseHome()

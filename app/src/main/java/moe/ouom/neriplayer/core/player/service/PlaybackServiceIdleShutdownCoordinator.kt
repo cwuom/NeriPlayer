@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 internal class PlaybackServiceIdleShutdownCoordinator(
     private val scope: CoroutineScope,
@@ -24,7 +25,7 @@ internal class PlaybackServiceIdleShutdownCoordinator(
 
         val scheduledStartId = currentStartId()
         shutdownJob = scope.launch {
-            delay(delayMs)
+            delay(delayMs.milliseconds)
             shutdownJob = null
             if (scheduledStartId != currentStartId() || !isEligible()) {
                 refresh()

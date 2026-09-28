@@ -59,6 +59,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import kotlin.time.Duration.Companion.milliseconds
 
 internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
     context: Context,
@@ -360,7 +361,7 @@ internal fun GlobalDownloadManager.playDownloadedSongImpl(context: Context, song
                 refreshIfMissing = true
             )
             if (hydratedSong != quickSong) {
-                delay(resolveDownloadedPlaybackHydrationDelayMs(quickSong, hydratedSong))
+                delay((resolveDownloadedPlaybackHydrationDelayMs(quickSong, hydratedSong)).milliseconds)
                 if (!isLatestDownloadedPlaybackRequest(requestGeneration) ||
                     !shouldApplyDownloadedPlaybackHydration(
                         currentSong = PlayerManager.currentSongFlow.value,

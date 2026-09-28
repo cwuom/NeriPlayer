@@ -152,7 +152,7 @@ class GitHubSyncManager private constructor(context: Context) {
                 lastRemoteSha != null &&
                 lastRemoteSha != remoteSnapshot.version.sha
             val lastSyncTime = storage.getLastSyncTime()
-            val uploadResolutionResult = SyncUploadRetryExecutor.execute<GitHubRemotePayload, MergeResult, GitHubRemoteVersion>(
+            val uploadResolutionResult = SyncUploadRetryExecutor.execute(
                 initialRemote = remoteSnapshot?.let { snapshot ->
                     GitHubRemotePayload(
                         data = snapshot.data,

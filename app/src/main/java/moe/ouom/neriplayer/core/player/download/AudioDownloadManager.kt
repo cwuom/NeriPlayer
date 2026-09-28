@@ -1,5 +1,3 @@
-@file:Suppress("SpellCheckingInspection")
-
 package moe.ouom.neriplayer.core.player.download
 
 /*

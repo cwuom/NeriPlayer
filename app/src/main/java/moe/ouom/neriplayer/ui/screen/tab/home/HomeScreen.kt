@@ -281,7 +281,7 @@ fun HomeScreen(
                     shouldValidateHomeContinueCoverReference(entry.picUrl)
         }
         .mapTo(linkedSetOf()) { entry -> entry.id }
-    val localPlaylistUsageLookup by produceState<Map<Long, LocalPlaylist>>(
+    val localPlaylistUsageLookup by produceState(
         initialValue = emptyMap(),
         key1 = localPlaylistSnapshotVersion,
         key2 = localPlaylistCoverFallbackIds,

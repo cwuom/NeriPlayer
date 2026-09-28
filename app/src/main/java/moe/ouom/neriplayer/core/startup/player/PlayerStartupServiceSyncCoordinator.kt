@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
+import kotlin.time.Duration.Companion.milliseconds
 
 internal class PlayerStartupServiceSyncCoordinator(
     private val awaitUiFrame: suspend () -> Unit,
@@ -25,7 +26,7 @@ internal class PlayerStartupServiceSyncCoordinator(
     ) {
         awaitUiFrame()
         if (PlayerStartupServiceSyncPlanner.isLocalPlaybackCommandSource(source)) {
-            delay(PlayerStartupServiceSyncPlanner.LOCAL_PLAYBACK_COMMAND_DELAY_MS)
+            delay(PlayerStartupServiceSyncPlanner.LOCAL_PLAYBACK_COMMAND_DELAY_MS.milliseconds)
         }
         val plan = PlayerStartupServiceSyncPlanner.planServiceStart(
             source = source,

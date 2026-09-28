@@ -107,7 +107,6 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("AssignedValueIsNeverRead")
 fun EditSongInfoSheet(
     viewModel: NowPlayingViewModel,
     originalSong: SongItem,
@@ -138,7 +137,6 @@ fun EditSongInfoSheet(
         originalSong
     }
     val actualSongKey = actualSong.stableKey()
-    val latestActualSongKeyState = rememberUpdatedState(actualSongKey)
     val canReplaceCoverFromLocalFile = shouldAllowLocalCoverReplacement(actualSong, context)
     val resolvedDisplayCoverUrl = rememberSongDisplayCoverUrl(actualSong)
 
@@ -159,7 +157,6 @@ fun EditSongInfoSheet(
             playbackPort = PlayerManagerNowPlayingSongEditPlaybackPort
         )
     }
-    var coverUrl by owner.coverUrlState
     var songName by owner.songNameState
     var artistName by owner.artistNameState
     var showSearchResults by owner.showSearchResultsState
@@ -167,14 +164,11 @@ fun EditSongInfoSheet(
     var lyricsEditorSeed by owner.lyricsEditorSeedState
     var pendingLyricsSourceSeed by owner.pendingLyricsSourceSeedState
     var isPendingEmbeddedLyricsLoading by owner.isPendingEmbeddedLyricsLoadingState
-    var shouldClearLyrics by owner.shouldClearLyricsState
-    var shouldRestoreLyrics by owner.shouldRestoreLyricsState
     var showLocalMetadataWriteBackConfirm by owner.showLocalMetadataWriteBackConfirmState
     var showFillLyricsMetadataWriteBackConfirm by owner.showFillLyricsMetadataWriteBackConfirmState
     var isOriginalInfoRestoring by owner.isOriginalInfoRestoringState
     var showLocalCoverSyncConfirm by owner.showLocalCoverSyncConfirmState
     var pendingCoverReplacementSong by owner.pendingCoverReplacementSongState
-    var userHasEdited by owner.userHasEditedState
     var isCoverImporting by owner.isCoverImportingState
     var isSaving by owner.isSavingState
 
@@ -312,7 +306,12 @@ fun EditSongInfoSheet(
                 offlineMode = offlineMode,
                 canReplaceFromFile = canReplaceCoverFromLocalFile,
                 onRestore = {
-                    applyOriginalInfo(true, false, false, false)
+                    applyOriginalInfo(
+                        restoreCover = true,
+                        restoreTitle = false,
+                        restoreArtist = false,
+                        restoreLyrics = false
+                    )
                 },
                 onSelectLocalCover = {
                     clearEditSongInfoFocus()
@@ -325,7 +324,14 @@ fun EditSongInfoSheet(
                 label = stringResource(R.string.music_edit_title),
                 restoreDescription = stringResource(R.string.music_restore_title),
                 enabled = owner.canEditFields(),
-                onRestore = { applyOriginalInfo(false, true, false, false) }
+                onRestore = {
+                    applyOriginalInfo(
+                        restoreCover = false,
+                        restoreTitle = true,
+                        restoreArtist = false,
+                        restoreLyrics = false
+                    )
+                }
             )
             EditSongEditableTextField(
                 value = artistName,
@@ -333,7 +339,14 @@ fun EditSongInfoSheet(
                 label = stringResource(R.string.music_edit_artist),
                 restoreDescription = stringResource(R.string.music_restore_artist),
                 enabled = owner.canEditFields(),
-                onRestore = { applyOriginalInfo(false, false, true, false) }
+                onRestore = {
+                    applyOriginalInfo(
+                        restoreCover = false,
+                        restoreTitle = false,
+                        restoreArtist = true,
+                        restoreLyrics = false
+                    )
+                }
             )
             EditSongLyricsButton(
                 busy = owner.isLyricsButtonBusy(),
@@ -363,7 +376,14 @@ fun EditSongInfoSheet(
                 showSearchResults = true
                 focusManager.clearFocus()
             },
-            onRestoreAll = { applyOriginalInfo(true, true, true, true) },
+            onRestoreAll = {
+                applyOriginalInfo(
+                    restoreCover = true,
+                    restoreTitle = true,
+                    restoreArtist = true,
+                    restoreLyrics = true
+                )
+            },
             onSave = {
                 owner.requestSave(
                     song = actualSong,

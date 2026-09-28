@@ -123,7 +123,7 @@ internal fun LocalScanPreviewScreen(
 ) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
-    val previewItems by produceState<List<LocalScanPreviewItem>>(
+    val previewItems by produceState(
         initialValue = emptyList(),
         songs,
         metadataPendingKeys,
@@ -139,7 +139,7 @@ internal fun LocalScanPreviewScreen(
         }
     }
     val listState = rememberLazyListState()
-    val displayedItems by produceState<List<LocalScanPreviewItem>>(
+    val displayedItems by produceState(
         initialValue = emptyList(),
         previewItems,
         query,

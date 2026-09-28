@@ -949,6 +949,10 @@ It also checks owned `.cpp` / `.h` files under USB `exclusive/`.
 Update its file list when adding components. Third-party libusb and test files
 are outside this line limit.
 
+`LocalManagementLineBudgetTest` applies the same line limit to download,
+local-data, and Library code and related tests. When moving an entry point or
+splitting a directory, update its required paths and scanned scope.
+
 Extract state, async jobs, and cleanup into the component responsible for them,
 and access external capabilities through narrow interfaces. Player and global
 service access for the extracted `PlayerManager` components belongs in their

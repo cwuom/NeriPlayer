@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val NowPlayingActiveContentColorTransitionDurationMs = 220
 internal const val NowPlayingActiveContentColorStabilizationDelayMs = 72
@@ -54,7 +55,7 @@ internal fun rememberStableNowPlayingActiveContentColor(targetColor: Color): Col
     var settledTargetColor by remember { mutableStateOf(targetColor) }
 
     LaunchedEffect(targetColor) {
-        delay(NowPlayingActiveContentColorStabilizationDelayMs.toLong())
+        delay((NowPlayingActiveContentColorStabilizationDelayMs.toLong()).milliseconds)
         settledTargetColor = targetColor
     }
 

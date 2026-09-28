@@ -32,6 +32,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal fun GlobalDownloadManager.completeStartupProgressRestoreReady() {
@@ -124,7 +125,7 @@ internal suspend fun GlobalDownloadManager.awaitDownloadAdmissionTicketForStable
         if (openTicket == null) {
             downloadAdmissionGate.awaitOpen()
         } else {
-            delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS)
+            delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS.milliseconds)
         }
     }
 }
@@ -162,7 +163,7 @@ internal fun GlobalDownloadManager.scheduleStartupArtifactRecovery(context: Cont
     }
     scope.launch {
         try {
-            delay(STARTUP_ARTIFACT_RECOVERY_HANDOFF_DELAY_MS)
+            delay(STARTUP_ARTIFACT_RECOVERY_HANDOFF_DELAY_MS.milliseconds)
             startupRecoveryMutex.withLock {
                 val admissionTicket = downloadAdmissionGate.openTicketOrNull()
                 if (
@@ -286,7 +287,7 @@ internal suspend fun GlobalDownloadManager.awaitDownloadAdmissionTicket(
         if (openTicket == null) {
             downloadAdmissionGate.awaitOpen()
         } else {
-            delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS)
+            delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS.milliseconds)
         }
     }
 }

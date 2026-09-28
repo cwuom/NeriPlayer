@@ -137,8 +137,9 @@ bool uac2EndpointPacketSizeValidForSpeed(
             return payloadBytes >= 683U;
         case 3:
             return false;
+        default:
+            return false;
     }
-    return false;
 }
 
 Uac2FeedbackTimingProfile buildUac2FeedbackTimingProfile(

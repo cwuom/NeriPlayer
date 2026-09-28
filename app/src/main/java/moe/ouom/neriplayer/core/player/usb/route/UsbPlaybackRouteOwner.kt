@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveRecover
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class UsbPlaybackRouteSnapshot(
     val enabled: Boolean,
@@ -232,10 +233,17 @@ internal class UsbPlaybackRouteOwner(
             NPLogger.w("NERI-UsbExclusive", "first completion timeout recovery limit reached: reason=$reason runtime=$runtimeReport")
             return false
         }
-        val scheduled = recoverIfUnhealthy("first_completion_timeout_recovery:$reason", true)
+        val scheduled = recoverIfUnhealthy(
+            reason = "first_completion_timeout_recovery:$reason",
+            forceRecovery = true
+        )
         if (!scheduled) {
             nativePort.requireFreshOpen("first_completion_timeout_recovery")
-            sink.schedule("usb_exclusive_first_completion_timeout_recovery", true, true)
+            sink.schedule(
+                reason = "usb_exclusive_first_completion_timeout_recovery",
+                allowWhilePlaybackActive = true,
+                bypassCooldown = true
+            )
         }
         NPLogger.w("NERI-UsbExclusive", "recover native USB playback after first completion timeout: attempt=$attempt reason=$reason runtime=$runtimeReport")
         return true
@@ -306,7 +314,7 @@ internal class UsbPlaybackRouteOwner(
         val startedAtMs = nowElapsedMs()
         var gate: String? = initialGateReason
         while (shouldWaitForOpenGate(port.snapshot(), gate, nowElapsedMs() - startedAtMs, OPEN_GATE_WAIT_TIMEOUT_MS)) {
-            delay(OPEN_GATE_WAIT_POLL_MS)
+            delay(OPEN_GATE_WAIT_POLL_MS.milliseconds)
             nativePort.clearRecoverableOpenBlock("manual_play_wait:$reason")
             gate = nativePort.openGateReason()
         }
@@ -374,7 +382,11 @@ internal class UsbPlaybackRouteOwner(
         nativePort.requireFreshOpen("usb_recovery:$reason")
         port.markPreparing(true, "usb_recovery:$reason")
         port.applyAudioFocus()
-        sink.schedule("usb_recovery:$reason", true, true)
+        sink.schedule(
+            reason = "usb_recovery:$reason",
+            allowWhilePlaybackActive = true,
+            bypassCooldown = true
+        )
         NPLogger.w(
             "NERI-UsbExclusive",
             "recover USB exclusive playback by rebuilding native route: reason=$reason force=$forceRecovery " +

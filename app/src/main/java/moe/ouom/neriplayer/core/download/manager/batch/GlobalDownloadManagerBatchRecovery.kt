@@ -54,6 +54,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal suspend fun GlobalDownloadManager.claimAndPrepareBatchArtifact(
@@ -1262,7 +1263,7 @@ internal suspend fun GlobalDownloadManager.buildBatchDownloadLibrarySnapshot(
     context: Context
 ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
     val refreshedSnapshot = withTimeoutOrNull(
-        STARTUP_INITIAL_SCAN_WAIT_TIMEOUT_MS
+        STARTUP_INITIAL_SCAN_WAIT_TIMEOUT_MS.milliseconds
     ) {
         loadFinalizationRecoverySnapshot(
             context = context,

@@ -86,7 +86,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -196,6 +195,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricsL
 import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
 import moe.ouom.neriplayer.ui.screen.playback.resolveListenTogetherProgressSeekEnabled
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val LyricsPageTransitionDurationMs = 300
 private const val CoverSourceBadgeRevealBufferMs = 120
@@ -401,7 +401,6 @@ private fun seekToLyricSafely(
     ExperimentalSharedTransitionApi::class
 )
 @Composable
-@Suppress("AssignedValueIsNeverRead")
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
     onOpenCurrentPlaybackSource: (() -> Unit)? = null,
@@ -633,7 +632,6 @@ fun NowPlayingScreen(
     var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
 
-    val clipboard = LocalClipboard.current
     val screenScope = rememberCoroutineScope()
 
     val downloadCurrentCover: () -> Unit = {
@@ -912,7 +910,7 @@ fun NowPlayingScreen(
         } else {
             animateCoverPageSourceBadge = returningFromLyrics
             if (returningFromLyrics) {
-                delay(CoverSourceBadgeRevealDelayMs.toLong())
+                delay((CoverSourceBadgeRevealDelayMs.toLong()).milliseconds)
             }
             showCoverPageSourceBadge = true
         }
@@ -923,7 +921,7 @@ fun NowPlayingScreen(
             rawPlaybackSourceType != null -> playbackSourceType = rawPlaybackSourceType
             playbackSourceSongKey == null -> playbackSourceType = null
             else -> {
-                delay(250)
+                delay(250.milliseconds)
                 playbackSourceType = null
             }
         }

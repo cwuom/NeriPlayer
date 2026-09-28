@@ -26,6 +26,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.R
+import kotlin.time.Duration.Companion.milliseconds
 
 object LyriconManager {
     private var provider: LyriconProvider? = null
@@ -340,7 +341,7 @@ object LyriconManager {
                 while (isActive) {
                     val activeProvider = provider
                     if (activeProvider == null || !enabled) {
-                        delay(LYRICON_FEED_INTERVAL_MS)
+                        delay(LYRICON_FEED_INTERVAL_MS.milliseconds)
                         continue
                     }
                     val mediaPositionMs = resolveLyriconFeedPosition(
@@ -355,7 +356,7 @@ object LyriconManager {
                         )
                         runCatching { activeProvider.player.setPosition(displayPositionMs) }
                     }
-                    delay(LYRICON_FEED_INTERVAL_MS)
+                    delay(LYRICON_FEED_INTERVAL_MS.milliseconds)
                 }
             } finally {
                 feedRunning = false

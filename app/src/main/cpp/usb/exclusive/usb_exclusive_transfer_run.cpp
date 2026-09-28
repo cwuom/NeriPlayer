@@ -944,17 +944,17 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept {
                     packetReportedNoDevice = true;
                 }
                 if (packet.status == LIBUSB_TRANSFER_COMPLETED) {
-                    const int completedBytes = neri::usb::completedIsoPacketBytes(
+                    const unsigned int completedBytes = neri::usb::completedIsoPacketBytes(
                         true,
                         packet.length,
                         packet.actual_length
                     );
-                    completedPacketBytes += completedBytes;
+                    completedPacketBytes += static_cast<int64_t>(completedBytes);
                     if (completedPacketPrefixOpen) {
                         if (completedBytes == 0) {
                             completedPacketPrefixOpen = false;
                         } else {
-                            completedPacketPrefixBytes += completedBytes;
+                            completedPacketPrefixBytes += static_cast<int64_t>(completedBytes);
                         }
                     }
                 }

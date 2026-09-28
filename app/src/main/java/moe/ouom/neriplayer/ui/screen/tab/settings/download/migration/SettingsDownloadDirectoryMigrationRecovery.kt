@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrat
 import moe.ouom.neriplayer.core.download.storage.migration.migrationProgressFromWorkData
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 
 internal interface DownloadDirectoryMigrationRecoveryGateway {
     fun readSnapshot(): PersistedMigrationUiSnapshot
@@ -291,7 +292,7 @@ internal class DownloadDirectoryMigrationRecoveryController(
                 return
             }
             if (snapshot != null && !reconcileStartupSnapshot(snapshot, tracker)) return
-            delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS)
+            delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS.milliseconds)
         }
     }
 
@@ -325,7 +326,7 @@ internal class DownloadDirectoryMigrationRecoveryController(
         val tracker = MigrationSnapshotReadTracker()
         while (true) {
             val nextDelay = inspectActiveWork(workId, tracker) ?: return
-            delay(nextDelay)
+            delay(nextDelay.milliseconds)
         }
     }
 

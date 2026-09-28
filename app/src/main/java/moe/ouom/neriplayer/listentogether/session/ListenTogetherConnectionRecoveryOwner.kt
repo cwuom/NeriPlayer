@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.listentogether.session
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -11,7 +12,7 @@ import moe.ouom.neriplayer.listentogether.network.reconnect.isTerminalListenToge
 import moe.ouom.neriplayer.listentogether.network.reconnect.listenTogetherReconnectDelayMs
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
-import kotlin.coroutines.coroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 
 internal interface ListenTogetherConnectionRecoveryPort {
     fun session(): ListenTogetherSessionState
@@ -106,11 +107,12 @@ internal class ListenTogetherConnectionRecoveryOwner(
         scheduledSession: ListenTogetherSessionState,
         scheduledGeneration: Long
     ) {
-        delay(delayMs)
+        delay(delayMs.milliseconds)
+        val currentJob = currentCoroutineContext()[Job]
         synchronized(lock) {
             val latest = port.session()
             if (!canRunListenTogetherReconnect(scheduledSession, latest, enabled, generation == scheduledGeneration)) return
-            if (reconnectJob == coroutineContext[Job]) reconnectJob = null
+            if (reconnectJob == currentJob) reconnectJob = null
             port.updateBackgroundKeepAlive("reconnect_attempt:$reason")
             NPLogger.d(TAG, "reconnect(): roomId=${latest.roomId}, attempt=$attempt")
             if (!recoverMembershipBeforeReconnect("scheduled_reconnect:$reason")) port.connectWebSocket()
@@ -199,8 +201,9 @@ internal class ListenTogetherConnectionRecoveryOwner(
         } catch (error: Throwable) {
             onMembershipRecoveryFailure(error, reason, snapshot, recoveryGeneration)
         } finally {
+            val currentJob = currentCoroutineContext()[Job]
             synchronized(lock) {
-                if (membershipRecoveryJob == coroutineContext[Job]) membershipRecoveryJob = null
+                if (membershipRecoveryJob == currentJob) membershipRecoveryJob = null
             }
         }
     }
