@@ -3,7 +3,8 @@ package moe.ouom.neriplayer.core.download.model
 sealed interface ManagedLibraryRefreshOutcome {
     data class Published(
         val rootKey: String?,
-        val songCount: Int
+        val songCount: Int,
+        val audioFileNames: Set<String> = emptySet()
     ) : ManagedLibraryRefreshOutcome
 
     data class Preserved(

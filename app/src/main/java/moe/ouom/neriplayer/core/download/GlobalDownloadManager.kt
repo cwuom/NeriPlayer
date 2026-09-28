@@ -890,9 +890,10 @@ object GlobalDownloadManager {
     }
 
     internal fun shouldCompleteProcessingAfterCatalogPublish(
-        state: ManagedLibraryProcessingState
+        state: ManagedLibraryProcessingState,
+        migrationRequestActive: Boolean
     ): Boolean {
-        return this.shouldCompleteProcessingAfterCatalogPublishImpl(state)
+        return this.shouldCompleteProcessingAfterCatalogPublishImpl(state, migrationRequestActive)
     }
 
     fun refreshDownloadedSongsForManager(

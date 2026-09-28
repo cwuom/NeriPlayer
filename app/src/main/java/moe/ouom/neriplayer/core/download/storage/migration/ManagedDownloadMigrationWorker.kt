@@ -44,6 +44,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -343,10 +344,6 @@ internal fun shouldAbortSupersededMigrationWorker(
     return persistedUuid != null && activeUuid != null
 }
 
-internal fun shouldRetryAfterMigrationFinalScan(
-    outcome: ManagedLibraryRefreshOutcome
-): Boolean = outcome !is ManagedLibraryRefreshOutcome.Published
-
 internal fun migrationProgressCheckpointIds(
     currentWorkId: String,
     inputCheckpointWorkId: String?,
@@ -362,100 +359,6 @@ internal fun migrationProgressCheckpointIds(
     ).mapNotNull { value ->
         value?.trim()?.takeIf(String::isNotBlank)
     }.distinct().toList()
-}
-
-internal fun mergeMigrationRequestForWorker(
-    persisted: ManagedMigrationRequest?,
-    input: ManagedMigrationRequest,
-    inputKeys: Set<String>
-): ManagedMigrationRequest {
-    persisted ?: return input.normalized()
-
-    fun hasInput(key: String): Boolean = key in inputKeys
-    if (
-        hasInput(ManagedDownloadMigrationWorker.KEY_FROM_DIRECTORY_URI) &&
-            !ManagedDownloadStorage.areEquivalentDirectoryUris(
-                persisted.fromDirectoryUri,
-                input.fromDirectoryUri
-            )
-    ) {
-        throw ManagedDownloadMigrationException.transient(
-            "持久迁移请求与任务源目录不一致"
-        )
-    }
-    if (
-        hasInput(ManagedDownloadMigrationWorker.KEY_TO_DIRECTORY_URI) &&
-            !ManagedDownloadStorage.areEquivalentDirectoryUris(
-                persisted.toDirectoryUri,
-                input.toDirectoryUri
-            )
-    ) {
-        throw ManagedDownloadMigrationException.transient(
-            "持久迁移请求与任务目标目录不一致"
-        )
-    }
-    if (
-        hasInput(ManagedDownloadMigrationWorker.KEY_TARGET_LABEL) &&
-            persisted.targetLabel.isNotBlank() &&
-            persisted.targetLabel != input.targetLabel
-    ) {
-        throw ManagedDownloadMigrationException.transient(
-            "持久迁移请求与任务标签不一致"
-        )
-    }
-    if (
-        hasInput(ManagedDownloadMigrationWorker.KEY_RELEASE_PREVIOUS_PERMISSION) &&
-            persisted.releasePreviousPermission != input.releasePreviousPermission
-    ) {
-        throw ManagedDownloadMigrationException.transient(
-            "持久迁移请求与权限策略不一致"
-        )
-    }
-    val checkpointWorkId = if (
-        hasInput(ManagedDownloadMigrationWorker.KEY_CHECKPOINT_WORK_ID)
-    ) {
-        input.checkpointWorkId ?: persisted.checkpointWorkId
-    } else {
-        persisted.checkpointWorkId
-    }
-    return persisted.copy(
-        workId = input.workId,
-        fromDirectoryUri = if (
-            hasInput(ManagedDownloadMigrationWorker.KEY_FROM_DIRECTORY_URI)
-        ) {
-            input.fromDirectoryUri
-        } else {
-            persisted.fromDirectoryUri
-        },
-        toDirectoryUri = if (
-            hasInput(ManagedDownloadMigrationWorker.KEY_TO_DIRECTORY_URI)
-        ) {
-            input.toDirectoryUri
-        } else {
-            persisted.toDirectoryUri
-        },
-        targetLabel = if (
-            hasInput(ManagedDownloadMigrationWorker.KEY_TARGET_LABEL)
-        ) {
-            input.targetLabel
-        } else {
-            persisted.targetLabel
-        },
-        releasePreviousPermission = if (
-            hasInput(ManagedDownloadMigrationWorker.KEY_RELEASE_PREVIOUS_PERMISSION)
-        ) {
-            input.releasePreviousPermission
-        } else {
-            persisted.releasePreviousPermission
-        },
-        minimumSourceEntryCount = maxOf(
-            persisted.minimumSourceEntryCount,
-            input.minimumSourceEntryCount
-        ),
-        checkpointWorkId = checkpointWorkId,
-        // 终态请求可能是上一次 Worker 被杀后重新执行，不能在合并输入时重新打开自动恢复
-        autoResume = persisted.autoResume
-    ).normalized()
 }
 
 internal fun shouldAbortTerminalMigrationWorker(
@@ -982,12 +885,75 @@ class ManagedDownloadMigrationWorker(
                     )
                 )
             }
-            // 目录切换只有在最终扫描发布后才算完成, 否则 UI 可能短暂显示空列表
-            val finalScanOutcome = GlobalDownloadManager.scanLocalFilesAwait(
-                applicationContext,
-                forceRefresh = true
+            // 目录切换只有目标目录的最终扫描发布后才算完成
+            val expectedRootKey = ManagedDownloadStorage.snapshotRootKeyForOperation(
+                context = applicationContext,
+                directoryUri = toDirectoryUri,
+                useDefaultRootWhenDirectoryUriMissing = true
             )
-            if (shouldRetryAfterMigrationFinalScan(finalScanOutcome)) {
+            // 目标文件校验不保证每首歌都已经发布到 catalog
+            val finalJournal = checkpointStore.readReplacementJournal()
+            val expectedAudioFileNames = finalJournal
+                ?.let(::migrationExpectedCatalogAudioFileNames)
+                .orEmpty()
+            val minimumSongCount = if (finalJournal == null) {
+                minimumSourceEntryCount
+            } else {
+                expectedAudioFileNames.size
+            }
+            var finalScanOutcome: ManagedLibraryRefreshOutcome? = null
+            for (attempt in 1..MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS) {
+                if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
+                    return Result.success()
+                }
+                if (!ManagedDownloadStorage.areEquivalentDirectoryUris(
+                        ManagedDownloadStorage.configuredDirectoryUri(),
+                        toDirectoryUri
+                    )
+                ) {
+                    ManagedDownloadStorage.updateConfiguredTreeUri(toDirectoryUri)
+                }
+                val outcome = GlobalDownloadManager.scanLocalFilesAwait(
+                    applicationContext,
+                    forceRefresh = true
+                )
+                finalScanOutcome = outcome
+                if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
+                    return Result.success()
+                }
+                if (!shouldRetryAfterMigrationFinalScan(
+                        outcome,
+                        expectedRootKey,
+                        minimumSongCount,
+                        expectedAudioFileNames
+                    )
+                ) {
+                    break
+                }
+                val scanDetail = when (outcome) {
+                    is ManagedLibraryRefreshOutcome.Published ->
+                        "Published(root=${outcome.rootKey}, songs=${outcome.songCount}, " +
+                            "missingAudio=${expectedAudioFileNames.count { it !in outcome.audioFileNames }})"
+                    else -> outcome.toString()
+                }
+                NPLogger.w(
+                    TAG,
+                    "迁移后目标目录扫描未发布: attempt=$attempt, " +
+                        "expectedRoot=$expectedRootKey, minimumSongs=$minimumSongCount, " +
+                        "expectedAudioNames=${expectedAudioFileNames.size}, " +
+                        "outcome=$scanDetail"
+                )
+                if (attempt < MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS) {
+                    delay(IMMEDIATE_FINAL_SCAN_RETRY_DELAY_MS)
+                }
+            }
+            if (shouldRetryAfterMigrationFinalScan(
+                    checkNotNull(finalScanOutcome),
+                    expectedRootKey,
+                    minimumSongCount,
+                    expectedAudioFileNames
+                )
+            ) {
                 val retryFinalScan = shouldRetryMigrationAttempt(
                     runAttemptCount = logicalRetryAttemptCount,
                     maxRetryAttempts = MAX_RETRY_ATTEMPTS
@@ -1507,6 +1473,8 @@ class ManagedDownloadMigrationWorker(
         private const val NOTIFICATION_ID = 1004
         private const val TAG = "ManagedDownloadMigrationWorker"
         private const val MAX_RETRY_ATTEMPTS = 2
+        private const val MAX_IMMEDIATE_FINAL_SCAN_ATTEMPTS = 3
+        private const val IMMEDIATE_FINAL_SCAN_RETRY_DELAY_MS = 150L
         private const val WORK_PROGRESS_MIN_INTERVAL_MS = 750L
         private const val WORK_PROGRESS_PERCENT_DELTA = 1
         private const val NOTIFICATION_MIN_INTERVAL_MS = 1_000L

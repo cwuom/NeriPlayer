@@ -975,7 +975,7 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
-    fun `committed receipt audio count ignores metadata and sidecars`() {
+    fun `committed receipts identify catalog audio and exclude bare or deleted sources`() {
         val target = ManagedDownloadStorage.StoredEntry(
             name = "track.mp3",
             reference = "content://target/track",
@@ -1019,6 +1019,41 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertEquals(1, committedMigrationAudioReceiptCount(journal))
         assertTrue(committedMigrationReceiptsMeetAudioMinimum(journal, 1))
         assertFalse(committedMigrationReceiptsMeetAudioMinimum(journal, 2))
+        val expectedNames = migrationExpectedCatalogAudioFileNames(journal)
+        assertEquals(setOf("track.mp3"), expectedNames)
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = "content://target",
+                    songCount = 10,
+                    audioFileNames = setOf("existing.mp3")
+                ),
+                expectedRootKey = "content://target",
+                minimumSongCount = expectedNames.size,
+                expectedAudioFileNames = expectedNames
+            )
+        )
+
+        val metadataLess = journal.copy(
+            cleanupReceipts = journal.cleanupReceipts.filterNot { receipt ->
+                receipt.sourceName.endsWith(".npmeta.json")
+            }
+        )
+        assertEquals(emptySet<String>(), migrationExpectedCatalogAudioFileNames(metadataLess))
+        assertFalse(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published("content://target", 0),
+                expectedRootKey = "content://target",
+                minimumSongCount = migrationExpectedCatalogAudioFileNames(metadataLess).size
+            )
+        )
+
+        val deleted = journal.copy(
+            cleanupReceipts = emptyList(),
+            targetNamesByReference = mapOf("content://source/audio" to "track.mp3"),
+            deletedSourceAudioCount = 1
+        )
+        assertEquals(emptySet<String>(), migrationExpectedCatalogAudioFileNames(deleted))
     }
 
     @Test
@@ -1029,25 +1064,96 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
-    fun `final scan must publish before migration can complete`() {
+    fun `final scan must publish the target and its migrated audio before completion`() {
+        val targetRoot = "content://provider/tree/target"
         assertFalse(
             shouldRetryAfterMigrationFinalScan(
                 ManagedLibraryRefreshOutcome.Published(
-                    rootKey = "content://provider/tree/target",
+                    rootKey = targetRoot,
                     songCount = 1_000
-                )
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
+            )
+        )
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = "content://provider/tree/source",
+                    songCount = 1_000
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
+            )
+        )
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = targetRoot,
+                    songCount = 0
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
+            )
+        )
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = targetRoot,
+                    songCount = 1
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 2
+            )
+        )
+        assertFalse(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = targetRoot,
+                    songCount = 2
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 2
+            )
+        )
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = targetRoot,
+                    songCount = 1_000,
+                    audioFileNames = setOf("old-song.flac")
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1,
+                expectedAudioFileNames = setOf("migrated-song.flac")
+            )
+        )
+        assertFalse(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = targetRoot,
+                    songCount = 1_000,
+                    audioFileNames = setOf("old-song.flac", "migrated-song.flac")
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1,
+                expectedAudioFileNames = setOf("migrated-song.flac")
             )
         )
         assertTrue(
             shouldRetryAfterMigrationFinalScan(
                 ManagedLibraryRefreshOutcome.Preserved(
                     ManagedLibraryRefreshPreserveReason.INCOMPLETE_ROOT_ENUMERATION
-                )
+                ),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
             )
         )
         assertTrue(
             shouldRetryAfterMigrationFinalScan(
-                ManagedLibraryRefreshOutcome.Failed("provider unavailable")
+                ManagedLibraryRefreshOutcome.Failed("provider unavailable"),
+                expectedRootKey = targetRoot,
+                minimumSongCount = 1
             )
         )
     }
