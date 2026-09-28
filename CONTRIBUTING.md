@@ -801,10 +801,24 @@ CRAP 质量门禁与职责拆分：
 ./gradlew :app:verifyCrap
 ```
 
-此任务使用 Debug JVM 的 JaCoCo 覆盖率，列出所有 app 方法中 CRAP > 8 的条目；
-`config/quality/crap-scope.json` 覆盖的完整源文件中，任意方法 CRAP > 9 即失败。
+此任务使用 Debug JVM 的 JaCoCo 覆盖率，输出可映射到 app 主源码的全部 JVM 方法分数，
+并单独列出 CRAP > 8 的条目。`config/quality/crap-scope.json` 的 `source_patterns`
+覆盖完整源文件，`method_scopes` 覆盖原入口中受本次拆分影响的方法；
+范围内任意方法 CRAP > 9 即失败，范围外的方法仍保留在完整报告中。
+分数使用 JaCoCo 复杂度覆盖率近似路径覆盖率；不衡量 Native 代码，也不能代替耦合度审查。
 `:app:check` 和 Android CI 均执行门禁；完整评分和范围报告位于
 `app/build/reports/crap/`，口径与依赖见 [质量检查说明](tools_pub/quality/README.md)。
+
+`OwnedMainSourceLineBudgetTest` 约束本轮拆分的自有主源码及拆出的组件严格少于 2000 物理行，
+USB `exclusive/` 下的自有 `.cpp` / `.h` 也在检查范围内。新增组件时应同步维护测试中的文件清单；
+第三方 libusb 和测试文件不属于这个行数上限。
+
+拆分时应把状态、异步任务和释放逻辑交给负责该职责的组件，通过小接口接入外部能力。
+`PlayerManager` 的播放器和全局服务访问集中在对应的 `PlayerManager*Port` 适配器；
+一起听的房间状态、成员生命周期、连接恢复和控制结果由 `session/` 下各组件分别维护。
+`NowPlayingScreen`、`SettingsScreen` 和 `NeriApp` 组合页面与功能组件，具体编辑会话、目录选择、
+设置领域绑定和导航副作用在对应组件中处理。不要把原入口作为 receiver 搬进扩展文件，
+也不要让新组件回读原入口的内部状态。
 存储统计由 `StorageUsageScanner` 通过数据源接口采集快照，`StorageUsagePresenter`
 只读取快照和字符串资源；`StorageCacheCleaner` 通过文件和平台清理端口执行操作，Room 和全局服务访问集中在
 `StorageUsageAndroid.kt`。新增组件应保持这个单向依赖，并纳入完整文件门禁。
