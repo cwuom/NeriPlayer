@@ -1,5 +1,7 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/core/download/catalog/assembly/*.kt",
+    "moe/ouom/neriplayer/core/download/catalog/host/DownloadedSongLocalMetadataAdapter.kt",
     "moe/ouom/neriplayer/core/api/lyrics/amll/AmllLyricsResolver.kt",
     "moe/ouom/neriplayer/core/lyrics/PlainLyrics.kt",
     "moe/ouom/neriplayer/core/player/session/PlayerQueueSessionBindings.kt",
@@ -203,6 +205,21 @@
     "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/core/download/catalog/DownloadedSongBuilder.kt",
+      "class": "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilder",
+      "methods": [
+        "build$default", "build$lambda$0", "build$lambda$1",
+        "readMetadata", "fileInfo", "resolveCoverInfo",
+        "resolveCoverInfo$lambda$0", "resolveCoverInfo$lambda$1",
+        "resolveCoverInfo$lambda$0$0", "resolveCoverInfo$lambda$2", "resolveCoverInfo$lambda$3"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/download/catalog/DownloadedSongBuilder.kt",
+      "class": "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilderKt",
+      "methods": ["shouldInspectDownloadedLocalLyrics"]
+    },
     {
       "source": "moe/ouom/neriplayer/core/api/lyrics/AmllTtmlClient.kt",
       "class": "moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient",

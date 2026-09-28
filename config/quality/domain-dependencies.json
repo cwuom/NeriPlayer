@@ -1,5 +1,33 @@
 [
   {
+    "name": "downloaded-song-assembly",
+    "package": "moe.ouom.neriplayer.core.download.catalog.assembly.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "moe.ouom.neriplayer.core.download.ManagedDownloadStorage$DownloadedAudioMetadata",
+      "moe.ouom.neriplayer.core.download.model.DownloadedSong"
+    ],
+    "bridges": {
+      "moe.ouom.neriplayer.core.download.ManagedDownloadStorage": [],
+      "moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState": [],
+      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata": [],
+      "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilderKt": [
+        "Methodref fallbackDownloadedSongId:(Ljava/lang/String;)J",
+        "Methodref shouldInspectDownloadedLocalLyrics:(ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"
+      ],
+      "moe.ouom.neriplayer.core.download.policy.DownloadLifecyclePoliciesKt": [
+        "Methodref shouldInspectDownloadedAudioDetails:(ZLmoe/ouom/neriplayer/core/download/ManagedDownloadStorage$DownloadedAudioMetadata;Ljava/lang/String;Z)Z",
+        "Methodref resolveDownloadedLyricOverride:(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"
+      ],
+      "moe.ouom.neriplayer.core.download.model.DownloadModelsKt": [
+        "Methodref withRecoveredRemoteSourceStableKey:(Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;)Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;"
+      ]
+    }
+  },
+  {
     "name": "playback-queue",
     "package": "moe.ouom.neriplayer.core.player.queue.",
     "descriptor_only": [],

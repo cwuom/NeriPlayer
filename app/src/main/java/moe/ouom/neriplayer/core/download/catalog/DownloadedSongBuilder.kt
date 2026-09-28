@@ -4,23 +4,25 @@ import android.content.Context
 import androidx.core.net.toUri
 import java.nio.ByteBuffer
 import java.security.MessageDigest
-import kotlin.LazyThreadSafetyMode
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
-import moe.ouom.neriplayer.core.download.model.withRecoveredRemoteSourceStableKey
+import moe.ouom.neriplayer.core.download.catalog.assembly.DownloadedSongAssembler
+import moe.ouom.neriplayer.core.download.catalog.assembly.DownloadedSongCoverInfo
+import moe.ouom.neriplayer.core.download.catalog.assembly.DownloadedSongFileInfo
+import moe.ouom.neriplayer.core.download.catalog.assembly.DownloadedSongLyricContent
+import moe.ouom.neriplayer.core.download.catalog.assembly.acceptIndexedDownloadedCover
+import moe.ouom.neriplayer.core.download.catalog.assembly.selectDownloadedSongCover
+import moe.ouom.neriplayer.core.download.catalog.host.toSongLocalMetadata
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates
 import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName
-import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricOverride
-import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDetails
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLookup
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
-import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 
 internal fun fallbackDownloadedSongId(reference: String): Long {
     val digest = MessageDigest.getInstance("SHA-256")
@@ -48,209 +50,92 @@ internal class DownloadedSongBuilder(
         verifySnapshotReferences: Boolean = true
     ): DownloadedSong {
         val effectiveSnapshot = snapshot ?: ManagedDownloadStorage.buildDownloadLibrarySnapshot(context)
-        val metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.logicalName]
-            ?: effectiveSnapshot.metadataEntriesByAudioName[storedAudio.name]
-        val snapshotMetadata = ManagedDownloadStorage.metadataForAudioEntry(
-            effectiveSnapshot,
-            storedAudio
+        val metadata = readMetadata(context, storedAudio, effectiveSnapshot)
+        val cover = resolveCoverInfo(
+            context, storedAudio, metadata, effectiveSnapshot,
+            allowSlowLocalInspection, verifySnapshotReferences
         )
-        val metadata = snapshotMetadata ?: metadataStore.read(
-            context = context,
-            audio = storedAudio,
-            metadataEntry = metadataEntry
+        val lyrics = resolveLyricContent(
+            context, storedAudio, metadata, effectiveSnapshot,
+            loadLyricContents, resolveLyricFallbacks
         )
-        val safeCoverUrl = sanitizeDownloadedCoverMetadataReference(
-            metadata?.coverUrl,
-            effectiveSnapshot
-        )
-        val safeCustomCoverUrl = sanitizeDownloadedCoverMetadataReference(
-            metadata?.customCoverUrl,
-            effectiveSnapshot
-        )
-        val safeOriginalCoverUrl = sanitizeDownloadedCoverMetadataReference(
-            metadata?.originalCoverUrl,
-            effectiveSnapshot
-        )
-        val (parsedArtist, parsedTitle) = parseDownloadedFileName(storedAudio.name)
-        val indexedCoverReference = resolveIndexedDownloadedCoverReference(
+        return DownloadedSongAssembler(
             metadata = metadata,
-            storedAudio = storedAudio,
-            snapshot = effectiveSnapshot
-        )?.takeIf { reference ->
-            (
-                !verifySnapshotReferences && reference in effectiveSnapshot.knownReferences
-            ) || isAccessibleManagedReference(
-                ManagedDownloadReferenceIo.inspect(context, reference)
-            )
-        }
-        val cachedCoverReference = if (indexedCoverReference == null) {
-            resolveAccessibleManagedReference(
-                context = context,
-                ManagedDownloadArtifactPlanner.trustedMetadataReference(
-                    metadata?.coverPath,
-                    effectiveSnapshot
-                ),
-                metadata?.coverUrl,
-                metadata?.originalCoverUrl,
-                trustedReferences = effectiveSnapshot.knownReferences.takeIf {
-                    !verifySnapshotReferences
-                } ?: emptySet()
-            )
-        } else {
-            null
-        }
-        val metadataCoverReference = if (
-            cachedCoverReference == null && indexedCoverReference == null
-        ) {
-            if (allowSlowLocalInspection) {
-                resolveCachedAudioMetadataCoverReference(context, storedAudio)
-            } else {
-                null
-            }
-                ?: if (allowSlowLocalInspection) {
-                    resolveAudioMetadataCoverReference(context, storedAudio)
-                } else {
-                    null
-                }
-        } else {
-            null
-        }
-        val lyricContent = resolveLyricContent(
-            context = context,
-            storedAudio = storedAudio,
-            metadata = metadata,
-            snapshot = effectiveSnapshot,
+            file = fileInfo(storedAudio, metadata, existingDownloadTime),
+            cover = cover,
+            lyrics = lyrics,
             loadLyricContents = loadLyricContents,
-            resolveLyricFallbacks = resolveLyricFallbacks
-        )
-        val needsLocalLyricFallback = shouldInspectDownloadedLocalLyrics(
-            loadLyricContents = loadLyricContents,
-            fileLyric = lyricContent.fileLyric,
-            fileTranslatedLyric = lyricContent.fileTranslatedLyric,
-            fileRomanizedLyric = lyricContent.fileRomanizedLyric,
-            matchedLyric = metadata?.matchedLyric,
-            originalLyric = metadata?.originalLyric,
-            matchedTranslatedLyric = metadata?.matchedTranslatedLyric,
-            originalTranslatedLyric = metadata?.originalTranslatedLyric,
-            matchedRomanizedLyric = metadata?.matchedRomanizedLyric,
-            originalRomanizedLyric = metadata?.originalRomanizedLyric,
-            indexedLyric = lyricContent.indexedLyric,
-            indexedTranslatedLyric = lyricContent.indexedTranslatedLyric,
-            indexedRomanizedLyric = lyricContent.indexedRomanizedLyric
-        )
-        val localDetails by lazy(LazyThreadSafetyMode.NONE) {
-            if (
-                shouldInspectDownloadedAudioDetails(
-                    allowSlowLocalInspection = allowSlowLocalInspection,
-                    metadata = metadata,
-                    coverReference = indexedCoverReference
-                        ?: cachedCoverReference
-                        ?: metadataCoverReference,
-                    needsLocalLyricFallback = needsLocalLyricFallback
-                )
-            ) {
-                inspectAudioDetails(context, storedAudio)
-            } else {
-                null
-            }
-        }
-        val coverReference = indexedCoverReference
-            ?: cachedCoverReference
-            ?: metadataCoverReference
-            ?: localDetails?.coverUri
-        val matchedLyric = if (loadLyricContents) {
-            resolveDownloadedLyricOverride(
-                fileLyric = lyricContent.fileLyric,
-                embeddedMatchedLyric = metadata?.matchedLyric,
-                embeddedOriginalLyric = metadata?.originalLyric,
-                localLyricContent = localDetails?.lyricContent,
-                indexedLyricContent = lyricContent.indexedLyric
-            )
-        } else {
-            metadata?.matchedLyric
-        }
-        val matchedTranslatedLyric = if (loadLyricContents) {
-            resolveDownloadedLyricOverride(
-                fileLyric = lyricContent.fileTranslatedLyric,
-                embeddedMatchedLyric = metadata?.matchedTranslatedLyric,
-                embeddedOriginalLyric = metadata?.originalTranslatedLyric,
-                localLyricContent = null,
-                indexedLyricContent = lyricContent.indexedTranslatedLyric.takeIf {
-                    lyricContent.fileTranslatedLyric.isNullOrBlank() &&
-                        metadata?.matchedTranslatedLyric == null &&
-                        metadata?.originalTranslatedLyric == null
-                }
-            )
-        } else {
-            metadata?.matchedTranslatedLyric
-        }
-        val matchedRomanizedLyric = if (loadLyricContents) {
-            resolveDownloadedLyricOverride(
-                fileLyric = lyricContent.fileRomanizedLyric,
-                embeddedMatchedLyric = metadata?.matchedRomanizedLyric,
-                embeddedOriginalLyric = metadata?.originalRomanizedLyric,
-                localLyricContent = null,
-                indexedLyricContent = lyricContent.indexedRomanizedLyric.takeIf {
-                    lyricContent.fileRomanizedLyric.isNullOrBlank() &&
-                        metadata?.matchedRomanizedLyric == null &&
-                        metadata?.originalRomanizedLyric == null
-                }
-            )
-        } else {
-            metadata?.matchedRomanizedLyric
-        }
+            allowSlowLocalInspection = allowSlowLocalInspection,
+            defaultAlbum = { context.getString(R.string.local_files) },
+            readLocalMetadata = { inspectAudioDetails(context, storedAudio)?.toSongLocalMetadata() }
+        ).assemble()
+    }
 
-        return DownloadedSong(
-            id = metadata?.songId ?: fallbackDownloadedSongId(storedAudio.reference),
-            name = metadata?.name?.takeIf(String::isNotBlank)
-                ?: localDetails?.title?.takeIf(String::isNotBlank)
-                ?: parsedTitle,
-            artist = metadata?.artist?.takeIf(String::isNotBlank)
-                ?: localDetails?.artist?.takeIf(String::isNotBlank)
-                ?: parsedArtist,
-            album = metadata?.album?.takeIf(String::isNotBlank)
-                ?: (if (metadata == null) {
-                    localDetails?.album?.takeIf(String::isNotBlank)
-                } else {
-                    null
-                })
-                ?: metadata?.identityAlbum
-                    ?.takeUnless { it == LocalSongSupport.LOCAL_ALBUM_IDENTITY }
-                ?: context.getString(R.string.local_files),
-            filePath = storedAudio.reference,
-            fileSize = storedAudio.sizeBytes,
+    private suspend fun readMetadata(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+        val metadataEntry = snapshot.metadataEntriesByAudioName[audio.logicalName]
+            ?: snapshot.metadataEntriesByAudioName[audio.name]
+        return ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
+            ?: metadataStore.read(context, audio, metadataEntry)
+    }
+
+    private fun fileInfo(
+        audio: ManagedDownloadStorage.StoredEntry,
+        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        existingDownloadTime: Long?
+    ): DownloadedSongFileInfo {
+        val (parsedArtist, parsedTitle) = parseDownloadedFileName(audio.name)
+        return DownloadedSongFileInfo(
+            reference = audio.reference,
+            playbackUri = ManagedDownloadStorage.resolveStoredEntryPlaybackUri(audio).orEmpty(),
+            logicalName = audio.logicalName,
+            sizeBytes = audio.sizeBytes,
             downloadTime = existingDownloadTime
-                ?: ManagedLibraryRebuilder.logicalTimeMs(metadata, storedAudio)
+                ?: ManagedLibraryRebuilder.logicalTimeMs(metadata, audio)
                 ?: System.currentTimeMillis(),
-            coverPath = coverReference,
-            coverUrl = safeCoverUrl,
-            matchedLyric = matchedLyric,
-            matchedTranslatedLyric = matchedTranslatedLyric,
-            matchedRomanizedLyric = matchedRomanizedLyric,
-            matchedLyricSource = metadata?.matchedLyricSource,
-            matchedSongId = metadata?.matchedSongId,
-            userLyricOffsetMs = metadata?.userLyricOffsetMs ?: 0L,
-            customCoverUrl = safeCustomCoverUrl,
-            customName = metadata?.customName,
-            customArtist = metadata?.customArtist,
-            originalName = metadata?.originalName ?: localDetails?.originalTitle,
-            originalArtist = metadata?.originalArtist ?: localDetails?.originalArtist,
-            originalCoverUrl = safeOriginalCoverUrl,
-            originalLyric = metadata?.originalLyric,
-            originalTranslatedLyric = metadata?.originalTranslatedLyric,
-            originalRomanizedLyric = metadata?.originalRomanizedLyric,
-            mediaUri = ManagedDownloadStorage.resolveStoredEntryPlaybackUri(storedAudio)
-                .orEmpty(),
-            durationMs = metadata?.durationMs?.takeIf { it > 0L } ?: localDetails?.durationMs ?: 0L,
-            stableKey = metadata?.stableKey ?: localDetails?.sourceStableKey,
-            sourceIdentityAlbum = metadata?.identityAlbum,
-            sourceMediaUri = metadata?.mediaUri,
-            sourceChannelId = metadata?.channelId,
-            sourceAudioId = metadata?.audioId,
-            sourceSubAudioId = metadata?.subAudioId,
-            sourcePlaylistContextId = metadata?.playlistContextId,
-            localFileName = storedAudio.logicalName
-        ).withRecoveredRemoteSourceStableKey()
+            parsedTitle = parsedTitle,
+            parsedArtist = parsedArtist
+        )
+    }
+
+    private fun resolveCoverInfo(
+        context: Context,
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        allowSlowLocalInspection: Boolean,
+        verifySnapshotReferences: Boolean
+    ): DownloadedSongCoverInfo {
+        val values = metadata ?: ManagedDownloadStorage.DownloadedAudioMetadata()
+        return DownloadedSongCoverInfo(
+            reference = selectDownloadedSongCover(
+                indexedCover = {
+                    acceptIndexedDownloadedCover(
+                        resolveIndexedDownloadedCoverReference(metadata, storedAudio, snapshot),
+                        snapshot.knownReferences,
+                        verifySnapshotReferences
+                    ) { reference -> isAccessibleManagedReference(ManagedDownloadReferenceIo.inspect(context, reference)) }
+                },
+                cachedCover = {
+                    resolveAccessibleManagedReference(
+                        context,
+                        ManagedDownloadArtifactPlanner.trustedMetadataReference(values.coverPath, snapshot),
+                        values.coverUrl,
+                        values.originalCoverUrl,
+                        trustedReferences = if (verifySnapshotReferences) emptySet() else snapshot.knownReferences
+                    )
+                },
+                allowSlowInspection = allowSlowLocalInspection,
+                cachedEmbeddedCover = { resolveCachedAudioMetadataCoverReference(context, storedAudio) },
+                embeddedCover = { resolveAudioMetadataCoverReference(context, storedAudio) }
+            ),
+            coverUrl = sanitizeDownloadedCoverMetadataReference(values.coverUrl, snapshot),
+            customCoverUrl = sanitizeDownloadedCoverMetadataReference(values.customCoverUrl, snapshot),
+            originalCoverUrl = sanitizeDownloadedCoverMetadataReference(values.originalCoverUrl, snapshot)
+        )
     }
 
     fun inspectAudioDetails(
@@ -563,15 +448,6 @@ internal class DownloadedSongBuilder(
         }
     }
 
-    private data class DownloadedSongLyricContent(
-        val fileLyric: String?,
-        val indexedLyric: String?,
-        val fileTranslatedLyric: String?,
-        val indexedTranslatedLyric: String?,
-        val fileRomanizedLyric: String?,
-        val indexedRomanizedLyric: String?
-    )
-
 }
 
 internal data class DownloadedLyricReference(
@@ -675,16 +551,10 @@ internal fun shouldInspectDownloadedLocalLyrics(
     indexedRomanizedLyric: String?
 ): Boolean {
     if (!loadLyricContents) return false
-    return fileLyric == null &&
-        fileTranslatedLyric == null &&
-        fileRomanizedLyric == null &&
-        matchedLyric == null &&
-        originalLyric == null &&
-        matchedTranslatedLyric == null &&
-        originalTranslatedLyric == null &&
-        matchedRomanizedLyric == null &&
-        originalRomanizedLyric == null &&
-        indexedLyric == null &&
-        indexedTranslatedLyric == null &&
-        indexedRomanizedLyric == null
+    return listOf(
+        fileLyric, fileTranslatedLyric, fileRomanizedLyric,
+        matchedLyric, originalLyric, matchedTranslatedLyric, originalTranslatedLyric,
+        matchedRomanizedLyric, originalRomanizedLyric,
+        indexedLyric, indexedTranslatedLyric, indexedRomanizedLyric
+    ).all { it == null }
 }

@@ -98,6 +98,22 @@ class DomainDependenciesTest(unittest.TestCase):
         self.compile("public sample.bridge.Identity identity = new sample.bridge.Identity();")
         self.assertTrue(any("Methodref <init>:()V" in x for x in self.check()["errors"]))
 
+    def test_nested_metadata_model_does_not_allow_calls_to_its_storage_owner(self):
+        self.domain["allowed_classes"].append("sample.runtime.Storage$Metadata")
+        self.domain["bridges"]["sample.runtime.Storage"] = []
+        self.config.write_text(json.dumps([self.domain]))
+        storage = {"sample/runtime/Storage.java": (
+            "package sample.runtime; public class Storage {"
+            "public static class Metadata { public String title; }"
+            "public static String read() { return \"disk\"; }}"
+        )}
+        model = "public sample.runtime.Storage.Metadata metadata = new sample.runtime.Storage.Metadata();"
+        self.compile(model, storage)
+        self.assertEqual([], self.check()["errors"])
+        self.compile(model + "public String read() { return sample.runtime.Storage.read(); }", storage)
+        self.assertTrue(any("forbidden bridge member sample.runtime.Storage#Methodref read:" in x
+                            for x in self.check()["errors"]))
+
     def test_another_domain_is_not_implicitly_allowed(self):
         self.compile("public String load() { return sample.bridge.Identity.key(); }")
         second = {"name": "bridge", "package": "sample.bridge.", "allowed_classes": ["java.lang.*"],
