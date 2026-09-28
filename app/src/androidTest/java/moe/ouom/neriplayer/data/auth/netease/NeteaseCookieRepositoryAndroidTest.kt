@@ -122,7 +122,7 @@ class NeteaseCookieRepositoryAndroidTest {
     @Test
     fun withCurrentCookiesIfMatches_doesNotReactivateAnObsoleteClientSession() {
         val repository = NeteaseCookieRepository(context)
-        val client = NeteaseClient()
+        val client = NeteaseClient { error("Comment token is outside this test") }
         assertTrue(repository.saveCookies(mapOf("MUSIC_U" to "account-a")))
         val accountA = repository.getCookiesOnce()
 

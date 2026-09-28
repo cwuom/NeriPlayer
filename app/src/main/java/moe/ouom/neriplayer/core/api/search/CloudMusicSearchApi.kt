@@ -32,7 +32,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
-import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
+import moe.ouom.neriplayer.core.lyrics.normalizeLegacyLrcTimestamps
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.util.network.awaitResponse

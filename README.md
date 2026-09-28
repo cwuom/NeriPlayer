@@ -526,13 +526,21 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 ### 模块结构
 
-- `:app`：主 Android 应用。
+- `:app`：Android 宿主、页面、播放/下载运行时及依赖组装。
+- `:core:common` / `:core:model` / `:core:logging` / `:core:network`：通用工具、共享模型、日志和网络基础能力。
+- `:core:lyrics` / `:core:listen-protocol`：歌词解析与转换、一起听协议模型。
+- `:data:netease` / `:data:bilibili` / `:data:youtube`：平台 API、账号和播放源解析。
+- `:data:lyrics`：歌词来源和匹配策略。
 - `:ksp-annotations` / `:ksp-processor`：设置项自动登记与生成。
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`：歌词解析与 Compose 歌词 UI 子模块。
 - `build-logic`：统一 Gradle convention plugin。
 - `buildSrc`：保留的辅助 Gradle 构建逻辑模块。
 - `np-submodule/NeriPlayer-LTW`：一起听 Cloudflare Workers 服务端。
 - `np-submodule/miuix`：仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
+
+库模块不依赖 `app`；偏好设置、设备令牌和网络客户端由宿主注入。
+运行 `./gradlew verifyModularization` 检查依赖边界、各模块 JVM 测试、合并 CRAP 覆盖率和 lint。
+具体扩展规则见 [贡献指南](CONTRIBUTING.md#项目结构与当前实现--project-layout)。
 
 ### 入口与导航
 

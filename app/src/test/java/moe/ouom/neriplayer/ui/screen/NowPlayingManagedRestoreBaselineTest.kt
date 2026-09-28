@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.ui.screen
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaseline

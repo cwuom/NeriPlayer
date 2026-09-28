@@ -100,6 +100,7 @@ class YouTubeAuthRotationWorker(
 
             when (val outcome = youtubeAuthRotationMutex.withLock {
                 val result = YouTubeCookieRotator(
+                    httpClientProvider = { AppContainer.sharedOkHttpClient },
                     stateStore = SharedPreferencesYouTubeCookieRotationStateStore(
                         applicationContext
                     )

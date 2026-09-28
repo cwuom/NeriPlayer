@@ -483,7 +483,7 @@ class NowPlayingViewModel : ViewModel() {
                         )
                         return@launch
                     }
-                    NPLogger.d("NowPlayingViewModel", "歌词已保存: songId=${song.id}, album=${song.album}, lyrics length=${songDetails.lyric.length}, hasTranslation=${!songDetails.translatedLyric.isNullOrBlank()}")
+                    NPLogger.d("NowPlayingViewModel", "歌词已保存: songId=${song.id}, album=${song.album}, lyrics length=${songDetails.lyric.orEmpty().length}, hasTranslation=${!songDetails.translatedLyric.isNullOrBlank()}")
                     onComplete(true, context.getString(R.string.music_lyrics_filled_success))
                 } else {
                     NPLogger.w("NowPlayingViewModel", "获取的歌词为空: searchSongId=${selectedSong.id}")

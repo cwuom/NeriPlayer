@@ -100,7 +100,7 @@
 - **本地持久化**：播放/流量统计的批量写入、生命周期 flush、原子文件替换和
   SAF/本地歌单初始化就绪状态。
 
-对应测试已分布在 `app/src/test/` 与 `app/src/androidTest/`。
+对应测试分布在 app 与各库模块的 `src/test/`，设备测试位于 `app/src/androidTest/`。
 修改上述链路时，优先搜索同名目录或相邻测试类，再补新的覆盖。
 
 ---
@@ -175,7 +175,15 @@
 #### 根模块
 
 - `:app`
-  - Android 主应用。
+  - Android 宿主和依赖组装，保留页面、播放服务、下载、本地媒体与 Worker 适配层。
+- `:core:common` / `:core:model` / `:core:logging` / `:core:network`
+  - 通用工具、跨平台共享模型、日志和 HTTP 基础能力。
+- `:core:lyrics` / `:core:listen-protocol`
+  - 不依赖 Compose 的歌词解析、转换、翻译对齐，以及一起听协议模型。
+- `:data:netease` / `:data:bilibili` / `:data:youtube`
+  - 各平台 API、账号仓库和播放源解析；YouTube 的 JS assets 和 consumer R8 规则由该模块维护。
+- `:data:lyrics`
+  - 外部歌词来源和匹配策略；跨平台匹配编排仍由 app 负责。
 - `:ksp-annotations` / `:ksp-processor`
   - 设置项 schema、key、备份白名单和设置 UI 元数据的 KSP 生成链路。
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`
@@ -188,6 +196,16 @@
   - 一起听 Cloudflare Workers 服务端。
 - `np-submodule/miuix`
   - 仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
+
+库模块的依赖方向为 `app -> data -> core`，允许 app 直接使用 core。
+core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` 或 `PlayerManager`。
+设置值通过挂起的 provider 在调用时读取，网络客户端和设备令牌由 `AppContainer` 注入，
+不要通过全局容器恢复反向依赖。涉及 Room、服务生命周期和播放器的功能仍在 app，
+后续提取前应先设计窄接口，不要为了搬文件引入循环依赖。
+
+新增库需在 `settings.gradle.kts` 和 app 的 `ownedLibraryPaths` 登记，使用
+`build-logic.android.feature-library` convention，测试放在该模块 `src/test/`。
+`verifyModuleBoundaries` 检查依赖方向、循环、禁止导入和库主源码少于 2000 行的约束。
 
 #### Android 客户端关键路径
 
@@ -218,6 +236,7 @@
   - `AdvancedLyricsView.kt` 与 `SyncedLyricsView.kt` 负责高级歌词排版、
     逐字/逐词高亮、翻译/音译显示、点击跳转和长按回调。
   - `LyricShareSheet.kt` 负责歌词行选择、复制、歌曲分享和歌词卡片生成。
+  - 共享歌词模型、LRC/YRC/TTML 解析和翻译对齐位于 `core/lyrics` 的 `core.lyrics` 包。
   - 旧 `AppleMusicLyric` 名称只存在于 `ui/component/LyricsCompatibility.kt`
     的 `@Deprecated` 包装中，新代码统一使用 `SyncedLyricsView`。
 
@@ -245,16 +264,18 @@
 - `app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`
   - 首次启动引导，覆盖语言、平台账号、权限说明、播放控件、GitHub 同步和个性化设置。
 
-- `app/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `netease/`：网易云接口、加密和账号能力。
-  - `bili/`：Bilibili 搜索、二维码登录、收藏夹、合集、播放信息和音频播放解析。
+- `data/*/src/main/java/moe/ouom/neriplayer/core/api/`
+  - `data/netease` 中的 `netease/`：网易云接口、加密和账号能力。
+  - `data/bilibili` 中的 `bili/`：Bilibili 搜索、二维码登录、收藏夹、合集、播放信息和音频播放解析。
     Explore 链接识别会保留 Bilibili 分 P、`cid` 和 `season_id` 上下文；
     改动时同步检查 `ExploreLinkRecognizer` 与 `ExploreViewModel`。
-  - `youtube/`：YouTube Music 客户端（NewPipe Extractor）、
+  - `data/youtube` 中的 `youtube/`：YouTube Music 客户端（NewPipe Extractor）、
     首页/歌单/搜索/播放、PoToken 和 JS Challenge 支持。
-  - `search/`：播放页元数据/歌词补全接口，
-    当前实现为 `CloudMusicSearchApi` 与 `QQMusicSearchApi`。
-  - `lyrics/`：外部歌词来源，当前实现为 `LrcLibClient`。
+  - `data/lyrics` 中的 `lyrics/`：外部歌词来源，当前实现为 `LrcLibClient`。
+
+- `app/src/main/java/moe/ouom/neriplayer/core/api/`
+  - `search/` 保留 `CloudMusicSearchApi` 与 `QQMusicSearchApi` 的宿主适配，接口和 DTO 位于 `core/model`。
+  - `lyrics/EditableLyricsMatcher` 组合平台能力与 `data/lyrics` 的匹配策略。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`：Media3 ExoPlayer 的统一管理层，
@@ -321,10 +342,9 @@
     `MainActivity` 只负责协调这些组件与 UI 生命周期。
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `model/`：跨播放器、歌单、下载、同步、一起听和 UI 共享的 `SongItem`、
-    `SongIdentity` 与媒体模型扩展。
+  - `model/`：`SongIdentity` 与媒体模型扩展；共享的 `SongItem` 已移到 `core/model`。
   - `settings/`：`DataStore` 设置、KSP schema、启动快照、主题快照和播放偏好快照。
-  - `auth/`：网易云、Bilibili、YouTube 的 Cookie / Auth 本地存储与校验。
+  - `auth/`：宿主登录适配与 YouTube 轮换 Worker；各平台 Cookie / Auth 仓库位于对应 `data/*` 模块。
   - `platform/netease/`：网易云平台侧缓存，当前包含歌单详情本地缓存。
   - `storage/`：存储占用分析、缓存分组和额外缓存清理。
   - `local/playlist/`：本地歌单 JSON 原子写入、系统歌单兼容、
@@ -341,7 +361,7 @@
   - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - `protocol/` 定义房间、事件与传输模型，`network/` 负责 HTTP/WebSocket 与重连，
+  - `protocol/` 的房间、事件与传输模型已移到 `core/listen-protocol`；`network/` 负责 HTTP/WebSocket 与重连，
     `playback/` 负责队列、权威播放候选和进度同步，`control/`、`session/`、`invite/`、
     `mapping/`、`validation/` 分别承载控制、会话策略、邀请、模型映射和输入边界。
   - 根目录保留 `ListenTogetherSessionManager.kt` 与少量兼容入口；新增协议逻辑
@@ -750,12 +770,12 @@ adb logcat | grep NeriPlayer
    ```
 2. 单元测试：
    ```bash
-   ./gradlew :app:testDebugUnitTest
+   ./gradlew :app:verifyCrap
    ```
 3. 如修改登录态、播放解析链路或回归风险较高的集成行为，可按需执行 smoke test：
    ```bash
    ./gradlew :app:testDebugUnitTest -DrunNeteaseSmoke=true
-   ./gradlew :app:testDebugUnitTest \
+   ./gradlew :data:youtube:testDebugUnitTest \
      -DrunYouTubePlaybackSmoke=true \
      -DyoutubeSmokeVideoId=<id> \
      [-DyoutubeSmokeForceRefresh=true] \
@@ -791,17 +811,18 @@ adb logcat | grep NeriPlayer
    ```
    这里的 `npm run check` 会依次执行 `node --check`、协议测试和
    `wrangler deploy --dry-run`；协议或房间状态改动还需要实际验证 create/join/ws 流程。
-8. 新增单元测试放到 `app/src/test/`；
+8. 新增单元测试放到被测代码所在模块的 `src/test/`，宿主集成测试放在 `app/src/test/`；
    新增设备或 Compose UI 测试放到 `app/src/androidTest/`。
 9. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
 
 CRAP 质量门禁与职责拆分：
 
 ```bash
-./gradlew :app:verifyCrap
+./gradlew verifyModularization
 ```
 
-此任务使用 Debug JVM 的 JaCoCo 覆盖率，输出可映射到 app 主源码的全部 JVM 方法分数，
+此任务执行模块边界检查、app 与自有库的 lint 和 JVM 测试，合并 JaCoCo 覆盖率，
+输出可映射到 app 与库主源码的全部 JVM 方法分数，
 并单独列出 CRAP > 8 的条目。`config/quality/crap-scope.json` 的 `source_patterns`
 覆盖完整源文件，`method_scopes` 覆盖原入口中受本次拆分影响的方法；
 范围内任意方法 CRAP > 9 即失败，范围外的方法仍保留在完整报告中。

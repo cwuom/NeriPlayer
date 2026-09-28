@@ -5,9 +5,9 @@ import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlLyrics
 import moe.ouom.neriplayer.core.api.lyrics.isAmllDurationCompatible
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.lyrics.hasWordTimedEntries
-import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
+import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
 import kotlin.math.max
 
 internal data class AmllResolvedLyrics(

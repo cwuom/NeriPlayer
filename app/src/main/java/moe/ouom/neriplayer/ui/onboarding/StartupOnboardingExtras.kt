@@ -80,7 +80,7 @@ import moe.ouom.neriplayer.data.settings.PlaybackControlSize
 import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.scaleButtonSize
 import moe.ouom.neriplayer.ui.component.playback.scaleIconSize

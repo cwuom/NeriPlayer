@@ -4,8 +4,8 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.lyrics.WordTiming
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.WordTiming
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.ManagedLyricVariant
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingBackgroundRawLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsBackgroundInputs

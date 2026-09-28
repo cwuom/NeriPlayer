@@ -24,12 +24,12 @@ import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
-import moe.ouom.neriplayer.ui.component.lyrics.resolveLocalLyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.core.lyrics.resolveLocalLyricsEditorSeed
+import moe.ouom.neriplayer.core.lyrics.resolveLyricsEditorSeed
+import moe.ouom.neriplayer.core.lyrics.toEditableLyricsText
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 

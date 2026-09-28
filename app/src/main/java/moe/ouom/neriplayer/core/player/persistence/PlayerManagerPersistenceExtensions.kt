@@ -60,7 +60,7 @@ import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.saturatingAddLyricOffsetMs
 import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger

@@ -92,10 +92,10 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
-import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText
+import moe.ouom.neriplayer.core.lyrics.toEditableLyricsText
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton

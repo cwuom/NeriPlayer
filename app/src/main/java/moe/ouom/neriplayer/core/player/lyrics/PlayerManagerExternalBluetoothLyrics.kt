@@ -16,8 +16,8 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.resolveEffectiveLyricOffsetMs
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices
 
 internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
     externalBluetoothLyricsLoadJob?.cancel()

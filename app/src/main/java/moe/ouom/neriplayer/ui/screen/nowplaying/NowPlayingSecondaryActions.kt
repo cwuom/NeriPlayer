@@ -72,7 +72,7 @@ import moe.ouom.neriplayer.data.settings.LyricFontScalePage
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet

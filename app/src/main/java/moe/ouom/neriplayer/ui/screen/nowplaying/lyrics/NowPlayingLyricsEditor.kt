@@ -108,7 +108,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton

@@ -16,6 +16,27 @@ plugins {
     id("kotlin-parcelize")
 }
 
+val ownedLibraryPaths = listOf(
+    ":core:lyrics", ":core:common", ":core:model", ":core:logging", ":core:network",
+    ":core:listen-protocol", ":data:netease", ":data:bilibili", ":data:youtube", ":data:lyrics"
+)
+val libraryCoverageClasses = configurations.create("libraryCoverageClasses") {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+val libraryCoverageExecution = configurations.create("libraryCoverageExecution") {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+val coverageSources = tasks.register<Sync>("collectCoverageSources") {
+    from(layout.projectDirectory.dir("src/main/java"))
+    ownedLibraryPaths.forEach { module ->
+        from(rootProject.layout.projectDirectory.dir("${module.drop(1).replace(':', '/')}/src/main/java"))
+    }
+    into(layout.buildDirectory.dir("reports/crap/sources"))
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+}
+
 val isGithubPullRequest = providers.environmentVariable("GITHUB_EVENT_NAME").orNull == "pull_request"
 val isIdeBuild = listOf("android.injected.invoked.from.ide", "idea.active").any { propertyName ->
     (project.findProperty(propertyName) as String?)?.toBoolean() == true ||
@@ -260,11 +281,13 @@ val verifyCrapExecutionData = tasks.register("verifyCrapExecutionData") {
 
 val crapCoverageReport = tasks.register<ProjectCoverageReport>("crapCoverageReport") {
     group = "verification"
-    description = "Collect coverage for all app Kotlin and Java classes."
-    dependsOn(verifyCrapExecutionData)
+    description = "Collect coverage for app and owned library Kotlin and Java classes."
+    dependsOn(verifyCrapExecutionData, coverageSources, libraryCoverageExecution)
     executionData.setFrom(crapExecutionData)
+    executionData.from(libraryCoverageExecution)
     classDirectories.from(projectJars, projectDirectories)
-    sourceDirectories.from(layout.projectDirectory.dir("src/main/java"))
+    classDirectories.from(libraryCoverageClasses)
+    sourceDirectories.from(coverageSources)
     reports {
         xml.required.set(true)
         xml.outputLocation.set(layout.buildDirectory.file("reports/crap/coverage.xml"))
@@ -291,13 +314,13 @@ val crapToolTests = tasks.register<Exec>("crapToolTests") {
 
 val crapReport = tasks.register<Exec>("crapReport") {
     group = "verification"
-    description = "List all app method scores and every CRAP score greater than 8."
+    description = "List all owned app/library method scores and every CRAP score greater than 8."
     dependsOn(crapCoverageReport, crapToolTests)
     workingDir(rootProject.projectDir)
     commandLine(
         "python3", "-B", "tools_pub/quality/crap_report.py",
         "--xml", layout.buildDirectory.file("reports/crap/coverage.xml").get().asFile,
-        "--source-root", layout.projectDirectory.dir("src/main/java").asFile,
+        "--source-root", coverageSources.get().destinationDir,
         "--scope", rootProject.file("config/quality/crap-scope.json"),
         "--output", layout.buildDirectory.dir("reports/crap").get().asFile,
         "--report-only"
@@ -340,6 +363,11 @@ androidComponents {
 }
 
 dependencies {
+    ownedLibraryPaths.forEach { module ->
+        implementation(project(module))
+        add(libraryCoverageClasses.name, project(mapOf("path" to module, "configuration" to "coverageClassesElements")))
+        add(libraryCoverageExecution.name, project(mapOf("path" to module, "configuration" to "coverageExecutionElements")))
+    }
     implementation(project(":ksp-annotations"))
     ksp(project(":ksp-processor"))
 
@@ -382,12 +410,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    implementation(libs.dec)
-    implementation(libs.newpipe.extractor)
     implementation(libs.okhttp)
     implementation(libs.lyricon.provider)
     implementation(libs.zxing.core)
-    implementation(libs.tiny.pinyin)
 
     implementation(project(":accompanist-lyrics-core"))
     implementation(project(":accompanist-lyrics-ui"))
@@ -421,7 +446,6 @@ dependencies {
 
     // WorkManager - 后台同步
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.androidx.javascriptengine)
 
     implementation(libs.androidx.webkit)
 

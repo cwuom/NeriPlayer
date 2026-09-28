@@ -12,7 +12,7 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
 import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsEditorOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.defaultEditableLyricsMatchKeyword

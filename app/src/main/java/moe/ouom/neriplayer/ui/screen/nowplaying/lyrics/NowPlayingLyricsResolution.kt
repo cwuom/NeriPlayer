@@ -5,12 +5,12 @@ import moe.ouom.neriplayer.core.player.metadata.resolveLyricTextForPlayback
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
-import moe.ouom.neriplayer.ui.component.lyrics.flattenWordTimedEntries
-import moe.ouom.neriplayer.ui.component.lyrics.hasWordTimedEntries
-import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
-import moe.ouom.neriplayer.ui.component.lyrics.resolvePreferredLyricContent
+import moe.ouom.neriplayer.core.lyrics.flattenWordTimedEntries
+import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
+import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.core.lyrics.resolvePreferredLyricContent
 
 internal data class NowPlayingBackgroundRawLyrics(
     val original: String?,

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
+
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent

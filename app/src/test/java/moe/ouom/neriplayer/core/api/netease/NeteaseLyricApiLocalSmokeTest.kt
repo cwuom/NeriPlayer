@@ -26,7 +26,7 @@ class NeteaseLyricApiLocalSmokeTest {
         val validation = validateAndSanitizeNeteaseCookies(cookies)
         assumeTrue("NetEase cookie missing login token.", validation.isAccepted)
 
-        val client = NeteaseClient()
+        val client = NeteaseClient { error("Comment token is outside this test") }
         client.setPersistedCookies(validation.sanitizedCookies)
 
         val payload = client.getLyricNew(songId = 33894312L)

@@ -23,6 +23,16 @@ dependencyResolutionManagement {
 
 rootProject.name = "NeriPlayer"
 include(":app")
+include(":core:lyrics")
+include(":core:common")
+include(":core:listen-protocol")
+include(":core:logging")
+include(":core:model")
+include(":core:network")
+include(":data:bilibili")
+include(":data:lyrics")
+include(":data:netease")
+include(":data:youtube")
 include(":ksp-annotations")
 include(":ksp-processor")
 include(":accompanist-lyrics-core")

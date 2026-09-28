@@ -21,8 +21,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.R
@@ -194,9 +194,10 @@ object LyriconManager {
             lastLyricIndex = -1
             positionAnchor = positionAnchor?.copy(durationMs = songDurationMs)
             val lyriconLyrics = lyrics?.mapIndexed { index, entry ->
-                val words = if (entry.words != null) {
+                val wordTimings = entry.words
+                val words = if (wordTimings != null) {
                     var currentIndex = 0
-                    entry.words.mapNotNull { wordTiming ->
+                    wordTimings.mapNotNull { wordTiming ->
                         if (currentIndex + wordTiming.charCount <= entry.text.length) {
                             val wordText = entry.text.substring(currentIndex, currentIndex + wordTiming.charCount)
                             currentIndex += wordTiming.charCount

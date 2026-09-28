@@ -12,8 +12,8 @@ import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaseline
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongEmbeddedReadResult
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft

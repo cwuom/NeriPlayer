@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.ui.screen
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSeed
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongMetadataSnapshot
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.canChooseEmbeddedLyricsSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongCoverForSave

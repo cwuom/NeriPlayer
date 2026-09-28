@@ -151,8 +151,8 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
-import moe.ouom.neriplayer.ui.component.lyrics.flattenWordTimedEntries
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.flattenWordTimedEntries
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog

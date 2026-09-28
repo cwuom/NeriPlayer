@@ -21,7 +21,7 @@ import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
 import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueReorderAutoScrollMaxPerFrame
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueReorderOwner

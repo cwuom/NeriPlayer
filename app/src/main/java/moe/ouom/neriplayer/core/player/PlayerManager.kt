@@ -221,7 +221,7 @@ import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.shouldHoldListenTogetherPlaybackForSafetyPause
 import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForAudioRouteLoss
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger

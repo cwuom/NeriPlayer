@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.metadata
 
+import moe.ouom.neriplayer.core.lyrics.normalizeLegacyLrcTimestamps
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

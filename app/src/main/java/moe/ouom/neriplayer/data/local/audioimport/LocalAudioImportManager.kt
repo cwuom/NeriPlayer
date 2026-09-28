@@ -926,7 +926,7 @@ object LocalAudioImportManager {
         val artistNeedsProbe = isQuickMetadataPlaceholder(song.artist) ||
             song.artist.isBlank()
         val fileName = song.localFileName
-            ?.substringBeforeLast('.', song.localFileName)
+            ?.substringBeforeLast('.')
             ?.trim()
             .orEmpty()
         val titleNeedsProbe = song.name.isBlank() ||

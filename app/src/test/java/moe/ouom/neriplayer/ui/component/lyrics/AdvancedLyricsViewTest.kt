@@ -1,5 +1,14 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.WordTiming
+import moe.ouom.neriplayer.core.lyrics.flattenWordTimedEntries
+import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.core.lyrics.parseTtmlLyrics
+import moe.ouom.neriplayer.core.lyrics.resolveLyricsEditorInitialText
+import moe.ouom.neriplayer.core.lyrics.resolvePreferredLyricContent
+import moe.ouom.neriplayer.core.lyrics.toEditableLyricsText
+
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import org.junit.Assert.assertEquals

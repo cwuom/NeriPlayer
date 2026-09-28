@@ -115,7 +115,7 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Local persistence**: debounced playback/traffic-stat writes, lifecycle flushes,
   atomic file replacement, and local-playlist/SAF initialization readiness.
 
-Related tests live under `app/src/test/` and `app/src/androidTest/`.
+Related JVM tests live in app and library `src/test/` directories; device tests are under `app/src/androidTest/`.
 When changing these areas, search for neighboring tests first, then add coverage
 for the new behavior.
 
@@ -196,7 +196,15 @@ Security reminders:
 #### Root modules
 
 - `:app`
-  - Main Android application.
+  - Android host and dependency assembly, including screens, playback services, downloads, local media, and Worker adapters.
+- `:core:common` / `:core:model` / `:core:logging` / `:core:network`
+  - Shared utilities, cross-platform models, logging, and HTTP infrastructure.
+- `:core:lyrics` / `:core:listen-protocol`
+  - Compose-independent lyric parsing, transforms, translation alignment, and Listen Together protocol models.
+- `:data:netease` / `:data:bilibili` / `:data:youtube`
+  - Platform APIs, account repositories, and playback source resolution. YouTube owns its JS assets and consumer R8 rules.
+- `:data:lyrics`
+  - External lyric sources and matching policies; app still coordinates matching across platforms.
 - `:ksp-annotations` / `:ksp-processor`
   - KSP-generated settings schema, keys, backup allowlists, and UI metadata.
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`
@@ -209,6 +217,18 @@ Security reminders:
   - Listen Together Cloudflare Workers server.
 - `np-submodule/miuix`
   - Vendored upstream Miuix source/docs tree, not part of the current app module graph.
+
+Dependencies flow from `app -> data -> core`; app may also use core directly.
+Core must not depend on data. Libraries must not reference app, Compose screens,
+`AppContainer`, or `PlayerManager`. Read preferences through suspending providers
+at call time, and inject clients and device tokens from `AppContainer`.
+Room, service lifecycles, and player integration remain in app; define narrow
+interfaces before extracting these responsibilities.
+
+Register new libraries in `settings.gradle.kts` and app's `ownedLibraryPaths`, use
+the `build-logic.android.feature-library` convention, and keep tests in their own
+`src/test/`. `verifyModuleBoundaries` checks dependency direction, cycles,
+forbidden imports, and the limit of fewer than 2000 lines per library source file.
 
 #### Android client key paths
 
@@ -243,6 +263,7 @@ Security reminders:
     word/character highlighting, translation/phonetic display, click-to-seek,
     and long-press callbacks.
   - `LyricShareSheet.kt`: lyric-line selection, copy, song sharing, and lyric card generation.
+  - Shared lyric models, LRC/YRC/TTML parsing, and translation alignment live in the `core.lyrics` package in `core/lyrics`.
   - The old `AppleMusicLyric` name exists only as an `@Deprecated` wrapper in
     `ui/component/LyricsCompatibility.kt`. New code should use `SyncedLyricsView`.
 
@@ -273,18 +294,20 @@ Security reminders:
   - First-run onboarding for language, platform accounts, permission guidance,
     playback controls, GitHub sync, and personalization.
 
-- `app/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `netease/`: NetEase endpoints, crypto, and account capabilities.
-  - `bili/`: Bilibili search, QR login, favorites, collections, playback info,
+- `data/*/src/main/java/moe/ouom/neriplayer/core/api/`
+  - `netease/` in `data/netease`: NetEase endpoints, crypto, and account capabilities.
+  - `bili/` in `data/bilibili`: Bilibili search, QR login, favorites, collections, playback info,
     and audio playback resolution.
     Explore link recognition preserves Bilibili selected parts, `cid`, and
     `season_id` context; changes should check both `ExploreLinkRecognizer` and
     `ExploreViewModel`.
-  - `youtube/`: YouTube Music client based on NewPipe Extractor, home/playlist/search/playback,
+  - `youtube/` in `data/youtube`: YouTube Music client based on NewPipe Extractor, home/playlist/search/playback,
     PoToken, and JS Challenge support.
-  - `search/`: playback metadata/lyrics completion APIs. Current implementations:
-    `CloudMusicSearchApi` and `QQMusicSearchApi`.
-  - `lyrics/`: external lyrics sources. Current implementation: `LrcLibClient`.
+  - `lyrics/` in `data/lyrics`: external lyrics sources. Current implementation: `LrcLibClient`.
+
+- `app/src/main/java/moe/ouom/neriplayer/core/api/`
+  - `search/` retains the `CloudMusicSearchApi` and `QQMusicSearchApi` host adapters; interfaces and DTOs live in `core/model`.
+  - `lyrics/EditableLyricsMatcher` coordinates platform capabilities and `data/lyrics` matching policies.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`: unified Media3 ExoPlayer management, playback resolution, queue,
@@ -365,11 +388,10 @@ Security reminders:
     `MainActivity` coordinates these components with the UI lifecycle.
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `model/`: shared `SongItem`, `SongIdentity`, and media model extensions used
-    by playback, playlists, downloads, sync, Listen Together, and UI.
+  - `model/`: `SongIdentity` and media model extensions; shared `SongItem` now lives in `core/model`.
   - `settings/`: `DataStore` settings, KSP schema, bootstrap snapshot, theme snapshot,
     and playback preference snapshot.
-  - `auth/`: NetEase, Bilibili, and YouTube cookie/auth storage and validation.
+  - `auth/`: host login adapters and the YouTube rotation Worker; platform cookie/auth repositories live in the corresponding `data/*` modules.
   - `platform/netease/`: NetEase platform-side caches, currently including playlist detail cache.
   - `storage/`: storage usage analysis, cache grouping, and extra cache cleanup.
   - `local/playlist/`: local playlist JSON atomic writes, system playlist compatibility,
@@ -388,7 +410,7 @@ Security reminders:
   - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - `protocol/` defines room, event, and transport models; `network/` owns
+  - Room, event, and transport models from `protocol/` now live in `core/listen-protocol`; `network/` owns
     HTTP/WebSocket and reconnect behavior; `playback/` owns queues, authoritative
     stream links, and position sync. `control/`, `session/`, `invite/`, `mapping/`,
     and `validation/` own their corresponding policies and boundaries.
@@ -877,13 +899,13 @@ Before submitting, consider at least these checks:
    ```
 2. Unit tests:
    ```bash
-   ./gradlew :app:testDebugUnitTest
+   ./gradlew :app:verifyCrap
    ```
 3. If you changed auth-dependent flows, playback resolution, or other integration-heavy
    behavior, optional smoke tests are available:
    ```bash
    ./gradlew :app:testDebugUnitTest -DrunNeteaseSmoke=true
-   ./gradlew :app:testDebugUnitTest \
+   ./gradlew :data:youtube:testDebugUnitTest \
      -DrunYouTubePlaybackSmoke=true \
      -DyoutubeSmokeVideoId=<id> \
      [-DyoutubeSmokeForceRefresh=true] \
@@ -921,7 +943,7 @@ Before submitting, consider at least these checks:
    `npm run check` runs `node --check`, protocol tests, and
    `wrangler deploy --dry-run`. Protocol or room-state changes still need real
    create/join/WebSocket flow verification.
-8. Add unit tests under `app/src/test/`.
+8. Add unit tests to the owning module's `src/test/`; keep host integration tests in `app/src/test/`.
    Add device or Compose UI tests under `app/src/androidTest/`.
 9. If behavior changes affect README, settings copy, user flows, or sync formats,
    update documentation in the same PR.
@@ -929,11 +951,12 @@ Before submitting, consider at least these checks:
 CRAP gate and responsibility boundaries:
 
 ```bash
-./gradlew :app:verifyCrap
+./gradlew verifyModularization
 ```
 
-The task uses Debug JVM JaCoCo coverage to report every JVM method that maps to
-app main source, with a separate list of scores above 8. In
+The task checks module boundaries, runs app and owned-library lint and JVM tests,
+and combines JaCoCo coverage to report every JVM method mapped to app or library
+main source, with a separate list of scores above 8. In
 `config/quality/crap-scope.json`, `source_patterns` covers complete source files
 and `method_scopes` covers affected methods in the original entry points.
 Any scoped method with CRAP above 9 fails the gate; methods outside the scope

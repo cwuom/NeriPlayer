@@ -4,3 +4,18 @@ plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.ksp) apply false
 }
+
+val verifyModuleBoundaries = tasks.register<Exec>("verifyModuleBoundaries") {
+    group = "verification"
+    description = "Check library dependency direction and owned source budgets."
+    workingDir(rootDir)
+    commandLine("python3", "-B", "tools_pub/quality/module_boundaries.py")
+}
+
+tasks.register("verifyModularization") {
+    group = "verification"
+    description = "Run app and library tests, combined CRAP coverage, lint and module boundary checks."
+    dependsOn(verifyModuleBoundaries, ":app:verifyCrap", ":app:lintDebug")
+    subprojects.filter { it.path.startsWith(":core:") || it.path.startsWith(":data:") }
+        .forEach { dependsOn("${it.path}:lintDebug") }
+}

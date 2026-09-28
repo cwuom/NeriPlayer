@@ -4,16 +4,21 @@
 
 ```bash
 ./gradlew :app:verifyCrap
+./gradlew verifyModularization
 ```
 
-此任务运行 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES 获取 app 自身的 Kotlin/Java
-字节码，生成 JaCoCo XML，再计算逐方法 CRAP。`:app:check` 和 Android CI 均执行门禁。
+`verifyCrap` 运行 app 和自有 core/data 库的 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES
+获取每个模块自身的 Kotlin/Java 字节码，合并各测试任务的执行数据，生成 JaCoCo XML，
+再计算逐方法 CRAP。库的覆盖率产物由 convention 的 outgoing configurations 提供。
+源码合并到 `app/build/reports/crap/sources`，重复路径直接报错；移动模块不会丢失原门禁。
+`:app:check` 执行 CRAP 门禁，Android CI 的 `verifyModularization` 还执行所有自有模块的
+lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
 单独查看完整报告可以运行 `./gradlew :app:crapReport`，该任务仍要求测试和报告输入有效，
 但不会因超分退出失败。
 
 报告位于 `app/build/reports/crap/`：
 
-- `methods.json`：能映射到 app/src/main/java 源码的全部 JVM 方法，包含签名、位置、复杂度、覆盖率和分数
+- `methods.json`：能映射到 app 和自有库主源码的全部 JVM 方法，包含签名、位置、复杂度、覆盖率和分数
 - `above-8.md`：严格大于 8 的全部方法，包含不在本次门禁范围的既有代码
 - `scope.md`：门禁范围内的全部方法
 - `coverage.xml`、`coverage/index.html`：真实测试采集结果
@@ -35,6 +40,11 @@ CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
 不使用平均分或历史 baseline 豁免；协程和 lambda 字节码同样保留，只使用 JaCoCo 内置的编译器过滤。
 新增拆分组件应位于已覆盖的文件模式内，或同时更新范围配置。原文件内受影响的方法也必须
 加入门禁；不能因为其既有分数较高而遗漏改动。
+
+Compose 编译器产生的分支会经过 [JaCoCo 内置过滤](https://www.jacoco.org/jacoco/trunk/doc/changes.html)，不能根据源码分支数或“未调用 composable”
+直接断言 CRAP 必然超分。评审时检查实际 `methods.json` 的复杂度、覆盖率和方法名；
+JVM 门禁通过仍不能代替设备上的 Compose 行为测试。Kotlin `internal` 方法的 JVM 名称
+可能含模块后缀，移动方法时需按实际 XML 同步 `method_scopes`，不要改成宽泛匹配。
 
 报告器回归测试：
 

@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.core.di
  * Created: 2025/8/19
  */
 
+import kotlinx.coroutines.flow.first
+import moe.ouom.neriplayer.core.api.netease.NeteaseYdDeviceTokenProvider
 import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -238,6 +240,7 @@ object AppContainer {
     val youtubeAuthRepo by lazy { YouTubeAuthRepository(application) }
     internal val youtubeAuthAutoRefreshManager by lazy {
         YouTubeAuthAutoRefreshManager(
+            httpClientProvider = { sharedOkHttpClient },
             context = application,
             authProvider = youtubeAuthRepo::getAuthOnce,
             authHealthProvider = youtubeAuthRepo::getAuthHealthOnce,
@@ -344,7 +347,10 @@ object AppContainer {
 
     // 网络客户端
     val neteaseClient by lazy {
-        NeteaseClient().also { client ->
+        NeteaseClient {
+            NeteaseYdDeviceTokenProvider(applicationContext)
+                .getCommentToken()
+        }.also { client ->
             neteaseCookieRepo.withCurrentCookies { cookies ->
                 client.setPersistedCookies(cookies)
             }
@@ -367,12 +373,13 @@ object AppContainer {
     // 功能 Repo 和 API
     val biliPlaybackRepository by lazy {
         val dataSource = BiliClientAudioDataSource(biliClient)
-        BiliPlaybackRepository(dataSource, settingsRepo)
+        BiliPlaybackRepository(dataSource) { settingsRepo.biliAudioQualityFlow.first() }
     }
     private val youtubeMusicPlaybackRepositoryDelegate = lazy {
         YouTubeMusicPlaybackRepository(
             okHttpClient = sharedOkHttpClient,
-            settings = settingsRepo,
+            audioQualityProvider = { settingsRepo.youtubeAudioQualityFlow.first() },
+            playbackSourceProvider = { settingsRepo.youtubePlaybackSourceFlow.first() },
             authProvider = youtubeAuthRepo::getAuthOnce,
             authAutoRefreshManager = youtubeAuthAutoRefreshManager,
             applicationContext = application,
@@ -386,7 +393,8 @@ object AppContainer {
             okHttpClient = sharedOkHttpClient.newBuilder()
                 .callTimeout(YOUTUBE_DOWNLOAD_PLAYBACK_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .build(),
-            settings = settingsRepo,
+            audioQualityProvider = { settingsRepo.youtubeAudioQualityFlow.first() },
+            playbackSourceProvider = { settingsRepo.youtubePlaybackSourceFlow.first() },
             authProvider = youtubeAuthRepo::getAuthOnce,
             authAutoRefreshManager = youtubeAuthAutoRefreshManager,
             applicationContext = application,

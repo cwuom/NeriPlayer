@@ -681,13 +681,21 @@ For release build and signing details, see
 
 ### Module layout
 
-- `:app`: main Android application.
+- `:app`: Android host, screens, playback/download runtime, and dependency assembly.
+- `:core:common` / `:core:model` / `:core:logging` / `:core:network`: shared utilities, models, logging, and networking.
+- `:core:lyrics` / `:core:listen-protocol`: lyric parsing/transforms and Listen Together protocol models.
+- `:data:netease` / `:data:bilibili` / `:data:youtube`: platform APIs, accounts, and playback source resolution.
+- `:data:lyrics`: lyric sources and matching policies.
 - `:ksp-annotations` / `:ksp-processor`: generated settings registration and metadata.
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`: lyrics parsing and Compose lyrics UI submodules.
 - `build-logic`: shared Gradle convention plugins.
 - `buildSrc`: retained auxiliary Gradle build logic.
 - `np-submodule/NeriPlayer-LTW`: Listen Together Cloudflare Workers server.
 - `np-submodule/miuix`: vendored upstream Miuix source/docs tree, not part of the current app module graph.
+
+Libraries do not depend on `app`; the host injects preferences, device tokens, and network clients.
+Run `./gradlew verifyModularization` for dependency boundaries, module JVM tests, combined CRAP coverage, and lint.
+See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension rules.
 
 ### Entry point and navigation
 

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.core.player.metadata
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.core.lyrics.normalizeLegacyLrcTimestamps
 import android.app.Application
 import android.util.LruCache
 import kotlinx.coroutines.CancellationException
@@ -57,10 +58,10 @@ import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.lyrics.hasWordTimedEntries
-import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
-import moe.ouom.neriplayer.ui.component.lyrics.resolveStoredLyricText
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
+import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.core.lyrics.resolveStoredLyricText
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.storage.lyricsCacheDirectory
 import moe.ouom.neriplayer.core.logging.NPLogger

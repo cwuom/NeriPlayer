@@ -11,9 +11,9 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.resolveLocalLyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.resolveStoredLyricText
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.core.lyrics.resolveLocalLyricsEditorSeed
+import moe.ouom.neriplayer.core.lyrics.resolveStoredLyricText
 import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
 
 internal enum class EditSongLyricVariant { ORIGINAL, TRANSLATED, ROMANIZED }

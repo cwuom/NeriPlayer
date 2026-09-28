@@ -2,6 +2,9 @@
     <application>
         <activity
             android:name="moe.ouom.neriplayer.testing.DocumentsFixtureActivity"
+            android:launchMode="singleTask"
+            android:taskAffinity="moe.ouom.neriplayer.test.documentsfixture"
+            android:excludeFromRecents="true"
             android:exported="true" />
         <provider
             android:name="moe.ouom.neriplayer.core.download.ManagedDownloadDelayedDocumentsProvider"

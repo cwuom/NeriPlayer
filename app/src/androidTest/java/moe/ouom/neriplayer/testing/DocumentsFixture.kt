@@ -12,7 +12,6 @@ import android.os.ParcelFileDescriptor
 import android.os.ResultReceiver
 import android.os.SystemClock
 import android.provider.DocumentsContract
-import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.net.toUri
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
@@ -25,7 +24,7 @@ internal object DocumentsFixture {
 
     fun setupDelayedProvider(options: Bundle): Bundle = launch(options = options)
 
-    fun createExternalTree(): Uri {
+    fun createExternalTree(confirmPicker: Boolean = true, timeoutMillis: Long = 20_000): Uri {
         check(Build.HARDWARE in setOf("ranchu", "goldfish")) { "external fixtures require an emulator" }
         val name = "NeriPlayer-test-${UUID.randomUUID()}"
         val path = "/sdcard/Download/$name"
@@ -40,7 +39,7 @@ internal object DocumentsFixture {
             val initial = DocumentsContract.buildDocumentUri(
                 "com.android.externalstorage.documents", "primary:Download/$name"
             )
-            val result = launch(initial = initial, confirmPicker = true)
+            val result = launch(initial = initial, confirmPicker = confirmPicker, timeoutMillis = timeoutMillis)
             return requireNotNull(result.getString("treeUri")).toUri().also { tree ->
                 instrumentation.targetContext.contentResolver.takePersistableUriPermission(tree,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -52,7 +51,13 @@ internal object DocumentsFixture {
         }
     }
 
-    private fun launch(options: Bundle? = null, initial: Uri? = null, confirmPicker: Boolean = false): Bundle {
+    private fun launch(
+        options: Bundle? = null,
+        initial: Uri? = null,
+        confirmPicker: Boolean = false,
+        timeoutMillis: Long = 20_000
+    ): Bundle {
+        val requestId = UUID.randomUUID().toString()
         val completed = CountDownLatch(1)
         val response = AtomicReference<Bundle>()
         val resultCode = AtomicReference<Int>()
@@ -66,11 +71,16 @@ internal object DocumentsFixture {
         val intent = Intent().setClassName(instrumentation.context.packageName, DocumentsFixtureActivity::class.java.name)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             .putExtra(DocumentsFixtureActivity.RECEIVER, receiver)
+            .putExtra(DocumentsFixtureActivity.REQUEST_ID, requestId)
             .putExtra(DocumentsFixtureActivity.TARGET_PACKAGE, instrumentation.targetContext.packageName)
             .putExtra(DocumentsFixtureActivity.SETUP, options)
             .setData(initial)
         val automation = instrumentation.uiAutomation
         val previousFlags = automation.serviceInfo.flags
+        val picker = initial?.let {
+            DocumentsPickerAutomation(DocumentsContract.getDocumentId(it).substringAfterLast('/'))
+        }
+        var failure: Throwable? = null
         if (confirmPicker) {
             automation.serviceInfo = automation.serviceInfo.apply {
                 flags = flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
@@ -79,57 +89,53 @@ internal object DocumentsFixture {
         }
         try {
             instrumentation.targetContext.startActivity(intent)
-            val deadline = SystemClock.elapsedRealtime() + 20_000
-            var selectedAt = 0L
+            val deadline = SystemClock.elapsedRealtime() + timeoutMillis
             while (completed.count != 0L && SystemClock.elapsedRealtime() < deadline) {
                 if (confirmPicker) {
-                    val now = SystemClock.elapsedRealtime()
-                    val activeRoot = automation.rootInActiveWindow
-                    val roots = (listOfNotNull(activeRoot) +
-                        automation.windows.mapNotNull { it.root }).distinctBy { it.windowId }
-                    picker@ for (root in roots) {
-                        val packageName = root.packageName?.toString()
-                        val isPicker = packageName in setOf("com.android.documentsui", "com.google.android.documentsui")
-                        // 系统确认弹窗可能先于选择按钮出现，只点击当前活动的 android 窗口
-                        if (!isPicker && (packageName != "android" || root.windowId != activeRoot?.windowId)) continue
-                        val ids = if (!isPicker || now - selectedAt < 1_000L) listOf("android:id/button1") else listOf(
-                            "android:id/button1",
-                            "com.android.documentsui:id/action_menu_select",
-                            "com.google.android.documentsui:id/action_menu_select"
-                        )
-                        for (id in ids) {
-                            val node = root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull { it.isEnabled && it.isClickable }
-                            if (node?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
-                                if (id != "android:id/button1") selectedAt = now
-                                break@picker
-                            }
-                        }
-                    }
+                    requireNotNull(picker).confirm(automation)
                 }
-                completed.await(50, TimeUnit.MILLISECONDS)
+                completed.await(100, TimeUnit.MILLISECONDS)
             }
             check(completed.count == 0L) {
                 "test directory authorization timed out: $initial, active=${automation.rootInActiveWindow?.packageName}, " +
-                    "windows=${automation.windows.mapNotNull { it.root?.packageName }.distinct()}, pickerSelected=${selectedAt != 0L}"
+                    picker?.diagnostics()
             }
             check(resultCode.get() == Activity.RESULT_OK) { "test directory authorization failed: ${response.get()}" }
             return requireNotNull(response.get())
+        } catch (error: Throwable) {
+            failure = error
+            throw error
         } finally {
-            if (confirmPicker) {
+            try {
                 if (completed.count != 0L) {
-                    runCatching {
-                        repeat(2) {
-                            if (completed.count != 0L) {
-                                ParcelFileDescriptor.AutoCloseInputStream(
-                                    automation.executeShellCommand("input keyevent 4")
-                                ).use { it.readBytes() }
-                                completed.await(500, TimeUnit.MILLISECONDS)
-                            }
-                        }
-                    }
+                    closeFixture(requestId)
                 }
-                automation.serviceInfo = automation.serviceInfo.apply { flags = previousFlags }
+            } catch (cleanupError: Throwable) {
+                failure?.addSuppressed(cleanupError) ?: throw cleanupError
+            } finally {
+                if (confirmPicker) automation.serviceInfo = automation.serviceInfo.apply { flags = previousFlags }
             }
+        }
+    }
+
+    private fun closeFixture(requestId: String) {
+        val closed = CountDownLatch(1)
+        val code = AtomicReference<Int>()
+        val receiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
+            override fun onReceiveResult(resultCode: Int, result: Bundle) {
+                code.set(resultCode)
+                closed.countDown()
+            }
+        }
+        instrumentation.targetContext.startActivity(
+            Intent(DocumentsFixtureActivity.CANCEL)
+                .setClassName(instrumentation.context.packageName, DocumentsFixtureActivity::class.java.name)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(DocumentsFixtureActivity.REQUEST_ID, requestId)
+                .putExtra(DocumentsFixtureActivity.RECEIVER, receiver)
+        )
+        check(closed.await(5, TimeUnit.SECONDS) && code.get() == Activity.RESULT_OK) {
+            "directory fixture did not close: $requestId"
         }
     }
 }

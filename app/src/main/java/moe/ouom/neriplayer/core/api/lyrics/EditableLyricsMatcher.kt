@@ -9,9 +9,9 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResult
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.metadata.convertPlainLyricsToEntries
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
-import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText
+import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.core.lyrics.toEditableLyricsText
 
 private const val TAG = "EditableLyricsMatcher"
 private const val MAX_SOURCE_RESULTS = 5
@@ -446,24 +446,6 @@ class EditableLyricsMatcher(
 
 }
 
-fun editableLyricMatchSearchQueries(request: EditableLyricMatchRequest): List<String> {
-    val metadataQuery = listOf(request.trackName, request.artistName)
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .joinToString(" ")
-    return listOf(request.keyword, metadataQuery, request.trackName)
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .distinctBy(::normalizeLyricMatchText)
-}
-
-fun editableLyricMatchDomesticSearchQueries(request: EditableLyricMatchRequest): List<String> {
-    return editableLyricMatchSearchQueries(request)
-        .map(::toSimplifiedChineseForDomesticSearch)
-        .filter { it.isNotBlank() }
-        .distinctBy(::normalizeLyricMatchText)
-}
-
 private fun List<SongSearchInfo>.rankSearchApiForDetailLookup(
     request: EditableLyricMatchRequest
 ): List<SongSearchInfo> {
@@ -509,15 +491,6 @@ private fun List<KugouSongSearchResult>.rankKugouForDetailLookup(
         )
         .take(MAX_DETAIL_RESULTS)
         .toList()
-}
-
-internal fun isLyricDetailLookupDurationAllowed(
-    expectedDurationMs: Long,
-    candidateDurationMs: Long
-): Boolean {
-    return expectedDurationMs <= 0L ||
-        candidateDurationMs <= 0L ||
-        isExternalLyricDurationCompatible(expectedDurationMs, candidateDurationMs)
 }
 
 private fun List<YouTubeMusicSearchResult>.rankYouTubeForDetailLookup(

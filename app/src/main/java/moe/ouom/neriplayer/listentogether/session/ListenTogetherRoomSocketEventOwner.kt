@@ -123,11 +123,12 @@ internal class ListenTogetherRoomSocketEventOwner(
         )
 
     private fun confirmUnavailableLink(message: ListenTogetherSocketEnvelope, accepted: ListenTogetherRoomState): Boolean {
-        if (message.causedBy?.type != "LINK_UNAVAILABLE") return false
+        val cause = message.causedBy
+        if (cause?.type != "LINK_UNAVAILABLE") return false
         val pending = controllerLink.markUnavailable(
             state = accepted,
             requestedStableKey = message.requestTrackStableKey,
-            signalId = message.causedBy.eventId ?: "room-state:${accepted.version}"
+            signalId = cause.eventId ?: "room-state:${accepted.version}"
         )
         NPLogger.d(TAG, "link unavailable confirmation pending=$pending, stableKey=${accepted.currentStableKey()}")
         return pending

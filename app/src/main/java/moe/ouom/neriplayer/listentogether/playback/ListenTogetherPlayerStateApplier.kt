@@ -249,11 +249,12 @@ internal class ListenTogetherPlayerStateApplier(
     }
 
     private fun ListenTogetherRoomState.toSongQueue(): List<SongItem> {
+        val currentTrack = track
         return when {
             queue.isNotEmpty() -> queue
                 .mergeCurrentTrack(currentIndex, track)
                 .map { it.toSongItem() }
-            track != null -> listOf(track.toSongItem())
+            currentTrack != null -> listOf(currentTrack.toSongItem())
             else -> emptyList()
         }
     }

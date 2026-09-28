@@ -16,8 +16,8 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.core.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 
 internal fun shouldFetchOriginalSongInfo(song: SongItem): Boolean {

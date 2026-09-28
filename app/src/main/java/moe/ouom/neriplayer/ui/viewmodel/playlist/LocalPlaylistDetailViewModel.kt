@@ -954,7 +954,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private fun hasMeaningfulScanMetadata(song: SongItem): Boolean {
         val unknownArtist = app.getString(moe.ouom.neriplayer.R.string.music_unknown_artist)
         val fileTitle = song.localFileName
-            ?.substringBeforeLast('.', song.localFileName)
+            ?.substringBeforeLast('.')
             ?.trim()
             .orEmpty()
         val hasTitleMetadata = song.name.isNotBlank() &&
@@ -979,7 +979,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         }
         if (!artistNeedsRepair && hasMeaningfulScanMetadata(song)) return false
         val fileTitle = song.localFileName
-            ?.substringBeforeLast('.', song.localFileName)
+            ?.substringBeforeLast('.')
             ?.trim()
             .orEmpty()
         return artistNeedsRepair ||

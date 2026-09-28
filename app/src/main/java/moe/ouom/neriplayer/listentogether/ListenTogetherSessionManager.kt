@@ -577,7 +577,8 @@ class ListenTogetherSessionManager(
                     roomId = roomId
                 )
             }.onSuccess { response ->
-                if (response.ok && response.state != null) {
+                val responseState = response.state
+                if (response.ok && responseState != null) {
                     mainScope.launch {
                         val currentSession = _sessionState.value
                         if (
@@ -590,9 +591,9 @@ class ListenTogetherSessionManager(
                         val latestRoomState = roomState.value
                         val stateToApply = latestRoomState
                             ?.takeIf { it.roomId == roomId }
-                            ?: response.state
+                            ?: responseState
                         val expectedPositionMs = response.expectedPositionMs
-                            .takeIf { stateToApply.version == response.state.version }
+                            .takeIf { stateToApply.version == responseState.version }
                         val applied = playerStateApplier.apply(
                             state = stateToApply,
                             causeType = LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE,
@@ -1331,7 +1332,8 @@ class ListenTogetherSessionManager(
             publishControllerHeartbeatIfNeeded(force = true, reason = "reject_member_control_disabled")
             return true
         }
-        val requestType = message.causedBy?.type ?: return false
+        val cause = message.causedBy ?: return false
+        val requestType = cause.type ?: return false
         if (requestType !in trackBoundRequestControlEventTypes) return false
         val currentStableKey = roomState.currentStableKey()
         val requestedStableKey = forwardedEvent.requestedStableKey()
@@ -1340,7 +1342,7 @@ class ListenTogetherSessionManager(
         }
         NPLogger.w(
             TAG,
-            "shouldRejectForwardedMemberControl(): stale target, requestType=$requestType, requested=$requestedStableKey, current=$currentStableKey, requester=${message.causedBy.userUuid}"
+            "shouldRejectForwardedMemberControl(): stale target, requestType=$requestType, requested=$requestedStableKey, current=$currentStableKey, requester=${cause.userUuid}"
         )
         publishControllerHeartbeatIfNeeded(force = true, reason = "reject_stale_member_control")
         return true
@@ -1535,18 +1537,18 @@ class ListenTogetherSessionManager(
         expectedRoomId: String?
     ) {
         val snapshot = _sessionState.value
+        val baseUrl = snapshot.baseUrl
+        val token = snapshot.token
         if (
-            snapshot.baseUrl.isNullOrBlank() ||
+            baseUrl.isNullOrBlank() ||
             snapshot.roomId.isNullOrBlank() ||
-            snapshot.token.isNullOrBlank() ||
+            token.isNullOrBlank() ||
             expectedRoomId.isNullOrBlank() ||
             snapshot.roomId != expectedRoomId
         ) {
             NPLogger.d(TAG, "sendControlEventOverHttpFallback(): skipped, missing session, reason=$reason")
             return
         }
-        val baseUrl = snapshot.baseUrl
-        val token = snapshot.token
         scope.launch {
             if (_sessionState.value.roomId != expectedRoomId) {
                 NPLogger.d(
