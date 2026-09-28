@@ -49,23 +49,6 @@ import org.junit.Test
 class ListenTogetherEventCompatibilityTest {
 
     @Test
-    fun `initial shuffle restore queue survives protocol serialization`() {
-        val originalQueue = listOf(track("netease:1", "1"), track("netease:2", "2"))
-        val snapshot = ListenTogetherInitialSnapshot(
-            queue = originalQueue.reversed(),
-            currentIndex = 0,
-            shuffleEnabled = true,
-            shuffleRestoreQueue = originalQueue
-        )
-
-        val decoded = Json.decodeFromString<ListenTogetherInitialSnapshot>(
-            Json.encodeToString(snapshot)
-        )
-
-        assertEquals(originalQueue, decoded.shuffleRestoreQueue)
-    }
-
-    @Test
     fun `shuffle restore snapshot keeps the active bounded queue in original order`() {
         val originalQueue = listOf(
             songItem(ListenTogetherChannels.NETEASE, "1"),

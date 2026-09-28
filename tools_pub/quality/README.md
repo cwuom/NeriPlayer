@@ -10,7 +10,8 @@
 `verifyCrap` 运行 app 和自有 core/data 库的 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES
 获取每个模块自身的 Kotlin/Java 字节码，合并各测试任务的执行数据，生成 JaCoCo XML，
 再计算逐方法 CRAP。库的覆盖率产物由 convention 的 outgoing configurations 提供。
-源码合并到 `app/build/reports/crap/sources`，重复路径直接报错；移动模块不会丢失原门禁。
+源码从各模块的 `src/main/java` 和 `src/main/kotlin` 合并到 `app/build/reports/crap/sources`，
+重复路径直接报错。生成报告前检查 app 和每个自有库的执行数据，缺失或空文件立即失败。
 `:app:check` 执行 CRAP 门禁，Android CI 的 `verifyModularization` 还执行所有自有模块的
 lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
 

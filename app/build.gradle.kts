@@ -29,9 +29,10 @@ val libraryCoverageExecution = configurations.create("libraryCoverageExecution")
     isTransitive = false
 }
 val coverageSources = tasks.register<Sync>("collectCoverageSources") {
-    from(layout.projectDirectory.dir("src/main/java"))
-    ownedLibraryPaths.forEach { module ->
-        from(project(module).layout.projectDirectory.dir("src/main/java"))
+    (listOf(project.path) + ownedLibraryPaths).forEach { module ->
+        listOf("java", "kotlin").forEach { language ->
+            from(project(module).layout.projectDirectory.dir("src/main/$language"))
+        }
     }
     into(layout.buildDirectory.dir("reports/crap/sources"))
     duplicatesStrategy = DuplicatesStrategy.FAIL
@@ -269,14 +270,9 @@ val crapExecutionData = providers.provider {
         ?: throw GradleException("Debug JVM coverage destination is missing")
 }
 
-val verifyCrapExecutionData = tasks.register("verifyCrapExecutionData") {
-    dependsOn("testDebugUnitTest")
-    doLast {
-        val executionFile = crapExecutionData.get()
-        if (!executionFile.isFile || executionFile.length() == 0L) {
-            throw GradleException("Missing or empty coverage execution data: $executionFile")
-        }
-    }
+val verifyCrapExecutionData = tasks.register<VerifyCoverageExecutionData>("verifyCrapExecutionData") {
+    dependsOn("testDebugUnitTest", libraryCoverageExecution)
+    executionData.from(crapExecutionData, libraryCoverageExecution)
 }
 
 val crapCoverageReport = tasks.register<ProjectCoverageReport>("crapCoverageReport") {
