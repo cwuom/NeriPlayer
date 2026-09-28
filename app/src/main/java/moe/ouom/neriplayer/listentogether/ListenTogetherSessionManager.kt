@@ -47,13 +47,10 @@ import moe.ouom.neriplayer.listentogether.playback.resolveListenTogetherSoftSync
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
 import moe.ouom.neriplayer.listentogether.playback.shouldWaitForListenTogetherAuthoritativeStreamPlayback
 import moe.ouom.neriplayer.listentogether.playback.targetSongItem
-import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
-import moe.ouom.neriplayer.listentogether.playback.toShareableShuffleRestoreQueueSnapshot
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherControlResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherInitialSnapshot
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
@@ -84,32 +81,27 @@ import moe.ouom.neriplayer.listentogether.session.ListenTogetherRoomStateObserve
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherRoomStateOwner
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherRoomSocketEventOwner
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherRoomSocketEventPort
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherRoomMembershipOwner
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherRoomMembershipPort
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherApiMembershipTransport
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherSocketControlResultOwner
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherSocketControlResultPort
 import moe.ouom.neriplayer.listentogether.session.PlayerManagerListenTogetherLinkPlaybackPort
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherForegroundRecoveryAction
-import moe.ouom.neriplayer.listentogether.session.ListenTogetherMembershipCredential
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherRecentEventTracker
 import moe.ouom.neriplayer.listentogether.session.RoomStateSource
 import moe.ouom.neriplayer.listentogether.session.normalized
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherControlBlockReason
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherForegroundRecoveryAction
-import moe.ouom.neriplayer.listentogether.session.resolveReusableListenTogetherMembershipCredential
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherRoomNotice
-import moe.ouom.neriplayer.listentogether.session.shouldAutoPauseListenTogetherForMemberChange
 import moe.ouom.neriplayer.listentogether.session.shouldHoldListenTogetherBackgroundKeepAlive
 import moe.ouom.neriplayer.listentogether.session.isNormalListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.listentogether.session.normalizeListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherRoomStateToPlayer
 import moe.ouom.neriplayer.listentogether.session.shouldRejectForwardedListenTogetherMemberControl
-import moe.ouom.neriplayer.listentogether.session.toMembershipCredentialOrNull
 import moe.ouom.neriplayer.listentogether.session.prepareListenTogetherSessionUpdate
-import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherNickname
-import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherJoinSecret
-import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomCreation
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomId
-import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherUserUuid
 import moe.ouom.neriplayer.util.units.MINUTE_MS
 import moe.ouom.neriplayer.util.units.SECOND_MS
 import java.util.UUID
@@ -132,8 +124,6 @@ class ListenTogetherSessionManager(
     private var lastControllerLocalControlAtElapsedMs: Long = 0L
     @Volatile
     private var applicationInForeground = true
-    @Volatile
-    private var retainedMembershipCredential: ListenTogetherMembershipCredential? = null
     private val forwardedRequestDeduper = ListenTogetherForwardedRequestDeduper()
     @Volatile
     private var webSocketConnectingAtElapsedMs: Long = 0L
@@ -143,6 +133,27 @@ class ListenTogetherSessionManager(
 
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
+
+    private val membershipOwner = ListenTogetherRoomMembershipOwner(
+        scope = scope,
+        transport = ListenTogetherApiMembershipTransport(api),
+        port = object : ListenTogetherRoomMembershipPort {
+            override fun currentSession(): ListenTogetherSessionState = _sessionState.value
+            override fun repeatMode(): Int = PlayerManager.repeatModeFlow.value
+            override fun shuffleEnabled(): Boolean = PlayerManager.shuffleModeFlow.value
+            override fun shuffleRestoreSongs(): List<SongItem>? = PlayerManager.shuffleRestorePlaylistReference
+            override fun applyRoomResponse(baseUrl: String, response: ListenTogetherRoomResponse) =
+                updateSession(baseUrl, response)
+            override fun pauseForDeparture() {
+                PlayerManager.pauseImpl(
+                    forcePersist = true,
+                    commandSource = PlaybackCommandSource.REMOTE_SYNC,
+                    allowFadeOut = false,
+                    debugReason = "listen_together_leave_room_auto_pause"
+                )
+            }
+        }
+    )
 
     private val connectionRecoveryOwner: ListenTogetherConnectionRecoveryOwner = ListenTogetherConnectionRecoveryOwner(
         scope = scope,
@@ -484,48 +495,9 @@ class ListenTogetherSessionManager(
         roomSettings: ListenTogetherRoomSettings = ListenTogetherRoomSettings(),
         currentSong: SongItem? = queue.getOrNull(currentIndex)
     ): ListenTogetherRoomResponse {
-        val validatedUserUuid = requireValidListenTogetherUserUuid(userUuid)
-        val validatedNickname = requireValidListenTogetherNickname(nickname)
-        requireValidListenTogetherRoomCreation(queue, currentIndex, currentSong)
-        val (queueTracks, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
-            currentIndex = currentIndex,
-            roomSettings = roomSettings,
-            includeResolvedStreamUrl = false
+        return membershipOwner.createRoom(
+            baseUrl, userUuid, nickname, queue, currentIndex, positionMs, isPlaying, roomSettings, currentSong
         )
-        val shuffleRestoreQueue = if (PlayerManager.shuffleModeFlow.value) {
-            PlayerManager.shuffleRestorePlaylistReference
-                ?.toShareableShuffleRestoreQueueSnapshot(queueTracks)
-                ?.takeIf { it.isNotEmpty() }
-        } else {
-            null
-        }
-        NPLogger.d(
-            TAG,
-            "createRoom(): baseUrl=$baseUrl, userUuid=$validatedUserUuid, nickname=$validatedNickname, queueSize=${queue.size}, shareableQueueSize=${queueTracks.size}, shuffleRestoreQueueSize=${shuffleRestoreQueue?.size ?: 0}, currentIndex=$currentIndex, resolvedCurrentIndex=$resolvedCurrentIndex, isPlaying=$isPlaying, positionMs=$positionMs"
-        )
-        val initialSnapshot = ListenTogetherInitialSnapshot(
-            queue = queueTracks,
-            currentIndex = resolvedCurrentIndex,
-            track = queueTracks.getOrNull(resolvedCurrentIndex),
-            settings = roomSettings.normalized(),
-            isPlaying = isPlaying,
-            positionMs = positionMs.coerceAtLeast(0L),
-            repeatMode = PlayerManager.repeatModeFlow.value,
-            shuffleEnabled = PlayerManager.shuffleModeFlow.value,
-            shuffleRestoreQueue = shuffleRestoreQueue
-        )
-        val response = api.createRoom(
-            baseUrl = baseUrl,
-            userUuid = validatedUserUuid,
-            nickname = validatedNickname,
-            initialSnapshot = initialSnapshot
-        )
-        updateSession(baseUrl, response)
-        NPLogger.d(
-            TAG,
-            "createRoom(): ok=${response.ok}, roomId=${response.roomId}, role=${response.role}, wsUrl=${response.wsUrl.redactListenTogetherWsUrlForLog()}"
-        )
-        return response
     }
 
     suspend fun joinRoom(
@@ -536,45 +508,7 @@ class ListenTogetherSessionManager(
         memberSecret: String? = null,
         joinSecret: String? = null
     ): ListenTogetherRoomResponse {
-        val validatedRoomId = requireValidListenTogetherRoomId(roomId)
-        val validatedUserUuid = requireValidListenTogetherUserUuid(userUuid)
-        val validatedNickname = requireValidListenTogetherNickname(nickname)
-        NPLogger.d(TAG, "joinRoom(): baseUrl=$baseUrl, roomId=$validatedRoomId, userUuid=$validatedUserUuid, nickname=$validatedNickname")
-        val previousSession = _sessionState.value
-        val reusableCredential = resolveReusableListenTogetherMembershipCredential(
-            activeSession = previousSession,
-            retainedCredential = retainedMembershipCredential,
-            baseUrl = baseUrl,
-            roomId = validatedRoomId,
-            userUuid = validatedUserUuid
-        )
-        val resolvedMemberSecret = memberSecret ?: reusableCredential?.memberSecret
-        val explicitJoinSecret = joinSecret
-            ?.takeIf { it.isNotBlank() }
-            ?.let(::requireValidListenTogetherJoinSecret)
-        val resolvedJoinSecret = explicitJoinSecret ?: reusableCredential?.joinSecret
-        val hasReusableMembership = !resolvedMemberSecret.isNullOrBlank() ||
-            !reusableCredential?.token.isNullOrBlank()
-        val validatedJoinSecret = if (hasReusableMembership) {
-            resolvedJoinSecret
-        } else {
-            requireValidListenTogetherJoinSecret(resolvedJoinSecret)
-        }
-        val response = api.joinRoom(
-            baseUrl = baseUrl,
-            roomId = validatedRoomId,
-            userUuid = validatedUserUuid,
-            nickname = validatedNickname,
-            memberSecret = resolvedMemberSecret,
-            joinSecret = validatedJoinSecret,
-            bearerToken = reusableCredential?.token
-        )
-        updateSession(baseUrl, response)
-        NPLogger.d(
-            TAG,
-            "joinRoom(): ok=${response.ok}, roomId=${response.roomId}, role=${response.role}, wsUrl=${response.wsUrl.redactListenTogetherWsUrlForLog()}"
-        )
-        return response
+        return membershipOwner.joinRoom(baseUrl, roomId, userUuid, nickname, memberSecret, joinSecret)
     }
 
     suspend fun refreshRoomState(
@@ -893,57 +827,13 @@ class ListenTogetherSessionManager(
         localControlOwner.clearCoalesced("leave")
         localControlOwner.clearOutbox()
         val snapshot = _sessionState.value
-        val shouldAutoPause = shouldAutoPauseListenTogetherForMemberChange(
-            autoPauseOnMemberChange =
-                !snapshot.roomId.isNullOrBlank() &&
-                    (roomState.value?.settings?.autoPauseOnMemberChange ?: true),
-            memberChangeType = "MEMBER_LEFT"
-        )
-        if (shouldAutoPause) {
-            PlayerManager.pauseImpl(
-                forcePersist = true,
-                commandSource = PlaybackCommandSource.REMOTE_SYNC,
-                allowFadeOut = false,
-                debugReason = "listen_together_leave_room_auto_pause"
-            )
-        }
-        val leaveBaseUrl = snapshot.baseUrl
-        val leaveRoomId = snapshot.roomId
-        val leaveToken = snapshot.token
-        retainedMembershipCredential = null
+        membershipOwner.pauseBeforeLeave(snapshot, roomState.value)
         connectionRecoveryOwner.stop()
         socketHealthOwner.pendingRefreshAfterReconnect = false
         controllerLinkOwner.clear()
         socketHealthOwner.cancelForegroundProbe()
         stopListenTogetherSoftSyncRateRecheck()
-        if (
-            !leaveBaseUrl.isNullOrBlank() &&
-            !leaveRoomId.isNullOrBlank() &&
-            !leaveToken.isNullOrBlank()
-        ) {
-            scope.launch {
-                runCatching {
-                    api.leaveRoom(
-                        baseUrl = leaveBaseUrl,
-                        roomId = leaveRoomId,
-                        token = leaveToken
-                    )
-                }.onSuccess { response ->
-                    if (!response.ok) {
-                        NPLogger.w(
-                            TAG,
-                            "leaveRoom(): server rejected leave, roomId=$leaveRoomId, error=${response.error}"
-                        )
-                    }
-                }.onFailure { error ->
-                    NPLogger.w(
-                        TAG,
-                        "leaveRoom(): server notification failed, roomId=$leaveRoomId, error=${error.message}",
-                        error
-                    )
-                }
-            }
-        }
+        membershipOwner.notifyAndClearCredential(snapshot)
         socketHealthOwner.stopKeepAlive()
         listenerWatchdogOwner.stop()
         heartbeatOwner.reset()
@@ -1180,7 +1070,7 @@ class ListenTogetherSessionManager(
         openSessionRoom(response.roomId)
         logSessionUpdate(response, prepared.resolvedWsUrl)
         _sessionState.value = prepared.applyTo(_sessionState.value)
-        retainCurrentMembershipCredential()
+        membershipOwner.retainCurrentCredential()
         applySessionRoomState(response)
     }
 
@@ -1209,12 +1099,6 @@ class ListenTogetherSessionManager(
             TAG,
             "updateSession(): roomId=${response.roomId}, role=${response.role}, wsUrl=${wsUrl.redactListenTogetherWsUrlForLog()}"
         )
-    }
-
-    private fun retainCurrentMembershipCredential() {
-        _sessionState.value.toMembershipCredentialOrNull()?.let { credential ->
-            retainedMembershipCredential = credential
-        }
     }
 
     private fun applySessionRoomState(response: ListenTogetherRoomResponse) {

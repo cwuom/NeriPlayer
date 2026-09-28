@@ -173,7 +173,9 @@
     "moe/ouom/neriplayer/core/player/audio/route/PlayerManagerAudioDeviceRoutePort.kt",
     "moe/ouom/neriplayer/core/player/policy/command/LocalRoomControlRestriction.kt",
     "moe/ouom/neriplayer/listentogether/session/ListenTogetherRoomSocketEventOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/ListenTogetherSocketControlResultOwner.kt"
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherSocketControlResultOwner.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherRoomMembershipOwner.kt",
+    "moe/ouom/neriplayer/listentogether/session/ListenTogetherMembershipTransport.kt"
   ],
   "method_scopes": [
     {
@@ -648,12 +650,16 @@
         "<init>",
         "getRoomState",
         "start",
+        "createRoom",
+        "createRoom$default",
+        "joinRoom",
+        "joinRoom$default",
+        "leaveRoom",
         "updateSession",
         "resetForSessionChange",
         "openSessionRoom",
         "finishSessionRoomActivation",
         "logSessionUpdate",
-        "retainCurrentMembershipCredential",
         "applySessionRoomState",
         "acceptRoomState",
         "onRoomStateCommitted",
@@ -668,6 +674,14 @@
         "trySendTrackFinishedLegacyFallback",
         "sendPing",
         "noteOutboundSync"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
+      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$membershipOwner$1",
+      "methods": [
+        "<init>", "currentSession", "repeatMode", "shuffleEnabled", "shuffleRestoreSongs",
+        "applyRoomResponse", "pauseForDeparture"
       ]
     },
     {

@@ -198,7 +198,9 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/core/player/policy/command/LocalRoomControlRestriction.kt",
             "app/src/main/java/moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
             "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherRoomSocketEventOwner.kt",
-            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherSocketControlResultOwner.kt"
+            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherSocketControlResultOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherRoomMembershipOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherMembershipTransport.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)
