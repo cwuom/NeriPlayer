@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
@@ -32,6 +33,7 @@ import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
+import kotlin.time.Duration.Companion.milliseconds
 
 internal fun PlayerManager.configureActivePlaybackCandidates(
     result: SongUrlResult.Success,
@@ -84,14 +86,15 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
     val watchdogToken = playbackStartupWatchdogToken + 1L
     playbackStartupWatchdogToken = watchdogToken
     playbackStartupWatchdogJob?.cancel()
-    val startPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
-        .getOrDefault(_playbackPositionMs.value.coerceAtLeast(0L))
+    val startPositionMs = player.currentPositionMsOr(
+        _playbackPositionMs.value.coerceAtLeast(0L)
+    )
     val startedAtMs = SystemClock.elapsedRealtime()
     val earlyTimeoutMs = startupEarlyWatchdogTimeoutMs(timeoutMs)
 
     playbackStartupWatchdogJob = mainScope.launch {
         if (earlyTimeoutMs in 1 until timeoutMs) {
-            delay(earlyTimeoutMs)
+            delay(earlyTimeoutMs.milliseconds)
             if (playbackStartupWatchdogToken != watchdogToken) return@launch
             if (requestToken != playbackRequestToken) return@launch
             if (isEarlyStartupPlaybackStalled(startPositionMs)) {
@@ -105,9 +108,9 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
                 recoverPlaybackStartupStall(requestToken)
                 return@launch
             }
-            delay(timeoutMs - earlyTimeoutMs)
+            delay((timeoutMs - earlyTimeoutMs).milliseconds)
         } else {
-            delay(timeoutMs)
+            delay(timeoutMs.milliseconds)
         }
         if (playbackStartupWatchdogToken != watchdogToken) return@launch
         if (requestToken != playbackRequestToken) return@launch
@@ -135,7 +138,7 @@ internal fun PlayerManager.cancelPlaybackStartupWatchdog(reason: String) {
 }
 
 private fun PlayerManager.shouldWatchPlaybackStartup(): Boolean {
-    if (!initialized || isPendingMediaLoadActive()) return false
+    if (!initialized || !resumePlaybackRequested || isPendingMediaLoadActive()) return false
     if (!isPlayerInitialized()) return false
     if (player.currentMediaItem == null || !player.playWhenReady) return false
     if (_currentSongFlow.value == null) return false

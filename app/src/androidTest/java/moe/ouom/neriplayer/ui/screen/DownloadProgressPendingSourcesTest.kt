@@ -20,6 +20,8 @@ import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecution
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.ui.screen.download.DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES
+import moe.ouom.neriplayer.ui.screen.download.readDurablePendingDownloadSongKeys
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -64,7 +66,9 @@ class DownloadProgressPendingSourcesTest {
         withFixture { context, database ->
             val request = request("cancelled")
             DownloadExecutionRoomStore.upsert(context, request, "QUEUED", database = database)
-            assertEquals(setOf(request.song.stableKey()), readDurablePendingDownloadSongKeys(context, database))
+            assertEquals(setOf(request.song.stableKey()),
+                readDurablePendingDownloadSongKeys(context, database)
+            )
             DownloadExecutionRoomStore.requestCancelOperations(context, listOf(request.operationId), database)
 
             assertEquals(emptySet<String>(), readDurablePendingDownloadSongKeys(context, database))
@@ -96,7 +100,9 @@ class DownloadProgressPendingSourcesTest {
             val replacement = cancelled.copy(operationId = "new-request", attemptId = 2L)
             DownloadExecutionRoomStore.upsert(context, replacement, "QUEUED", database = database)
 
-            assertEquals(setOf(cancelled.song.stableKey()), readDurablePendingDownloadSongKeys(context, database))
+            assertEquals(setOf(cancelled.song.stableKey()),
+                readDurablePendingDownloadSongKeys(context, database)
+            )
             assertEquals("QUEUED", database.downloadOperationDao().findHeader(replacement.operationId)?.state)
         }
     }
@@ -107,7 +113,9 @@ class DownloadProgressPendingSourcesTest {
             val request = request("legacy")
             createStaging(context, request, operationId = null)
 
-            assertEquals(setOf(request.song.stableKey()), readDurablePendingDownloadSongKeys(context, database))
+            assertEquals(setOf(request.song.stableKey()),
+                readDurablePendingDownloadSongKeys(context, database)
+            )
         }
     }
 

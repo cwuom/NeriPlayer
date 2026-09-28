@@ -38,7 +38,7 @@ internal object ManagedDownloadMigrationTargetIndexBuilder {
             coverEntriesByName = coverEntriesByName,
             lyricEntriesByName = lyricEntriesByName,
             metadataByAudioName = metadataByAudioName,
-            ambiguousNamesBySubdirectory = buildMap<String?, Set<String>> {
+            ambiguousNamesBySubdirectory = buildMap {
                 if (ambiguousRootNames.isNotEmpty()) put(null, ambiguousRootNames)
                 if (ambiguousCoverNames.isNotEmpty()) {
                     put(COVER_SUBDIRECTORY, ambiguousCoverNames)

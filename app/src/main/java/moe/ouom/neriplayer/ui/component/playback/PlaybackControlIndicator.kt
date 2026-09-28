@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val PLAYBACK_WAITING_VISUAL_DELAY_MS = 1_000L
 
@@ -137,7 +138,7 @@ internal fun rememberDelayedPlaybackWaiting(
 
         // 短缓冲先别闪等待圈，超过 1 秒再显示会更稳
         showWaiting = false
-        delay(delayMillis)
+        delay(delayMillis.milliseconds)
         showWaiting = true
     }
 

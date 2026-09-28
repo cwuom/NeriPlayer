@@ -46,7 +46,7 @@ internal object ManagedDownloadSnapshotIndex {
             .groupBy { it.first }
             .mapValues { (audioName, entries) ->
                 entries.minWithOrNull(
-                    compareBy<Pair<String, ManagedDownloadStorage.StoredEntry>>(
+                    compareBy(
                         { ManagedDownloadTreeNaming.metadataNameOrdinal(it.second.name, audioName) ?: Int.MAX_VALUE },
                         { it.second.name }
                     )

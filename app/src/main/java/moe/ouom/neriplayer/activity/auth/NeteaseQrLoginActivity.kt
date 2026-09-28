@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import org.json.JSONObject
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 internal fun shouldPollNeteaseQrLogin(
     lifecycleState: Lifecycle.State,
@@ -371,7 +372,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
                     return
                 }
             }
-            delay(POLL_INTERVAL_MS)
+            delay(POLL_INTERVAL_MS.milliseconds)
         }
     }
 

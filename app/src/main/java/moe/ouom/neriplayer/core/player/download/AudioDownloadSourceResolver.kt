@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeWebRemixDirectMissingPoToken
 import java.io.IOException
 import java.net.URLConnection
+import kotlin.time.Duration.Companion.milliseconds
 
 internal class DownloadSourceUnavailableException(message: String) : IOException(message)
 
@@ -243,7 +244,7 @@ internal object AudioDownloadSourceResolver {
     ): YouTubePlayableAudio? {
         val startedAtMs = System.currentTimeMillis()
         return try {
-            val playableAudio = withTimeoutOrNull(attempt.timeoutMs) {
+            val playableAudio = withTimeoutOrNull(attempt.timeoutMs.milliseconds) {
                 val repository = if (attempt.shareInFlight) {
                     AppContainer.youtubeMusicPlaybackRepository
                 } else {

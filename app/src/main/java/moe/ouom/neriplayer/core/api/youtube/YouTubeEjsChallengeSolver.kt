@@ -51,6 +51,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class YouTubeJsChallengeSolution(
     val signature: String? = null,
@@ -784,7 +785,7 @@ internal class YouTubeEjsChallengeSolver(
                 }
                 val fallbackHedge = async {
                     val sandboxSessionReadyWithinGracePeriod = withTimeoutOrNull(
-                        YOUTUBE_EJS_WEBVIEW_WARMUP_HEDGE_DELAY_MS
+                        YOUTUBE_EJS_WEBVIEW_WARMUP_HEDGE_DELAY_MS.milliseconds
                     ) {
                         sandboxWarmup.await()
                     } == true

@@ -90,6 +90,7 @@ import moe.ouom.neriplayer.util.media.CoverArtColorCache
 import moe.ouom.neriplayer.util.media.normalizeCoverArtColorCacheKey
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.search.SearchTextMatcher
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val PLAYLIST_HEADER_KEY = "header"
 internal const val PLAYLIST_ACTIONS_KEY = "playlist_actions"
@@ -300,7 +301,7 @@ internal fun rememberPlaylistSearchInputState(
     LaunchedEffect(inputState.value) {
         val pendingQuery = inputState.value.text
         if (pendingQuery == query) return@LaunchedEffect
-        delay(delayMillis)
+        delay(delayMillis.milliseconds)
         if (inputState.value.text == pendingQuery) {
             onQueryChange(pendingQuery)
         }

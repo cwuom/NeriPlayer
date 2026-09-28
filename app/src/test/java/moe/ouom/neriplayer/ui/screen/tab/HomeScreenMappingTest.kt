@@ -4,6 +4,16 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.screen.tab.home.buildHomeSongInfo
+import moe.ouom.neriplayer.ui.screen.tab.home.homeLocalFilesCoverCandidates
+import moe.ouom.neriplayer.ui.screen.tab.home.resolveHomeContinueCardWidthDp
+import moe.ouom.neriplayer.ui.screen.tab.home.resolveHomeContinueCardsPerPage
+import moe.ouom.neriplayer.ui.screen.tab.home.resolveHomeContinuePagerPage
+import moe.ouom.neriplayer.ui.screen.tab.home.selectContinueCoverUrl
+import moe.ouom.neriplayer.ui.screen.tab.home.shouldResolveHomeContinueLocalCoverFallback
+import moe.ouom.neriplayer.ui.screen.tab.home.shouldShowHomeContinueSection
+import moe.ouom.neriplayer.ui.screen.tab.home.shouldValidateHomeContinueCoverReference
+import moe.ouom.neriplayer.ui.screen.tab.home.toPlayableSongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -69,6 +79,39 @@ class HomeScreenMappingTest {
         assertEquals(24, candidates.size)
         assertEquals("https://example.com/cover-0.jpg", candidates.first().coverUrl)
         assertEquals("https://example.com/cover-23.jpg", candidates.last().coverUrl)
+    }
+
+    @Test
+    fun `home cover candidates accept each cover source and ignore blank references`() {
+        val base = DownloadedSong(
+            id = 1L,
+            name = "song",
+            artist = "artist",
+            album = "album",
+            filePath = "/music/song.mp3",
+            fileSize = 1L,
+            downloadTime = 1L
+        )
+        val candidates = homeLocalFilesCoverCandidates(
+            listOf(
+                base.copy(id = 1L, customCoverUrl = "content://custom"),
+                base.copy(id = 2L, coverPath = "/music/cover.jpg"),
+                base.copy(id = 3L, coverUrl = "https://example.com/cover.jpg"),
+                base.copy(id = 4L),
+                base.copy(id = 5L, customCoverUrl = "   ")
+            )
+        )
+
+        assertEquals(listOf(1L, 2L, 3L), candidates.map(SongItem::id))
+    }
+
+    @Test
+    fun `continue cover prefers resolved cover then usable persisted cover`() {
+        assertEquals("content://fresh", selectContinueCoverUrl("content://fresh", "file://old"))
+        assertEquals("file://old", selectContinueCoverUrl(" ", "file://old"))
+        assertEquals("file://old", selectContinueCoverUrl(null, "file://old"))
+        assertEquals(null, selectContinueCoverUrl(null, " "))
+        assertEquals(null, selectContinueCoverUrl(null, null))
     }
 
     @Test

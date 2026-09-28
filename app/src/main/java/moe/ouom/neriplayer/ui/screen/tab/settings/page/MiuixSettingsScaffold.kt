@@ -65,7 +65,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
@@ -75,6 +75,7 @@ import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
+import kotlin.time.Duration.Companion.milliseconds
 
 private val MiuixCardShape = RoundedCornerShape(16.dp)
 private val MiuixHighlightShape = RoundedCornerShape(18.dp)
@@ -197,10 +198,10 @@ internal fun Modifier.settingsHighlightTarget(
             bringIntoViewRequester.bringIntoView()
             withFrameNanos { }
         }
-        delay(80)
+        delay(80.milliseconds)
         repeat(4) { index ->
             highlightActive = index % 2 == 0
-            delay(180)
+            delay(180.milliseconds)
         }
         highlightActive = false
         onHighlightFinished?.invoke()
@@ -632,7 +633,7 @@ internal fun MiuixSettingsSectionCard(
         }
         repeat(4) { index ->
             highlightActive = index % 2 == 0
-            delay(180)
+            delay(180.milliseconds)
         }
         highlightActive = false
         onHighlightFinished?.invoke()

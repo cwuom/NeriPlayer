@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal fun GlobalDownloadManager.removeDownloadTasks(expectedAttemptIdsBySongKey: Map<String, Long>) {
@@ -69,7 +70,7 @@ internal fun GlobalDownloadManager.scheduleCompletedTaskRemoval(
         )
         ?: return
     scope.launch {
-        delay(DOWNLOAD_TASK_COMPLETED_RETENTION_MS)
+        delay(DOWNLOAD_TASK_COMPLETED_RETENTION_MS.milliseconds)
         admitDownloadMutation(
             context = appContext,
             admissionTicket = capturedAdmissionTicket,
@@ -98,7 +99,7 @@ internal fun GlobalDownloadManager.scheduleCatalogReconcile(context: Context, fo
             return
         }
         catalogReconcileJob = scope.launch {
-            delay(DOWNLOAD_CATALOG_RECONCILE_DELAY_MS)
+            delay(DOWNLOAD_CATALOG_RECONCILE_DELAY_MS.milliseconds)
             if (!awaitAllDownloadedSongDeletions()) {
                 // 删除仍未收敛时保留对账意图，等待删除完成后的明确触发，
                 // 不能把超时当作目录已经稳定，也不能在后台无限轮询
@@ -898,7 +899,7 @@ internal fun GlobalDownloadManager.clearInitialBatchDownloadPresentationOnTransf
 
 internal fun GlobalDownloadManager.scheduleCompletedBatchDownloadPresentationRemoval(batchId: Long) {
     scope.launch {
-        delay(DOWNLOAD_TASK_COMPLETED_RETENTION_MS)
+        delay(DOWNLOAD_TASK_COMPLETED_RETENTION_MS.milliseconds)
         var removed = false
         batchDownloadPresentationsMutable.update { presentations ->
             val presentation = presentations[batchId] ?: return@update presentations
@@ -1208,7 +1209,7 @@ internal suspend fun GlobalDownloadManager.captureCancellationOperationIds(
     }
     val snapshotJob = cancellationOperationSnapshotJobs[normalizedKey]
     val snapshotResult = snapshotJob?.let { job ->
-        withTimeoutOrNull(DOWNLOAD_CANCEL_OPERATION_SNAPSHOT_TIMEOUT_MS) {
+        withTimeoutOrNull(DOWNLOAD_CANCEL_OPERATION_SNAPSHOT_TIMEOUT_MS.milliseconds) {
             try {
                 Result.success(job.await())
             } catch (cancellation: CancellationException) {
@@ -1239,7 +1240,7 @@ internal suspend fun GlobalDownloadManager.captureCancellationOperationIds(
         snapshotIds
     }
     val persistedResult = withTimeoutOrNull(
-        DOWNLOAD_CANCEL_OPERATION_SNAPSHOT_TIMEOUT_MS
+        DOWNLOAD_CANCEL_OPERATION_SNAPSHOT_TIMEOUT_MS.milliseconds
     ) {
         try {
             Result.success(
@@ -1483,7 +1484,7 @@ internal suspend fun GlobalDownloadManager.awaitCancellationOperationSnapshot(
     val snapshotJob = cancellationOperationSnapshotJobs[normalizedKey]
         ?: return isCancellationSnapshotResolved(normalizedKey)
     snapshotJob.start()
-    val completed = withTimeoutOrNull(DOWNLOAD_CANCEL_OPERATION_SNAPSHOT_TIMEOUT_MS) {
+    val completed = withTimeoutOrNull(DOWNLOAD_CANCEL_OPERATION_SNAPSHOT_TIMEOUT_MS.milliseconds) {
         try {
             snapshotJob.await()
             true

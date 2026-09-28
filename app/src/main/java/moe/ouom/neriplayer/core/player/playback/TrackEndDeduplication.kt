@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.core.player.playback
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.stableKey
+
 internal const val PENDING_TRACK_END_DEDUPLICATION_KEY = "__pending_track_end__"
 
 internal fun trackEndDeduplicationKey(
@@ -32,9 +35,18 @@ internal fun trackEndDeduplicationKey(
     return mediaId ?: fallbackSongKey ?: PENDING_TRACK_END_DEDUPLICATION_KEY
 }
 
+internal fun trackEndKeyForSong(mediaId: String?, song: SongItem?): String =
+    trackEndDeduplicationKey(mediaId, song?.stableKey())
+
 internal fun shouldHandleTrackEnd(
     lastHandledKey: String?,
     currentKey: String
 ): Boolean {
     return lastHandledKey != currentKey
 }
+
+internal fun shouldSkipDuplicateTrackEnd(
+    repeatOne: Boolean,
+    lastHandledKey: String?,
+    currentKey: String
+): Boolean = !repeatOne && !shouldHandleTrackEnd(lastHandledKey, currentKey)

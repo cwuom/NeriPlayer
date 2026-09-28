@@ -107,22 +107,6 @@ class WifiBoundDownloadWakeWorker(
             return normalizeDownloadOperationId(operationId) != null && scheduleAll(context)
         }
 
-        private fun enqueue(
-            context: Context,
-            operationId: String,
-            policy: ExistingWorkPolicy
-        ): Boolean {
-            return runCatching {
-                WorkManager.getInstance(context.applicationContext)
-                    .enqueueUniqueWork(
-                        uniqueWorkName(operationId),
-                        policy,
-                        buildRequest(operationId)
-                    )
-                true
-            }.getOrDefault(false)
-        }
-
         fun cancel(
             context: Context,
             operationId: String

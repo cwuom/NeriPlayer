@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
+import kotlin.time.Duration.Companion.milliseconds
 
 class TrafficStatsRepository private constructor(
     private val app: Application
@@ -127,7 +128,7 @@ class TrafficStatsRepository private constructor(
         val generation = persistGeneration
         persistJob?.cancel()
         persistJob = scope.launch {
-            delay(PERSIST_DEBOUNCE_MS)
+            delay(PERSIST_DEBOUNCE_MS.milliseconds)
             persistSnapshot(snapshot, generation)
         }
     }

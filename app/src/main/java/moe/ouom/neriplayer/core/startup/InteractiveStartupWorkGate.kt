@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.startup
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val STARTUP_WORK_GATE_TIMEOUT_MS = 3_000L
 
@@ -16,7 +17,7 @@ internal class InteractiveStartupWorkGate {
         timeoutMillis: Long = STARTUP_WORK_GATE_TIMEOUT_MS
     ): Boolean {
         if (interactiveContentReady.isCompleted) return true
-        return withTimeoutOrNull(timeoutMillis.coerceAtLeast(0L)) {
+        return withTimeoutOrNull((timeoutMillis.coerceAtLeast(0L)).milliseconds) {
             interactiveContentReady.await()
             true
         } == true

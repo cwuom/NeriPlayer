@@ -7,6 +7,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingActiveContentColorStabilizationDelayMs
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingActiveContentColorTransitionDurationMs
+import moe.ouom.neriplayer.ui.screen.nowplaying.rememberStableNowPlayingActiveContentColor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Before

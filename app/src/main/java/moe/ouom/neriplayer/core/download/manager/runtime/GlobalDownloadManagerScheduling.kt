@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWork
 import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal fun GlobalDownloadManager.wakeDownloadExecutionPump(
@@ -134,7 +135,7 @@ internal fun GlobalDownloadManager.scheduleStartupDispatchWatchdog(
     synchronized(startupWatchdogLock) {
         startupWatchdogJob?.cancel()
         startupWatchdogJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            delay(STARTUP_FIRST_TRANSFER_DEADLINE_MS)
+            delay(STARTUP_FIRST_TRANSFER_DEADLINE_MS.milliseconds)
             val firstSnapshot = DownloadStartupTrace.snapshot()
             if (
                 firstSnapshot.generation != generation ||
@@ -176,7 +177,7 @@ internal fun GlobalDownloadManager.scheduleStartupDispatchWatchdog(
                 "启动首发看门狗完成一次有界补偿: " +
                     "generation=$generation, rescheduled=$rescheduled"
             )
-            delay(STARTUP_WATCHDOG_RECHECK_DELAY_MS)
+            delay(STARTUP_WATCHDOG_RECHECK_DELAY_MS.milliseconds)
             val recheck = DownloadStartupTrace.snapshot()
             if (
                 recheck.generation == generation &&

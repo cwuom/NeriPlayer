@@ -93,7 +93,7 @@ import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherJoinS
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherRoomCreation
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherUserUuid
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import java.text.SimpleDateFormat

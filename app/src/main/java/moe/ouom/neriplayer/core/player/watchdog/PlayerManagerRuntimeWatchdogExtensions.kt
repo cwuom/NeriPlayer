@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
@@ -20,6 +21,7 @@ import moe.ouom.neriplayer.core.player.policy.progress.PlaybackRuntimeStallPolic
 import moe.ouom.neriplayer.core.player.policy.progress.RuntimePlaybackStallAction
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
 import moe.ouom.neriplayer.core.player.policy.wake.PlaybackTransitionWakeLock
+import kotlin.time.Duration.Companion.milliseconds
 
 internal fun PlayerManager.resetPlaybackRuntimeWatchdog(reason: String) {
     if (playbackRuntimeWatchdogJob?.isActive == true) {
@@ -72,13 +74,12 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
     playbackRuntimeWatchdogJob = mainScope.launch {
         try {
             while (isActive) {
-                delay(PLAYBACK_RUNTIME_STALL_POLL_INTERVAL_MS)
+                delay(PLAYBACK_RUNTIME_STALL_POLL_INTERVAL_MS.milliseconds)
                 if (watchdogToken != playbackRuntimeWatchdogToken) return@launch
                 if (requestToken != playbackRequestToken) return@launch
                 if (!shouldWatchRuntimePlayback()) return@launch
 
-                val positionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
-                    .getOrDefault(playbackRuntimeLastProgressPositionMs)
+                val positionMs = player.currentPositionMsOr(playbackRuntimeLastProgressPositionMs)
                 if (
                     PlaybackRuntimeStallPolicy.hasPositionAdvanced(
                         currentPositionMs = positionMs,
@@ -149,7 +150,7 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
 private fun PlayerManager.shouldWatchRuntimePlayback(): Boolean {
     if (!initialized || !isPlayerInitialized() || isPendingMediaLoadActive()) return false
     if (_currentSongFlow.value == null || player.currentMediaItem == null) return false
-    if (urlRefreshInProgress) return false
+    if (urlRefreshController.currentSemantics() != null) return false
     if (!resumePlaybackRequested || !player.playWhenReady) return false
     if (!playbackProgressAdvanceReported) return false
     return player.playbackState == Player.STATE_READY ||

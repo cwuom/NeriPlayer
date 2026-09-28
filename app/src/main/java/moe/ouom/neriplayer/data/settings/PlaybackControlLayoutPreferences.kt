@@ -32,11 +32,11 @@ internal fun resolvePlaybackControlLayoutPreferences(
     lyricsSizeValue: Int?
 ): PlaybackControlLayoutPreferences {
     return PlaybackControlLayoutPreferences(
-        nowPlayingPlacement = NowPlayingControlPlacement.values()
+        nowPlayingPlacement = NowPlayingControlPlacement.entries
             .getOrElse(nowPlayingPlacementValue ?: -1) { NowPlayingControlPlacement.LOWER },
-        nowPlayingSize = PlaybackControlSize.values()
+        nowPlayingSize = PlaybackControlSize.entries
             .getOrElse(nowPlayingSizeValue ?: -1) { PlaybackControlSize.MEDIUM },
-        lyricsSize = PlaybackControlSize.values()
+        lyricsSize = PlaybackControlSize.entries
             .getOrElse(lyricsSizeValue ?: -1) { PlaybackControlSize.MEDIUM }
     )
 }

@@ -91,9 +91,9 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.rememberMainTabDetailVisibilityState
-import moe.ouom.neriplayer.ui.screen.BiliVideoSkipIntervalsSheet
+import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsSheet
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
@@ -121,6 +121,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import androidx.compose.runtime.saveable.rememberSaveable
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -403,7 +404,7 @@ fun BiliPlaylistDetailScreen(
             searchQuery = searchQuery
         )
         if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
-        if (shouldAutoFocus) delay(120)
+        if (shouldAutoFocus) delay(120.milliseconds)
         searchFocusRequester.requestFocus()
         keyboardController?.show()
     }

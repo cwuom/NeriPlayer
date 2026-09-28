@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.data.settings
 
 import android.content.Context
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
+import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
 
 internal const val DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY = "exhigh"
 internal const val DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY = "high"
@@ -100,7 +100,7 @@ internal fun resolveDownloadAudioQualitySelection(
 internal suspend fun resolveDownloadAudioQualitySelection(
     context: Context
 ): DownloadAudioQualitySelection {
-    return try {
+    return runCatchingNonCancellation {
         val preferences = context.applicationContext.dataStore.data.first()
         val followsPlaybackQuality = preferences.valueOf(
             AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality
@@ -120,9 +120,7 @@ internal suspend fun resolveDownloadAudioQualitySelection(
                 AutoSettingsSchema.download.downloadBiliAudioQuality
             )
         )
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (_: Exception) {
+    }.getOrElse {
         DownloadAudioQualitySelection.normalized(
             neteaseQuality = DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY,
             youtubeQuality = DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY,

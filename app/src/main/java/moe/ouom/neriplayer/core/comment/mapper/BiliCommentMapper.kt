@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.comment.model.CommentError
 import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.SongComment
+import moe.ouom.neriplayer.util.json.mapObjectsNotNull
 import org.json.JSONObject
 
 /** Bilibili 评论区「评论已关闭」业务码 */
@@ -44,14 +45,9 @@ internal fun parseBiliCommentPage(
     }
     val total = pageObject.optLong("count", -1L).takeIf { it >= 0L }
 
-    val array = data.optJSONArray("replies")
-    val comments = ArrayList<SongComment>(array?.length() ?: 0)
-    if (array != null) {
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            comments += parseBiliComment(item)
-        }
-    }
+    val comments = data.optJSONArray("replies")
+        ?.mapObjectsNotNull { parseBiliComment(it) }
+        .orEmpty()
 
     val loadedThrough = (page.toLong() - 1L) * pageSize + comments.size
     if (comments.isEmpty() && total != null && loadedThrough < total) {
@@ -99,11 +95,9 @@ private fun parseBiliComment(item: JSONObject, includePreview: Boolean = true): 
         userLevel = levelInfo?.optInt("current_level", 0)?.takeIf { it > 0 },
         isLiked = item.optInt("action", 0) == 1,
         previewReplies = if (includePreview) {
-            item.optJSONArray("replies")?.let { replies ->
-                (0 until replies.length()).mapNotNull { index ->
-                    replies.optJSONObject(index)?.let { parseBiliComment(it, false) }
-                }
-            }.orEmpty()
+            item.optJSONArray("replies")
+                ?.mapObjectsNotNull { parseBiliComment(it, false) }
+                .orEmpty()
         } else emptyList(),
         rootId = item.optLong("root", 0L).takeIf { it > 0L }?.toString()
     )

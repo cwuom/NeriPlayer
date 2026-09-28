@@ -10,6 +10,7 @@ import android.provider.OpenableColumns
 import android.system.Os
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -26,7 +27,6 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
-import kotlin.coroutines.coroutineContext
 
 internal fun LocalAudioImportManager.resolveParsedArtistFallback(
     currentArtist: String?,
@@ -87,7 +87,7 @@ internal suspend fun LocalAudioImportManager.collectFolderCandidatesWithDocument
     managedDownloadGate: ManagedDownloadCandidatePublicationGate
 ): FolderTraversalResult {
     val candidates = mutableListOf<FolderScanCandidate>()
-    var failed = 0
+    val failed = 0
     var visitedDirectoryCount = 0
     var withheldManagedCandidates = 0
     val treeDocumentId = configuredManagedDownloadTreeDocumentId()
@@ -112,7 +112,7 @@ internal suspend fun LocalAudioImportManager.collectFolderCandidatesWithDocument
     var rootLyricsIndex: Map<String, String> = emptyMap()
 
     while (pendingDirectories.isNotEmpty()) {
-        coroutineContext.ensureActive()
+        currentCoroutineContext().ensureActive()
         val directory = pendingDirectories.removeFirst()
         val directoryUri = directory.uri
         visitedDirectoryCount++
@@ -143,7 +143,7 @@ internal suspend fun LocalAudioImportManager.collectFolderCandidatesWithDocument
             rootLyricsIndex = nestedSidecarIndex
         }
         for (child in children) {
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
             when {
                 child.isDirectory -> pendingDirectories.add(
                     PendingDirectory(
@@ -248,7 +248,7 @@ internal suspend fun LocalAudioImportManager.collectFolderCandidatesWithDocument
     var rootLyricsIndex: Map<String, String> = emptyMap()
 
     while (pendingDirectories.isNotEmpty()) {
-        coroutineContext.ensureActive()
+        currentCoroutineContext().ensureActive()
         val pendingDirectory = pendingDirectories.removeFirst()
         val directory = pendingDirectory.document
         visitedDirectoryCount++
@@ -290,7 +290,7 @@ internal suspend fun LocalAudioImportManager.collectFolderCandidatesWithDocument
         }
 
         for (child in children) {
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
             when {
                 child.isDirectory -> pendingDirectories.add(
                     PendingDirectory(
@@ -374,7 +374,7 @@ internal suspend fun LocalAudioImportManager.queryFolderChildren(
 ): List<QueriedFolderChild>? {
     val documentId = resolveDocumentId(parentUri) ?: return null
     val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
-    val scanContext = coroutineContext
+    val scanContext = currentCoroutineContext()
     fun query(includeDuration: Boolean): List<QueriedFolderChild>? {
         val projection = buildList {
             add(DocumentsContract.Document.COLUMN_DOCUMENT_ID)

@@ -79,7 +79,7 @@ public:
 
 private:
     TransferSetLifecycle* mutableSet(TransferKind kind);
-    const TransferSetLifecycle* set(TransferKind kind) const;
+    [[nodiscard]] const TransferSetLifecycle* set(TransferKind kind) const;
     void updateReclaimable();
 
     uint64_t generation_ = 0;

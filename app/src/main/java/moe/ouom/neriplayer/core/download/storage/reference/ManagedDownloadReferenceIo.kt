@@ -402,10 +402,6 @@ internal object ManagedDownloadReferenceIo {
         return null
     }
 
-    private fun inspectDocumentWithoutCursor(context: Context, uri: Uri): AccessResult {
-        return inspectDocumentWithoutCursorWithSize(context, uri).result
-    }
-
     private fun inspectDocumentWithoutCursorWithSize(
         context: Context,
         uri: Uri

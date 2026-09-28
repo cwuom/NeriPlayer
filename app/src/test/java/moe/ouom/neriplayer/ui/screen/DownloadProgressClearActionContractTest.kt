@@ -10,7 +10,7 @@ class DownloadProgressClearActionContractTest {
     @Test
     fun `clear action stays disabled while durable fence is active`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/ui/screen/DownloadProgressScreen.kt"
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/download/DownloadProgressScreen.kt"
         ).readText()
         val topBar = source.substringAfter("TopAppBar(")
             .substringBefore("when (pagePresentation)")

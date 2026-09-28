@@ -285,6 +285,68 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun parsePlaylistTracks_readsEachMenuVideoFallback() {
+        val menuItems = listOf(
+            """{"menuNavigationItemRenderer":{"navigationEndpoint":{"watchEndpoint":{"videoId":"navigation"}}}}""" to "navigation",
+            """{"menuServiceItemRenderer":{"serviceEndpoint":{"queueAddEndpoint":{"queueTarget":{"videoId":"queued"}}}}}""" to "queued",
+            """{"menuServiceItemRenderer":{"serviceEndpoint":{"queueAddEndpoint":{"queueTarget":{"onEmptyQueue":{"watchEndpoint":{"videoId":"empty-queue"}}}}}}}""" to "empty-queue"
+        )
+        menuItems.forEach { (menuItem, expectedVideoId) ->
+            val root = JSONObject(
+                """
+                {
+                  "continuationContents": {
+                    "musicPlaylistShelfContinuation": {
+                      "contents": [{
+                        "musicResponsiveListItemRenderer": {
+                          "menu": { "menuRenderer": { "items": [$menuItem] } },
+                          "flexColumns": [{
+                            "musicResponsiveListItemFlexColumnRenderer": {
+                              "text": { "simpleText": "Menu fallback song" }
+                            }
+                          }]
+                        }
+                      }]
+                    }
+                  }
+                }
+                """.trimIndent()
+            )
+
+            assertEquals(expectedVideoId, YouTubeMusicParser.parsePlaylistTracks(root).single().videoId)
+        }
+    }
+
+    @Test
+    fun parseHomeShelfPages_keepsItemsWhenHeaderTitleIsMissing() {
+        val root = JSONObject(
+            """
+            {
+              "continuationContents": {
+                "sectionListContinuation": {
+                  "contents": [{
+                    "musicCarouselShelfRenderer": {
+                      "header": { "musicCarouselShelfBasicHeaderRenderer": {} },
+                      "contents": [{
+                        "musicTwoRowItemRenderer": {
+                          "title": { "simpleText": "Song" },
+                          "navigationEndpoint": { "watchEndpoint": { "videoId": "video-1" } }
+                        }
+                      }]
+                    }
+                  }]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val shelf = YouTubeMusicParser.parseHomeShelfPages(root).single()
+        assertEquals("", shelf.title)
+        assertEquals("video-1", shelf.items.single().videoId)
+    }
+
+    @Test
     fun extractPlaylistContinuation_readsShelfTokenBeyondFirstSection() {
         val root = JSONObject(
             """

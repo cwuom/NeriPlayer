@@ -84,13 +84,14 @@ internal object DocumentsFixture {
             while (completed.count != 0L && SystemClock.elapsedRealtime() < deadline) {
                 if (confirmPicker) {
                     val now = SystemClock.elapsedRealtime()
-                    val roots = (listOfNotNull(automation.rootInActiveWindow) +
+                    val activeRoot = automation.rootInActiveWindow
+                    val roots = (listOfNotNull(activeRoot) +
                         automation.windows.mapNotNull { it.root }).distinctBy { it.windowId }
                     picker@ for (root in roots) {
                         val packageName = root.packageName?.toString()
                         val isPicker = packageName in setOf("com.android.documentsui", "com.google.android.documentsui")
-                        // 目录选择后的系统确认弹窗可能由 android 包持有
-                        if (!isPicker && (packageName != "android" || selectedAt == 0L)) continue
+                        // 系统确认弹窗可能先于选择按钮出现，只点击当前活动的 android 窗口
+                        if (!isPicker && (packageName != "android" || root.windowId != activeRoot?.windowId)) continue
                         val ids = if (!isPicker || now - selectedAt < 1_000L) listOf("android:id/button1") else listOf(
                             "android:id/button1",
                             "com.android.documentsui:id/action_menu_select",
@@ -99,7 +100,7 @@ internal object DocumentsFixture {
                         for (id in ids) {
                             val node = root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull { it.isEnabled && it.isClickable }
                             if (node?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
-                                if (isPicker) selectedAt = now
+                                if (id != "android:id/button1") selectedAt = now
                                 break@picker
                             }
                         }
@@ -109,12 +110,24 @@ internal object DocumentsFixture {
             }
             check(completed.count == 0L) {
                 "test directory authorization timed out: $initial, active=${automation.rootInActiveWindow?.packageName}, " +
-                    "pickerSelected=${selectedAt != 0L}"
+                    "windows=${automation.windows.mapNotNull { it.root?.packageName }.distinct()}, pickerSelected=${selectedAt != 0L}"
             }
             check(resultCode.get() == Activity.RESULT_OK) { "test directory authorization failed: ${response.get()}" }
             return requireNotNull(response.get())
         } finally {
             if (confirmPicker) {
+                if (completed.count != 0L) {
+                    runCatching {
+                        repeat(2) {
+                            if (completed.count != 0L) {
+                                ParcelFileDescriptor.AutoCloseInputStream(
+                                    automation.executeShellCommand("input keyevent 4")
+                                ).use { it.readBytes() }
+                                completed.await(500, TimeUnit.MILLISECONDS)
+                            }
+                        }
+                    }
+                }
                 automation.serviceInfo = automation.serviceInfo.apply { flags = previousFlags }
             }
         }

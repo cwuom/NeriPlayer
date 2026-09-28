@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
+import kotlin.time.Duration.Companion.milliseconds
 
 data class TrackStat(
     val id: Long,
@@ -329,7 +330,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         val generation = persistGeneration
         persistJob?.cancel()
         persistJob = scope.launch {
-            delay(PERSIST_DEBOUNCE_MS)
+            delay(PERSIST_DEBOUNCE_MS.milliseconds)
             val snapshot = synchronized(this@PlaybackStatsRepository) {
                 if (generation != persistGeneration) {
                     null
@@ -424,7 +425,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     }
 
     suspend fun flushPendingWrites() {
-        mutex.withLock<Unit> {
+        mutex.withLock {
             val shouldPersist = synchronized(this@PlaybackStatsRepository) {
                 persistenceDirty || pendingPersistence != null || persistJob?.isActive == true
             }

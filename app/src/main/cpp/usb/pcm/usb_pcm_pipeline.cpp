@@ -554,7 +554,7 @@ void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {
     appliedGain_.store(applied);
 }
 
-void PcmPipeline::fadeOutTrailingFrames(uint8_t* output, size_t bytes) {
+void PcmPipeline::fadeOutTrailingFrames(uint8_t* output, size_t bytes) const {
     const int frames = outputFormat_.frameBytes > 0
         ? static_cast<int>(bytes / static_cast<size_t>(outputFormat_.frameBytes))
         : 0;

@@ -26,6 +26,9 @@ import moe.ouom.neriplayer.core.comment.model.SongComment
 import moe.ouom.neriplayer.core.comment.repository.CommentRepository
 import moe.ouom.neriplayer.core.comment.repository.commentRepositoryFor
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.collections.mergeDistinctBy
+import moe.ouom.neriplayer.util.concurrent.RequestGeneration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 评论列表的展示状态。
@@ -106,15 +109,7 @@ internal fun mergeComments(
 ): List<SongComment> {
     if (incoming.isEmpty()) return existing
     if (existing.isEmpty()) return incoming.distinctBy { it.id }
-    val seen = HashSet<String>(existing.size + incoming.size)
-    val merged = ArrayList<SongComment>(existing.size + incoming.size)
-    for (comment in existing) {
-        if (seen.add(comment.id)) merged += comment
-    }
-    for (comment in incoming) {
-        if (seen.add(comment.id)) merged += comment
-    }
-    return merged
+    return existing.mergeDistinctBy(incoming) { it.id }
 }
 
 /**
@@ -142,7 +137,7 @@ internal class CommentViewModel : ViewModel() {
 
     private var loadJob: Job? = null
     private var loadMoreJob: Job? = null
-    private var generation = 0L
+    private val commentRequests = RequestGeneration()
     private val likeJobs = mutableMapOf<String, Job>()
     private val replyJobs = mutableMapOf<String, Job>()
     private var sendJob: Job? = null
@@ -164,7 +159,7 @@ internal class CommentViewModel : ViewModel() {
 
         val previous = _uiState.value.takeIf { it.source == source }
         activeSource = source
-        generation++
+        commentRequests.advance()
         loadJob?.cancel()
         loadMoreJob?.cancel()
         cancelLikes()
@@ -192,7 +187,7 @@ internal class CommentViewModel : ViewModel() {
         val current = _uiState.value
         if (sort == (current.pendingSort ?: current.sort) || sort !in CommentSort.supportedBy(source.platform)) return
         if (current.likingIds.isNotEmpty() || current.isSending) return
-        generation++
+        commentRequests.advance()
         loadJob?.cancel()
         loadMoreJob?.cancel()
         cancelReplies()
@@ -216,13 +211,13 @@ internal class CommentViewModel : ViewModel() {
             current.isLoadingMore || current.pendingSort != null) return
         if (commentId in current.likingIds) return
         val comment = current.comments.find { it.id == commentId } ?: return
-        val requestGeneration = generation
+        val request = commentRequests.capture()
         val liked = !comment.isLiked
         _uiState.update { it.copy(likingIds = it.likingIds + commentId, likeError = null, likeErrorCode = null) }
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try {
                 repositoryFactory(source.platform).setLiked(source, commentId, liked)
-                if (!isActive || requestGeneration != generation) return@launch
+                if (!isActive || !request.isCurrent) return@launch
                 _uiState.update { state ->
                     state.copy(comments = state.comments.map { item ->
                         if (item.id != commentId) item else item.copy(
@@ -234,13 +229,13 @@ internal class CommentViewModel : ViewModel() {
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
-                if (isActive && requestGeneration == generation) {
+                if (isActive && request.isCurrent) {
                     val code = (error as? CommentApiException)?.code
                     NPLogger.w(TAG, "Comment like failed: platform=${source.platform}, code=$code, type=${error.javaClass.simpleName}")
                     _uiState.update { it.copy(likeError = toCommentError(error), likeErrorCode = code) }
                 }
             } finally {
-                if (requestGeneration == generation) {
+                if (request.isCurrent) {
                     likeJobs.remove(commentId)
                     _uiState.update { it.copy(likingIds = it.likingIds - commentId) }
                 }
@@ -302,7 +297,7 @@ internal class CommentViewModel : ViewModel() {
     }
 
     fun onSheetHidden() {
-        generation++
+        commentRequests.advance()
         loadJob?.cancel()
         loadMoreJob?.cancel()
         cancelLikes()
@@ -346,12 +341,12 @@ internal class CommentViewModel : ViewModel() {
             current.status !in setOf(CommentListStatus.SUCCESS, CommentListStatus.EMPTY) ||
             content.isBlank() || current.draft.length > source.platform.commentLengthLimit()) return
         val target = current.replyTarget
-        val requestGeneration = generation
+        val request = commentRequests.capture()
         _uiState.update { it.copy(isSending = true, sendError = null, sendErrorCode = null, sendSucceeded = false) }
         sendJob = viewModelScope.launch {
             try {
                 repositoryFactory(source.platform).sendComment(source, content, target)
-                if (!isActive || requestGeneration != generation) return@launch
+                if (!isActive || !request.isCurrent) return@launch
                 _uiState.update {
                     it.copy(isSending = false, draft = "", replyTarget = null, sendSucceeded = true)
                 }
@@ -365,7 +360,7 @@ internal class CommentViewModel : ViewModel() {
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
-                if (isActive && requestGeneration == generation) {
+                if (isActive && request.isCurrent) {
                     _uiState.update {
                         it.copy(isSending = false, sendError = toCommentError(error),
                             sendErrorCode = (error as? CommentApiException)?.code)
@@ -391,14 +386,14 @@ internal class CommentViewModel : ViewModel() {
         if (current.comments.none { it.id == rootId }) return
         val thread = current.replyThreads[rootId] ?: CommentReplyState()
         if (thread.loading || !thread.hasMore) return
-        val requestGeneration = generation
+        val request = commentRequests.capture()
         _uiState.update { it.copy(replyThreads = it.replyThreads + (rootId to thread.copy(loading = true, error = null))) }
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try {
                 val result = repositoryFactory(source.platform).loadReplies(
                     source, rootId, thread.page + 1, COMMENT_PAGE_SIZE, thread.nextCursor
                 )
-                if (!isActive || requestGeneration != generation) return@launch
+                if (!isActive || !request.isCurrent) return@launch
                 val comments = mergeComments(thread.comments, result.comments)
                 if (result.hasMore && comments.size == thread.comments.size) {
                     throw CommentApiException(0, CommentError.API, "Comment replies did not advance")
@@ -420,7 +415,7 @@ internal class CommentViewModel : ViewModel() {
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
-                if (isActive && requestGeneration == generation) {
+                if (isActive && request.isCurrent) {
                     _uiState.update { state ->
                         val latest = state.replyThreads[rootId] ?: return@update state
                         state.copy(replyThreads = state.replyThreads + (rootId to latest.copy(
@@ -429,7 +424,7 @@ internal class CommentViewModel : ViewModel() {
                     }
                 }
             } finally {
-                if (requestGeneration == generation && replyJobs[rootId] == coroutineContext[Job]) {
+                if (request.isCurrent && replyJobs[rootId] == coroutineContext[Job]) {
                     replyJobs.remove(rootId)
                 }
             }
@@ -458,7 +453,7 @@ internal class CommentViewModel : ViewModel() {
         val isFirstPage = page <= 1
         val sort = _uiState.value.pendingSort ?: _uiState.value.sort
         val cursor = if (isFirstPage) null else _uiState.value.nextCursor
-        val requestGeneration = generation
+        val request = commentRequests.capture()
         if (isFirstPage) {
             loadJob?.cancel()
         } else {
@@ -470,7 +465,7 @@ internal class CommentViewModel : ViewModel() {
             try {
                 if (cacheFirst) {
                     cached = repository.cachedComments(source, COMMENT_PAGE_SIZE, sort)
-                    if (!isActive || requestGeneration != generation) return@launch
+                    if (!isActive || !request.isCurrent) return@launch
                     val snapshot = cached
                     _uiState.update { current ->
                         if (snapshot == null) current.copy(status = CommentListStatus.LOADING, isCheckingCache = false)
@@ -493,13 +488,13 @@ internal class CommentViewModel : ViewModel() {
                     cursor = cursor
                 )
                 // 歌曲已经切换, 丢弃过期结果 (§23/§24)
-                if (!isActive || requestGeneration != generation) return@launch
+                if (!isActive || !request.isCurrent) return@launch
 
                 if (cached != null && (cached.comments != result.comments || cached.total != result.total ||
                         cached.hasMore != result.hasMore)) {
                     _uiState.update { it.copy(isRefreshing = true) }
-                    delay(CACHE_UPDATE_INDICATION_MS)
-                    if (!isActive || requestGeneration != generation) return@launch
+                    delay(CACHE_UPDATE_INDICATION_MS.milliseconds)
+                    if (!isActive || !request.isCurrent) return@launch
                 }
 
                 _uiState.update { current ->
@@ -536,7 +531,7 @@ internal class CommentViewModel : ViewModel() {
                 // 协程已被取消 (切歌 / 刷新 / 面板关闭) 时绝不发布错误:
                 // 一次正常的取消不能被渲染成「加载失败」
                 if (!isActive) return@launch
-                if (requestGeneration != generation) return@launch
+                if (!request.isCurrent) return@launch
                 val reason = toCommentError(error)
                 // 只记录非敏感上下文 (§36)
                 NPLogger.e(

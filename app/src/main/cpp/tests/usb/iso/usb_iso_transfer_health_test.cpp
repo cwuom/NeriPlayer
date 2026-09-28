@@ -1,6 +1,7 @@
 #include "usb/iso/usb_iso_transfer_health.h"
 
 #include <cassert>
+#include <limits>
 
 int main() {
     using neri::usb::kIsoPacketErrorFailureScore;
@@ -29,6 +30,11 @@ int main() {
     assert(completedIsoPacketBytes(true, 192, 384) == 192);
     assert(completedIsoPacketBytes(true, 192, 0) == 0);
     assert(completedIsoPacketBytes(false, 192, 192) == 0);
+    assert(completedIsoPacketBytes(
+        true,
+        std::numeric_limits<unsigned int>::max(),
+        192U
+    ) == 192U);
 
     return 0;
 }

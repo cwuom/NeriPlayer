@@ -1,6 +1,11 @@
 package moe.ouom.neriplayer.ui.screen
 
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.ui.screen.download.DownloadSelectionState
+import moe.ouom.neriplayer.ui.screen.download.captureSongsPendingDelete
+import moe.ouom.neriplayer.ui.screen.download.isAllDownloadedSongsSelected
+import moe.ouom.neriplayer.ui.screen.download.sanitizeDownloadSelectionState
+import moe.ouom.neriplayer.ui.screen.download.toggleSelectedDownloadSongKeys
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -65,7 +70,10 @@ class DownloadManagerScreenSelectionTest {
         assertEquals(
             true,
             isAllDownloadedSongsSelected(
-                selectedSongKeys = downloadedSongs.mapTo(linkedSetOf(), DownloadedSong::deletionIdentity),
+                selectedSongKeys = downloadedSongs.mapTo(
+                    linkedSetOf(),
+                    DownloadedSong::deletionIdentity
+                ),
                 downloadedSongs = downloadedSongs
             )
         )

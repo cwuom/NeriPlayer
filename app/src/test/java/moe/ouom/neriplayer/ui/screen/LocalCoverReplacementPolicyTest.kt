@@ -4,6 +4,8 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolvePendingLocalCoverReplacementTarget
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldAllowLocalCoverReplacement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

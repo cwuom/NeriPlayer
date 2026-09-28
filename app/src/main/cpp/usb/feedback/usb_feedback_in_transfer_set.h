@@ -124,7 +124,7 @@ private:
 
     bool submitSlotLocked(Slot* slot, std::string* error);
     void releaseSlotsLocked();
-    void assignError(std::string* error, const char* value) const;
+    static void assignError(std::string* error, const char* value);
 
     FeedbackTransferBackend* backend_ = nullptr;
     FeedbackInCompletionConsumer* consumer_ = nullptr;

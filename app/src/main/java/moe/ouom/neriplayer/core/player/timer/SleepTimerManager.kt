@@ -33,6 +33,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.util.units.minute
+import moe.ouom.neriplayer.util.units.second
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 定时器模式
@@ -72,9 +75,6 @@ class SleepTimerManager(
     private val _timerState = MutableStateFlow(SleepTimerState())
     val timerState: StateFlow<SleepTimerState> = _timerState
 
-    /** 预设时间选项 (分钟) */
-    val presetMinutes = listOf(15, 30, 45, 60, 90, 120)
-
     /**
      * 启动倒计时定时器
      * @param minutes 倒计时分钟数
@@ -85,7 +85,7 @@ class SleepTimerManager(
         finishCurrentOnExpiry: Boolean = false
     ) {
         cancel(notifyStateChanged = false)
-        val totalMillis = minutes.coerceAtLeast(0).toLong() * 60_000L
+        val totalMillis = minutes.coerceAtLeast(0).minute
         val timerMode = if (finishCurrentOnExpiry) {
             SleepTimerMode.COUNTDOWN_FINISH_CURRENT
         } else {
@@ -104,7 +104,7 @@ class SleepTimerManager(
         timerJob = scope.launch {
             var remaining = totalMillis
             while (isActive && remaining > 0L) {
-                delay(min(1000L, remaining))
+                delay(min(1.second, remaining).milliseconds)
                 remaining = (deadlineMs - nowMsProvider()).coerceAtLeast(0L)
                 _timerState.value = _timerState.value.copy(remainingMillis = remaining)
             }

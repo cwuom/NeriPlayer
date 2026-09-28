@@ -19,6 +19,8 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.ui.screen.download.DownloadProgressScreen
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.DownloadProgressContent
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -59,7 +61,12 @@ class DownloadProgressContentTest {
                 DownloadExecutionRoomStore.upsert(context, request, "ASSETS_ENRICHING", database = database)
             }
             composeRule.setContent {
-                MaterialTheme { DownloadProgressScreen(onBack = {}, listState = rememberLazyListState()) }
+                MaterialTheme {
+                    DownloadProgressScreen(
+                        onBack = {},
+                        listState = rememberLazyListState()
+                    )
+                }
             }
             awaitText(pendingText)
             runBlocking {

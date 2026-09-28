@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import kotlin.coroutines.resume
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val ACTION_CLEAR_WEBVIEW_LOGIN_STATE =
     "moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE"
@@ -307,7 +308,7 @@ private suspend fun requestRemoteWebViewLoginStateClear(
                         .putExtra(EXTRA_WEBVIEW_CLEAR_REQUEST_ID, requestId)
                 )
             }
-            if (withTimeoutOrNull(WEBVIEW_CLEAR_TIMEOUT_MS) { completed.await() } == null) {
+            if (withTimeoutOrNull(WEBVIEW_CLEAR_TIMEOUT_MS.milliseconds) { completed.await() } == null) {
                 val missing = targetComponents
                     .map { it.className }
                     .filterNot { className -> completedTargets.containsClassName(className) }

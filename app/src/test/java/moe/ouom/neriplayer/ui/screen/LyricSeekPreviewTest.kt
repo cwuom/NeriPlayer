@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.ui.screen
 
+import moe.ouom.neriplayer.ui.screen.playback.resolveListenTogetherProgressSeekEnabled
+import moe.ouom.neriplayer.ui.screen.playback.resolveLyricPreviewTimeMs
+import moe.ouom.neriplayer.ui.screen.playback.shouldAnimateAdvancedLyricsFromPlayback
+import moe.ouom.neriplayer.ui.screen.playback.shouldReleaseLyricSeekPreview
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

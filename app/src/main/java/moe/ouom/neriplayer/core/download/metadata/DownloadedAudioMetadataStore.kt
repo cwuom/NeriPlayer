@@ -23,8 +23,10 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.util.time.elapsedMillisSince
 import org.json.JSONObject
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 以固定并发度读取独立侧载, 保持返回顺序并避免阻塞下一首歌曲
@@ -366,7 +368,7 @@ internal class DownloadedAudioMetadataStore(
                     loggerTag,
                     "写入下载元数据失败(第${attempt + 1}次): ${audio.name} - ${error.message}"
                 )
-                delay(writeRetryDelayMs)
+                delay(writeRetryDelayMs.milliseconds)
             }
         }
         NPLogger.e(
@@ -401,8 +403,8 @@ internal class DownloadedAudioMetadataStore(
                         retryMessage
                     )
                     val multiplier = 1L shl attempt.coerceAtMost(4)
-                    delay((writeRetryDelayMs.coerceAtLeast(0L) * multiplier)
-                        .coerceAtMost(2_000L))
+                    delay(((writeRetryDelayMs.coerceAtLeast(0L) * multiplier)
+                        .coerceAtMost(2_000L)).milliseconds)
                 }
             }
         }
@@ -486,7 +488,7 @@ internal class DownloadedAudioMetadataStore(
             }
             lastError = result.exceptionOrNull()
             if (attempt < writeAttempts - 1) {
-                delay(writeRetryDelayMs)
+                delay(writeRetryDelayMs.milliseconds)
             }
         }
         NPLogger.e(loggerTag, "补写下载封面侧载引用失败: ${audio.name}", lastError)
@@ -636,7 +638,7 @@ internal class DownloadedAudioMetadataStore(
     }
 
     private fun elapsedMs(startedAtNs: Long): Long {
-        return ((System.nanoTime() - startedAtNs) / 1_000_000L).coerceAtLeast(0L)
+        return elapsedMillisSince(startedAtNs).coerceAtLeast(0L)
     }
 
     private fun buildMetadataPayload(

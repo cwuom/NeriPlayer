@@ -114,7 +114,7 @@ internal fun planDeletedSourceCopyReceiptRecovery(
                 receipt.sourceReference !in cleanupReferences
         }
         .sortedWith(
-            compareBy<ManagedMigrationCopyReceipt>(
+            compareBy(
                 { it.sourceSubdirectory.orEmpty() },
                 { it.sourceName },
                 { it.sourceReference }
@@ -318,7 +318,7 @@ internal fun reconcileMigrationSourceManifest(
         )
     }
     val ordered = merged.values.sortedWith(
-        compareBy<ManagedMigrationSourceEntry>(
+        compareBy(
             { it.sourceSubdirectory.orEmpty() },
             { it.sourceName },
             { it.sourceReference }
@@ -451,7 +451,7 @@ internal fun mergePersistedMigrationCleanupReceipts(
         merged[receipt.sourceReference] = receipt
     }
     return merged.values.sortedWith(
-        compareBy<ManagedMigrationCleanupReceipt>(
+        compareBy(
             { it.sourceSubdirectory.orEmpty() },
             { it.targetEntry.name },
             { it.sourceReference }
@@ -632,7 +632,7 @@ internal fun selectOrphanedMigrationReplacementPlans(
                 reference !in cleanupReferences
         }
         .sortedWith(
-            compareBy<ManagedMigrationReplacementPlan>(
+            compareBy(
                 { it.subdirectory.orEmpty() },
                 { it.targetName },
                 { it.sourceReference }

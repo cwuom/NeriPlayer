@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui
 
+import moe.ouom.neriplayer.ui.theme.reveal.resolveThemeRevealSnapshotDimensions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

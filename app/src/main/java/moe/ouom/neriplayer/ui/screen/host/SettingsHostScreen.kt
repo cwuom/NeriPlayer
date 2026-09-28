@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/1/17
  */
 
-import android.net.Uri
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -42,26 +41,30 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.ThemeMode
-import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.ui.settings.route.AppSettingsHostBindings
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
-import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
-import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
-import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.ui.screen.download.DownloadManagerScreen
+import moe.ouom.neriplayer.ui.screen.download.DownloadProgressScreen
+import moe.ouom.neriplayer.ui.screen.tab.settings.SettingsScreen
 
 internal enum class SettingsScreenState {
     Settings,
     DownloadManager,
     DownloadProgress
+}
+
+internal fun <T> selectSettingsHostPage(
+    state: SettingsScreenState,
+    settings: T,
+    downloadManager: T,
+    downloadProgress: T
+): T = when (state) {
+    SettingsScreenState.Settings -> settings
+    SettingsScreenState.DownloadManager -> downloadManager
+    SettingsScreenState.DownloadProgress -> downloadProgress
 }
 
 private fun SettingsScreenState.saveableKey(): String = "settings_host:${name}"
@@ -101,156 +104,12 @@ internal fun shouldAdvanceSettingsScreenTransition(
     renderedScreenStates == setOf(targetState)
 
 @Composable
-fun SettingsHostScreen(
-    dynamicColor: Boolean,
-    onDynamicColorChange: (Boolean) -> Unit,
-    isDarkTheme: Boolean,
-    themeMode: ThemeMode,
-    onThemeToggleRequest: (Offset, Float) -> Unit,
-    onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit,
-    preferredQuality: String,
-    onQualityChange: (String) -> Unit,
-    youtubePreferredQuality: String,
-    onYouTubeQualityChange: (String) -> Unit,
-    biliPreferredQuality: String,
-    onBiliQualityChange: (String) -> Unit,
-    mobileDataFollowDefaultAudioQuality: Boolean,
-    onMobileDataFollowDefaultAudioQualityChange: (Boolean) -> Unit,
-    mobileDataNeteaseAudioQuality: String,
-    onMobileDataNeteaseAudioQualityChange: (String) -> Unit,
-    mobileDataYouTubeAudioQuality: String,
-    onMobileDataYouTubeAudioQualityChange: (String) -> Unit,
-    mobileDataBiliAudioQuality: String,
-    onMobileDataBiliAudioQualityChange: (String) -> Unit,
-    seedColorHex: String,
-    onSeedColorChange: (String) -> Unit,
-    themeColorPalette: List<String>,
-    onAddColorToPalette: (String) -> Unit,
-    onRemoveColorFromPalette: (String) -> Unit,
-    themePaletteStyle: String,
-    onThemePaletteStyleChange: (String) -> Unit,
-    themeColorSpec: String,
-    onThemeColorSpecChange: (String) -> Unit,
-    devModeEnabled: Boolean,
-    onDevModeChange: (Boolean) -> Unit,
-    lyricBlurEnabled: Boolean,
-    onLyricBlurEnabledChange: (Boolean) -> Unit,
-    lyricBlurAmount: Float,
-    onLyricBlurAmountChange: (Float) -> Unit,
-    cloudMusicLyricDefaultOffsetMs: Long,
-    onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
-    qqMusicLyricDefaultOffsetMs: Long,
-    onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
-    kugouLyricDefaultOffsetMs: Long,
-    onKugouLyricDefaultOffsetMsChange: (Long) -> Unit,
-    lrclibLyricDefaultOffsetMs: Long,
-    onLrclibLyricDefaultOffsetMsChange: (Long) -> Unit,
-    amllTtmlLyricDefaultOffsetMs: Long,
-    onAmllTtmlLyricDefaultOffsetMsChange: (Long) -> Unit,
-    onResetAllLyricDefaultOffsets: () -> Unit,
-    floatingLyricsPreferences: FloatingLyricsPreferences,
-    onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
-    advancedBlurEnabled: Boolean,
-    onAdvancedBlurEnabledChange: (Boolean) -> Unit,
-    enhancedAdvancedBlurEnabled: Boolean,
-    onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
-    enhancedAdvancedBlurRadiusDp: Float,
-    onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit,
-    advancedBlurQuality: AdvancedBlurQuality,
-    onAdvancedBlurQualityChange: (AdvancedBlurQuality) -> Unit,
-    nowPlayingAudioReactiveEnabled: Boolean,
-    onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
-    nowPlayingDynamicBackgroundEnabled: Boolean,
-    onNowPlayingDynamicBackgroundEnabledChange: (Boolean) -> Unit,
-    nowPlayingCoverBlurBackgroundEnabled: Boolean,
-    onNowPlayingCoverBlurBackgroundEnabledChange: (Boolean) -> Unit,
-    nowPlayingCoverBlurAmount: Float,
-    onNowPlayingCoverBlurAmountChange: (Float) -> Unit,
-    nowPlayingCoverBlurDarken: Float,
-    onNowPlayingCoverBlurDarkenChange: (Float) -> Unit,
-    lyricFontScales: LyricFontScales,
-    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
-    uiDensityScale: Float,
-    onUiDensityScaleChange: (Float) -> Unit,
-    bypassProxy: Boolean,
-    onBypassProxyChange: (Boolean) -> Unit,
-    backgroundImageUri: String?,
-    onBackgroundImageChange: (Uri?) -> Unit,
-    downloadDirectoryUri: String?,
-    downloadFileNameTemplate: String?,
-    onDownloadDirectoryUriChange: (String?, String?) -> Unit,
-    onDownloadFileNameTemplateChange: (String?) -> Unit,
-    backgroundImageBlur: Float,
-    onBackgroundImageBlurChange: (Float) -> Unit,
-    onBackgroundImageBlurChangeFinished: (Float) -> Unit,
-    backgroundImageAlpha: Float,
-    onBackgroundImageAlphaChange: (Float) -> Unit,
-    onBackgroundImageAlphaChangeFinished: (Float) -> Unit,
-    defaultStartDestination: String,
-    onDefaultStartDestinationChange: (String) -> Unit,
-    showHomeContinueCard: Boolean,
-    onShowHomeContinueCardChange: (Boolean) -> Unit,
-    showHomeTrendingCard: Boolean,
-    onShowHomeTrendingCardChange: (Boolean) -> Unit,
-    showHomeRadarCard: Boolean,
-    onShowHomeRadarCardChange: (Boolean) -> Unit,
-    showHomeRecommendedCard: Boolean,
-    onShowHomeRecommendedCardChange: (Boolean) -> Unit,
-    homeHasRecentUsage: Boolean,
-    playbackFadeIn: Boolean,
-    onPlaybackFadeInChange: (Boolean) -> Unit,
-    playbackCrossfadeNext: Boolean,
-    onPlaybackCrossfadeNextChange: (Boolean) -> Unit,
-    sleepTimerFinishCurrentOnExpiry: Boolean,
-    onSleepTimerFinishCurrentOnExpiryChange: (Boolean) -> Unit,
-    playbackFadeInDurationMs: Long,
-    onPlaybackFadeInDurationMsChange: (Long) -> Unit,
-    playbackFadeOutDurationMs: Long,
-    onPlaybackFadeOutDurationMsChange: (Long) -> Unit,
-    playbackCrossfadeInDurationMs: Long,
-    onPlaybackCrossfadeInDurationMsChange: (Long) -> Unit,
-    playbackCrossfadeOutDurationMs: Long,
-    onPlaybackCrossfadeOutDurationMsChange: (Long) -> Unit,
-    playbackVolumeNormalizationEnabled: Boolean,
-    onPlaybackVolumeNormalizationEnabledChange: (Boolean) -> Unit,
-    playbackHighResolutionOutputEnabled: Boolean,
-    onPlaybackHighResolutionOutputEnabledChange: (Boolean) -> Unit,
-    playbackVolumeBalance: Float,
-    onPlaybackVolumeBalanceChange: (Float) -> Unit,
-    keepLastPlaybackProgress: Boolean,
-    onKeepLastPlaybackProgressChange: (Boolean) -> Unit,
-    rememberLongFormPlaybackProgress: Boolean,
-    onRememberLongFormPlaybackProgressChange: (Boolean) -> Unit,
-    keepPlaybackModeState: Boolean,
-    onKeepPlaybackModeStateChange: (Boolean) -> Unit,
-    neteaseAutoSourceSwitch: Boolean,
-    onNeteaseAutoSourceSwitchChange: (Boolean) -> Unit,
-    neteaseLocalSourceFallback: Boolean,
-    onNeteaseLocalSourceFallbackChange: (Boolean) -> Unit,
-    stopOnBluetoothDisconnect: Boolean,
-    onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
-    usbExclusivePlayback: Boolean,
-    onUsbExclusivePlaybackChange: (Boolean) -> Unit,
-    allowMixedPlayback: Boolean,
-    onAllowMixedPlaybackChange: (Boolean) -> Unit,
-    preemptAudioFocus: Boolean,
-    onPreemptAudioFocusChange: (Boolean) -> Unit,
-    maxCacheSizeBytes: Long,
-    onMaxCacheSizeBytesChange: (Long) -> Unit,
-    onClearCacheClick: (StorageCacheClearOptions) -> Unit,
-    onBeforeLanguageRestart: () -> Unit = {},
-    onLanguageChanged: (LanguageManager.Language) -> Unit = {},
-    coherentFeedbackEnabled: Boolean = false,
-    renderScene: @Composable (
-        revealTopFraction: Float,
-        contentTranslationYFraction: Float,
-        contentScale: Float,
-        sceneDepth: Int,
-        content: @Composable () -> Unit
-    ) -> Unit = { _, _, _, _, content ->
-        content()
-    },
+internal fun SettingsHostScreen(
+    bindings: AppSettingsHostBindings,
+    renderScene: @Composable (Float, Float, Float, Int, @Composable () -> Unit) -> Unit
 ) {
+    val coherentFeedbackEnabled = bindings.environment.coherentFeedbackEnabled
+
     var screenState by rememberSaveable { mutableStateOf(SettingsScreenState.Settings) }
     var requestedScreenState by rememberSaveable { mutableStateOf(SettingsScreenState.Settings) }
     val saveableStateHolder = rememberSaveableStateHolder()
@@ -376,185 +235,33 @@ fun SettingsHostScreen(
                 state.navigationDepth
             ) {
                     saveableStateHolder.SaveableStateProvider(state.saveableKey()) {
-                        when (state) {
-                            SettingsScreenState.Settings -> {
-                                SettingsScreen(
-                            listState = settingsListState,
-                            dynamicColor = dynamicColor,
-                            onDynamicColorChange = onDynamicColorChange,
-                            isDarkTheme = isDarkTheme,
-                            themeMode = themeMode,
-                            onThemeToggleRequest = onThemeToggleRequest,
-                            onThemeModeRequest = onThemeModeRequest,
-                            preferredQuality = preferredQuality,
-                            onQualityChange = onQualityChange,
-                            youtubePreferredQuality = youtubePreferredQuality,
-                            onYouTubeQualityChange = onYouTubeQualityChange,
-                            biliPreferredQuality = biliPreferredQuality,
-                            onBiliQualityChange = onBiliQualityChange,
-                            mobileDataFollowDefaultAudioQuality =
-                                mobileDataFollowDefaultAudioQuality,
-                            onMobileDataFollowDefaultAudioQualityChange =
-                                onMobileDataFollowDefaultAudioQualityChange,
-                            mobileDataNeteaseAudioQuality = mobileDataNeteaseAudioQuality,
-                            onMobileDataNeteaseAudioQualityChange =
-                                onMobileDataNeteaseAudioQualityChange,
-                            mobileDataYouTubeAudioQuality = mobileDataYouTubeAudioQuality,
-                            onMobileDataYouTubeAudioQualityChange =
-                                onMobileDataYouTubeAudioQualityChange,
-                            mobileDataBiliAudioQuality = mobileDataBiliAudioQuality,
-                            onMobileDataBiliAudioQualityChange =
-                                onMobileDataBiliAudioQualityChange,
-                            seedColorHex = seedColorHex,
-                            onSeedColorChange = onSeedColorChange,
-                            themeColorPalette = themeColorPalette,
-                            onAddColorToPalette = onAddColorToPalette,
-                            onRemoveColorFromPalette = onRemoveColorFromPalette,
-                            themePaletteStyle = themePaletteStyle,
-                            onThemePaletteStyleChange = onThemePaletteStyleChange,
-                            themeColorSpec = themeColorSpec,
-                            onThemeColorSpecChange = onThemeColorSpecChange,
-                            devModeEnabled = devModeEnabled,
-                            onDevModeChange = onDevModeChange,
-                            lyricBlurEnabled = lyricBlurEnabled,
-                            onLyricBlurEnabledChange = onLyricBlurEnabledChange,
-                            lyricBlurAmount = lyricBlurAmount,
-                            onLyricBlurAmountChange = onLyricBlurAmountChange,
-                            cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
-                            onCloudMusicLyricDefaultOffsetMsChange = onCloudMusicLyricDefaultOffsetMsChange,
-                            qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
-                            onQqMusicLyricDefaultOffsetMsChange = onQqMusicLyricDefaultOffsetMsChange,
-                            kugouLyricDefaultOffsetMs = kugouLyricDefaultOffsetMs,
-                            onKugouLyricDefaultOffsetMsChange = onKugouLyricDefaultOffsetMsChange,
-                            lrclibLyricDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
-                            onLrclibLyricDefaultOffsetMsChange = onLrclibLyricDefaultOffsetMsChange,
-                            amllTtmlLyricDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
-                            onAmllTtmlLyricDefaultOffsetMsChange = onAmllTtmlLyricDefaultOffsetMsChange,
-                            onResetAllLyricDefaultOffsets = onResetAllLyricDefaultOffsets,
-                            floatingLyricsPreferences = floatingLyricsPreferences,
-                            onFloatingLyricsPreferencesChange = onFloatingLyricsPreferencesChange,
-                            advancedBlurEnabled = advancedBlurEnabled,
-                            onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
-                            enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
-                            onEnhancedAdvancedBlurEnabledChange =
-                                onEnhancedAdvancedBlurEnabledChange,
-                            enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
-                            onEnhancedAdvancedBlurRadiusDpChange =
-                                onEnhancedAdvancedBlurRadiusDpChange,
-                            advancedBlurQuality = advancedBlurQuality,
-                            onAdvancedBlurQualityChange = onAdvancedBlurQualityChange,
-                            nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
-                            onNowPlayingAudioReactiveEnabledChange = onNowPlayingAudioReactiveEnabledChange,
-                            nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
-                            onNowPlayingDynamicBackgroundEnabledChange = onNowPlayingDynamicBackgroundEnabledChange,
-                            nowPlayingCoverBlurBackgroundEnabled = nowPlayingCoverBlurBackgroundEnabled,
-                            onNowPlayingCoverBlurBackgroundEnabledChange = onNowPlayingCoverBlurBackgroundEnabledChange,
-                            nowPlayingCoverBlurAmount = nowPlayingCoverBlurAmount,
-                            onNowPlayingCoverBlurAmountChange = onNowPlayingCoverBlurAmountChange,
-                            nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
-                            onNowPlayingCoverBlurDarkenChange = onNowPlayingCoverBlurDarkenChange,
-                            lyricFontScales = lyricFontScales,
-                            onLyricFontScaleChange = onLyricFontScaleChange,
-                            uiDensityScale = uiDensityScale,
-                            onUiDensityScaleChange = onUiDensityScaleChange,
-                            bypassProxy = bypassProxy,
-                            onBypassProxyChange = onBypassProxyChange,
-                            backgroundImageUri = backgroundImageUri,
-                            onBackgroundImageChange = onBackgroundImageChange,
-                            downloadDirectoryUri = downloadDirectoryUri,
-                            downloadFileNameTemplate = downloadFileNameTemplate,
-                            onDownloadDirectoryUriChange = onDownloadDirectoryUriChange,
-                            onDownloadFileNameTemplateChange = onDownloadFileNameTemplateChange,
-                            backgroundImageBlur = backgroundImageBlur,
-                            onBackgroundImageBlurChange = onBackgroundImageBlurChange,
-                            onBackgroundImageBlurChangeFinished = onBackgroundImageBlurChangeFinished,
-                            backgroundImageAlpha = backgroundImageAlpha,
-                            onBackgroundImageAlphaChange = onBackgroundImageAlphaChange,
-                            onBackgroundImageAlphaChangeFinished = onBackgroundImageAlphaChangeFinished,
-                            defaultStartDestination = defaultStartDestination,
-                            onDefaultStartDestinationChange = onDefaultStartDestinationChange,
-                            showHomeContinueCard = showHomeContinueCard,
-                            onShowHomeContinueCardChange = onShowHomeContinueCardChange,
-                            showHomeTrendingCard = showHomeTrendingCard,
-                            onShowHomeTrendingCardChange = onShowHomeTrendingCardChange,
-                            showHomeRadarCard = showHomeRadarCard,
-                            onShowHomeRadarCardChange = onShowHomeRadarCardChange,
-                            showHomeRecommendedCard = showHomeRecommendedCard,
-                            onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
-                            homeHasRecentUsage = homeHasRecentUsage,
-                            playbackFadeIn = playbackFadeIn,
-                            onPlaybackFadeInChange = onPlaybackFadeInChange,
-                            playbackCrossfadeNext = playbackCrossfadeNext,
-                            onPlaybackCrossfadeNextChange = onPlaybackCrossfadeNextChange,
-                            sleepTimerFinishCurrentOnExpiry = sleepTimerFinishCurrentOnExpiry,
-                            onSleepTimerFinishCurrentOnExpiryChange =
-                                onSleepTimerFinishCurrentOnExpiryChange,
-                            playbackFadeInDurationMs = playbackFadeInDurationMs,
-                            onPlaybackFadeInDurationMsChange = onPlaybackFadeInDurationMsChange,
-                            playbackFadeOutDurationMs = playbackFadeOutDurationMs,
-                            onPlaybackFadeOutDurationMsChange = onPlaybackFadeOutDurationMsChange,
-                            playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
-                            onPlaybackCrossfadeInDurationMsChange = onPlaybackCrossfadeInDurationMsChange,
-                            playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
-                            onPlaybackCrossfadeOutDurationMsChange = onPlaybackCrossfadeOutDurationMsChange,
-                            playbackVolumeNormalizationEnabled = playbackVolumeNormalizationEnabled,
-                            onPlaybackVolumeNormalizationEnabledChange =
-                                onPlaybackVolumeNormalizationEnabledChange,
-                            playbackHighResolutionOutputEnabled =
-                                playbackHighResolutionOutputEnabled,
-                            onPlaybackHighResolutionOutputEnabledChange =
-                                onPlaybackHighResolutionOutputEnabledChange,
-                            playbackVolumeBalance = playbackVolumeBalance,
-                            onPlaybackVolumeBalanceChange = onPlaybackVolumeBalanceChange,
-                            keepLastPlaybackProgress = keepLastPlaybackProgress,
-                            onKeepLastPlaybackProgressChange = onKeepLastPlaybackProgressChange,
-                            rememberLongFormPlaybackProgress = rememberLongFormPlaybackProgress,
-                            onRememberLongFormPlaybackProgressChange =
-                                onRememberLongFormPlaybackProgressChange,
-                            keepPlaybackModeState = keepPlaybackModeState,
-                            onKeepPlaybackModeStateChange = onKeepPlaybackModeStateChange,
-                            neteaseAutoSourceSwitch = neteaseAutoSourceSwitch,
-                            onNeteaseAutoSourceSwitchChange = onNeteaseAutoSourceSwitchChange,
-                            neteaseLocalSourceFallback = neteaseLocalSourceFallback,
-                            onNeteaseLocalSourceFallbackChange = onNeteaseLocalSourceFallbackChange,
-                            stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
-                            onStopOnBluetoothDisconnectChange = onStopOnBluetoothDisconnectChange,
-                            usbExclusivePlayback = usbExclusivePlayback,
-                            onUsbExclusivePlaybackChange = onUsbExclusivePlaybackChange,
-                            allowMixedPlayback = allowMixedPlayback,
-                            onAllowMixedPlaybackChange = onAllowMixedPlaybackChange,
-                            preemptAudioFocus = preemptAudioFocus,
-                            onPreemptAudioFocusChange = onPreemptAudioFocusChange,
-                            onNavigateToDownloadManager = {
-                                requestScreen(SettingsScreenState.DownloadManager)
-                            },
-                            maxCacheSizeBytes = maxCacheSizeBytes,
-                            onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
-                            onClearCacheClick = onClearCacheClick,
-                            onBeforeLanguageRestart = onBeforeLanguageRestart,
-                            onLanguageChanged = onLanguageChanged
-                                )
-                            }
-
-                            SettingsScreenState.DownloadManager -> {
-                                DownloadManagerScreen(
-                                    onBack = { requestScreen(SettingsScreenState.Settings) },
-                                    onOpenDownloadProgress = {
-                                        requestScreen(SettingsScreenState.DownloadProgress)
-                                    },
-                                    listState = downloadManagerListState
-                                )
-                            }
-
-                            SettingsScreenState.DownloadProgress -> {
-                                DownloadProgressScreen(
-                                    onBack = {
-                                        requestScreen(SettingsScreenState.DownloadManager)
-                                    },
-                                    listState = downloadProgressListState
-                                )
-                            }
+                        val settingsPage: @Composable () -> Unit = {
+                            SettingsScreen(
+                                listState = settingsListState,
+                                bindings = bindings,
+                                onNavigateToDownloadManager = {
+                                    requestScreen(SettingsScreenState.DownloadManager)
+                                }
+                            )
                         }
+                        val downloadManagerPage: @Composable () -> Unit = {
+                            DownloadManagerScreen(
+                                onBack = { requestScreen(SettingsScreenState.Settings) },
+                                onOpenDownloadProgress = {
+                                    requestScreen(SettingsScreenState.DownloadProgress)
+                                },
+                                listState = downloadManagerListState
+                            )
+                        }
+                        val downloadProgressPage: @Composable () -> Unit = {
+                            DownloadProgressScreen(
+                                onBack = { requestScreen(SettingsScreenState.DownloadManager) },
+                                listState = downloadProgressListState
+                            )
+                        }
+                        selectSettingsHostPage(
+                            state, settingsPage, downloadManagerPage, downloadProgressPage
+                        ).invoke()
                     }
             }
         }

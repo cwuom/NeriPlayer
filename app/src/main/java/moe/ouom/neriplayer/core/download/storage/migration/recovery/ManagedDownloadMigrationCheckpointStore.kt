@@ -485,7 +485,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             receipts
                 .distinctBy(ManagedMigrationCopyReceipt::sourceReference)
                 .sortedWith(
-                    compareBy<ManagedMigrationCopyReceipt>(
+                    compareBy(
                         { it.sourceSubdirectory.orEmpty() },
                         { it.sourceName },
                         { it.sourceReference }
@@ -1091,7 +1091,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             })
             put("replacements", org.json.JSONArray().apply {
                 journal.replacements.sortedWith(
-                    compareBy<ManagedMigrationReplacementPlan>(
+                    compareBy(
                         { it.sourceReference },
                         { it.subdirectory.orEmpty() },
                         { it.targetName }
@@ -1106,7 +1106,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             put("sourceEntriesComplete", journal.sourceEntriesComplete)
             put("cleanupReceipts", org.json.JSONArray().apply {
                 journal.cleanupReceipts.sortedWith(
-                    compareBy<ManagedMigrationCleanupReceipt>(
+                    compareBy(
                         { it.sourceSubdirectory.orEmpty() },
                         { it.targetEntry.name },
                         { it.sourceReference }
@@ -1117,7 +1117,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             })
             put("sourceEntries", org.json.JSONArray().apply {
                 journal.sourceEntries.sortedWith(
-                    compareBy<ManagedMigrationSourceEntry>(
+                    compareBy(
                         { it.sourceSubdirectory.orEmpty() },
                         { it.sourceName },
                         { it.sourceReference }

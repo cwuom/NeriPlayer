@@ -88,8 +88,9 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.HapticOutlinedButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
-import moe.ouom.neriplayer.ui.screen.resolveNowPlayingMainControlsLayout
-import moe.ouom.neriplayer.ui.screen.resolvePlaybackActionToolbarLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingMainControlsLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingMainControlsLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
 import kotlin.math.roundToInt
 
 internal val OnboardingCardShape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
@@ -1155,7 +1156,7 @@ private fun PlaybackPreviewProgress() {
 
 @Composable
 private fun PlaybackPreviewControls(
-    controlsLayout: moe.ouom.neriplayer.ui.screen.NowPlayingMainControlsLayout,
+    controlsLayout: NowPlayingMainControlsLayout,
     baseSecondaryControlSize: Dp,
     basePrimaryControlSize: Dp,
     baseIconSize: Dp

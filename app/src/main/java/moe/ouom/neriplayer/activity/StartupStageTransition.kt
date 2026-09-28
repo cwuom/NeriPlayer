@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.startup.StartupStage
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val STARTUP_STAGE_ENTER_DURATION_MILLIS = 620
 internal const val STARTUP_STAGE_CONTENT_DELAY_MILLIS = 520L
@@ -78,7 +79,7 @@ internal fun StartupStageContentGate(
             return@LaunchedEffect
         }
         contentReady = false
-        delay(STARTUP_STAGE_CONTENT_DELAY_MILLIS)
+        delay(STARTUP_STAGE_CONTENT_DELAY_MILLIS.milliseconds)
         contentReady = true
     }
 

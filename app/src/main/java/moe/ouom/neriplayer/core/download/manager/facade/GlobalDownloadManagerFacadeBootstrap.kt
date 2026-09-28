@@ -74,6 +74,7 @@ import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 internal fun GlobalDownloadManager.onWifiBoundDownloadNetworkRestoredImpl(
     context: Context,
@@ -645,7 +646,7 @@ internal fun GlobalDownloadManager.initializeImpl(context: Context) {
             }
             // 让首屏协程先获得一次调度机会，避免为目录扫描固定空等
             yield()
-            val refreshOutcome = withTimeoutOrNull(STARTUP_INITIAL_SCAN_WAIT_TIMEOUT_MS) {
+            val refreshOutcome = withTimeoutOrNull(STARTUP_INITIAL_SCAN_WAIT_TIMEOUT_MS.milliseconds) {
                 scanLocalFilesAwait(
                     appContext,
                     forceRefresh = true
@@ -1004,7 +1005,7 @@ internal fun GlobalDownloadManager.recoverPendingDownloadsForNetworkRestoredImpl
                 reason = reason,
                 admissionTicket = admissionTicket
             )
-            delay(1_500L)
+            delay(1_500L.milliseconds)
         }
     }
 }
@@ -1024,7 +1025,7 @@ internal fun GlobalDownloadManager.scheduleWifiRecoveryProbeImpl(context: Contex
             try {
                 repeat(WIFI_RECOVERY_PROBE_ATTEMPTS) { attempt ->
                     if (attempt > 0) {
-                        delay(WIFI_RECOVERY_PROBE_DELAY_MS)
+                        delay(WIFI_RECOVERY_PROBE_DELAY_MS.milliseconds)
                     }
                     if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
                         return@launch

@@ -1,16 +1,18 @@
 package moe.ouom.neriplayer.data.settings
 
+import moe.ouom.neriplayer.util.units.GIBIBYTE_BYTES
+import moe.ouom.neriplayer.util.units.MEBIBYTE_BYTES
+
 /**
  * keeps the cache setting representation shared by the settings UI and playback startup
  */
 object CacheSizePolicy {
     const val UNLIMITED_CACHE_SIZE_BYTES = -1L
-    const val MAX_FINITE_CACHE_SIZE_BYTES = 10L * 1024L * 1024L * 1024L
+    const val DEFAULT_CACHE_SIZE_BYTES = GIBIBYTE_BYTES
+    const val MAX_FINITE_CACHE_SIZE_BYTES = 10 * GIBIBYTE_BYTES
     const val CACHE_SIZE_SLIDER_MAX_FINITE_MB = 10_240f
     const val CACHE_SIZE_SLIDER_UNLIMITED_VALUE = 10_241f
     const val CACHE_SIZE_SLIDER_NO_CACHE_THRESHOLD_MB = 10f
-
-    private const val BYTES_PER_MEGABYTE = 1024L * 1024L
 
     fun normalizeCacheSizeBytes(bytes: Long): Long {
         return if (bytes == UNLIMITED_CACHE_SIZE_BYTES) {
@@ -25,7 +27,7 @@ object CacheSizePolicy {
         if (normalized == UNLIMITED_CACHE_SIZE_BYTES) {
             return CACHE_SIZE_SLIDER_UNLIMITED_VALUE
         }
-        return (normalized.toFloat() / BYTES_PER_MEGABYTE.toFloat())
+        return (normalized.toFloat() / MEBIBYTE_BYTES.toFloat())
             .coerceIn(0f, CACHE_SIZE_SLIDER_MAX_FINITE_MB)
     }
 
@@ -38,7 +40,7 @@ object CacheSizePolicy {
         if (normalized < CACHE_SIZE_SLIDER_NO_CACHE_THRESHOLD_MB) {
             return 0L
         }
-        return (normalized * BYTES_PER_MEGABYTE.toFloat()).toLong()
+        return (normalized * MEBIBYTE_BYTES.toFloat()).toLong()
             .coerceIn(0L, MAX_FINITE_CACHE_SIZE_BYTES)
     }
 }

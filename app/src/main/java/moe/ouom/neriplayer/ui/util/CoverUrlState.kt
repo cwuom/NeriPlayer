@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import java.util.LinkedHashMap
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 private val coverProbeDispatcher = Dispatchers.IO.limitedParallelism(4)
@@ -812,7 +813,7 @@ private suspend fun resolvePlaylistCoverFallbackGradually(
             if (!resolvedCover.isNullOrBlank()) return resolvedCover
 
             // 每个候选之间留出时间，避免无封面的大歌单持续占用 CPU 和内存
-            delay(PLAYLIST_COVER_FALLBACK_IDLE_DELAY_MS)
+            delay(PLAYLIST_COVER_FALLBACK_IDLE_DELAY_MS.milliseconds)
         }
         return null
     }

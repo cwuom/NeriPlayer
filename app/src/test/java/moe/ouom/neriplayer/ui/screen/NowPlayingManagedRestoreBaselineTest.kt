@@ -7,6 +7,16 @@ import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
 import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaseline
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.applyEditSongLyricsDraftPreview
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.applyLyricsEditorRestorePreview
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.isOriginalInfoRequestCurrent
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongBaselineFromSong
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsForSave
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsRestorePlan
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveManagedEditSongBaseline
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldFetchOriginalSongInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

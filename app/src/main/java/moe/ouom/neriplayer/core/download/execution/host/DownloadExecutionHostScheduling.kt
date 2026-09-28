@@ -17,7 +17,6 @@ internal fun DefaultDownloadExecutionHost.scheduleWithTicket(
     ticket: ScheduleTicket
 ): DownloadExecutionSchedule {
     var hostAdmissionAcquired = false
-    var scheduledBackend: DownloadExecutionSchedule.Backend? = null
     var currentTicket = ticket
     try {
         if (!isScheduleTicketCurrent(context, ticket)) {
@@ -173,7 +172,7 @@ internal fun DefaultDownloadExecutionHost.scheduleWithTicket(
             sdkInt = sdkInt,
             userInitiated = request.userInitiated
         )
-        scheduledBackend = when (selectedBackend) {
+        val scheduledBackend = when (selectedBackend) {
             DownloadExecutionSchedule.Backend.UIDT_JOB -> {
                 if (!isScheduleTicketCurrent(context, boundTicket)) {
                     return rejectStaleSchedule(
@@ -246,7 +245,7 @@ internal fun DefaultDownloadExecutionHost.scheduleWithTicket(
             if (existingOwner == null || existingOwner.ticket == boundTicket) {
                 backendOwners[request.operationId] = BackendOwner(
                     ticket = boundTicket,
-                    backend = requireNotNull(scheduledBackend)
+                    backend = scheduledBackend
                 )
                 true
             } else {

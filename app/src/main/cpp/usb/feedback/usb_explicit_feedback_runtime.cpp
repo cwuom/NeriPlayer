@@ -22,7 +22,7 @@ uint16_t periodsForMinimumDuration(
     if (expectedReportPeriodNs <= 0) {
         return minimumPeriods;
     }
-    const uint64_t expectedPeriod = static_cast<uint64_t>(expectedReportPeriodNs);
+    const auto expectedPeriod = static_cast<uint64_t>(expectedReportPeriodNs);
     const uint64_t durationPeriods =
         (static_cast<uint64_t>(minimumDurationNs) + expectedPeriod - 1U) /
         expectedPeriod;
@@ -79,8 +79,8 @@ int64_t longGapReacquisitionThresholdNs(int64_t expectedReportPeriodNs) {
     // 取 hardHoldover 的一半,保证阈值仍大于 softMiss(落在保持窗口内),且余量远大于 tick 周期
     const uint64_t periods = static_cast<uint64_t>(config.softMissPeriods) +
         static_cast<uint64_t>(config.hardHoldoverPeriods) / 2U;
-    const uint64_t expectedPeriod = static_cast<uint64_t>(expectedReportPeriodNs);
-    const uint64_t maximum = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+    const auto expectedPeriod = static_cast<uint64_t>(expectedReportPeriodNs);
+    const auto maximum = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
     if (periods == 0 || expectedPeriod > maximum / periods) {
         return std::numeric_limits<int64_t>::max();
     }

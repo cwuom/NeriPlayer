@@ -5,12 +5,9 @@ package moe.ouom.neriplayer.core.player.persistence
 import android.app.Application
 import android.os.SystemClock
 import androidx.media3.common.Player
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -44,14 +41,10 @@ import moe.ouom.neriplayer.core.player.metadata.shouldSkipSongMetadataMutation
 import moe.ouom.neriplayer.core.player.metadata.shouldWriteLocalCoverMetadata
 import moe.ouom.neriplayer.core.player.metadata.toBasicSongDetails
 import moe.ouom.neriplayer.core.player.metadata.withUpdatedLyricsPreservingOriginal
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PersistedState
-import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
-import moe.ouom.neriplayer.core.player.model.toPlaybackState
-import moe.ouom.neriplayer.core.player.model.withPlaybackState
+import moe.ouom.neriplayer.core.player.model.RestoredPlaybackState
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
-import moe.ouom.neriplayer.core.player.url.isCurrentListenTogetherFallbackMediaUrl
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
@@ -74,9 +67,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
-import java.lang.reflect.Type
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun PlayerManager.hasItemsImpl(): Boolean = currentPlaylist.isNotEmpty()
@@ -91,7 +82,6 @@ internal data class RestoredPlayerStateSnapshot(
     val shuffleRestoreIndex: Int,
     val resumePositionMs: Long,
     val shouldResumePlayback: Boolean,
-    val persistedPlaybackState: PersistedPlaybackState,
     val originalPlaylistSize: Int,
     val persistedIndex: Int
 )
@@ -165,170 +155,6 @@ private fun PlayerManager.dispatchMetadataReplacementCompletion(
 
 private fun downloadedLocalFilesCoverCandidates(): List<SongItem> {
     return GlobalDownloadManager.downloadedSongs.value.map { it.toPlaybackSongItem() }
-}
-
-private fun buildPersistedPlaybackState(
-    currentIndexSnapshot: Int,
-    mediaUrlSnapshot: String?,
-    positionMs: Long,
-    shouldResumePlayback: Boolean,
-    repeatMode: Int,
-    shuffleEnabled: Boolean
-): PersistedPlaybackState {
-    return PersistedPlaybackState(
-        index = currentIndexSnapshot,
-        mediaUrl = mediaUrlSnapshot,
-        positionMs = positionMs,
-        shouldResumePlayback = shouldResumePlayback,
-        repeatMode = repeatMode,
-        shuffleEnabled = shuffleEnabled
-    )
-}
-
-private fun PlayerManager.buildPersistedPlaylistState(
-    playlistReference: List<SongItem>,
-    playbackStateSnapshot: PersistedPlaybackState
-): PersistedState {
-    val currentSong = _currentSongFlow.value
-    val restorePlaylistReference = shuffleRestorePlaylistReference
-    return PersistedState(
-        playlist = playlistReference.mapIndexed { index, song ->
-            // 只给当前歌曲保留内嵌歌词, 避免大队列切歌时反复序列化整批长文本
-            song.toPersistedSongItem(
-                includeLyrics = shouldPersistEmbeddedLyrics(song) && index == playbackStateSnapshot.index
-            )
-        },
-        index = playbackStateSnapshot.index,
-        mediaUrl = playbackStateSnapshot.mediaUrl,
-        positionMs = playbackStateSnapshot.positionMs,
-        shouldResumePlayback = playbackStateSnapshot.shouldResumePlayback,
-        repeatMode = playbackStateSnapshot.repeatMode,
-        shuffleEnabled = playbackStateSnapshot.shuffleEnabled,
-        shuffleRestorePlaylist = if (playbackStateSnapshot.shuffleEnabled == true) {
-            restorePlaylistReference?.map { song ->
-                song.toPersistedSongItem(
-                    includeLyrics = shouldPersistEmbeddedLyrics(song) &&
-                        currentSong?.sameIdentityAs(song) == true
-                )
-            }
-        } else {
-            null
-        },
-        shuffleRestoreIndex = if (playbackStateSnapshot.shuffleEnabled == true) {
-            restorePlaylistReference
-                ?.indexOfFirst { currentSong?.sameIdentityAs(it) == true }
-                ?.takeIf { it >= 0 }
-                ?: shuffleRestoreCurrentIndex.takeIf { it >= 0 }
-        } else {
-            null
-        }
-    )
-}
-
-private fun <T> PlayerManager.readJson(file: File, type: Type): T {
-    file.inputStream().bufferedReader().use { reader ->
-        return gson.fromJson(reader, type)
-    }
-}
-
-internal class PlaybackQueueLegacyStore(
-    private val stateFile: File,
-    private val playbackStateFile: File,
-    private val gson: com.google.gson.Gson
-) {
-    fun read(): PersistedState? {
-        if (!stateFile.exists()) {
-            return null
-        }
-        val type = object : TypeToken<PersistedState>() {}.type
-        val legacyData: PersistedState = PlayerManager.readJson(stateFile, type)
-        val playbackState = playbackStateFile.takeIf(File::exists)?.runCatching {
-            PlayerManager.readJson<PersistedPlaybackState>(
-                this,
-                PersistedPlaybackState::class.java
-            )
-        }?.getOrNull()
-        return playbackState?.let(legacyData::withPlaybackState) ?: legacyData
-    }
-
-    fun write(
-        state: PersistedState,
-        playbackState: PersistedPlaybackState
-    ) {
-        runCatching { playbackStateFile.delete() }
-        stateFile.writeTextAtomically(gson.toJson(state))
-        playbackStateFile.writeTextAtomically(gson.toJson(playbackState))
-    }
-
-    fun lastModified(): Long {
-        return maxOf(
-            stateFile.takeIf(File::exists)?.lastModified() ?: 0L,
-            playbackStateFile.takeIf(File::exists)?.lastModified() ?: 0L
-        )
-    }
-
-    fun clear() {
-        runCatching { stateFile.delete() }
-        runCatching { playbackStateFile.delete() }
-    }
-}
-
-internal enum class PlaybackQueuePersistTarget {
-    ROOM,
-    LEGACY_JSON,
-    NONE
-}
-
-internal suspend fun persistPlaybackQueueWithRoomFallback(
-    roomStore: PlaybackQueueStateStore,
-    legacyStore: PlaybackQueueLegacyStore,
-    queueState: PersistedState?,
-    playbackState: PersistedPlaybackState,
-    shouldWriteQueueState: Boolean,
-    shouldWritePlaybackState: Boolean,
-    onRoomFailure: (Throwable) -> Unit = {}
-): PlaybackQueuePersistTarget {
-    if (!shouldWriteQueueState && !shouldWritePlaybackState) {
-        return PlaybackQueuePersistTarget.NONE
-    }
-    val now = System.currentTimeMillis()
-    if (queueState == null) {
-        return runCatching {
-            roomStore.clear(now)
-            legacyStore.clear()
-            PlaybackQueuePersistTarget.ROOM
-        }.getOrElse { error ->
-            onRoomFailure(error)
-            legacyStore.write(
-                PersistedState(playlist = emptyList(), index = -1)
-                    .withPlaybackState(playbackState),
-                playbackState
-            )
-            runCatching { roomStore.markLegacyJsonPrimary(now) }
-                .onFailure { markerError ->
-                    onRoomFailure(markerError)
-                }
-            PlaybackQueuePersistTarget.LEGACY_JSON
-        }
-    }
-
-    return runCatching {
-        if (shouldWriteQueueState) {
-            roomStore.replaceSnapshot(queueState, now)
-        }
-        if (shouldWritePlaybackState && !shouldWriteQueueState) {
-            roomStore.updatePlaybackState(playbackState, now)
-        }
-        PlaybackQueuePersistTarget.ROOM
-    }.getOrElse { error ->
-        onRoomFailure(error)
-        legacyStore.write(queueState, playbackState)
-        runCatching { roomStore.markLegacyJsonPrimary(now) }
-            .onFailure { markerError ->
-                onRoomFailure(markerError)
-            }
-        PlaybackQueuePersistTarget.LEGACY_JSON
-    }
 }
 
 internal data class PlaybackQueueLegacySnapshot(
@@ -448,7 +274,6 @@ private fun buildRestoredStateSnapshot(
                 0L
             },
             shouldResumePlayback = data.shouldResumePlayback && currentIndex != -1,
-            persistedPlaybackState = data.toPlaybackState(),
             originalPlaylistSize = data.playlist.size,
             persistedIndex = data.index
         )
@@ -610,14 +435,12 @@ private fun loadRestoredStateSnapshot(
 }
 
 internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerStateSnapshot) {
-    currentPlaylist = snapshot.playlist
+    publishCurrentQueue(snapshot.playlist, snapshot.currentIndex)
     if (currentPlaylist.isEmpty()) {
         NPLogger.w(
             "NERI-PlayerManager",
             "restoreState: sanitized playlist became empty, originalSize=${snapshot.originalPlaylistSize}, persistedIndex=${snapshot.persistedIndex}"
         )
-        currentIndex = -1
-        _currentQueueFlow.value = emptyList()
         setCurrentSongForPlayback(null)
         _currentMediaUrl.value = null
         _currentPlaybackAudioInfo.value = null
@@ -625,14 +448,11 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
         currentMediaUrlResolvedAtMs = 0L
         shuffleRestorePlaylistReference = null
         shuffleRestoreCurrentIndex = -1
-        restoredResumePositionMs = 0L
-        restoredShouldResumePlayback = false
+        clearRestoredPlayback()
         updateResumePlaybackRequested(false)
         return
     }
 
-    currentIndex = snapshot.currentIndex
-    _currentQueueFlow.value = currentPlaylist
     setCurrentSongForPlayback(currentPlaylist.getOrNull(currentIndex))
     _currentMediaUrl.value = snapshot.currentMediaUrl
     repeatModeSetting = snapshot.repeatMode
@@ -649,55 +469,16 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
         shuffleRestoreCurrentIndex = -1
     }
 
-    restoredResumePositionMs = snapshot.resumePositionMs
-    restoredShouldResumePlayback = snapshot.shouldResumePlayback
+    setRestoredPlayback(snapshot.resumePositionMs, snapshot.shouldResumePlayback)
     updateResumePlaybackRequested(false)
     _playbackPositionMs.value = restoredResumePositionMs
     currentMediaUrlResolvedAtMs = 0L
-    lastPersistedPlaylistReference = currentPlaylist
-    lastPersistedPlaybackState = snapshot.persistedPlaybackState
+    statePersistenceWriter.invalidate()
     lastStatePersistAtMs = SystemClock.elapsedRealtime()
     NPLogger.d(
         "NERI-PlayerManager",
         "restoreState completed: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, restoredResumePositionMs=$restoredResumePositionMs, restoredShouldResumePlayback=$restoredShouldResumePlayback, shuffle=${_shuffleModeFlow.value}, repeatMode=$repeatModeSetting, currentSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}"
     )
-}
-
-internal fun PlayerManager.scheduleStatePersist(
-    positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
-    shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot(),
-    debounceMs: Long = STATE_PERSIST_DEBOUNCE_MS
-) {
-    scheduledStatePersistJob?.cancel()
-    scheduledStatePersistJob = ioScope.launch {
-        if (debounceMs > 0L) {
-            delay(debounceMs)
-        }
-        persistState(
-            positionMs = positionMs,
-            shouldResumePlayback = shouldResumePlayback
-        )
-    }
-}
-
-internal suspend fun PlayerManager.persistStateNow(
-    positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
-    shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot(),
-    reason: String
-): Boolean {
-    if (!initialized) return false
-    val pendingJob = scheduledStatePersistJob
-    scheduledStatePersistJob = null
-    pendingJob?.cancelAndJoin()
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "persistStateNow: reason=$reason positionMs=$positionMs shouldResume=$shouldResumePlayback"
-    )
-    persistState(
-        positionMs = positionMs,
-        shouldResumePlayback = shouldResumePlayback
-    )
-    return true
 }
 
 private suspend fun PlayerManager.updateCurrentFavorite(
@@ -785,136 +566,6 @@ internal fun PlayerManager.toggleCurrentFavoriteImpl() {
             "toggleCurrentFavorite(): song=${song.name}/${song.id}, currentlyFavorite=$currentlyFavorite, stack=[${debugStackHint()}]"
         )
         !currentlyFavorite
-    }
-}
-
-internal suspend fun PlayerManager.persistStateImpl(
-    positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
-    shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot()
-) {
-    scheduledStatePersistJob = null
-    val playlistReference = currentPlaylist
-    val currentIndexSnapshot = currentIndex
-    val mediaUrlSnapshot = _currentMediaUrl.value
-        .takeUnless { isCurrentListenTogetherFallbackMediaUrl() }
-    val persistedShouldResumePlayback =
-        shouldResumePlayback && !suppressAutoResumeForCurrentSession
-    val persistedPositionMs = if (keepLastPlaybackProgressEnabled) {
-        positionMs.coerceAtLeast(0L)
-    } else {
-        0L
-    }
-    val persistedRepeatMode = if (keepPlaybackModeStateEnabled) {
-        repeatModeSetting
-    } else {
-        Player.REPEAT_MODE_OFF
-    }
-    val persistedShuffleEnabled = keepPlaybackModeStateEnabled && _shuffleModeFlow.value
-    val playbackStateSnapshot = buildPersistedPlaybackState(
-        currentIndexSnapshot = currentIndexSnapshot,
-        mediaUrlSnapshot = mediaUrlSnapshot,
-        positionMs = persistedPositionMs,
-        shouldResumePlayback = persistedShouldResumePlayback,
-        repeatMode = persistedRepeatMode,
-        shuffleEnabled = persistedShuffleEnabled
-    )
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "persistState: queueSize=${playlistReference.size}, index=$currentIndexSnapshot, positionMs=$persistedPositionMs, shouldResume=$persistedShouldResumePlayback, repeatMode=$persistedRepeatMode, shuffle=$persistedShuffleEnabled, mediaUrlPresent=${!mediaUrlSnapshot.isNullOrBlank()}"
-    )
-
-    withContext(Dispatchers.IO) {
-        statePersistMutex.withLock {
-            try {
-                val roomStore = PlaybackQueueRoomStore(
-                    NeriUserDataDatabase.getInstance(application.applicationContext)
-                )
-                val legacyStore = PlaybackQueueLegacyStore(
-                    stateFile = stateFile,
-                    playbackStateFile = playbackStateFile,
-                    gson = gson
-                )
-                if (playlistReference.isEmpty()) {
-                    restoredResumePositionMs = 0L
-                    restoredShouldResumePlayback = false
-                    val persistTarget = persistPlaybackQueueWithRoomFallback(
-                        roomStore = roomStore,
-                        legacyStore = legacyStore,
-                        queueState = null,
-                        playbackState = playbackStateSnapshot,
-                        shouldWriteQueueState = true,
-                        shouldWritePlaybackState = true,
-                        onRoomFailure = { error ->
-                            NPLogger.e(
-                                "NERI-PlayerManager",
-                                "persistState: Room clear failed; falling back to legacy JSON",
-                                error
-                            )
-                        }
-                    )
-                    shuffleRestorePlaylistReference = null
-                    shuffleRestoreCurrentIndex = -1
-                    lastPersistedPlaylistReference = null
-                    lastPersistedPlaybackState = null
-                    lastStatePersistAtMs = SystemClock.elapsedRealtime()
-                    NPLogger.d(
-                        "NERI-PlayerManager",
-                        "persistState: cleared persisted playback state because queue is empty, target=$persistTarget"
-                    )
-                    return@withLock
-                }
-
-                val shouldWriteQueueState = playlistReference !== lastPersistedPlaylistReference
-                val shouldWritePlaybackState =
-                    shouldWriteQueueState ||
-                        playbackStateSnapshot != lastPersistedPlaybackState ||
-                        lastPersistedPlaybackState == null
-
-                val queueState = if (shouldWriteQueueState || shouldWritePlaybackState) {
-                    buildPersistedPlaylistState(
-                        playlistReference = playlistReference,
-                        playbackStateSnapshot = playbackStateSnapshot
-                    )
-                } else {
-                    null
-                }
-                val persistTarget = persistPlaybackQueueWithRoomFallback(
-                    roomStore = roomStore,
-                    legacyStore = legacyStore,
-                    queueState = queueState,
-                    playbackState = playbackStateSnapshot,
-                    shouldWriteQueueState = shouldWriteQueueState,
-                    shouldWritePlaybackState = shouldWritePlaybackState,
-                    onRoomFailure = { error ->
-                        NPLogger.e(
-                            "NERI-PlayerManager",
-                            "persistState: Room write failed; falling back to legacy JSON",
-                            error
-                        )
-                    }
-                )
-
-                if (shouldWriteQueueState) {
-                    lastPersistedPlaylistReference = playlistReference
-                    NPLogger.d(
-                        "NERI-PlayerManager",
-                        "persistState: wrote $persistTarget queue state, queueSize=${playlistReference.size}, index=$currentIndexSnapshot"
-                    )
-                }
-
-                if (shouldWritePlaybackState) {
-                    lastPersistedPlaybackState = playbackStateSnapshot
-                }
-
-                if (shouldWriteQueueState || shouldWritePlaybackState) {
-                    lastStatePersistAtMs = SystemClock.elapsedRealtime()
-                }
-            } catch (e: Exception) {
-                lastPersistedPlaylistReference = null
-                lastPersistedPlaybackState = null
-                NPLogger.e("PlayerManager", "Failed to persist state", e)
-            }
-        }
     }
 }
 
@@ -1102,412 +753,6 @@ internal fun PlayerManager.playFromQueueImpl(
     )
 }
 
-internal fun PlayerManager.replaceCurrentInQueueAndPlayImpl(
-    song: SongItem,
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
-    bypassLoudVolumeWarning: Boolean = false
-) {
-    ensureInitialized()
-    if (!initialized) return
-
-    if (currentPlaylist.isEmpty() || currentIndex !in currentPlaylist.indices) {
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "replaceCurrentInQueueAndPlay(): queue empty, fallback to playPlaylist, song=${song.name}/${song.id}"
-        )
-        playPlaylist(listOf(song), 0, commandSource)
-        return
-    }
-
-    if (shouldBlockLocalRoomControl(commandSource) ||
-        shouldBlockLocalSongSwitch(song, commandSource)
-    ) {
-        return
-    }
-    if (requestUsbExclusiveLoudPlaybackConfirmation(
-            commandSource = commandSource,
-            bypassWarning = bypassLoudVolumeWarning,
-            continuePlayback = {
-                replaceCurrentInQueueAndPlayImpl(
-                    song = song,
-                    commandSource = commandSource,
-                    bypassLoudVolumeWarning = true
-                )
-            }
-        )
-    ) {
-        return
-    }
-
-    val oldIndex = currentIndex.coerceIn(currentPlaylist.indices)
-    val newPlaylist = currentPlaylist.toMutableList()
-    val existingIndex = newPlaylist.indexOfFirst { it.sameIdentityAs(song) }
-    val targetIndex = if (existingIndex != -1 && existingIndex != oldIndex) {
-        newPlaylist.removeAt(existingIndex)
-        if (existingIndex < oldIndex) oldIndex - 1 else oldIndex
-    } else {
-        oldIndex
-    }.coerceIn(newPlaylist.indices)
-
-    newPlaylist[targetIndex] = song
-    suppressAutoResumeForCurrentSession = false
-    consecutivePlayFailures = 0
-    currentPlaylist = newPlaylist
-    _currentQueueFlow.value = currentPlaylist
-    currentIndex = targetIndex
-    bumpCurrentQueueDisplayRevision()
-
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "replaceCurrentInQueueAndPlay(): song=${song.name}/${song.id}, existingIndex=$existingIndex, targetIndex=$targetIndex, queueSize=${currentPlaylist.size}, source=$commandSource, stack=[${debugStackHint()}]"
-    )
-    playAtIndex(currentIndex, commandSource = commandSource)
-    emitPlaybackCommand(
-        type = "PLAY_FROM_QUEUE",
-        source = commandSource,
-        queue = currentPlaylist.toList(),
-        currentIndex = currentIndex,
-        positionMs = _playbackPositionMs.value
-    )
-}
-
-internal fun resolveQueueCurrentIndexAfterMove(
-    currentIndex: Int,
-    fromIndex: Int,
-    toIndex: Int,
-    queueSize: Int
-): Int {
-    if (queueSize <= 0) return -1
-    if (currentIndex !in 0 until queueSize) return currentIndex
-    if (fromIndex !in 0 until queueSize || toIndex !in 0 until queueSize) return currentIndex
-    if (fromIndex == toIndex) return currentIndex
-    return when {
-        currentIndex == fromIndex -> toIndex
-        fromIndex < currentIndex && currentIndex <= toIndex -> currentIndex - 1
-        toIndex <= currentIndex && currentIndex < fromIndex -> currentIndex + 1
-        else -> currentIndex
-    }
-}
-
-internal fun resolveQueueCurrentIndexAfterRemoval(
-    currentIndex: Int,
-    removedIndex: Int,
-    queueSize: Int
-): Int {
-    if (queueSize <= 0) return -1
-    if (removedIndex !in 0 until queueSize) return currentIndex
-    val newSize = queueSize - 1
-    if (newSize <= 0) return -1
-    if (currentIndex !in 0 until queueSize) return currentIndex
-    return when {
-        currentIndex == removedIndex -> removedIndex.coerceAtMost(newSize - 1)
-        removedIndex < currentIndex -> currentIndex - 1
-        else -> currentIndex
-    }
-}
-
-internal fun PlayerManager.moveQueueItemImpl(fromIndex: Int, toIndex: Int) {
-    ensureInitialized()
-    if (!initialized) return
-    if (shouldBlockLocalRoomControl(PlaybackCommandSource.LOCAL)) return
-    val queueSize = currentPlaylist.size
-    if (queueSize <= 1) return
-    if (fromIndex !in 0 until queueSize || toIndex !in 0 until queueSize) return
-    if (fromIndex == toIndex) return
-
-    val newPlaylist = currentPlaylist.toMutableList()
-    newPlaylist.add(toIndex, newPlaylist.removeAt(fromIndex))
-    val oldIndex = currentIndex
-    currentPlaylist = newPlaylist
-    _currentQueueFlow.value = currentPlaylist
-    currentIndex = resolveQueueCurrentIndexAfterMove(
-        currentIndex = oldIndex,
-        fromIndex = fromIndex,
-        toIndex = toIndex,
-        queueSize = queueSize
-    )
-    bumpCurrentQueueDisplayRevision()
-
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "moveQueueItem(): from=$fromIndex, to=$toIndex, queueSize=$queueSize, oldIndex=$oldIndex, currentIndex=$currentIndex, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"
-    )
-    emitQueueUpdateCommand()
-
-    ioScope.launch {
-        persistState()
-    }
-}
-
-internal fun PlayerManager.removeQueueItemImpl(index: Int) {
-    ensureInitialized()
-    if (!initialized) return
-    if (shouldBlockLocalRoomControl(PlaybackCommandSource.LOCAL)) return
-    val queueSize = currentPlaylist.size
-    if (index !in 0 until queueSize) return
-
-    val oldIndex = currentIndex
-    val removedSong = currentPlaylist[index]
-    val removingCurrent = index == oldIndex
-    val shouldContinuePlayback = removingCurrent && isTransportActiveWithoutInitialization()
-    val newPlaylist = currentPlaylist.toMutableList()
-    newPlaylist.removeAt(index)
-    currentPlaylist = newPlaylist
-    _currentQueueFlow.value = currentPlaylist
-    currentIndex = resolveQueueCurrentIndexAfterRemoval(
-        currentIndex = oldIndex,
-        removedIndex = index,
-        queueSize = queueSize
-    )
-    bumpCurrentQueueDisplayRevision()
-
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "removeQueueItem(): index=$index, removed=${removedSong.name}/${removedSong.id}, queueSize=${currentPlaylist.size}, oldIndex=$oldIndex, currentIndex=$currentIndex, continue=$shouldContinuePlayback, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"
-    )
-
-    if (currentPlaylist.isEmpty()) {
-        shuffleRestorePlaylistReference = null
-        shuffleRestoreCurrentIndex = -1
-        stopPlaybackPreservingQueue(clearMediaUrl = true)
-        emitQueueUpdateCommand(shouldPlay = false)
-        return
-    }
-
-    if (removingCurrent) {
-        if (shouldContinuePlayback && currentIndex in currentPlaylist.indices) {
-            playAtIndex(currentIndex, commandSource = PlaybackCommandSource.LOCAL)
-            emitQueueUpdateCommand(shouldPlay = true)
-        } else {
-            stopPlaybackPreservingQueue(clearMediaUrl = true)
-            emitQueueUpdateCommand(shouldPlay = false)
-        }
-        return
-    }
-
-    setCurrentSongForPlayback(currentPlaylist.getOrNull(currentIndex))
-    emitQueueUpdateCommand()
-    ioScope.launch {
-        persistState()
-    }
-}
-
-private fun queueStableKeyCounts(queue: List<SongItem>): Map<String, Int> {
-    return queue.groupingBy { it.stableKey() }.eachCount()
-}
-
-internal fun resolveQueueCurrentIndexAfterReorder(
-    queue: List<SongItem>,
-    currentSong: SongItem?,
-    submittedCurrentIndex: Int,
-    fallbackCurrentIndex: Int
-): Int {
-    if (queue.isEmpty()) return -1
-    if (currentSong != null) {
-        if (
-            submittedCurrentIndex in queue.indices &&
-            queue[submittedCurrentIndex].sameIdentityAs(currentSong)
-        ) {
-            return submittedCurrentIndex
-        }
-        queue.indexOfFirst { candidate -> candidate.sameIdentityAs(currentSong) }
-            .takeIf { it >= 0 }
-            ?.let { return it }
-    }
-    return submittedCurrentIndex.takeIf { it in queue.indices }
-        ?: fallbackCurrentIndex.coerceIn(queue.indices)
-}
-
-internal fun PlayerManager.reorderQueueImpl(
-    queue: List<SongItem>,
-    currentIndexInQueue: Int,
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
-) {
-    ensureInitialized()
-    if (!initialized) return
-    if (shouldBlockLocalRoomControl(commandSource)) return
-    if (queue.size != currentPlaylist.size) return
-    if (queue.isEmpty()) return
-    if (queueStableKeyCounts(queue) != queueStableKeyCounts(currentPlaylist)) {
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "reorderQueue(): rejected mismatched queue content, oldSize=${currentPlaylist.size}, newSize=${queue.size}"
-        )
-        return
-    }
-
-    val oldIndex = currentIndex
-    val newIndex = resolveQueueCurrentIndexAfterReorder(
-        queue = queue,
-        currentSong = _currentSongFlow.value ?: currentPlaylist.getOrNull(oldIndex),
-        submittedCurrentIndex = currentIndexInQueue,
-        fallbackCurrentIndex = oldIndex
-    )
-
-    currentPlaylist = queue.toList()
-    _currentQueueFlow.value = currentPlaylist
-    currentIndex = newIndex.coerceIn(currentPlaylist.indices)
-    bumpCurrentQueueDisplayRevision()
-
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "reorderQueue(): queueSize=${currentPlaylist.size}, oldIndex=$oldIndex, currentIndex=$currentIndex, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"
-    )
-
-    emitPlaybackCommand(
-        type = "SET_QUEUE",
-        source = commandSource,
-        queue = currentPlaylist.toList(),
-        currentIndex = currentIndex,
-        positionMs = _playbackPositionMs.value
-    )
-
-    ioScope.launch {
-        persistState()
-    }
-}
-
-internal fun PlayerManager.addToQueueNextImpl(song: SongItem) {
-    ensureInitialized()
-    if (!initialized) return
-    if (
-        shouldBlockLocalRoomControl(PlaybackCommandSource.LOCAL) ||
-        shouldBlockLocalSongSwitch(song, PlaybackCommandSource.LOCAL)
-    ) {
-        return
-    }
-
-    if (currentPlaylist.isEmpty()) {
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "addToQueueNext(): queue empty, fallback to playPlaylist, song=${song.name}/${song.id}"
-        )
-        playPlaylist(listOf(song), 0)
-        return
-    }
-
-    val currentSong = _currentSongFlow.value
-    val newPlaylist = currentPlaylist.toMutableList()
-    var insertIndex = (currentIndex + 1).coerceIn(0, newPlaylist.size + 1)
-
-    val existingIndex = newPlaylist.indexOfFirst { it.sameIdentityAs(song) }
-    if (existingIndex != -1) {
-        if (existingIndex < insertIndex) {
-            insertIndex--
-        }
-        newPlaylist.removeAt(existingIndex)
-    }
-
-    insertIndex = insertIndex.coerceIn(0, newPlaylist.size)
-    newPlaylist.add(insertIndex, song)
-
-    currentPlaylist = newPlaylist
-    _currentQueueFlow.value = currentPlaylist
-    currentIndex = if (currentSong != null) {
-        queueIndexOf(currentSong, newPlaylist).takeIf { it >= 0 }
-            ?: currentIndex.coerceIn(0, newPlaylist.lastIndex)
-    } else {
-        currentIndex.coerceIn(0, newPlaylist.lastIndex)
-    }
-    bumpCurrentQueueDisplayRevision()
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "addToQueueNext(): song=${song.name}/${song.id}, existingIndex=$existingIndex, insertIndex=$insertIndex, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"
-    )
-    emitQueueUpdateCommand()
-
-    ioScope.launch {
-        persistState()
-    }
-}
-
-internal fun PlayerManager.addToQueueEndImpl(song: SongItem) {
-    ensureInitialized()
-    if (!initialized) return
-    if (
-        shouldBlockLocalRoomControl(PlaybackCommandSource.LOCAL) ||
-        shouldBlockLocalSongSwitch(song, PlaybackCommandSource.LOCAL)
-    ) {
-        return
-    }
-    if (currentPlaylist.isEmpty()) {
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "addToQueueEnd(): queue empty, fallback to playPlaylist, song=${song.name}/${song.id}"
-        )
-        playPlaylist(listOf(song), 0)
-        return
-    }
-
-    val currentSong = _currentSongFlow.value
-    val newPlaylist = currentPlaylist.toMutableList()
-
-    val existingIndex = newPlaylist.indexOfFirst { it.sameIdentityAs(song) }
-    if (existingIndex != -1) {
-        newPlaylist.removeAt(existingIndex)
-    }
-
-    newPlaylist.add(song)
-
-    currentPlaylist = newPlaylist
-    _currentQueueFlow.value = currentPlaylist
-    currentIndex = if (currentSong != null) {
-        queueIndexOf(currentSong, newPlaylist).takeIf { it >= 0 }
-            ?: currentIndex.coerceIn(0, newPlaylist.lastIndex)
-    } else {
-        currentIndex.coerceIn(0, newPlaylist.lastIndex)
-    }
-    bumpCurrentQueueDisplayRevision()
-
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "addToQueueEnd(): song=${song.name}/${song.id}, existingIndex=$existingIndex, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"
-    )
-    emitQueueUpdateCommand()
-
-    ioScope.launch {
-        persistState()
-    }
-}
-
-private fun PlayerManager.emitQueueUpdateCommand(shouldPlay: Boolean? = null) {
-    emitPlaybackCommand(
-        type = "SET_QUEUE",
-        source = PlaybackCommandSource.LOCAL,
-        queue = currentPlaylist.toList(),
-        currentIndex = currentIndex,
-        positionMs = _playbackPositionMs.value,
-        shouldPlay = shouldPlay
-    )
-}
-
-internal fun PlayerManager.applyRemoteQueueUpdateImpl(
-    queue: List<SongItem>,
-    currentIndexInQueue: Int
-) {
-    ensureInitialized()
-    if (!initialized) return
-
-    if (queue.isEmpty()) {
-        currentPlaylist = emptyList()
-        _currentQueueFlow.value = emptyList()
-        currentIndex = -1
-        shuffleRestorePlaylistReference = null
-        shuffleRestoreCurrentIndex = -1
-        bumpCurrentQueueDisplayRevision()
-        stopPlaybackPreservingQueue(clearMediaUrl = true)
-    } else {
-        currentPlaylist = queue.toList()
-        _currentQueueFlow.value = currentPlaylist
-        currentIndex = currentIndexInQueue.coerceIn(currentPlaylist.indices)
-        bumpCurrentQueueDisplayRevision()
-    }
-
-    ioScope.launch {
-        persistState()
-    }
-}
-
 internal fun PlayerManager.restoreState() {
     val snapshot = loadRestoredStateSnapshot(
         app = application,
@@ -1525,13 +770,14 @@ internal fun PlayerManager.resumeRestoredPlaybackIfNeededImpl(): Long? {
         NPLogger.d("NERI-PlayerManager", "resumeRestoredPlaybackIfNeeded(): skipped, manager not initialized")
         return null
     }
-    if (!restoredShouldResumePlayback) {
+    val restored = restoredPlaybackSnapshot()
+    if (restored !is RestoredPlaybackState.ResumePending) {
         NPLogger.d("NERI-PlayerManager", "resumeRestoredPlaybackIfNeeded(): skipped, restoredShouldResumePlayback=false")
         return null
     }
     when (
         resolveListenTogetherRestoredPlaybackAction(
-            restoredPlaybackRequested = restoredShouldResumePlayback,
+            restoredPlaybackRequested = true,
             listenTogetherSessionActive = isListenTogetherActive(),
             currentUserIsController = isCurrentUserControllerInListenTogether()
         )
@@ -1543,8 +789,7 @@ internal fun PlayerManager.resumeRestoredPlaybackIfNeededImpl(): Long? {
                 "NERI-PlayerManager",
                 "resumeRestoredPlaybackIfNeeded(): defer active Listen Together listener until room state is authoritative"
             )
-            restoredShouldResumePlayback = false
-            restoredResumePositionMs = 0L
+            if (!consumeRestoredPlayback(restored)) return null
             scheduleStatePersist(
                 positionMs = _playbackPositionMs.value.coerceAtLeast(0L),
                 shouldResumePlayback = false,
@@ -1569,13 +814,12 @@ internal fun PlayerManager.resumeRestoredPlaybackIfNeededImpl(): Long? {
         )
         return null
     }
-    val resumePositionMs = restoredResumePositionMs.coerceAtLeast(0L)
+    val resumePositionMs = restored.positionMs
     NPLogger.d(
         "NERI-PlayerManager",
         "resumeRestoredPlaybackIfNeeded(): resumeIndex=$resumeIndex, positionMs=$resumePositionMs, song=${resumeSong.name}, stack=[${debugStackHint()}]"
     )
-    restoredShouldResumePlayback = false
-    restoredResumePositionMs = 0L
+    if (!consumeRestoredPlayback(restored)) return null
     lastStatePersistAtMs = SystemClock.elapsedRealtime()
     playAtIndex(
         resumeIndex,
@@ -1591,7 +835,7 @@ internal fun PlayerManager.suppressFutureAutoResumeForCurrentSessionImpl(
     ensureInitialized()
     if (!initialized || currentPlaylist.isEmpty()) return
     suppressAutoResumeForCurrentSession = true
-    restoredShouldResumePlayback = false
+    suppressRestoredAutoResume()
     val positionMs = if (isPlayerInitialized()) {
         player.currentPosition.coerceAtLeast(0L)
     } else {
@@ -1602,26 +846,7 @@ internal fun PlayerManager.suppressFutureAutoResumeForCurrentSessionImpl(
         "NERI-PlayerManager",
         "suppressFutureAutoResumeForCurrentSession(): forcePersist=$forcePersist, positionMs=$positionMs, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, currentSong=${_currentSongFlow.value?.name}, stack=[${debugStackHint()}]"
     )
-    if (forcePersist) {
-        ioScope.launch {
-            runCatching {
-                persistState(positionMs = positionMs, shouldResumePlayback = false)
-            }.onFailure { error ->
-                if (error is CancellationException) {
-                    throw error
-                }
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "forced auto-resume suppression persistence failed",
-                    error
-                )
-            }
-        }
-    } else {
-        ioScope.launch {
-            persistState(positionMs = positionMs, shouldResumePlayback = false)
-        }
-    }
+    scheduleStatePersist(positionMs = positionMs, shouldResumePlayback = false, debounceMs = 0L)
 }
 
 internal fun PlayerManager.replaceMetadataFromSearchImpl(
@@ -2247,14 +1472,7 @@ internal suspend fun PlayerManager.updateUserLyricOffsetImpl(
         "NERI-PlayerManager",
         "updateUserLyricOffset: song=${songToUpdate.name}, id=${songToUpdate.id}, newOffset=$newOffset"
     )
-    val queueIndex = queueIndexOf(songToUpdate)
-    if (queueIndex != -1) {
-        val updatedSong = currentPlaylist[queueIndex].copy(userLyricOffsetMs = newOffset)
-        val newList = currentPlaylist.toMutableList()
-        newList[queueIndex] = updatedSong
-        currentPlaylist = newList
-        _currentQueueFlow.value = currentPlaylist
-    }
+    updateQueuedSong(songToUpdate) { it.copy(userLyricOffsetMs = newOffset) }
 
     if (isCurrentSong(songToUpdate)) {
         setCurrentSongForPlayback(_currentSongFlow.value?.copy(userLyricOffsetMs = newOffset))
@@ -2295,30 +1513,29 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
         "NERI-PlayerManager",
         "rebaseUserLyricOffsetsForSource: source=$targetSource old=$previousDefaultOffsetMs new=$newDefaultOffsetMs"
     )
-    var queueChanged = false
-    val rebasedPlaylist = currentPlaylist.map { song ->
-        if (
-            !shouldRebaseLyricOffsetForSource(
-                lyricSource = song.matchedLyricSource,
-                targetSource = targetSource,
-                userOffsetMs = song.userLyricOffsetMs
+    val queueChanged = updateCurrentQueueSongs { playlist ->
+        var changed = false
+        val rebasedPlaylist = playlist.map { song ->
+            if (
+                !shouldRebaseLyricOffsetForSource(
+                    lyricSource = song.matchedLyricSource,
+                    targetSource = targetSource,
+                    userOffsetMs = song.userLyricOffsetMs
+                )
+            ) {
+                return@map song
+            }
+            changed = true
+            song.copy(
+                userLyricOffsetMs = rebaseLyricUserOffsetMs(
+                    userOffsetMs = song.userLyricOffsetMs,
+                    previousDefaultOffsetMs = previousDefaultOffsetMs,
+                    newDefaultOffsetMs = newDefaultOffsetMs
+                )
             )
-        ) {
-            return@map song
         }
-        queueChanged = true
-        song.copy(
-            userLyricOffsetMs = rebaseLyricUserOffsetMs(
-                userOffsetMs = song.userLyricOffsetMs,
-                previousDefaultOffsetMs = previousDefaultOffsetMs,
-                newDefaultOffsetMs = newDefaultOffsetMs
-            )
-        )
-    }
-    if (queueChanged) {
-        currentPlaylist = rebasedPlaylist
-        _currentQueueFlow.value = rebasedPlaylist
-    }
+        rebasedPlaylist.takeIf { changed }
+    } != null
 
     val currentSong = _currentSongFlow.value
     val currentSongForRebase = currentSong
@@ -2382,15 +1599,10 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
         "NERI-PlayerManager",
         "updateSongLyrics: song=${songToUpdate.name}, id=${songToUpdate.id}, lyricLength=${newLyrics?.length ?: 0}"
     )
-    val queueIndex = queueIndexOf(songToUpdate)
-    if (queueIndex != -1) {
-        val updatedSong = currentPlaylist[queueIndex].withUpdatedLyricsPreservingOriginal(
+    updateQueuedSong(songToUpdate) { current ->
+        current.withUpdatedLyricsPreservingOriginal(
             newLyrics = newLyrics
         )
-        val newList = currentPlaylist.toMutableList()
-        newList[queueIndex] = updatedSong
-        currentPlaylist = newList
-        _currentQueueFlow.value = currentPlaylist
     }
 
     if (isCurrentSong(songToUpdate)) {
@@ -2432,15 +1644,10 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
         "NERI-PlayerManager",
         "updateSongTranslatedLyrics: song=${songToUpdate.name}, id=${songToUpdate.id}, translatedLength=${newTranslatedLyrics?.length ?: 0}"
     )
-    val queueIndex = queueIndexOf(songToUpdate)
-    if (queueIndex != -1) {
-        val updatedSong = currentPlaylist[queueIndex].withUpdatedLyricsPreservingOriginal(
+    updateQueuedSong(songToUpdate) { current ->
+        current.withUpdatedLyricsPreservingOriginal(
             newTranslatedLyric = newTranslatedLyrics
         )
-        val newList = currentPlaylist.toMutableList()
-        newList[queueIndex] = updatedSong
-        currentPlaylist = newList
-        _currentQueueFlow.value = currentPlaylist
     }
 
     if (isCurrentSong(songToUpdate)) {
@@ -2482,8 +1689,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     persistLocalSidecars: Boolean = true,
     syncDownloadedMetadata: Boolean = true
 ) : Boolean = runSongMetadataMutation {
-    val queueIndex = queueIndexOf(songToUpdate)
-    val currentQueueSong = currentPlaylist.getOrNull(queueIndex)
+    val currentQueueSong = currentQueueSnapshot().playlist
+        .firstOrNull { it.sameIdentityAs(songToUpdate) }
         ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
         ?: songToUpdate
     val effectiveLyrics = newLyrics ?: currentQueueSong.matchedLyric
@@ -2578,18 +1785,28 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         return@runSongMetadataMutation false
     }
 
-    if (queueIndex != -1) {
-        val newList = currentPlaylist.toMutableList()
-        newList[queueIndex] = updatedSong
-        currentPlaylist = newList
-        _currentQueueFlow.value = currentPlaylist
+    val updatedQueueSong = updateQueuedSong(songToUpdate) { current ->
+        current.withUpdatedLyricsPreservingOriginal(
+            newLyrics = effectiveLyrics,
+            newTranslatedLyric = effectiveTranslatedLyrics,
+            newRomanizedLyric = effectiveRomanizedLyrics
+        )
+    }
+    if (updatedQueueSong != null) {
         NPLogger.d("PlayerManager", "Queue song lyrics updated")
     }
-    if (isCurrentSong(songToUpdate)) {
-        setCurrentSongForPlayback(updatedSong)
+    val activeSong = _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
+    if (activeSong != null) {
+        setCurrentSongForPlayback(
+            activeSong.withUpdatedLyricsPreservingOriginal(
+                newLyrics = effectiveLyrics,
+                newTranslatedLyric = effectiveTranslatedLyrics,
+                newRomanizedLyric = effectiveRomanizedLyrics
+            )
+        )
     }
 
-    val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
+    val latestSong = updatedQueueSong
         ?: updatedSong.takeIf { it.sameIdentityAs(songToUpdate) }
     if (latestSong == null) {
         NPLogger.w("PlayerManager", "歌词更新后未找到最新歌曲副本")
@@ -2657,13 +1874,7 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
         "NERI-PlayerManager",
         "updateSongInAllPlaces: original=${originalSong.name}/${originalSong.id}, updated=${updatedSong.name}/${updatedSong.id}, hasCurrentMatch=${isCurrentSong(originalSong)}, stack=[${debugStackHint()}]"
     )
-    val queueIndex = queueIndexOf(originalSong)
-    if (queueIndex != -1) {
-        val newList = currentPlaylist.toMutableList()
-        newList[queueIndex] = updatedSong
-        currentPlaylist = newList
-        _currentQueueFlow.value = currentPlaylist
-    }
+    updateQueuedSong(originalSong) { updatedSong }
 
     if (isCurrentSong(originalSong)) {
         setCurrentSongForPlayback(updatedSong)

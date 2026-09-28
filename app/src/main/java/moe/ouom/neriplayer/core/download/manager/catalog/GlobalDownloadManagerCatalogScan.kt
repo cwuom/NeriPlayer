@@ -51,6 +51,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.util.time.elapsedMillisSince
 
 private const val MAX_AUTOMATIC_EMPTY_CONFIRMATIONS = 2
 
@@ -203,7 +204,7 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
             failureLogPrefix = "解析下载文件失败",
             verifySnapshotReferences = false
         )
-        val scanElapsedMs = (System.nanoTime() - scanStartedAtNs) / 1_000_000L
+        val scanElapsedMs = elapsedMillisSince(scanStartedAtNs)
         val scanMessage =
             "Managed SAF 刷新扫描完成: elapsedMs=$scanElapsedMs, " +
                 "root=${snapshot.audioEntries.size}, metadata=${snapshot.metadataByAudioName.size}, " +

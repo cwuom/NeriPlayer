@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTi
 import moe.ouom.neriplayer.core.download.manager.runtime.PostCoreDownloadRecoveryResult
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 /** 用一个持久任务分批收敛所有已提交音频的歌词、封面和标签 */
 class PostCoreDownloadRecoveryWorker(
@@ -47,7 +48,7 @@ class PostCoreDownloadRecoveryWorker(
                 return@withContext Result.retry()
             }
             GlobalDownloadManager.initialize(appContext)
-            val startupReady = withTimeoutOrNull(STARTUP_RESTORE_WAIT_MS) {
+            val startupReady = withTimeoutOrNull(STARTUP_RESTORE_WAIT_MS.milliseconds) {
                 GlobalDownloadManager.startupProgressRestoreReady.await()
                 true
             } == true
@@ -137,7 +138,7 @@ class PostCoreDownloadRecoveryWorker(
                 var completed = false
                 try {
                     GlobalDownloadManager.initialize(appContext)
-                    val ready = withTimeoutOrNull(STARTUP_RESTORE_WAIT_MS) {
+                    val ready = withTimeoutOrNull(STARTUP_RESTORE_WAIT_MS.milliseconds) {
                         GlobalDownloadManager.startupProgressRestoreReady.await()
                         true
                     } == true
@@ -167,7 +168,7 @@ class PostCoreDownloadRecoveryWorker(
                             }
                             // 新请求已被当前 owner 接下，等待中取消仍必须保留持久接班任务
                             result = PostCoreDownloadRecoveryResult.RETRY
-                            delay(SUCCESSOR_DELAY_MS)
+                            delay(SUCCESSOR_DELAY_MS.milliseconds)
                         }
                     }
                 } catch (cancellation: CancellationException) {
@@ -218,7 +219,7 @@ class PostCoreDownloadRecoveryWorker(
 
         internal suspend fun runImmediateRecovery(
             isCurrent: () -> Boolean,
-            awaitNextWindow: suspend (Long) -> Unit = { delay(it) },
+            awaitNextWindow: suspend (Long) -> Unit = { delay(it.milliseconds) },
             recover: suspend () -> PostCoreDownloadRecoveryResult
         ): PostCoreDownloadRecoveryResult {
             // 旧 Worker 可能还在长退避中，保留当前 owner 续跑，不能只接管第一窗口
@@ -278,7 +279,7 @@ class PostCoreDownloadRecoveryWorker(
             NPLogger.w("NERI-PostCoreRecovery", "持久收尾入队未确认，保留 Room 凭据", error)
             if (retryEnqueue) {
                 GlobalDownloadManager.scope.launch {
-                    delay(1_000L)
+                    delay(1_000L.milliseconds)
                     if (scheduleCoordinator.canRetry(generation)) {
                         enqueue(context, initialDelayMs = 0L, retryEnqueue = false)
                     }

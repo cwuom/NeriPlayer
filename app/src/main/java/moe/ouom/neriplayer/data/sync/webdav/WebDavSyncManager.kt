@@ -155,7 +155,7 @@ class WebDavSyncManager private constructor(context: Context) {
                 lastRemoteFingerprint != null &&
                 lastRemoteFingerprint != remoteSnapshot.fingerprint
             val lastSyncTime = webDavStorage.getLastSyncTime()
-            val uploadResolutionResult = SyncUploadRetryExecutor.execute<SyncData?, MergeResult, WebDavRemoteVersion>(
+            val uploadResolutionResult = SyncUploadRetryExecutor.execute(
                 initialRemote = remoteSnapshot?.data,
                 initialVersion = remoteSnapshot?.version ?: WebDavRemoteVersion(
                     token = null,

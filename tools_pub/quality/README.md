@@ -1,0 +1,47 @@
+# CRAP 与职责边界检查
+
+需要 JDK 17、Android 构建环境和 Python 3。脚本仅使用 Python 标准库。
+
+```bash
+./gradlew :app:verifyCrap
+```
+
+此任务运行 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES 获取 app 自身的 Kotlin/Java
+字节码，生成 JaCoCo XML，再计算逐方法 CRAP。`:app:check` 和 Android CI 均执行门禁。
+单独查看完整报告可以运行 `./gradlew :app:crapReport`，该任务仍要求测试和报告输入有效，
+但不会因超分退出失败。
+
+报告位于 `app/build/reports/crap/`：
+
+- `methods.json`：能映射到 app/src/main/java 源码的全部 JVM 方法，包含签名、位置、复杂度、覆盖率和分数
+- `above-8.md`：严格大于 8 的全部方法，包含不在本次门禁范围的既有代码
+- `scope.md`：门禁范围内的全部方法
+- `coverage.xml`、`coverage/index.html`：真实测试采集结果
+
+CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
+`C² × (1 − cov)³ + C`，`C` 为 JaCoCo COMPLEXITY 的 missed + covered，
+`cov` 为 covered / C，即 JaCoCo 复杂度覆盖率，作为路径覆盖率的近似值。
+它不是原版 crap4j 的严格独立路径覆盖测量，也不是行覆盖率。
+
+来源：[CRAP 原作者公式](https://www.artima.com/weblogs/viewpost.jsp?thread=215899)、
+[JaCoCo 计数器定义](https://www.jacoco.org/jacoco/trunk/doc/counters.html)。
+
+`config/quality/crap-scope.json` 的 `source_patterns` 对已拆出的组件和完整迁移的原文件
+实施整文件门禁。对于还在逐块拆分的原上帝类，`method_scopes` 精确列出本块改动的入口方法、
+构造方法和 Kotlin 默认参数方法；规则匹配不到 JaCoCo 方法时直接报错。其余方法仍进入
+`methods.json` 和 `above-8.md`，但不阻塞本块提交。
+范围内任意方法原始分数严格大于 9 时退出码为 1；分数等于 9 时通过。
+缺少 XML、无效计数器、空范围、范围匹配不到文件或范围文件无被测方法时退出码为 2。
+不使用平均分或历史 baseline 豁免；协程和 lambda 字节码同样保留，只使用 JaCoCo 内置的编译器过滤。
+新增拆分组件应位于已覆盖的文件模式内，或同时更新范围配置。原文件内受影响的方法也必须
+加入门禁；不能因为其既有分数较高而遗漏改动。
+
+报告器回归测试：
+
+```bash
+python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
+```
+
+结构验证需要同时审查依赖：采集器消费数据源接口，清理执行器消费清理端口，
+展示层只消费快照，计算和文件遍历不得读取全局容器、Context 或数据库实例。
+独立组件不以原上帝类为 receiver，也不回调原入口取得内部状态。

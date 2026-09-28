@@ -54,6 +54,7 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import java.util.LinkedHashMap
+import kotlin.time.Duration.Companion.milliseconds
 internal const val LOCAL_PLAYLIST_ARTWORK_IDLE_DELAY_MS = 96L
 internal const val LOCAL_PLAYLIST_ARTWORK_MEMORY_CACHE_LIMIT = 256
 internal val retainedLocalPlaylistArtworkCache = object : LinkedHashMap<String, String>(
@@ -76,7 +77,7 @@ internal fun rememberLocalPlaylistArtworkIdle(
         if (isScrollInProgress) {
             hasReachedIdleWindow = false
         } else {
-            delay(LOCAL_PLAYLIST_ARTWORK_IDLE_DELAY_MS)
+            delay(LOCAL_PLAYLIST_ARTWORK_IDLE_DELAY_MS.milliseconds)
             hasReachedIdleWindow = true
         }
     }

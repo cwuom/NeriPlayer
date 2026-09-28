@@ -100,7 +100,6 @@ private const val PLAYBACK_LYRICON_ENABLED_KEY = "lyricon_enabled"
 private const val PLAYBACK_AMLL_LYRICS_ENABLED_KEY = "amll_lyrics_enabled"
 private const val PLAYBACK_PREFER_WORD_TIMED_LYRICS_KEY = "prefer_word_timed_lyrics"
 private const val PLAYBACK_DEFAULT_LYRIC_SOURCE_KEY = "default_lyric_source"
-private const val DEFAULT_MAX_CACHE_SIZE_BYTES = 1024L * 1024 * 1024
 private val playbackPreferenceSnapshotWarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val playbackPreferenceSnapshotWarmLock = Any()
 
@@ -166,7 +165,7 @@ data class PlaybackPreferenceSnapshot(
     val amllLyricsEnabled: Boolean = true,
     val preferWordTimedLyrics: Boolean = true,
     val defaultLyricSource: String = DEFAULT_LYRIC_SOURCE,
-    val maxCacheSizeBytes: Long = DEFAULT_MAX_CACHE_SIZE_BYTES
+    val maxCacheSizeBytes: Long = CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES
 ) {
     fun sanitized(): PlaybackPreferenceSnapshot {
         return copy(
@@ -553,7 +552,7 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         preferWordTimedLyrics = this[SettingsKeys.PREFER_WORD_TIMED_LYRICS] ?: true,
         defaultLyricSource = this[SettingsKeys.DEFAULT_LYRIC_SOURCE] ?: DEFAULT_LYRIC_SOURCE,
         maxCacheSizeBytes =
-            this[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: DEFAULT_MAX_CACHE_SIZE_BYTES
+            this[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES
     ).sanitized()
 }
 
@@ -716,7 +715,7 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
             ?: DEFAULT_LYRIC_SOURCE,
         maxCacheSizeBytes = prefs.getLong(
             PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY,
-            DEFAULT_MAX_CACHE_SIZE_BYTES
+            CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES
         )
     ).sanitized()
 }

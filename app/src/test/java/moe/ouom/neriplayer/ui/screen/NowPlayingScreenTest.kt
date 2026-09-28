@@ -22,6 +22,66 @@ import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueReorderAutoScrollMaxPerFrame
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueReorderOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueScrollCommand
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingWideLyricsMode
+import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingQueueEntries
+import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingQueueEntriesFromDisplayItems
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldOpenNowPlayingCoverPreviewOnLongPress
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldOpenNowPlayingCoverPreviewOnTap
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongInitialCoverUrl
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongRestoredCoverUrl
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldApplyResolvedEditSongCover
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldConfirmLocalMetadataWriteBack
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldPersistEditedSongLyricsLocally
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldPublishPendingEmbeddedLyricsResult
+import moe.ouom.neriplayer.ui.screen.nowplaying.filterNowPlayingQueueIndexInput
+import moe.ouom.neriplayer.ui.screen.nowplaying.hasPublishedManagedDownload
+import moe.ouom.neriplayer.ui.screen.nowplaying.invertNowPlayingQueueSelection
+import moe.ouom.neriplayer.ui.screen.nowplaying.isBiliUploaderNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNeteaseArtistNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingActiveIconReadable
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingQueueIndexInputError
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingQueueReorderEnabled
+import moe.ouom.neriplayer.ui.screen.nowplaying.isYouTubeMusicArtistNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.ManagedLyricVariant
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingFastLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingImmediateLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingInitialLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildPreferredLyricSourceState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolveManagedDownloadFastLyricText
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolveNowPlayingLyricsMediaReloadKey
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldBackfillDownloadedLyricsAfterFastMiss
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldBypassCollapsedStoredLyric
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldReadEmbeddedLyricsForNowPlayingFastStage
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldReplaceLyricsAfterRefresh
+import moe.ouom.neriplayer.ui.screen.nowplaying.moveNowPlayingQueueEntry
+import moe.ouom.neriplayer.ui.screen.nowplaying.planNowPlayingQueueScroll
+import moe.ouom.neriplayer.ui.screen.nowplaying.queueArtworkUrl
+import moe.ouom.neriplayer.ui.screen.nowplaying.queueRowClick
+import moe.ouom.neriplayer.ui.screen.nowplaying.queueRowContainerColor
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingActiveIconColor
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingMainControlsLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingPlaybackSourceType
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingQueueCurrentIndexAfterReorder
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingQueueIndexInput
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingQueueScrollTarget
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingQueueSelectedSongs
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideLyricsMode
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.selectAllNowPlayingQueueKeys
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldAutoLocateNowPlayingQueue
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldHideDownloadActionForSong
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldShowNowPlayingCoverLyrics
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldShowNowPlayingQueueDragHandle
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldShowNowPlayingQueueQuickActions
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldShowQueueCurrentMarker
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldUpdateNowPlayingQueueScroll
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldUseCompactNowPlayingPortraitLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldUseNowPlayingToolbarDock
+import moe.ouom.neriplayer.ui.screen.nowplaying.syncNowPlayingQueueEntries
 import kotlin.math.pow
 
 class NowPlayingScreenTest {
@@ -964,6 +1024,125 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `queue reorder owner commits duplicate rows by occurrence key`() {
+        val repeated = testSong(id = 1L, name = "Repeated")
+        val other = testSong(id = 2L, name = "Other")
+        val source = buildNowPlayingQueueEntries(listOf(repeated, other, repeated))
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.move(enabled = true, from = source[2].key, to = source[0].key)
+        assertTrue(owner.isDirty)
+        assertEquals(listOf(source[2].key, source[0].key, source[1].key), owner.entries.map { it.key })
+
+        var committedIndex = -1
+        owner.finish(true, source[2].key, 2, source) { _, index ->
+            committedIndex = index
+            true
+        }
+
+        assertEquals(0, committedIndex)
+        assertFalse(owner.isDirty)
+    }
+
+    @Test
+    fun `queue reorder owner restores source when control is revoked`() {
+        val source = buildNowPlayingQueueEntries(
+            listOf(testSong(id = 1L, name = "First"), testSong(id = 2L, name = "Second"))
+        )
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.move(enabled = false, from = source[0].key, to = source[1].key)
+        assertFalse(owner.isDirty)
+        owner.move(enabled = true, from = source[0].key, to = source[1].key)
+        owner.revokeReorder(source)
+
+        assertEquals(source, owner.entries.toList())
+        assertFalse(owner.isDirty)
+    }
+
+    @Test
+    fun `queue reorder owner rolls back a rejected player commit`() {
+        val source = buildNowPlayingQueueEntries(
+            listOf(testSong(id = 1L, name = "First"), testSong(id = 2L, name = "Second"))
+        )
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.move(enabled = true, from = source[0].key, to = source[1].key)
+        owner.finish(true, source[0].key, 0, source) { _, _ -> false }
+
+        assertEquals(source, owner.entries.toList())
+        assertFalse(owner.isDirty)
+    }
+
+    @Test
+    fun `queue reorder owner ignores invalid drag keys and syncs only when clean`() {
+        val source = buildNowPlayingQueueEntries(
+            listOf(testSong(id = 1L, name = "First"), testSong(id = 2L, name = "Second"))
+        )
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.move(true, null, source[1].key)
+        owner.move(true, source[0].key, 1)
+        owner.move(true, "missing", source[1].key)
+        owner.move(true, source[0].key, source[0].key)
+        assertFalse(owner.isDirty)
+        owner.revokeReorder(source)
+        owner.move(true, source[0].key, source[1].key)
+        owner.sync(source)
+        assertEquals(listOf(source[1], source[0]), owner.entries.toList())
+        owner.finish(false, source[0].key, 0, source) { _, _ -> error("must not commit") }
+        assertEquals(source, owner.entries.toList())
+        owner.sync(source.reversed())
+        assertEquals(source.reversed(), owner.entries.toList())
+    }
+
+    @Test
+    fun `queue reorder owner uses fallback current index and ignores clean finish`() {
+        val source = buildNowPlayingQueueEntries(
+            listOf(testSong(id = 1L, name = "First"), testSong(id = 2L, name = "Second"))
+        )
+        val owner = NowPlayingQueueReorderOwner(source)
+        owner.finish(true, null, 0, source) { _, _ -> error("must not commit") }
+        owner.move(true, source[0].key, source[1].key)
+        var index = -1
+        owner.finish(true, null, 0, source) { _, resolvedIndex ->
+            index = resolvedIndex
+            true
+        }
+        assertEquals(0, index)
+    }
+
+    @Test
+    fun `queue row policies preserve click and visual precedence`() {
+        var selected = 0
+        var played = 0
+        val select: () -> Unit = { selected++ }
+        val play: () -> Unit = { played++ }
+        queueRowClick(true, select, play)()
+        queueRowClick(false, select, play)()
+        assertEquals(1, selected)
+        assertEquals(1, played)
+        assertTrue(shouldShowQueueCurrentMarker(true, false))
+        assertFalse(shouldShowQueueCurrentMarker(true, true))
+        assertFalse(shouldShowQueueCurrentMarker(false, false))
+
+        assertEquals(Color.Red.copy(alpha = 0.64f),
+            queueRowContainerColor(true, true, Color.Red, Color.Green, Color.Blue)
+        )
+        assertEquals(Color.Green.copy(alpha = 0.42f),
+            queueRowContainerColor(false, true, Color.Red, Color.Green, Color.Blue)
+        )
+        assertEquals(Color.Blue.copy(alpha = 0.36f),
+            queueRowContainerColor(false, false, Color.Red, Color.Green, Color.Blue)
+        )
+        assertNull(queueArtworkUrl(null))
+        assertNull(queueArtworkUrl("  "))
+        assertEquals("content://cover", queueArtworkUrl("content://cover"))
+        assertEquals(setOf("a", "b"), selectAllNowPlayingQueueKeys(false, setOf("a", "b")))
+        assertEquals(emptySet<String>(), selectAllNowPlayingQueueKeys(true, setOf("a", "b")))
+        assertFalse(isNowPlayingQueueIndexInputError("", null))
+        assertFalse(isNowPlayingQueueIndexInputError("1", 0))
+        assertTrue(isNowPlayingQueueIndexInputError("11", null))
+        assertEquals("123456", filterNowPlayingQueueIndexInput("a1b234567"))
+    }
+
+    @Test
     fun `queue entry sync keeps the same mutable list after commit`() {
         val first = testSong(id = 1L, name = "First")
         val second = testSong(id = 2L, name = "Second")
@@ -1150,6 +1329,34 @@ class NowPlayingScreenTest {
                 firstVisibleItemIndex = 4_096,
                 firstVisibleItemScrollOffset = 12
             )
+        )
+    }
+
+    @Test
+    fun `queue scroll plan preserves first positioning and later animation`() {
+        val initial = planNowPlayingQueueScroll(10, 7, false, false, false, 0, 0)
+        val later = planNowPlayingQueueScroll(10, 7, false, false, true, 0, 0)
+        val already = planNowPlayingQueueScroll(10, 7, false, false, false, 7, 0)
+
+        assertEquals(NowPlayingQueueScrollCommand.Jump(7), initial)
+        assertEquals(NowPlayingQueueScrollCommand.Animate(7), later)
+        assertEquals(NowPlayingQueueScrollCommand.AlreadyPositioned, already)
+        assertTrue(already.marksPositioned)
+    }
+
+    @Test
+    fun `queue scroll plan pauses during selection and stale current index`() {
+        assertEquals(
+            NowPlayingQueueScrollCommand.Skip,
+            planNowPlayingQueueScroll(10, 7, true, false, true, 0, 0)
+        )
+        assertEquals(
+            NowPlayingQueueScrollCommand.Skip,
+            planNowPlayingQueueScroll(10, 7, false, true, true, 0, 0)
+        )
+        assertEquals(
+            NowPlayingQueueScrollCommand.Skip,
+            planNowPlayingQueueScroll(10, 10, false, false, true, 0, 0)
         )
     }
 

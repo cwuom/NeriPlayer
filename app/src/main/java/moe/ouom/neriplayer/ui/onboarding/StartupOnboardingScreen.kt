@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,11 +39,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -72,7 +69,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
@@ -122,10 +118,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
-import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
-import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncUiState
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
-import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncUiState
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
@@ -150,7 +143,8 @@ import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.core.startup.permission.StartupMediaPermission
 import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
 import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.ui.CustomBackground
+import moe.ouom.neriplayer.ui.theme.background.CustomBackground
+import kotlin.time.Duration.Companion.milliseconds
 
 private enum class StartupStep {
     Language,
@@ -465,7 +459,7 @@ fun StartupOnboardingScreen(
             showNotificationPermissionWarning()
         }
         scope.launch {
-            delay(500L)
+            delay(500L.milliseconds)
             permissionNavigationBlocked = false
         }
     }
@@ -475,7 +469,7 @@ fun StartupOnboardingScreen(
         localMediaPermissionGranted = granted
         permissionRequestActive = false
         scope.launch {
-            delay(500L)
+            delay(500L.milliseconds)
             permissionNavigationBlocked = false
         }
     }
@@ -711,7 +705,7 @@ fun StartupOnboardingScreen(
             val captureView = activity?.window?.decorView?.rootView ?: rootView.rootView
             try {
                 awaitStartupStableDraw(captureView)
-                val snapshot = withTimeoutOrNull(STARTUP_THEME_REVEAL_CAPTURE_TIMEOUT_MILLIS) {
+                val snapshot = withTimeoutOrNull(STARTUP_THEME_REVEAL_CAPTURE_TIMEOUT_MILLIS.milliseconds) {
                     runCatching {
                         captureStartupThemeRevealSnapshot(
                             activity = activity,
@@ -766,7 +760,7 @@ fun StartupOnboardingScreen(
         if (!themeRevealActive) {
             return@LaunchedEffect
         }
-        delay(STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS)
+        delay(STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS.milliseconds)
         finishThemeReveal(activeThemeRevealToken)
     }
     DisposableEffect(lifecycleOwner) {
@@ -1228,7 +1222,7 @@ fun StartupOnboardingScreen(
                             )
                         ) {
                             scope.launch {
-                                delay(180L)
+                                delay(180L.milliseconds)
                                 if (!notificationPermissionGranted) {
                                     showNotificationPermissionWarning()
                                 }
@@ -1291,36 +1285,6 @@ private fun StepContainer(
                 .verticalScroll(rememberScrollState()),
             content = content
         )
-    }
-}
-
-@Composable
-private fun StepHeader(icon: ImageVector, title: String, description: String) {
-    val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            modifier = Modifier.size(54.dp),
-            shape = OnboardingControlShape,
-            color = colors.primaryContainer
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = colors.onPrimaryContainer)
-            }
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(description, style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
-        }
     }
 }
 
@@ -1418,62 +1382,6 @@ private fun PlatformContent(
     )
     Spacer(Modifier.height(18.dp))
     HintCard(body = stringResource(R.string.onboarding_platforms_hint))
-}
-
-@Composable
-private fun BackupRestoreContent(
-    gitHubState: GitHubSyncUiState,
-    webDavState: WebDavSyncUiState,
-    onDismissGitHubMessage: () -> Unit,
-    onDismissWebDavMessage: () -> Unit,
-    onOpenGitHubConfig: () -> Unit,
-    onOpenClearGitHubConfig: () -> Unit,
-    onToggleGitHubAutoSync: (Boolean) -> Unit,
-    onGitHubSyncNow: () -> Unit,
-    onOpenWebDavConfig: () -> Unit,
-    onOpenClearWebDavConfig: () -> Unit,
-    onToggleWebDavAutoSync: (Boolean) -> Unit,
-    onWebDavSyncNow: () -> Unit
-) {
-    StepHeader(
-        icon = Icons.Outlined.CloudSync,
-        title = stringResource(R.string.onboarding_backup_restore_title),
-        description = stringResource(R.string.onboarding_backup_restore_desc)
-    )
-    Spacer(Modifier.height(18.dp))
-    gitHubState.errorMessage?.let {
-        InlineMessage(text = it, onClose = onDismissGitHubMessage)
-        Spacer(Modifier.height(14.dp))
-    }
-    gitHubState.successMessage?.let {
-        InlineMessage(text = it, onClose = onDismissGitHubMessage)
-        Spacer(Modifier.height(14.dp))
-    }
-    webDavState.errorMessage?.let {
-        InlineMessage(text = it, onClose = onDismissWebDavMessage)
-        Spacer(Modifier.height(14.dp))
-    }
-    webDavState.successMessage?.let {
-        InlineMessage(text = it, onClose = onDismissWebDavMessage)
-        Spacer(Modifier.height(14.dp))
-    }
-    GitHubSyncCard(
-        state = gitHubState,
-        onOpenConfig = onOpenGitHubConfig,
-        onOpenClearConfig = onOpenClearGitHubConfig,
-        onToggleAutoSync = onToggleGitHubAutoSync,
-        onSyncNow = onGitHubSyncNow
-    )
-    Spacer(Modifier.height(14.dp))
-    WebDavSyncCard(
-        state = webDavState,
-        onOpenConfig = onOpenWebDavConfig,
-        onOpenClearConfig = onOpenClearWebDavConfig,
-        onToggleAutoSync = onToggleWebDavAutoSync,
-        onSyncNow = onWebDavSyncNow
-    )
-    Spacer(Modifier.height(18.dp))
-    HintCard(body = stringResource(R.string.onboarding_backup_restore_hint))
 }
 
 @Composable
@@ -1711,417 +1619,6 @@ private fun PlatformCard(
 }
 
 @Composable
-private fun OnboardingActionButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    HapticOutlinedButton(
-        onClick = onClick,
-        modifier = modifier
-            .widthIn(max = 104.dp)
-            .defaultMinSize(minWidth = 1.dp, minHeight = 36.dp),
-        shape = OnboardingControlShape,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun StatusPill(label: String, connected: Boolean) {
-    val colors = MaterialTheme.colorScheme
-    val textStyle = when {
-        label.length >= 14 -> MaterialTheme.typography.labelSmall
-        label.length >= 10 -> MaterialTheme.typography.labelMedium
-        else -> MaterialTheme.typography.labelLarge
-    }
-    Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = if (connected) colors.primary.copy(alpha = 0.14f) else colors.outlineVariant.copy(alpha = 0.6f)
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-            style = textStyle,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-            color = if (connected) colors.primary else colors.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun HintCard(
-    title: String? = null,
-    body: String,
-    content: @Composable ColumnScope.() -> Unit = {}
-) {
-    val colors = MaterialTheme.colorScheme
-    OnboardingGlassSurface(
-        shape = OnboardingCardShape,
-        color = colors.surfaceContainerHigh
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            title?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface
-                )
-            }
-            Text(body, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-            content()
-        }
-    }
-}
-
-@Composable
-private fun GitHubSyncCard(
-    state: GitHubSyncUiState,
-    onOpenConfig: () -> Unit,
-    onOpenClearConfig: () -> Unit,
-    onToggleAutoSync: (Boolean) -> Unit,
-    onSyncNow: () -> Unit
-) {
-    val colors = MaterialTheme.colorScheme
-    val repoFullName = listOf(state.repoOwner, state.repoName)
-        .filter { it.isNotBlank() }
-        .takeIf { it.size == 2 }
-        ?.joinToString("/")
-    val primarySupportingText = if (state.isConfigured) {
-        repoFullName?.let { stringResource(R.string.onboarding_github_repo_configured, it) }
-            ?: stringResource(R.string.settings_configured)
-    } else {
-        null
-    }
-    val secondarySupportingText = if (state.isConfigured) {
-        if (state.lastSyncTime > 0) {
-            stringResource(R.string.sync_last_time, formatSyncTime(state.lastSyncTime))
-        } else {
-            stringResource(R.string.sync_not_synced)
-        }
-    } else {
-        null
-    }
-
-    OnboardingGlassSurface(
-        shape = OnboardingCardShape,
-        color = if (state.isConfigured) {
-            colors.secondaryContainer
-        } else {
-            colors.surfaceContainerHigh
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    modifier = Modifier.size(52.dp),
-                    shape = OnboardingControlShape,
-                    color = colors.surface
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_github),
-                            contentDescription = stringResource(R.string.common_github),
-                            tint = colors.onSurface,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(
-                            R.string.onboarding_backup_restore_github_title
-                        ),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    StatusPill(
-                        label = if (state.isConfigured) {
-                            stringResource(R.string.settings_configured)
-                        } else {
-                            stringResource(R.string.settings_not_configured)
-                        },
-                        connected = state.isConfigured
-                    )
-                    primarySupportingText?.let {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant
-                        )
-                    }
-                    secondarySupportingText?.let {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.onSurfaceVariant
-                        )
-                    }
-                }
-                OnboardingActionButton(
-                    text = if (state.isConfigured) {
-                        stringResource(R.string.onboarding_platform_action_manage)
-                    } else {
-                        stringResource(R.string.settings_configure)
-                    },
-                    onClick = onOpenConfig
-                )
-            }
-
-            if (state.isConfigured) {
-                Surface(
-                    shape = OnboardingControlShape,
-                    color = colors.surface
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.sync_auto),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = colors.onSurface
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = stringResource(R.string.sync_auto_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = state.autoSyncEnabled,
-                            onCheckedChange = onToggleAutoSync
-                        )
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (state.isSyncing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        HapticOutlinedButton(onClick = onSyncNow, shape = OnboardingControlShape) {
-                            Text(stringResource(R.string.settings_sync_now))
-                        }
-                    }
-                    HapticTextButton(onClick = onOpenClearConfig) {
-                        Text(
-                            text = stringResource(R.string.settings_clear_config),
-                            color = colors.error
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WebDavSyncCard(
-    state: WebDavSyncUiState,
-    onOpenConfig: () -> Unit,
-    onOpenClearConfig: () -> Unit,
-    onToggleAutoSync: (Boolean) -> Unit,
-    onSyncNow: () -> Unit
-) {
-    val colors = MaterialTheme.colorScheme
-    val endpoint = state.serverUrl.takeIf { it.isNotBlank() }?.let { serverUrl ->
-        state.basePath.takeIf { it.isNotBlank() }?.let { basePath ->
-            "$serverUrl/$basePath"
-        } ?: serverUrl
-    }
-
-    OnboardingGlassSurface(
-        shape = OnboardingCardShape,
-        color = if (state.isConfigured) {
-            colors.secondaryContainer
-        } else {
-            colors.surfaceContainerHigh
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    modifier = Modifier.size(52.dp),
-                    shape = OnboardingControlShape,
-                    color = colors.surface
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Outlined.CloudSync,
-                            contentDescription = stringResource(
-                                R.string.onboarding_backup_restore_webdav_title
-                            ),
-                            tint = colors.onSurface,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(
-                            R.string.onboarding_backup_restore_webdav_title
-                        ),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    StatusPill(
-                        label = if (state.isConfigured) {
-                            stringResource(R.string.settings_configured)
-                        } else {
-                            stringResource(R.string.settings_not_configured)
-                        },
-                        connected = state.isConfigured
-                    )
-                    endpoint?.let {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(
-                                R.string.onboarding_backup_restore_webdav_endpoint,
-                                it
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    if (state.isConfigured) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = if (state.lastSyncTime > 0) {
-                                stringResource(
-                                    R.string.sync_last_time,
-                                    formatSyncTime(state.lastSyncTime)
-                                )
-                            } else {
-                                stringResource(R.string.sync_not_synced)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.onSurfaceVariant
-                        )
-                    }
-                }
-                OnboardingActionButton(
-                    text = if (state.isConfigured) {
-                        stringResource(R.string.onboarding_platform_action_manage)
-                    } else {
-                        stringResource(R.string.settings_configure)
-                    },
-                    onClick = onOpenConfig
-                )
-            }
-
-            if (state.isConfigured) {
-                Surface(
-                    shape = OnboardingControlShape,
-                    color = colors.surface
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.sync_auto),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = colors.onSurface
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = stringResource(R.string.webdav_auto_sync_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = state.autoSyncEnabled,
-                            onCheckedChange = onToggleAutoSync
-                        )
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (state.isSyncing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        HapticOutlinedButton(onClick = onSyncNow, shape = OnboardingControlShape) {
-                            Text(stringResource(R.string.settings_sync_now))
-                        }
-                    }
-                    HapticTextButton(onClick = onOpenClearConfig) {
-                        Text(
-                            text = stringResource(R.string.settings_clear_config),
-                            color = colors.error
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun StartupNoPlatformWarningDialog(
     onContinue: () -> Unit,
     onDismiss: () -> Unit
@@ -2304,7 +1801,7 @@ private suspend fun awaitStartupNextDraw(view: View) {
         return
     }
 
-    withTimeoutOrNull(120L) {
+    withTimeoutOrNull(120L.milliseconds) {
         suspendCancellableCoroutine { continuation ->
             val observer = view.viewTreeObserver
             var handled = false

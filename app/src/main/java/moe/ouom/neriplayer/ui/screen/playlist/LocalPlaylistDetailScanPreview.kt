@@ -84,7 +84,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanProgress
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -123,7 +123,7 @@ internal fun LocalScanPreviewScreen(
 ) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
-    val previewItems by produceState<List<LocalScanPreviewItem>>(
+    val previewItems by produceState(
         initialValue = emptyList(),
         songs,
         metadataPendingKeys,
@@ -139,7 +139,7 @@ internal fun LocalScanPreviewScreen(
         }
     }
     val listState = rememberLazyListState()
-    val displayedItems by produceState<List<LocalScanPreviewItem>>(
+    val displayedItems by produceState(
         initialValue = emptyList(),
         previewItems,
         query,

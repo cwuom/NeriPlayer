@@ -63,12 +63,12 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
-import moe.ouom.neriplayer.ui.animateMainTabDetailCloseRootRevealFraction
-import moe.ouom.neriplayer.ui.clipMainTabDetailCloseRoot
+import moe.ouom.neriplayer.ui.navigation.animateMainTabDetailCloseRootRevealFraction
+import moe.ouom.neriplayer.ui.navigation.clipMainTabDetailCloseRoot
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
-import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
+import moe.ouom.neriplayer.ui.navigation.rememberMainTabSceneRestoredEntry
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.artist.YouTubeMusicCreatorDetailScreen
 import moe.ouom.neriplayer.ui.screen.artist.YouTubeMusicCreatorItemsScreen
@@ -76,8 +76,8 @@ import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
-import moe.ouom.neriplayer.ui.shouldSuppressRestoredMainTabHostEntry
+import moe.ouom.neriplayer.ui.screen.tab.explore.ExploreScreen
+import moe.ouom.neriplayer.ui.navigation.shouldSuppressRestoredMainTabHostEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist

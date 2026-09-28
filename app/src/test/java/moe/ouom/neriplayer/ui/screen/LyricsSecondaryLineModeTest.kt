@@ -3,6 +3,10 @@ package moe.ouom.neriplayer.ui.screen
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.ui.screen.lyrics.LyricsSecondaryLineMode
+import moe.ouom.neriplayer.ui.screen.lyrics.hasDisplayableLyricTranslation
+import moe.ouom.neriplayer.ui.screen.lyrics.nextLyricsSecondaryLineMode
+import moe.ouom.neriplayer.ui.screen.lyrics.resolveLyricsSecondaryLineMode
 
 class LyricsSecondaryLineModeTest {
 

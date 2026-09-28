@@ -96,6 +96,7 @@ import kotlin.math.exp
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sign
+import kotlin.time.Duration.Companion.milliseconds
 
 object NeriMiniPlayerDefaults {
     val Height = 64.dp
@@ -667,7 +668,7 @@ fun NeriMiniPlayer(
         if (!shouldWait) return@LaunchedEffect
         val requestAtStart = requestedFrame
         val retainedAtStart = effectiveRetainedFrame
-        delay(MINI_PLAYER_COVER_CLEAR_DELAY_MS)
+        delay(MINI_PLAYER_COVER_CLEAR_DELAY_MS.milliseconds)
         val currentRetained = latestRetainedFrame ?: displayedFrame
         val currentFailed = latestFailedFrame
         if (

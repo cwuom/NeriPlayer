@@ -117,7 +117,7 @@ bool validateCapacity(const EndpointSnapshot& endpoint, std::string* reason) {
         return false;
     }
     if (endpoint.capacitySource == EndpointCapacitySource::StandardDescriptor) {
-        const int payloadBytes = endpoint.rawMaxPacketSize & 0x07FFU;
+        const int payloadBytes = static_cast<int>(endpoint.rawMaxPacketSize & 0x07FFU);
         const int transactions =
             1 + static_cast<int>((endpoint.rawMaxPacketSize >> 11U) & 0x03U);
         if (endpoint.effectiveMaxPacketBytes != payloadBytes * transactions) {
@@ -238,11 +238,12 @@ bool isConfigurationConsistent(
         *reason = "duplicate_endpoint_identity";
         return false;
     }
-    for (const EndpointSnapshot& endpoint : configuration.endpoints) {
-        if (endpoint.configurationValue != configuration.configurationValue) {
-            *reason = "endpoint_configuration_mismatch";
-            return false;
-        }
+    if (!std::all_of(configuration.endpoints.begin(), configuration.endpoints.end(),
+            [&](const EndpointSnapshot& endpoint) {
+                return endpoint.configurationValue == configuration.configurationValue;
+            })) {
+        *reason = "endpoint_configuration_mismatch";
+        return false;
     }
     return true;
 }

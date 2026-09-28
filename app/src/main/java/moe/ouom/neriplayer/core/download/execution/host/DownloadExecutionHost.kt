@@ -43,9 +43,11 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.util.units.DAY_MS
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.milliseconds
 
 class DefaultDownloadExecutionHost(
     internal val operationStore: DownloadExecutionOperationStore =
@@ -1485,7 +1487,7 @@ class DefaultDownloadExecutionHost(
                     if (transferRunning.isNotEmpty() || sideChannelRunning.isNotEmpty()) {
                         // 任一 operation 完成就继续填充窗口，不等待同一轮其它慢任务
                         val awaitCompletion: suspend () -> Any = {
-                            select<Any> {
+                            select {
                                 transferRunning.forEach { (operationId, execution) ->
                                     execution.onAwait { result ->
                                         PumpExecutionCompletion(
@@ -1516,7 +1518,7 @@ class DefaultDownloadExecutionHost(
                                 transferLaneOccupancy(appContext) < configuredDispatchWindow(appContext)
                         }
                         val completed = if (graceDelayMs != null) {
-                            withTimeoutOrNull(graceDelayMs) { awaitCompletion() } ?: continue
+                            withTimeoutOrNull(graceDelayMs.milliseconds) { awaitCompletion() } ?: continue
                         } else {
                             awaitCompletion()
                         }
@@ -1559,7 +1561,7 @@ class DefaultDownloadExecutionHost(
                         if (queueExhausted && remainingGraceDelayMs != null &&
                             !recoveryRequired.get()
                         ) {
-                            delay(remainingGraceDelayMs)
+                            delay(remainingGraceDelayMs.milliseconds)
                             continue
                         }
                         if (queueExhausted) {
@@ -1601,7 +1603,7 @@ class DefaultDownloadExecutionHost(
                                 transferLaneOccupancy(appContext) < configuredDispatchWindow(appContext)
                         }
                         if (graceDelayMs != null) {
-                            delay(graceDelayMs)
+                            delay(graceDelayMs.milliseconds)
                             continue
                         }
                         if (selection?.hasSchedulableRequest != true) {
@@ -1846,7 +1848,7 @@ internal fun scheduleUidtIfSupported(
     return scheduleUidt(context, operationId, pendingJobLimit)
 }
 
-private const val TERMINAL_OPERATION_RETENTION_MS = 7L * 24L * 60L * 60L * 1_000L
+private const val TERMINAL_OPERATION_RETENTION_MS = 7 * DAY_MS
 private const val TERMINAL_OPERATION_PRUNE_LIMIT = 64
 internal const val HOST_ADMISSION_RETRY_DELAY_MS = 200L
 internal const val MAX_DEFERRED_SCHEDULES_PER_PASS = 32

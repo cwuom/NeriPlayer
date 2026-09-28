@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeResult
 import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupCoordinator
 import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupResult
 import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupStatus
+import kotlin.time.Duration.Companion.milliseconds
 
 internal object LegacyJsonCleanupScheduler {
     private const val TAG = "NERI-LegacyJsonCleanup"
@@ -54,7 +55,7 @@ internal object LegacyJsonCleanupScheduler {
                 val upgradeGate = LegacyDownloadUpgradeDrainGate()
                 for (attemptIndex in retryDelaysMs.indices) {
                     if (attemptIndex > 0) {
-                        delay(retryDelaysMs[attemptIndex])
+                        delay((retryDelaysMs[attemptIndex]).milliseconds)
                     }
 
                     if (upgradeGate.claimAttempt()) {

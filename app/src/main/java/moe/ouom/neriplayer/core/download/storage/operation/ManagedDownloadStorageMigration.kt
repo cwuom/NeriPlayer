@@ -225,7 +225,7 @@ internal fun ManagedDownloadStorage.collectManagedMigrationEntries(
         .groupBy { it.first }
         .mapValues { (audioName, entries) ->
             entries.minWithOrNull(
-                compareBy<Pair<String, StoredEntry>>(
+                compareBy(
                     { ManagedDownloadTreeNaming.metadataNameOrdinal(it.second.name, audioName) ?: Int.MAX_VALUE },
                     { it.second.name }
                 )

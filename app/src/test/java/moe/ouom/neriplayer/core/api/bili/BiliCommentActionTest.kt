@@ -16,11 +16,96 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 
 class BiliCommentActionTest {
+    @Test
+    fun `cookie request helper omits absent values`() {
+        val empty = Request.Builder().url("https://api.bilibili.com/").biliCookie(null).build()
+        val blank = Request.Builder().url("https://api.bilibili.com/").biliCookie(" ").build()
+        val present = Request.Builder().url("https://api.bilibili.com/")
+            .biliCookie("SESSDATA=session").build()
+        assertNull(empty.header("Cookie"))
+        assertNull(blank.header("Cookie"))
+        assertEquals("SESSDATA=session", present.header("Cookie"))
+    }
+
+    @Test
+    fun `anonymous comment reads reuse fingerprint cookies then switch to stored login`(): Unit = runBlocking {
+        val cookies = mock(BiliCookieRepository::class.java)
+        `when`(cookies.getCookiesOnce()).thenReturn(emptyMap())
+        val requests = mutableListOf<Request>()
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            requests += request
+            val body = if (request.url.encodedPath.endsWith("/finger/spi")) {
+                """{"data":{"b_3":"anon-3","b_4":"","buvid_fp":"anon-fp"}}"""
+            } else {
+                """{"code":0,"data":{}}"""
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
+                .code(200).message("OK")
+                .body(body.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        try {
+            val client = BiliClient(cookies, http)
+            client.getVideoComments(170001L)
+            client.getVideoComments(170001L, page = 2, pageSize = 100, sort = 0)
+            assertEquals(1, requests.count { it.url.encodedPath.endsWith("/finger/spi") })
+            val anonymous = requests.filter { it.url.encodedPath == "/x/v2/reply" }
+            assertEquals(2, anonymous.size)
+            assertEquals("buvid3=anon-3; buvid_fp=anon-fp", anonymous.first().header("Cookie"))
+            assertEquals("49", anonymous.last().url.queryParameter("ps"))
+            assertEquals("0", anonymous.last().url.queryParameter("sort"))
+
+            `when`(cookies.getCookiesOnce()).thenReturn(mapOf("SESSDATA" to "logged-in"))
+            client.getVideoCommentReplies(170001L, "42", 1, 20)
+            val loggedIn = requests.last()
+            assertEquals("/x/v2/reply/reply", loggedIn.url.encodedPath)
+            assertEquals("SESSDATA=logged-in", loggedIn.header("Cookie"))
+            assertEquals("42", loggedIn.url.queryParameter("root"))
+        } finally {
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
+    }
+
+    @Test
+    fun `invalid comment identifiers fail before network request`(): Unit = runBlocking {
+        val cookies = mock(BiliCookieRepository::class.java)
+        val http = OkHttpClient.Builder().addInterceptor { error("Unexpected request") }.build()
+        val client = BiliClient(cookies, http)
+        try {
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { client.getVideoComments(0L) }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { client.getVideoCommentReplies(170001L, "0", 1, 20) }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { client.getVideoCommentReplies(170001L, "42", 0, 20) }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { client.getVideoCommentReplies(170001L, "42", 1, 21) }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { client.sendVideoComment(170001L, "text", "42", null) }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { client.sendVideoComment(170001L, "text", null, "42") }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { client.setVideoCommentLiked(170001L, "0", true) }
+            }
+        } finally {
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
+    }
+
     @Test
     fun `cache session key follows login without depending on rotating csrf`(): Unit = runBlocking {
         val cookies = mock(BiliCookieRepository::class.java)
@@ -29,7 +114,9 @@ class BiliCommentActionTest {
         try {
             `when`(cookies.getCookiesOnce()).thenReturn(emptyMap())
             assertNull(client.commentCacheSessionKey())
+            assertEquals(false, client.hasCommentLogin())
             `when`(cookies.getCookiesOnce()).thenReturn(mapOf("SESSDATA" to "test-account-a"))
+            assertEquals(true, client.hasCommentLogin())
             val first = client.commentCacheSessionKey()
             assertEquals(64, first?.length)
             `when`(cookies.getCookiesOnce()).thenReturn(mapOf("SESSDATA" to "test-account-a", "bili_jct" to "rotated"))

@@ -165,7 +165,7 @@ std::string TypeIFormat::sampleRateSummary() const {
     std::string summary;
     for (int sampleRate : discreteSampleRates) {
         if (!summary.empty()) {
-            summary += ",";
+            summary += ',';
         }
         summary += std::to_string(sampleRate);
     }

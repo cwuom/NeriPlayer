@@ -694,7 +694,7 @@ internal suspend fun ManagedDownloadStorage.buildLegacyUpgradeSnapshotImpl(
             .groupBy { (audioName, _) -> audioName }
             .mapValues { (audioName, entries) ->
                 entries.minWithOrNull(
-                    compareBy<Pair<String, StoredEntry>>(
+                    compareBy(
                         {
                             ManagedDownloadTreeNaming.metadataNameOrdinal(
                                 it.second.name,
@@ -1064,7 +1064,7 @@ private fun ManagedDownloadStorage.rebuildDownloadLibrarySnapshotBlocking(
         .groupBy { it.first }
         .mapValues { (audioName, entries) ->
             entries.minWithOrNull(
-                compareBy<Pair<String, StoredEntry>>(
+                compareBy(
                     { ManagedDownloadTreeNaming.metadataNameOrdinal(it.second.name, audioName) ?: Int.MAX_VALUE },
                     { it.second.name }
                 )
@@ -1110,7 +1110,7 @@ private fun ManagedDownloadStorage.rebuildDownloadLibrarySnapshotBlocking(
         .groupBy { it.first }
         .mapValues { (audioName, entries) ->
             entries.minWithOrNull(
-                compareBy<Pair<String, StoredEntry>>(
+                compareBy(
                     { ManagedDownloadTreeNaming.metadataNameOrdinal(it.second.name, audioName) ?: Int.MAX_VALUE },
                     { it.second.name }
                 )

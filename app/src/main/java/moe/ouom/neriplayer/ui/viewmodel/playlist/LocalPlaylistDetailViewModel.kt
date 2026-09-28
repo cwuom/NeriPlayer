@@ -363,7 +363,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     fun dismissDownloadedSongDeleteFailure(deleteId: Long) {
         GlobalDownloadManager.dismissDownloadedSongDeleteFailure(
-            getApplication<Application>(), deleteId
+            getApplication(), deleteId
         )
     }
 

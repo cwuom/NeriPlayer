@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.milliseconds
 
 /** translates WorkManager events to the shared download host */
 class ForegroundDownloadWorker(
@@ -437,7 +438,7 @@ class ForegroundDownloadWorker(
                 error
             )
             pumpRetryScope.launch {
-                delay(PUMP_ENQUEUE_RETRY_DELAY_MS)
+                delay(PUMP_ENQUEUE_RETRY_DELAY_MS.milliseconds)
                 if (pumpScheduleCoordinator.canRetry(generation)) {
                     schedulePump(context)
                 }
@@ -884,10 +885,10 @@ internal object DownloadExecutionNotificationIds {
     internal const val FOREGROUND_MIN = LEGACY_FOREGROUND_NOTIFICATION_MIN
     internal const val UIDT_MAX = LEGACY_UIDT_NOTIFICATION_MAX
 
-    fun foreground(@Suppress("UNUSED_PARAMETER") operationId: String): Int =
+    fun foreground(operationId: String): Int =
         DOWNLOAD_EXECUTION_NOTIFICATION_ID
 
-    fun uidt(@Suppress("UNUSED_PARAMETER") operationId: String): Int =
+    fun uidt(operationId: String): Int =
         DOWNLOAD_EXECUTION_NOTIFICATION_ID
 }
 

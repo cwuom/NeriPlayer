@@ -219,7 +219,7 @@ bool parseTypeIFormat(
         assignError(error, "format_type_descriptor_missing");
         return false;
     }
-    *output = std::move(parsed);
+    *output = parsed;
     if (error != nullptr) {
         error->clear();
     }

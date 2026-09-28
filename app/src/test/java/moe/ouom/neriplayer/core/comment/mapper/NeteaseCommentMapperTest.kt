@@ -14,6 +14,22 @@ import org.junit.Test
  */
 class NeteaseCommentMapperTest {
     @Test
+    fun `mixed comment and preview arrays skip non objects without reordering comments`() {
+        val page = parseNeteaseCommentPage(
+            """{"code":200,"comments":[null, 7, {"commentId":2,
+                "beReplied":[null, false, {"content":"quoted"}],
+                "showFloorComment":{"comments":[[], "text", {"commentId":3}]}
+            }, {"commentId":1}]}""",
+            page = 1,
+            pageSize = 20
+        )
+
+        assertEquals(listOf("2", "1"), page.comments.map { it.id })
+        assertEquals("quoted", page.comments.first().quotedComments.single().content)
+        assertEquals("3", page.comments.first().previewReplies.single().id)
+    }
+
+    @Test
     fun `quotes keep author and deleted content separate from reply previews`() {
         val page = parseNeteaseCommentPage("""{"code":200,"comments":[{
             "commentId":10,"content":"reply",

@@ -1593,8 +1593,8 @@ class LocalPlaylistRepository private constructor(
             ) { ids ->
                 addNeteasePlaylistSongIdsBatch(client, targetPlaylistId, ids)
             }
-            val addedIds = LinkedHashSet<Long>(addResult.addedIds)
-            val failedIds = LinkedHashSet<Long>(addResult.failedIds)
+            val addedIds = LinkedHashSet(addResult.addedIds)
+            val failedIds = LinkedHashSet(addResult.failedIds)
             if (failedIds.isNotEmpty()) {
                 val snapshot = fetchNeteasePlaylistTrackSnapshot(client, targetPlaylistId)
                 if (snapshot.compareSucceeded) {

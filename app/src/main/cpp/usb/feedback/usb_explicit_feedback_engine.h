@@ -159,7 +159,7 @@ public:
     [[nodiscard]] ExplicitFeedbackEngineSnapshot snapshot() const;
 
 private:
-    bool configurationValid(const ExplicitFeedbackEngineConfig& config) const;
+    [[nodiscard]] static bool configurationValid(const ExplicitFeedbackEngineConfig& config);
     ExplicitFeedbackEngineResult failStart(ExplicitFeedbackFailureReason reason);
     ExplicitFeedbackEngineResult enterTerminal(ExplicitFeedbackFailureReason reason);
     ExplicitFeedbackEngineResult beginDrain();
@@ -170,7 +170,7 @@ private:
     ExplicitFeedbackEngineResult settleWhileDraining();
     void requestCancellation();
     void updateStreamingState();
-    void increment(uint64_t* value);
+    static void increment(uint64_t* value);
 
     ExplicitFeedbackEngineConfig config_;
     ExplicitFeedbackBackend* backend_ = nullptr;

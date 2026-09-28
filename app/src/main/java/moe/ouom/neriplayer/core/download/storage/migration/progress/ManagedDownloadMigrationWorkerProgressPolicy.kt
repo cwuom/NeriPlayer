@@ -33,7 +33,7 @@ internal fun selectActiveMigrationWorkInfo(
 
     // WorkManager 不保证同一唯一名称返回记录的顺序
     return active.minWithOrNull(
-        compareBy<WorkInfo>(
+        compareBy(
             { migrationWorkStatePriority(it.state) },
             { -it.generation },
             { -it.runAttemptCount },

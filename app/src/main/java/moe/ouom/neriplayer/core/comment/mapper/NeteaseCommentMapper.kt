@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.comment.model.CommentPage
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentQuote
 import moe.ouom.neriplayer.core.comment.model.SongComment
+import moe.ouom.neriplayer.util.json.mapObjectsNotNull
 import org.json.JSONObject
 
 /**
@@ -34,14 +35,9 @@ internal fun parseNeteaseCommentPage(
     } else {
         root
     }
-    val array = data.optJSONArray("comments")
-    val comments = ArrayList<SongComment>(array?.length() ?: 0)
-    if (array != null) {
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            comments += parseNeteaseComment(item)
-        }
-    }
+    val comments = data.optJSONArray("comments")
+        ?.mapObjectsNotNull { parseNeteaseComment(it) }
+        .orEmpty()
 
     val total = data.optLong("totalCount", data.optLong("total", -1L)).takeIf { it >= 0L }
     val hasMore = if (data.has("hasMore")) {
@@ -83,22 +79,17 @@ private fun parseNeteaseComment(item: JSONObject, includePreview: Boolean = true
         platform = CommentPlatform.NETEASE,
         userLevel = user.optInt("level", 0).takeIf { it > 0 },
         isLiked = item.optBoolean("liked", false),
-        quotedComments = item.optJSONArray("beReplied")?.let { quotes ->
-            (0 until quotes.length()).mapNotNull { index ->
-                val quote = quotes.optJSONObject(index) ?: return@mapNotNull null
-                CommentQuote(
-                    username = quote.optJSONObject("user")?.optString("nickname").orEmpty(),
-                    content = if (quote.optInt("status", 0) == -5 || quote.isNull("content")) null
-                        else quote.optString("content")
-                )
-            }
+        quotedComments = item.optJSONArray("beReplied")?.mapObjectsNotNull { quote ->
+            CommentQuote(
+                username = quote.optJSONObject("user")?.optString("nickname").orEmpty(),
+                content = if (quote.optInt("status", 0) == -5 || quote.isNull("content")) null
+                    else quote.optString("content")
+            )
         }.orEmpty(),
         previewReplies = if (includePreview) {
-            item.optJSONObject("showFloorComment")?.optJSONArray("comments")?.let { replies ->
-                (0 until replies.length()).mapNotNull { index ->
-                    replies.optJSONObject(index)?.let { parseNeteaseComment(it, false) }
-                }
-            }.orEmpty()
+            item.optJSONObject("showFloorComment")?.optJSONArray("comments")
+                ?.mapObjectsNotNull { parseNeteaseComment(it, false) }
+                .orEmpty()
         } else emptyList(),
         rootId = item.optLong("parentCommentId", 0L).takeIf { it > 0L }?.toString()
     )

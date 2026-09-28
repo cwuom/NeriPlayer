@@ -15,6 +15,22 @@ import org.junit.Test
  */
 class BiliCommentMapperTest {
     @Test
+    fun `mixed reply arrays preserve valid order and pagination count`() {
+        val page = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20,"count":3},
+                "replies":[null, "text", {"rpid":2,"replies":[7, [], {"rpid":4}]},
+                false, {"rpid":1}]}}"""),
+            page = 1,
+            pageSize = 20
+        )
+
+        assertEquals(listOf("2", "1"), page.comments.map { it.id })
+        assertEquals("4", page.comments.first().previewReplies.single().id)
+        assertEquals(3L, page.total)
+        assertTrue(page.hasMore)
+    }
+
+    @Test
     fun `nested previews preserve root and stop recursive preview parsing`() {
         val page = parseBiliCommentPage(JSONObject("""{"code":0,"data":{
             "page":{"num":1,"size":20,"count":1},"replies":[{

@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 
 interface YouTubePoTokenProvider {
     suspend fun warmSession()
@@ -371,7 +372,7 @@ internal class YouTubeWebPoTokenProvider(
                         }
 
                         result?.status == "backoff" -> {
-                            delay(MINT_BACKOFF_MS)
+                            delay(MINT_BACKOFF_MS.milliseconds)
                         }
 
                         result?.status == "missing" -> {
@@ -470,7 +471,7 @@ internal class YouTubeWebPoTokenProvider(
 
             val resolvedAttempts = maxAttempts.coerceAtLeast(1)
             for (attempt in 0 until resolvedAttempts) {
-                delay(PAGE_PREPARE_BACKOFF_MS)
+                delay(PAGE_PREPARE_BACKOFF_MS.milliseconds)
                 val snapshot = readPageSnapshot() ?: continue
                 if (snapshot.hasYtcfg && snapshot.hasWebPoClient) {
                     preparedAtMs = System.currentTimeMillis()
@@ -730,7 +731,7 @@ internal class YouTubeWebPoTokenProvider(
                     result.complete(decodeEvaluateJavascriptValue(raw))
                 }
             }
-            withTimeoutOrNull(ASYNC_SCRIPT_TIMEOUT_MS) { result.await() }
+            withTimeoutOrNull(ASYNC_SCRIPT_TIMEOUT_MS.milliseconds) { result.await() }
         } finally {
             synchronized(pendingEvaluateResults) {
                 pendingEvaluateResults.remove(result)
@@ -773,7 +774,7 @@ internal class YouTubeWebPoTokenProvider(
                     null
                 )
             }
-            withTimeoutOrNull(ASYNC_SCRIPT_TIMEOUT_MS) { deferred.await() }
+            withTimeoutOrNull(ASYNC_SCRIPT_TIMEOUT_MS.milliseconds) { deferred.await() }
         } finally {
             synchronized(pendingBridgeResults) {
                 pendingBridgeResults.remove(requestId)

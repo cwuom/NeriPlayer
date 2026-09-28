@@ -23,6 +23,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceToken
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 在有界队列中执行歌词、封面和标签等非核心资产工作
@@ -149,7 +150,7 @@ internal class AssetEnrichmentCoordinator(
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     suspend fun runEnrichment() {
-                        withTimeout(timeoutMs) {
+                        withTimeout(timeoutMs.milliseconds) {
                             DownloadOperationTrace.mark(
                                 operationTraceToken,
                                 DownloadOperationTracePhase.ENRICHMENT_STARTED
@@ -254,7 +255,7 @@ internal class AssetEnrichmentCoordinator(
         if (entries.isEmpty()) return emptySet()
         fun completedIds() = entries.filterValues { it == null || it.settled.isCompleted }.keys
         completedIds().takeIf { it.isNotEmpty() }?.let { return it }
-        withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+        withTimeoutOrNull((timeoutMs.coerceAtLeast(1L)).milliseconds) {
             select {
                 entries.values.filterNotNull().forEach { entry ->
                     entry.settled.onAwait { }
@@ -277,7 +278,7 @@ internal class AssetEnrichmentCoordinator(
         val jobs = synchronized(jobRegistrationLock) {
             normalizedIds.mapNotNull(jobsByOperationId::get)
         }
-        val settled = withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+        val settled = withTimeoutOrNull((timeoutMs.coerceAtLeast(1L)).milliseconds) {
             jobs.forEach { it.settled.await() }
             true
         } ?: false
@@ -315,7 +316,7 @@ internal class AssetEnrichmentCoordinator(
         jobs.forEach { job ->
             job.job.cancel(CancellationException(reason))
         }
-        val settled = withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+        val settled = withTimeoutOrNull((timeoutMs.coerceAtLeast(1L)).milliseconds) {
             jobs.forEach { it.settled.await() }
             true
         } ?: false
@@ -336,7 +337,7 @@ internal class AssetEnrichmentCoordinator(
         jobs.forEach { job ->
             job.job.cancel(CancellationException(reason))
         }
-        val settled = withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+        val settled = withTimeoutOrNull((timeoutMs.coerceAtLeast(1L)).milliseconds) {
             jobs.forEach { it.settled.await() }
             true
         } ?: false

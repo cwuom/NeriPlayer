@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.data.platform.bili
 
 import android.content.Context
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,6 +23,7 @@ import moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomStore
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
+import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
 import java.io.File
 
 const val MAX_BILI_VIDEO_SKIP_INTERVALS = 100
@@ -412,16 +412,14 @@ class BiliVideoSkipRepository private constructor(context: Context) {
     }
 
     private suspend fun persistDraftsIfCurrent(expectedStateVersion: Long) {
-        try {
+        runCatchingNonCancellation {
             draftsMutex.withLock {
                 val snapshot = synchronized(draftsStateLock) {
                     _drafts.value.takeIf { draftsStateVersion == expectedStateVersion }
                 } ?: return@withLock
                 roomStore.replaceDrafts(snapshot)
             }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
+        }.onFailure { error ->
             NPLogger.w(TAG, "Failed to persist Bili video skip drafts", error)
         }
     }

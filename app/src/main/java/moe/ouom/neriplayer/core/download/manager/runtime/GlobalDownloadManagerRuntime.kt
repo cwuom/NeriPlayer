@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import java.security.MessageDigest
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal suspend fun <T> GlobalDownloadManager.withSongExecutionLock(
@@ -82,7 +83,7 @@ internal suspend fun GlobalDownloadManager.awaitSongCancellationSettled(
 
     val deadlineAt = System.currentTimeMillis() + timeoutMs
     while (isTargetActive() && System.currentTimeMillis() < deadlineAt) {
-        delay(50)
+        delay(50.milliseconds)
     }
     if (isTargetActive()) {
         if (logProgress) {

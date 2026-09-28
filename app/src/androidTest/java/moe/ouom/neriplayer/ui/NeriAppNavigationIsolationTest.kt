@@ -21,6 +21,12 @@ import androidx.navigation.navArgument
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.navigation.DEBUG_NAVIGATION_CLOSE_DURATION_MS
+import moe.ouom.neriplayer.ui.navigation.DEBUG_NAVIGATION_OPEN_DURATION_MS
+import moe.ouom.neriplayer.ui.navigation.debugNavigationEnterTransition
+import moe.ouom.neriplayer.ui.navigation.debugNavigationExitTransition
+import moe.ouom.neriplayer.ui.navigation.mainTabEnterTransition
+import moe.ouom.neriplayer.ui.navigation.mainTabExitTransition
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule

@@ -32,6 +32,8 @@ When maintaining docs, split them by audience:
     installation/builds, sync, and privacy.
 - `CONTRIBUTING.md` / `CONTRIBUTING_EN.md`
   - For developers: module boundaries, extension paths, tests, and PR expectations.
+- [`docs/kotlin-helpers.md`](docs/kotlin-helpers.md)
+  - Usage and boundaries for request generations, units, player reads, and coroutine results.
 - `app/src/main/cpp/README.md`
   - Defines the alternative-license scope for NeriPlayer-owned native source,
     third-party exclusions, and the explicit dual-license statement required
@@ -296,6 +298,35 @@ Security reminders:
     channel balance, and high-resolution output processing.
   - `playback/PlaybackStatsTracker.kt`: playback stats tracking. Playback commands
     and queue advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
+  - `PlayerQueueSnapshot` holds the queue and current index together;
+    `PlayerQueueStateStore` publishes that state for persistence and presentation.
+    Use `publishCurrentQueue` to replace a queue and `updateCurrentQueue` for
+    moves, removal, insertion, and shuffling. Compute from the latest snapshot
+    inside the lock; keep player and disk operations outside it.
+    Async metadata updates use `updateQueuedSong` to preserve the current selection.
+    UI reorders provide order only; song content comes from the latest queue.
+    Reject stale reorders when duplicate songs cannot be matched unambiguously,
+    and retain the current queue if restoring pre-shuffle order is ambiguous.
+    Queue transactions keep the list and index consistent; the current-song Flow
+    and Media3 side effects still require their own thread-boundary checks.
+  - `persistence/PlaybackStatePersistenceCoordinator.kt` owns save requests and delays.
+    Call `prepareStatePersist` or `scheduleStatePersist` at the synchronous event
+    boundary to capture a complete snapshot and issue a request before awaiting
+    stats writes or other async work. Writes are serial; superseded queued requests
+    do not write. `PlaybackStateWriter` acknowledges only successful backends.
+    After JSON fallback, fully write Room before resuming incremental persistence.
+    Propagate cancellation and close request admission when releasing the player;
+    storage completion callbacks must not change current playback state.
+    `RestoredPlaybackState` keeps absent, paused, and pending auto-resume states
+    together instead of independently changing the restored position and flags.
+  - `RefreshInFlightController` alone owns active URL refresh state.
+    Matching parameters can share an active request, but completion, cancellation,
+    and writeback use its `RefreshRequestHandle` identity so an older request
+    cannot affect a newer one. Watchdogs read the controller directly.
+    Cleanup must also handle lazy coroutines cancelled before they start.
+    Change playback intent through `updateResumePlaybackRequested` to invalidate
+    conflicting refreshes; capture quality-refresh state and create its request
+    together on the main thread.
   - `timer/SleepTimerManager.kt`: sleep timer.
   - `engine/datasource/ConditionalHttpDataSourceFactory.kt`: adds platform-specific request headers.
   - `watchdog/PlayerManagerStartupWatchdogExtensions.kt` and
@@ -578,6 +609,13 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `BootstrapSettingsSnapshot`, `ThemePreferenceSnapshot`, or `PlaybackPreferenceSnapshot`.
 5. UI usually belongs in the matching `SettingsPage` in `SettingsScreen.kt` or
    under `ui/screen/tab/settings/component/`.
+   `SettingsDownloadDirectoryPreflight.kt` owns directory probe timeouts and
+   Provider failure classification; the screen consumes the result.
+   `SettingsNavigationSearch.kt` owns page switching and search entry points.
+   `SettingsThemeControls.kt` owns theme-mode and palette controls, including
+   change requests and animation origins. `SettingsPlaybackControlLayout.kt`
+   owns playback-control layout dialogs and preference decisions.
+   `SettingsPersonalizationContent.kt` subscribes to settings per appearance card.
 6. When adding or renaming a setting, update localized strings,
    `SettingsSearchIndex.kt` keywords, Settings page visibility/filtering tests,
    and `AutoSettingsGeneratedTest`.
@@ -887,6 +925,50 @@ Before submitting, consider at least these checks:
    Add device or Compose UI tests under `app/src/androidTest/`.
 9. If behavior changes affect README, settings copy, user flows, or sync formats,
    update documentation in the same PR.
+
+CRAP gate and responsibility boundaries:
+
+```bash
+./gradlew :app:verifyCrap
+```
+
+The task uses Debug JVM JaCoCo coverage to report every JVM method that maps to
+app main source, with a separate list of scores above 8. In
+`config/quality/crap-scope.json`, `source_patterns` covers complete source files
+and `method_scopes` covers affected methods in the original entry points.
+Any scoped method with CRAP above 9 fails the gate; methods outside the scope
+remain in the full report. JaCoCo complexity coverage approximates path coverage;
+the score does not cover native code or replace a coupling review.
+Both `:app:check` and Android CI run the gate. Reports are under
+`app/build/reports/crap/`; see the [quality guide](tools_pub/quality/README.md)
+for the calculation and prerequisites.
+
+`OwnedMainSourceLineBudgetTest` keeps the owned main-source files split in this
+refactor and their extracted components strictly below 2000 physical lines.
+It also checks owned `.cpp` / `.h` files under USB `exclusive/`.
+Update its file list when adding components. Third-party libusb and test files
+are outside this line limit.
+
+`LocalManagementLineBudgetTest` applies the same line limit to download,
+local-data, and Library code and related tests. When moving an entry point or
+splitting a directory, update its required paths and scanned scope.
+
+Extract state, async jobs, and cleanup into the component responsible for them,
+and access external capabilities through narrow interfaces. Player and global
+service access for the extracted `PlayerManager` components belongs in their
+`PlayerManager*Port` adapters. Listen Together components under `session/` own
+room state, membership, connection recovery, and control results separately.
+`NowPlayingScreen`, `SettingsScreen`, and `NeriApp` compose pages and feature
+components; editing sessions, directory selection, settings domain bindings,
+and navigation effects belong to the corresponding components. Do not move
+logic into extension files with the original entry point as receiver or make
+new components read its internal state.
+
+For storage analysis, `StorageUsageScanner` collects snapshots through data-source
+interfaces and `StorageUsagePresenter` reads only snapshots and string resources.
+`StorageCacheCleaner` uses file and platform cleanup ports; Room and global
+service access stays in `StorageUsageAndroid.kt`. Keep this dependency direction
+and include new components in the full-file CRAP gate.
 
 Existing focused tests cover areas such as:
 

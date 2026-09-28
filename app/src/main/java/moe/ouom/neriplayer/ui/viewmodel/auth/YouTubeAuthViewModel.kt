@@ -104,7 +104,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             repo.clear()
             clearWebViewLoginState(
-                context = getApplication<Application>(),
+                context = getApplication(),
                 platform = WebLoginPlatform.YOUTUBE
             )
             _events.send(

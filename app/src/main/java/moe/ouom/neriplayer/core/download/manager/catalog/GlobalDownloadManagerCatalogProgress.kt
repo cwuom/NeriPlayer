@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal suspend fun GlobalDownloadManager.waitForActiveDownloadJobsToSettle() {
@@ -36,7 +37,7 @@ internal suspend fun GlobalDownloadManager.waitForActiveDownloadJobsToSettle() {
         if (activeBatchDownloadJobs.isEmpty()) {
             return
         }
-        delay(100L)
+        delay(100L.milliseconds)
     }
 }
 
@@ -59,7 +60,7 @@ internal suspend fun GlobalDownloadManager.waitForQueuedTasksToAttachToBatch() {
         if (!hasQueuedTask || hasDownloadingTask) {
             return
         }
-        delay(DOWNLOAD_RECOVERY_QUEUE_ATTACH_POLL_MS)
+        delay(DOWNLOAD_RECOVERY_QUEUE_ATTACH_POLL_MS.milliseconds)
     }
 }
 
@@ -201,7 +202,7 @@ internal fun GlobalDownloadManager.scheduleDownloadedSongsCatalogPersist(
         val generation = catalogPersistGeneration.incrementAndGet()
         catalogPersistJob?.cancel()
         catalogPersistJob = scope.launch {
-            delay(DOWNLOAD_CATALOG_PERSIST_DEBOUNCE_MS)
+            delay(DOWNLOAD_CATALOG_PERSIST_DEBOUNCE_MS.milliseconds)
             if (catalogPersistGeneration.get() != generation) return@launch
             val request = synchronized(catalogPersistenceLock) {
                 if (catalogPersistGeneration.get() != generation) {
@@ -363,7 +364,7 @@ internal fun GlobalDownloadManager.enqueueProgressCheckpoint(
         )
         if (progressCheckpointWriterJob?.isActive != true) {
             progressCheckpointWriterJob = scope.launch {
-                delay(DOWNLOAD_PROGRESS_CHECKPOINT_COALESCE_MS)
+                delay(DOWNLOAD_PROGRESS_CHECKPOINT_COALESCE_MS.milliseconds)
                 flushProgressCheckpoints()
             }
         }
@@ -435,7 +436,7 @@ internal suspend fun GlobalDownloadManager.flushProgressCheckpoints() {
             }
             return
         }
-        delay(DOWNLOAD_PROGRESS_CHECKPOINT_COALESCE_MS)
+        delay(DOWNLOAD_PROGRESS_CHECKPOINT_COALESCE_MS.milliseconds)
     }
 }
 

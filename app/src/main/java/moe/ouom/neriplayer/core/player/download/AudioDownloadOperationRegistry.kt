@@ -299,5 +299,5 @@ internal class AudioDownloadOperationRegistry(
         ?.takeIf(String::isNotBlank)
 
     private fun newCallSet(): MutableSet<Call> =
-        Collections.newSetFromMap(ConcurrentHashMap<Call, Boolean>())
+        Collections.newSetFromMap(ConcurrentHashMap())
 }

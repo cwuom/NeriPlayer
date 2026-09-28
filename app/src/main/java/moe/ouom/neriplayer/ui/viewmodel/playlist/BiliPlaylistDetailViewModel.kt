@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.data.platform.bili.CachedBiliFavoriteVideo
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.collections.mergeDistinctBy
 import java.io.IOException
 
 private const val TAG = "NERI-BiliPlaylistVM"
@@ -88,8 +89,9 @@ internal fun mergeBiliPagedVideoPage(
     totalCount: Int,
     hasMore: Boolean
 ): BiliPagedVideoPage {
-    val videos = (existingVideos + incomingVideos)
-        .distinctBy { video -> video.bvid.ifBlank { video.id.toString() } }
+    val videos = existingVideos.mergeDistinctBy(incomingVideos) { video ->
+        video.bvid.ifBlank { video.id.toString() }
+    }
     return BiliPagedVideoPage(
         videos = videos,
         totalCount = totalCount.coerceAtLeast(videos.size),

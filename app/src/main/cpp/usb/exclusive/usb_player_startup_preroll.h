@@ -25,7 +25,7 @@ public:
         if (output == nullptr || bytes == 0 || frameBytes <= 0) {
             return false;
         }
-        const int64_t transferFrames = static_cast<int64_t>(
+        const auto transferFrames = static_cast<int64_t>(
             bytes / static_cast<size_t>(frameBytes)
         );
         if (transferFrames <= 0) {

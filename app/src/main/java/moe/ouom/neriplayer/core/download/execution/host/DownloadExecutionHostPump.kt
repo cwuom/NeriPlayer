@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrac
 import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.data.model.stableKey
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal suspend fun DefaultDownloadExecutionHost.collectPumpCandidates(
@@ -269,7 +270,7 @@ internal fun DefaultDownloadExecutionHost.triggerDeferredSchedules(context: Cont
                     if (queueEmpty) {
                         return@launch
                     }
-                    delay(HOST_ADMISSION_RETRY_DELAY_MS)
+                    delay(HOST_ADMISSION_RETRY_DELAY_MS.milliseconds)
                     continue
                 }
                 when (val result = schedule(appContext, request)) {
@@ -303,7 +304,7 @@ internal fun DefaultDownloadExecutionHost.triggerDeferredSchedules(context: Cont
                 }
                 if (deferredRetryCount >= deferredRetryLimit()) {
                     deferredRetryCount = 0
-                    delay(HOST_ADMISSION_RETRY_DELAY_MS)
+                    delay(HOST_ADMISSION_RETRY_DELAY_MS.milliseconds)
                 }
             }
         } finally {

@@ -29,6 +29,8 @@
   - 面向用户和新贡献者，说明项目定位、能力边界、安装构建、同步与隐私。
 - `CONTRIBUTING.md` / `CONTRIBUTING_EN.md`
   - 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。
+- [`docs/kotlin-helpers.md`](docs/kotlin-helpers.md)
+  - 说明请求代次、单位、播放器读取和协程结果等辅助工具的用法与边界。
 - `app/src/main/cpp/README.md`
   - 说明 NeriPlayer 自有 Native 源码的替代授权范围、第三方排除项和
     外部贡献所需的显式双授权声明。
@@ -264,6 +266,26 @@
   - `engine/`：Media3 音频处理器，包括响度均衡、声道平衡和高解析输出相关处理。
   - `playback/PlaybackStatsTracker.kt`：播放统计采集；播放命令与队列推进也在
     `playback/PlayerManagerPlaybackExtensions.kt`。
+  - 队列列表与当前索引由 `PlayerQueueSnapshot` 一起持有，`PlayerQueueStateStore`
+    统一发布状态；持久化与队列展示从同一快照读取。
+    整队替换使用 `publishCurrentQueue`；移动、删除、插入和洗牌使用
+    `updateCurrentQueue`，在锁内基于最新快照计算，播放器与磁盘操作放在锁外。
+    异步歌曲元数据写回使用 `updateQueuedSong`，按歌曲身份更新最新队列，保留当前选曲。
+    UI 重排只提供顺序，歌曲内容取自最新队列；重复歌曲无法准确对应时拒绝旧请求并刷新界面。
+    恢复洗牌前顺序时若歌曲集合已改变或副本对应存在歧义，保留当前队列。
+    队列事务保证列表与索引一致；当前歌曲 Flow 和 Media3 副作用的线程边界仍需单独检查。
+  - `persistence/PlaybackStatePersistenceCoordinator.kt` 统一管理保存请求与延迟任务。
+    在同步事件入口调用 `prepareStatePersist` 或 `scheduleStatePersist`，先捕获完整快照并签发请求，
+    再等待统计落盘或其它异步工作；写入串行执行，排队期间被替代的请求不再写入。
+    `PlaybackStateWriter` 只确认实际成功的后端；JSON 回退后必须完整写回 Room，才能恢复增量保存。
+    协程取消继续向上传播，释放播放器会关闭保存请求入口；存储完成回调不修改当前播放状态。
+    `RestoredPlaybackState` 表达无恢复、保留暂停进度、待自动恢复三种状态，禁止独立修改恢复进度与标记。
+  - URL 刷新的活动状态只由 `RefreshInFlightController` 持有。
+    参数相同可以复用活动任务；写回、完成和取消使用该任务的 `RefreshRequestHandle` 身份，
+    避免旧任务影响参数相同的新任务。看门狗直接读取控制器，不另存“正在刷新”标记。
+    任务完成清理要覆盖 lazy 协程尚未执行就被取消的情况。
+    播放意图通过 `updateResumePlaybackRequested` 修改并撤销冲突刷新；音质刷新在主线程内
+    同步采集当前状态和创建请求，避免捕获旧意图后跨线程读取新代次。
   - `timer/SleepTimerManager.kt`：睡眠定时器。
   - `engine/datasource/ConditionalHttpDataSourceFactory.kt`：为特定域名动态附加 Header。
   - `watchdog/PlayerManagerStartupWatchdogExtensions.kt`、
@@ -501,6 +523,12 @@
    `BootstrapSettingsSnapshot`、`ThemePreferenceSnapshot` 或 `PlaybackPreferenceSnapshot`。
 5. UI 入口通常放在 `SettingsScreen.kt` 对应 `SettingsPage` 或
    `ui/screen/tab/settings/component/` 下。
+   下载目录的超时探测和 Provider 失败分类集中在
+   `SettingsDownloadDirectoryPreflight.kt`，设置页只消费探测结果。
+   设置页切换和搜索入口由 `SettingsNavigationSearch.kt` 持有。
+   主题模式和调色选项由 `SettingsThemeControls.kt` 持有，包括切换请求和动画起点的决策。
+   播放控件位置和尺寸的对话框状态与偏好变更决策由 `SettingsPlaybackControlLayout.kt` 持有。
+   个性化和歌词外观卡片由 `SettingsPersonalizationContent.kt` 按卡片独立订阅设置流。
 6. 新增或改名设置时，同步补齐中英文字符串、`SettingsSearchIndex.kt`
    搜索关键词、设置页可见性/过滤测试和 `AutoSettingsGeneratedTest`。
 7. 设置控制 Activity alias、播放服务、系统入口或启动前行为时，必须同时验证
@@ -766,6 +794,37 @@ adb logcat | grep NeriPlayer
 8. 新增单元测试放到 `app/src/test/`；
    新增设备或 Compose UI 测试放到 `app/src/androidTest/`。
 9. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
+
+CRAP 质量门禁与职责拆分：
+
+```bash
+./gradlew :app:verifyCrap
+```
+
+此任务使用 Debug JVM 的 JaCoCo 覆盖率，输出可映射到 app 主源码的全部 JVM 方法分数，
+并单独列出 CRAP > 8 的条目。`config/quality/crap-scope.json` 的 `source_patterns`
+覆盖完整源文件，`method_scopes` 覆盖原入口中受本次拆分影响的方法；
+范围内任意方法 CRAP > 9 即失败，范围外的方法仍保留在完整报告中。
+分数使用 JaCoCo 复杂度覆盖率近似路径覆盖率；不衡量 Native 代码，也不能代替耦合度审查。
+`:app:check` 和 Android CI 均执行门禁；完整评分和范围报告位于
+`app/build/reports/crap/`，口径与依赖见 [质量检查说明](tools_pub/quality/README.md)。
+
+`OwnedMainSourceLineBudgetTest` 约束本轮拆分的自有主源码及拆出的组件严格少于 2000 物理行，
+USB `exclusive/` 下的自有 `.cpp` / `.h` 也在检查范围内。新增组件时应同步维护测试中的文件清单；
+第三方 libusb 和测试文件不属于这个行数上限。
+
+`LocalManagementLineBudgetTest` 对下载、本地数据、媒体库及相关测试执行同样的行数限制。
+移动入口文件或拆分目录时，应同步更新测试中的必需文件路径和扫描范围。
+
+拆分时应把状态、异步任务和释放逻辑交给负责该职责的组件，通过小接口接入外部能力。
+`PlayerManager` 的播放器和全局服务访问集中在对应的 `PlayerManager*Port` 适配器；
+一起听的房间状态、成员生命周期、连接恢复和控制结果由 `session/` 下各组件分别维护。
+`NowPlayingScreen`、`SettingsScreen` 和 `NeriApp` 组合页面与功能组件，具体编辑会话、目录选择、
+设置领域绑定和导航副作用在对应组件中处理。不要把原入口作为 receiver 搬进扩展文件，
+也不要让新组件回读原入口的内部状态。
+存储统计由 `StorageUsageScanner` 通过数据源接口采集快照，`StorageUsagePresenter`
+只读取快照和字符串资源；`StorageCacheCleaner` 通过文件和平台清理端口执行操作，Room 和全局服务访问集中在
+`StorageUsageAndroid.kt`。新增组件应保持这个单向依赖，并纳入完整文件门禁。
 
 当前已有测试覆盖的重点包括：
 

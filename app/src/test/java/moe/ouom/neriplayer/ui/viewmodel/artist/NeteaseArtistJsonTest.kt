@@ -1,11 +1,22 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class NeteaseArtistJsonTest {
+
+    @Test
+    fun `mixed artists retain trimming and invalid identity filtering`() {
+        val artists = parseNeteaseArtistSummaries(
+            JSONArray("""[null, "text", [], {"id":0,"name":"invalid"},
+                {"id":1,"name":"  "}, {"id":2,"name":" artist "}]""")
+        )
+
+        assertEquals(listOf(NeteaseArtistSummary(id = 2L, name = "artist")), artists)
+    }
 
     @Test
     fun `song json falls back to artists array when ar is missing`() {

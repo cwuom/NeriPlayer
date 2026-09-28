@@ -250,7 +250,7 @@ internal fun ManagedDownloadStorage.findExistingTemporaryTreeDirectory(
             )
         }
         .sortedWith(
-            compareBy<QueriedTreeChild>(
+            compareBy(
                 { if (it.name == DOWNLOAD_TEMPORARY_DIR_NAME) 0 else 1 },
                 { it.name }
             )

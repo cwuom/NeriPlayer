@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.data.traffic.hasConfirmedInternetAccess
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import kotlin.time.Duration.Companion.milliseconds
 
 internal suspend fun <T> AudioDownloadManager.withTransferCyclePermit(
     context: Context,
@@ -410,7 +411,7 @@ internal suspend fun AudioDownloadManager.waitForRetryOrCancellation(
             recoveredOnlineAtMs = null
         }
         val nextSliceMs = remainingMs.coerceAtMost(DOWNLOAD_RETRY_POLL_SLICE_MS)
-        val wakeSignalResult = withTimeoutOrNull(nextSliceMs) {
+        val wakeSignalResult = withTimeoutOrNull(nextSliceMs.milliseconds) {
             retryWakeSignalVersion.first { version ->
                 version != observedWakeSignalVersion
             }

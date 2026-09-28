@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 低频检查空间等待队列，空间不足时不让共享下载泵反复空转
@@ -132,7 +133,7 @@ class DownloadStorageRecoveryWorker(
             NPLogger.w("NERI-DownloadStorageRecovery", "存储等待入队未确认，保留 Room 凭据", error)
             if (retryEnqueue) {
                 GlobalDownloadManager.scope.launch {
-                    delay(1_000L)
+                    delay(1_000L.milliseconds)
                     if (scheduleCoordinator.canRetry(generation)) {
                         enqueue(context, initialDelayMs = 0L, retryEnqueue = false)
                     }

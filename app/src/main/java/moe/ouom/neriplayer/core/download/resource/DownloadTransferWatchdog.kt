@@ -11,6 +11,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 传输无进展监视器
@@ -37,7 +38,7 @@ internal class DownloadTransferWatchdog(
         val stalled = CompletableDeferred<DownloadTransferStalledException>()
         val monitor = async(start = CoroutineStart.UNDISPATCHED) {
             while (true) {
-                delay(pollIntervalMs)
+                delay(pollIntervalMs.milliseconds)
                 if (
                     registry.isProgressStale(
                         ownerKey = permit.ownerKey,

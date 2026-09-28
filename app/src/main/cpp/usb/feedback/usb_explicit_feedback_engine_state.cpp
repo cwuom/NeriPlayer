@@ -296,7 +296,7 @@ bool ExplicitFeedbackEngineResources::empty() const {
 
 bool ExplicitFeedbackEngine::configurationValid(
     const ExplicitFeedbackEngineConfig& config
-) const {
+) {
     return config.generation > 0 && config.feedbackTransferCount > 0 &&
         config.feedbackTransferCount <= kMaximumTransferCount &&
         config.audioTransferCount > 0 &&

@@ -28,17 +28,8 @@ package moe.ouom.neriplayer.core.player
 
 import android.app.Application
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.media.AudioDeviceCallback
-import android.media.AudioManager
-import android.net.Uri
 import android.os.Looper
-import android.os.Process
 import android.os.SystemClock
-import androidx.core.net.toUri
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -52,98 +43,70 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
-import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
-import moe.ouom.neriplayer.core.player.effects.PlaybackEffectsController
+import moe.ouom.neriplayer.core.player.audio.output.PlaybackSoundOwner
+import moe.ouom.neriplayer.core.player.audio.output.PlayerManagerPlaybackSoundPort
+import moe.ouom.neriplayer.core.player.audio.output.PlaybackQualityOwner
+import moe.ouom.neriplayer.core.player.audio.output.PlayerManagerPlaybackQualityPort
+import moe.ouom.neriplayer.core.player.audio.output.PlaybackTransportOwner
+import moe.ouom.neriplayer.core.player.audio.output.PlayerManagerPlaybackTransportPort
 import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
 import moe.ouom.neriplayer.core.player.lifecycle.clearCacheImpl
 import moe.ouom.neriplayer.core.player.lifecycle.ensureInitializedImpl
 import moe.ouom.neriplayer.core.player.lifecycle.handleAudioBecomingNoisyImpl
 import moe.ouom.neriplayer.core.player.lifecycle.initializeImpl
 import moe.ouom.neriplayer.core.player.lifecycle.releaseImpl
-import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
-import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.lyrics.LyriconUpdateCoordinator
+import moe.ouom.neriplayer.core.player.media.LocalPlaybackMediaResolver
+import moe.ouom.neriplayer.core.player.media.PlaybackMediaItemFactory
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.model.AudioDevice
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PreferredQualityKeys
-import moe.ouom.neriplayer.core.player.model.forSource
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayState
+import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.model.PlayerQueueStateStore
+import moe.ouom.neriplayer.core.player.model.RestoredPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.buildPlayerQueueDisplayState
-import moe.ouom.neriplayer.core.player.policy.progress.LONG_FORM_PLAYBACK_MIN_DURATION_MS
-import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackPositionForPersistence
-import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackResumePosition
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.metadata.YouTubeMusicLyricsCacheEntry
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
-import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.command.LocalRoomControlRestriction
+import moe.ouom.neriplayer.core.player.policy.command.resolveLocalRoomControlRestriction
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshInFlightController
-import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestSemantics
 import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
-import moe.ouom.neriplayer.core.player.policy.storage.resolveRestorableLocalMediaState
-import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationCoordinator
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationSnapshot
-import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationToken
-import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource
-import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudPlaybackRisk
-import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveOutputDeviceClass
-import moe.ouom.neriplayer.core.player.policy.usb.estimateUsbExclusiveLoudness
-import moe.ouom.neriplayer.core.player.policy.usb.predictedUsbExclusivePlaybackGain
-import moe.ouom.neriplayer.core.player.policy.usb.shouldRequestUsbExclusiveLoudPlaybackWarning
 import moe.ouom.neriplayer.core.player.prefetch.GenericUrlPrefetchCache
 import moe.ouom.neriplayer.core.player.prefetch.PlaybackDemandArbiter
 import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.prefetch.prefetchYouTubePlayableUrlWindowImpl
 import moe.ouom.neriplayer.core.player.prefetch.prefetchYouTubeQueueWindowImpl
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
-import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingMediaLoadPosition
-import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackSoundConfigForEngine
 import moe.ouom.neriplayer.core.player.policy.command.resolveExoRepeatMode
-import moe.ouom.neriplayer.core.player.policy.wake.DEFAULT_PLAYBACK_WAKE_MODE
-import moe.ouom.neriplayer.core.player.policy.wake.resolvePlaybackWakeMode
 import moe.ouom.neriplayer.core.player.policy.command.shouldShowPauseButtonForPlaybackControls
-import moe.ouom.neriplayer.core.player.policy.command.shouldBootstrapPlaybackServiceOnAppLaunch
-import moe.ouom.neriplayer.core.player.policy.command.shouldRunPlaybackServiceInForeground
 import moe.ouom.neriplayer.core.player.playback.applyListenTogetherPlaybackModeImpl
 import moe.ouom.neriplayer.core.player.playback.cancelPendingPauseRequestImpl
 import moe.ouom.neriplayer.core.player.playback.cancelVolumeFadeImpl
@@ -154,8 +117,10 @@ import moe.ouom.neriplayer.core.player.playback.pauseImpl
 import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
-import moe.ouom.neriplayer.core.player.playback.PlaybackStatsSnapshot
-import moe.ouom.neriplayer.core.player.playback.PlaybackStatsTracker
+import moe.ouom.neriplayer.core.player.playback.PlaybackStatsOwner
+import moe.ouom.neriplayer.core.player.playback.AppPlaybackStatsWritePort
+import moe.ouom.neriplayer.core.player.playback.PlaybackProgressOwner
+import moe.ouom.neriplayer.core.player.playback.PlayerManagerPlaybackProgressPort
 import moe.ouom.neriplayer.core.player.playback.playBiliVideoPartsImpl
 import moe.ouom.neriplayer.core.player.playback.playImpl
 import moe.ouom.neriplayer.core.player.playback.playPlaylistImpl
@@ -185,6 +150,10 @@ import moe.ouom.neriplayer.core.player.persistence.getTranslatedLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.hasItemsImpl
 import moe.ouom.neriplayer.core.player.persistence.hydrateSongMetadataImpl
 import moe.ouom.neriplayer.core.player.persistence.persistStateImpl
+import moe.ouom.neriplayer.core.player.persistence.PlaybackStatePersistenceCoordinator
+import moe.ouom.neriplayer.core.player.persistence.PlaybackStatePersistenceSnapshot
+import moe.ouom.neriplayer.core.player.persistence.PlaybackStateWriter
+import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.persistence.playBiliVideoAsAudioImpl
 import moe.ouom.neriplayer.core.player.persistence.playFromQueueImpl
 import moe.ouom.neriplayer.core.player.persistence.rebaseUserLyricOffsetsForSourceImpl
@@ -207,22 +176,32 @@ import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_PLAYBACK_PREFER_M4A
 import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
 import moe.ouom.neriplayer.core.player.url.safeCustomPlaybackCacheKey
-import moe.ouom.neriplayer.core.player.url.stripListenTogetherStreamQualityMetadata
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
-import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
-import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
+import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackConfirmation
+import moe.ouom.neriplayer.core.player.usb.confirmation.UsbExclusiveLoudPlaybackConfirmationOwner
+import moe.ouom.neriplayer.core.player.usb.confirmation.PlayerManagerUsbLoudPlaybackSnapshotPort
+import moe.ouom.neriplayer.core.player.usb.recovery.PlayerManagerUsbExclusiveLivenessPort
+import moe.ouom.neriplayer.core.player.usb.recovery.PlayerManagerUsbInterruptedPlaybackPort
+import moe.ouom.neriplayer.core.player.usb.recovery.UsbExclusiveLivenessOwner
+import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbSinkRoutePort
+import moe.ouom.neriplayer.core.player.usb.route.UsbSinkRouteOwner
+import moe.ouom.neriplayer.core.player.usb.route.UsbRouteTransitionOwner
+import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbSystemAudioRoutePort
+import moe.ouom.neriplayer.core.player.usb.route.UsbSystemAudioRouteOwner
+import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbPlaybackRoutePort
+import moe.ouom.neriplayer.core.player.usb.route.UsbPlaybackRouteOwner
+import moe.ouom.neriplayer.core.player.usb.route.AndroidUsbPlaybackNativeRoutePort
+import moe.ouom.neriplayer.core.player.audio.route.AudioDeviceRouteOwner
+import moe.ouom.neriplayer.core.player.audio.route.PlayerManagerAudioDeviceRoutePort
+import moe.ouom.neriplayer.core.player.usb.recovery.UsbInterruptedPlaybackIntent
+import moe.ouom.neriplayer.core.player.usb.recovery.UsbInterruptedPlaybackOwner
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.shouldTreatReadyAtStartAsUnhealthyPrepared
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_KUGOU_LYRIC_OFFSET_MS
@@ -241,7 +220,6 @@ import moe.ouom.neriplayer.listentogether.playback.authoritativeStreamUrlForCurr
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.shouldHoldListenTogetherPlaybackForSafetyPause
 import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForAudioRouteLoss
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -250,8 +228,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.playback.stopPlaybackImmediatelyImpl
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
-import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 
 internal const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
@@ -265,27 +243,21 @@ internal data class LocalPlaylistPlaybackSource(
     }
 }
 
+internal fun previousSongForLongFormProgress(previousSong: SongItem?, nextSong: SongItem?): SongItem? {
+    if (previousSong == null) return null
+    if (previousSong.sameIdentityAs(nextSong)) return null
+    return previousSong
+}
+
+internal fun localPlaylistIdForSong(source: LocalPlaylistPlaybackSource?, song: SongItem?): Long? {
+    val playlist = source ?: return null
+    return if (playlist.contains(song)) playlist.playlistId else null
+}
+
 @Suppress("ObjectPropertyName", "ktlint:standard:property-naming")
 object PlayerManager {
-    const val BILI_SOURCE_TAG = "Bilibili"
+    const val BILI_SOURCE_TAG = PlaybackMediaItemFactory.BILI_SOURCE_TAG
     const val NETEASE_SOURCE_TAG = "Netease"
-
-    internal data class UsbExclusiveLoudPlaybackConfirmation(
-        val id: Long,
-        val systemVolumePercent: Int,
-        val deviceClass: UsbExclusiveOutputDeviceClass,
-        val deviceName: String,
-        val estimatedPeakDbfs: Double,
-        val peakSource: UsbExclusiveLoudnessPeakSource,
-        val riskThresholdDbfs: Int,
-        val risk: UsbExclusiveLoudPlaybackRisk
-    )
-
-    private data class PendingUsbExclusiveLoudPlaybackConfirmation(
-        val confirmation: UsbExclusiveLoudPlaybackConfirmation,
-        val continuePlayback: () -> Unit,
-        val cancelPlayback: (() -> Unit)?
-    )
 
     @Volatile
     internal var initialized = false
@@ -295,8 +267,6 @@ object PlayerManager {
     internal val initializationLock = Any()
     internal lateinit var application: Application
     internal lateinit var player: ExoPlayer
-    private var currentWakeMode: Int = DEFAULT_PLAYBACK_WAKE_MODE
-
     @Volatile
     internal var interactiveNowPlayingVisible: Boolean = false
 
@@ -328,6 +298,10 @@ object PlayerManager {
 
     internal var ioScope = newIoScope()
     internal var mainScope = newMainScope()
+    internal var playbackStatsOwner = PlaybackStatsOwner(ioScope, AppPlaybackStatsWritePort)
+    @Volatile
+    internal var usbExclusiveLivenessOwner = UsbExclusiveLivenessOwner(mainScope, PlayerManagerUsbExclusiveLivenessPort)
+    internal var usbInterruptedPlaybackOwner = UsbInterruptedPlaybackOwner(mainScope, PlayerManagerUsbInterruptedPlaybackPort)
     internal var progressJob: Job? = null
     internal var playbackRuntimeWatchdogJob: Job? = null
     @Volatile
@@ -344,7 +318,7 @@ object PlayerManager {
     internal var playbackStartupWatchdogJob: Job? = null
     @Volatile
     internal var playbackStartupWatchdogToken = 0L
-    internal var bluetoothDisconnectPauseJob: Job? = null
+    internal var audioDeviceRouteOwner = AudioDeviceRouteOwner(mainScope, PlayerManagerAudioDeviceRoutePort)
     @Volatile
     internal var audioRouteMuteRestoreVolume: Float? = null
     @Volatile
@@ -355,39 +329,40 @@ object PlayerManager {
     internal var listenTogetherSafetyPausePendingResume = false
     @Volatile
     internal var listenTogetherSafetyResumeInFlight = false
-    internal var playbackSoundPersistJob: Job? = null
-    internal var playbackSoundApplyJob: Job? = null
+    internal var playbackSoundOwner = PlaybackSoundOwner(mainScope, ioScope, PlayerManagerPlaybackSoundPort)
+    internal var playbackTransportOwner = PlaybackTransportOwner(
+        mainScope, PlayerManagerPlaybackTransportPort, SystemClock::elapsedRealtime
+    )
+    internal val playbackProgressOwner = PlaybackProgressOwner(
+        PlayerManagerPlaybackProgressPort, SystemClock::elapsedRealtime
+    )
     internal var lastRequiresPcmAudioProcessing: Boolean? = null
-    internal val usbAudioSinkReconfigurationCoordinator =
-        UsbAudioSinkReconfigurationCoordinator()
-    internal var usbExclusiveSystemAudioReleaseJob: Job? = null
-    internal var usbExclusiveSystemAudioResumeJob: Job? = null
-    internal var usbExclusiveSystemAudioWatchdogJob: Job? = null
-    internal var usbExclusiveToggleTransitionJob: Job? = null
-    @Volatile
-    internal var usbExclusiveSystemAudioReleaseInProgress = false
-    @Volatile
-    internal var usbExclusiveToggleTransitionActive = false
-    @Volatile
-    internal var usbExclusiveToggleTransitionReason = ""
-    internal var usbExclusiveRecoveryJob: Job? = null
-    internal var usbExclusiveOpenGatePlaybackJob: Job? = null
-    internal var usbExclusiveForegroundRecoveryJob: Job? = null
-    internal var usbExclusiveBackgroundAuditJob: Job? = null
-    internal var usbExclusiveDeviceReattachRecoveryJob: Job? = null
-    internal var usbExclusiveRecoveryAttempts = 0
-    internal var usbExclusiveInterruptedPlaybackIntent: UsbExclusiveInterruptedPlaybackIntent? = null
-    @Volatile
-    internal var usbExclusiveRouteGeneration = 0L
-    @Volatile
-    internal var pendingUsbExclusivePreferenceReconfigure = false
-    internal var lastUsbExclusiveAudioSinkReconfigureAtMs = 0L
-    internal var pendingPlaybackSoundConfig: PlaybackSoundConfig? = null
-    internal var neteaseQualityRefreshJob: Job? = null
-    internal var youtubeQualityRefreshJob: Job? = null
-    internal var biliQualityRefreshJob: Job? = null
-    internal var playbackStatsPersistJob: Job? = null
-    internal val playbackStatsPersistLock = Any()
+    internal var usbSinkRouteOwner = UsbSinkRouteOwner(
+        mainScope,
+        PlayerManagerUsbSinkRoutePort,
+        SystemClock::elapsedRealtime
+    )
+    internal var usbRouteTransitionOwner = UsbRouteTransitionOwner(
+        mainScope,
+        onToggleTimeout = { reason -> markUsbExclusivePlaybackPreparing(false, reason) }
+    )
+    internal var usbSystemAudioRouteOwner = UsbSystemAudioRouteOwner(
+        usbRouteTransitionOwner,
+        usbSinkRouteOwner,
+        PlayerManagerUsbSystemAudioRoutePort,
+        SystemClock::elapsedRealtime
+    )
+    internal var usbPlaybackRouteOwner = UsbPlaybackRouteOwner(
+        mainScope,
+        usbRouteTransitionOwner,
+        usbSinkRouteOwner,
+        usbSystemAudioRouteOwner,
+        PlayerManagerUsbPlaybackRoutePort,
+        AndroidUsbPlaybackNativeRoutePort
+    )
+    internal val usbExclusiveInterruptedPlaybackIntent: UsbInterruptedPlaybackIntent?
+        get() = usbInterruptedPlaybackOwner.intent
+    internal var playbackQualityOwner = PlaybackQualityOwner(ioScope, PlayerManagerPlaybackQualityPort)
 
     internal val localRepo: LocalPlaylistRepository
         get() = LocalPlaylistRepository.getInstance(application)
@@ -395,23 +370,15 @@ object PlayerManager {
     internal lateinit var stateFile: File
     internal lateinit var playbackStateFile: File
 
-    internal var preferredQuality: String = "exhigh"
-        set(value) {
-            field = value
-            publishPreferredQualityKeys()
-        }
-    internal var youtubePreferredQuality: String = "high"
-        set(value) {
-            field = value
-            publishPreferredQualityKeys()
-        }
-    internal var biliPreferredQuality: String = "high"
-        set(value) {
-            field = value
-            publishPreferredQualityKeys()
-        }
-
-    private val _preferredQualityKeys = MutableStateFlow(PreferredQualityKeys())
+    internal var preferredQuality: String
+        get() = playbackQualityOwner.neteasePreferredQuality
+        set(value) = playbackQualityOwner.setPreferredQuality(PlaybackAudioSource.NETEASE, value)
+    internal var youtubePreferredQuality: String
+        get() = playbackQualityOwner.youtubePreferredQuality
+        set(value) = playbackQualityOwner.setPreferredQuality(PlaybackAudioSource.YOUTUBE_MUSIC, value)
+    internal var biliPreferredQuality: String
+        get() = playbackQualityOwner.biliPreferredQuality
+        set(value) = playbackQualityOwner.setPreferredQuality(PlaybackAudioSource.BILIBILI, value)
 
     /**
      * 各平台的音质偏好, 供切换弹窗回显
@@ -419,16 +386,8 @@ object PlayerManager {
      * 播放页弹窗改的是全局偏好, 选中项不能拿当前流实测出来的档位充数
      * 否则平台只发得出低码率时弹窗会显示低档, 用户点一下就把默认设置改掉了
      */
-    val preferredQualityKeys: StateFlow<PreferredQualityKeys> =
-        _preferredQualityKeys.asStateFlow()
-
-    private fun publishPreferredQualityKeys() {
-        _preferredQualityKeys.value = PreferredQualityKeys(
-            netease = preferredQuality,
-            youtube = youtubePreferredQuality,
-            bili = biliPreferredQuality
-        )
-    }
+    val preferredQualityKeys: StateFlow<PreferredQualityKeys>
+        get() = playbackQualityOwner.preferredKeys
     internal var mobileDataFollowDefaultAudioQuality = true
     internal var mobileDataNeteaseAudioQuality: String = "standard"
     internal var mobileDataYouTubeAudioQuality: String = "low"
@@ -439,9 +398,10 @@ object PlayerManager {
     internal var playbackFadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackCrossfadeInDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
-    @Volatile
-    internal var playbackSoundConfig = PlaybackSoundConfig()
-    internal var playbackHighResolutionOutputEnabled = false
+    internal val playbackSoundConfig: PlaybackSoundConfig
+        get() = playbackSoundOwner.config
+    internal val playbackHighResolutionOutputEnabled: Boolean
+        get() = playbackSoundOwner.highResolutionEnabled
     internal var lyriconEnabled = false
     @Volatile
     internal var amllLyricsEnabled = false
@@ -472,24 +432,48 @@ object PlayerManager {
     internal var stopOnBluetoothDisconnectEnabled = true
     @Volatile
     internal var usbExclusivePlaybackEnabled = false
-    @Volatile
-    internal var usbExclusiveAppInForeground = true
+    internal val usbExclusiveAppInForeground: Boolean
+        get() = usbExclusiveLivenessOwner.appInForeground
     @Volatile
     internal var usbExclusivePreferences = UsbExclusivePreferences()
     internal var allowMixedPlaybackEnabled = false
 
-    internal data class UsbExclusiveInterruptedPlaybackIntent(
-        val queueIndex: Int,
-        val positionMs: Long,
-        val requestToken: Long,
-        val reason: String,
-        val recordedAtMs: Long = SystemClock.elapsedRealtime()
-    )
+    private val queueStore = PlayerQueueStateStore()
+    internal val currentPlaylist: List<SongItem>
+        get() = queueStore.snapshot().playlist
+    internal var currentIndex: Int
+        get() = queueStore.snapshot().currentIndex
+        set(value) {
+            queueStore.select(value)
+        }
+    internal fun currentQueueSnapshot(): PlayerQueueSnapshot = queueStore.snapshot()
 
-    @Volatile
-    internal var currentPlaylist: List<SongItem> = emptyList()
-    @Volatile
-    internal var currentIndex = -1
+    internal fun publishCurrentQueue(
+        playlist: List<SongItem>,
+        currentIndex: Int,
+        bumpDisplayRevision: Boolean = false
+    ) {
+        queueStore.publish(playlist, currentIndex)
+        if (bumpDisplayRevision) bumpCurrentQueueDisplayRevision()
+    }
+
+    internal fun updateCurrentQueueSongs(
+        transform: (List<SongItem>) -> List<SongItem>?
+    ): PlayerQueueSnapshot? = queueStore.updatePlaylist(transform)
+
+    internal fun updateCurrentQueue(
+        bumpDisplayRevision: Boolean = false,
+        transform: (PlayerQueueSnapshot) -> PlayerQueueSnapshot?
+    ): PlayerQueueSnapshot? {
+        val updated = queueStore.update(transform)
+        if (updated != null && bumpDisplayRevision) bumpCurrentQueueDisplayRevision()
+        return updated
+    }
+
+    internal fun updateQueuedSong(
+        song: SongItem,
+        transform: (SongItem) -> SongItem?
+    ): SongItem? = queueStore.updateSongMatching(song, transform)
     @Volatile
     internal var shuffleRestorePlaylistReference: List<SongItem>? = null
     @Volatile
@@ -503,10 +487,6 @@ object PlayerManager {
     internal const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
     internal const val STATE_PERSIST_DEBOUNCE_MS = 250L
     internal const val DEFAULT_FADE_DURATION_MS = 500L
-    internal const val AUTO_TRANSITION_EXTERNAL_PAUSE_GUARD_MS = 2_000L
-    internal const val AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS = 1_500L
-    internal const val USB_EXCLUSIVE_FOCUS_PAUSE_GUARD_MS = 3_000L
-    internal const val PENDING_SEEK_POSITION_TOLERANCE_MS = 1_500L
     internal const val STARTUP_STALL_POSITION_TOLERANCE_MS = 500L
     internal const val STARTUP_STALL_LOCAL_TIMEOUT_MS = 5_000L
     internal const val STARTUP_STALL_REMOTE_TIMEOUT_MS = 10_000L
@@ -517,46 +497,58 @@ object PlayerManager {
     internal const val STARTUP_STALL_BUFFERING_GRACE_MS = 2_000L
     internal const val STARTUP_STALL_USB_EARLY_TIMEOUT_MS = 4_000L
     internal const val STARTUP_STALL_MAX_RECOVERY_ATTEMPTS = 3
-    internal const val QUALITY_CHANGE_REFRESH_DEBOUNCE_MS = 0L
     internal const val MIN_FADE_STEPS = 4
     internal const val MAX_FADE_STEPS = 30
-    @Volatile
-    internal var urlRefreshInProgress = false
     internal data class UrlRefreshOperation(
-        val semantics: RefreshRequestSemantics,
         val deferred: CompletableDeferred<SongUrlResult>,
         val job: Job
     )
     internal val urlRefreshController = RefreshInFlightController<UrlRefreshOperation>()
-    @Volatile
-    internal var pendingSeekPositionMs: Long = C.TIME_UNSET
-    internal var expeditedYouTubeSeekRecoveryPending = false
+    internal val expeditedYouTubeSeekRecoveryPending: Boolean
+        get() = playbackProgressOwner.expeditedYouTubeSeekRecoveryPending
     internal var playbackPositionGeneration: Long = 0L
     internal var lastUrlRefreshKey: String? = null
     internal var lastUrlRefreshAtMs: Long = 0L
     internal var currentMediaUrlResolvedAtMs: Long = 0L
     internal var currentPlaybackDemandCacheKey: String? = null
-    internal var restoredResumePositionMs: Long = 0L
-    internal var restoredShouldResumePlayback = false
-    internal var lastStatePersistAtMs: Long = 0L
-    internal var lastPersistedPlaylistReference: List<SongItem>? = null
-    internal var lastPersistedPlaybackState: PersistedPlaybackState? = null
-    internal var scheduledStatePersistJob: Job? = null
-    internal var lastLongFormPlaybackProgressPersistAtMs: Long = 0L
-    internal var lastAutoTrackAdvanceAtMs: Long = 0L
+    private val restoredPlayback = AtomicReference<RestoredPlaybackState>(RestoredPlaybackState.None)
+    internal val restoredResumePositionMs: Long
+        get() = restoredPlayback.get().positionMs
+    internal val restoredShouldResumePlayback: Boolean
+        get() = restoredPlayback.get() is RestoredPlaybackState.ResumePending
+
+    internal fun restoredPlaybackSnapshot(): RestoredPlaybackState = restoredPlayback.get()
+
+    internal fun setRestoredPlayback(positionMs: Long, shouldResume: Boolean) {
+        restoredPlayback.set(RestoredPlaybackState.from(positionMs, shouldResume))
+    }
+
+    internal fun clearRestoredPlayback() {
+        restoredPlayback.set(RestoredPlaybackState.None)
+    }
+
+    internal fun consumeRestoredPlayback(expected: RestoredPlaybackState): Boolean =
+        restoredPlayback.compareAndSet(expected, RestoredPlaybackState.None)
+
+    internal fun suppressRestoredAutoResume() {
+        restoredPlayback.updateAndGet { it.withoutAutoResume() }
+    }
+
     @Volatile
-    internal var lastUsbExclusiveFocusDisruptionAtMs: Long = 0L
-    internal val statePersistMutex = Mutex()
+    internal var lastStatePersistAtMs: Long = 0L
+    internal val statePersistenceCoordinator = PlaybackStatePersistenceCoordinator<PlaybackStatePersistenceSnapshot>()
+    internal val statePersistenceWriter = PlaybackStateWriter()
     @Volatile
     internal var resumePlaybackRequested = false
-        set(value) {
+        private set(value) {
             field = value
+            urlRefreshController.cancelIfPlaybackIntentChanged(value)
             syncPlaybackControlPlayingState()
         }
     @Volatile
     internal var suppressAutoResumeForCurrentSession = false
-    @Volatile
-    internal var listenTogetherSyncPlaybackRate = 1f
+    internal val listenTogetherSyncPlaybackRate: Float
+        get() = playbackSoundOwner.listenTogetherSyncRate
 
     internal val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
@@ -566,8 +558,7 @@ object PlayerManager {
     internal var localPlaylistPlaybackSource: LocalPlaylistPlaybackSource? = null
     internal val playbackDemandArbiter = PlaybackDemandArbiter()
 
-    internal val _currentQueueFlow = MutableStateFlow<List<SongItem>>(emptyList())
-    val currentQueueFlow: StateFlow<List<SongItem>> = _currentQueueFlow
+    val currentQueueFlow: StateFlow<List<SongItem>> = queueStore.playlistFlow
     internal val _currentQueueDisplayRevisionFlow = MutableStateFlow(0L)
     val currentQueueDisplayRevisionFlow: StateFlow<Long> = _currentQueueDisplayRevisionFlow
 
@@ -590,8 +581,8 @@ object PlayerManager {
     internal val _playbackPositionMs = MutableStateFlow(0L)
     val playbackPositionFlow: StateFlow<Long> = _playbackPositionMs
 
-    internal val _playbackDurationMs = MutableStateFlow(0L)
-    val playbackDurationFlow: StateFlow<Long> = _playbackDurationMs
+    val playbackDurationFlow: StateFlow<Long>
+        get() = playbackProgressOwner.duration
 
     internal val _usbExclusivePlaybackPreparingFlow = MutableStateFlow(false)
     val usbExclusivePlaybackPreparingFlow: StateFlow<Boolean> =
@@ -606,7 +597,6 @@ object PlayerManager {
 
     internal val _currentAudioDevice = MutableStateFlow<AudioDevice?>(null)
     val currentAudioDeviceFlow: StateFlow<AudioDevice?> = _currentAudioDevice
-    internal var audioDeviceCallback: AudioDeviceCallback? = null
 
     @Volatile
     internal var externalBluetoothLyricsSongKey: String? = null
@@ -634,14 +624,10 @@ object PlayerManager {
     internal val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()
 
-    private val _usbExclusiveLoudPlaybackConfirmationFlow =
-        MutableStateFlow<UsbExclusiveLoudPlaybackConfirmation?>(null)
+    private val usbExclusiveLoudPlaybackConfirmationOwner = UsbExclusiveLoudPlaybackConfirmationOwner()
     internal val usbExclusiveLoudPlaybackConfirmationFlow:
         StateFlow<UsbExclusiveLoudPlaybackConfirmation?> =
-        _usbExclusiveLoudPlaybackConfirmationFlow
-    private var pendingUsbExclusiveLoudPlaybackConfirmation:
-        PendingUsbExclusiveLoudPlaybackConfirmation? = null
-    private var nextUsbExclusiveLoudPlaybackConfirmationId = 0L
+        usbExclusiveLoudPlaybackConfirmationOwner.confirmationFlow
 
     internal val _playbackCommandFlow = MutableSharedFlow<PlaybackCommand>(
         extraBufferCapacity = 32
@@ -653,13 +639,10 @@ object PlayerManager {
     val currentMediaUrlFlow: StateFlow<String?> = _currentMediaUrl
 
     internal val _currentPlaybackAudioInfo = MutableStateFlow<PlaybackAudioInfo?>(null)
-    @Suppress("unused")
     val currentPlaybackAudioInfoFlow: StateFlow<PlaybackAudioInfo?> = _currentPlaybackAudioInfo
 
-    internal val playbackEffectsController = PlaybackEffectsController()
-    internal val _playbackSoundState = MutableStateFlow(PlaybackSoundState())
-    val playbackSoundStateFlow: StateFlow<PlaybackSoundState> = _playbackSoundState
-    internal var playbackStatsTracker = PlaybackStatsTracker()
+    val playbackSoundStateFlow: StateFlow<PlaybackSoundState>
+        get() = playbackSoundOwner.state
 
     /** 本地歌单快照, 供收藏状态和歌单选择弹窗使用 */
     internal val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
@@ -744,93 +727,44 @@ object PlayerManager {
 
     internal fun setCurrentSongForPlayback(song: SongItem?, syncLyricon: Boolean = true) {
         val previousSong = _currentSongFlow.value
-        if (previousSong != null && !previousSong.sameIdentityAs(song)) {
-            persistLongFormPlaybackProgress(
-                song = previousSong,
-                positionMs = _playbackPositionMs.value,
-                durationMs = _playbackDurationMs.value
-            )
-            lastLongFormPlaybackProgressPersistAtMs = 0L
-        }
+        playbackProgressOwner.persistPreviousSongProgress(previousSong, song)
+        publishCurrentSong(song)
+        if (previousSong !== song) syncChangedSongOutputs(song, syncLyricon)
+    }
+
+    private fun publishCurrentSong(song: SongItem?) {
         _currentSongFlow.value = song
-        _playbackDurationMs.value = song?.durationMs?.coerceAtLeast(0L) ?: 0L
-        if (previousSong === song) return
-        if (syncLyricon) {
-            syncLyriconSong(song)
-        }
+        playbackProgressOwner.onCurrentSongPublished(song)
+    }
+
+    private fun syncChangedSongOutputs(song: SongItem?, syncLyricon: Boolean) {
+        if (syncLyricon) syncLyriconSong(song)
         syncExternalBluetoothLyrics(song)
-        persistPlaybackStatsSnapshotAsync(
-            synchronized(playbackStatsTracker) {
-                playbackStatsTracker.onSongChanged(
-                    song = song,
-                    localPlaylistId = localPlaylistPlaybackSource
-                        ?.takeIf { source -> source.contains(song) }
-                        ?.playlistId
-                )
-            }
+        playbackStatsOwner.onSongChanged(
+            song = song,
+            localPlaylistId = currentSongLocalPlaylistId(song),
+            writesEnabled = initialized
         )
+    }
+
+    private fun currentSongLocalPlaylistId(song: SongItem?): Long? {
+        return localPlaylistIdForSong(localPlaylistPlaybackSource, song)
     }
 
     internal fun resolveRememberedLongFormPlaybackStartPosition(
         song: SongItem,
         requestedPositionMs: Long,
         allowRememberedPosition: Boolean
-    ): Long {
-        val normalizedRequestedPositionMs = requestedPositionMs.coerceAtLeast(0L)
-        if (
-            !allowRememberedPosition ||
-            !rememberLongFormPlaybackProgressEnabled ||
-            song.durationMs < LONG_FORM_PLAYBACK_MIN_DURATION_MS
-        ) {
-            return normalizedRequestedPositionMs
-        }
-        return resolveLongFormPlaybackResumePosition(
-            enabled = true,
-            durationMs = song.durationMs,
-            requestedPositionMs = normalizedRequestedPositionMs,
-            rememberedPositionMs = AppContainer.playHistoryRepo.rememberedPlaybackPosition(song),
-            allowRememberedPosition = allowRememberedPosition
-        )
-    }
+    ): Long = playbackProgressOwner.resolveRememberedStartPosition(
+        song, requestedPositionMs, allowRememberedPosition
+    )
 
-    internal fun persistLongFormPlaybackProgress(
-        song: SongItem?,
-        positionMs: Long,
-        durationMs: Long
-    ) {
-        val songToPersist = song ?: return
-        val effectiveDurationMs = maxOf(
-            songToPersist.durationMs.coerceAtLeast(0L),
-            durationMs.coerceAtLeast(0L)
-        )
-        val rememberedPositionMs = resolveLongFormPlaybackPositionForPersistence(
-            enabled = rememberLongFormPlaybackProgressEnabled,
-            durationMs = effectiveDurationMs,
-            positionMs = positionMs
-        ) ?: return
-        AppContainer.playHistoryRepo.updateRememberedPlaybackPosition(
-            song = songToPersist,
-            positionMs = rememberedPositionMs
-        )
+    internal fun persistLongFormPlaybackProgress(song: SongItem?, positionMs: Long, durationMs: Long) {
+        playbackProgressOwner.persistLongFormProgress(song, positionMs, durationMs)
     }
 
     internal fun persistCurrentLongFormPlaybackProgress() {
-        val song = _currentSongFlow.value ?: return
-        val playerPositionMs = if (isPlayerInitialized()) {
-            runCatching { player.currentPosition.coerceAtLeast(0L) }.getOrDefault(0L)
-        } else {
-            0L
-        }
-        val playerDurationMs = if (isPlayerInitialized()) {
-            runCatching { player.duration.coerceAtLeast(0L) }.getOrDefault(0L)
-        } else {
-            0L
-        }
-        persistLongFormPlaybackProgress(
-            song = song,
-            positionMs = maxOf(_playbackPositionMs.value, playerPositionMs),
-            durationMs = maxOf(_playbackDurationMs.value, playerDurationMs)
-        )
+        playbackProgressOwner.persistCurrentLongFormProgress()
     }
 
     internal fun syncLyriconSong(
@@ -957,153 +891,39 @@ object PlayerManager {
         resumePlaybackRequested = requested
     }
 
-    fun isTransportActive(): Boolean {
-        ensureInitialized()
-        return isTransportActiveWithoutInitialization()
-    }
+    fun isTransportActive(): Boolean = playbackTransportOwner.isTransportActive()
 
-    internal fun isTransportActiveWithoutInitialization(): Boolean {
-        if (!initialized || _currentSongFlow.value == null) return false
-        return resumePlaybackRequested ||
-            playJob?.isActive == true ||
-            pendingPauseJob?.isActive == true ||
-            _playWhenReadyFlow.value ||
-            _isPlayingFlow.value
-    }
+    internal fun isTransportActiveWithoutInitialization(): Boolean =
+        playbackTransportOwner.isTransportActiveWithoutInitialization()
 
-    fun shouldRunPlaybackServiceInForeground(): Boolean {
-        ensureInitialized()
-        if (!initialized || _currentSongFlow.value == null) return false
-        return shouldRunPlaybackServiceInForeground(
-            hasCurrentSong = _currentSongFlow.value != null,
-            resumePlaybackRequested = resumePlaybackRequested,
-            playJobActive = playJob?.isActive == true,
-            pendingPauseJobActive = pendingPauseJob?.isActive == true,
-            playWhenReady = _playWhenReadyFlow.value,
-            isPlaying = _isPlayingFlow.value,
-            playerPlaybackState = _playerPlaybackStateFlow.value
-        )
-    }
+    fun shouldRunPlaybackServiceInForeground(): Boolean =
+        playbackTransportOwner.shouldRunForegroundService()
 
-    fun shouldBootstrapPlaybackServiceOnAppLaunch(): Boolean {
-        ensureInitialized()
-        val currentSong = _currentSongFlow.value
-        if (!initialized || currentSong == null) return false
-        val canAutoResumeRestoredPlayback =
-            restoredShouldResumePlayback &&
-                (!isLocalSong(currentSong) || isRestorableLocalSong(currentSong))
-        return shouldBootstrapPlaybackServiceOnAppLaunch(
-            hasCurrentSong = true,
-            hasPendingRestoredPlaybackResume = canAutoResumeRestoredPlayback,
-            resumePlaybackRequested = resumePlaybackRequested,
-            playJobActive = playJob?.isActive == true,
-            pendingPauseJobActive = pendingPauseJob?.isActive == true,
-            playWhenReady = _playWhenReadyFlow.value,
-            isPlaying = _isPlayingFlow.value,
-            playerPlaybackState = _playerPlaybackStateFlow.value
-        )
-    }
+    fun shouldBootstrapPlaybackServiceOnAppLaunch(): Boolean =
+        playbackTransportOwner.shouldBootstrapService()
 
-    fun isTransportBuffering(): Boolean {
-        ensureInitialized()
-        if (!initialized || !isTransportActive()) return false
-        return playJob?.isActive == true || _playerPlaybackStateFlow.value == Player.STATE_BUFFERING
-    }
+    fun isTransportBuffering(): Boolean = playbackTransportOwner.isBuffering()
 
-    fun shouldIgnoreExternalPauseCommand(source: String): Boolean {
-        ensureInitialized()
-        if (!initialized || _currentSongFlow.value == null) return false
-        if (source.isUserInitiatedExternalPlaybackCommand()) return false
-        if (shouldIgnoreUsbExclusiveFocusPause(source)) return true
-        if (!resumePlaybackRequested) return false
-
-        val autoAdvanceAgeMs = SystemClock.elapsedRealtime() - lastAutoTrackAdvanceAtMs
-        if (autoAdvanceAgeMs !in 0L..AUTO_TRANSITION_EXTERNAL_PAUSE_GUARD_MS) return false
-
-        if (playJob?.isActive == true) {
-            return true
-        }
-
-        val currentPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
-            .getOrDefault(Long.MAX_VALUE)
-        val playbackState = _playerPlaybackStateFlow.value
-        if (playbackState == Player.STATE_ENDED) {
-            return true
-        }
-        if (!_playWhenReadyFlow.value) {
-            return false
-        }
-        return when (playbackState) {
-            Player.STATE_BUFFERING,
-            Player.STATE_READY -> currentPositionMs <= AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS
-            else -> false
-        }
-    }
-
-    private fun String.isUserInitiatedExternalPlaybackCommand(): Boolean {
-        return equals("intent_pause", ignoreCase = true) ||
-            equals("intent_stop", ignoreCase = true) ||
-            startsWith("media_session_", ignoreCase = true)
-    }
+    fun shouldIgnoreExternalPauseCommand(source: String): Boolean =
+        playbackTransportOwner.shouldIgnoreExternalPause(source)
 
     internal fun markUsbExclusiveFocusDisrupted(change: Int) {
-        markUsbExclusiveShortDisruption("audio_focus:$change")
+        playbackTransportOwner.markUsbFocusDisrupted(change)
     }
 
     internal fun pauseForUsbExclusiveFocusLoss(change: Int) {
-        if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled || !initialized) return
-        if (!isPlayerInitialized()) return
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainScope.launch { pauseForUsbExclusiveFocusLoss(change) }
-            return
-        }
-        if (!resumePlaybackRequested && !_playWhenReadyFlow.value && !_isPlayingFlow.value) {
-            return
-        }
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "pause USB exclusive playback after audio focus loss: change=$change " +
-                "playWhenReady=${_playWhenReadyFlow.value} isPlaying=${_isPlayingFlow.value}"
-        )
-        pauseImpl(
-            forcePersist = false,
-            commandSource = PlaybackCommandSource.REMOTE_SYNC,
-            allowFadeOut = false,
-            debugReason = "usb_focus_loss:$change"
-        )
+        playbackTransportOwner.pauseForUsbFocusLoss(change)
     }
 
     fun markUsbExclusiveShortDisruption(reason: String) {
-        if (!usbExclusivePlaybackEnabled) return
-        lastUsbExclusiveFocusDisruptionAtMs = SystemClock.elapsedRealtime()
-        val nativeState = UsbExclusiveSessionController.state.value
-        val openGate = UsbExclusiveSessionController.playerPcmOpenGateReason() ?: "open"
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "USB exclusive short disruption noted: reason=$reason " +
-                "enabled=$usbExclusivePlaybackEnabled allowMixed=$allowMixedPlaybackEnabled " +
-                "resumeRequested=$resumePlaybackRequested playWhenReady=${_playWhenReadyFlow.value} " +
-                "isPlaying=${_isPlayingFlow.value} nativeSource=${nativeState.source} " +
-                "nativeOpened=${nativeState.opened} nativeStreaming=${nativeState.streaming} " +
-                "openGate=$openGate"
-        )
+        playbackTransportOwner.markUsbShortDisruption(reason)
     }
 
-    internal fun isRecentUsbExclusiveFocusDisruption(): Boolean {
-        if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
-        val ageMs = SystemClock.elapsedRealtime() - lastUsbExclusiveFocusDisruptionAtMs
-        return ageMs in 0L..USB_EXCLUSIVE_FOCUS_PAUSE_GUARD_MS
-    }
-
-    private fun shouldIgnoreUsbExclusiveFocusPause(source: String): Boolean {
-        if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
-        if (source.contains("stop", ignoreCase = true)) return false
-        if (!resumePlaybackRequested && !_playWhenReadyFlow.value && !_isPlayingFlow.value) return false
-        return isRecentUsbExclusiveFocusDisruption()
-    }
+    internal fun isRecentUsbExclusiveFocusDisruption(): Boolean =
+        playbackTransportOwner.isRecentUsbFocusDisruption()
 
     internal fun markAutoTrackAdvance() {
-        lastAutoTrackAdvanceAtMs = SystemClock.elapsedRealtime()
+        playbackTransportOwner.markAutoTrackAdvance()
     }
 
     internal fun fadeStepsFor(durationMs: Long): Int {
@@ -1124,93 +944,24 @@ object PlayerManager {
     }
 
     internal fun applyAudioFocusPolicy() {
-        if (!::player.isInitialized) return
-        runPlayerActionOnMainThread {
-            applyAudioFocusPolicyOnMainThread()
-        }
+        playbackTransportOwner.applyAudioFocusPolicy()
     }
 
     internal fun applyAudioFocusPolicyOnMainThread() {
-        if (!::player.isInitialized) return
-        val useUsbExclusiveFocusGuard = shouldUseUsbExclusiveFocusGuard()
-        val bypassPlatformFocus = shouldBypassPlatformAudioFocusForUsbExclusive()
-        val handleFocus = !allowMixedPlaybackEnabled && !bypassPlatformFocus
-        UsbExclusiveDebugLogger.logFocusPolicy(
-            usbExclusivePlayback = usbExclusivePlaybackEnabled,
-            allowMixedPlayback = allowMixedPlaybackEnabled,
-            handleFocus = handleFocus
-        )
-        val attributes = AudioAttributes.Builder()
-            .setUsage(C.USAGE_MEDIA)
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-            .build()
-        player.setAudioAttributes(attributes, handleFocus)
-        StartupAudioFocusController.updateForForeground(
-            context = application,
-            enabled = useUsbExclusiveFocusGuard,
-            allowMixedPlayback = allowMixedPlaybackEnabled,
-            usbExclusivePlayback = usbExclusivePlaybackEnabled,
-            usbExclusiveNativeActive = useUsbExclusiveFocusGuard,
-            transportActive = isTransportActiveWithoutInitialization(),
-            reason = "apply_audio_focus_policy"
-        )
+        playbackTransportOwner.applyAudioFocusPolicyOnMainThread()
     }
 
-    internal fun shouldUseUsbExclusiveFocusGuard(): Boolean {
-        if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
-        val pathState = UsbExclusiveAudioPathTracker.state.value
-        val nativeState = UsbExclusiveSessionController.state.value
-        return pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB &&
-            pathState.sinkPlaying &&
-            nativeState.source == "player_pcm" &&
-            nativeState.streaming
-    }
+    internal fun shouldUseUsbExclusiveFocusGuard(): Boolean =
+        playbackTransportOwner.shouldUseUsbFocusGuard()
 
-    internal fun shouldBypassPlatformAudioFocusForUsbExclusive(): Boolean {
-        if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
-        val pathState = UsbExclusiveAudioPathTracker.state.value
-        val nativeState = UsbExclusiveSessionController.state.value
-        if (
-            nativeState.transitioning ||
-            (nativeState.opened && nativeState.source == "player_pcm") ||
-            pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB
-        ) {
-            return true
-        }
-        val fallbackReason = pathState.fallbackReason ?: return true
-        return fallbackReason.startsWith("native_open_deferred") ||
-            fallbackReason.startsWith("native_reopen_cooling_down") ||
-            fallbackReason.contains("transport", ignoreCase = true) ||
-            fallbackReason.contains("start", ignoreCase = true) ||
-            fallbackReason.contains("play", ignoreCase = true)
-    }
+    internal fun shouldBypassPlatformAudioFocusForUsbExclusive(): Boolean =
+        playbackTransportOwner.shouldBypassPlatformFocus()
 
-    internal fun isUsbExclusiveNativePlaybackStable(): Boolean {
-        if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
-        val pathState = UsbExclusiveAudioPathTracker.state.value
-        val nativeState = UsbExclusiveSessionController.state.value
-        val metrics = nativeState.runtimeReport.usbRuntimeMetrics()
-        return pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB &&
-            pathState.sinkPlaying &&
-            pathState.fallbackReason == null &&
-            nativeState.source == "player_pcm" &&
-            nativeState.opened &&
-            nativeState.streaming &&
-            !nativeState.transitioning &&
-            metrics.hasHealthyTransport
-    }
+    internal fun isUsbExclusiveNativePlaybackStable(): Boolean =
+        playbackTransportOwner.isUsbNativePlaybackStable()
 
-    internal fun isUsbExclusivePlaybackActiveForForegroundService(): Boolean {
-        if (!isPlayerInitialized()) return false
-        if (!usbExclusivePlaybackEnabled) return false
-        if (!isTransportActiveWithoutInitialization()) return false
-        val nativeState = UsbExclusiveSessionController.state.value
-        val pathState = UsbExclusiveAudioPathTracker.state.value
-        return nativeState.streaming ||
-            nativeState.opened ||
-            pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB ||
-            pathState.requestedPath == UsbExclusiveAudioPathState.REQUESTED_NATIVE_USB
-    }
+    internal fun isUsbExclusivePlaybackActiveForForegroundService(): Boolean =
+        playbackTransportOwner.isUsbPlaybackActiveForForegroundService()
 
     internal fun isPreparedInPlayer(): Boolean =
         player.currentMediaItem != null &&
@@ -1219,17 +970,7 @@ object PlayerManager {
 
     fun setListenTogetherSyncPlaybackRate(rate: Float) {
         ensureInitialized()
-        val resolvedRate = rate.coerceIn(0.95f, 1.05f)
-        if (kotlin.math.abs(listenTogetherSyncPlaybackRate - resolvedRate) < 0.001f) return
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "setListenTogetherSyncPlaybackRate(): old=$listenTogetherSyncPlaybackRate, new=$resolvedRate, stack=[${debugStackHint()}]"
-        )
-        listenTogetherSyncPlaybackRate = resolvedRate
-        schedulePlaybackSoundConfigApply(
-            previousConfig = playbackSoundConfig,
-            newConfig = playbackSoundConfig
-        )
+        playbackSoundOwner.setListenTogetherSyncRate(rate)
     }
 
     fun resetListenTogetherSyncPlaybackRate() {
@@ -1247,6 +988,7 @@ object PlayerManager {
         cancelPendingPauseRequest(resetVolumeToFull = true)
         clearListenTogetherSafetyPause()
         playbackRequestToken += 1
+        urlRefreshController.cancelCurrent()
         cancelPlaybackStartupWatchdog(reason = "listen_together_reset")
         clearActivePlaybackCandidates()
         playJob?.cancel()
@@ -1256,8 +998,7 @@ object PlayerManager {
         currentYouTubePrefetchJob = null
         currentYouTubePrefetchVideoIds = emptySet()
         updateResumePlaybackRequested(false)
-        restoredShouldResumePlayback = false
-        restoredResumePositionMs = 0L
+        clearRestoredPlayback()
         stopProgressUpdates()
         cancelVolumeFade(resetToFull = true)
         persistCurrentLongFormPlaybackProgress()
@@ -1269,46 +1010,27 @@ object PlayerManager {
         _currentMediaUrl.value = null
         currentMediaUrlResolvedAtMs = 0L
         setCurrentSongForPlayback(null)
-        _currentQueueFlow.value = emptyList()
+        publishCurrentQueue(emptyList(), -1)
         shuffleRestorePlaylistReference = null
         shuffleRestoreCurrentIndex = -1
-        currentPlaylist = emptyList()
-        currentIndex = -1
         consecutivePlayFailures = 0
         NPLogger.d("NERI-PlayerManager", "resetForListenTogetherJoin(): state cleared")
-        ioScope.launch {
-            persistState(positionMs = 0L, shouldResumePlayback = false)
-        }
+        scheduleStatePersist(positionMs = 0L, shouldResumePlayback = false, debounceMs = 0L)
     }
 
-    internal fun pendingSeekPositionOrNull(): Long? {
-        return pendingSeekPositionMs.takeIf { it != C.TIME_UNSET }
-    }
+    internal fun pendingSeekPositionOrNull(): Long? =
+        playbackProgressOwner.pendingSeekPositionOrNull()
 
     internal fun rememberPendingSeekPosition(positionMs: Long) {
-        pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
+        playbackProgressOwner.rememberPendingSeekPosition(positionMs)
     }
 
     internal fun clearPendingSeekPosition() {
-        pendingSeekPositionMs = C.TIME_UNSET
-        expeditedYouTubeSeekRecoveryPending = false
+        playbackProgressOwner.clearPendingSeekPosition()
     }
 
-    internal fun resolveDisplayedPlaybackPosition(actualPositionMs: Long): Long {
-        val actual = resolvePendingMediaLoadPosition(
-            pendingLoadActive = isPendingMediaLoadActive(),
-            requestedPositionMs = pendingMediaLoadPositionMs,
-            livePlayerPositionMs = actualPositionMs
-        )
-        if (isPendingMediaLoadActive()) return actual
-        val pending = pendingSeekPositionOrNull() ?: return actual
-        return if (kotlin.math.abs(actual - pending) <= PENDING_SEEK_POSITION_TOLERANCE_MS) {
-            clearPendingSeekPosition()
-            actual
-        } else {
-            pending
-        }
-    }
+    internal fun resolveDisplayedPlaybackPosition(actualPositionMs: Long): Long =
+        playbackProgressOwner.resolveDisplayedPosition(actualPositionMs)
 
     internal fun isPendingMediaLoadActive(): Boolean {
         return pendingMediaLoadActive
@@ -1498,7 +1220,7 @@ object PlayerManager {
     internal fun rejectUsbExclusiveToggleControl(): Boolean {
         NPLogger.w(
             "NERI-PlayerManager",
-            "rejectUsbExclusiveToggleControl(): reason=$usbExclusiveToggleTransitionReason, stack=[${debugStackHint()}]"
+            "rejectUsbExclusiveToggleControl(): reason=${usbRouteTransitionOwner.toggleReason}, stack=[${debugStackHint()}]"
         )
         postPlayerEvent(
             PlayerEvent.ShowError(
@@ -1509,54 +1231,39 @@ object PlayerManager {
     }
 
     fun beginUsbExclusiveToggleTransitionFromUi(targetEnabled: Boolean): Boolean {
-        if (usbExclusiveToggleTransitionActive) {
+        if (usbRouteTransitionOwner.toggleActive) {
             rejectUsbExclusiveToggleControl()
             return false
         }
-        usbExclusiveToggleTransitionActive = true
-        usbExclusiveToggleTransitionReason = if (targetEnabled) {
-            "usb_exclusive_enabled"
-        } else {
-            "usb_exclusive_disabled"
-        }
-        markUsbExclusivePlaybackPreparing(true, usbExclusiveToggleTransitionReason)
-        usbExclusiveToggleTransitionJob?.cancel()
-        val pendingReason = usbExclusiveToggleTransitionReason
-        usbExclusiveToggleTransitionJob = mainScope.launch {
-            delay(8_000L)
-            if (usbExclusiveToggleTransitionActive && usbExclusiveToggleTransitionReason == pendingReason) {
-                NPLogger.w(
-                    "NERI-UsbExclusive",
-                    "unlock stale USB toggle transition before settings flow update: reason=$pendingReason"
-                )
-                usbExclusiveToggleTransitionActive = false
-                usbExclusiveToggleTransitionReason = ""
-                markUsbExclusivePlaybackPreparing(false, "usb_toggle_ui_timeout:$pendingReason")
-            }
-        }
+        usbRouteTransitionOwner.beginUiToggle(targetEnabled)
+        markUsbExclusivePlaybackPreparing(true, usbRouteTransitionOwner.toggleReason)
         return true
     }
 
     internal fun shouldBlockLocalRoomControl(commandSource: PlaybackCommandSource): Boolean {
         if (commandSource != PlaybackCommandSource.LOCAL) return false
-        if (usbExclusiveToggleTransitionActive) {
-            return rejectUsbExclusiveToggleControl()
-        }
-        if (!isListenTogetherActive()) return false
-        val room = activeListenTogetherRoomState()
-        if (room?.roomStatus == "controller_offline" && !isCurrentUserControllerInListenTogether()) {
-            return rejectListenTogetherControl(
-                R.string.listen_together_error_controller_offline,
-                debugReason = "local_control_blocked:controller_offline"
-            )
-        }
-        if (room?.settings?.allowMemberControl == false && !isCurrentUserControllerInListenTogether()) {
-            return rejectListenTogetherControl(
-                R.string.listen_together_error_member_control_disabled,
-                debugReason = "local_control_blocked:member_control_disabled"
-            )
-        }
-        return false
+        if (usbRouteTransitionOwner.toggleActive) return rejectUsbExclusiveToggleControl()
+        return rejectRoomControlRestriction()
+    }
+
+    private fun rejectRoomControlRestriction(): Boolean {
+        val restriction = localRoomControlRestriction()
+        val message = restriction.errorResId ?: return false
+        return rejectListenTogetherControl(message, restriction.debugReason)
+    }
+
+    private fun localRoomControlRestriction(): LocalRoomControlRestriction {
+        if (!isListenTogetherActive()) return LocalRoomControlRestriction.NONE
+        return activeRoomControlRestriction()
+    }
+
+    private fun activeRoomControlRestriction(): LocalRoomControlRestriction {
+        val room = activeListenTogetherRoomState() ?: return LocalRoomControlRestriction.NONE
+        return resolveLocalRoomControlRestriction(
+            room.roomStatus,
+            room.settings.allowMemberControl,
+            isCurrentUserControllerInListenTogether()
+        )
     }
 
     internal fun shouldBlockLocalSongSwitch(song: SongItem, commandSource: PlaybackCommandSource): Boolean {
@@ -1570,28 +1277,21 @@ object PlayerManager {
     }
 
     internal fun isYouTubeMusicTrack(song: SongItem): Boolean {
-        return song.channelId == ListenTogetherChannels.YOUTUBE_MUSIC || isYouTubeMusicSong(song)
+        return PlaybackMediaItemFactory.isYouTubeSource(song)
     }
 
     internal fun isBiliTrack(song: SongItem): Boolean {
-        return song.channelId == ListenTogetherChannels.BILIBILI ||
-            song.album.startsWith(BILI_SOURCE_TAG)
+        return PlaybackMediaItemFactory.isBiliSource(song)
     }
-    internal fun shouldPersistEmbeddedLyrics(song: SongItem): Boolean {
-        return song.matchedLyric != null ||
-            song.matchedTranslatedLyric != null ||
-            song.originalLyric != null ||
-            song.originalTranslatedLyric != null
-    }
-
     internal fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
     }
 
     fun currentQueueDisplaySnapshot(): PlayerQueueDisplayState {
+        val snapshot = currentQueueSnapshot()
         return buildPlayerQueueDisplayState(
-            playlist = currentPlaylist,
-            currentIndex = currentIndex
+            playlist = snapshot.playlist,
+            currentIndex = snapshot.currentIndex
         )
     }
 
@@ -1600,165 +1300,42 @@ object PlayerManager {
     }
 
     internal fun localMediaSource(song: SongItem): String? {
-        val preferred = preferredLocalMediaReference(
-            localFilePath = song.localFilePath,
-            mediaUri = song.mediaUri
-        )
-        return listOfNotNull(preferred, song.localFilePath, song.mediaUri)
-            .distinct()
-            .firstOrNull(::isReadableLocalMediaUri)
-            ?: preferred
+        return LocalPlaybackMediaResolver.source(song, application)
     }
 
-    internal fun toPlayableLocalUrl(mediaUri: String?): String? {
-        val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return null
-        return if (uriString.startsWith("/")) {
-            Uri.fromFile(File(uriString)).toString()
-        } else {
-            val parsed = runCatching { uriString.toUri() }.getOrNull() ?: return null
-            when (parsed.scheme?.lowercase()) {
-                null, "" -> Uri.fromFile(File(uriString)).toString()
-                else -> uriString
-            }
-        }
-    }
+    internal fun toPlayableLocalUrl(mediaUri: String?): String? =
+        LocalPlaybackMediaResolver.playableUrl(mediaUri)
 
-    internal fun isReadableLocalMediaUri(mediaUri: String?, context: Context = application): Boolean {
-        val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return false
-        if (uriString.startsWith("/")) {
-            return canOpenLocalFile(File(uriString))
-        }
-
-        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return false
-        return when (uri.scheme?.lowercase()) {
-            null, "" -> canOpenLocalFile(File(uriString))
-            "file" -> uri.path?.let(::File)?.let(::canOpenLocalFile) == true
-            "content", "android.resource" -> runCatching {
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
-            }.getOrDefault(false)
-            else -> false
-        }
-    }
+    internal fun isReadableLocalMediaUri(mediaUri: String?, context: Context = application): Boolean =
+        LocalPlaybackMediaResolver.isReadable(mediaUri, context)
 
     internal fun restorableLocalMediaState(
         mediaUri: String?,
         context: Context = application,
-    ): RestorableLocalMediaState {
-        val uriString = mediaUri?.takeIf { it.isNotBlank() }
-            ?: return RestorableLocalMediaState.REVOKED
-        if (uriString.startsWith("/")) {
-            return resolveRestorableLocalMediaState(
-                scheme = null,
-                localFileReadable = canOpenLocalFile(File(uriString)),
-            )
-        }
-
-        val uri = runCatching { uriString.toUri() }.getOrNull()
-            ?: return RestorableLocalMediaState.REVOKED
-        return when (uri.scheme?.lowercase()) {
-            null, "" -> resolveRestorableLocalMediaState(
-                scheme = uri.scheme,
-                localFileReadable = canOpenLocalFile(File(uriString)),
-            )
-            "file" -> resolveRestorableLocalMediaState(
-                scheme = uri.scheme,
-                localFileReadable = uri.path?.let(::File)?.let(::canOpenLocalFile) == true,
-            )
-            "content" -> {
-                val hasPersistedReadPermission = context.contentResolver.persistedUriPermissions.any {
-                    it.isReadPermission && it.uri == uri
-                }
-                val hasCurrentReadPermission = context.checkUriPermission(
-                    uri,
-                    Process.myPid(),
-                    Process.myUid(),
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                ) == PackageManager.PERMISSION_GRANTED
-                resolveRestorableLocalMediaState(
-                    scheme = uri.scheme,
-                    hasPersistedReadPermission = hasPersistedReadPermission,
-                    hasCurrentReadPermission = hasCurrentReadPermission,
-                )
-            }
-            else -> resolveRestorableLocalMediaState(scheme = uri.scheme)
-        }
-    }
+    ): RestorableLocalMediaState = LocalPlaybackMediaResolver.restorableState(mediaUri, context)
 
     internal fun isRestorableLocalMediaUri(
         mediaUri: String?,
         context: Context = application,
-    ): Boolean {
-        return restorableLocalMediaState(mediaUri, context) != RestorableLocalMediaState.REVOKED
-    }
+    ): Boolean = LocalPlaybackMediaResolver.isRestorable(mediaUri, context)
 
-    internal fun isRestorableLocalSong(song: SongItem, context: Context = application): Boolean {
-        val preferred = preferredLocalMediaReference(
-            localFilePath = song.localFilePath,
-            mediaUri = song.mediaUri
-        )
-        return listOfNotNull(preferred, song.localFilePath, song.mediaUri)
-            .distinct()
-            .any { isRestorableLocalMediaUri(it, context) }
-    }
+    internal fun isRestorableLocalSong(song: SongItem, context: Context = application): Boolean =
+        LocalPlaybackMediaResolver.isRestorableSong(song, context)
 
     @Suppress("unused")
-    internal fun sanitizeRestoredPlaylist(playlist: List<SongItem>): List<SongItem> {
-        return playlist.filter { song ->
-            !isLocalSong(song) || isRestorableLocalSong(song)
-        }
-    }
+    internal fun sanitizeRestoredPlaylist(playlist: List<SongItem>): List<SongItem> =
+        LocalPlaybackMediaResolver.sanitizeRestoredPlaylist(playlist, application)
 
     internal fun isCurrentSong(song: SongItem): Boolean {
         return _currentSongFlow.value?.sameIdentityAs(song) == true
     }
 
-    private fun canOpenLocalFile(file: File): Boolean {
-        if (!file.exists() || !file.isFile) {
-            return false
-        }
-        return runCatching {
-            RandomAccessFile(file, "r").use { true }
-        }.getOrDefault(false)
-    }
-
     internal fun maybeUpdateSongDuration(song: SongItem, durationMs: Long) {
-        val resolvedDurationMs = durationMs.takeIf { it > 0L } ?: return
-        var changed = false
-
-        val queueIndex = queueIndexOf(song)
-        if (queueIndex != -1) {
-            val queuedSong = currentPlaylist[queueIndex]
-            if (queuedSong.durationMs <= 0L) {
-                val updatedPlaylist = currentPlaylist.toMutableList()
-                updatedPlaylist[queueIndex] = queuedSong.copy(durationMs = resolvedDurationMs)
-                currentPlaylist = updatedPlaylist
-                _currentQueueFlow.value = currentPlaylist
-                changed = true
-            }
-        }
-
-        val currentSong = _currentSongFlow.value
-        if (currentSong?.sameIdentityAs(song) == true && currentSong.durationMs <= 0L) {
-            setCurrentSongForPlayback(currentSong.copy(durationMs = resolvedDurationMs))
-            changed = true
-        }
-        if (currentSong?.sameIdentityAs(song) == true) {
-            _playbackDurationMs.value = resolvedDurationMs
-        }
-
-        if (changed) {
-            ioScope.launch { persistState() }
-        }
+        playbackProgressOwner.maybeUpdateSongDuration(song, durationMs)
     }
 
     internal fun maybeBackfillCurrentSongDurationFromPlayer() {
-        if (!::player.isInitialized) {
-            return
-        }
-        val currentSong = _currentSongFlow.value ?: return
-        val playerDurationMs = player.duration.takeIf { it > 0L } ?: return
-        _playbackDurationMs.value = playerDurationMs
-        maybeUpdateSongDuration(currentSong, playerDurationMs)
+        playbackProgressOwner.maybeBackfillCurrentSongDurationFromPlayer()
     }
 
     internal fun shouldStartUsbExclusiveTransportFromSink(): Boolean {
@@ -1777,148 +1354,55 @@ object PlayerManager {
         )
     }
 
-    internal fun beginUsbAudioSinkReconfiguration(
-        reason: String
-    ): UsbAudioSinkReconfigurationToken {
-        val start = usbAudioSinkReconfigurationCoordinator.begin(reason)
-        start.supersededJob?.cancel()
-        return start.token
-    }
-
-    internal fun installUsbAudioSinkReconfiguration(
-        requestToken: UsbAudioSinkReconfigurationToken,
-        job: Job
-    ): Boolean {
-        return usbAudioSinkReconfigurationCoordinator.install(requestToken, job)
-    }
-
-    internal fun finishUsbAudioSinkReconfiguration(
-        requestToken: UsbAudioSinkReconfigurationToken,
-        job: Job
-    ) {
-        usbAudioSinkReconfigurationCoordinator.complete(requestToken, job)
-    }
-
-    internal fun isLatestUsbAudioSinkReconfiguration(
-        requestToken: UsbAudioSinkReconfigurationToken
-    ): Boolean {
-        return usbAudioSinkReconfigurationCoordinator.isLatest(requestToken)
-    }
-
-    internal fun abandonUsbAudioSinkReconfiguration(
-        requestToken: UsbAudioSinkReconfigurationToken
-    ) {
-        usbAudioSinkReconfigurationCoordinator.abandonIfUninstalled(requestToken)
-    }
-
     internal fun usbAudioSinkReconfigurationSnapshot():
-        UsbAudioSinkReconfigurationSnapshot {
-        return usbAudioSinkReconfigurationCoordinator.snapshot()
-    }
+        UsbAudioSinkReconfigurationSnapshot = usbSinkRouteOwner.snapshot()
 
     internal fun cancelUsbAudioSinkReconfiguration() {
-        usbAudioSinkReconfigurationCoordinator.invalidate()?.cancel()
+        usbSinkRouteOwner.cancel()
     }
 
     fun changeCurrentPlaybackQuality(optionKey: String) {
-        val normalizedKey = optionKey.trim().lowercase()
-        if (normalizedKey.isBlank()) return
-        val currentAudioInfo = _currentPlaybackAudioInfo.value ?: return
-        // 和弹窗回显保持同一基准, 按偏好而不是当前流实测档位去重
-        // 否则偏好和实测不一致时点实测档会被误判为未变化
-        val preferredKey = _preferredQualityKeys.value.forSource(currentAudioInfo.source)
-        if (normalizedKey == preferredKey) return
-
-        ioScope.launch {
-            when (currentAudioInfo.source) {
-                PlaybackAudioSource.NETEASE -> settingsRepo.setAudioQuality(normalizedKey)
-                PlaybackAudioSource.BILIBILI -> settingsRepo.setBiliAudioQuality(normalizedKey)
-                PlaybackAudioSource.YOUTUBE_MUSIC -> settingsRepo.setYouTubeAudioQuality(normalizedKey)
-                PlaybackAudioSource.LOCAL -> Unit
-            }
-        }
+        playbackQualityOwner.changeCurrentPlaybackQuality(optionKey)
     }
 
     fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
         ensureInitialized()
-        applyPlaybackSoundConfig(
-            playbackSoundConfig.copy(speed = normalizePlaybackSpeed(speed)),
-            persist = persist
-        )
+        playbackSoundOwner.setSpeed(speed, persist)
     }
 
     fun setPlaybackPitch(pitch: Float, persist: Boolean = true) {
         ensureInitialized()
-        applyPlaybackSoundConfig(
-            playbackSoundConfig.copy(pitch = normalizePlaybackPitch(pitch)),
-            persist = persist
-        )
+        playbackSoundOwner.setPitch(pitch, persist)
     }
 
     fun setPlaybackLoudnessGain(levelMb: Int, persist: Boolean = true) {
         ensureInitialized()
-        applyPlaybackSoundConfig(
-            playbackSoundConfig.copy(
-                loudnessGainMb = normalizePlaybackLoudnessGainMb(levelMb)
-            ),
-            persist = persist
-        )
+        playbackSoundOwner.setLoudnessGain(levelMb, persist)
     }
 
     fun setPlaybackVolumeBalance(balance: Float, persist: Boolean = true) {
         ensureInitialized()
-        applyPlaybackSoundConfig(
-            playbackSoundConfig.copy(
-                volumeBalance = normalizePlaybackVolumeBalance(balance)
-            ),
-            persist = persist
-        )
+        playbackSoundOwner.setVolumeBalance(balance, persist)
     }
 
     fun setPlaybackVolumeNormalizationEnabled(enabled: Boolean, persist: Boolean = true) {
         ensureInitialized()
-        applyPlaybackSoundConfig(
-            playbackSoundConfig.copy(volumeNormalizationEnabled = enabled),
-            persist = persist
-        )
+        playbackSoundOwner.setVolumeNormalizationEnabled(enabled, persist)
     }
 
     fun setPlaybackHighResolutionOutputEnabled(enabled: Boolean, persist: Boolean = true) {
         ensureInitialized()
-        if (playbackHighResolutionOutputEnabled == enabled) return
-        playbackHighResolutionOutputEnabled = enabled
-        updateAudioOffloadPreferences("playback_high_resolution_output")
-        if (persist) {
-            ioScope.launch {
-                settingsRepo.setPlaybackHighResolutionOutputEnabled(enabled)
-            }
-        }
-        if (usbExclusivePlaybackEnabled) {
-            scheduleUsbAudioSinkReconfiguration(
-                reason = "playback_high_resolution_output_changed",
-                allowWhilePlaybackActive = true,
-                bypassCooldown = true
-            )
-        }
+        playbackSoundOwner.setHighResolutionEnabled(enabled, persist)
     }
 
     fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {
         ensureInitialized()
-        applyPlaybackSoundConfig(
-            playbackSoundConfig.copy(equalizerEnabled = enabled),
-            persist = persist
-        )
+        playbackSoundOwner.setEqualizerEnabled(enabled, persist)
     }
 
     fun selectPlaybackEqualizerPreset(presetId: String, persist: Boolean = true) {
         ensureInitialized()
-        applyPlaybackSoundConfig(
-            playbackSoundConfig.copy(
-                equalizerEnabled = true,
-                presetId = presetId
-            ),
-            persist = persist
-        )
+        playbackSoundOwner.selectEqualizerPreset(presetId, persist)
     }
 
     fun updatePlaybackEqualizerBandLevel(
@@ -1927,157 +1411,34 @@ object PlayerManager {
         persist: Boolean = true
     ) {
         ensureInitialized()
-        val currentBands = _playbackSoundState.value.bands
-        if (index !in currentBands.indices) return
-        val updatedLevels = currentBands.map { it.levelMb }.toMutableList()
-        updatedLevels[index] = levelMb
-        applyPlaybackSoundConfig(
-            playbackSoundConfig.copy(
-                equalizerEnabled = true,
-                presetId = PlaybackEqualizerPresetId.CUSTOM,
-                customBandLevelsMb = updatedLevels
-            ),
-            persist = persist
-        )
+        playbackSoundOwner.updateEqualizerBandLevel(index, levelMb, persist)
     }
 
     fun resetPlaybackSoundSettings(persist: Boolean = true) {
         ensureInitialized()
-        applyPlaybackSoundConfig(
-            PlaybackSoundConfig(
-                speed = DEFAULT_PLAYBACK_SPEED,
-                pitch = DEFAULT_PLAYBACK_PITCH,
-                loudnessGainMb = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
-                volumeBalance = DEFAULT_PLAYBACK_VOLUME_BALANCE,
-                volumeNormalizationEnabled = DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED,
-                equalizerEnabled = false,
-                presetId = PlaybackEqualizerPresetId.FLAT,
-                customBandLevelsMb = emptyList()
-            ),
-            persist = persist
-        )
+        playbackSoundOwner.reset(persist)
     }
 
-    internal fun applyPlaybackSoundConfig(
-        newConfig: PlaybackSoundConfig,
-        persist: Boolean
-    ) {
-        val previousConfig = playbackSoundConfig
-        playbackSoundConfig = newConfig.copy(
-            speed = normalizePlaybackSpeed(newConfig.speed),
-            pitch = normalizePlaybackPitch(newConfig.pitch),
-            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb),
-            volumeBalance = normalizePlaybackVolumeBalance(newConfig.volumeBalance)
-        )
-        if (lyriconEnabled && previousConfig.speed != playbackSoundConfig.speed) {
-            LyriconManager.setPlaybackSpeed(playbackSoundConfig.speed)
-        }
-        schedulePlaybackSoundConfigApply(
-            previousConfig = previousConfig,
-            newConfig = playbackSoundConfig
-        )
-        if (persist) {
-            persistPlaybackSoundConfig(playbackSoundConfig)
-        }
+    internal fun applyPlaybackSoundConfig(newConfig: PlaybackSoundConfig, persist: Boolean) {
+        playbackSoundOwner.applyConfig(newConfig, persist)
     }
 
     internal fun schedulePlaybackSoundConfigApply(
         previousConfig: PlaybackSoundConfig,
         newConfig: PlaybackSoundConfig
     ) {
-        pendingPlaybackSoundConfig = resolvePlaybackSoundConfigForEngine(
-            baseConfig = newConfig,
-            listenTogetherSyncPlaybackRate = listenTogetherSyncPlaybackRate,
-            usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled
-        )
-        playbackSoundApplyJob?.cancel()
-
-        val debounceHeavyEffectUpdate =
-            previousConfig.equalizerEnabled != newConfig.equalizerEnabled ||
-                previousConfig.presetId != newConfig.presetId ||
-                previousConfig.customBandLevelsMb != newConfig.customBandLevelsMb ||
-                previousConfig.loudnessGainMb != newConfig.loudnessGainMb
-        val applyDelayMs = if (debounceHeavyEffectUpdate) 48L else 0L
-
-        playbackSoundApplyJob = mainScope.launch {
-            if (applyDelayMs > 0L) {
-                delay(applyDelayMs)
-            }
-            val latestConfig = pendingPlaybackSoundConfig ?: return@launch
-            pendingPlaybackSoundConfig = null
-            _playbackSoundState.value = playbackEffectsController.updateConfig(latestConfig)
-            updateAudioOffloadPreferences("playback_sound_config")
-        }
+        playbackSoundOwner.scheduleApply(previousConfig, newConfig)
     }
 
     internal fun applyPlaybackSoundConfigIfChanged(newConfig: PlaybackSoundConfig) {
-        val normalizedConfig = newConfig.copy(
-            speed = normalizePlaybackSpeed(newConfig.speed),
-            pitch = normalizePlaybackPitch(newConfig.pitch),
-            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb),
-            volumeBalance = normalizePlaybackVolumeBalance(newConfig.volumeBalance)
-        )
-        if (normalizedConfig == playbackSoundConfig) return
-        applyPlaybackSoundConfig(normalizedConfig, persist = false)
-    }
-
-    internal fun persistPlaybackSoundConfig(config: PlaybackSoundConfig) {
-        playbackSoundPersistJob?.cancel()
-        playbackSoundPersistJob = ioScope.launch {
-            delay(150)
-            settingsRepo.setPlaybackSpeed(config.speed)
-            settingsRepo.setPlaybackPitch(config.pitch)
-            settingsRepo.setPlaybackLoudnessGainMb(config.loudnessGainMb)
-            settingsRepo.setPlaybackVolumeBalance(config.volumeBalance)
-            settingsRepo.setPlaybackVolumeNormalizationEnabled(config.volumeNormalizationEnabled)
-            settingsRepo.setPlaybackEqualizerEnabled(config.equalizerEnabled)
-            settingsRepo.setPlaybackEqualizerPreset(config.presetId)
-            settingsRepo.setPlaybackEqualizerCustomBandLevels(config.customBandLevelsMb)
-        }
+        playbackSoundOwner.applyConfigIfChanged(newConfig)
     }
 
     internal fun scheduleQualityRefresh(
         source: PlaybackAudioSource,
         reason: String
     ) {
-        val targetJob = when (source) {
-            PlaybackAudioSource.NETEASE -> ::neteaseQualityRefreshJob
-            PlaybackAudioSource.YOUTUBE_MUSIC -> ::youtubeQualityRefreshJob
-            PlaybackAudioSource.BILIBILI -> ::biliQualityRefreshJob
-            PlaybackAudioSource.LOCAL -> return
-        }
-        targetJob.get()?.cancel()
-        targetJob.set(
-            ioScope.launch {
-                if (QUALITY_CHANGE_REFRESH_DEBOUNCE_MS > 0L) {
-                    delay(QUALITY_CHANGE_REFRESH_DEBOUNCE_MS)
-                }
-                refreshCurrentSongForQualityChange(source = source, reason = reason)
-            }
-        )
-    }
-
-    internal suspend fun refreshCurrentSongForQualityChange(
-        source: PlaybackAudioSource,
-        reason: String
-    ) {
-        val currentAudioInfo = _currentPlaybackAudioInfo.value ?: return
-        if (currentAudioInfo.source != source) return
-        val currentSong = _currentSongFlow.value ?: return
-        if (isLocalSong(currentSong)) return
-
-        val (positionMs, shouldResumePlaybackAfterRefresh) = withContext(Dispatchers.Main) {
-            player.currentPosition.coerceAtLeast(0L) to (player.playWhenReady || player.isPlaying)
-        }
-        refreshCurrentSongUrl(
-            resumePositionMs = positionMs,
-            allowFallback = true,
-            reason = reason,
-            bypassCooldown = true,
-            fallbackSeekPositionMs = positionMs,
-            resumePlaybackAfterRefresh = shouldResumePlaybackAfterRefresh,
-            resumedPlaybackCommandSource = activePlaybackCommandSource
-        )
+        playbackQualityOwner.scheduleRefresh(source, reason)
     }
 
     internal fun postPlayerEvent(event: PlayerEvent) {
@@ -2089,143 +1450,20 @@ object PlayerManager {
         bypassWarning: Boolean = false,
         continuePlayback: () -> Unit,
         cancelPlayback: (() -> Unit)? = null
-    ): Boolean {
-        if (bypassWarning) return false
-        val systemVolumePercent = currentSystemMediaVolumePercent() ?: run {
-            NPLogger.w(
-                "NERI-PlayerManager",
-                "cannot read system media volume for USB loudness warning; use conservative full scale"
-            )
-            100
-        }
-        val playbackAlreadyAudible = isPlaybackAudibleForLoudnessWarning()
-        val loudnessEstimate = currentUsbExclusiveLoudnessEstimate(
-            systemVolumePercent = systemVolumePercent,
-            playbackAlreadyAudible = playbackAlreadyAudible
-        )
-        val outputRouteKey = currentAudioOutputRouteKey()
-        if (!shouldRequestUsbExclusiveLoudPlaybackWarning(
-                usbExclusiveEnabled = usbExclusivePlaybackEnabled,
-                appInForeground = usbExclusiveAppInForeground,
-                commandSource = commandSource,
-                playbackAlreadyAudible = playbackAlreadyAudible,
-                loudnessEstimate = loudnessEstimate
-            )
-        ) {
-            return false
-        }
-        val confirmation = UsbExclusiveLoudPlaybackConfirmation(
-            id = ++nextUsbExclusiveLoudPlaybackConfirmationId,
-            systemVolumePercent = systemVolumePercent,
-            deviceClass = loudnessEstimate.deviceClass,
-            deviceName = _currentAudioDevice.value?.name.orEmpty(),
-            estimatedPeakDbfs = loudnessEstimate.estimatedPeakDbfs,
-            peakSource = loudnessEstimate.peakSource,
-            riskThresholdDbfs = loudnessEstimate.riskThresholdDbfs,
-            risk = loudnessEstimate.risk
-        )
-        pendingUsbExclusiveLoudPlaybackConfirmation =
-            PendingUsbExclusiveLoudPlaybackConfirmation(
-                confirmation = confirmation,
-                continuePlayback = continuePlayback,
-                cancelPlayback = cancelPlayback
-            )
-        _usbExclusiveLoudPlaybackConfirmationFlow.value = confirmation
-        NPLogger.i(
-            "NERI-PlayerManager",
-            "defer manual USB playback for loud-volume confirmation: " +
-                "volumePercent=$systemVolumePercent peakDbfs=${loudnessEstimate.estimatedPeakDbfs} " +
-                "source=${loudnessEstimate.peakSource} " +
-                "thresholdDbfs=${loudnessEstimate.riskThresholdDbfs} " +
-                "risk=${loudnessEstimate.risk} route=$outputRouteKey"
-        )
-        return true
-    }
+    ): Boolean = usbExclusiveLoudPlaybackConfirmationOwner.request(
+        commandSource = commandSource,
+        bypassWarning = bypassWarning,
+        snapshot = PlayerManagerUsbLoudPlaybackSnapshotPort::capture,
+        continuePlayback = continuePlayback,
+        cancelPlayback = cancelPlayback
+    )
 
     internal fun confirmUsbExclusiveLoudPlayback(confirmationId: Long) {
-        val pending = pendingUsbExclusiveLoudPlaybackConfirmation ?: return
-        if (pending.confirmation.id != confirmationId) return
-        pendingUsbExclusiveLoudPlaybackConfirmation = null
-        _usbExclusiveLoudPlaybackConfirmationFlow.value = null
-        NPLogger.i(
-            "NERI-PlayerManager",
-            "confirmed manual USB playback at peakDbfs=" +
-                pending.confirmation.estimatedPeakDbfs
-        )
-        pending.continuePlayback()
+        usbExclusiveLoudPlaybackConfirmationOwner.confirm(confirmationId)
     }
 
     internal fun cancelUsbExclusiveLoudPlayback(confirmationId: Long) {
-        val pending = pendingUsbExclusiveLoudPlaybackConfirmation ?: return
-        if (pending.confirmation.id != confirmationId) return
-        pendingUsbExclusiveLoudPlaybackConfirmation = null
-        _usbExclusiveLoudPlaybackConfirmationFlow.value = null
-        pending.cancelPlayback?.invoke()
-        NPLogger.i(
-            "NERI-PlayerManager",
-            "cancelled manual USB playback loud-volume confirmation"
-        )
-    }
-
-    private fun currentSystemMediaVolumePercent(): Int? {
-        val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            ?: return null
-        return runCatching {
-            val minVolume = audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            val range = maxVolume - minVolume
-            if (range <= 0) {
-                100
-            } else {
-                ((currentVolume - minVolume) * 100 / range).coerceIn(0, 100)
-            }
-        }.getOrNull()
-    }
-
-    private fun currentAudioOutputRouteKey(): String {
-        val device = _currentAudioDevice.value
-        val metrics = UsbExclusiveSessionController.state.value.runtimeReport.usbRuntimeMetrics()
-        val route = if (device == null) "unknown" else "${device.type}:${device.name}"
-        return "$route:${metrics.uacVersion ?: "uac_unknown"}:${metrics.candidateId ?: "candidate_unknown"}"
-    }
-
-    private fun currentUsbExclusiveLoudnessEstimate(
-        systemVolumePercent: Int,
-        playbackAlreadyAudible: Boolean
-    ) = run {
-        val nativeState = UsbExclusiveSessionController.state.value
-        val metrics = nativeState.runtimeReport.usbRuntimeMetrics()
-        val currentPlayerVolume = if (isPlayerInitialized()) {
-            runCatching { player.volume.coerceIn(0f, 1f) }
-                .getOrElse { UsbExclusiveAudioPathTracker.state.value.requestedVolume }
-        } else {
-            UsbExclusiveAudioPathTracker.state.value.requestedVolume
-        }
-        val playerVolume = predictedUsbExclusivePlaybackGain(
-            currentPlayerVolume = currentPlayerVolume,
-            playbackAlreadyAudible = playbackAlreadyAudible
-        )
-        val observedOutputPeak = if (playbackAlreadyAudible) {
-            metrics.lastOutputPeak?.takeIf { it.isFinite() && it > 0f }
-        } else {
-            null
-        }
-        estimateUsbExclusiveLoudness(
-            systemVolumePercent = systemVolumePercent,
-            playerVolume = playerVolume,
-            bitPerfect = usbExclusivePreferences.bitPerfect,
-            uacVersion = metrics.uacVersion,
-            outputSampleRate = metrics.sampleRate ?: nativeState.outputSampleRate,
-            outputBitDepth = metrics.subslotBytes?.times(8),
-            observedOutputPeak = observedOutputPeak,
-            riskThresholdDbfs = usbExclusivePreferences.volumeRiskThresholdDbfs
-        )
-    }
-
-    private fun isPlaybackAudibleForLoudnessWarning(): Boolean {
-        return _isPlayingFlow.value ||
-            (isPlayerInitialized() && runCatching { player.isPlaying }.getOrDefault(false))
+        usbExclusiveLoudPlaybackConfirmationOwner.cancel(confirmationId)
     }
 
     internal fun emitPlaybackCommand(
@@ -2272,135 +1510,25 @@ object PlayerManager {
         playing: Boolean,
         reason: String
     ) {
-        val snapshot = synchronized(playbackStatsTracker) {
-            playbackStatsTracker.onPlayingChanged(playing)
-        }
-        if (snapshot != null) {
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "syncPlaybackStatsPlayingState: reason=$reason, playing=$playing, song=${snapshot.song.name}, listenedMs=${snapshot.listenedMs}, playCountIncrement=${snapshot.playCountIncrement}"
-            )
-        }
-        persistPlaybackStatsSnapshotAsync(snapshot)
-    }
-
-    internal fun persistPlaybackStatsSnapshotAsync(snapshot: PlaybackStatsSnapshot?) {
-        snapshot ?: return
-        if (!initialized) return
-        synchronized(playbackStatsPersistLock) {
-            val previousJob = playbackStatsPersistJob
-            playbackStatsPersistJob = ioScope.launch {
-                previousJob?.join()
-                recordPlaybackStatsSnapshot(snapshot)
-            }
-        }
-    }
-
-    internal suspend fun recordPlaybackStatsSnapshot(snapshot: PlaybackStatsSnapshot) {
-        AppContainer.playbackStatsRepo.recordListenDeltaNow(
-            song = snapshot.song,
-            listenedMs = snapshot.listenedMs,
-            playCountIncrement = snapshot.playCountIncrement,
-            scheduleSync = snapshot.scheduleSync
-        )
-        if (snapshot.playCountIncrement > 0) {
-            snapshot.localPlaylistId?.let { playlistId ->
-                AppContainer.localPlaylistPlaybackStatsRepo.recordPlayNow(playlistId)
-            }
-        }
+        playbackStatsOwner.onPlayingChanged(playing, reason, writesEnabled = initialized)
     }
 
     internal fun drainPlaybackStatsPersistJobBlocking(reason: String) {
-        if (!initialized) return
-        val pendingJob = synchronized(playbackStatsPersistLock) {
-            playbackStatsPersistJob
-        }
-        val hasPendingRepositoryWrites = AppContainer.playbackStatsRepo.hasPendingWrites()
-        if ((pendingJob == null || pendingJob.isCompleted) && !hasPendingRepositoryWrites) return
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "drainPlaybackStatsPersistJobBlocking: reason=$reason"
-        )
-        moe.ouom.neriplayer.core.player.state.blockingIo {
-            pendingJob?.join()
-            AppContainer.playbackStatsRepo.flushPendingWrites()
-        }
-        synchronized(playbackStatsPersistLock) {
-            if (playbackStatsPersistJob === pendingJob && pendingJob?.isCompleted == true) {
-                playbackStatsPersistJob = null
-            }
-        }
+        playbackStatsOwner.drainBlocking(reason, writesEnabled = initialized)
     }
 
     internal fun flushPlaybackStatsBlockingImpl(
         reason: String,
         stopTracking: Boolean = false
     ) {
-        if (!initialized) return
-        val pendingJob = synchronized(playbackStatsPersistLock) {
-            playbackStatsPersistJob
-        }
-        val currentSnapshot = synchronized(playbackStatsTracker) {
-            if (stopTracking) {
-                playbackStatsTracker.onPlayingChanged(false) ?: playbackStatsTracker.flushFinal()
-            } else {
-                playbackStatsTracker.flushFinal()
-            }
-        }
-        if (stopTracking) {
-            synchronized(playbackStatsTracker) {
-                playbackStatsTracker.onSongChanged(null)
-            }
-        }
-        val hasPendingWork =
-            (pendingJob != null && !pendingJob.isCompleted) ||
-                AppContainer.playbackStatsRepo.hasPendingWrites()
-        if (!hasPendingWork && currentSnapshot == null) return
-        if (currentSnapshot != null) {
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "flushPlaybackStatsBlocking: reason=$reason, song=${currentSnapshot.song.name}, listenedMs=${currentSnapshot.listenedMs}, playCountIncrement=${currentSnapshot.playCountIncrement}"
-            )
-        }
-        // drain + flush 合并为单次 blockingIo, 最大阻塞 2s
-        moe.ouom.neriplayer.core.player.state.blockingIo(timeoutMs = 2_000L) {
-            pendingJob?.join()
-            if (currentSnapshot != null) {
-                recordPlaybackStatsSnapshot(currentSnapshot)
-            }
-            AppContainer.playbackStatsRepo.flushPendingWrites()
-        }
-        synchronized(playbackStatsPersistLock) {
-            if (playbackStatsPersistJob === pendingJob && pendingJob?.isCompleted == true) {
-                playbackStatsPersistJob = null
-            }
-        }
+        playbackStatsOwner.flushBlocking(reason, stopTracking, writesEnabled = initialized)
     }
 
     internal fun flushPlaybackStatsAsyncImpl(
         reason: String,
         stopTracking: Boolean = false
     ) {
-        if (!initialized) return
-        val currentSnapshot = synchronized(playbackStatsTracker) {
-            if (stopTracking) {
-                playbackStatsTracker.onPlayingChanged(false) ?: playbackStatsTracker.flushFinal()
-            } else {
-                playbackStatsTracker.flushFinal()
-            }
-        }
-        if (currentSnapshot != null) {
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "flushPlaybackStatsAsync: reason=$reason, song=${currentSnapshot.song.name}, listenedMs=${currentSnapshot.listenedMs}, playCountIncrement=${currentSnapshot.playCountIncrement}"
-            )
-            persistPlaybackStatsSnapshotAsync(currentSnapshot)
-        }
-        if (stopTracking) {
-            synchronized(playbackStatsTracker) {
-                playbackStatsTracker.onSongChanged(null)
-            }
-        }
+        playbackStatsOwner.flushAsync(reason, stopTracking, writesEnabled = initialized)
     }
 
     /**
@@ -2428,58 +1556,31 @@ object PlayerManager {
         song: SongItem,
         youtubeQualityOverride: String? = null,
         youtubePreferM4aOverride: Boolean? = null
-    ): String {
-        return when {
-            isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
-            isYouTubeMusicTrack(song) -> {
-                val videoId = song.audioId ?: extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
-                computeYouTubeCacheKey(
-                    videoId = videoId,
-                    preferredQuality = youtubeQualityOverride ?: effectiveYouTubeQuality(),
-                    preferM4a = youtubePreferM4aOverride ?: YOUTUBE_PLAYBACK_PREFER_M4A
-                )
-            }
-            isBiliTrack(song) -> {
-                val cidPart = song.subAudioId ?: song.album
-                    .substringAfter('|', "")
-                    .substringBefore('|')
-                    .takeIf { it.isNotBlank() }
-                val biliSongId = song.audioId ?: song.id.toString()
-                if (cidPart != null) {
-                    "bili-$biliSongId-$cidPart-${effectiveBiliQuality()}"
-                } else {
-                    "bili-$biliSongId-${effectiveBiliQuality()}"
-                }
-            }
-            else -> buildNeteasePlaybackCacheKey(
-                songId = song.id,
-                preferredQuality = effectiveNeteaseQuality(),
-                useFallbackNamespace = neteaseAutoSourceSwitchEnabled ||
-                    neteaseLocalSourceFallbackEnabled
-            )
-        }
-    }
+    ): String = PlaybackMediaItemFactory.cacheKey(
+        song = song,
+        context = application,
+        youtubeQualityOverride = youtubeQualityOverride,
+        youtubePreferM4a = youtubePreferM4aOverride ?: YOUTUBE_PLAYBACK_PREFER_M4A,
+        neteaseFallbackEnabled = { neteaseAutoSourceSwitchEnabled || neteaseLocalSourceFallbackEnabled },
+        youtubeQuality = ::effectiveYouTubeQuality,
+        biliQuality = ::effectiveBiliQuality,
+        neteaseQuality = ::effectiveNeteaseQuality
+    )
 
     internal fun buildNeteasePlaybackCacheKey(
         songId: Long,
         preferredQuality: String,
         useFallbackNamespace: Boolean
-    ): String {
-        val quality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
-        return if (useFallbackNamespace) {
-            "netease-$songId-$quality-fallback-v1"
-        } else {
-            "netease-$songId-$quality"
-        }
-    }
+    ): String = PlaybackMediaItemFactory.neteaseCacheKey(
+        songId,
+        preferredQuality,
+        useFallbackNamespace
+    )
 
     internal fun buildNeteasePreviewCacheKey(
         songId: Long,
         preferredQuality: String
-    ): String {
-        val quality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
-        return "netease-preview-v1-$songId-$quality"
-    }
+    ): String = PlaybackMediaItemFactory.neteasePreviewCacheKey(songId, preferredQuality)
 
     /**
      * 键必须在解析前确定, 预取与播放才能对齐同一份缓存
@@ -2489,13 +1590,7 @@ object PlayerManager {
         videoId: String,
         preferredQuality: String = effectiveYouTubeQuality(),
         preferM4a: Boolean = YOUTUBE_PLAYBACK_PREFER_M4A
-    ): String {
-        return if (preferM4a) {
-            "ytmusic-$videoId-$preferredQuality-stable-m4a"
-        } else {
-            "ytmusic-$videoId-$preferredQuality"
-        }
-    }
+    ): String = PlaybackMediaItemFactory.youtubeCacheKey(videoId, preferredQuality, preferM4a)
 
     internal fun buildMediaItem(
         song: SongItem,
@@ -2503,46 +1598,20 @@ object PlayerManager {
         cacheKey: String,
         mimeType: String? = null,
         allowCustomCacheKey: Boolean = true
-    ): MediaItem {
-        val mediaUrl = stripListenTogetherStreamQualityMetadata(url)
-        val mediaUri = mediaUrl.toUri()
-        val isLocalFile =
-            mediaUrl.startsWith("file://") ||
-            mediaUrl.startsWith("content://") ||
-            mediaUrl.startsWith("android.resource://") ||
-            mediaUrl.startsWith("/")
-        if (mediaUri.path?.endsWith(".flac", ignoreCase = true) == true) {
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "build FLAC media item: songId=${song.id}, host=${mediaUri.host ?: "local"}, " +
-                    "declaredMimeType=${mimeType ?: "missing"}, cacheKey=$cacheKey"
-            )
-        }
-        return MediaItem.Builder()
-            .setMediaId("${song.id}|${song.album}|${song.mediaUri.orEmpty()}")
-            .setUri(mediaUri)
-            .apply {
-                if (!mimeType.isNullOrBlank()) {
-                    setMimeType(mimeType)
-                }
-                // Local files do not need a custom cache key.
-                if (!isLocalFile && allowCustomCacheKey) {
-                    safeCustomPlaybackCacheKey(cacheKey)?.let(::setCustomCacheKey)
-                }
-            }
-            .build()
-    }
+    ): MediaItem = PlaybackMediaItemFactory.mediaItem(
+        song,
+        url,
+        cacheKey,
+        mimeType,
+        { if (allowCustomCacheKey) safeCustomPlaybackCacheKey(cacheKey) else null }
+    )
 
     internal fun applyWakeModeForPlaybackUrl(url: String?) {
-        val wakeMode = resolvePlaybackWakeMode(url)
-        if (wakeMode == currentWakeMode) return
-        player.setWakeMode(wakeMode)
-        currentWakeMode = wakeMode
+        playbackTransportOwner.applyWakeModeForUrl(url)
     }
 
     internal fun applyInitialPlaybackWakeMode() {
-        player.setWakeMode(DEFAULT_PLAYBACK_WAKE_MODE)
-        currentWakeMode = DEFAULT_PLAYBACK_WAKE_MODE
+        playbackTransportOwner.applyInitialWakeMode()
     }
 
     fun updateInteractiveNowPlayingVisible(visible: Boolean) {
@@ -2569,7 +1638,6 @@ object PlayerManager {
         restoredStateSnapshot = restoredStateSnapshot
     )
 
-    @Suppress("unused")
     suspend fun clearCache(
         clearAudio: Boolean = true,
         clearImage: Boolean = true

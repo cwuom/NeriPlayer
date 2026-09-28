@@ -25,17 +25,6 @@ internal data class YouTubePlaybackRecoveryStrategy(
     val allowUnverifiedDirectFallback: Boolean = true
 )
 
-internal data class RefreshInFlightOwner(
-    val semantics: RefreshRequestSemantics,
-    val isActive: Boolean
-)
-
-internal enum class RefreshInFlightDecision {
-    StartNew,
-    ReuseExisting,
-    CancelExistingAndStartNew
-}
-
 internal enum class RefreshResultKind {
     SUCCESS,
     FALLBACK,
@@ -60,9 +49,12 @@ internal data class RefreshApplyAction(
 )
 
 internal data class RefreshInFlightStart<T>(
+    val request: RefreshRequestHandle,
     val operation: T,
     val startedNew: Boolean
 )
+
+internal class RefreshRequestHandle internal constructor(val semantics: RefreshRequestSemantics)
 
 internal class RefreshSideEffectGate(
     private val isCurrent: () -> Boolean
@@ -153,18 +145,6 @@ internal class RefreshResultSideEffects(
     }
 }
 
-internal fun resolveRefreshInFlightDecision(
-    owner: RefreshInFlightOwner?,
-    incoming: RefreshRequestSemantics
-): RefreshInFlightDecision {
-    if (owner == null || !owner.isActive) return RefreshInFlightDecision.StartNew
-    return if (owner.semantics == incoming) {
-        RefreshInFlightDecision.ReuseExisting
-    } else {
-        RefreshInFlightDecision.CancelExistingAndStartNew
-    }
-}
-
 internal fun shouldApplyRefreshResult(
     owner: RefreshRequestSemantics,
     current: RefreshRequestSemantics,
@@ -221,73 +201,75 @@ internal fun resolveRefreshApplyAction(
 }
 
 internal class RefreshInFlightController<T> {
-    private var owner: RefreshInFlightOwner? = null
-    private var operation: T? = null
-    private var cancelCurrent: (() -> Unit)? = null
+    private class ActiveRefresh<T>(
+        val request: RefreshRequestHandle,
+        val operation: T,
+        val cancel: (T) -> Unit
+    )
+
+    private var active: ActiveRefresh<T>? = null
 
     fun startOrReuse(
         semantics: RefreshRequestSemantics,
-        start: () -> T,
-        cancel: () -> Unit,
-        fallback: () -> Unit
+        start: (RefreshRequestHandle) -> T,
+        cancel: (T) -> Unit
     ): RefreshInFlightStart<T> {
         return synchronized(this) {
-            when (resolveRefreshInFlightDecision(owner, semantics)) {
-                RefreshInFlightDecision.StartNew -> startLocked(semantics, start, cancel)
-                RefreshInFlightDecision.ReuseExisting -> {
-                    @Suppress("UNCHECKED_CAST")
-                    RefreshInFlightStart(operation as T, startedNew = false)
-                }
-                RefreshInFlightDecision.CancelExistingAndStartNew -> {
-                    cancelCurrent?.invoke()
-                    startLocked(semantics, start, cancel)
-                }
+            val current = active
+            if (current?.request?.semantics == semantics) {
+                return@synchronized RefreshInFlightStart(current.request, current.operation, startedNew = false)
             }
+            cancelLocked()
+            val request = RefreshRequestHandle(semantics)
+            val operation = start(request)
+            active = ActiveRefresh(request, operation, cancel)
+            RefreshInFlightStart(request, operation, startedNew = true)
         }
     }
 
     fun cancelIfNotReusable(semantics: RefreshRequestSemantics): Boolean {
         return synchronized(this) {
-            val currentOwner = owner ?: return@synchronized false
-            if (!currentOwner.isActive || currentOwner.semantics == semantics) {
+            val current = active ?: return@synchronized false
+            if (current.request.semantics == semantics) {
                 return@synchronized false
             }
-            cancelCurrent?.invoke()
-            clearLocked(currentOwner.semantics)
+            cancelLocked()
             true
         }
     }
 
-    fun isCurrent(semantics: RefreshRequestSemantics): Boolean {
+    fun cancelIfPlaybackIntentChanged(shouldResumePlayback: Boolean): Boolean {
         return synchronized(this) {
-            owner?.let { it.isActive && it.semantics == semantics } == true
+            val current = active ?: return@synchronized false
+            if (current.request.semantics.resumePlaybackAfterRefresh == shouldResumePlayback) {
+                return@synchronized false
+            }
+            cancelLocked()
+            true
         }
     }
 
+    fun isCurrent(request: RefreshRequestHandle): Boolean =
+        synchronized(this) { active?.request === request }
+
     fun currentSemantics(): RefreshRequestSemantics? {
-        return synchronized(this) { owner?.semantics }
+        return synchronized(this) { active?.request?.semantics }
     }
 
-    fun clear(semantics: RefreshRequestSemantics) {
-        synchronized(this) { clearLocked(semantics) }
+    fun clear(request: RefreshRequestHandle) {
+        synchronized(this) {
+            // 参数相同的新请求仍有独立身份，旧请求的结束回调不能清除它
+            if (active?.request === request) active = null
+        }
     }
 
-    private fun startLocked(
-        semantics: RefreshRequestSemantics,
-        start: () -> T,
-        cancel: () -> Unit
-    ): RefreshInFlightStart<T> {
-        val newOperation = start()
-        owner = RefreshInFlightOwner(semantics = semantics, isActive = true)
-        operation = newOperation
-        cancelCurrent = cancel
-        return RefreshInFlightStart(newOperation, startedNew = true)
+    fun cancelCurrent() {
+        synchronized(this) { cancelLocked() }
     }
 
-    private fun clearLocked(semantics: RefreshRequestSemantics) {
-        if (owner?.semantics != semantics) return
-        owner = null
-        operation = null
-        cancelCurrent = null
+    private fun cancelLocked() {
+        val previous = active
+        active = null
+        previous?.cancel?.invoke(previous.operation)
     }
 }

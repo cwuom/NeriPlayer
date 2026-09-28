@@ -143,7 +143,7 @@ internal object ManagedDownloadMigrationTargetResolver {
                     ?.equals(sourceAudioName, ignoreCase = true) == true
             }
             .minWithOrNull(
-                compareBy<ManagedDownloadStorage.StoredEntry>(
+                compareBy(
                     {
                         ManagedDownloadTreeNaming.metadataNameOrdinal(it.name, sourceAudioName)
                             ?: Int.MAX_VALUE

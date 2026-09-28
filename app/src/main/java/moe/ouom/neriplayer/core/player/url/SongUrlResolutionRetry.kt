@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.url
 
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val SONG_URL_RESOLUTION_RETRY_COUNT = 5
 private const val SONG_URL_RESOLUTION_RETRY_DELAY_MS = 250L
@@ -9,7 +10,7 @@ private const val SONG_URL_RESOLUTION_RETRY_DELAY_MS = 250L
 internal suspend fun retrySongUrlResolution(
     retryCount: Int = SONG_URL_RESOLUTION_RETRY_COUNT,
     delayBeforeRetry: suspend (retryNumber: Int) -> Unit = { retryNumber ->
-        delay(SONG_URL_RESOLUTION_RETRY_DELAY_MS * retryNumber)
+        delay((SONG_URL_RESOLUTION_RETRY_DELAY_MS * retryNumber).milliseconds)
     },
     resolveAttempt: suspend (attempt: Int) -> SongUrlResult
 ): SongUrlResult {

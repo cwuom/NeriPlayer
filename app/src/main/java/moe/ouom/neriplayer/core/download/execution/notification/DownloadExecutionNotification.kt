@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.model.downloadProgressFraction
 import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
 import moe.ouom.neriplayer.data.model.displayName
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val DOWNLOAD_EXECUTION_NOTIFICATION_CHANNEL_ID = "download_execution"
 
@@ -249,7 +250,7 @@ internal object DownloadExecutionNotificationController {
             val generation = delayedReleaseGeneration
             delayedReleaseRefreshJob?.cancel()
             delayedReleaseRefreshJob = scope.launch {
-                delay(REFRESH_AFTER_RELEASE_MS)
+                delay(REFRESH_AFTER_RELEASE_MS.milliseconds)
                 synchronized(lock) {
                     if (generation != delayedReleaseGeneration) return@launch
                     delayedReleaseRefreshJob = null
@@ -278,7 +279,7 @@ internal object DownloadExecutionNotificationController {
                 if (delayMs != null && pendingRefreshJob?.isActive != true) {
                     val token = decision.token
                     pendingRefreshJob = scope.launch {
-                        delay(delayMs)
+                        delay(delayMs.milliseconds)
                         var fireNow = false
                         var retry = false
                         synchronized(lock) {

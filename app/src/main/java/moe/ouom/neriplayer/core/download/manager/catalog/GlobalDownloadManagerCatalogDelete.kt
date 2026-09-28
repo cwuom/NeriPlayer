@@ -86,6 +86,7 @@ import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val DELETE_PROGRESS_REFERENCE_STEP = 32
 
@@ -271,9 +272,9 @@ internal suspend fun GlobalDownloadManager.awaitDownloadedSongDeletion(
     if (keys.isEmpty()) {
         return true
     }
-    val settled = withTimeoutOrNull(DOWNLOADED_SONG_DELETE_BARRIER_TIMEOUT_MS) {
+    val settled = withTimeoutOrNull(DOWNLOADED_SONG_DELETE_BARRIER_TIMEOUT_MS.milliseconds) {
         while (keys.any(downloadedSongDeletionCounts::containsKey)) {
-            delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS)
+            delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS.milliseconds)
         }
         true
     } == true
@@ -292,9 +293,9 @@ internal suspend fun GlobalDownloadManager.awaitAllDownloadedSongDeletions(): Bo
     if (!isDownloadedSongDeletionActive()) {
         return true
     }
-    val settled = withTimeoutOrNull(DOWNLOADED_SONG_DELETE_BARRIER_TIMEOUT_MS) {
+    val settled = withTimeoutOrNull(DOWNLOADED_SONG_DELETE_BARRIER_TIMEOUT_MS.milliseconds) {
         while (isDownloadedSongDeletionActive()) {
-            delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS)
+            delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS.milliseconds)
         }
         true
     } == true
@@ -743,11 +744,11 @@ internal suspend fun GlobalDownloadManager.deleteDownloadedSongsOnIo(
                 "全选删除下载目录，先取消活动下载并保留清理标记直到收敛: songs=${targetSongs.size}"
             )
             val cancellationSettled = withTimeoutOrNull(
-                DOWNLOAD_CLEAR_FENCE_WAIT_TIMEOUT_MS
+                DOWNLOAD_CLEAR_FENCE_WAIT_TIMEOUT_MS.milliseconds
             ) {
                 session.clearJob?.join() ?: cancelAllDownloadTasksAndWait()
                 while (!isFullLibraryDeleteCancellationSettled(appContext)) {
-                    delay(DOWNLOAD_CLEAR_FENCE_WAIT_POLL_MS)
+                    delay(DOWNLOAD_CLEAR_FENCE_WAIT_POLL_MS.milliseconds)
                 }
                 true
             } == true
@@ -1457,7 +1458,7 @@ internal suspend fun GlobalDownloadManager.resolveDownloadedPlaybackWithRetry(
             if (attemptIndex == 0) {
                 scheduleCatalogReconcile(context, forceRefresh = false)
             }
-            delay(delayMs)
+            delay(delayMs.milliseconds)
             yield()
         }
     }

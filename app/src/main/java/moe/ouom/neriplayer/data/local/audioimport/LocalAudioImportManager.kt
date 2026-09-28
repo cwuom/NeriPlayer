@@ -58,6 +58,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resumeWithException
+import kotlin.time.Duration.Companion.milliseconds
 
 object LocalAudioImportManager {
     internal const val TAG = "LocalAudioImport"
@@ -272,7 +273,7 @@ object LocalAudioImportManager {
         progress.emitWaitingHeartbeat(phase)
         val pending = async(Dispatchers.IO) { block() }
         while (!pending.isCompleted) {
-            withTimeoutOrNull(SCAN_WAIT_HEARTBEAT_MS) {
+            withTimeoutOrNull(SCAN_WAIT_HEARTBEAT_MS.milliseconds) {
                 pending.join()
             }
             if (!pending.isCompleted) {

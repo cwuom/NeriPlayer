@@ -1,5 +1,6 @@
 #include "usb/feedback/usb_feedback_rate_math.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <limits>
@@ -158,23 +159,20 @@ struct WideUnsigned {
     }
 
     [[nodiscard]] bool isZero() const {
-        for (const uint32_t word : words) {
-            if (word != 0) {
-                return false;
-            }
-        }
-        return true;
+        return std::all_of(words.begin(), words.end(), [](uint32_t word) {
+            return word == 0;
+        });
     }
 
     [[nodiscard]] bool bitAt(size_t index) const {
         const size_t wordIndex = index / 32U;
-        const uint32_t bitIndex = static_cast<uint32_t>(index % 32U);
+        const auto bitIndex = static_cast<uint32_t>(index % 32U);
         return (words[wordIndex] & (UINT32_C(1) << bitIndex)) != 0;
     }
 
     void setBit(size_t index) {
         const size_t wordIndex = index / 32U;
-        const uint32_t bitIndex = static_cast<uint32_t>(index % 32U);
+        const auto bitIndex = static_cast<uint32_t>(index % 32U);
         words[wordIndex] |= UINT32_C(1) << bitIndex;
     }
 

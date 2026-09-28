@@ -61,6 +61,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
 
 
 internal suspend fun GlobalDownloadManager.captureDownloadClearOwnership(
@@ -105,7 +106,7 @@ internal suspend fun GlobalDownloadManager.runFastTaskClearPhase(
     // 先写入批量取消状态，让任务列表在交互预算内立即收敛。持久围栏
     // 已经生效，宿主即使有极短暂的尾部写入也只能留下可恢复凭据
     val persistedCancellationCount = withTimeoutOrNull(
-        DOWNLOAD_CLEAR_FAST_DB_WAIT_MS
+        DOWNLOAD_CLEAR_FAST_DB_WAIT_MS.milliseconds
     ) {
         try {
             DownloadExecutionRoomStore.requestCancelForStableKeysFast(
@@ -239,7 +240,7 @@ internal fun GlobalDownloadManager.scheduleDeferredTaskClearRecovery(
     val appContext = context.applicationContext
     scope.launch {
         try {
-            delay(100L)
+            delay(100L.milliseconds)
             if (finishReleasedTaskClearState(appContext)) {
                 return@launch
             }
@@ -272,13 +273,13 @@ internal fun GlobalDownloadManager.scheduleDeferredTaskClearRecovery(
                     false
                 }
                 if (!retryCompleted) {
-                    delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+                    delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
                     continue
                 }
                 if (finishReleasedTaskClearState(appContext)) {
                     return@launch
                 }
-                delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+                delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
             }
             finishReleasedTaskClearState(appContext)
         } catch (cancellation: CancellationException) {
@@ -320,13 +321,13 @@ internal fun GlobalDownloadManager.scheduleTaskClearHardDeadline(context: Contex
                         (System.currentTimeMillis() - requestedAtMs)
                 }
                 if (remainingMs > 0L) {
-                    delay(remainingMs)
+                    delay(remainingMs.milliseconds)
                     continue
                 }
                 if (escalateExpiredTaskClear(appContext)) {
                     return@launch
                 }
-                delay(100L)
+                delay(100L.milliseconds)
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -407,9 +408,9 @@ internal fun GlobalDownloadManager.finishReleasedTaskClearState(context: Context
 }
 
 internal suspend fun GlobalDownloadManager.awaitDownloadClearFenceRelease(context: Context): Boolean {
-    val released = withTimeoutOrNull(DOWNLOAD_CLEAR_FENCE_WAIT_TIMEOUT_MS) {
+    val released = withTimeoutOrNull(DOWNLOAD_CLEAR_FENCE_WAIT_TIMEOUT_MS.milliseconds) {
         while (PersistentDownloadClearFenceStore.hasPersistedFence(context)) {
-            delay(DOWNLOAD_CLEAR_FENCE_WAIT_POLL_MS)
+            delay(DOWNLOAD_CLEAR_FENCE_WAIT_POLL_MS.milliseconds)
         }
         true
     } == true
@@ -492,7 +493,7 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
         var recoveryProgressId = downloadedSongDeleteProgressMutable.value
             ?.takeIf { it.fullLibraryDelete }?.deleteId
         try {
-            delay(100L)
+            delay(100L.milliseconds)
             repeat(3) { attempt ->
                 if (!PersistentDownloadClearFenceStore.isActive(appContext)) {
                     return@launch
@@ -519,7 +520,7 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
                 // 自身释放，形成递归等待。先单独收敛任务取消，再按目录快照
                 // 回放物理删除，完全不依赖 catalog
                 val cancellationSettled = withTimeoutOrNull(
-                    DOWNLOAD_CLEAR_FENCE_WAIT_TIMEOUT_MS
+                    DOWNLOAD_CLEAR_FENCE_WAIT_TIMEOUT_MS.milliseconds
                 ) {
                     requestAllDownloadTaskCancellation(
                         purpose = DownloadClearPurpose.FULL_LIBRARY_DELETE,
@@ -542,7 +543,7 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
                         return@launch
                     }
                     if (attempt < 2) {
-                        delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+                        delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
                     }
                     return@repeat
                 }
@@ -573,7 +574,7 @@ internal fun GlobalDownloadManager.scheduleDeferredFullLibraryDeleteRecovery(con
                     "进程重启后的全选删除仍有残留: attempt=${attempt + 1}/3"
                 )
                 if (attempt < 2) {
-                    delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+                    delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
                 }
             }
             if (PersistentDownloadedSongDeleteIntentStore.hasPending(appContext) &&
@@ -786,7 +787,7 @@ internal suspend fun GlobalDownloadManager.finishUnconfirmedFullLibraryDelete(co
             DownloadClearFenceReleaseResult.SUPERSEDED -> return false
             DownloadClearFenceReleaseResult.FAILED -> {
                 if (attempt < DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS) {
-                    delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+                    delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
                 }
             }
         }
@@ -814,7 +815,7 @@ internal suspend fun GlobalDownloadManager.activateDownloadClearFence(context: C
             context = context,
             reason = "waiting for durable download clear fence"
         )
-        delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+        delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
     }
     NPLogger.e(
         TAG,
@@ -955,7 +956,7 @@ internal suspend fun GlobalDownloadManager.clearDownloadClearFence(
                     context = context,
                     reason = "download clear fence still active"
                 )
-                delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+                delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
             }
         }
     }
@@ -1007,7 +1008,7 @@ internal suspend fun GlobalDownloadManager.requestAllDownloadOperationCancellati
                     error
                 )
                 if (attempt + 1 < DOWNLOAD_CANCEL_JOURNAL_MAX_ATTEMPTS) {
-                    delay(DOWNLOAD_CANCEL_JOURNAL_RETRY_DELAY_MS * (attempt + 1))
+                    delay((DOWNLOAD_CANCEL_JOURNAL_RETRY_DELAY_MS * (attempt + 1)).milliseconds)
                 }
             }
         }
@@ -1023,7 +1024,7 @@ internal suspend fun GlobalDownloadManager.requestAllDownloadOperationCancellati
             reason = "waiting for durable download cancellation",
             operationIds = operationIds
         )
-        delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS)
+        delay(DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS.milliseconds)
     }
     throw IllegalStateException(
         "批量取消持久化在有界重试后仍不可用: " +
@@ -1677,7 +1678,7 @@ internal suspend fun GlobalDownloadManager.awaitDownloadCancellationsSettled(son
         if (songKeys.none(AudioDownloadManager::isSongDownloadActive)) {
             break
         }
-        delay(50L)
+        delay(50L.milliseconds)
     }
     val stuckKeys = songKeys.filter(AudioDownloadManager::isSongDownloadActive)
     if (stuckKeys.isNotEmpty()) {

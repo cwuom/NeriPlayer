@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.player.policy.skip.BiliVideoSkipTracker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val BILI_VIDEO_SKIP_TARGET_LOAD_MAX_ATTEMPTS = 3
 private const val BILI_VIDEO_SKIP_TARGET_LOAD_RETRY_BASE_DELAY_MS = 1_000L
@@ -184,7 +185,7 @@ internal object BiliVideoSkipPlaybackController {
                     }
                     if (target != null) break
                     resolveBiliVideoSkipTargetLoadRetryDelayMs(attempt + 1)?.let { delayMs ->
-                        delay(delayMs)
+                        delay(delayMs.milliseconds)
                     }
                 }
                 if (target == null) {
