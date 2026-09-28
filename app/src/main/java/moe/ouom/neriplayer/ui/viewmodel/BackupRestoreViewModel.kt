@@ -55,7 +55,6 @@ class BackupRestoreViewModel internal constructor(
     private var backupManager: BackupManager? = null
     private var strings: BackupRestoreStrings? = null
     private var playlistCountJob: Job? = null
-    private var playlistCountContext: Context? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
@@ -67,11 +66,10 @@ class BackupRestoreViewModel internal constructor(
     }
 
     fun observePlaylistCount(context: Context) {
-        val appContext = context.applicationContext
-        if (playlistCountJob?.isActive == true && playlistCountContext == appContext) {
+        if (playlistCountJob?.isActive == true) {
             return
         }
-        playlistCountContext = appContext
+        val appContext = context.applicationContext
         playlistCountJob?.cancel()
         playlistCountJob = viewModelScope.launch {
             try {

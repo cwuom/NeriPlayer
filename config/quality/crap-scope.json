@@ -203,6 +203,21 @@
   ],
   "method_scopes": [
     {
+      "source": "moe/ouom/neriplayer/ui/viewmodel/BackupRestoreViewModel.kt",
+      "class": "moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel",
+      "methods": ["observePlaylistCount"]
+    },
+    {
+      "source": "moe/ouom/neriplayer/ui/viewmodel/BackupRestoreViewModel.kt",
+      "class": "moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel$observePlaylistCount$1",
+      "methods": ["invokeSuspend"]
+    },
+    {
+      "source": "moe/ouom/neriplayer/ui/viewmodel/BackupRestoreViewModel.kt",
+      "class": "moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel$observePlaylistCount$1$1",
+      "methods": ["emit"]
+    },
+    {
       "source": "moe/ouom/neriplayer/core/api/search/CloudMusicSearchApi.kt",
       "class": "moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi",
       "methods": ["<init>", "logResponseSummary"]
