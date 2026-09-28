@@ -30,29 +30,13 @@ import android.content.ContextWrapper
 import android.net.Uri
 import android.os.Build
 import android.view.WindowManager
-import androidx.compose.animation.AnimatedContentScope
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Home
@@ -60,10 +44,8 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -78,18 +60,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
@@ -100,14 +78,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import coil.Coil
-import com.google.gson.Gson
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.Dispatchers
@@ -123,16 +96,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.lifecycle.updateUsbExclusiveForegroundState
 import moe.ouom.neriplayer.core.player.policy.usb.shouldPromptForUsbExclusiveBackgroundPermission
@@ -144,20 +112,13 @@ import moe.ouom.neriplayer.core.startup.player.PlayerStartupAudioFocusRefresher
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupHistoryRecorder
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupServiceSyncCoordinator
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
-import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.playbackVisualKey
 import moe.ouom.neriplayer.data.model.playbackVisualKeyAliases
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
 import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
-import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.AdvancedBlurQualityPreference
-import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
@@ -165,81 +126,94 @@ import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotCached
-import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.navigation.LauncherShortcutAction
 import moe.ouom.neriplayer.navigation.LauncherShortcutRequest
 import moe.ouom.neriplayer.navigation.launcherShortcutMainTabRoute
-import moe.ouom.neriplayer.ui.component.navigation.NeriBottomBar
-import moe.ouom.neriplayer.ui.component.navigation.resolveBottomBarSelectionAlpha
-import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
-import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults
-import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneLayer
-import moe.ouom.neriplayer.ui.effect.glass.advancedGlassSceneZIndex
-import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassVisibilitySceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
 import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
-import moe.ouom.neriplayer.ui.feedback.AppFeedbackHostEffect
-import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
-import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
-import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
-import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
-import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
-import moe.ouom.neriplayer.ui.screen.RecentScreen
-import moe.ouom.neriplayer.ui.screen.PlaybackStatsScreen
-import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
-import moe.ouom.neriplayer.ui.screen.debug.CrashLogListScreen
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
-import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherDebugScreen
-import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
-import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
-import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
-import moe.ouom.neriplayer.ui.screen.debug.UsbExclusiveDebugScreen
-import moe.ouom.neriplayer.ui.screen.debug.YouTubeApiProbeScreen
-import moe.ouom.neriplayer.ui.screen.artist.BiliUploaderDetailScreen
-import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
-import moe.ouom.neriplayer.ui.screen.artist.YouTubeMusicCreatorNavigationScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
 import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
-import moe.ouom.neriplayer.ui.screen.host.SettingsHostScreen
 import moe.ouom.neriplayer.ui.screen.host.rememberHomeHostRuntimeState
-import moe.ouom.neriplayer.ui.screen.tab.shouldShowHomeContinueSection
-import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.tab.home.shouldShowHomeContinueSection
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
-import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
-import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.ui.debug.appDebugCrashActionOwner
+import moe.ouom.neriplayer.ui.dialog.AppTrafficRiskDialogHost
+import moe.ouom.neriplayer.ui.dialog.AppUsbBackgroundPermissionDialogHost
 import moe.ouom.neriplayer.util.platform.openAppBackgroundSettings
 import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
 import moe.ouom.neriplayer.util.platform.requestIgnoreBatteryOptimizationsCompat
 import moe.ouom.neriplayer.util.platform.LanguageManager
-import moe.ouom.neriplayer.util.format.formatFileSize
 import moe.ouom.neriplayer.util.media.isRemoteImageSource
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.network.rememberOfflineModeState
 import moe.ouom.neriplayer.ui.haptic.syncHapticFeedbackSetting
+import moe.ouom.neriplayer.ui.navigation.AppBottomBarPresentation
+import moe.ouom.neriplayer.ui.navigation.AppMiniPlayerPresentation
+import moe.ouom.neriplayer.ui.navigation.AppNavigationGraph
+import moe.ouom.neriplayer.ui.navigation.AppNavigationGraphOwner
+import moe.ouom.neriplayer.ui.navigation.AppNavigationGraphPresentation
+import moe.ouom.neriplayer.ui.navigation.AppNavigationMediaActions
+import moe.ouom.neriplayer.ui.navigation.AppNavigationScaffold
+import moe.ouom.neriplayer.ui.navigation.AppNavigationSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabGlassOwner
+import moe.ouom.neriplayer.ui.navigation.MainTabLayerHost
+import moe.ouom.neriplayer.ui.navigation.biliPlaylistSourceRoute
+import moe.ouom.neriplayer.ui.navigation.biliUploaderSourceRoute
+import moe.ouom.neriplayer.ui.navigation.localPlaylistSourceRoute
+import moe.ouom.neriplayer.ui.navigation.mainTabDetailContentOffsetEasing
+import moe.ouom.neriplayer.ui.navigation.navigationGson
+import moe.ouom.neriplayer.ui.navigation.neteaseAlbumSourceRoute
+import moe.ouom.neriplayer.ui.navigation.neteasePlaylistSourceRoute
+import moe.ouom.neriplayer.ui.navigation.rememberMainTabLayerTransitionState
+import moe.ouom.neriplayer.ui.navigation.resolveMainStartDestination
+import moe.ouom.neriplayer.ui.navigation.resolveMainTabBackgroundMotionDurationMillis
+import moe.ouom.neriplayer.ui.navigation.resolveMainTabNavigationMotionState
+import moe.ouom.neriplayer.ui.navigation.resolveMainTabNavigationMotionTarget
+import moe.ouom.neriplayer.ui.navigation.selectMainTabRouteContent
+import moe.ouom.neriplayer.ui.navigation.shouldAcceptObservedMainTabRoute
+import moe.ouom.neriplayer.ui.navigation.shouldDispatchMainTabNavigation
+import moe.ouom.neriplayer.ui.navigation.shouldUseAdvancedGlassNavigationHandoff
+import moe.ouom.neriplayer.ui.playback.visual.AppNowPlayingOverlay
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayBackground
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayCover
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
+import moe.ouom.neriplayer.ui.playback.visual.PLAYBACK_COVER_SEED_GRACE_MS
+import moe.ouom.neriplayer.ui.playback.visual.PlaybackCoverSeed
+import moe.ouom.neriplayer.ui.playback.visual.playbackVisualCoverRequest
+import moe.ouom.neriplayer.ui.playback.visual.rememberPlaybackVisualCoverState
+import moe.ouom.neriplayer.ui.playback.visual.resolveActiveCoverSeedHex
+import moe.ouom.neriplayer.ui.playback.visual.resolveCoverSeedWarmupDelayMillis
+import moe.ouom.neriplayer.ui.settings.route.AppSettingsHostEnvironment
+import moe.ouom.neriplayer.ui.settings.route.AppSettingsRoute
+import moe.ouom.neriplayer.ui.theme.background.CustomBackground
+import moe.ouom.neriplayer.ui.theme.reveal.AppThemeRevealOverlayHost
+import moe.ouom.neriplayer.ui.theme.reveal.THEME_REVEAL_WATCHDOG_DELAY_MILLIS
+import moe.ouom.neriplayer.ui.theme.reveal.appThemeRevealPresentation
+import moe.ouom.neriplayer.ui.theme.reveal.awaitStableDraw
+import moe.ouom.neriplayer.ui.theme.reveal.captureThemeRevealSnapshot
+import moe.ouom.neriplayer.ui.theme.reveal.resolveThemeToggleTarget
+import moe.ouom.neriplayer.ui.theme.reveal.shouldBlockThemeModeChange
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -877,7 +851,7 @@ private fun NeriAppContent(
                 writeInFlight = themeModeWriteInFlight,
                 revealActive = latestThemeRevealActive,
                 hasPendingThemePreference = pendingFollowSystemDark != null ||
-                    pendingForceDark != null
+                        pendingForceDark != null
             )
         ) {
             return
@@ -1247,7 +1221,7 @@ private fun NeriAppContent(
             ) {
                 visibleNavigationOwners +
                     visibleMainTabGlassOwners +
-                    MainTabGlassOwner(selectedMainTabRoute)
+                        MainTabGlassOwner(selectedMainTabRoute)
             }
             fun navigateToMainTab(route: String) {
                 if (selectedMainTabRoute != route) {
@@ -1743,214 +1717,220 @@ private fun NeriAppContent(
                     )
                 }
 
-                AppStartupDestinationEffect(
-                    navController = navController,
-                    currentRoute = currentRoute,
-                    showHomeTab = showHomeTab,
-                    effectiveStartDestination = effectiveStartDestination,
-                    defaultStartDestination = defaultStartDestination,
-                    navHostStartDestination = navHostStartDestination
-                )
+                    AppStartupDestinationEffect(
+                        navController = navController,
+                        currentRoute = currentRoute,
+                        showHomeTab = showHomeTab,
+                        effectiveStartDestination = effectiveStartDestination,
+                        defaultStartDestination = defaultStartDestination,
+                        navHostStartDestination = navHostStartDestination
+                    )
 
-                AppNavigationScaffold(
-                    bottomBar = AppBottomBarPresentation(
-                        items = bottomBarItems,
-                        currentDestination = backEntry?.destination,
-                        showNowPlaying = showNowPlaying,
-                        offlineMode = offlineMode,
-                        alwaysUseNewTabStyle = alwaysUseNewTabStyle,
-                        backgroundImageUri = backgroundImageUri
-                    ),
-                    miniPlayer = AppMiniPlayerPresentation(
-                        song = currentSong,
-                        coverUrl = displayCoverUrl,
-                        visualCoverUrl = playbackVisualCoverUrl,
-                        songVisualKey = currentSongVisualKey,
-                        visualCoverSongKey = playbackVisualCoverState.ownerSongKey,
-                        enableBlur = effectiveAdvancedBlurEnabled
-                    ),
-                    baseBlurRequested = advancedGlassController.isBaseBlurRequested,
-                    snackbarHostState = snackbarHostState,
-                    onMainTabSelected = ::navigateToMainTab,
-                    onExpandNowPlaying = { showNowPlaying = true }
-                ) { bottomBarLayoutInsets ->
-                    // Keep the effect on a stable layer outside NavHost transitions
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .captureAdvancedGlassBackdrop(contentGlassBackdrop)
-                    ) {
-                        MainTabLayerHost(
-                            selectedRoute = selectedMainTabRoute,
-                            transitionState = mainTabTransitionState,
+                    AppNavigationScaffold(
+                        bottomBar = AppBottomBarPresentation(
+                            items = bottomBarItems,
+                            currentDestination = backEntry?.destination,
+                            showNowPlaying = showNowPlaying,
+                            offlineMode = offlineMode,
+                            alwaysUseNewTabStyle = alwaysUseNewTabStyle,
+                            backgroundImageUri = backgroundImageUri
+                        ),
+                        miniPlayer = AppMiniPlayerPresentation(
+                            song = currentSong,
+                            coverUrl = displayCoverUrl,
+                            visualCoverUrl = playbackVisualCoverUrl,
+                            songVisualKey = currentSongVisualKey,
+                            visualCoverSongKey = playbackVisualCoverState.ownerSongKey,
+                            enableBlur = effectiveAdvancedBlurEnabled
+                        ),
+                        baseBlurRequested = advancedGlassController.isBaseBlurRequested,
+                        snackbarHostState = snackbarHostState,
+                        onMainTabSelected = ::navigateToMainTab,
+                        onExpandNowPlaying = { showNowPlaying = true }
+                    ) { bottomBarLayoutInsets ->
+                        // Keep the effect on a stable layer outside NavHost transitions
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .onSizeChanged { size ->
-                                    if (size.height > 0) {
-                                        mainTabDetailContentHeightPx = size.height
-                                    }
-                                }
-                                .offset {
-                                    IntOffset(
-                                        x = 0,
-                                        y = (
-                                            mainTabNavigationMotion.tabLayerTransform
-                                                .translationYFraction *
-                                                mainTabDetailContentHeightPx
-                                        ).roundToInt()
-                                    )
-                                }
-                                .graphicsLayer {
-                                    scaleX = mainTabNavigationMotion.tabLayerTransform.scale
-                                    scaleY = mainTabNavigationMotion.tabLayerTransform.scale
-                                    alpha = mainTabNavigationMotion.tabLayerTransform.alpha
-                                    transformOrigin = TransformOrigin.Center
-                                }
-                                .zIndex(MAIN_TAB_LAYER_Z_INDEX),
-                            onVisibleGlassOwnersChanged = {
-                                visibleMainTabGlassOwners = it
-                            },
-                            content = { route ->
-                                RenderMainTabRoute(route)
-                            }
-                        )
-                        AdvancedGlassNavigationHandoff(
-                            enabled = shouldUseAdvancedGlassNavigationHandoff(
-                                visibleNavigationRoutes
-                            )
+                                .captureAdvancedGlassBackdrop(contentGlassBackdrop)
                         ) {
-                            AppNavigationGraph(
-                                owner = AppNavigationGraphOwner(
-                                    navController = navController,
-                                    presentation = AppNavigationGraphPresentation(
-                                        navHostStartDestination, coherentFeedbackEnabled, offlineMode
-                                    ) { route, content ->
-                                        navigationSceneRenderer.run {
-                                            RenderNavHostScene(route, content)
+                            MainTabLayerHost(
+                                selectedRoute = selectedMainTabRoute,
+                                transitionState = mainTabTransitionState,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .onSizeChanged { size ->
+                                        if (size.height > 0) {
+                                            mainTabDetailContentHeightPx = size.height
                                         }
-                                    },
-                                    mediaActions = AppNavigationMediaActions(
-                                        playSongs = { songs, index, sourceRoute ->
-                                            playSongsAndOpenNowPlaying(songs, index, sourceRoute)
+                                    }
+                                    .offset {
+                                        IntOffset(
+                                            x = 0,
+                                            y = (
+                                                    mainTabNavigationMotion.tabLayerTransform
+                                                        .translationYFraction *
+                                                            mainTabDetailContentHeightPx
+                                                    ).roundToInt()
+                                        )
+                                    }
+                                    .graphicsLayer {
+                                        scaleX = mainTabNavigationMotion.tabLayerTransform.scale
+                                        scaleY = mainTabNavigationMotion.tabLayerTransform.scale
+                                        alpha = mainTabNavigationMotion.tabLayerTransform.alpha
+                                        transformOrigin = TransformOrigin.Center
+                                    }
+                                    .zIndex(MAIN_TAB_LAYER_Z_INDEX),
+                                onVisibleGlassOwnersChanged = {
+                                    visibleMainTabGlassOwners = it
+                                },
+                                content = { route ->
+                                    RenderMainTabRoute(route)
+                                }
+                            )
+                            AdvancedGlassNavigationHandoff(
+                                enabled = shouldUseAdvancedGlassNavigationHandoff(
+                                    visibleNavigationRoutes
+                                )
+                            ) {
+                                AppNavigationGraph(
+                                    owner = AppNavigationGraphOwner(
+                                        navController = navController,
+                                        presentation = AppNavigationGraphPresentation(
+                                            navHostStartDestination,
+                                            coherentFeedbackEnabled,
+                                            offlineMode
+                                        ) { route, content ->
+                                            navigationSceneRenderer.run {
+                                                RenderNavHostScene(route, content)
+                                            }
                                         },
-                                        playBiliAudio = ::playBiliAudioAndOpenNowPlayingWithSource,
-                                        playBiliParts = ::playBiliPartsAndOpenNowPlayingWithSource,
-                                        onNeteaseAlbumClick = { navigateToNeteaseAlbum(it) },
-                                        onYouTubePlaylistClick = ::navigateToYouTubeMusicPlaylist,
-                                        onYouTubeCreatorClick = ::navigateToYouTubeMusicCreator
+                                        mediaActions = AppNavigationMediaActions(
+                                            playSongs = { songs, index, sourceRoute ->
+                                                playSongsAndOpenNowPlaying(
+                                                    songs,
+                                                    index,
+                                                    sourceRoute
+                                                )
+                                            },
+                                            playBiliAudio = ::playBiliAudioAndOpenNowPlayingWithSource,
+                                            playBiliParts = ::playBiliPartsAndOpenNowPlayingWithSource,
+                                            onNeteaseAlbumClick = { navigateToNeteaseAlbum(it) },
+                                            onYouTubePlaylistClick = ::navigateToYouTubeMusicPlaylist,
+                                            onYouTubeCreatorClick = ::navigateToYouTubeMusicCreator
+                                        )
                                     )
                                 )
-                            )
+                            }
                         }
                     }
-                }
 
-                AppNowPlayingOverlay(
-                    visible = showNowPlaying,
-                    cover = NowPlayingOverlayCover(
-                        url = playbackVisualCoverUrl,
-                        songKey = currentSongVisualKey,
-                        song = currentSong,
-                        assetRefreshKey = coverAssetRefreshKey
-                    ),
-                    queueFlow = PlayerManager.currentQueueFlow,
-                    theme = NowPlayingOverlayTheme(
-                        dynamicColorEnabled = dynamicColorEnabled,
-                        activeCoverSeedHex = activeCoverSeedHex,
-                        seedColorHex = themeSeedColor,
-                        paletteStyle = themePaletteStyle,
-                        colorSpec = themeColorSpec
-                    ),
-                    background = NowPlayingOverlayBackground(
-                        blurEnabled = nowPlayingCoverBlurBackgroundEnabled,
-                        blurAmount = nowPlayingCoverBlurAmount,
-                        blurDarken = nowPlayingCoverBlurDarken,
-                        dynamicEnabled = effectiveDynamicBackgroundEnabled,
-                        offlineMode = offlineMode
-                    ),
-                    onVisibilityChanged = latestOnNowPlayingVisibilityChanged,
-                    onClose = { showNowPlaying = false }
-                ) {
-                    val currentSourceRoute = currentPlaybackSourceRoute
-                    NowPlayingScreen(
-                        onNavigateUp = { showNowPlaying = false },
-                        onOpenCurrentPlaybackSource = currentSourceRoute?.let { route ->
-                            {
-                                navigateToPlaybackSourceRoute(route)
-                            }
-                        },
-                        showLyricsScreen = showNowPlayingLyrics,
-                        onShowLyricsScreenChange = { showNowPlayingLyrics = it },
-                        onEnterAlbum = { album ->
-                            val shouldRestoreLyrics = showNowPlayingLyrics
-                            navigateToNeteaseAlbum(album) {
-                                if (shouldRestoreLyrics) {
-                                    restoreLyricsAfterAlbumBack = true
+                    AppNowPlayingOverlay(
+                        visible = showNowPlaying,
+                        cover = NowPlayingOverlayCover(
+                            url = playbackVisualCoverUrl,
+                            songKey = currentSongVisualKey,
+                            song = currentSong,
+                            assetRefreshKey = coverAssetRefreshKey
+                        ),
+                        queueFlow = PlayerManager.currentQueueFlow,
+                        theme = NowPlayingOverlayTheme(
+                            dynamicColorEnabled = dynamicColorEnabled,
+                            activeCoverSeedHex = activeCoverSeedHex,
+                            seedColorHex = themeSeedColor,
+                            paletteStyle = themePaletteStyle,
+                            colorSpec = themeColorSpec
+                        ),
+                        background = NowPlayingOverlayBackground(
+                            blurEnabled = nowPlayingCoverBlurBackgroundEnabled,
+                            blurAmount = nowPlayingCoverBlurAmount,
+                            blurDarken = nowPlayingCoverBlurDarken,
+                            dynamicEnabled = effectiveDynamicBackgroundEnabled,
+                            offlineMode = offlineMode
+                        ),
+                        onVisibilityChanged = latestOnNowPlayingVisibilityChanged,
+                        onClose = { showNowPlaying = false }
+                    ) {
+                        val currentSourceRoute = currentPlaybackSourceRoute
+                        NowPlayingScreen(
+                            onNavigateUp = { showNowPlaying = false },
+                            onOpenCurrentPlaybackSource = currentSourceRoute?.let { route ->
+                                {
+                                    navigateToPlaybackSourceRoute(route)
                                 }
+                            },
+                            showLyricsScreen = showNowPlayingLyrics,
+                            onShowLyricsScreenChange = { showNowPlayingLyrics = it },
+                            onEnterAlbum = { album ->
+                                val shouldRestoreLyrics = showNowPlayingLyrics
+                                navigateToNeteaseAlbum(album) {
+                                    if (shouldRestoreLyrics) {
+                                        restoreLyricsAfterAlbumBack = true
+                                    }
+                                }
+                            },
+                            onEnterArtist = ::navigateToNeteaseArtist,
+                            onEnterBiliUploader = ::navigateToBiliUploader,
+                            onEnterYouTubeCreator = ::navigateToYouTubeMusicCreator,
+                            lyricBlurEnabled = lyricBlurEnabled,
+                            lyricBlurAmount = lyricBlurAmount,
+                            lyricFontScales = lyricFontScales,
+                            onLyricFontScaleChange = { target, scale ->
+                                scope.launch { repo.setLyricFontScale(target, scale) }
+                            },
+                            advancedLyricsEnabled = advancedLyricsEnabled,
+                            showCoverSourceBadge = showCoverSourceBadge,
+                            showLyricTranslation = showLyricTranslation,
+                            offlineMode = offlineMode,
+                            resolvedCoverUrl = displayCoverUrl,
+                            visualCoverUrl = playbackVisualCoverUrl,
+                            playbackSongKey = currentSongVisualKey,
+                            playbackSongKeyAliases = currentSongVisualKeyAliases,
+                            visualCoverSongKey = playbackVisualCoverState.ownerSongKey
+                        )
+                    }
+
+                    AppThemeRevealOverlayHost(
+                        presentation = appThemeRevealPresentation(
+                            themeRevealOriginWindow,
+                            themeRevealFallbackColorArgb,
+                            themeRevealCaptureToken
+                        ),
+                        snapshot = themeRevealSnapshot,
+                        startRadiusPx = themeRevealStartRadiusPx,
+                        onFinished = finishThemeReveal
+                    )
+
+                    AppTrafficRiskDialogHost(
+                        request = pendingTrafficRiskDownloadRequest,
+                        onConfirm = { request ->
+                            pendingTrafficRiskDownloadRequest = null
+                            GlobalDownloadManager.confirmTrafficRiskDownload(context, request)
+                        },
+                        onDismiss = { pendingTrafficRiskDownloadRequest = null }
+                    )
+
+                    AppUsbBackgroundPermissionDialogHost(
+                        visible = showUsbExclusiveBackgroundPermissionDialog,
+                        readBatteryOptimizationAllowed = {
+                            context.readBackgroundBehaviorAllowance().ignoringBatteryOptimizations
+                        },
+                        onRequestBatteryOptimization = {
+                            showUsbExclusiveBackgroundPermissionDialog = false
+                            context.requestIgnoreBatteryOptimizationsCompat()
+                        },
+                        onOpenAppSettings = {
+                            showUsbExclusiveBackgroundPermissionDialog = false
+                            context.openAppBackgroundSettings()
+                        },
+                        onNeverShowAgain = {
+                            showUsbExclusiveBackgroundPermissionDialog = false
+                            scope.launch {
+                                repo.setUsbExclusiveBackgroundPermissionPromptSuppressed(true)
                             }
                         },
-                        onEnterArtist = ::navigateToNeteaseArtist,
-                        onEnterBiliUploader = ::navigateToBiliUploader,
-                        onEnterYouTubeCreator = ::navigateToYouTubeMusicCreator,
-                        lyricBlurEnabled = lyricBlurEnabled,
-                        lyricBlurAmount = lyricBlurAmount,
-                        lyricFontScales = lyricFontScales,
-                        onLyricFontScaleChange = { target, scale ->
-                            scope.launch { repo.setLyricFontScale(target, scale) }
-                        },
-                        advancedLyricsEnabled = advancedLyricsEnabled,
-                        showCoverSourceBadge = showCoverSourceBadge,
-                        showLyricTranslation = showLyricTranslation,
-                        offlineMode = offlineMode,
-                        resolvedCoverUrl = displayCoverUrl,
-                        visualCoverUrl = playbackVisualCoverUrl,
-                        playbackSongKey = currentSongVisualKey,
-                        playbackSongKeyAliases = currentSongVisualKeyAliases,
-                        visualCoverSongKey = playbackVisualCoverState.ownerSongKey
+                        onDismiss = { showUsbExclusiveBackgroundPermissionDialog = false }
                     )
-                }
-
-                AppThemeRevealOverlayHost(
-                    presentation = appThemeRevealPresentation(
-                        themeRevealOriginWindow,
-                        themeRevealFallbackColorArgb,
-                        themeRevealCaptureToken
-                    ),
-                    snapshot = themeRevealSnapshot,
-                    startRadiusPx = themeRevealStartRadiusPx,
-                    onFinished = finishThemeReveal
-                )
-
-                AppTrafficRiskDialogHost(
-                    request = pendingTrafficRiskDownloadRequest,
-                    onConfirm = { request ->
-                        pendingTrafficRiskDownloadRequest = null
-                        GlobalDownloadManager.confirmTrafficRiskDownload(context, request)
-                    },
-                    onDismiss = { pendingTrafficRiskDownloadRequest = null }
-                )
-
-                AppUsbBackgroundPermissionDialogHost(
-                    visible = showUsbExclusiveBackgroundPermissionDialog,
-                    readBatteryOptimizationAllowed = {
-                        context.readBackgroundBehaviorAllowance().ignoringBatteryOptimizations
-                    },
-                    onRequestBatteryOptimization = {
-                        showUsbExclusiveBackgroundPermissionDialog = false
-                        context.requestIgnoreBatteryOptimizationsCompat()
-                    },
-                    onOpenAppSettings = {
-                        showUsbExclusiveBackgroundPermissionDialog = false
-                        context.openAppBackgroundSettings()
-                    },
-                    onNeverShowAgain = {
-                        showUsbExclusiveBackgroundPermissionDialog = false
-                        scope.launch {
-                            repo.setUsbExclusiveBackgroundPermissionPromptSuppressed(true)
-                        }
-                    },
-                    onDismiss = { showUsbExclusiveBackgroundPermissionDialog = false }
-                )
 
             }
         }

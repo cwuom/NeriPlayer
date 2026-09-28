@@ -5,6 +5,11 @@ import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
+import moe.ouom.neriplayer.ui.screen.nowplaying.PlaybackActionToolbarLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarLayoutSpec
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.toolbarPreferredPadding
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.toolbarRowArrangement
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.toolbarRowVerticalPadding
 
 class NowPlayingCoverActionToolbarTest {
     @Test

@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.ui.viewmodel.buildLocalOriginalSongInfo
-import moe.ouom.neriplayer.ui.screen.resolveEditSongLyricsForSave
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsForSave
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.os.ParcelFileDescriptor

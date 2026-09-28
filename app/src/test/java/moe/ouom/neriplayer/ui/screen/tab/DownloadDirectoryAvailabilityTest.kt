@@ -4,6 +4,9 @@ import java.util.concurrent.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectoryAvailability
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.resolveDownloadDirectoryAvailability
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.resolveDownloadDirectoryPermissionLost
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

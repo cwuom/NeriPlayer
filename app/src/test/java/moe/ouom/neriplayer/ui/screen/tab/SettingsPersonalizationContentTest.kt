@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.ToolbarDockSwitchState
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.resolveToolbarDockSwitchState
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.switchRowClick
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

@@ -7,6 +7,22 @@ import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricBehaviorSheetState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricFontSizeSheetState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricTranslationToggleCopy
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.booleanToggleClick
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.formatLyricOffset
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.isLyricPhoneticSwitchChecked
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.isLyricPhoneticSwitchEnabled
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.lyricFontInputSyncAction
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.lyricFontSizeDoneAction
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.lyricOffsetTextColor
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.lyricPhoneticHint
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.lyricPhoneticSwitchAction
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.lyricSecondaryToggleDescription
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.lyricSecondaryToggleTitle
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.lyricTranslationToggleCopy
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolveLyricOffsetSliderRange
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -24,7 +40,8 @@ class NowPlayingLyricSettingsSheetTest {
         assertEquals(LYRIC_DEFAULT_OFFSET_STEP_MS * 2, state.currentOffset)
         assertEquals(resolveLyricOffsetSliderRange(state.currentOffset), state.sliderRange)
 
-        val below = LyricBehaviorSheetState(MIN_LYRIC_DEFAULT_OFFSET_MS - LYRIC_DEFAULT_OFFSET_STEP_MS)
+        val below =
+            LyricBehaviorSheetState(MIN_LYRIC_DEFAULT_OFFSET_MS - LYRIC_DEFAULT_OFFSET_STEP_MS)
         assertEquals(MIN_LYRIC_DEFAULT_OFFSET_MS - LYRIC_DEFAULT_OFFSET_STEP_MS, below.sliderRange.min)
         assertEquals(MAX_LYRIC_DEFAULT_OFFSET_MS, below.sliderRange.max)
     }
@@ -41,16 +58,31 @@ class NowPlayingLyricSettingsSheetTest {
 
     @Test
     fun `secondary lyric controls only advertise available content`() {
-        assertEquals(R.string.lyrics_secondary_mode_phonetic, lyricSecondaryToggleTitle(false, true))
-        assertEquals(R.string.lyrics_phonetic_only_desc, lyricSecondaryToggleDescription(false, true))
+        assertEquals(R.string.lyrics_secondary_mode_phonetic,
+            lyricSecondaryToggleTitle(false, true)
+        )
+        assertEquals(R.string.lyrics_phonetic_only_desc,
+            lyricSecondaryToggleDescription(false, true)
+        )
         assertEquals(
-            LyricTranslationToggleCopy(R.string.lyrics_secondary_mode_phonetic, R.string.lyrics_phonetic_only_desc),
+            LyricTranslationToggleCopy(
+                R.string.lyrics_secondary_mode_phonetic,
+                R.string.lyrics_phonetic_only_desc
+            ),
             lyricTranslationToggleCopy(false, true)
         )
-        assertEquals(R.string.settings_show_lyric_translation, lyricSecondaryToggleTitle(true, true))
-        assertEquals(R.string.settings_show_lyric_translation_desc, lyricSecondaryToggleDescription(false, false))
-        assertEquals(R.string.lyrics_translation_use_phonetic_requires_translation, lyricPhoneticHint(false, true))
-        assertEquals(R.string.lyrics_translation_use_phonetic_unavailable, lyricPhoneticHint(true, false))
+        assertEquals(R.string.settings_show_lyric_translation,
+            lyricSecondaryToggleTitle(true, true)
+        )
+        assertEquals(R.string.settings_show_lyric_translation_desc,
+            lyricSecondaryToggleDescription(false, false)
+        )
+        assertEquals(R.string.lyrics_translation_use_phonetic_requires_translation,
+            lyricPhoneticHint(false, true)
+        )
+        assertEquals(R.string.lyrics_translation_use_phonetic_unavailable,
+            lyricPhoneticHint(true, false)
+        )
         assertEquals(R.string.lyrics_translation_use_phonetic_desc, lyricPhoneticHint(true, true))
         assertFalse(isLyricPhoneticSwitchEnabled(false, true))
         assertFalse(isLyricPhoneticSwitchEnabled(true, false))

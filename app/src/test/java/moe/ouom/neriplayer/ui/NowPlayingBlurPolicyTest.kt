@@ -1,6 +1,17 @@
 package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayCover
+import moe.ouom.neriplayer.ui.playback.visual.currentNowPlayingBlurCoverUrl
+import moe.ouom.neriplayer.ui.playback.visual.hasNowPlayingCoverBlur
+import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurAssetVersion
+import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurNeighborUrls
+import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurRequestKey
+import moe.ouom.neriplayer.ui.playback.visual.resolveNowPlayingBlurLoadFailure
+import moe.ouom.neriplayer.ui.playback.visual.selectNowPlayingAccentCoverUrl
+import moe.ouom.neriplayer.ui.playback.visual.shouldDisableNowPlayingBlurNetwork
+import moe.ouom.neriplayer.ui.playback.visual.shouldShowStableNowPlayingBlur
+import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingBlur
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -60,7 +71,7 @@ class NowPlayingBlurPolicyTest {
         assertNull(nowPlayingBlurRequestKey(" ", cover.songKey, 4f, version))
         assertFalse(
             nowPlayingBlurRequestKey(cover.url, "song-b", 4f, version) ==
-                nowPlayingBlurRequestKey(cover.url, cover.songKey, 4f, version)
+                    nowPlayingBlurRequestKey(cover.url, cover.songKey, 4f, version)
         )
     }
 

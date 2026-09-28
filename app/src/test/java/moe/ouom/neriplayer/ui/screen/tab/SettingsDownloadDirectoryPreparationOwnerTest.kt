@@ -4,6 +4,12 @@ import android.content.res.Resources
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadDirectoryChangeDecision
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.PendingDownloadDirectoryChange
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationActionPort
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationGateway
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationOwner
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationResult
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.downloadDirectoryChangeDirection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -107,7 +113,9 @@ class SettingsDownloadDirectoryPreparationOwnerTest {
     fun `direction log names default custom and inter custom transitions`() {
         assertEquals("to_default", downloadDirectoryChangeDirection("content://old", null))
         assertEquals("from_default", downloadDirectoryChangeDirection(null, "content://new"))
-        assertEquals("between_custom_roots", downloadDirectoryChangeDirection("content://old", "content://new"))
+        assertEquals("between_custom_roots",
+            downloadDirectoryChangeDirection("content://old", "content://new")
+        )
     }
 
     private class Fixture {
@@ -126,7 +134,8 @@ class SettingsDownloadDirectoryPreparationOwnerTest {
         )
     }
 
-    private class FakeGateway(private val events: MutableList<String>) : DownloadDirectoryPreparationGateway {
+    private class FakeGateway(private val events: MutableList<String>) :
+        DownloadDirectoryPreparationGateway {
         var equivalent = false
         var decision: Result<ManagedDownloadDirectoryChangeDecision>? =
             Result.success(ManagedDownloadDirectoryChangeDecision.APPLY_DIRECTLY)
@@ -145,7 +154,8 @@ class SettingsDownloadDirectoryPreparationOwnerTest {
         }
     }
 
-    private class FakeActions(private val events: MutableList<String>) : DownloadDirectoryPreparationActionPort {
+    private class FakeActions(private val events: MutableList<String>) :
+        DownloadDirectoryPreparationActionPort {
         var blocked = false
         var pending: PendingDownloadDirectoryChange? = null
 

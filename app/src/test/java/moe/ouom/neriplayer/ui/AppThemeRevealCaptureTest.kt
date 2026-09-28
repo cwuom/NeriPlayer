@@ -6,6 +6,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import moe.ouom.neriplayer.ui.theme.reveal.awaitStableDraw
+import moe.ouom.neriplayer.ui.theme.reveal.captureThemeRevealSnapshot
 import org.junit.After
 import org.junit.Assert.assertNull
 import org.junit.Before

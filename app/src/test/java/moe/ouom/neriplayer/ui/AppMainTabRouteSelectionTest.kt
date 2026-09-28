@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.ui.navigation.selectMainTabRouteContent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

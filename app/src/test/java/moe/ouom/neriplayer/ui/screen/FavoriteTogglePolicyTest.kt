@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen
 
+import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

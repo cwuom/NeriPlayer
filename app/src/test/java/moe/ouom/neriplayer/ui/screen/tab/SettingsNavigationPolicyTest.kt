@@ -7,6 +7,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.PendingSettingsSearchNavigation
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsSearchScrollOwner
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.canNavigateBackFromSettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.ensureSplitSettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.initialSettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.isForwardSettingsPageTransition
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.pendingSettingsNavigationForPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsHomeSelectedPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsSearchResultsState
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldHandoffGlass
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldShowActiveGlassScene
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsSearchEntry
 import org.junit.Assert.assertEquals
@@ -115,10 +126,30 @@ class SettingsNavigationPolicyTest {
 
     @Test
     fun `opening a detail page moves forward and returning moves back`() {
-        assertTrue(isForwardSettingsPageTransition(SettingsPage.Playback, SettingsPage.UsbExclusive))
-        assertFalse(isForwardSettingsPageTransition(SettingsPage.UsbExclusive, SettingsPage.Playback))
-        assertTrue(isForwardSettingsPageTransition(SettingsPage.Storage, SettingsPage.StorageCacheDetails))
-        assertFalse(isForwardSettingsPageTransition(SettingsPage.StorageCacheDetails, SettingsPage.Storage))
+        assertTrue(
+            isForwardSettingsPageTransition(
+                SettingsPage.Playback,
+                SettingsPage.UsbExclusive
+            )
+        )
+        assertFalse(
+            isForwardSettingsPageTransition(
+                SettingsPage.UsbExclusive,
+                SettingsPage.Playback
+            )
+        )
+        assertTrue(
+            isForwardSettingsPageTransition(
+                SettingsPage.Storage,
+                SettingsPage.StorageCacheDetails
+            )
+        )
+        assertFalse(
+            isForwardSettingsPageTransition(
+                SettingsPage.StorageCacheDetails,
+                SettingsPage.Storage
+            )
+        )
     }
 
     @Test

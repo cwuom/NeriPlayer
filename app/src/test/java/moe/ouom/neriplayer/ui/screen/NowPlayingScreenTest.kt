@@ -22,6 +22,66 @@ import moe.ouom.neriplayer.data.settings.LyricSourcePreference
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueReorderAutoScrollMaxPerFrame
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueReorderOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueScrollCommand
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingWideLyricsMode
+import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingQueueEntries
+import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingQueueEntriesFromDisplayItems
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldOpenNowPlayingCoverPreviewOnLongPress
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldOpenNowPlayingCoverPreviewOnTap
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongInitialCoverUrl
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongRestoredCoverUrl
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldApplyResolvedEditSongCover
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldConfirmLocalMetadataWriteBack
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldPersistEditedSongLyricsLocally
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldPublishPendingEmbeddedLyricsResult
+import moe.ouom.neriplayer.ui.screen.nowplaying.filterNowPlayingQueueIndexInput
+import moe.ouom.neriplayer.ui.screen.nowplaying.hasPublishedManagedDownload
+import moe.ouom.neriplayer.ui.screen.nowplaying.invertNowPlayingQueueSelection
+import moe.ouom.neriplayer.ui.screen.nowplaying.isBiliUploaderNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNeteaseArtistNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingActiveIconReadable
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingQueueIndexInputError
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingQueueReorderEnabled
+import moe.ouom.neriplayer.ui.screen.nowplaying.isYouTubeMusicArtistNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.ManagedLyricVariant
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingFastLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingImmediateLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingInitialLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildPreferredLyricSourceState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolveManagedDownloadFastLyricText
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolveNowPlayingLyricsMediaReloadKey
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldBackfillDownloadedLyricsAfterFastMiss
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldBypassCollapsedStoredLyric
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldReadEmbeddedLyricsForNowPlayingFastStage
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldReplaceLyricsAfterRefresh
+import moe.ouom.neriplayer.ui.screen.nowplaying.moveNowPlayingQueueEntry
+import moe.ouom.neriplayer.ui.screen.nowplaying.planNowPlayingQueueScroll
+import moe.ouom.neriplayer.ui.screen.nowplaying.queueArtworkUrl
+import moe.ouom.neriplayer.ui.screen.nowplaying.queueRowClick
+import moe.ouom.neriplayer.ui.screen.nowplaying.queueRowContainerColor
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingActiveIconColor
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingMainControlsLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingPlaybackSourceType
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingQueueCurrentIndexAfterReorder
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingQueueIndexInput
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingQueueScrollTarget
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingQueueSelectedSongs
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideLyricsMode
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.selectAllNowPlayingQueueKeys
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldAutoLocateNowPlayingQueue
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldHideDownloadActionForSong
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldShowNowPlayingCoverLyrics
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldShowNowPlayingQueueDragHandle
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldShowNowPlayingQueueQuickActions
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldShowQueueCurrentMarker
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldUpdateNowPlayingQueueScroll
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldUseCompactNowPlayingPortraitLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldUseNowPlayingToolbarDock
+import moe.ouom.neriplayer.ui.screen.nowplaying.syncNowPlayingQueueEntries
 import kotlin.math.pow
 
 class NowPlayingScreenTest {
@@ -1062,9 +1122,15 @@ class NowPlayingScreenTest {
         assertFalse(shouldShowQueueCurrentMarker(true, true))
         assertFalse(shouldShowQueueCurrentMarker(false, false))
 
-        assertEquals(Color.Red.copy(alpha = 0.64f), queueRowContainerColor(true, true, Color.Red, Color.Green, Color.Blue))
-        assertEquals(Color.Green.copy(alpha = 0.42f), queueRowContainerColor(false, true, Color.Red, Color.Green, Color.Blue))
-        assertEquals(Color.Blue.copy(alpha = 0.36f), queueRowContainerColor(false, false, Color.Red, Color.Green, Color.Blue))
+        assertEquals(Color.Red.copy(alpha = 0.64f),
+            queueRowContainerColor(true, true, Color.Red, Color.Green, Color.Blue)
+        )
+        assertEquals(Color.Green.copy(alpha = 0.42f),
+            queueRowContainerColor(false, true, Color.Red, Color.Green, Color.Blue)
+        )
+        assertEquals(Color.Blue.copy(alpha = 0.36f),
+            queueRowContainerColor(false, false, Color.Red, Color.Green, Color.Blue)
+        )
         assertNull(queueArtworkUrl(null))
         assertNull(queueArtworkUrl("  "))
         assertEquals("content://cover", queueArtworkUrl("content://cover"))

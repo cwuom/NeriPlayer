@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.ui.banner.AppManagedProcessingBannerOwner
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame

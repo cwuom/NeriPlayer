@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.ui.theme.reveal.resolveThemeRevealSnapshotDimensions
+import moe.ouom.neriplayer.ui.theme.reveal.resolveThemeToggleTarget
+import moe.ouom.neriplayer.ui.theme.reveal.shouldBlockThemeModeChange
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

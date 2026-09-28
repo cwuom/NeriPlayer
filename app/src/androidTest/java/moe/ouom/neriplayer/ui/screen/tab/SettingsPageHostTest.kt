@@ -19,6 +19,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageHost
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsPageGroupCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsResponsiveDetailScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage

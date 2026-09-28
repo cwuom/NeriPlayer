@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui
 
 import android.content.Context
+import moe.ouom.neriplayer.ui.debug.AppDebugCrashActionOwner
+import moe.ouom.neriplayer.ui.debug.appDebugCrashActionOwner
 import moe.ouom.neriplayer.ui.screen.debug.DebugCrashTestType
 import org.junit.Assert.assertEquals
 import org.junit.Test

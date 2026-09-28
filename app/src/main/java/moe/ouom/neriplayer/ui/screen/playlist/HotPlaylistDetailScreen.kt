@@ -45,9 +45,9 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsHotPlaylist
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.buildPlaybackStatsHotPlaylist
 import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
-import moe.ouom.neriplayer.ui.screen.StatTrackRow
+import moe.ouom.neriplayer.ui.screen.history.stats.StatTrackRow
 import moe.ouom.neriplayer.util.format.formatPlayCount
 
 @OptIn(ExperimentalMaterial3Api::class)

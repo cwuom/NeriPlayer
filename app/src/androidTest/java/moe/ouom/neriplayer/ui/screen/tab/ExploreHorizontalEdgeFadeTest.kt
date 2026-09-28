@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.math.abs
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.screen.tab.explore.exploreHorizontalEdgeFade
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule

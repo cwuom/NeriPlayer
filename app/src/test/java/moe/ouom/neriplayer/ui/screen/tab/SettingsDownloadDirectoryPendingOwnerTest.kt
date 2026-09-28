@@ -9,6 +9,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.PendingDownloadDirectoryChange
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPendingActionPort
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPendingGateway
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPendingOwner
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.shouldReleaseCancelledTargetGrant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -31,9 +36,13 @@ class SettingsDownloadDirectoryPendingOwnerTest {
         fixture.owner.cancel(default)
         assertEquals(1, fixture.events.size)
         assertFalse(shouldReleaseCancelledTargetGrant(default))
-        assertFalse(shouldReleaseCancelledTargetGrant(fixture.change.copy(
-            releaseTargetPermissionOnCancel = false
-        )))
+        assertFalse(
+            shouldReleaseCancelledTargetGrant(
+                fixture.change.copy(
+                    releaseTargetPermissionOnCancel = false
+                )
+            )
+        )
     }
 
     @Test
@@ -128,7 +137,8 @@ class SettingsDownloadDirectoryPendingOwnerTest {
         )
     }
 
-    private class FakeGateway(private val events: MutableList<String>) : DownloadDirectoryPendingGateway {
+    private class FakeGateway(private val events: MutableList<String>) :
+        DownloadDirectoryPendingGateway {
         var enqueueError: Exception? = null
 
         override fun releaseTargetGrant(uri: String?) {
@@ -142,7 +152,8 @@ class SettingsDownloadDirectoryPendingOwnerTest {
         }
     }
 
-    private class FakeActions(private val events: MutableList<String>) : DownloadDirectoryPendingActionPort {
+    private class FakeActions(private val events: MutableList<String>) :
+        DownloadDirectoryPendingActionPort {
         var blocked = false
         var applyError: Exception? = null
 

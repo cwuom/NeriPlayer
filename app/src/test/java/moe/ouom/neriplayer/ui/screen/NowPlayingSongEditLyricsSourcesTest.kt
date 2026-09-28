@@ -8,6 +8,14 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongEmbeddedReadResult
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricVariant
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsSourceReader
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsSources
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.hasEmbeddedLyricText
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.readEditSongEmbeddedLyrics
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.readEditSongLyricsSources
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldProbeEditSongLocalLyrics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -96,7 +104,12 @@ class NowPlayingSongEditLyricsSourcesTest {
         val complete = bundle("a", "b", "c", true, true, true)
         assertTrue(shouldProbeEditSongLocalLyrics(true, complete))
         assertTrue(shouldProbeEditSongLocalLyrics(false, null))
-        assertTrue(shouldProbeEditSongLocalLyrics(false, complete.copy(hasRomanizedSidecar = false)))
+        assertTrue(
+            shouldProbeEditSongLocalLyrics(
+                false,
+                complete.copy(hasRomanizedSidecar = false)
+            )
+        )
         assertFalse(shouldProbeEditSongLocalLyrics(false, complete))
     }
 
@@ -107,7 +120,8 @@ class NowPlayingSongEditLyricsSourcesTest {
             downloadedValue = bundle("downloaded", null, null)
             localValue = scan("local", null, null, original = true)
         }
-        val result = readEditSongLyricsSources(context, song, reader, StandardTestDispatcher(testScheduler))
+        val result =
+            readEditSongLyricsSources(context, song, reader, StandardTestDispatcher(testScheduler))
         assertEquals(1, reader.downloadedCalls)
         assertEquals(1, reader.localCalls)
         assertEquals(0, reader.embeddedCalls)
@@ -121,7 +135,8 @@ class NowPlayingSongEditLyricsSourcesTest {
         val reader = FakeReader().apply {
             embeddedValue = scan(null, null, null, embeddedLyric = "embedded")
         }
-        val result = readEditSongLyricsSources(context, song, reader, StandardTestDispatcher(testScheduler))
+        val result =
+            readEditSongLyricsSources(context, song, reader, StandardTestDispatcher(testScheduler))
         assertEquals(0, reader.downloadedCalls)
         assertEquals(1, reader.localCalls)
         assertEquals(1, reader.embeddedCalls)
@@ -134,7 +149,8 @@ class NowPlayingSongEditLyricsSourcesTest {
             managed = true
             downloadedFailure = IllegalStateException("stale index")
         }
-        val fallback = readEditSongLyricsSources(context, song, reader, StandardTestDispatcher(testScheduler))
+        val fallback =
+            readEditSongLyricsSources(context, song, reader, StandardTestDispatcher(testScheduler))
         assertNull(fallback.downloaded)
         assertEquals(1, reader.localCalls)
         assertEquals(1, reader.embeddedCalls)

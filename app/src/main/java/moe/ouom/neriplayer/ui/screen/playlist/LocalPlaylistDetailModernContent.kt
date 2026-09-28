@@ -123,7 +123,7 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCard
 import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
@@ -149,153 +149,157 @@ import org.burnoutcrew.reorderable.reorderable
 
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, DelicateCoroutinesApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalFoundationApi::class,
+    DelicateCoroutinesApi::class
+)
 internal fun LocalPlaylistDetailModernContent(
     contentScope: LocalPlaylistDetailModernContentScope
 ) {
     with(contentScope) {
-            val deleteProgress by vm.downloadedSongDeleteProgress.collectAsStateWithLifecycle()
-            val deleteFailureDismissed by
-                vm.downloadedSongDeleteFailureDismissed.collectAsStateWithLifecycle()
-            var deletingSongCount by remember(playlistId) { mutableIntStateOf(0) }
-            val deletionInProgress = deletingSongCount > 0 ||
+        val deleteProgress by vm.downloadedSongDeleteProgress.collectAsStateWithLifecycle()
+        val deleteFailureDismissed by
+        vm.downloadedSongDeleteFailureDismissed.collectAsStateWithLifecycle()
+        var deletingSongCount by remember(playlistId) { mutableIntStateOf(0) }
+        val deletionInProgress = deletingSongCount > 0 ||
                 isDownloadedSongDeletionRunning(deleteProgress)
-            PlaylistModernVisualColorsProvider(
+        PlaylistModernVisualColorsProvider(
+            coverUrl = headerCover,
+            offlineMode = offlineMode
+        ) {
+            val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
                 coverUrl = headerCover,
                 offlineMode = offlineMode
+            )
+            val density = LocalDensity.current
+            val searchVisible = shouldShowPlaylistSearch(
+                showSearch = showSearch,
+                selectionMode = selectionMode
+            )
+            val searchVisibilityProgress by animateFloatAsState(
+                targetValue = if (searchVisible) 1f else 0f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                ),
+                label = "playlist-search-visibility"
+            )
+            val searchSlotProgress = searchVisibilityProgress.coerceIn(0f, 1f)
+            val searchVisibilityEased = FastOutSlowInEasing.transform(searchSlotProgress)
+            val searchDockedRevealProgress by remember(
+                reorderState.listState,
+                density
             ) {
-                val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
-                    coverUrl = headerCover,
-                    offlineMode = offlineMode
-                )
-                val density = LocalDensity.current
-                val searchVisible = shouldShowPlaylistSearch(
-                    showSearch = showSearch,
-                    selectionMode = selectionMode
-                )
-                val searchVisibilityProgress by animateFloatAsState(
-                    targetValue = if (searchVisible) 1f else 0f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow
-                    ),
-                    label = "playlist-search-visibility"
-                )
-                val searchSlotProgress = searchVisibilityProgress.coerceIn(0f, 1f)
-                val searchVisibilityEased = FastOutSlowInEasing.transform(searchSlotProgress)
-                val searchDockedRevealProgress by remember(
-                    reorderState.listState,
-                    density
-                ) {
-                    derivedStateOf {
-                        resolvePlaylistDockedSearchRevealProgress(
-                            firstVisibleItemIndex = reorderState.listState.firstVisibleItemIndex,
-                            firstVisibleItemScrollOffsetPx =
-                                reorderState.listState.firstVisibleItemScrollOffset,
-                            revealDistancePx = with(density) {
-                                PlaylistModernDockedSearchSlotHeight.roundToPx()
-                            }
-                        )
-                    }
+                derivedStateOf {
+                    resolvePlaylistDockedSearchRevealProgress(
+                        firstVisibleItemIndex = reorderState.listState.firstVisibleItemIndex,
+                        firstVisibleItemScrollOffsetPx =
+                            reorderState.listState.firstVisibleItemScrollOffset,
+                        revealDistancePx = with(density) {
+                            PlaylistModernDockedSearchSlotHeight.roundToPx()
+                        }
+                    )
                 }
-                val searchDockedVisualProgress = FastOutSlowInEasing.transform(
-                    searchDockedRevealProgress
-                )
-                val dockedSearchProgress = resolvePlaylistDockedSearchSlotProgress(
-                    searchVisibilityProgress = searchSlotProgress,
-                    dockedRevealProgress = searchDockedRevealProgress
-                )
-                val searchSlotVisible = shouldComposePlaylistSearchSlot(
-                    searchVisible = searchVisible,
-                    visibilityProgress = dockedSearchProgress
-                )
-                val searchSlotHeight = interpolatePlaylistDp(
-                    start = 0.dp,
-                    end = PlaylistModernDockedSearchSlotHeight,
-                    fraction = dockedSearchProgress
-                )
-                val searchSlotAlpha = FastOutSlowInEasing.transform(dockedSearchProgress)
-                val playlistHeroHeight = interpolatePlaylistDp(
-                    start = PlaylistModernHeroHeight,
-                    end = PlaylistModernHeroSearchHeight,
-                    fraction = searchVisibilityEased
-                )
-                val playlistChromeCollapseProgress by remember(
-                    reorderState.listState,
-                    density,
-                    playlistHeroHeight
-                ) {
-                    derivedStateOf {
-                        resolvePlaylistChromeCollapseProgress(
-                            firstVisibleItemIndex = reorderState.listState.firstVisibleItemIndex,
-                            firstVisibleItemScrollOffsetPx =
-                                reorderState.listState.firstVisibleItemScrollOffset,
-                            expandedHeroHeightPx = with(density) {
-                                playlistHeroHeight.roundToPx()
-                            }
-                        )
-                    }
+            }
+            val searchDockedVisualProgress = FastOutSlowInEasing.transform(
+                searchDockedRevealProgress
+            )
+            val dockedSearchProgress = resolvePlaylistDockedSearchSlotProgress(
+                searchVisibilityProgress = searchSlotProgress,
+                dockedRevealProgress = searchDockedRevealProgress
+            )
+            val searchSlotVisible = shouldComposePlaylistSearchSlot(
+                searchVisible = searchVisible,
+                visibilityProgress = dockedSearchProgress
+            )
+            val searchSlotHeight = interpolatePlaylistDp(
+                start = 0.dp,
+                end = PlaylistModernDockedSearchSlotHeight,
+                fraction = dockedSearchProgress
+            )
+            val searchSlotAlpha = FastOutSlowInEasing.transform(dockedSearchProgress)
+            val playlistHeroHeight = interpolatePlaylistDp(
+                start = PlaylistModernHeroHeight,
+                end = PlaylistModernHeroSearchHeight,
+                fraction = searchVisibilityEased
+            )
+            val playlistChromeCollapseProgress by remember(
+                reorderState.listState,
+                density,
+                playlistHeroHeight
+            ) {
+                derivedStateOf {
+                    resolvePlaylistChromeCollapseProgress(
+                        firstVisibleItemIndex = reorderState.listState.firstVisibleItemIndex,
+                        firstVisibleItemScrollOffsetPx =
+                            reorderState.listState.firstVisibleItemScrollOffset,
+                        expandedHeroHeightPx = with(density) {
+                            playlistHeroHeight.roundToPx()
+                        }
+                    )
                 }
-                val playlistChromeVisualProgress =
-                    FastOutSlowInEasing.transform(playlistChromeCollapseProgress)
-                val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
-                    searchVisibilityProgress = searchSlotProgress,
-                    chromeCollapseProgress = playlistChromeCollapseProgress
-                )
-                val headerSearchVisible = shouldComposePlaylistSearchSlot(
-                    searchVisible = searchVisible,
-                    visibilityProgress = headerSearchAlpha
-                )
-                val playlistTopBarColor = resolvePlaylistTranslucentTopBarColor(
-                    playlistColor = playlistChromeColor,
-                    collapseProgress = playlistChromeVisualProgress
-                )
-                val playlistTopBarContentColor = interpolatePlaylistColor(
-                    start = resolvePlaylistSolidTopBarContentColor(playlistChromeColor),
-                    end = playlistModernCollapsedTopBarContentColor(),
-                    fraction = playlistChromeVisualProgress
-                )
-                val playlistSelectionTopBarColor = resolvePlaylistSelectionTopBarColor(
-                    playlistColor = playlistChromeColor,
-                    collapseProgress = playlistChromeCollapseProgress
-                )
-                val playlistSelectionTopBarContentColor = resolvePlaylistSelectionTopBarContentColor(
-                    playlistColor = playlistChromeColor,
-                    collapsedContentColor = playlistModernCollapsedTopBarContentColor(),
-                    collapseProgress = playlistChromeCollapseProgress
-                )
-                val dockedSearchGlassColor = playlistModernDockedSearchGlassColor(
-                    playlistColor = playlistChromeColor
-                )
-                val searchFieldFocusInHeader =
-                    headerSearchVisible && searchDockedRevealProgress < 0.5f
-                val searchFieldComposed = headerSearchVisible || searchSlotVisible
-                LaunchedEffect(
+            }
+            val playlistChromeVisualProgress =
+                FastOutSlowInEasing.transform(playlistChromeCollapseProgress)
+            val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
+                searchVisibilityProgress = searchSlotProgress,
+                chromeCollapseProgress = playlistChromeCollapseProgress
+            )
+            val headerSearchVisible = shouldComposePlaylistSearchSlot(
+                searchVisible = searchVisible,
+                visibilityProgress = headerSearchAlpha
+            )
+            val playlistTopBarColor = resolvePlaylistTranslucentTopBarColor(
+                playlistColor = playlistChromeColor,
+                collapseProgress = playlistChromeVisualProgress
+            )
+            val playlistTopBarContentColor = interpolatePlaylistColor(
+                start = resolvePlaylistSolidTopBarContentColor(playlistChromeColor),
+                end = playlistModernCollapsedTopBarContentColor(),
+                fraction = playlistChromeVisualProgress
+            )
+            val playlistSelectionTopBarColor = resolvePlaylistSelectionTopBarColor(
+                playlistColor = playlistChromeColor,
+                collapseProgress = playlistChromeCollapseProgress
+            )
+            val playlistSelectionTopBarContentColor = resolvePlaylistSelectionTopBarContentColor(
+                playlistColor = playlistChromeColor,
+                collapsedContentColor = playlistModernCollapsedTopBarContentColor(),
+                collapseProgress = playlistChromeCollapseProgress
+            )
+            val dockedSearchGlassColor = playlistModernDockedSearchGlassColor(
+                playlistColor = playlistChromeColor
+            )
+            val searchFieldFocusInHeader =
+                headerSearchVisible && searchDockedRevealProgress < 0.5f
+            val searchFieldComposed = headerSearchVisible || searchSlotVisible
+            LaunchedEffect(
+                showSearch,
+                selectionMode,
+                autoShowKeyboard,
+                searchFieldComposed,
+                searchFieldFocusInHeader
+            ) {
+                if (!searchFieldComposed) return@LaunchedEffect
+                val shouldAutoFocus = shouldRequestPlaylistSearchFocus(
                     showSearch,
                     selectionMode,
-                    autoShowKeyboard,
-                    searchFieldComposed,
-                    searchFieldFocusInHeader
-                ) {
-                    if (!searchFieldComposed) return@LaunchedEffect
-                    val shouldAutoFocus = shouldRequestPlaylistSearchFocus(
-                        showSearch,
-                        selectionMode,
-                        autoShowKeyboard
-                    )
-                    val shouldTransferFocus = shouldTransferPlaylistSearchFocus(
-                        showSearch = showSearch,
-                        selectionMode = selectionMode,
-                        searchFieldComposed = searchFieldComposed,
-                        searchInputFocused = headerSearchFocused || dockedSearchFocused,
-                        searchQuery = searchQuery
-                    )
-                    if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
-                    if (shouldAutoFocus) delay(120)
-                    searchFocusRequester.requestFocus()
-                    keyboardController?.show()
-                }
-                Scaffold(
+                    autoShowKeyboard
+                )
+                val shouldTransferFocus = shouldTransferPlaylistSearchFocus(
+                    showSearch = showSearch,
+                    selectionMode = selectionMode,
+                    searchFieldComposed = searchFieldComposed,
+                    searchInputFocused = headerSearchFocused || dockedSearchFocused,
+                    searchQuery = searchQuery
+                )
+                if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
+                if (shouldAutoFocus) delay(120)
+                searchFocusRequester.requestFocus()
+                keyboardController?.show()
+            }
+            Scaffold(
                 containerColor = Color.Transparent,
                 snackbarHost = {
                     NeriSnackbarHost(
@@ -335,7 +339,12 @@ internal fun LocalPlaylistDetailModernContent(
                                         keyboardController?.hide()
                                     }
                                     showSearch = openingSearch
-                                }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search_songs)) }
+                                }) {
+                                    Icon(
+                                        Icons.Filled.Search,
+                                        contentDescription = stringResource(R.string.cd_search_songs)
+                                    )
+                                }
 
                                 if (hasDownloadManagerEntry) {
                                     HapticIconButton(
@@ -383,11 +392,15 @@ internal fun LocalPlaylistDetailModernContent(
 
                                 if (!isSystemPlaylist) {
                                     HapticIconButton(onClick = {
-                                        renameText = playlistNameFieldValue(playlist.name, maxNameLength)
+                                        renameText =
+                                            playlistNameFieldValue(playlist.name, maxNameLength)
                                         renameError = null
                                         showRename = true
                                     }) {
-                                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.local_playlist_rename))
+                                        Icon(
+                                            Icons.Filled.Edit,
+                                            contentDescription = stringResource(R.string.local_playlist_rename)
+                                        )
                                     }
                                     HapticIconButton(onClick = {
                                         showDeletePlaylistConfirm = true
@@ -447,7 +460,9 @@ internal fun LocalPlaylistDetailModernContent(
                                 ) {
                                     Icon(
                                         imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                        contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)
+                                        contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(
+                                            R.string.action_select_all
+                                        )
                                     )
                                 }
                                 HapticIconButton(
@@ -500,11 +515,14 @@ internal fun LocalPlaylistDetailModernContent(
                                         }
                                     },
                                     enabled = selectedKeysState.value.isNotEmpty() &&
-                                        !(isLocalFilesPlaylist &&
-                                            selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED &&
-                                            deletionInProgress)
+                                            !(isLocalFilesPlaylist &&
+                                                    selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED &&
+                                                    deletionInProgress)
                                 ) {
-                                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete_selected))
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = stringResource(R.string.common_delete_selected)
+                                    )
                                 }
                             },
                             windowInsets = WindowInsets.statusBars,
@@ -520,12 +538,20 @@ internal fun LocalPlaylistDetailModernContent(
                 }
             ) { padding ->
                 val miniPlayerHeight = LocalMiniPlayerHeight.current
-                Column(Modifier.padding(padding).fillMaxSize()) {
+                Column(
+                    Modifier
+                        .padding(padding)
+                        .fillMaxSize()
+                ) {
                     if (isLocalFilesPlaylist && shouldShowDownloadedSongDeleteProgress(
                             deleteProgress, deletingSongCount, deleteFailureDismissed
                         )
                     ) {
-                        Box(Modifier.fillMaxWidth().background(playlistTopBarColor)) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(playlistTopBarColor)
+                        ) {
                             DownloadedSongDeleteProgressCard(
                                 progress = deleteProgress,
                                 failureDismissed = deleteFailureDismissed,
@@ -579,425 +605,514 @@ internal fun LocalPlaylistDetailModernContent(
                             ) {
                                 LazyColumn(
                                     state = reorderState.listState,
-	                                    contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
-	                                    modifier = Modifier
-	                                        .fillMaxSize()
-	                                        .reorderable(reorderState)
-	                                ) {
-                                item(
-                                    key = headerKey,
-                                    contentType = "playlist_header"
+                                    contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .reorderable(reorderState)
                                 ) {
-                                    LocalPlaylistHeroHeader(
-                                        displayName = headerDisplayName,
-                                        headerCover = headerCover,
-                                        totalDurationText = totalDurationText,
-                                        songCount = tabSongs.size,
-                                        playCount = playlistPlayCount,
-                                        offlineMode = offlineMode,
-                                        height = playlistHeroHeight,
-                                        actions = if (headerSearchVisible) {
-                                            {
-                                                Box(
-                                                    modifier = Modifier.graphicsLayer {
-                                                        alpha = headerSearchAlpha
-                                                    }
-                                                ) {
-                                                    PlaylistModernHeroSearchField(
-                                                        query = searchQuery,
-                                                        onQueryChange = { searchQuery = it },
-                                                        placeholder = stringResource(R.string.search_playlist),
-                                                        inputState = searchInputState,
-                                                        onFocusChanged = { headerSearchFocused = it },
-                                                        focusRequester = if (searchFieldFocusInHeader) {
-                                                            searchFocusRequester
-                                                        } else {
-                                                            null
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        } else {
-                                            null
-                                        }
-                                    )
-                                }
-
-                                item(
-                                    key = LOCAL_PLAYLIST_ACTIONS_KEY,
-                                    contentType = "playlist_actions"
-                                ) {
-                                    PlaylistModernActionSheet(
-                                        coverUrl = headerCover,
-                                        offlineMode = offlineMode,
-                                        hasCustomBackground = hasCustomBackground
-                                    ) {
-                                        Column {
-                                            if (isLocalFilesPlaylist) {
-                                                PrimaryTabRow(
-                                                    selectedTabIndex = selectedLocalFilesTabIndex,
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(horizontal = 16.dp),
-                                                    containerColor = Color.Transparent,
-                                                    contentColor = MaterialTheme.colorScheme.primary
-                                                ) {
-                                                    Tab(
-                                                        selected = selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED,
-                                                        onClick = {
-                                                            selectedLocalFilesTabIndex =
-                                                                LocalFilesSongTab.MANUALLY_ADDED.ordinal
-                                                            if (selectionMode) exitSelectionMode()
-                                                        },
-                                                        text = {
-                                                            Text(
-                                                                stringResource(R.string.local_files_manual_added)
-                                                            )
-                                                        }
-                                                    )
-                                                    Tab(
-                                                        selected = selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED,
-                                                        onClick = {
-                                                            selectedLocalFilesTabIndex =
-                                                                LocalFilesSongTab.DOWNLOADED.ordinal
-                                                            if (selectionMode) exitSelectionMode()
-                                                        },
-                                                        text = {
-                                                            Text(
-                                                                stringResource(R.string.local_files_downloaded)
-                                                            )
-                                                        }
-                                                    )
-                                                }
-                                                HorizontalDivider(
-                                                    color = MaterialTheme.colorScheme.outlineVariant.copy(
-                                                        alpha = 0.5f
-                                                    )
-                                                )
-                                            }
-                                            LocalPlaylistPlaybackActions(
-                                                songCount = tabSongs.size,
-                                                shuffleEnabled = shuffleEnabled,
-                                                repeatMode = repeatMode,
-                                                onPlayInOrder = { playPlaylist(shuffle = false) },
-                                                onShufflePlay = { playPlaylist(shuffle = true) },
-                                                onToggleShuffle = {
-                                                    PlayerManager.setShuffle(!shuffleEnabled)
-                                                },
-                                                onCycleRepeatMode = {
-                                                    PlayerManager.cycleRepeatMode()
-                                                },
-                                                onExportToLocalPlaylist = {
-                                                    showExportAllSheet = true
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-
-                                if (metadataProcessingVisible) {
                                     item(
-                                        key = LOCAL_PLAYLIST_METADATA_PROCESSING_KEY,
-                                        contentType = "local_metadata_processing"
+                                        key = headerKey,
+                                        contentType = "playlist_header"
                                     ) {
-                                        PlaylistModernListItemSurface(
-                                            coverUrl = headerCover,
-                                            offlineMode = offlineMode
-                                        ) {
-                                            LocalMetadataProcessingCard(visibleMetadataProcessingState)
-                                        }
-                                    }
-                                }
-
-                                // 列表
-                                itemsIndexed(
-                                    items = displayedSongs,
-                                    key = { _, song -> song.stableKey() },
-                                    contentType = { _, _ -> "local_playlist_song" }
-                                ) { revIndex, song ->
-                                val songKey = remember(song) { song.stableKey() }
-                                ReorderableItem(state = reorderState, key = songKey) { isDragging ->
-                                    val rowScale by animateFloatAsState(
-                                        targetValue = if (isDragging) 1.02f else 1f,
-                                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                                        label = "row-scale"
-                                    )
-                                    val isSelectedSong =
-                                        selectionMode && selectedKeysState.value.contains(songKey)
-                                    val isFavoriteSong = favoriteSongLookup.contains(song)
-                                    val rowContainerColor = if (isSelectedSong) {
-                                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
-                                    } else {
-                                        Color.Transparent
-                                    }
-
-                                    PlaylistModernListItemSurface(
-                                        coverUrl = headerCover,
-                                        offlineMode = offlineMode,
-                                        modifier = Modifier
-                                            .graphicsLayer { scaleX = rowScale; scaleY = rowScale }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(rowContainerColor)
-                                                .combinedClickable(
-                                                    onClick = {
-                                                        context.performHapticFeedback()
-                                                        if (selectionMode) {
-                                                            toggleSelect(songKey)
-                                                        } else {
-                                                            val pos = queueIndexBySongKey[songKey] ?: -1
-                                                            if (pos >= 0) onSongClick(tabSongs, pos)
+                                        LocalPlaylistHeroHeader(
+                                            displayName = headerDisplayName,
+                                            headerCover = headerCover,
+                                            totalDurationText = totalDurationText,
+                                            songCount = tabSongs.size,
+                                            playCount = playlistPlayCount,
+                                            offlineMode = offlineMode,
+                                            height = playlistHeroHeight,
+                                            actions = if (headerSearchVisible) {
+                                                {
+                                                    Box(
+                                                        modifier = Modifier.graphicsLayer {
+                                                            alpha = headerSearchAlpha
                                                         }
-                                                    },
-                                                    onLongClick = {
-                                                        if (!selectionMode) {
-                                                            selectionMode = true
-                                                            selectedKeysState.value = setOf(songKey)
-                                                        } else {
-                                                            toggleSelect(songKey)
-                                                        }
+                                                    ) {
+                                                        PlaylistModernHeroSearchField(
+                                                            query = searchQuery,
+                                                            onQueryChange = { searchQuery = it },
+                                                            placeholder = stringResource(R.string.search_playlist),
+                                                            inputState = searchInputState,
+                                                            onFocusChanged = {
+                                                                headerSearchFocused = it
+                                                            },
+                                                            focusRequester = if (searchFieldFocusInHeader) {
+                                                                searchFocusRequester
+                                                            } else {
+                                                                null
+                                                            }
+                                                        )
                                                     }
-                                                )
-                                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                        Row(
-                                            modifier = Modifier.weight(1f),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            // 序号/复选框
-                                            Box(
-                                                Modifier.width(48.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                if (selectionMode) {
-                                                    Checkbox(
-                                                        checked = selectedKeysState.value.contains(songKey),
-                                                        onCheckedChange = { toggleSelect(songKey) }
-                                                    )
-                                                } else {
-                                                    Text(
-                                                        text = (revIndex + 1).toString(),
-                                                        style = MaterialTheme.typography.titleSmall,
-                                                        color = playlistModernListTertiaryContentColor(),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Clip
-                                                    )
                                                 }
+                                            } else {
+                                                null
                                             }
+                                        )
+                                    }
 
-                                            // 可见行立即排入受限的封面队列, 不让首屏等待滚动空闲
-                                            val resolveArtworkFallback =
-                                                shouldResolveLocalPlaylistRowArtworkFallback()
-                                            LocalPlaylistSongArtwork(
-                                                song = song,
-                                                offlineMode = offlineMode,
-                                                resolveLocalFallback = resolveArtworkFallback,
-                                                downloadPresenceVersion = downloadPresenceVersion,
-                                                allowEmbeddedCoverFallback = resolveArtworkFallback
-                                            )
-                                            Spacer(Modifier.width(12.dp))
-
-                                            // 标题/歌手
-                                            Column(Modifier.weight(1f)) {
-                                                val downloaded = songKey in downloadedSongKeys
-                                                Text(
-                                                    text = song.displayName(),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    color = playlistModernListPrimaryContentColor()
-                                                )
-                                                SongDownloadSubtitle(
-                                                    text = song.displayArtist(),
-                                                    downloaded = downloaded,
-                                                    color = playlistModernListSecondaryContentColor()
-                                                )
-                                            }
-                                        }
-
-                                        // 右侧: 非多选为时间/播放态; 多选为手柄
-                                        val isPlayingSong = currentSongLookup.contains(song)
-                                        val trailingVisible = !isDragging && !selectionMode
-
-                                        if (!selectionMode) {
-                                            AnimatedVisibility(
-                                                visible = trailingVisible,
-                                                enter = fadeIn(tween(120)),
-                                                exit = fadeOut(tween(100))
-                                            ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                    if (isPlayingSong) {
-                                                        PlayingIndicator(
-                                                            color = MaterialTheme.colorScheme.primary,
-                                                            animate = isPlaying
-                                                        )
-                                                    } else {
-                                                        Text(
-                                                            text = formatDuration(song.durationMs),
-                                                            color = playlistModernListSecondaryContentColor(),
-                                                            style = MaterialTheme.typography.bodySmall
-                                                        )
-                                                    }
-
-                                                    // 更多操作菜单
-                                                    var showMoreMenu by remember { mutableStateOf(false) }
-                                                    Box {
-                                                        IconButton(
-                                                            onClick = { showMoreMenu = true }
-                                                        ) {
-                                                            Icon(
-                                                                Icons.Filled.MoreVert,
-                                                                contentDescription = stringResource(R.string.cd_more_actions),
-                                                                tint = playlistModernListSecondaryContentColor()
-                                                            )
-                                                        }
-
-                                                        DropdownMenu(
-                                                            expanded = showMoreMenu,
-                                                            onDismissRequest = { showMoreMenu = false }
-                                                        ) {
-                                                                if (song.isLocalSong()) {
-                                                                    DropdownMenuItem(
-                                                                        text = { Text(stringResource(R.string.local_song_open_details)) },
-                                                                        leadingIcon = {
-                                                                            Icon(
-                                                                                imageVector = Icons.Outlined.Info,
-                                                                                contentDescription = null
-                                                                            )
-                                                                        },
-                                                                        onClick = {
-                                                                            detailSong = song
-                                                                            showMoreMenu = false
-                                                                    }
-                                                                )
-                                                                    DropdownMenuItem(
-                                                                        text = { Text(stringResource(R.string.action_share)) },
-                                                                        leadingIcon = {
-                                                                            Icon(
-                                                                                imageVector = Icons.Outlined.Share,
-                                                                                contentDescription = null
-                                                                            )
-                                                                        },
-                                                                        onClick = {
-                                                                            showMoreMenu = false
-                                                                            scope.launch {
-                                                                            val shared = runCatching {
-                                                                                LocalMediaSupport.shareSongFile(context, song)
-                                                                            }.getOrElse { false }
-                                                                            if (!shared) {
-                                                                                snackbarHostState.showNeriSnackbar(
-                                                                                    composeResources.getString(R.string.local_song_share_failed)
-                                                                                )
-                                                                            }
-                                                                        }
-                                                                    }
+                                    item(
+                                        key = LOCAL_PLAYLIST_ACTIONS_KEY,
+                                        contentType = "playlist_actions"
+                                    ) {
+                                        PlaylistModernActionSheet(
+                                            coverUrl = headerCover,
+                                            offlineMode = offlineMode,
+                                            hasCustomBackground = hasCustomBackground
+                                        ) {
+                                            Column {
+                                                if (isLocalFilesPlaylist) {
+                                                    PrimaryTabRow(
+                                                        selectedTabIndex = selectedLocalFilesTabIndex,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(horizontal = 16.dp),
+                                                        containerColor = Color.Transparent,
+                                                        contentColor = MaterialTheme.colorScheme.primary
+                                                    ) {
+                                                        Tab(
+                                                            selected = selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED,
+                                                            onClick = {
+                                                                selectedLocalFilesTabIndex =
+                                                                    LocalFilesSongTab.MANUALLY_ADDED.ordinal
+                                                                if (selectionMode) exitSelectionMode()
+                                                            },
+                                                            text = {
+                                                                Text(
+                                                                    stringResource(R.string.local_files_manual_added)
                                                                 )
                                                             }
-                                                            DropdownMenuItem(
-                                                                text = { Text(stringResource(R.string.local_playlist_play_next)) },
-                                                                leadingIcon = {
-                                                                    Icon(
-                                                                        imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                                                        contentDescription = null
+                                                        )
+                                                        Tab(
+                                                            selected = selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED,
+                                                            onClick = {
+                                                                selectedLocalFilesTabIndex =
+                                                                    LocalFilesSongTab.DOWNLOADED.ordinal
+                                                                if (selectionMode) exitSelectionMode()
+                                                            },
+                                                            text = {
+                                                                Text(
+                                                                    stringResource(R.string.local_files_downloaded)
+                                                                )
+                                                            }
+                                                        )
+                                                    }
+                                                    HorizontalDivider(
+                                                        color = MaterialTheme.colorScheme.outlineVariant.copy(
+                                                            alpha = 0.5f
+                                                        )
+                                                    )
+                                                }
+                                                LocalPlaylistPlaybackActions(
+                                                    songCount = tabSongs.size,
+                                                    shuffleEnabled = shuffleEnabled,
+                                                    repeatMode = repeatMode,
+                                                    onPlayInOrder = { playPlaylist(shuffle = false) },
+                                                    onShufflePlay = { playPlaylist(shuffle = true) },
+                                                    onToggleShuffle = {
+                                                        PlayerManager.setShuffle(!shuffleEnabled)
+                                                    },
+                                                    onCycleRepeatMode = {
+                                                        PlayerManager.cycleRepeatMode()
+                                                    },
+                                                    onExportToLocalPlaylist = {
+                                                        showExportAllSheet = true
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (metadataProcessingVisible) {
+                                        item(
+                                            key = LOCAL_PLAYLIST_METADATA_PROCESSING_KEY,
+                                            contentType = "local_metadata_processing"
+                                        ) {
+                                            PlaylistModernListItemSurface(
+                                                coverUrl = headerCover,
+                                                offlineMode = offlineMode
+                                            ) {
+                                                LocalMetadataProcessingCard(
+                                                    visibleMetadataProcessingState
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // 列表
+                                    itemsIndexed(
+                                        items = displayedSongs,
+                                        key = { _, song -> song.stableKey() },
+                                        contentType = { _, _ -> "local_playlist_song" }
+                                    ) { revIndex, song ->
+                                        val songKey = remember(song) { song.stableKey() }
+                                        ReorderableItem(
+                                            state = reorderState,
+                                            key = songKey
+                                        ) { isDragging ->
+                                            val rowScale by animateFloatAsState(
+                                                targetValue = if (isDragging) 1.02f else 1f,
+                                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                                label = "row-scale"
+                                            )
+                                            val isSelectedSong =
+                                                selectionMode && selectedKeysState.value.contains(
+                                                    songKey
+                                                )
+                                            val isFavoriteSong = favoriteSongLookup.contains(song)
+                                            val rowContainerColor = if (isSelectedSong) {
+                                                MaterialTheme.colorScheme.secondaryContainer.copy(
+                                                    alpha = 0.35f
+                                                )
+                                            } else {
+                                                Color.Transparent
+                                            }
+
+                                            PlaylistModernListItemSurface(
+                                                coverUrl = headerCover,
+                                                offlineMode = offlineMode,
+                                                modifier = Modifier
+                                                    .graphicsLayer {
+                                                        scaleX = rowScale; scaleY = rowScale
+                                                    }
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .background(rowContainerColor)
+                                                        .combinedClickable(
+                                                            onClick = {
+                                                                context.performHapticFeedback()
+                                                                if (selectionMode) {
+                                                                    toggleSelect(songKey)
+                                                                } else {
+                                                                    val pos =
+                                                                        queueIndexBySongKey[songKey]
+                                                                            ?: -1
+                                                                    if (pos >= 0) onSongClick(
+                                                                        tabSongs,
+                                                                        pos
                                                                     )
-                                                                },
-                                                                onClick = {
-                                                                    PlayerManager.addToQueueNext(song)
-                                                                    showMoreMenu = false
                                                                 }
-                                                            )
-                                                            DropdownMenuItem(
-                                                                text = { Text(stringResource(R.string.playlist_add_to_end)) },
-                                                                leadingIcon = {
-                                                                    Icon(
-                                                                        imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                                                        contentDescription = null
-                                                                    )
-                                                                },
-                                                                onClick = {
-                                                                    PlayerManager.addToQueueEnd(song)
-                                                                    showMoreMenu = false
+                                                            },
+                                                            onLongClick = {
+                                                                if (!selectionMode) {
+                                                                    selectionMode = true
+                                                                    selectedKeysState.value =
+                                                                        setOf(songKey)
+                                                                } else {
+                                                                    toggleSelect(songKey)
                                                                 }
-                                                            )
-                                                            DropdownMenuItem(
-                                                                text = {
-                                                                    Text(
-                                                                        stringResource(
-                                                                            if (isFavoriteSong) {
-                                                                                R.string.favorite_remove
-                                                                            } else {
-                                                                                R.string.favorite_add
-                                                                            }
-                                                                        )
-                                                                    )
-                                                                },
-                                                                leadingIcon = {
-                                                                    Icon(
-                                                                        imageVector = if (isFavoriteSong) {
-                                                                            Icons.Filled.Favorite
-                                                                        } else {
-                                                                            Icons.Outlined.FavoriteBorder
-                                                                        },
-                                                                        contentDescription = null
-                                                                    )
-                                                                },
-                                                                onClick = {
-                                                                    toggleSongFavorite(song, isFavoriteSong)
-                                                                    showMoreMenu = false
-                                                                }
-                                                            )
-                                                            DropdownMenuItem(
-                                                                text = { Text(stringResource(R.string.action_copy_song_info)) },
-                                                                leadingIcon = {
-                                                                    Icon(
-                                                                        imageVector = Icons.Outlined.ContentCopy,
-                                                                        contentDescription = null
-                                                                    )
-                                                                },
-                                                                onClick = {
-                                                                    val songInfo =
-                                                                        "${song.displayName()}-${song.displayArtist()}"
-                                                                    scope.launch {
-                                                                        copyText(songInfo)
-                                                                        snackbarHostState.showNeriSnackbar(
-                                                                            composeResources.getString(R.string.toast_copied)
+                                                            }
+                                                        )
+                                                        .padding(
+                                                            horizontal = 16.dp,
+                                                            vertical = 12.dp
+                                                        ),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.weight(1f),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        // 序号/复选框
+                                                        Box(
+                                                            Modifier.width(48.dp),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            if (selectionMode) {
+                                                                Checkbox(
+                                                                    checked = selectedKeysState.value.contains(
+                                                                        songKey
+                                                                    ),
+                                                                    onCheckedChange = {
+                                                                        toggleSelect(
+                                                                            songKey
                                                                         )
                                                                     }
-                                                                    showMoreMenu = false
-                                                                }
+                                                                )
+                                                            } else {
+                                                                Text(
+                                                                    text = (revIndex + 1).toString(),
+                                                                    style = MaterialTheme.typography.titleSmall,
+                                                                    color = playlistModernListTertiaryContentColor(),
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Clip
+                                                                )
+                                                            }
+                                                        }
+
+                                                        // 可见行立即排入受限的封面队列, 不让首屏等待滚动空闲
+                                                        val resolveArtworkFallback =
+                                                            shouldResolveLocalPlaylistRowArtworkFallback()
+                                                        LocalPlaylistSongArtwork(
+                                                            song = song,
+                                                            offlineMode = offlineMode,
+                                                            resolveLocalFallback = resolveArtworkFallback,
+                                                            downloadPresenceVersion = downloadPresenceVersion,
+                                                            allowEmbeddedCoverFallback = resolveArtworkFallback
+                                                        )
+                                                        Spacer(Modifier.width(12.dp))
+
+                                                        // 标题/歌手
+                                                        Column(Modifier.weight(1f)) {
+                                                            val downloaded =
+                                                                songKey in downloadedSongKeys
+                                                            Text(
+                                                                text = song.displayName(),
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                style = MaterialTheme.typography.titleMedium,
+                                                                color = playlistModernListPrimaryContentColor()
+                                                            )
+                                                            SongDownloadSubtitle(
+                                                                text = song.displayArtist(),
+                                                                downloaded = downloaded,
+                                                                color = playlistModernListSecondaryContentColor()
                                                             )
                                                         }
                                                     }
+
+                                                    // 右侧: 非多选为时间/播放态; 多选为手柄
+                                                    val isPlayingSong =
+                                                        currentSongLookup.contains(song)
+                                                    val trailingVisible =
+                                                        !isDragging && !selectionMode
+
+                                                    if (!selectionMode) {
+                                                        AnimatedVisibility(
+                                                            visible = trailingVisible,
+                                                            enter = fadeIn(tween(120)),
+                                                            exit = fadeOut(tween(100))
+                                                        ) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(
+                                                                    8.dp
+                                                                )
+                                                            ) {
+                                                                if (isPlayingSong) {
+                                                                    PlayingIndicator(
+                                                                        color = MaterialTheme.colorScheme.primary,
+                                                                        animate = isPlaying
+                                                                    )
+                                                                } else {
+                                                                    Text(
+                                                                        text = formatDuration(song.durationMs),
+                                                                        color = playlistModernListSecondaryContentColor(),
+                                                                        style = MaterialTheme.typography.bodySmall
+                                                                    )
+                                                                }
+
+                                                                // 更多操作菜单
+                                                                var showMoreMenu by remember {
+                                                                    mutableStateOf(
+                                                                        false
+                                                                    )
+                                                                }
+                                                                Box {
+                                                                    IconButton(
+                                                                        onClick = {
+                                                                            showMoreMenu = true
+                                                                        }
+                                                                    ) {
+                                                                        Icon(
+                                                                            Icons.Filled.MoreVert,
+                                                                            contentDescription = stringResource(
+                                                                                R.string.cd_more_actions
+                                                                            ),
+                                                                            tint = playlistModernListSecondaryContentColor()
+                                                                        )
+                                                                    }
+
+                                                                    DropdownMenu(
+                                                                        expanded = showMoreMenu,
+                                                                        onDismissRequest = {
+                                                                            showMoreMenu = false
+                                                                        }
+                                                                    ) {
+                                                                        if (song.isLocalSong()) {
+                                                                            DropdownMenuItem(
+                                                                                text = {
+                                                                                    Text(
+                                                                                        stringResource(
+                                                                                            R.string.local_song_open_details
+                                                                                        )
+                                                                                    )
+                                                                                },
+                                                                                leadingIcon = {
+                                                                                    Icon(
+                                                                                        imageVector = Icons.Outlined.Info,
+                                                                                        contentDescription = null
+                                                                                    )
+                                                                                },
+                                                                                onClick = {
+                                                                                    detailSong =
+                                                                                        song
+                                                                                    showMoreMenu =
+                                                                                        false
+                                                                                }
+                                                                            )
+                                                                            DropdownMenuItem(
+                                                                                text = {
+                                                                                    Text(
+                                                                                        stringResource(
+                                                                                            R.string.action_share
+                                                                                        )
+                                                                                    )
+                                                                                },
+                                                                                leadingIcon = {
+                                                                                    Icon(
+                                                                                        imageVector = Icons.Outlined.Share,
+                                                                                        contentDescription = null
+                                                                                    )
+                                                                                },
+                                                                                onClick = {
+                                                                                    showMoreMenu =
+                                                                                        false
+                                                                                    scope.launch {
+                                                                                        val shared =
+                                                                                            runCatching {
+                                                                                                LocalMediaSupport.shareSongFile(
+                                                                                                    context,
+                                                                                                    song
+                                                                                                )
+                                                                                            }.getOrElse { false }
+                                                                                        if (!shared) {
+                                                                                            snackbarHostState.showNeriSnackbar(
+                                                                                                composeResources.getString(
+                                                                                                    R.string.local_song_share_failed
+                                                                                                )
+                                                                                            )
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            )
+                                                                        }
+                                                                        DropdownMenuItem(
+                                                                            text = {
+                                                                                Text(
+                                                                                    stringResource(R.string.local_playlist_play_next)
+                                                                                )
+                                                                            },
+                                                                            leadingIcon = {
+                                                                                Icon(
+                                                                                    imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                                                                    contentDescription = null
+                                                                                )
+                                                                            },
+                                                                            onClick = {
+                                                                                PlayerManager.addToQueueNext(
+                                                                                    song
+                                                                                )
+                                                                                showMoreMenu = false
+                                                                            }
+                                                                        )
+                                                                        DropdownMenuItem(
+                                                                            text = {
+                                                                                Text(
+                                                                                    stringResource(R.string.playlist_add_to_end)
+                                                                                )
+                                                                            },
+                                                                            leadingIcon = {
+                                                                                Icon(
+                                                                                    imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                                                                    contentDescription = null
+                                                                                )
+                                                                            },
+                                                                            onClick = {
+                                                                                PlayerManager.addToQueueEnd(
+                                                                                    song
+                                                                                )
+                                                                                showMoreMenu = false
+                                                                            }
+                                                                        )
+                                                                        DropdownMenuItem(
+                                                                            text = {
+                                                                                Text(
+                                                                                    stringResource(
+                                                                                        if (isFavoriteSong) {
+                                                                                            R.string.favorite_remove
+                                                                                        } else {
+                                                                                            R.string.favorite_add
+                                                                                        }
+                                                                                    )
+                                                                                )
+                                                                            },
+                                                                            leadingIcon = {
+                                                                                Icon(
+                                                                                    imageVector = if (isFavoriteSong) {
+                                                                                        Icons.Filled.Favorite
+                                                                                    } else {
+                                                                                        Icons.Outlined.FavoriteBorder
+                                                                                    },
+                                                                                    contentDescription = null
+                                                                                )
+                                                                            },
+                                                                            onClick = {
+                                                                                toggleSongFavorite(
+                                                                                    song,
+                                                                                    isFavoriteSong
+                                                                                )
+                                                                                showMoreMenu = false
+                                                                            }
+                                                                        )
+                                                                        DropdownMenuItem(
+                                                                            text = {
+                                                                                Text(
+                                                                                    stringResource(R.string.action_copy_song_info)
+                                                                                )
+                                                                            },
+                                                                            leadingIcon = {
+                                                                                Icon(
+                                                                                    imageVector = Icons.Outlined.ContentCopy,
+                                                                                    contentDescription = null
+                                                                                )
+                                                                            },
+                                                                            onClick = {
+                                                                                val songInfo =
+                                                                                    "${song.displayName()}-${song.displayArtist()}"
+                                                                                scope.launch {
+                                                                                    copyText(
+                                                                                        songInfo
+                                                                                    )
+                                                                                    snackbarHostState.showNeriSnackbar(
+                                                                                        composeResources.getString(
+                                                                                            R.string.toast_copied
+                                                                                        )
+                                                                                    )
+                                                                                }
+                                                                                showMoreMenu = false
+                                                                            }
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    } else if (canReorderCurrentSongs) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .detectReorder(reorderState)
+                                                                .padding(8.dp),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Filled.DragHandle,
+                                                                contentDescription = stringResource(
+                                                                    R.string.common_drag_handle
+                                                                ),
+                                                                modifier = Modifier.size(24.dp)
+                                                            )
+                                                        }
+                                                    } else {
+                                                        Spacer(Modifier.size(40.dp))
+                                                    }
                                                 }
                                             }
-                                        } else if (canReorderCurrentSongs) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .detectReorder(reorderState)
-                                                    .padding(8.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.DragHandle,
-                                                    contentDescription = stringResource(R.string.common_drag_handle),
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-                                        } else {
-                                            Spacer(Modifier.size(40.dp))
                                         }
                                     }
                                 }
-                                }
                             }
-                        }
-                        }
                         }
                         if (currentIndexInDisplay >= 0) {
                             HapticFloatingActionButton(
@@ -1062,7 +1177,7 @@ internal fun LocalPlaylistDetailModernContent(
                 if (showDeleteMultiConfirm) {
                     val count = selectedKeysState.value.size
                     val deletesDownloadedSongs = isLocalFilesPlaylist &&
-                        selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED
+                            selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED
                     AlertDialog(
                         onDismissRequest = { showDeleteMultiConfirm = false },
                         title = {
@@ -1097,81 +1212,92 @@ internal fun LocalPlaylistDetailModernContent(
                             HapticTextButton(
                                 enabled = !deletesDownloadedSongs || !deletionInProgress,
                                 onClick = {
-                                if (deletesDownloadedSongs) {
-                                    val songsToDelete = selectedDownloadedSongsForAction
-                                    deletingSongCount = songsToDelete.size
+                                    if (deletesDownloadedSongs) {
+                                        val songsToDelete = selectedDownloadedSongsForAction
+                                        deletingSongCount = songsToDelete.size
+                                        showDeleteMultiConfirm = false
+                                        exitSelectionMode()
+                                        vm.deleteDownloadedSongs(songsToDelete) { result ->
+                                            deletingSongCount = 0
+                                            scope.launch {
+                                                val message = when {
+                                                    result.physicalCleanupPending -> {
+                                                        context.resources.getQuantityString(
+                                                            R.plurals.local_files_delete_downloaded_cleanup_pending,
+                                                            result.deletedCount + result.notDeletedCount,
+                                                            result.deletedCount + result.notDeletedCount
+                                                        )
+                                                    }
+
+                                                    result.deletedCount > 0 && result.notDeletedCount == 0 -> {
+                                                        context.resources.getQuantityString(
+                                                            R.plurals.local_files_delete_downloaded_success,
+                                                            result.deletedCount,
+                                                            result.deletedCount
+                                                        )
+                                                    }
+
+                                                    result.deletedCount > 0 -> {
+                                                        composeResources.getQuantityString(
+                                                            R.plurals.local_files_delete_downloaded_partial,
+                                                            result.deletedCount,
+                                                            result.deletedCount,
+                                                            result.notDeletedCount
+                                                        )
+                                                    }
+
+                                                    else -> {
+                                                        composeResources.getString(
+                                                            R.string.local_files_delete_downloaded_failed
+                                                        )
+                                                    }
+                                                }
+                                                snackbarHostState.showNeriSnackbar(message)
+                                            }
+                                        }
+                                        return@HapticTextButton
+                                    }
+                                    val previousSongs = localSongs.toList()
+                                    val selectedKeys = selectedKeysState.value
+                                    val removeAll = localSongs.isNotEmpty() &&
+                                            selectedKeys.size == localSongs.size &&
+                                            localSongs.all { it.stableKey() in selectedKeys }
+                                    var songsToRemove = emptyList<SongItem>()
+                                    val expectedSongs = if (removeAll) {
+                                        emptyList()
+                                    } else {
+                                        songsToRemove = localSongs.filter {
+                                            it.stableKey() in selectedKeys
+                                        }
+                                        val removeIdentities =
+                                            songsToRemove.map { it.identity() }.toSet()
+                                        localSongs.filterNot { it.identity() in removeIdentities }
+                                    }
+                                    pendingOrderIdentities = expectedSongs.map { it.identity() }
+                                    blockSync = true
+
+                                    localSongs.clear()
+                                    localSongs.addAll(expectedSongs)
                                     showDeleteMultiConfirm = false
                                     exitSelectionMode()
-                                    vm.deleteDownloadedSongs(songsToDelete) { result ->
-                                        deletingSongCount = 0
-                                        scope.launch {
-                                            val message = when {
-                                                result.physicalCleanupPending -> {
-                                                    context.resources.getQuantityString(
-                                                        R.plurals.local_files_delete_downloaded_cleanup_pending,
-                                                        result.deletedCount + result.notDeletedCount,
-                                                        result.deletedCount + result.notDeletedCount
-                                                    )
-                                                }
-                                                result.deletedCount > 0 && result.notDeletedCount == 0 -> {
-                                                    context.resources.getQuantityString(
-                                                        R.plurals.local_files_delete_downloaded_success,
-                                                        result.deletedCount,
-                                                        result.deletedCount
-                                                    )
-                                                }
-                                                result.deletedCount > 0 -> {
-                                                    composeResources.getQuantityString(
-                                                        R.plurals.local_files_delete_downloaded_partial,
-                                                        result.deletedCount,
-                                                        result.deletedCount,
-                                                        result.notDeletedCount
-                                                    )
-                                                }
-                                                else -> {
-                                                    composeResources.getString(
-                                                        R.string.local_files_delete_downloaded_failed
-                                                    )
-                                                }
-                                            }
-                                            snackbarHostState.showNeriSnackbar(message)
+
+                                    if (removeAll) {
+                                        vm.clearSongs { result ->
+                                            handleLocalSongDeleteResult(previousSongs, result)
+                                        }
+                                    } else {
+                                        vm.removeSongs(songsToRemove) { result ->
+                                            handleLocalSongDeleteResult(previousSongs, result)
                                         }
                                     }
-                                    return@HapticTextButton
-                                }
-                                val previousSongs = localSongs.toList()
-                                val selectedKeys = selectedKeysState.value
-                                val removeAll = localSongs.isNotEmpty() &&
-                                    selectedKeys.size == localSongs.size &&
-                                    localSongs.all { it.stableKey() in selectedKeys }
-                                var songsToRemove = emptyList<SongItem>()
-                                val expectedSongs = if (removeAll) {
-                                    emptyList()
-                                } else {
-                                    songsToRemove = localSongs.filter {
-                                        it.stableKey() in selectedKeys
-                                    }
-                                    val removeIdentities = songsToRemove.map { it.identity() }.toSet()
-                                    localSongs.filterNot { it.identity() in removeIdentities }
-                                }
-                                pendingOrderIdentities = expectedSongs.map { it.identity() }
-                                blockSync = true
-
-                                localSongs.clear()
-                                localSongs.addAll(expectedSongs)
-                                showDeleteMultiConfirm = false
-                                exitSelectionMode()
-
-                                if (removeAll) {
-                                    vm.clearSongs { result ->
-                                        handleLocalSongDeleteResult(previousSongs, result)
-                                    }
-                                } else {
-                                    vm.removeSongs(songsToRemove) { result ->
-                                        handleLocalSongDeleteResult(previousSongs, result)
-                                    }
-                                }
-                            }) { Text(stringResource(R.string.local_playlist_delete_count, count)) }
+                                }) {
+                                Text(
+                                    stringResource(
+                                        R.string.local_playlist_delete_count,
+                                        count
+                                    )
+                                )
+                            }
                         },
                         dismissButton = {
                             HapticTextButton(onClick = {
@@ -1186,7 +1312,10 @@ internal fun LocalPlaylistDetailModernContent(
                     PlaylistExportSheet(
                         title = stringResource(R.string.local_playlist_export_to),
                         playlists = allPlaylists.filter {
-                            it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(it, context)
+                            it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(
+                                it,
+                                context
+                            )
                         },
                         selectedCount = selectedKeysState.value.size,
                         onDismissRequest = { showExportSheet = false },
@@ -1249,7 +1378,10 @@ internal fun LocalPlaylistDetailModernContent(
                     PlaylistExportSheet(
                         title = stringResource(R.string.playlist_export_to_local),
                         playlists = allPlaylists.filter {
-                            it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(it, context)
+                            it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(
+                                it,
+                                context
+                            )
                         },
                         selectedCount = tabSongs.size,
                         onDismissRequest = { showExportAllSheet = false },
@@ -1325,16 +1457,20 @@ internal fun LocalPlaylistDetailModernContent(
                         },
                         text = {
                             Text(
-                                "${pluralStringResource(
-                                    R.plurals.local_playlist_sync_netease_partial_confirm_unsupported,
-                                    pending.unsupportedCount,
-                                    pending.unsupportedCount
-                                )} ${pluralStringResource(
-                                    R.plurals.local_playlist_sync_netease_partial_confirm_target,
-                                    supportedCount,
-                                    supportedCount,
-                                    pending.target.name
-                                )}"
+                                "${
+                                    pluralStringResource(
+                                        R.plurals.local_playlist_sync_netease_partial_confirm_unsupported,
+                                        pending.unsupportedCount,
+                                        pending.unsupportedCount
+                                    )
+                                } ${
+                                    pluralStringResource(
+                                        R.plurals.local_playlist_sync_netease_partial_confirm_target,
+                                        supportedCount,
+                                        supportedCount,
+                                        pending.target.name
+                                    )
+                                }"
                             )
                         },
                         confirmButton = {

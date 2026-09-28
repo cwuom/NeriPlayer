@@ -4,6 +4,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingBlurEffectOwner
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingBlurPreloadRequest
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingBlurRetentionRequest
+import moe.ouom.neriplayer.ui.playback.visual.PLAYBACK_VISUAL_COVER_GRACE_MS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

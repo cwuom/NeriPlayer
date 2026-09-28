@@ -4,6 +4,26 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavail
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongMetadataSnapshot
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.canChooseEmbeddedLyricsSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongCoverForSave
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongLyricsLoadErrorMessage
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongMetadataSnapshot
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongSaveTiming
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.isEditSongLyricsPermissionFailure
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.keepFilledLyricsWriteBackPrompt
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.refreshedEditSongBaselineCover
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongBaselineFromSong
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolvePendingLocalCoverReplacementTarget
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.restoredEditSongLyricsOrDraft
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.seedWithEmbeddedEditLyrics
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.selectEditSongInitialCover
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldApplyResolvedEditSongCover
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldFetchOriginalSongInfo
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldHandleEditLyricsPermissionLoss
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldOfferFilledLyricsWriteBack
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldOpenEditLyricsSeedImmediately
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldPersistEditSongManualCover
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -15,7 +35,9 @@ class NowPlayingSongEditPolicyTest {
     fun `baseline cover only adopts a nonblank initial reference for missing or remote covers`() {
         assertNull(refreshedEditSongBaselineCover("content://cover/local", "content://cover/new"))
         assertNull(refreshedEditSongBaselineCover("", ""))
-        assertEquals("content://cover/new", refreshedEditSongBaselineCover("", "content://cover/new"))
+        assertEquals("content://cover/new",
+            refreshedEditSongBaselineCover("", "content://cover/new")
+        )
         assertEquals(
             "content://cover/new",
             refreshedEditSongBaselineCover("https://cover/remote", "content://cover/new")
@@ -55,7 +77,10 @@ class NowPlayingSongEditPolicyTest {
         assertEquals("Source", editSongMetadataSnapshot(song).name)
         assertEquals("Artist", editSongMetadataSnapshot(song).artist)
         val edited = song.copy(customName = "Edited", customArtist = "Edited artist", customCoverUrl = "local-cover")
-        assertEquals(EditSongMetadataSnapshot("local-cover", "Edited", "Edited artist"), editSongMetadataSnapshot(edited))
+        assertEquals(
+            EditSongMetadataSnapshot("local-cover", "Edited", "Edited artist"),
+            editSongMetadataSnapshot(edited)
+        )
         assertNull(editSongCoverForSave(""))
         assertEquals("local-cover", editSongCoverForSave("local-cover"))
     }
@@ -98,8 +123,12 @@ class NowPlayingSongEditPolicyTest {
         val choice = seedWithEmbeddedEditLyrics(
             sidecar,
             LocalLyricsScanMetadata(
-                null, null, null,
-                embeddedLyric = "tag", embeddedTranslatedLyric = "translated", embeddedRomanizedLyric = "romanized"
+                null,
+                null,
+                null,
+                embeddedLyric = "tag",
+                embeddedTranslatedLyric = "translated",
+                embeddedRomanizedLyric = "romanized"
             )
         )
         assertEquals("tag", choice?.embeddedLyrics)
@@ -127,7 +156,9 @@ class NowPlayingSongEditPolicyTest {
         assertTrue(isEditSongLyricsPermissionFailure(directory))
         assertTrue(isEditSongLyricsPermissionFailure(file))
         assertFalse(isEditSongLyricsPermissionFailure(ordinary))
-        assertEquals("歌词编辑器配置的下载目录授权已失效", editSongLyricsLoadErrorMessage(directory))
+        assertEquals("歌词编辑器配置的下载目录授权已失效",
+            editSongLyricsLoadErrorMessage(directory)
+        )
         assertEquals("歌词编辑器读取本地文件权限失效", editSongLyricsLoadErrorMessage(file))
         assertEquals("歌词编辑器初始化失败", editSongLyricsLoadErrorMessage(ordinary))
     }

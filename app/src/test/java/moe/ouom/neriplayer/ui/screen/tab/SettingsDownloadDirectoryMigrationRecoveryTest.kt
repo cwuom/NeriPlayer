@@ -16,6 +16,18 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.DownloadDirectoryMigrationRecoveryController
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.DownloadDirectoryMigrationRecoveryGateway
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.MIGRATION_SNAPSHOT_READ_RETRY_LIMIT
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.MigrationRecoveryLoopDecision
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.MigrationSharedProcessingProgress
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.PersistedMigrationUiSnapshot
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.activeMigrationWorkId
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.migrationRecoveryLoopDecision
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.migrationSharedProcessingProgress
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.restoredMigrationProgress
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.shouldKeepMigrationLoading
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.shouldPollMigrationRecovery
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -37,8 +49,12 @@ class SettingsDownloadDirectoryMigrationRecoveryTest {
         )
 
         assertEquals(durable, restoredMigrationProgress(snapshot, worker, current))
-        assertEquals(worker, restoredMigrationProgress(snapshot.copy(progress = null), worker, current))
-        assertEquals(current, restoredMigrationProgress(snapshot.copy(progress = null), null, current))
+        assertEquals(worker,
+            restoredMigrationProgress(snapshot.copy(progress = null), worker, current)
+        )
+        assertEquals(current,
+            restoredMigrationProgress(snapshot.copy(progress = null), null, current)
+        )
     }
 
     @Test
@@ -110,12 +126,19 @@ class SettingsDownloadDirectoryMigrationRecoveryTest {
             reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
             phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
         )
-        assertNull(migrationSharedProcessingProgress(ManagedLibraryProcessingState.Idle, progress(1)))
+        assertNull(
+            migrationSharedProcessingProgress(
+                ManagedLibraryProcessingState.Idle,
+                progress(1)
+            )
+        )
         assertNull(migrationSharedProcessingProgress(running, null))
-        assertNull(migrationSharedProcessingProgress(
-            running.copy(reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE),
-            progress(1)
-        ))
+        assertNull(
+            migrationSharedProcessingProgress(
+                running.copy(reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE),
+                progress(1)
+            )
+        )
         assertEquals(
             MigrationSharedProcessingProgress("directory-change", 0, 4),
             migrationSharedProcessingProgress(running, progress(-1))
@@ -405,7 +428,8 @@ class SettingsDownloadDirectoryMigrationRecoveryTest {
     )
 
     private fun controller(
-        gateway: DownloadDirectoryMigrationRecoveryGateway = object : DownloadDirectoryMigrationRecoveryGateway {
+        gateway: DownloadDirectoryMigrationRecoveryGateway = object :
+            DownloadDirectoryMigrationRecoveryGateway {
             override fun readSnapshot(): PersistedMigrationUiSnapshot = error("unexpected snapshot read")
             override fun findWorkInfo(workId: String): WorkInfo? = error("unexpected work read")
             override suspend fun resumePersistedRequestIfNeeded(): String? = error("unexpected resume")
@@ -420,7 +444,9 @@ class SettingsDownloadDirectoryMigrationRecoveryTest {
         onInlineMessageChange = {},
         isMigratingMutableState = mutableStateOf(false),
         liveProgressState = mutableStateOf(liveProgress),
-        persistedProgressMutableState = mutableStateOf<ManagedDownloadStorage.MigrationProgress?>(null),
+        persistedProgressMutableState = mutableStateOf<ManagedDownloadStorage.MigrationProgress?>(
+            null
+        ),
         activeWorkIdMutableState = mutableStateOf<String?>(null),
         autoResumeAttemptedMutableState = mutableStateOf(false)
     )

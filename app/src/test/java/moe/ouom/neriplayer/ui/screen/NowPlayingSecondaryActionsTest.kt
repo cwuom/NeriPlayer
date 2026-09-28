@@ -5,6 +5,12 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsBiliTargetOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsPage
+import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsSheetOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNeteaseArtistNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.isYouTubeMusicArtistNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveMoreOptionsSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -73,32 +79,74 @@ class NowPlayingSecondaryActionsTest {
         assertTrue(isNeteaseArtistNavigationSource(song.copy(mediaUri = "https://music.163.com/song")))
         assertTrue(isNeteaseArtistNavigationSource(song.copy(localFileName = "Netease - song.mp3")))
         assertTrue(isNeteaseArtistNavigationSource(song.copy(localFilePath = "Netease%20-song.mp3")))
-        assertTrue(isNeteaseArtistNavigationSource(song.copy(
-            neteaseArtists = listOf(NeteaseArtistSummary(8L, "artist"))
-        )))
-        assertFalse(isNeteaseArtistNavigationSource(song.copy(
-            neteaseArtists = listOf(NeteaseArtistSummary(0L, "artist"))
-        )))
-        assertFalse(isNeteaseArtistNavigationSource(song.copy(
-            neteaseArtists = listOf(NeteaseArtistSummary(8L, " "))
-        )))
-        assertTrue(isNeteaseArtistNavigationSource(song.copy(
-            neteaseArtists = listOf(NeteaseArtistSummary(0L, "invalid"), NeteaseArtistSummary(8L, "artist"))
-        )))
+        assertTrue(
+            isNeteaseArtistNavigationSource(
+                song.copy(
+                    neteaseArtists = listOf(NeteaseArtistSummary(8L, "artist"))
+                )
+            )
+        )
+        assertFalse(
+            isNeteaseArtistNavigationSource(
+                song.copy(
+                    neteaseArtists = listOf(NeteaseArtistSummary(0L, "artist"))
+                )
+            )
+        )
+        assertFalse(
+            isNeteaseArtistNavigationSource(
+                song.copy(
+                    neteaseArtists = listOf(NeteaseArtistSummary(8L, " "))
+                )
+            )
+        )
+        assertTrue(
+            isNeteaseArtistNavigationSource(
+                song.copy(
+                    neteaseArtists = listOf(
+                        NeteaseArtistSummary(0L, "invalid"),
+                        NeteaseArtistSummary(8L, "artist")
+                    )
+                )
+            )
+        )
         assertTrue(isNeteaseArtistNavigationSource(song.copy(coverUrl = "https://music.126.net/a.jpg")))
-        assertFalse(isNeteaseArtistNavigationSource(song.copy(
-            channelId = "qq", coverUrl = "https://music.126.net/a.jpg"
-        )))
-        assertFalse(isNeteaseArtistNavigationSource(song.copy(
-            album = "Bilibili|123", coverUrl = "https://music.126.net/a.jpg"
-        )))
-        assertFalse(isNeteaseArtistNavigationSource(song.copy(
-            channelId = "youtubeMusic", coverUrl = "https://music.126.net/a.jpg"
-        )))
-        assertFalse(isNeteaseArtistNavigationSource(song.copy(
-            mediaUri = "file:///music/song.mp3", coverUrl = "https://music.126.net/a.jpg"
-        )))
-        assertFalse(isYouTubeMusicArtistNavigationSource(song.copy(artist = "", channelId = "youtubeMusic")))
+        assertFalse(
+            isNeteaseArtistNavigationSource(
+                song.copy(
+                    channelId = "qq", coverUrl = "https://music.126.net/a.jpg"
+                )
+            )
+        )
+        assertFalse(
+            isNeteaseArtistNavigationSource(
+                song.copy(
+                    album = "Bilibili|123", coverUrl = "https://music.126.net/a.jpg"
+                )
+            )
+        )
+        assertFalse(
+            isNeteaseArtistNavigationSource(
+                song.copy(
+                    channelId = "youtubeMusic", coverUrl = "https://music.126.net/a.jpg"
+                )
+            )
+        )
+        assertFalse(
+            isNeteaseArtistNavigationSource(
+                song.copy(
+                    mediaUri = "file:///music/song.mp3", coverUrl = "https://music.126.net/a.jpg"
+                )
+            )
+        )
+        assertFalse(
+            isYouTubeMusicArtistNavigationSource(
+                song.copy(
+                    artist = "",
+                    channelId = "youtubeMusic"
+                )
+            )
+        )
 
         val refreshed = song.copy(name = "refreshed")
         assertEquals(refreshed, resolveMoreOptionsSong(refreshed, song))

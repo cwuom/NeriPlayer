@@ -38,7 +38,7 @@ import moe.ouom.neriplayer.data.traffic.aggregateTrafficStatsForPeriod
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
-import moe.ouom.neriplayer.ui.screen.StatsPeriodSelector
+import moe.ouom.neriplayer.ui.screen.history.stats.StatsPeriodSelector
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch

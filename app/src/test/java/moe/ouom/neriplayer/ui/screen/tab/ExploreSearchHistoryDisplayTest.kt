@@ -1,5 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
+import moe.ouom.neriplayer.ui.screen.tab.explore.exploreSearchTypeBarSource
+import moe.ouom.neriplayer.ui.screen.tab.explore.filteredExploreSearchHistory
+import moe.ouom.neriplayer.ui.screen.tab.explore.isExploreSearchTypeBarSourceSwap
+import moe.ouom.neriplayer.ui.screen.tab.explore.shouldShowExploreNeteaseSearchTypeBar
+import moe.ouom.neriplayer.ui.screen.tab.explore.shouldShowExploreSearchHistory
+import moe.ouom.neriplayer.ui.screen.tab.explore.shouldShowExploreYouTubeSearchTypeBar
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

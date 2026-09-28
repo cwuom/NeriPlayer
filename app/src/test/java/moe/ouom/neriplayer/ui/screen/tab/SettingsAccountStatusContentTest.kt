@@ -4,6 +4,10 @@ import android.content.res.Resources
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountEntryAction
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.accountStatusText
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.hasValidSavedCookieHealth
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.hasValidYouTubeAuthHealth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

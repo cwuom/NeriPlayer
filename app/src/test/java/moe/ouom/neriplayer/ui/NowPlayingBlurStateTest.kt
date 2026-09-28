@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui
 
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingBlurRetentionRequest
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingBlurState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

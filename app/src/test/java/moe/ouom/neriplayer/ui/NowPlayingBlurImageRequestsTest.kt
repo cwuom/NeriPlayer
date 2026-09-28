@@ -1,6 +1,10 @@
 package moe.ouom.neriplayer.ui
 
 import coil.request.CachePolicy
+import moe.ouom.neriplayer.ui.playback.visual.normalizedNowPlayingBlurStrength
+import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurImageCacheKey
+import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurNetworkCachePolicy
+import moe.ouom.neriplayer.ui.playback.visual.preloadNowPlayingBlurCovers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

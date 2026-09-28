@@ -11,6 +11,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.core.api.bili.BiliVideoSkipTargetOption
 import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BILI_VIDEO_SKIP_ADD_BUTTON_TEST_TAG
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BILI_VIDEO_SKIP_END_INPUT_TEST_TAG
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BILI_VIDEO_SKIP_START_INPUT_TEST_TAG
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsContent
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test

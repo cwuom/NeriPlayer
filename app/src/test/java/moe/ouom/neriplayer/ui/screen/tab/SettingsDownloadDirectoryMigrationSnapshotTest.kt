@@ -6,6 +6,8 @@ import java.util.UUID
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournal
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationRequest
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.composePersistedMigrationReadResults
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.composePersistedMigrationUiSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

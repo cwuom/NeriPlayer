@@ -3,6 +3,11 @@ package moe.ouom.neriplayer.ui.screen
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingSyncedLyricContent
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingSecondaryLyrics
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsPosition
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldAdvanceNowPlayingLyrics
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldShowNowPlayingEmbeddedLyrics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

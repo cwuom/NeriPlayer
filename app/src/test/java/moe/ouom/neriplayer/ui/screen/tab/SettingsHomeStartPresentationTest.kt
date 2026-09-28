@@ -1,6 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.SettingsHomeCardCopy
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.effectiveSettingsStartDestination
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.isSettingsHomeStartAvailable
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsStartDestinationLabelRes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

@@ -14,6 +14,10 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.screen.tab.explore.EXPLORE_NETEASE_SEARCH_TYPE_BAR_TAG
+import moe.ouom.neriplayer.ui.screen.tab.explore.EXPLORE_SEARCH_TYPE_BAR_CONTAINER_TAG
+import moe.ouom.neriplayer.ui.screen.tab.explore.EXPLORE_YOUTUBE_SEARCH_TYPE_BAR_TAG
+import moe.ouom.neriplayer.ui.screen.tab.explore.ExploreSearchTypeBar
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeExploreSearchType

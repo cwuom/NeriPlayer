@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.ui.screen.tab
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountAuthController
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAuthDialogState
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent

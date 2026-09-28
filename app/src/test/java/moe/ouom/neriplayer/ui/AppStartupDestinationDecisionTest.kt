@@ -1,6 +1,10 @@
 package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationDecision
+import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationInput
+import moe.ouom.neriplayer.ui.navigation.appStartupDestinationDecision
+import moe.ouom.neriplayer.ui.navigation.dispatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

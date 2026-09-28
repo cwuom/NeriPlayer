@@ -5,6 +5,9 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingBusyException
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryChangeGuardGateway
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryChangeGuardOwner
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationErrorPresenter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -102,7 +105,8 @@ class SettingsDownloadDirectoryGuardOwnerTest {
         )
     }
 
-    private class FakeGateway(private val events: MutableList<String>) : DownloadDirectoryChangeGuardGateway {
+    private class FakeGateway(private val events: MutableList<String>) :
+        DownloadDirectoryChangeGuardGateway {
         var activeDownloads = false
 
         override fun hasActiveDownloads(): Boolean {

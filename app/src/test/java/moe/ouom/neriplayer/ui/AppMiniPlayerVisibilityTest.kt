@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui
 
+import moe.ouom.neriplayer.ui.navigation.shouldShowMiniPlayer
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

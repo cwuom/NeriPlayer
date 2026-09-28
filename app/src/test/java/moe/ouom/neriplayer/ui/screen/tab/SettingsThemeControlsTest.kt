@@ -2,6 +2,10 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.ui.geometry.Offset
 import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.AutoThemeModeController
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.ThemeRevealRequest
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.resolveAutoThemeToggle
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.resolveManualThemeReveal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

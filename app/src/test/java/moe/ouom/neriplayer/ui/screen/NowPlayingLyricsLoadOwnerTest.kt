@@ -7,6 +7,12 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.settings.LyricSourcePreference
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LoadedLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingFastLyricsResult
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsStages
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingFastLyricsState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

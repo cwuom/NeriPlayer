@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.ui.screen
 import android.content.res.Resources
 import android.net.Uri
 import androidx.compose.material3.SnackbarHostState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.awaitCancellation
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
@@ -12,6 +14,17 @@ import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
 import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaseline
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongEmbeddedReadResult
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongRestoreSelection
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.NowPlayingSongEditOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.NowPlayingSongEditPlaybackPort
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.SongEditLyricsWrite
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.latestMatchingEditSong
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsForSave
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsSavePlan
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.withVerifiedEditCoverPickerTarget
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,7 +35,8 @@ import org.mockito.Mockito
 
 class NowPlayingSongEditOwnerTest {
     private val song = SongItem(8L, "Current", "Current artist", "Album", 2L, 60_000L, null)
-    private val baseline = EditSongBaseline("Baseline", "Baseline artist", "base-cover", "base lyric", null, null)
+    private val baseline =
+        EditSongBaseline("Baseline", "Baseline artist", "base-cover", "base lyric", null, null)
 
     @Test
     fun `successful metadata writeback has no failure snackbar`() = runTest {
@@ -104,7 +118,8 @@ class NowPlayingSongEditOwnerTest {
         owner.artistNameState.value = "Manual artist"
         val staleRequest = owner.nextOriginalInfoRequest()
         val currentRequest = owner.nextOriginalInfoRequest()
-        val choice = EditSongRestoreSelection(cover = false, title = true, artist = false, lyrics = false)
+        val choice =
+            EditSongRestoreSelection(cover = false, title = true, artist = false, lyrics = false)
         val source = NowPlayingViewModel.OriginalSongInfo("Fetched title", "Fetched artist", "fetched-cover")
 
         assertFalse(owner.applyRestoredOriginalInfo(staleRequest, choice, baseline, source))
@@ -124,7 +139,8 @@ class NowPlayingSongEditOwnerTest {
         val owner = owner()
         owner.pendingLyricsDraftState.value = EditSongLyricsDraft("draft", "", "", false)
         val request = owner.nextOriginalInfoRequest()
-        val choice = EditSongRestoreSelection(cover = true, title = true, artist = true, lyrics = true)
+        val choice =
+            EditSongRestoreSelection(cover = true, title = true, artist = true, lyrics = true)
         val source = NowPlayingViewModel.OriginalSongInfo(
             name = "Original", artist = "Original artist", coverUrl = "original-cover",
             lyric = "original lyric"
@@ -152,7 +168,12 @@ class NowPlayingSongEditOwnerTest {
         assertTrue(
             owner.applyRestoredOriginalInfo(
                 request,
-                EditSongRestoreSelection(cover = false, title = true, artist = false, lyrics = false),
+                EditSongRestoreSelection(
+                    cover = false,
+                    title = true,
+                    artist = false,
+                    lyrics = false
+                ),
                 baseline,
                 null
             )
@@ -302,8 +323,10 @@ class NowPlayingSongEditOwnerTest {
     @Test
     fun `managed baseline and resolved cover stop replacing manual edits`() {
         val owner = NowPlayingSongEditOwner(
-            initialSong = song, initialCoverUrl = "", initialBaseline = baseline.copy(coverUrl = ""),
-            scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+            initialSong = song,
+            initialCoverUrl = "",
+            initialBaseline = baseline.copy(coverUrl = ""),
+            scope = CoroutineScope(Dispatchers.Unconfined),
             onSavingChanged = {},
             playbackPort = RecordingPlaybackPort()
         )
@@ -488,14 +511,15 @@ class NowPlayingSongEditOwnerTest {
         assertEquals(setOf("restore", "lyrics", "cover", "save"), cancelled)
     }
 
-    private fun owner(playbackPort: RecordingPlaybackPort = RecordingPlaybackPort()) = NowPlayingSongEditOwner(
-        initialSong = song,
-        initialCoverUrl = "current-cover",
-        initialBaseline = baseline,
-        scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
-        onSavingChanged = {},
-        playbackPort = playbackPort
-    )
+    private fun owner(playbackPort: RecordingPlaybackPort = RecordingPlaybackPort()) =
+        NowPlayingSongEditOwner(
+            initialSong = song,
+            initialCoverUrl = "current-cover",
+            initialBaseline = baseline,
+            scope = CoroutineScope(Dispatchers.Unconfined),
+            onSavingChanged = {},
+            playbackPort = playbackPort
+        )
 
     private class RecordingPlaybackPort : NowPlayingSongEditPlaybackPort {
         var current: SongItem? = null

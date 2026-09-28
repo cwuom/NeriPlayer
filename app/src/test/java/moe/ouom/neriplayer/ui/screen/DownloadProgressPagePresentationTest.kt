@@ -3,6 +3,19 @@ package moe.ouom.neriplayer.ui.screen
 import java.io.File
 import moe.ouom.neriplayer.core.download.policy.DownloadClearVisibility
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
+import moe.ouom.neriplayer.ui.screen.download.DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES
+import moe.ouom.neriplayer.ui.screen.download.DownloadProgressInitialProbeState
+import moe.ouom.neriplayer.ui.screen.download.DownloadProgressPagePresentation
+import moe.ouom.neriplayer.ui.screen.download.hasUnhydratedDurableDownloadTasks
+import moe.ouom.neriplayer.ui.screen.download.isEffectiveDownloadClearInProgress
+import moe.ouom.neriplayer.ui.screen.download.isLogicalDownloadTaskClearComplete
+import moe.ouom.neriplayer.ui.screen.download.resolveDownloadClearPresentationProgress
+import moe.ouom.neriplayer.ui.screen.download.resolveDownloadClearProgressOrFallback
+import moe.ouom.neriplayer.ui.screen.download.resolveDownloadProgressPagePresentation
+import moe.ouom.neriplayer.ui.screen.download.shouldPrioritizeDownloadBackgroundCleanup
+import moe.ouom.neriplayer.ui.screen.download.shouldRecheckDownloadProgressBootstrap
+import moe.ouom.neriplayer.ui.screen.download.shouldShowDownloadClearProgressCard
+import moe.ouom.neriplayer.ui.screen.download.shouldShowPendingDownloadSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -12,7 +25,7 @@ class DownloadProgressPagePresentationTest {
 
     @Test
     fun `clear progress bar animates between durable updates`() {
-        val source = source("app/src/main/java/moe/ouom/neriplayer/ui/screen/DownloadProgressScreen.kt")
+        val source = source("app/src/main/java/moe/ouom/neriplayer/ui/screen/download/DownloadProgressScreen.kt")
         val summary = source
             .substringAfter("private fun DownloadClearProgressSummary(")
             .substringBefore("@OptIn(ExperimentalMaterial3Api::class)")

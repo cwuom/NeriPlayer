@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.ui.screen
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingTrackDisplay
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingTrackIdentityOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingTrackDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -38,10 +41,18 @@ class NowPlayingTrackIdentityTest {
             durationMs = 5_000L,
             coverUrl = null
         )
-        assertEquals(NowPlayingTrackDisplay("Original", "Original artist"), resolveNowPlayingTrackDisplay(song))
+        assertEquals(
+            NowPlayingTrackDisplay("Original", "Original artist"),
+            resolveNowPlayingTrackDisplay(song)
+        )
         assertEquals(
             NowPlayingTrackDisplay("Edited", "Edited artist"),
-            resolveNowPlayingTrackDisplay(song.copy(customName = "Edited", customArtist = "Edited artist"))
+            resolveNowPlayingTrackDisplay(
+                song.copy(
+                    customName = "Edited",
+                    customArtist = "Edited artist"
+                )
+            )
         )
     }
 }

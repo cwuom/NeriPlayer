@@ -5,6 +5,16 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.downloadDirectoryMigrationBytes
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.downloadDirectoryMigrationDialogPresentation
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.downloadDirectoryMigrationStageId
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.managedLibraryProcessingCardPresentation
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.managedLibraryProcessingCount
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.managedLibraryProcessingFraction
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.managedLibraryProcessingStageId
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.managedLibraryProcessingTitleId
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.migrationStageLabelId
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.visibleProcessingFileName
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -27,7 +37,9 @@ class SettingsDownloadDirectoryPresentationTest {
             R.string.managed_library_processing_directory_title,
             managedLibraryProcessingTitleId(ManagedLibraryProcessingReason.DIRECTORY_CHANGE)
         )
-        assertEquals(R.string.settings_download_directory_migrating, managedLibraryProcessingTitleId(null))
+        assertEquals(R.string.settings_download_directory_migrating,
+            managedLibraryProcessingTitleId(null)
+        )
         assertEquals(
             R.string.managed_library_processing_upgrade_title,
             managedLibraryProcessingStageId(null, ManagedLibraryProcessingPhase.UPGRADING_DATABASE)
@@ -133,22 +145,30 @@ class SettingsDownloadDirectoryPresentationTest {
         assertEquals(100L, copying?.totalBytes)
 
         val verifying = downloadDirectoryMigrationBytes(
-            progress(stage = ManagedDownloadStorage.MigrationStage.VERIFYING, verifiedBytes = 12,
-                verificationBytesTotal = 20, totalBytes = 100)
+            progress(
+                stage = ManagedDownloadStorage.MigrationStage.VERIFYING, verifiedBytes = 12,
+                verificationBytesTotal = 20, totalBytes = 100
+            )
         )
         assertEquals(R.string.settings_download_directory_migrating_verification_progress_bytes, verifying?.messageId)
         assertEquals(12L, verifying?.processedBytes)
         assertEquals(20L, verifying?.totalBytes)
         assertNull(downloadDirectoryMigrationBytes(progress()))
         assertNull(downloadDirectoryMigrationBytes(null))
-        assertNull(downloadDirectoryMigrationBytes(progress(
-            stage = ManagedDownloadStorage.MigrationStage.VERIFYING
-        )))
-        assertEquals(0L, downloadDirectoryMigrationBytes(progress(
-            stage = ManagedDownloadStorage.MigrationStage.VERIFYING,
-            verifiedBytes = -2,
-            verificationBytesTotal = 20
-        ))?.processedBytes)
+        assertNull(
+            downloadDirectoryMigrationBytes(
+                progress(
+                    stage = ManagedDownloadStorage.MigrationStage.VERIFYING
+                )
+            )
+        )
+        assertEquals(0L, downloadDirectoryMigrationBytes(
+            progress(
+                stage = ManagedDownloadStorage.MigrationStage.VERIFYING,
+                verifiedBytes = -2,
+                verificationBytesTotal = 20
+            )
+        )?.processedBytes)
     }
 
     @Test

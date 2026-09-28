@@ -11,6 +11,20 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverPreviewAttempt
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverRequestInput
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverCacheKey
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverRequest
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.isNowPlayingCachedCoverFrameCompatible
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.isNowPlayingRetainedCoverFrameCompatible
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingCoverBadgeScaleTarget
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverCacheKeys
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverSize
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverViewport
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.sameNowPlayingCoverRequestFrame
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldPreloadNowPlayingCover
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -165,7 +179,8 @@ class NowPlayingCoverOwnerTest {
     @Test
     fun `composed request reuses its token until the cover input changes`() = runTest {
         val owner = NowPlayingCoverOwner(this)
-        val firstInput = NowPlayingCoverRequestInput("content://cover-owner-test/first", "song", "g1")
+        val firstInput =
+            NowPlayingCoverRequestInput("content://cover-owner-test/first", "song", "g1")
         val first = owner.requestFor(firstInput)!!
         assertEquals(first, owner.requestFor(firstInput.copy()))
         val changed = owner.requestFor(firstInput.copy(cacheKey = "g2"))!!
@@ -216,7 +231,13 @@ class NowPlayingCoverOwnerTest {
     fun `preload is required only when the visible frame has a different source`() {
         val request = buildNowPlayingCoverRequest("content://cover-owner-test/new", "song", "g2")!!
         assertTrue(shouldPreloadNowPlayingCover(request, null, null))
-        assertTrue(shouldPreloadNowPlayingCover(request, null, request.frame.copy(cacheKey = "old")))
+        assertTrue(
+            shouldPreloadNowPlayingCover(
+                request,
+                null,
+                request.frame.copy(cacheKey = "old")
+            )
+        )
         assertFalse(shouldPreloadNowPlayingCover(request, null, request.frame))
         assertFalse(shouldPreloadNowPlayingCover(request, request, null))
         assertFalse(shouldPreloadNowPlayingCover(null, null, null))
@@ -224,8 +245,12 @@ class NowPlayingCoverOwnerTest {
 
     @Test
     fun `cache aliases reject missing request owners and normalize only current aliases`() {
-        assertEquals(emptyList<String>(), resolveNowPlayingCoverCacheKeys(null, null, listOf("alias")))
-        assertEquals(emptyList<String>(), resolveNowPlayingCoverCacheKeys("  ", "  ", listOf("alias")))
+        assertEquals(emptyList<String>(),
+            resolveNowPlayingCoverCacheKeys(null, null, listOf("alias"))
+        )
+        assertEquals(emptyList<String>(),
+            resolveNowPlayingCoverCacheKeys("  ", "  ", listOf("alias"))
+        )
         assertEquals(
             listOf("song"),
             resolveNowPlayingCoverCacheKeys(" song ", "other", listOf("alias"))
@@ -238,14 +263,34 @@ class NowPlayingCoverOwnerTest {
 
     @Test
     fun `request frame identity ignores bitmap but isolates owner cache key and token`() {
-        val first = buildNowPlayingCoverRequest("content://cover-owner-test/identity", "song", "g1", "first")!!
+        val first = buildNowPlayingCoverRequest(
+            "content://cover-owner-test/identity",
+            "song",
+            "g1",
+            "first"
+        )!!
         assertTrue(sameNowPlayingCoverRequestFrame(null, null))
         assertFalse(sameNowPlayingCoverRequestFrame(first.frame, null))
         assertFalse(sameNowPlayingCoverRequestFrame(null, first.frame))
-        assertTrue(sameNowPlayingCoverRequestFrame(first.frame, first.frame.copy(decodedBitmap = markerBitmap)))
+        assertTrue(
+            sameNowPlayingCoverRequestFrame(
+                first.frame,
+                first.frame.copy(decodedBitmap = markerBitmap)
+            )
+        )
         assertFalse(sameNowPlayingCoverRequestFrame(first.frame, first.frame.copy(cacheKey = "g2")))
-        assertFalse(sameNowPlayingCoverRequestFrame(first.frame, first.frame.copy(ownerSongKey = "other")))
-        assertFalse(sameNowPlayingCoverRequestFrame(first.frame, first.frame.copy(requestToken = "second")))
+        assertFalse(
+            sameNowPlayingCoverRequestFrame(
+                first.frame,
+                first.frame.copy(ownerSongKey = "other")
+            )
+        )
+        assertFalse(
+            sameNowPlayingCoverRequestFrame(
+                first.frame,
+                first.frame.copy(requestToken = "second")
+            )
+        )
     }
 
     @Test
@@ -266,19 +311,43 @@ class NowPlayingCoverOwnerTest {
 
     @Test
     fun `retained and decoded cache compatibility require the right frame owner`() {
-        val request = buildNowPlayingCoverRequest("content://cover-owner-test/compatible", "song", "g2")!!
+        val request = buildNowPlayingCoverRequest(
+            "content://cover-owner-test/compatible",
+            "song",
+            "g2"
+        )!!
         val decoded = request.frame.copy(decodedBitmap = markerBitmap)
         assertFalse(isNowPlayingCachedCoverFrameCompatible(null, request.frame))
         assertFalse(isNowPlayingCachedCoverFrameCompatible(request.frame, request.frame))
         assertTrue(isNowPlayingCachedCoverFrameCompatible(decoded, null))
         assertTrue(isNowPlayingCachedCoverFrameCompatible(decoded, request.frame))
-        assertFalse(isNowPlayingCachedCoverFrameCompatible(decoded.copy(cacheKey = "old"), request.frame))
+        assertFalse(
+            isNowPlayingCachedCoverFrameCompatible(
+                decoded.copy(cacheKey = "old"),
+                request.frame
+            )
+        )
         assertFalse(isNowPlayingRetainedCoverFrameCompatible(null, request.frame))
         assertFalse(isNowPlayingRetainedCoverFrameCompatible(request.frame, request.frame))
         assertTrue(isNowPlayingRetainedCoverFrameCompatible(decoded, null))
-        assertTrue(isNowPlayingRetainedCoverFrameCompatible(decoded.copy(cacheKey = "old"), request.frame))
-        assertFalse(isNowPlayingRetainedCoverFrameCompatible(decoded.copy(ownerSongKey = "other"), request.frame))
-        assertFalse(isNowPlayingRetainedCoverFrameCompatible(decoded.copy(coverUrl = "other"), request.frame))
+        assertTrue(
+            isNowPlayingRetainedCoverFrameCompatible(
+                decoded.copy(cacheKey = "old"),
+                request.frame
+            )
+        )
+        assertFalse(
+            isNowPlayingRetainedCoverFrameCompatible(
+                decoded.copy(ownerSongKey = "other"),
+                request.frame
+            )
+        )
+        assertFalse(
+            isNowPlayingRetainedCoverFrameCompatible(
+                decoded.copy(coverUrl = "other"),
+                request.frame
+            )
+        )
     }
 
     private companion object {

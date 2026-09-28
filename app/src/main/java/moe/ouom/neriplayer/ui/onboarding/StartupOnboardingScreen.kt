@@ -143,7 +143,7 @@ import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.core.startup.permission.StartupMediaPermission
 import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
 import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.ui.CustomBackground
+import moe.ouom.neriplayer.ui.theme.background.CustomBackground
 
 private enum class StartupStep {
     Language,

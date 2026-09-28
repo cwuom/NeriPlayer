@@ -49,6 +49,30 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS
+import moe.ouom.neriplayer.ui.navigation.DRAWER_DETAIL_OPEN_DURATION_MS
+import moe.ouom.neriplayer.ui.navigation.MAIN_TAB_DETAIL_CLOSE_DURATION_MS
+import moe.ouom.neriplayer.ui.navigation.MAIN_TAB_DETAIL_OPEN_DURATION_MS
+import moe.ouom.neriplayer.ui.navigation.MainTabBackgroundMotion
+import moe.ouom.neriplayer.ui.navigation.MainTabLayerHost
+import moe.ouom.neriplayer.ui.navigation.MainTabLayerTransitionState
+import moe.ouom.neriplayer.ui.navigation.animateMainTabDetailCloseRootRevealFraction
+import moe.ouom.neriplayer.ui.navigation.clipMainTabDetailCloseRoot
+import moe.ouom.neriplayer.ui.navigation.debugNavigationEnterTransition
+import moe.ouom.neriplayer.ui.navigation.debugNavigationExitTransition
+import moe.ouom.neriplayer.ui.navigation.mainTabDetailContentOffsetEasing
+import moe.ouom.neriplayer.ui.navigation.mainTabEnterTransition
+import moe.ouom.neriplayer.ui.navigation.mainTabExitTransition
+import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
+import moe.ouom.neriplayer.ui.navigation.rememberMainTabLayerTransitionState
+import moe.ouom.neriplayer.ui.navigation.rememberMainTabSceneRestoredEntry
+import moe.ouom.neriplayer.ui.navigation.resolveMainTabBackgroundMotion
+import moe.ouom.neriplayer.ui.navigation.resolveMainTabBackgroundMotionDurationMillis
+import moe.ouom.neriplayer.ui.navigation.resolveMainTabBackgroundTransform
+import moe.ouom.neriplayer.ui.navigation.shouldSuppressRestoredMainTabHostEntry
+import moe.ouom.neriplayer.ui.navigation.transparentDetailEnterTransition
+import moe.ouom.neriplayer.ui.navigation.transparentDetailExitTransition
+import moe.ouom.neriplayer.ui.navigation.transparentDetailPopEnterTransition
+import moe.ouom.neriplayer.ui.navigation.transparentDetailPopExitTransition
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -496,7 +520,7 @@ class NeriAppNavigationTransitionTest {
                 val restoredEntry = rememberMainTabSceneRestoredEntry()
                 val tag = if (
                     route == Destinations.Home.route &&
-                        restoredEntry
+                    restoredEntry
                 ) {
                     RestoredHomeSceneTag
                 } else {
@@ -890,8 +914,8 @@ class NeriAppNavigationTransitionTest {
                             IntOffset(
                                 x = 0,
                                 y = (
-                                    backgroundTransform.translationYFraction * layerHeightPx
-                                    ).roundToInt()
+                                        backgroundTransform.translationYFraction * layerHeightPx
+                                        ).roundToInt()
                             )
                         }
                 ) {
@@ -1175,8 +1199,8 @@ class NeriAppNavigationTransitionTest {
                             IntOffset(
                                 x = 0,
                                 y = (
-                                    transform.translationYFraction * layerHeightPx
-                                    ).roundToInt()
+                                        transform.translationYFraction * layerHeightPx
+                                        ).roundToInt()
                             )
                         }
                         .graphicsLayer {

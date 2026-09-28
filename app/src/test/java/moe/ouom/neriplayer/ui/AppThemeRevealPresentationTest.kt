@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui
 
 import androidx.compose.ui.geometry.Offset
+import moe.ouom.neriplayer.ui.theme.reveal.AppThemeRevealPresentation
+import moe.ouom.neriplayer.ui.theme.reveal.appThemeRevealPresentation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

@@ -21,6 +21,13 @@ import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import moe.ouom.neriplayer.ui.component.playback.NowPlayingCoverPreviewDialog
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQualityOptionsDialog
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLocalMetadataWriteBackConfirmDialog
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.FillOptionsDialog
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricFontSizeSheet
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricOffsetSheet
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricsEditorSheet
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

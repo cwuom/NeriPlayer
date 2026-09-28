@@ -2,6 +2,11 @@ package moe.ouom.neriplayer.ui.screen
 
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongActionAvailability
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongCoverPreviewState
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongActionAvailability
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongActionFontSize
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongCoverRenderer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
@@ -16,10 +21,22 @@ class NowPlayingSongEditSheetTest {
 
     @Test
     fun `restore save and cover import disable only the affected edit actions`() {
-        assertEquals(EditSongActionAvailability(true, true), editSongActionAvailability(false, false, false))
-        assertEquals(EditSongActionAvailability(false, false), editSongActionAvailability(true, false, false))
-        assertEquals(EditSongActionAvailability(false, false), editSongActionAvailability(false, true, false))
-        assertEquals(EditSongActionAvailability(true, false), editSongActionAvailability(false, false, true))
+        assertEquals(
+            EditSongActionAvailability(true, true),
+            editSongActionAvailability(false, false, false)
+        )
+        assertEquals(
+            EditSongActionAvailability(false, false),
+            editSongActionAvailability(true, false, false)
+        )
+        assertEquals(
+            EditSongActionAvailability(false, false),
+            editSongActionAvailability(false, true, false)
+        )
+        assertEquals(
+            EditSongActionAvailability(true, false),
+            editSongActionAvailability(false, false, true)
+        )
     }
 
     @Test

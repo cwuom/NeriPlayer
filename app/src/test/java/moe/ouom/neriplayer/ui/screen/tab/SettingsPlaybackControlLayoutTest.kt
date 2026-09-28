@@ -4,6 +4,10 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
 import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.PlaybackControlSize
+import moe.ouom.neriplayer.ui.screen.tab.settings.playback.PlaybackControlLayoutOwner
+import moe.ouom.neriplayer.ui.screen.tab.settings.playback.PlaybackControlLayoutSetting
+import moe.ouom.neriplayer.ui.screen.tab.settings.playback.nowPlayingControlPlacementLabelRes
+import moe.ouom.neriplayer.ui.screen.tab.settings.playback.playbackControlSizeLabelRes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

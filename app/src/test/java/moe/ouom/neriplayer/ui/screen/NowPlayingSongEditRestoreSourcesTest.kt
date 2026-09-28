@@ -8,6 +8,10 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaseline
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaselineReader
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.readManagedEditSongBaselineSnapshot
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveManagedEditSongBaselineAtRestore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test

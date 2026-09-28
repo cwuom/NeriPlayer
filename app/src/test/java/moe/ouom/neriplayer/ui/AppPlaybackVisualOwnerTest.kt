@@ -2,6 +2,22 @@ package moe.ouom.neriplayer.ui
 
 import android.content.Context
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.ui.playback.visual.BackdropAccentRequest
+import moe.ouom.neriplayer.ui.playback.visual.BackdropAccentSampleSource
+import moe.ouom.neriplayer.ui.playback.visual.PlaybackVisualCoverRequest
+import moe.ouom.neriplayer.ui.playback.visual.PlaybackVisualCoverState
+import moe.ouom.neriplayer.ui.playback.visual.backdropAccentColor
+import moe.ouom.neriplayer.ui.playback.visual.backdropAccentRequest
+import moe.ouom.neriplayer.ui.playback.visual.hasCurrentOrRetainedVisualCover
+import moe.ouom.neriplayer.ui.playback.visual.isCurrentAccentRequest
+import moe.ouom.neriplayer.ui.playback.visual.loadBackdropAccent
+import moe.ouom.neriplayer.ui.playback.visual.playbackVisualCoverRequest
+import moe.ouom.neriplayer.ui.playback.visual.resolveActiveCoverSeedHex
+import moe.ouom.neriplayer.ui.playback.visual.resolvePlaybackVisualCoverState
+import moe.ouom.neriplayer.ui.playback.visual.shouldClearRetainedPlaybackVisualCoverAfterGrace
+import moe.ouom.neriplayer.ui.playback.visual.shouldCommitRetainedPlaybackVisualCoverClear
+import moe.ouom.neriplayer.ui.playback.visual.shouldRetainNowPlayingBlurCover
+import moe.ouom.neriplayer.ui.playback.visual.shouldScheduleRetainedPlaybackVisualCoverClear
 import moe.ouom.neriplayer.util.media.CoverArtColorSample
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -117,7 +133,12 @@ class AppPlaybackVisualOwnerTest {
     fun retainedCoverGraceIgnoresAReplacedSongOrCover() {
         val oldState = PlaybackVisualCoverState("old-cover", "old-song")
         assertTrue(hasCurrentOrRetainedVisualCover(null, oldState))
-        assertTrue(hasCurrentOrRetainedVisualCover("new-song", PlaybackVisualCoverState(null, null)))
+        assertTrue(
+            hasCurrentOrRetainedVisualCover(
+                "new-song",
+                PlaybackVisualCoverState(null, null)
+            )
+        )
         assertFalse(hasCurrentOrRetainedVisualCover(null, PlaybackVisualCoverState(null, null)))
         assertTrue(shouldScheduleRetainedPlaybackVisualCoverClear(oldState, null))
         assertFalse(shouldScheduleRetainedPlaybackVisualCoverClear(oldState, "new-cover"))

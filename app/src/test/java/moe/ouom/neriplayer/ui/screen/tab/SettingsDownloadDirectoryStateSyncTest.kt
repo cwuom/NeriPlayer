@@ -2,6 +2,9 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectoryPermissionOwner
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectorySummaryGateway
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectorySummaryOwner
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -11,7 +14,8 @@ class SettingsDownloadDirectoryStateSyncTest {
         val summary = mutableStateOf("Old")
         val owner = DownloadDirectorySummaryOwner(
             gateway = object : DownloadDirectorySummaryGateway {
-                override suspend fun describe(uri: String): Result<String>? = error("unexpected probe")
+                override suspend fun describe(uri: String): Result<String>? =
+                    error("unexpected probe")
             },
             directoryUri = null,
             defaultSummary = "Default",
@@ -68,7 +72,8 @@ class SettingsDownloadDirectoryStateSyncTest {
         assertEquals(true, lost.value)
     }
 
-    private class FakeGateway(private val result: Result<String>?) : DownloadDirectorySummaryGateway {
+    private class FakeGateway(private val result: Result<String>?) :
+        DownloadDirectorySummaryGateway {
         override suspend fun describe(uri: String): Result<String>? = result
     }
 }

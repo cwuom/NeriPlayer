@@ -9,6 +9,8 @@ import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingBusyExcep
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshPreserveReason
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryApplyGateway
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryApplyOwner
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

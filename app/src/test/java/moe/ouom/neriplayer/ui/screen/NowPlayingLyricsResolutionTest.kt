@@ -6,6 +6,20 @@ import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.WordTiming
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.ManagedLyricVariant
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingBackgroundRawLyrics
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsBackgroundInputs
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingNeteaseFallback
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildBackgroundLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildBackgroundRawLyrics
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.effectiveRawLyric
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.hasDisplayableContent
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolveBackgroundOriginal
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolveBackgroundPhonetic
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolveBackgroundTranslated
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldDelayNowPlayingOnlineLyrics
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldReadNeteaseOriginal
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.shouldReadNeteaseRomanized
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -28,8 +42,12 @@ class NowPlayingLyricsResolutionTest {
         )
         val inputs = inputs(localSong.copy(matchedLyric = "stored"), local, downloaded, managed = true)
         assertEquals("downloaded", effectiveRawLyric(inputs, ManagedLyricVariant.ORIGINAL))
-        assertEquals("downloaded translation", effectiveRawLyric(inputs, ManagedLyricVariant.TRANSLATED))
-        assertEquals("downloaded phonetic", effectiveRawLyric(inputs, ManagedLyricVariant.ROMANIZED))
+        assertEquals("downloaded translation",
+            effectiveRawLyric(inputs, ManagedLyricVariant.TRANSLATED)
+        )
+        assertEquals("downloaded phonetic",
+            effectiveRawLyric(inputs, ManagedLyricVariant.ROMANIZED)
+        )
         assertFalse(shouldReadNeteaseOriginal(inputs))
         assertFalse(shouldReadNeteaseRomanized(inputs))
     }
@@ -45,9 +63,20 @@ class NowPlayingLyricsResolutionTest {
             )
         )
         val raw = buildBackgroundRawLyrics(inputs, NowPlayingNeteaseFallback("", ""))
-        assertEquals("embedded", resolveBackgroundOriginal(inputs, raw, FakeNowPlayingLyricsSources()).single().text)
-        assertEquals("translation", resolveBackgroundTranslated(inputs, raw, FakeNowPlayingLyricsSources()).single().text)
-        assertEquals("phonetic", resolveBackgroundPhonetic(inputs, NowPlayingNeteaseFallback("", ""), FakeNowPlayingLyricsSources()).single().text)
+        assertEquals("embedded", resolveBackgroundOriginal(
+            inputs,
+            raw,
+            FakeNowPlayingLyricsSources()
+        ).single().text)
+        assertEquals("translation", resolveBackgroundTranslated(
+            inputs,
+            raw,
+            FakeNowPlayingLyricsSources()
+        ).single().text)
+        assertEquals("phonetic", resolveBackgroundPhonetic(
+            inputs,
+            NowPlayingNeteaseFallback("", ""), FakeNowPlayingLyricsSources()
+        ).single().text)
     }
 
     @Test
@@ -75,7 +104,11 @@ class NowPlayingLyricsResolutionTest {
             )
         }
         assertEquals("timed", resolveBackgroundOriginal(inputs, raw, wordTimed).single().text)
-        assertEquals("stored", resolveBackgroundOriginal(inputs, raw, FakeNowPlayingLyricsSources()).single().text)
+        assertEquals("stored", resolveBackgroundOriginal(
+            inputs,
+            raw,
+            FakeNowPlayingLyricsSources()
+        ).single().text)
     }
 
     @Test
@@ -88,10 +121,23 @@ class NowPlayingLyricsResolutionTest {
             }
         }
         val missing = inputs(song)
-        assertEquals("online", resolveBackgroundOriginal(missing, NowPlayingBackgroundRawLyrics(null, null, null), sources).single().text)
+        assertEquals("online", resolveBackgroundOriginal(
+            missing,
+            NowPlayingBackgroundRawLyrics(null, null, null),
+            sources
+        ).single().text)
         val collapsed = "[00:00.00]one\n[00:00.00]two\n[00:00.00]three"
-        assertEquals("online", resolveBackgroundOriginal(missing, NowPlayingBackgroundRawLyrics(collapsed, null, null), sources).single().text)
-        assertTrue(resolveBackgroundOriginal(inputs(localSong), NowPlayingBackgroundRawLyrics(null, null, null), sources).isEmpty())
+        assertEquals("online", resolveBackgroundOriginal(
+            missing,
+            NowPlayingBackgroundRawLyrics(collapsed, null, null),
+            sources
+        ).single().text)
+        assertTrue(
+            resolveBackgroundOriginal(
+                inputs(localSong),
+                NowPlayingBackgroundRawLyrics(null, null, null),
+                sources
+            ).isEmpty())
         assertEquals(2, onlineCalls)
     }
 
@@ -121,9 +167,10 @@ class NowPlayingLyricsResolutionTest {
         assertEquals("online phonetic", resolveBackgroundPhonetic(
             inputs(song), NowPlayingNeteaseFallback("", ""), sources
         ).single().text)
-        assertTrue(resolveBackgroundPhonetic(
-            inputs(localSong), NowPlayingNeteaseFallback("", ""), sources
-        ).isEmpty())
+        assertTrue(
+            resolveBackgroundPhonetic(
+                inputs(localSong), NowPlayingNeteaseFallback("", ""), sources
+            ).isEmpty())
     }
 
     @Test
@@ -169,5 +216,12 @@ class NowPlayingLyricsResolutionTest {
         managed: Boolean = false,
         preferWordTimed: Boolean = true,
         mediaUrl: String? = null
-    ) = NowPlayingLyricsBackgroundInputs(song, local, downloaded, managed, mediaUrl, preferWordTimed)
+    ) = NowPlayingLyricsBackgroundInputs(
+        song,
+        local,
+        downloaded,
+        managed,
+        mediaUrl,
+        preferWordTimed
+    )
 }

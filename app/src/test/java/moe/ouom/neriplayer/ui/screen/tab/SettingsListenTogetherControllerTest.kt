@@ -16,6 +16,18 @@ import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
 import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherServerTestResult
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.SettingsListenTogetherController
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.isDefaultListenTogetherSettingsServer
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.listenTogetherIdentityDescriptionId
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.listenTogetherJoinButtonLabelId
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.listenTogetherJoinDescriptionId
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.listenTogetherNicknameDescription
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.listenTogetherServerDescriptionId
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.listenTogetherServerTestMessageId
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.normalizedSettingsListenTogetherServerInput
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.readSettingsListenTogetherClipboardText
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.settingsListenTogetherServerProbeRequest
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.validListenTogetherClipboardInvite
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -31,7 +43,9 @@ class SettingsListenTogetherControllerTest {
         assertFalse(isDefaultListenTogetherSettingsServer("https://example.com"))
         assertFalse(isDefaultListenTogetherSettingsServer("not-a-url"))
         assertEquals("", normalizedSettingsListenTogetherServerInput(" "))
-        assertEquals("https://example.com", normalizedSettingsListenTogetherServerInput("https://example.com/"))
+        assertEquals("https://example.com",
+            normalizedSettingsListenTogetherServerInput("https://example.com/")
+        )
         assertEquals(null, normalizedSettingsListenTogetherServerInput("not-a-url"))
     }
 
@@ -134,14 +148,22 @@ class SettingsListenTogetherControllerTest {
             R.string.settings_listen_together_server_custom_desc,
             listenTogetherServerDescriptionId(usingDefault = false)
         )
-        assertEquals(R.string.listen_together_joining_room, listenTogetherJoinButtonLabelId(joining = true))
-        assertEquals(R.string.listen_together_join_room, listenTogetherJoinButtonLabelId(joining = false))
+        assertEquals(R.string.listen_together_joining_room,
+            listenTogetherJoinButtonLabelId(joining = true)
+        )
+        assertEquals(R.string.listen_together_join_room,
+            listenTogetherJoinButtonLabelId(joining = false)
+        )
     }
 
     @Test
     fun `nickname description uses room restriction then current or fallback value`() {
-        assertEquals("room locked", listenTogetherNicknameDescription(true, "Neri", "room locked", "unset"))
-        assertEquals("Neri", listenTogetherNicknameDescription(false, "Neri", "room locked", "unset"))
+        assertEquals("room locked",
+            listenTogetherNicknameDescription(true, "Neri", "room locked", "unset")
+        )
+        assertEquals("Neri",
+            listenTogetherNicknameDescription(false, "Neri", "room locked", "unset")
+        )
         assertEquals("unset", listenTogetherNicknameDescription(false, "", "room locked", "unset"))
     }
 

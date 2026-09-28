@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.ui.settings.owner.AppUsbExclusiveSettingsActions
+import moe.ouom.neriplayer.ui.settings.route.AppAppearanceSettingsActions
+import moe.ouom.neriplayer.ui.settings.route.appSettingsRouteStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.Mockito.mock

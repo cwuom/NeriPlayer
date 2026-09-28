@@ -1,6 +1,11 @@
 package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.ui.navigation.MainTabBackgroundMotion
+import moe.ouom.neriplayer.ui.navigation.MainTabBackgroundTransform
+import moe.ouom.neriplayer.ui.navigation.MainTabNavigationMotionState
+import moe.ouom.neriplayer.ui.navigation.mainTabScenePresentation
+import moe.ouom.neriplayer.ui.navigation.navHostSceneMotionIntent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

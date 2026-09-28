@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui
 
+import moe.ouom.neriplayer.ui.navigation.debugLogViewerFilePath
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -13,6 +13,12 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
 import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsEditorOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.defaultEditableLyricsMatchKeyword
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.editableLyricMatchFailureDescription
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.mergeEditableLyricMatchResults
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.stringResId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -236,11 +242,20 @@ class NowPlayingLyricsEditorOwnerTest {
         assertEquals("Title Artist", defaultEditableLyricsMatchKeyword(song))
         assertEquals(
             "Edited Singer",
-            defaultEditableLyricsMatchKeyword(song.copy(customName = "Edited", customArtist = "Singer"))
+            defaultEditableLyricsMatchKeyword(
+                song.copy(
+                    customName = "Edited",
+                    customArtist = "Singer"
+                )
+            )
         )
         assertEquals("", defaultEditableLyricsMatchKeyword(song.copy(name = "", artist = "")))
-        assertEquals("network", editableLyricMatchFailureDescription(IllegalStateException("network")))
-        assertEquals("IllegalStateException", editableLyricMatchFailureDescription(IllegalStateException("")))
+        assertEquals("network",
+            editableLyricMatchFailureDescription(IllegalStateException("network"))
+        )
+        assertEquals("IllegalStateException",
+            editableLyricMatchFailureDescription(IllegalStateException(""))
+        )
     }
 
     @Test
@@ -250,11 +265,21 @@ class NowPlayingLyricsEditorOwnerTest {
         val next = match("next")
         assertEquals(
             listOf(old),
-            mergeEditableLyricMatchResults(mapOf(source to listOf(old)), emptyList(), setOf(source), true)[source]
+            mergeEditableLyricMatchResults(
+                mapOf(source to listOf(old)),
+                emptyList(),
+                setOf(source),
+                true
+            )[source]
         )
         assertEquals(
             listOf(next),
-            mergeEditableLyricMatchResults(mapOf(source to listOf(old)), listOf(next), setOf(source), true)[source]
+            mergeEditableLyricMatchResults(
+                mapOf(source to listOf(old)),
+                listOf(next),
+                setOf(source),
+                true
+            )[source]
         )
         assertEquals(
             emptyList<RankedEditableLyricMatch>(),
@@ -262,7 +287,12 @@ class NowPlayingLyricsEditorOwnerTest {
         )
         assertEquals(
             emptyList<RankedEditableLyricMatch>(),
-            mergeEditableLyricMatchResults(mapOf(source to listOf(old)), emptyList(), setOf(source), false)[source]
+            mergeEditableLyricMatchResults(
+                mapOf(source to listOf(old)),
+                emptyList(),
+                setOf(source),
+                false
+            )[source]
         )
     }
 

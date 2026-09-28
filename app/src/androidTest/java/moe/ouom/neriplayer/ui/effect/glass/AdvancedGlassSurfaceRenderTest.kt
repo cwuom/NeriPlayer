@@ -63,7 +63,7 @@ import androidx.navigation.compose.rememberNavController
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
-import moe.ouom.neriplayer.ui.screen.tab.ExploreGlassPillSurface
+import moe.ouom.neriplayer.ui.screen.tab.explore.ExploreGlassPillSurface
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHomeScaffold
 import org.junit.Assert.assertEquals

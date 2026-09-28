@@ -5,6 +5,23 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.ui.banner.DeterminateManagedProcessingIndicator
+import moe.ouom.neriplayer.ui.banner.HiddenManagedProcessingRow
+import moe.ouom.neriplayer.ui.banner.IndeterminateManagedProcessingIndicator
+import moe.ouom.neriplayer.ui.banner.ManagedProcessingBytes
+import moe.ouom.neriplayer.ui.banner.ManagedProcessingCollapseDragTracker
+import moe.ouom.neriplayer.ui.banner.ManagedProcessingCount
+import moe.ouom.neriplayer.ui.banner.ManagedProcessingFileRow
+import moe.ouom.neriplayer.ui.banner.ManagedProcessingRevealDragTracker
+import moe.ouom.neriplayer.ui.banner.ManagedProcessingStageRow
+import moe.ouom.neriplayer.ui.banner.managedProcessingBytes
+import moe.ouom.neriplayer.ui.banner.managedProcessingCount
+import moe.ouom.neriplayer.ui.banner.managedProcessingFileRow
+import moe.ouom.neriplayer.ui.banner.managedProcessingFraction
+import moe.ouom.neriplayer.ui.banner.managedProcessingIndicatorKind
+import moe.ouom.neriplayer.ui.banner.managedProcessingStageResource
+import moe.ouom.neriplayer.ui.banner.managedProcessingStageRow
+import moe.ouom.neriplayer.ui.banner.managedProcessingTitleResource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -82,7 +99,10 @@ class AppStatusBannerPolicyTest {
         assertEquals(HiddenManagedProcessingRow, managedProcessingFileRow(null))
         val copying = migration(ManagedDownloadStorage.MigrationStage.COPYING)
         assertEquals(HiddenManagedProcessingRow, managedProcessingFileRow(copying))
-        assertEquals(HiddenManagedProcessingRow, managedProcessingFileRow(copying.copy(currentFileName = " ")))
+        assertEquals(
+            HiddenManagedProcessingRow,
+            managedProcessingFileRow(copying.copy(currentFileName = " "))
+        )
         assertEquals(
             ManagedProcessingFileRow("track.flac"),
             managedProcessingFileRow(copying.copy(currentFileName = "track.flac"))
@@ -99,7 +119,9 @@ class AppStatusBannerPolicyTest {
             totalBytes = 1_000
         )
         assertEquals(ManagedProcessingCount(2, 10), managedProcessingCount(state, copying))
-        assertEquals(copying.fraction, managedProcessingFraction(managedProcessingCount(state, copying), copying))
+        assertEquals(copying.fraction,
+            managedProcessingFraction(managedProcessingCount(state, copying), copying)
+        )
         assertEquals(
             ManagedProcessingBytes(
                 R.string.settings_download_directory_migrating_progress_bytes,
@@ -117,7 +139,9 @@ class AppStatusBannerPolicyTest {
             verificationBytesTotal = 1_000
         )
         assertEquals(ManagedProcessingCount(1, 4), managedProcessingCount(state, verifying))
-        assertEquals(verifying.fraction, managedProcessingFraction(managedProcessingCount(state, verifying), verifying))
+        assertEquals(verifying.fraction,
+            managedProcessingFraction(managedProcessingCount(state, verifying), verifying)
+        )
         assertEquals(
             ManagedProcessingBytes(
                 R.string.settings_download_directory_migrating_verification_progress_bytes,

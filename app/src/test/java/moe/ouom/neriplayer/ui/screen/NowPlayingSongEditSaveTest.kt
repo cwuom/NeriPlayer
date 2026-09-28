@@ -4,6 +4,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongSaveResult
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongSaveSteps
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.captureEditSongOperation
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.executeEditSongSave
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.failureMessage
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.latestMatchingEditSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,7 +23,11 @@ class NowPlayingSongEditSaveTest {
         assertTrue(captureEditSongOperation<String> { error("write failed") }.isFailure)
         var cancellations = 0
         try {
-            captureEditSongOperation(onCancelled = { cancellations++ }) { throw CancellationException("closed") }
+            captureEditSongOperation(onCancelled = { cancellations++ }) {
+                throw CancellationException(
+                    "closed"
+                )
+            }
             org.junit.Assert.fail("Cancellation must propagate")
         } catch (_: CancellationException) {
             // closing an edit session must still cancel the underlying job
@@ -64,7 +74,8 @@ class NowPlayingSongEditSaveTest {
         var current: SongItem? = initial
         var metadataInput: SongItem? = null
         val steps = object : EditSongSaveSteps {
-            override fun latestSong(original: SongItem): SongItem = latestMatchingEditSong(current, original)
+            override fun latestSong(original: SongItem): SongItem =
+                latestMatchingEditSong(current, original)
 
             override suspend fun writeLyrics(song: SongItem): Boolean {
                 current = otherSong

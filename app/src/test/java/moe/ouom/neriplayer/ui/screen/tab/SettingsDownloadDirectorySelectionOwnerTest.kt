@@ -7,6 +7,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationResult
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectorySelectionGateway
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectorySelectionOwner
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.selectedDownloadDirectorySummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -145,7 +149,8 @@ class SettingsDownloadDirectorySelectionOwnerTest {
         )
     }
 
-    private class FakeGateway(private val events: MutableList<String>) : DownloadDirectorySelectionGateway {
+    private class FakeGateway(private val events: MutableList<String>) :
+        DownloadDirectorySelectionGateway {
         var persistError: Exception? = null
         var describeError: Exception? = null
         var cancelAfterPersist = false

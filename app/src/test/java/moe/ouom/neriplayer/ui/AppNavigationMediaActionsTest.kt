@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.navigation.AppNavigationMediaActions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame

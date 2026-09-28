@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui
 
+import moe.ouom.neriplayer.ui.banner.shouldExpandManagedProcessingBannerFromDrag
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -136,10 +137,10 @@ class NeriAppProcessingBannerLayoutPolicyTest {
     }
 
     private fun bannerSource(): String =
-        source("app/src/main/java/moe/ouom/neriplayer/ui/AppStatusBanners.kt")
+        source("app/src/main/java/moe/ouom/neriplayer/ui/banner/AppStatusBanners.kt")
 
     private fun scaffoldSource(): String =
-        source("app/src/main/java/moe/ouom/neriplayer/ui/AppNavigationScaffold.kt")
+        source("app/src/main/java/moe/ouom/neriplayer/ui/navigation/AppNavigationScaffold.kt")
 
     private fun source(path: String): String {
         var directory = File(System.getProperty("user.dir") ?: ".")

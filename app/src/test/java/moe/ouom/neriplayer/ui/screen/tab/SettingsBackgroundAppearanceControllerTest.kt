@@ -3,6 +3,12 @@ package moe.ouom.neriplayer.ui.screen.tab
 import android.net.Uri
 import androidx.compose.runtime.mutableFloatStateOf
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.BackgroundDraftReconciler
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.BackgroundImageImportOwner
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.SettingsBackgroundImageDraft
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.draftBackgroundValue
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.resolveNowPlayingBackgroundExclusion
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.shouldRefreshBackgroundImageDraft
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

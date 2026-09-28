@@ -4,6 +4,16 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.screen.tab.home.buildHomeSongInfo
+import moe.ouom.neriplayer.ui.screen.tab.home.homeLocalFilesCoverCandidates
+import moe.ouom.neriplayer.ui.screen.tab.home.resolveHomeContinueCardWidthDp
+import moe.ouom.neriplayer.ui.screen.tab.home.resolveHomeContinueCardsPerPage
+import moe.ouom.neriplayer.ui.screen.tab.home.resolveHomeContinuePagerPage
+import moe.ouom.neriplayer.ui.screen.tab.home.selectContinueCoverUrl
+import moe.ouom.neriplayer.ui.screen.tab.home.shouldResolveHomeContinueLocalCoverFallback
+import moe.ouom.neriplayer.ui.screen.tab.home.shouldShowHomeContinueSection
+import moe.ouom.neriplayer.ui.screen.tab.home.shouldValidateHomeContinueCoverReference
+import moe.ouom.neriplayer.ui.screen.tab.home.toPlayableSongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

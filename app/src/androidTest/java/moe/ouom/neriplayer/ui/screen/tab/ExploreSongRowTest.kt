@@ -1,8 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.remember
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -12,6 +10,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.screen.tab.explore.ExploreSongRowActions
+import moe.ouom.neriplayer.ui.screen.tab.explore.ExploreSongRowState
+import moe.ouom.neriplayer.ui.screen.tab.explore.SongRow
+import moe.ouom.neriplayer.ui.screen.tab.explore.buildExploreSongInfo
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
@@ -36,20 +38,23 @@ class ExploreSongRowTest {
 
         composeRule.setContent {
             MaterialTheme {
-                val snackbarHostState = remember { SnackbarHostState() }
                 SongRow(
-                    index = 1,
-                    song = testSong(),
-                    isFavorite = false,
-                    favoriteActionEnabled = true,
-                    offlineMode = true,
-                    snackbarHostState = snackbarHostState,
-                    onClick = {},
-                    onPlayNow = {},
-                    onPlayNext = {},
-                    onAddToQueueEnd = {},
-                    onDownload = { downloadCount += 1 },
-                    onToggleFavorite = {}
+                    state = ExploreSongRowState(
+                        index = 1,
+                        song = testSong(),
+                        isFavorite = false,
+                        favoriteActionEnabled = true,
+                        offlineMode = true
+                    ),
+                    actions = ExploreSongRowActions(
+                        onClick = {},
+                        onPlayNow = {},
+                        onPlayNext = {},
+                        onAddToQueueEnd = {},
+                        onDownload = { downloadCount += 1 },
+                        onToggleFavorite = {},
+                        onCopyInfo = {}
+                    )
                 )
             }
         }

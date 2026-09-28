@@ -10,6 +10,11 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectoryAvailability
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryResetActionPort
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryResetGateway
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryResetOwner
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.downloadDirectoryProviderFailureType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -23,7 +28,9 @@ class SettingsDownloadDirectoryResetOwnerTest {
     @Test
     fun `provider failure type keeps timeout distinct from transport errors`() {
         assertEquals("timeout", downloadDirectoryProviderFailureType(null))
-        assertEquals("IllegalStateException", downloadDirectoryProviderFailureType(IllegalStateException()))
+        assertEquals("IllegalStateException",
+            downloadDirectoryProviderFailureType(IllegalStateException())
+        )
     }
 
     @Test
@@ -122,7 +129,8 @@ class SettingsDownloadDirectoryResetOwnerTest {
         )
     }
 
-    private class FakeGateway(private val events: MutableList<String>) : DownloadDirectoryResetGateway {
+    private class FakeGateway(private val events: MutableList<String>) :
+        DownloadDirectoryResetGateway {
         var result: DownloadDirectoryAvailability = DownloadDirectoryAvailability.Available
         var error: Exception? = null
 
@@ -133,7 +141,8 @@ class SettingsDownloadDirectoryResetOwnerTest {
         }
     }
 
-    private class FakeActions(private val events: MutableList<String>) : DownloadDirectoryResetActionPort {
+    private class FakeActions(private val events: MutableList<String>) :
+        DownloadDirectoryResetActionPort {
         var blocked = false
 
         override fun isBlocked(): Boolean {

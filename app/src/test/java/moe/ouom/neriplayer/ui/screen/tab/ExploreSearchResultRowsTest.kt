@@ -1,6 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.screen.tab.explore.biliCollectionSubtitle
+import moe.ouom.neriplayer.ui.screen.tab.explore.exploreClipboardMessageRes
+import moe.ouom.neriplayer.ui.screen.tab.explore.exploreSongSubtitle
+import moe.ouom.neriplayer.ui.screen.tab.explore.exploreVisibleCoverUrl
+import moe.ouom.neriplayer.ui.screen.tab.explore.youtubeCollectionSubtitle
 import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

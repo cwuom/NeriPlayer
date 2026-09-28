@@ -3,6 +3,11 @@ package moe.ouom.neriplayer.ui.screen
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressInfoSegment
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingSeekActionOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingProgressInfoSegments
+import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingProgressFraction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -136,7 +141,12 @@ class NowPlayingPlaybackControlsTest {
         assertEquals(
             emptyList<NowPlayingProgressInfoSegment>(),
             buildNowPlayingProgressInfoSegments(
-                info.copy(qualityLabel = " ", codecLabel = " ", sampleRateHz = null, bitDepth = null),
+                info.copy(
+                    qualityLabel = " ",
+                    codecLabel = " ",
+                    sampleRateHz = null,
+                    bitDepth = null
+                ),
                 true, true, true, 1f
             )
         )

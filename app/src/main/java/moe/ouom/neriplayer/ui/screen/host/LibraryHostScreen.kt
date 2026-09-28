@@ -65,8 +65,8 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.tab.LibraryTab
-import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
+import moe.ouom.neriplayer.ui.screen.tab.library.LibraryTab
+import moe.ouom.neriplayer.ui.screen.tab.library.LibraryScreen
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
@@ -84,10 +84,10 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
-import moe.ouom.neriplayer.ui.animateMainTabDetailCloseRootRevealFraction
-import moe.ouom.neriplayer.ui.clipMainTabDetailCloseRoot
-import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
-import moe.ouom.neriplayer.ui.shouldSuppressRestoredMainTabHostEntry
+import moe.ouom.neriplayer.ui.navigation.animateMainTabDetailCloseRootRevealFraction
+import moe.ouom.neriplayer.ui.navigation.clipMainTabDetailCloseRoot
+import moe.ouom.neriplayer.ui.navigation.rememberMainTabSceneRestoredEntry
+import moe.ouom.neriplayer.ui.navigation.shouldSuppressRestoredMainTabHostEntry
 import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreAlbumSummary

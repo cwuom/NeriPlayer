@@ -5,6 +5,15 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.PendingDownloadDirectoryChange
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.isDownloadDirectoryChangeEnabled
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DirectoryChangeBlockReason
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.directoryChangeBlockReason
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.shouldReleaseBlockedDirectoryGrant
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.resolveDownloadDirectoryProcessingPresentation
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.shouldAttemptMigrationAutoResume
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.shouldRetryMigrationSnapshotRead
+import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.shouldStopMigrationRecoveryAfterNoProgress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -38,7 +47,7 @@ class SettingsDownloadDirectoryFlowContractTest {
     @Test
     fun `picked grant has one cleanup owner until preparation succeeds`() {
         val preparationFlow = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPreparationOwner.kt"
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/operation/SettingsDownloadDirectoryPreparationOwner.kt"
         ).readText()
         val pickerFlow = selectionOwnerSource()
 
@@ -213,7 +222,7 @@ class SettingsDownloadDirectoryFlowContractTest {
     fun `directory preflight has a bounded retryable deadline`() {
         val source = settingsSource()
         val preflight = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPreflight.kt"
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/SettingsDownloadDirectoryPreflight.kt"
         ).readText()
 
         assertTrue(preflight.contains("DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS = 3_000L"))
@@ -425,20 +434,43 @@ class SettingsDownloadDirectoryFlowContractTest {
         )
         assertEquals(
             DirectoryChangeBlockReason.PREPARATION_OR_MIGRATION,
-            directoryChangeBlockReason(true, false, false, ManagedLibraryProcessingState.Idle, activeDownloads)
+            directoryChangeBlockReason(
+                true,
+                false,
+                false,
+                ManagedLibraryProcessingState.Idle,
+                activeDownloads
+            )
         )
         assertEquals(
             DirectoryChangeBlockReason.PREPARATION_OR_MIGRATION,
-            directoryChangeBlockReason(false, false, true, ManagedLibraryProcessingState.Idle, activeDownloads)
+            directoryChangeBlockReason(
+                false,
+                false,
+                true,
+                ManagedLibraryProcessingState.Idle,
+                activeDownloads
+            )
         )
         assertEquals(0, downloadChecks)
         assertEquals(
             DirectoryChangeBlockReason.ACTIVE_DOWNLOADS,
-            directoryChangeBlockReason(true, true, false, ManagedLibraryProcessingState.Idle, activeDownloads)
+            directoryChangeBlockReason(
+                true,
+                true,
+                false,
+                ManagedLibraryProcessingState.Idle,
+                activeDownloads
+            )
         )
         assertEquals(
             DirectoryChangeBlockReason.NONE,
-            directoryChangeBlockReason(false, false, false, ManagedLibraryProcessingState.Idle) { false }
+            directoryChangeBlockReason(
+                false,
+                false,
+                false,
+                ManagedLibraryProcessingState.Idle
+            ) { false }
         )
     }
 
@@ -554,40 +586,40 @@ class SettingsDownloadDirectoryFlowContractTest {
     }
 
     private fun selectionOwnerSource(): String = locateProjectFile(
-        "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectorySelectionOwner.kt"
+        "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/operation/SettingsDownloadDirectorySelectionOwner.kt"
     ).readText()
 
     private fun pendingOwnerSource(): String = locateProjectFile(
-        "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryPendingOwner.kt"
+        "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/operation/SettingsDownloadDirectoryPendingOwner.kt"
     ).readText()
 
     private fun resetFlow(): String = locateProjectFile(
-        "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryResetOwner.kt"
+        "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/operation/SettingsDownloadDirectoryResetOwner.kt"
     ).readText()
 
     private fun settingsSource(): String {
         return listOf(
-            "SettingsDownloadDirectoryMigrationSnapshot.kt",
-            "SettingsDownloadDirectoryMigrationRecovery.kt",
-            "SettingsDownloadDirectoryApplyOwner.kt",
-            "SettingsDownloadDirectoryPreparationOwner.kt",
-            "SettingsDownloadDirectorySelectionOwner.kt",
-            "SettingsDownloadDirectoryResetOwner.kt",
-            "SettingsDownloadDirectoryGuardOwner.kt",
-            "SettingsDownloadDirectoryPendingOwner.kt",
-            "SettingsDownloadDirectorySwitchOwner.kt",
-            "SettingsDownloadDirectoryStateSync.kt",
-            "SettingsDownloadDirectoryActions.kt",
-            "SettingsDownloadDirectoryController.kt",
-            "SettingsScreen.kt",
-            "SettingsDownloadDirectoryPresentation.kt"
-        ).joinToString("\n") { name ->
-            locateProjectFile("app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/$name").readText()
+            "settings/download/migration/SettingsDownloadDirectoryMigrationSnapshot.kt",
+            "settings/download/migration/SettingsDownloadDirectoryMigrationRecovery.kt",
+            "settings/download/directory/operation/SettingsDownloadDirectoryApplyOwner.kt",
+            "settings/download/directory/operation/SettingsDownloadDirectoryPreparationOwner.kt",
+            "settings/download/directory/operation/SettingsDownloadDirectorySelectionOwner.kt",
+            "settings/download/directory/operation/SettingsDownloadDirectoryResetOwner.kt",
+            "settings/download/directory/operation/SettingsDownloadDirectoryGuardOwner.kt",
+            "settings/download/directory/operation/SettingsDownloadDirectoryPendingOwner.kt",
+            "settings/download/directory/SettingsDownloadDirectorySwitchOwner.kt",
+            "settings/download/directory/SettingsDownloadDirectoryStateSync.kt",
+            "settings/download/directory/SettingsDownloadDirectoryActions.kt",
+            "settings/download/directory/SettingsDownloadDirectoryController.kt",
+            "settings/SettingsScreen.kt",
+            "settings/download/directory/SettingsDownloadDirectoryPresentation.kt"
+        ).joinToString("\n") { relativePath ->
+            locateProjectFile("app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/$relativePath").readText()
         }
     }
 
     private fun migrationRecoverySource(): String = locateProjectFile(
-        "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsDownloadDirectoryMigrationRecovery.kt"
+        "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/download/migration/SettingsDownloadDirectoryMigrationRecovery.kt"
     ).readText()
 
     private fun locateProjectFile(path: String): File {

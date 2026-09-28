@@ -57,7 +57,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorItem
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback

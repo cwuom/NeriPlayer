@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui
 
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
+import moe.ouom.neriplayer.ui.playback.visual.selectNowPlayingOverlayTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

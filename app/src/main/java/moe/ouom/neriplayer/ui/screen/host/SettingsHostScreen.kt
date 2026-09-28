@@ -43,12 +43,12 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.ui.AppSettingsHostBindings
+import moe.ouom.neriplayer.ui.settings.route.AppSettingsHostBindings
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
-import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
-import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
-import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
+import moe.ouom.neriplayer.ui.screen.download.DownloadManagerScreen
+import moe.ouom.neriplayer.ui.screen.download.DownloadProgressScreen
+import moe.ouom.neriplayer.ui.screen.tab.settings.SettingsScreen
 
 internal enum class SettingsScreenState {
     Settings,

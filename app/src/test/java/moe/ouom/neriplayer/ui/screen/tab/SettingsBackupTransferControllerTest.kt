@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import android.content.Context
 import android.app.Activity
+import moe.ouom.neriplayer.ui.screen.tab.settings.backup.BackupImportRecreateAction
+import moe.ouom.neriplayer.ui.screen.tab.settings.backup.recreateSettingsActivity
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.Mockito.mock

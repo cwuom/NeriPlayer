@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.screen.tab.settings.playback.biliQualityLabelRes
+import moe.ouom.neriplayer.ui.screen.tab.settings.playback.neteaseQualityLabelRes
+import moe.ouom.neriplayer.ui.screen.tab.settings.playback.youtubeQualityLabelRes
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
