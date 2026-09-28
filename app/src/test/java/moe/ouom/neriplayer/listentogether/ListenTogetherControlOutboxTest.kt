@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.session.ListenTogetherControlOutbox
+import moe.ouom.neriplayer.listentogether.session.control.ListenTogetherControlOutbox
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

@@ -138,11 +138,11 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.settings.LyricFontScalePage
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
+import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScalePage
+import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.isSyncableRemoteSong

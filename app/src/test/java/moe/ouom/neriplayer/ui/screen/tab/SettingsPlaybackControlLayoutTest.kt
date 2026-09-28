@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
-import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.data.settings.PlaybackControlSize
+import moe.ouom.neriplayer.data.settings.playback.NowPlayingControlPlacement
+import moe.ouom.neriplayer.data.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.PlaybackControlLayoutOwner
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.PlaybackControlLayoutSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.nowPlayingControlPlacementLabelRes

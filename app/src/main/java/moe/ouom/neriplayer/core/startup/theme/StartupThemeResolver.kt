@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.startup.theme
 
-import moe.ouom.neriplayer.data.settings.ThemeMode
-import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.appearance.ThemeMode
+import moe.ouom.neriplayer.data.settings.appearance.ThemePreferenceSnapshot
 
 internal object StartupThemeResolver {
     fun resolveSnapshotUseDark(

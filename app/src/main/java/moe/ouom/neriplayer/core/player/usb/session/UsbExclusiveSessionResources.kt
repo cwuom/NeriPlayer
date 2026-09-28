@@ -20,7 +20,7 @@ import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.transport.allowsAlternativeOutputRetry
 import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
 import moe.ouom.neriplayer.core.player.policy.usb.usbExclusiveTransferWindowDurationMs
-import moe.ouom.neriplayer.data.settings.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
+import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
 
 internal class UsbExclusiveSessionResources(
     private val ioGate: UsbExclusiveIoGate,

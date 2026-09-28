@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
-import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.EnhancedAdvancedBlurPreference
+import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.settings.appearance.EnhancedAdvancedBlurPreference
 
 internal const val ADVANCED_GLASS_MIN_SDK = ADVANCED_GLASS_BACKEND_MIN_SDK
 

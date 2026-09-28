@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.player
 
 import android.media.session.PlaybackState
-import moe.ouom.neriplayer.core.player.service.buildMediaSessionControlFingerprint
-import moe.ouom.neriplayer.core.player.service.MediaSessionPlaybackStateThrottler
+import moe.ouom.neriplayer.core.player.service.media.buildMediaSessionControlFingerprint
+import moe.ouom.neriplayer.core.player.service.media.MediaSessionPlaybackStateThrottler
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

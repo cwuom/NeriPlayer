@@ -39,7 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLibraryPlaylist
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate

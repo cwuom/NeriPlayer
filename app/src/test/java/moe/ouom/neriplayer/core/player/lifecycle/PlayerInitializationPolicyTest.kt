@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.lifecycle
 
-import moe.ouom.neriplayer.data.settings.CacheSizePolicy
+import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

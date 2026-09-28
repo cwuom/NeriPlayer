@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
-import moe.ouom.neriplayer.listentogether.session.ListenTogetherForegroundRecoveryAction
-import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherForegroundRecoveryAction
-import moe.ouom.neriplayer.listentogether.session.shouldReconnectListenTogetherForegroundSocket
+import moe.ouom.neriplayer.listentogether.session.connection.ListenTogetherForegroundRecoveryAction
+import moe.ouom.neriplayer.listentogether.session.connection.resolveListenTogetherForegroundRecoveryAction
+import moe.ouom.neriplayer.listentogether.session.connection.shouldReconnectListenTogetherForegroundSocket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

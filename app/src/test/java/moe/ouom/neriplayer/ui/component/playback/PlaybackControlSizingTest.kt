@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.component.playback
 
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.data.settings.PlaybackControlSize
+import moe.ouom.neriplayer.data.settings.playback.PlaybackControlSize
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

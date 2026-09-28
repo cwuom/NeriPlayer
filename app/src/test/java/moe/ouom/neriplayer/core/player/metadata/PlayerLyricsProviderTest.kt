@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
 import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.settings.LyricSourcePreference
+import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset

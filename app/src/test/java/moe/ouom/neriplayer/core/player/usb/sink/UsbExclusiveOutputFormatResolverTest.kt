@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
 import androidx.media3.common.C
-import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
-import moe.ouom.neriplayer.data.settings.UsbExclusiveSampleRateMode
-import moe.ouom.neriplayer.data.settings.UsbExclusiveUnsupportedFormatPolicy
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveSampleRateMode
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveUnsupportedFormatPolicy
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

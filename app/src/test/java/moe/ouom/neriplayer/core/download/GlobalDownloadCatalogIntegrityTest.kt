@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.core.download.manager.runtime.readDownloadedCatalogRe
 import moe.ouom.neriplayer.core.download.policy.matchesDownloadedCatalogFileSize
 import moe.ouom.neriplayer.core.download.policy.shouldTrustDirectPresentDownloadedSongReference
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
-import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
+import moe.ouom.neriplayer.core.player.download.playback.isReadableManagedAudioPlaybackAllowed
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

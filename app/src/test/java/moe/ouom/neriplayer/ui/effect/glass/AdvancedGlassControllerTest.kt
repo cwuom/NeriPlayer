@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
 import androidx.compose.ui.graphics.CompositingStrategy
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQuality
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

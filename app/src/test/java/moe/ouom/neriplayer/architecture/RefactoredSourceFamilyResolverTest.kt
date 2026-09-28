@@ -40,4 +40,19 @@ class RefactoredSourceFamilyResolverTest {
         file.writeText(content)
         return file
     }
+
+    @Test
+    fun `download facade includes declared responsibility directories only`() {
+        val root = write("AudioDownloadManager.kt", "download_root_marker")
+        for (directory in listOf("facade", "runtime", "network", "sidecar")) {
+            write("$directory/AudioDownloadManagerImplementation.kt", "${directory}_marker")
+        }
+        write("transfer/AudioDownloadManagerUnrelated.kt", "unrelated_marker")
+        val source = RefactoredSourceFamilyResolver.resolve(root).readText()
+        assertTrue(source.contains("download_root_marker"))
+        for (directory in listOf("facade", "runtime", "network", "sidecar")) {
+            assertTrue(source.contains("${directory}_marker"))
+        }
+        assertFalse(source.contains("unrelated_marker"))
+    }
 }

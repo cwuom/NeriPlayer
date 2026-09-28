@@ -45,7 +45,7 @@ class ManagedLocalPlaybackGateTest {
                 "AudioDownloadManager.kt"
         ).readText()
         val playbackSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/playback/" +
                 "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
         assertTrue(playbackSource.contains("peekPendingDownloadedAudio(song)"))
@@ -88,7 +88,7 @@ class ManagedLocalPlaybackGateTest {
     @Test
     fun `catalog ready miss still probes the durable snapshot before NotIndexed`() {
         val playbackSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/playback/" +
                 "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
         val indexedLookupBody = playbackSource.substringAfter(

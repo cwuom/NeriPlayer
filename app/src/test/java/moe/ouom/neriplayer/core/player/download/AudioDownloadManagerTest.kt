@@ -1,5 +1,19 @@
 package moe.ouom.neriplayer.core.player.download
 
+import moe.ouom.neriplayer.core.player.download.playback.LocalPlaybackReferenceResolution
+import moe.ouom.neriplayer.core.player.download.playback.canExposeManagedDownloadForPlayback
+import moe.ouom.neriplayer.core.player.download.playback.coreCommittedSeedMetadataJson
+import moe.ouom.neriplayer.core.player.download.playback.findReboundFinalizedManagedAudio
+import moe.ouom.neriplayer.core.player.download.playback.isReadableManagedAudioPlaybackAllowed
+import moe.ouom.neriplayer.core.player.download.playback.selectIndexedLocalPlaybackResolution
+import moe.ouom.neriplayer.core.player.download.playback.selectPermittedLocalPlaybackReference
+import moe.ouom.neriplayer.core.player.download.playback.selectPermittedLocalPlaybackResolution
+import moe.ouom.neriplayer.core.player.download.playback.shouldAbortDownloadWork
+import moe.ouom.neriplayer.core.player.download.playback.shouldPreserveWorkingArtifactsAfterCancellation
+import moe.ouom.neriplayer.core.player.download.playback.shouldTriggerNetworkRecovery
+import moe.ouom.neriplayer.core.player.download.playback.shouldUseCompletedAudioReferenceDirectly
+import moe.ouom.neriplayer.core.player.download.playback.shouldUseDirectPresentLocalPlayback
+import moe.ouom.neriplayer.core.player.download.network.DownloadNetworkPolicyTracker
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
@@ -423,17 +437,17 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
     @Test
     fun `network policy pause keeps unrelated batch state and gates working file mutations`() {
         val pauseSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerFacadePlayback.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/facade/AudioDownloadManagerFacadePlayback.kt"
         ).readText()
         val executionSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerRuntime.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/runtime/AudioDownloadManagerRuntime.kt"
         ).readText()
         val batchSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/batch/" +
                 "AudioDownloadBatchCoordinator.kt"
         ).readText()
         val hlsSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/transfer/" +
                 "AudioDownloadHlsTransfer.kt"
         ).readText()
         val pauseBody = methodBody(pauseSource, "pauseDownloadsForNetworkPolicyImpl")
@@ -457,7 +471,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
     @Test
     fun `direct and chunked streams sync the working file before completion`() {
         val transferSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadFileTransfer.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/transfer/AudioDownloadFileTransfer.kt"
         ).readText()
         assertTrue(transferSource.contains("suspend fun download("))
         assertTrue(transferSource.contains("private suspend fun downloadChunked("))
@@ -1112,10 +1126,10 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
         ).readText()
         val facadeSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerFacadeControl.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/facade/AudioDownloadManagerFacadeControl.kt"
         ).readText()
         val attemptSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerAttempt.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/runtime/AudioDownloadManagerAttempt.kt"
         ).readText()
         val downloadSongBody = methodBody(managerSource, "downloadSong", preferLast = true)
         val facadeBody = methodBody(facadeSource, "downloadSongImpl")

@@ -76,11 +76,11 @@ import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClear
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
+import moe.ouom.neriplayer.core.player.download.playback.isReadableManagedAudioPlaybackAllowed
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.settings.download.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File

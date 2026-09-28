@@ -72,10 +72,10 @@ import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestora
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.download.DownloadProgressProjectionStore
+import moe.ouom.neriplayer.core.player.download.progress.DownloadProgressProjectionStore
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.util.units.DAY_MS
 import java.io.File

@@ -6,7 +6,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 import org.junit.Assert.assertEquals

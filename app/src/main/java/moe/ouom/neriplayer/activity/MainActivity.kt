@@ -133,7 +133,7 @@ import moe.ouom.neriplayer.core.startup.safemode.SafeModeRecoveryCoordinator
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.settings.readBootstrapSettingsSnapshotSync
+import moe.ouom.neriplayer.data.settings.bootstrap.readBootstrapSettingsSnapshotSync
 import moe.ouom.neriplayer.core.startup.sync.StartupSyncScheduler
 import moe.ouom.neriplayer.core.startup.sync.StartupSyncWarningCoordinator
 import moe.ouom.neriplayer.core.startup.sync.StartupSyncWarningRepository

@@ -148,9 +148,9 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicHomeItem
+import moe.ouom.neriplayer.core.api.youtube.parser.YouTubeMusicParser
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.format.formatPlayCount

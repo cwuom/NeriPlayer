@@ -14,7 +14,7 @@ import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationJournal
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
-import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
+import moe.ouom.neriplayer.core.player.download.network.resolveDownloadDispatchWindow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

@@ -6,9 +6,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.appearance.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.ui.screen.host.SettingsHostScreen
 
 @Composable

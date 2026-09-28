@@ -29,9 +29,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
-import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_DISPATCH_WINDOW
-import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
+import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.network.MAX_DOWNLOAD_DISPATCH_WINDOW
+import moe.ouom.neriplayer.core.player.download.network.resolveDownloadDispatchWindow
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 

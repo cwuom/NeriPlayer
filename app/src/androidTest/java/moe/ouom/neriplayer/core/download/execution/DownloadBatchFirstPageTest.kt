@@ -12,8 +12,8 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.manager.admission.stageAndPromotePendingDownloadQueue
-import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
-import moe.ouom.neriplayer.core.player.download.publishDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.network.publishDownloadParallelism
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey

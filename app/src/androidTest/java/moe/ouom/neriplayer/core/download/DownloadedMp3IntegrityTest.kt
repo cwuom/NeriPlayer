@@ -18,10 +18,10 @@ import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.download.manager.runtime.validateExistingDownloadedAudio
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.download.DownloadIntegrityException
-import moe.ouom.neriplayer.core.player.download.verifyDownloadedAudioPayload
+import moe.ouom.neriplayer.core.player.download.transfer.DownloadIntegrityException
+import moe.ouom.neriplayer.core.player.download.sidecar.verifyDownloadedAudioPayload
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
+import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.model.SongItem

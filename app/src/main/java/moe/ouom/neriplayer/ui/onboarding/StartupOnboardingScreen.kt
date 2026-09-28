@@ -96,11 +96,11 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
-import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQualityPreference
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.isCurrentBuildDimensity
+import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
+import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
@@ -142,7 +142,7 @@ import androidx.core.graphics.createBitmap
 import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.core.startup.permission.StartupMediaPermission
 import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
-import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.ui.theme.background.CustomBackground
 import kotlin.time.Duration.Companion.milliseconds
 

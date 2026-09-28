@@ -61,8 +61,8 @@ import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
-import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
+import moe.ouom.neriplayer.data.settings.lyrics.rebaseLyricUserOffsetMs
+import moe.ouom.neriplayer.data.settings.lyrics.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger

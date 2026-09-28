@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.settings
 
+import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ADVANCED_BLUR_QUALITY
+import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import android.content.Context
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking

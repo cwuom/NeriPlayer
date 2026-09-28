@@ -2,15 +2,15 @@ package moe.ouom.neriplayer.ui.settings.route
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
-import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.lyrics.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.settings.ThemeDefaults
-import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
 
 internal data class AppThemeSettingsState(
     val dynamicColorEnabled: Boolean,

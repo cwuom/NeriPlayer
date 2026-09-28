@@ -48,7 +48,7 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTermina
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
 import kotlin.time.Duration.Companion.milliseconds
 
 

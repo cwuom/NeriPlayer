@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.listentogether.network.ws.shouldReconnectListenTogetherSocket
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
-import moe.ouom.neriplayer.listentogether.session.shouldHoldListenTogetherBackgroundKeepAlive
+import moe.ouom.neriplayer.listentogether.session.connection.shouldHoldListenTogetherBackgroundKeepAlive
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

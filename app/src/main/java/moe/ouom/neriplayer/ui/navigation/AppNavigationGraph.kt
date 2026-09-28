@@ -17,7 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.google.gson.Gson
 import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.screen.download.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.download.DownloadProgressScreen

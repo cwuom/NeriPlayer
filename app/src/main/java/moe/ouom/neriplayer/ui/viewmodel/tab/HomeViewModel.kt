@@ -44,7 +44,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.netease.mergeNeteaseSessionCookies
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint

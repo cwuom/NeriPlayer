@@ -17,12 +17,12 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.modules = []
 
     def module(self, name, dependency=None, source="package sample\nclass Sample\n"):
-        self.settings.write_text(self.settings.read_text() + f'include("{name}")\n')
+        self.settings.write_text(self.settings.read_text() + f'includeOwnedLibrary("{name}")\n')
         self.modules.append(name)
         self.app.write_text('val ownedLibraryPaths = listOf(' +
                             ', '.join(f'"{module}"' for module in self.modules) + ')\n')
-        directory = self.root / name.lstrip(":").replace(":", "/")
-        sources = directory / "src/main/java"
+        directory = self.root / "modules" / name.lstrip(":").replace(":", "/")
+        sources = directory / "src/main/java/sample"
         sources.mkdir(parents=True)
         (sources / "Sample.kt").write_text(source)
         script = 'plugins { id("build-logic.android.feature-library") }\n'
@@ -63,6 +63,52 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.module(":core:model")
         self.app.write_text('val ownedLibraryPaths = listOf()\n')
         self.assertTrue(any("coverage registry" in error for error in verify(self.root)))
+
+    def test_rejects_library_outside_modules_directory(self):
+        self.module(":core:model")
+        misplaced = self.root / "core/model"
+        misplaced.parent.mkdir()
+        (self.root / "modules/core/model").rename(misplaced)
+        self.assertTrue(any("missing build.gradle.kts" in error for error in verify(self.root)))
+
+    def test_rejects_unregistered_library(self):
+        self.module(":core:model")
+        extra = self.root / "modules/data/missing"
+        extra.mkdir(parents=True)
+        (extra / "build.gradle.kts").write_text("")
+        self.assertTrue(any("unregistered library" in error for error in verify(self.root)))
+
+    def test_rejects_package_directory_mismatch(self):
+        self.module(":core:model", source="package different\nclass Sample\n")
+        self.assertTrue(any("package directory mismatch" in error for error in verify(self.root)))
+
+    def test_accepts_indented_package_declaration(self):
+        self.module(":core:model", source=" package sample\nclass Sample\n")
+        self.assertEqual([], verify(self.root))
+
+    def test_rejects_test_package_directory_mismatch(self):
+        self.module(":core:model")
+        directory = self.root / "modules/core/model/src/test/java/sample"
+        directory.mkdir(parents=True)
+        (directory / "SampleTest.kt").write_text("package wrong\nclass SampleTest\n")
+        self.assertTrue(any("package directory mismatch" in error for error in verify(self.root)))
+
+    def test_rejects_crowded_library_directory(self):
+        self.module(":core:model")
+        directory = self.root / "modules/core/model/src/main/java/sample"
+        for index in range(16):
+            (directory / f"Extra{index}.kt").write_text(f"package sample\nclass Extra{index}\n")
+        self.assertTrue(any("17 source files" in error for error in verify(self.root)))
+
+    def test_rejects_crowded_app_family(self):
+        self.module(":core:model")
+        directory = self.root / "app/src/main/java/moe/ouom/neriplayer/core/player/download"
+        directory.mkdir(parents=True)
+        for index in range(17):
+            (directory / f"Extra{index}.kt").write_text(
+                f"package moe.ouom.neriplayer.core.player.download\nclass Extra{index}\n"
+            )
+        self.assertTrue(any("17 source files" in error for error in verify(self.root)))
 
 
 if __name__ == "__main__":

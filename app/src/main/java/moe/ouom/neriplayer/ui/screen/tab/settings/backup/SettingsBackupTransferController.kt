@@ -14,7 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsBackupRestoreSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.backup.SettingsBackupRestoreSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState

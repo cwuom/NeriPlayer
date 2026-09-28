@@ -31,7 +31,7 @@ val libraryCoverageExecution = configurations.create("libraryCoverageExecution")
 val coverageSources = tasks.register<Sync>("collectCoverageSources") {
     from(layout.projectDirectory.dir("src/main/java"))
     ownedLibraryPaths.forEach { module ->
-        from(rootProject.layout.projectDirectory.dir("${module.drop(1).replace(':', '/')}/src/main/java"))
+        from(project(module).layout.projectDirectory.dir("src/main/java"))
     }
     into(layout.buildDirectory.dir("reports/crap/sources"))
     duplicatesStrategy = DuplicatesStrategy.FAIL

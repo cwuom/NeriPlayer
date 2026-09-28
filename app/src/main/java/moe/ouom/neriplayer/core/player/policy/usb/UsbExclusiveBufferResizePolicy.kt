@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.policy.usb
 
-import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveBackgroundBufferMs
-import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveForegroundBufferMs
+import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveBackgroundBufferMs
+import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveForegroundBufferMs
 
 internal fun shouldApplyActiveUsbBufferResize(
     streaming: Boolean,

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.url
 
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.player.download.LocalPlaybackReferenceResolution
+import moe.ouom.neriplayer.core.player.download.playback.LocalPlaybackReferenceResolution
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup

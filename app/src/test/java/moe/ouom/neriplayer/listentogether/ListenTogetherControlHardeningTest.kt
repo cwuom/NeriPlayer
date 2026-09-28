@@ -13,8 +13,8 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueReference
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
-import moe.ouom.neriplayer.listentogether.session.ListenTogetherForwardedRequestDeduper
-import moe.ouom.neriplayer.listentogether.session.shouldRejectForwardedListenTogetherMemberControl
+import moe.ouom.neriplayer.listentogether.session.control.ListenTogetherForwardedRequestDeduper
+import moe.ouom.neriplayer.listentogether.session.control.shouldRejectForwardedListenTogetherMemberControl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.playback
 import android.content.Context
 import androidx.compose.runtime.Composable
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.normalizeMobileDataBiliAudioQuality
-import moe.ouom.neriplayer.data.settings.normalizeMobileDataNeteaseAudioQuality
-import moe.ouom.neriplayer.data.settings.normalizeMobileDataYouTubeAudioQuality
+import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataBiliAudioQuality
+import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataNeteaseAudioQuality
+import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataYouTubeAudioQuality
 
 internal fun neteaseQualityLabelRes(value: String): Int? = when (value) {
     "standard" -> R.string.settings_audio_quality_standard

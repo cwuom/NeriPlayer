@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.core.api.youtube.parser.YouTubeMusicParser
 
 internal data class YouTubeMusicHomeSnapshot(
     val playlists: List<YouTubeMusicPlaylist>,

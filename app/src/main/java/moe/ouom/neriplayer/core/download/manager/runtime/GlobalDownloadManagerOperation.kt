@@ -53,13 +53,13 @@ import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_C
 import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.download.DownloadSourceUnavailableException
-import moe.ouom.neriplayer.core.player.download.DownloadIntegrityException
-import moe.ouom.neriplayer.core.player.download.RetryableDownloadFailureException
+import moe.ouom.neriplayer.core.player.download.source.DownloadSourceUnavailableException
+import moe.ouom.neriplayer.core.player.download.transfer.DownloadIntegrityException
+import moe.ouom.neriplayer.core.player.download.source.RetryableDownloadFailureException
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
 
 
 internal suspend fun GlobalDownloadManager.prepareConfirmedDownload(

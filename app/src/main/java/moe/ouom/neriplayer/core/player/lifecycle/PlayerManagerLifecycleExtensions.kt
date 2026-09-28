@@ -108,13 +108,13 @@ import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidateForRecovery
-import moe.ouom.neriplayer.data.settings.LyricSourcePreferencePolicy
+import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
-import moe.ouom.neriplayer.data.settings.CacheSizePolicy
-import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
-import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
-import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
+import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
+import moe.ouom.neriplayer.data.settings.usb.toUsbExclusivePreferences
 import java.io.File
 
 private const val MEDIA_CACHE_DIRECTORY_NAME = "media_cache"

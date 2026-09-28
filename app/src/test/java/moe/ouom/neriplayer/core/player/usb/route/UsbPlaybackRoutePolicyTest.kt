@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.player.usb.route
 
 import kotlinx.coroutines.Job
-import moe.ouom.neriplayer.data.settings.UsbExclusiveBufferProfile
-import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveBufferProfile
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 import org.junit.Assert.assertFalse

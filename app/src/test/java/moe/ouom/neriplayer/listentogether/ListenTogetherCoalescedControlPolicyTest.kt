@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether
 
 import kotlinx.coroutines.Job
-import moe.ouom.neriplayer.listentogether.session.isCurrentListenTogetherCoalescedControlJob
+import moe.ouom.neriplayer.listentogether.session.control.isCurrentListenTogetherCoalescedControlJob
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

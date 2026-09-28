@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQuality
 
 internal enum class AdvancedGlassBlurAlgorithm {
     Native

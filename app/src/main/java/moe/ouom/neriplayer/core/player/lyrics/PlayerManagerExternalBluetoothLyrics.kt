@@ -14,8 +14,8 @@ import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothLyricPay
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.LyricSourcePreference
-import moe.ouom.neriplayer.data.settings.resolveEffectiveLyricOffsetMs
+import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.data.settings.lyrics.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices
 

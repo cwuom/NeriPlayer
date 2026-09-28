@@ -7,7 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
-import moe.ouom.neriplayer.data.settings.PlaybackControlSize
+import moe.ouom.neriplayer.data.settings.playback.PlaybackControlSize
 
 class StartupOnboardingProgressTest {
 

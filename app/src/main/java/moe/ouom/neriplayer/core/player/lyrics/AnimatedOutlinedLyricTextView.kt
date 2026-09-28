@@ -15,8 +15,8 @@ import android.view.View
 import android.view.animation.LinearInterpolator
 import android.view.animation.PathInterpolator
 import androidx.core.graphics.withSave
-import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
-import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_RENDER_STYLE_SHADOW
+import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
+import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_SHADOW
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt

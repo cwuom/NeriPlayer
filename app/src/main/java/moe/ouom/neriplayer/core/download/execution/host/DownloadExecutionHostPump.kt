@@ -14,8 +14,8 @@ import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
 import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionMetrics
 import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrace
-import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
-import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
+import moe.ouom.neriplayer.core.player.download.network.MAX_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.network.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.data.model.stableKey
 import kotlin.time.Duration.Companion.milliseconds
 

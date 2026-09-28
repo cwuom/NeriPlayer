@@ -44,7 +44,7 @@ import androidx.core.graphics.toColorInt
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
-import moe.ouom.neriplayer.data.settings.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 
 private val NeriTypography = Typography()
 private const val ThemeColorTransitionDurationMs = 420

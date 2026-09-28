@@ -18,7 +18,7 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
 
 internal fun isLegacyQueueImportSuppressed(cutoverState: String?): Boolean {
     return cutoverState == DownloadRecoveryRoomStore.USER_CLEARED_STATE

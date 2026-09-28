@@ -39,7 +39,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.core.player.download.resolveDownloadDispatchWindow
+import moe.ouom.neriplayer.core.player.download.network.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrace
 import org.junit.Test
 import org.junit.Assert.assertEquals

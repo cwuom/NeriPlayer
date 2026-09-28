@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.settings
 
+import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
 import android.content.Context
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -12,8 +13,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
-import moe.ouom.neriplayer.core.player.download.publishDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.network.normalizeDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.network.publishDownloadParallelism
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import moe.ouom.neriplayer.ksp.annotations.SettingValueType
 

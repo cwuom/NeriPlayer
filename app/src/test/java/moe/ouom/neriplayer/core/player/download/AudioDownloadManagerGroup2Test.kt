@@ -1,6 +1,14 @@
 package moe.ouom.neriplayer.core.player.download
 
-import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
+import moe.ouom.neriplayer.core.player.download.source.AudioDownloadSourceResolver
+import moe.ouom.neriplayer.core.player.download.source.DownloadSourceUnavailableException
+import moe.ouom.neriplayer.core.player.download.source.RetryableDownloadFailureException
+import moe.ouom.neriplayer.core.player.download.network.DEFAULT_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.network.INITIAL_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.runtime.hasHlsResumeState
+import moe.ouom.neriplayer.core.player.download.transfer.DownloadIntegrityException
+import moe.ouom.neriplayer.core.player.download.transfer.DownloadRangeRestartRequiredException
+import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.engine.datasource.ChunkRequestIOException
 import moe.ouom.neriplayer.data.model.SongItem
@@ -22,10 +30,10 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
     @Test
     fun `transfer cycle releases permit only after core commit and wakes the pump`() {
         val attemptSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerAttempt.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/runtime/AudioDownloadManagerAttempt.kt"
         ).readText()
         val assetsSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerAssets.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/sidecar/AudioDownloadManagerAssets.kt"
         ).readText()
         val transferBody = methodBody(attemptSource, "transferAndCommitDownloadAttempt")
         val transferIndex = transferBody.indexOf("transferWatchdog.run(permit)")
@@ -78,25 +86,25 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
         ).readText()
         val runtimeSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerRuntime.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/runtime/AudioDownloadManagerRuntime.kt"
         ).readText()
         val assetsSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerAssets.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/sidecar/AudioDownloadManagerAssets.kt"
         ).readText()
         val attemptSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerAttempt.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/runtime/AudioDownloadManagerAttempt.kt"
         ).readText()
         val playbackFacadeSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerFacadePlayback.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/facade/AudioDownloadManagerFacadePlayback.kt"
         ).readText()
         val allManagerSources = managerSource + runtimeSource + assetsSource + attemptSource + playbackFacadeSource
         val trackedCallBody = methodBody(runtimeSource, "executeTrackedCall")
         val cancellationGuardBody = methodBody(runtimeSource, "ensureSongDownloadNotCancelled")
         val transferSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadFileTransfer.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/transfer/AudioDownloadFileTransfer.kt"
         ).readText()
         val coverSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/cover/" +
                 "AudioDownloadCoverCoordinator.kt"
         ).readText()
 
@@ -140,7 +148,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
     @Test
     fun `batch progress publication leaves aggregation lock before invoking hook`() {
         val batchSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/batch/" +
                 "AudioDownloadBatchCoordinator.kt"
         ).readText()
         val publishBody = batchSource
@@ -164,7 +172,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
     @Test
     fun `completed bridge is retained until a real transport starts`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerRuntime.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/runtime/AudioDownloadManagerRuntime.kt"
         ).readText()
         val executionBody = methodBody(source, "executeDownloadSong")
         val cachedLookupIndex = executionBody.indexOf(
@@ -186,7 +194,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
         ).readText()
         val executionSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManagerRuntime.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/runtime/AudioDownloadManagerRuntime.kt"
         ).readText()
         val executionBody = methodBody(executionSource, "executeDownloadSong")
 
@@ -203,7 +211,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
     @Test
     fun `recent completed bridge is checked before SAF inspection`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/playback/" +
                 "AudioDownloadPlaybackCoordinator.kt"
         ).readText()
         val playbackBody = methodBody(source, "resolvePermittedLocalPlayback")
@@ -250,7 +258,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
     fun `parallelism cache uses a conservative fallback until the persisted setting is readable`() {
         assertEquals(DEFAULT_DOWNLOAD_PARALLELISM, INITIAL_DOWNLOAD_PARALLELISM)
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/DownloadParallelism.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/network/DownloadParallelism.kt"
         ).readText()
 
         assertFalse(source.contains("runBlocking"))
@@ -472,7 +480,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
     @Test
     fun `range 416 clears stale resume state before retrying from zero`() {
         val transferSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadFileTransfer.kt"
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/transfer/AudioDownloadFileTransfer.kt"
         ).readText()
         val directBody = methodBody(transferSource, "downloadResponse")
         val chunkedBody = methodBody(transferSource, "downloadChunked")

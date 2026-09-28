@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.transport.isRecoverableTransportFailure
 import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
-import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
 
 internal fun UsbExclusivePreferences.requiresRouteReconfiguration(next: UsbExclusivePreferences): Boolean =
     routeSelection() != next.routeSelection()

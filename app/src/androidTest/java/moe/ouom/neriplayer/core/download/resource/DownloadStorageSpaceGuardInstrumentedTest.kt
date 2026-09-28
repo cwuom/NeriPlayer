@@ -8,8 +8,8 @@ import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.download.RetryableDownloadFailureException
-import moe.ouom.neriplayer.core.player.download.handleDownloadAttemptFailure
+import moe.ouom.neriplayer.core.player.download.source.RetryableDownloadFailureException
+import moe.ouom.neriplayer.core.player.download.runtime.handleDownloadAttemptFailure
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertArrayEquals

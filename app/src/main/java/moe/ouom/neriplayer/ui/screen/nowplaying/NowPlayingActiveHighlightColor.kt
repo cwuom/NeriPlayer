@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.toColorInt
 import kotlinx.coroutines.delay
-import moe.ouom.neriplayer.data.settings.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt

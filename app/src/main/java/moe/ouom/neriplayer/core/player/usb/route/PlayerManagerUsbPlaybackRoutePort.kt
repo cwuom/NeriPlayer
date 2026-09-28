@@ -24,7 +24,7 @@ import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.policy.wake.PlaybackTransitionWakeLock
-import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
 
 internal object PlayerManagerUsbPlaybackRoutePort : UsbPlaybackRoutePort {
     internal fun isPlaybackActiveForSwitch(): Boolean {

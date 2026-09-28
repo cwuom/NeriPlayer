@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.execution.host
 
 import android.content.Context
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
 import java.io.IOException
 import java.util.UUID
 

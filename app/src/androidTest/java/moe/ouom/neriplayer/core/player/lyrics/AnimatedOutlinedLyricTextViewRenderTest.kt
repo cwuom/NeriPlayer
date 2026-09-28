@@ -8,7 +8,7 @@ import android.graphics.PorterDuff
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_RENDER_STYLE_SHADOW
+import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_SHADOW
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith

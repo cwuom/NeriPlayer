@@ -37,8 +37,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicDebugProbeResult
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLocaleResolver
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicDebugProbeResult
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform

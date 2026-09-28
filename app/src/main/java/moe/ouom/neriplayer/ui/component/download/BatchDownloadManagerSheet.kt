@@ -41,7 +41,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.model.batchDownloadProgressForDisplay
 import moe.ouom.neriplayer.core.download.model.countFailedDownloadTasks
 import moe.ouom.neriplayer.core.download.model.countPendingDownloadTasks
-import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 

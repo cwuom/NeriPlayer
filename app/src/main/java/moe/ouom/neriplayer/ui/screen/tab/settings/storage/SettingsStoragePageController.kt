@@ -21,10 +21,10 @@ import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.storage.StorageUsageSummary
 import moe.ouom.neriplayer.data.storage.analyzeStorageUsage
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.ManagedLibraryProcessingDetailsCard
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadQualityFollowPlaybackCard
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadSection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsStorageCacheSection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.StorageCacheDetailsContent
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.download.SettingsDownloadQualityFollowPlaybackCard
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.download.SettingsDownloadSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.storage.SettingsStorageCacheSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.storage.StorageCacheDetailsContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectoryProcessingPresentation
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectorySettingsController
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage

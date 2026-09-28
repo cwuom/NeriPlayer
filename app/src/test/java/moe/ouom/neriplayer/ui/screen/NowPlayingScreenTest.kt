@@ -17,8 +17,8 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
-import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
-import moe.ouom.neriplayer.data.settings.LyricSourcePreference
+import moe.ouom.neriplayer.data.settings.playback.NowPlayingControlPlacement
+import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.lyrics.LyricEntry

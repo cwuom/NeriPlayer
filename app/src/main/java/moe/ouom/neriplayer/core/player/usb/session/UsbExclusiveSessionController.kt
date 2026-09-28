@@ -27,8 +27,8 @@ import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRecoveryActionAckStatus
 import moe.ouom.neriplayer.core.player.usb.transport.booleanField
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
-import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveBackgroundBufferMs
-import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveForegroundBufferMs
+import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveBackgroundBufferMs
+import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveForegroundBufferMs
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 object UsbExclusiveSessionController {

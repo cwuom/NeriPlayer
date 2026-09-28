@@ -37,10 +37,10 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchFilter
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResult
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResultType
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicSearchFilter
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicSearchResult
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicSearchResultType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient

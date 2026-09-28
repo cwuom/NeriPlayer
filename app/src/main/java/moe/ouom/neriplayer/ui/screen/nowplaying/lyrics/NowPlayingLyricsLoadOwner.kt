@@ -17,7 +17,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.LyricSourcePreference
+import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
 
 internal data class NowPlayingLyricsLoadRequest(
     val context: Context,

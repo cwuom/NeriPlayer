@@ -47,7 +47,7 @@ import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
-import moe.ouom.neriplayer.core.api.youtube.YouTubePlaybackBootstrapCoordinator
+import moe.ouom.neriplayer.core.api.youtube.bootstrap.YouTubePlaybackBootstrapCoordinator
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.startup.app.InstrumentationTestRuntime
@@ -75,12 +75,12 @@ import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
 import moe.ouom.neriplayer.listentogether.network.ws.ListenTogetherWebSocketClient
 import moe.ouom.neriplayer.data.settings.dataStore
-import moe.ouom.neriplayer.data.settings.persistBootstrapSettingsSnapshot
-import moe.ouom.neriplayer.data.settings.persistPlaybackPreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.readBootstrapSettingsSnapshotSync
+import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.bootstrap.readBootstrapSettingsSnapshotSync
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.settings.toBootstrapSettingsSnapshot
-import moe.ouom.neriplayer.data.settings.toPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.bootstrap.toBootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.playback.toPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders

@@ -4,7 +4,7 @@ import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
-import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
+import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.url.CachePrefetchReadiness

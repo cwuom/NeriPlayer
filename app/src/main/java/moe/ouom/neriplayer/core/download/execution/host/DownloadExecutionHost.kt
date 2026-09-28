@@ -41,7 +41,7 @@ import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePha
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
-import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.units.DAY_MS
 import java.util.concurrent.ConcurrentHashMap

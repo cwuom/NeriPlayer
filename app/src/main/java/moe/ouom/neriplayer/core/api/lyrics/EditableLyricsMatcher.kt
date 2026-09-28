@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.SearchApi
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResult
+import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicSearchResult
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.metadata.convertPlainLyricsToEntries
 import moe.ouom.neriplayer.core.lyrics.LyricEntry

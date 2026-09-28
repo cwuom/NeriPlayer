@@ -23,16 +23,23 @@ dependencyResolutionManagement {
 
 rootProject.name = "NeriPlayer"
 include(":app")
-include(":core:lyrics")
-include(":core:common")
-include(":core:listen-protocol")
-include(":core:logging")
-include(":core:model")
-include(":core:network")
-include(":data:bilibili")
-include(":data:lyrics")
-include(":data:netease")
-include(":data:youtube")
+fun includeOwnedLibrary(path: String) {
+    include(path)
+    project(path).projectDir = file("modules/${path.drop(1).replace(':', '/')}")
+}
+
+includeOwnedLibrary(":core:lyrics")
+includeOwnedLibrary(":core:common")
+includeOwnedLibrary(":core:listen-protocol")
+includeOwnedLibrary(":core:logging")
+includeOwnedLibrary(":core:model")
+includeOwnedLibrary(":core:network")
+includeOwnedLibrary(":data:bilibili")
+includeOwnedLibrary(":data:lyrics")
+includeOwnedLibrary(":data:netease")
+includeOwnedLibrary(":data:youtube")
+project(":core").projectDir = file("modules/core")
+project(":data").projectDir = file("modules/data")
 include(":ksp-annotations")
 include(":ksp-processor")
 include(":accompanist-lyrics-core")

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
-import moe.ouom.neriplayer.data.settings.EnhancedAdvancedBlurPreference
+import moe.ouom.neriplayer.data.settings.appearance.EnhancedAdvancedBlurPreference
 
 internal data class AdvancedGlassTokens(
     val blurRadiusDp: Float,

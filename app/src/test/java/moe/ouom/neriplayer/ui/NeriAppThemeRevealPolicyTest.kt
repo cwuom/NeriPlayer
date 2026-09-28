@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui
 
-import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.data.settings.appearance.ThemeMode
 import moe.ouom.neriplayer.ui.theme.reveal.resolveThemeRevealSnapshotDimensions
 import moe.ouom.neriplayer.ui.theme.reveal.resolveThemeToggleTarget
 import moe.ouom.neriplayer.ui.theme.reveal.shouldBlockThemeModeChange

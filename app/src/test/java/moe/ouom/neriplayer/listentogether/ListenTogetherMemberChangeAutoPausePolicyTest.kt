@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherClosedRoomPause
-import moe.ouom.neriplayer.listentogether.session.shouldAutoPauseListenTogetherForMemberChange
+import moe.ouom.neriplayer.listentogether.session.membership.shouldApplyListenTogetherClosedRoomPause
+import moe.ouom.neriplayer.listentogether.session.membership.shouldAutoPauseListenTogetherForMemberChange
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

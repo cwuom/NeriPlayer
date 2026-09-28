@@ -23,6 +23,34 @@ package moe.ouom.neriplayer.core.player.service
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.core.player.service.lifecycle.TaskRemovedPlaybackCallbacks
+import moe.ouom.neriplayer.core.player.service.lifecycle.executeTaskRemovedPlaybackAction
+import moe.ouom.neriplayer.core.player.service.lifecycle.resolveTaskRemovedPlaybackAction
+import moe.ouom.neriplayer.core.player.service.lifecycle.resolveTaskRemovedTransportActive
+import moe.ouom.neriplayer.core.player.service.artwork.AndroidPlaybackArtworkClock
+import moe.ouom.neriplayer.core.player.service.artwork.AndroidPlaybackCoverSources
+import moe.ouom.neriplayer.core.player.service.artwork.CoilPlaybackArtworkBitmapLoader
+import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkChange
+import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkOwner
+import moe.ouom.neriplayer.core.player.service.artwork.PlaybackCoverSourceResolver
+import moe.ouom.neriplayer.core.player.service.lifecycle.PlaybackServiceIdleShutdownCoordinator
+import moe.ouom.neriplayer.core.player.service.lifecycle.shouldKeepPlaybackServiceSticky
+import moe.ouom.neriplayer.core.player.service.lifecycle.shouldPreservePlayerRuntimeOnForegroundPromotionFailure
+import moe.ouom.neriplayer.core.player.service.lifecycle.shouldSchedulePlaybackServiceIdleShutdown
+import moe.ouom.neriplayer.core.player.service.lifecycle.shouldUseStickyStartModeWhilePlayerRuntimeInitializes
+import moe.ouom.neriplayer.core.player.service.lifecycle.suspendPlaybackForServiceRestart
+import moe.ouom.neriplayer.core.player.service.notification.isFloatingLyricsEffectivelyEnabled
+import moe.ouom.neriplayer.core.player.service.notification.resolveStatusBarLyricNotificationState
+import moe.ouom.neriplayer.core.player.service.notification.statusBarLyricNotificationStateFlow
+import moe.ouom.neriplayer.core.player.service.presentation.AndroidPlaybackServicePresentationPort
+import moe.ouom.neriplayer.core.player.service.presentation.AndroidPlaybackServicePresentationSource
+import moe.ouom.neriplayer.core.player.service.presentation.PlaybackServicePresentationOwner
+import moe.ouom.neriplayer.core.player.service.presentation.resolveListenTogetherMediaSessionPosition
+import moe.ouom.neriplayer.core.player.service.usb.AndroidUsbExclusiveKeepAlivePort
+import moe.ouom.neriplayer.core.player.service.usb.AndroidUsbExclusiveVolumeRoutingPort
+import moe.ouom.neriplayer.core.player.service.usb.UsbExclusiveKeepAliveServiceHost
+import moe.ouom.neriplayer.core.player.service.usb.UsbExclusiveMediaSessionVolumeRouter
+import moe.ouom.neriplayer.core.player.service.usb.UsbExclusiveServiceKeepAliveOwner
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
@@ -88,9 +116,9 @@ import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.settings.DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
-import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
-import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.playback.DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
+import moe.ouom.neriplayer.data.settings.playback.PlaybackServiceIdleShutdownPreference
+import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.widget.playbackWidgetProgressRefreshBucket
@@ -157,92 +185,6 @@ internal fun shouldStopServiceForExternalPauseCommand(
 ): Boolean {
     // 系统外部控制面板的 stop 经常只是"结束本次会话", 不能把当前队列一并释放掉
     return stopServiceRequested && source != MEDIA_SESSION_STOP_SOURCE
-}
-
-internal fun shouldStopPlaybackOnTaskRemoved(
-    hasPlaybackSurfaceContent: Boolean,
-    transportActive: Boolean,
-): Boolean {
-    return hasPlaybackSurfaceContent && transportActive
-}
-
-internal fun resolveTaskRemovedTransportActive(
-    playerTransportActive: Boolean,
-    listenTogetherRemotePlaying: Boolean,
-): Boolean {
-    return playerTransportActive || listenTogetherRemotePlaying
-}
-
-internal data class TaskRemovedPlaybackAction(
-    val stopPlaybackImmediately: Boolean,
-    val persistPlaybackState: Boolean,
-    val stopServiceAfterPersist: Boolean,
-    val updateNotificationAfterPersist: Boolean,
-)
-
-internal data class TaskRemovedPlaybackCallbacks(
-    val stopPlaybackImmediately: () -> Unit,
-    val persistPlaybackState: suspend (String) -> Boolean,
-    val stopForegroundIfStarted: (String) -> Unit,
-    val stopSelf: () -> Unit,
-    val updateNotification: () -> Unit,
-    val onPlaybackStopFailure: (Throwable) -> Unit,
-    val onNotificationUpdateFailure: (Throwable) -> Unit,
-)
-
-internal fun resolveTaskRemovedPlaybackAction(
-    hasPlaybackSurfaceContent: Boolean,
-    playerTransportActive: Boolean,
-    listenTogetherRemotePlaying: Boolean,
-    hasItems: Boolean,
-): TaskRemovedPlaybackAction {
-    val transportActive = resolveTaskRemovedTransportActive(
-        playerTransportActive = playerTransportActive,
-        listenTogetherRemotePlaying = listenTogetherRemotePlaying,
-    )
-    val stopPlaybackImmediately = shouldStopPlaybackOnTaskRemoved(
-        hasPlaybackSurfaceContent = hasPlaybackSurfaceContent,
-        transportActive = transportActive,
-    )
-    return TaskRemovedPlaybackAction(
-        stopPlaybackImmediately = stopPlaybackImmediately,
-        persistPlaybackState = stopPlaybackImmediately || hasItems,
-        stopServiceAfterPersist = stopPlaybackImmediately,
-        updateNotificationAfterPersist = hasItems && !stopPlaybackImmediately,
-    )
-}
-
-internal suspend fun executeTaskRemovedPlaybackAction(
-    action: TaskRemovedPlaybackAction,
-    callbacks: TaskRemovedPlaybackCallbacks,
-) {
-    if (action.stopPlaybackImmediately) {
-        runCatching { callbacks.stopPlaybackImmediately() }
-            .onFailure(callbacks.onPlaybackStopFailure)
-    }
-    val playbackStatePersisted = if (action.persistPlaybackState) {
-        val reason = if (action.stopPlaybackImmediately) {
-            "task_removed"
-        } else {
-            "inactive_task_removed"
-        }
-        callbacks.persistPlaybackState(reason)
-    } else {
-        true
-    }
-    if (action.updateNotificationAfterPersist) {
-        runCatching { callbacks.updateNotification() }
-            .onFailure(callbacks.onNotificationUpdateFailure)
-    }
-    if (action.stopServiceAfterPersist) {
-        if (playbackStatePersisted) {
-            callbacks.stopForegroundIfStarted("task_removed")
-            callbacks.stopSelf()
-        } else {
-            runCatching { callbacks.updateNotification() }
-                .onFailure(callbacks.onNotificationUpdateFailure)
-        }
-    }
 }
 
 internal fun shouldUseForegroundServiceStart(

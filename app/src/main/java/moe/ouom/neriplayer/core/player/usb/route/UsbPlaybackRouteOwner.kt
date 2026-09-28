@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.isTransientUsbExclusiveOpenGat
 import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveRecoveryForPendingReconfiguration
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
-import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
 import kotlin.time.Duration.Companion.milliseconds
 
 internal data class UsbPlaybackRouteSnapshot(

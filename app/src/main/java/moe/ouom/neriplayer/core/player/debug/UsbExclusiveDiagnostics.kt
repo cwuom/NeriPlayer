@@ -24,9 +24,9 @@ import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
 import moe.ouom.neriplayer.core.player.usb.device.usbExclusiveDeviceKey
 import moe.ouom.neriplayer.core.player.usb.device.usbExclusiveDeviceKeyMatchesLabel
 import moe.ouom.neriplayer.core.player.usb.device.matchesUsbExclusiveDeviceKey
-import moe.ouom.neriplayer.data.settings.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
-import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
-import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
+import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
+import moe.ouom.neriplayer.data.settings.usb.toUsbExclusivePreferences
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.util.concurrent.atomic.AtomicBoolean
 

@@ -47,7 +47,7 @@ import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
-import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
+import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.util.crash.AnrWatchdog
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.util.platform.LanguageManager

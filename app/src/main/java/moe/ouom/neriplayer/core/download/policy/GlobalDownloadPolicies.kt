@@ -24,8 +24,8 @@ import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadRefere
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.clear.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.download.isFormalManagedAudioReference
-import moe.ouom.neriplayer.core.player.download.isReadableManagedAudioPlaybackAllowed
+import moe.ouom.neriplayer.core.player.download.playback.isFormalManagedAudioReference
+import moe.ouom.neriplayer.core.player.download.playback.isReadableManagedAudioPlaybackAllowed
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs

@@ -28,7 +28,7 @@ import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
-import moe.ouom.neriplayer.data.settings.LyricSourcePreference
+import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.core.player.metadata.SongMetadataRequestCoordinator
 import moe.ouom.neriplayer.core.player.metadata.hasUsableLyrics
 import moe.ouom.neriplayer.core.player.metadata.LocalMetadataWritePlaybackAction
@@ -57,9 +57,9 @@ import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.isReadableLocalFile
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
-import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
-import moe.ouom.neriplayer.data.settings.saturatingAddLyricOffsetMs
-import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
+import moe.ouom.neriplayer.data.settings.lyrics.rebaseLyricUserOffsetMs
+import moe.ouom.neriplayer.data.settings.lyrics.saturatingAddLyricOffsetMs
+import moe.ouom.neriplayer.data.settings.lyrics.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem

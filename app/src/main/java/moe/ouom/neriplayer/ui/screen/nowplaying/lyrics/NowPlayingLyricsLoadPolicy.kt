@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.core.player.metadata.resolveLyricTextForPlayback
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.settings.LyricSourcePreference
+import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
 import moe.ouom.neriplayer.core.lyrics.flattenWordTimedEntries

@@ -19,7 +19,8 @@ internal object RefactoredSourceFamilyResolver {
 
     private val implementationDirectoriesByRootName = mapOf(
         "GlobalDownloadManager.kt" to listOf("manager"),
-        "ManagedDownloadStorage.kt" to listOf("storage/facade", "storage/operation")
+        "ManagedDownloadStorage.kt" to listOf("storage/facade", "storage/operation"),
+        "AudioDownloadManager.kt" to listOf("facade", "runtime", "network", "sidecar")
     )
 
     fun resolve(candidate: File): File {

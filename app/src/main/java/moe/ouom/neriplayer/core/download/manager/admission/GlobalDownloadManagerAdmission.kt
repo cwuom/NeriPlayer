@@ -25,11 +25,11 @@ import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteI
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.settings.download.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import kotlin.time.Duration.Companion.milliseconds

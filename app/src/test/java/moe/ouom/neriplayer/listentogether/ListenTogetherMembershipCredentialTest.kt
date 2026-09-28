@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
-import moe.ouom.neriplayer.listentogether.session.resolveReusableListenTogetherMembershipCredential
-import moe.ouom.neriplayer.listentogether.session.toMembershipCredentialOrNull
+import moe.ouom.neriplayer.listentogether.session.membership.resolveReusableListenTogetherMembershipCredential
+import moe.ouom.neriplayer.listentogether.session.membership.toMembershipCredentialOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame

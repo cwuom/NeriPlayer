@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.download
 
+import moe.ouom.neriplayer.core.player.download.transfer.AudioHlsSegmentSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -273,7 +274,7 @@ class AudioDownloadManagerGroup3Test : AudioDownloadManagerTestSupport() {
     @Test
     fun `new transfer clears stale core marker before registering operation`() {
         val source = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/runtime/" +
                 "AudioDownloadManagerRuntime.kt"
         ).readText()
         val body = methodBody(source, "executeDownloadSong")

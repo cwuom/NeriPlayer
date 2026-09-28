@@ -23,6 +23,66 @@ package moe.ouom.neriplayer.core.player.download
  * Created: 2025/8/20
  */
 
+import moe.ouom.neriplayer.core.player.download.batch.AudioDownloadBatchCoordinator
+import moe.ouom.neriplayer.core.player.download.cover.AudioCachedCoverReference
+import moe.ouom.neriplayer.core.player.download.cover.AudioDownloadCoverCoordinator
+import moe.ouom.neriplayer.core.player.download.facade.cancelDownloadImpl
+import moe.ouom.neriplayer.core.player.download.facade.cancelOperationDownloadImpl
+import moe.ouom.neriplayer.core.player.download.facade.cancelSongDownloadImpl
+import moe.ouom.neriplayer.core.player.download.facade.copyHlsSegmentImpl
+import moe.ouom.neriplayer.core.player.download.facade.downloadSongImpl
+import moe.ouom.neriplayer.core.player.download.facade.getLyricsBundleFastImpl
+import moe.ouom.neriplayer.core.player.download.facade.initializeImpl
+import moe.ouom.neriplayer.core.player.download.facade.isHlsResumeStateCompatibleImpl
+import moe.ouom.neriplayer.core.player.download.facade.notifyRecoveryOpportunityImpl
+import moe.ouom.neriplayer.core.player.download.facade.onConfiguredDownloadParallelismChangedImpl
+import moe.ouom.neriplayer.core.player.download.facade.pauseDownloadsForNetworkPolicyImpl
+import moe.ouom.neriplayer.core.player.download.facade.pauseOperationDownloadForExecutionHostImpl
+import moe.ouom.neriplayer.core.player.download.facade.pauseSongDownloadForExecutionHostImpl
+import moe.ouom.neriplayer.core.player.download.facade.publishStageProgressImpl
+import moe.ouom.neriplayer.core.player.download.facade.releaseCompletedAudioReferenceImpl
+import moe.ouom.neriplayer.core.player.download.facade.resolveBatchDownloadWorkerCountImpl
+import moe.ouom.neriplayer.core.player.download.facade.shouldFetchRomanizedLyricForDownloadImpl
+import moe.ouom.neriplayer.core.player.download.lyrics.AudioDownloadLyricsCoordinator
+import moe.ouom.neriplayer.core.player.download.network.DEFAULT_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.network.DownloadNetworkPolicyTracker
+import moe.ouom.neriplayer.core.player.download.network.MAX_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.network.newDownloadTrafficAccumulator
+import moe.ouom.neriplayer.core.player.download.network.normalizeDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.ownership.AudioDownloadOperationRegistry
+import moe.ouom.neriplayer.core.player.download.ownership.AudioDownloadReferenceOwnership
+import moe.ouom.neriplayer.core.player.download.ownership.AudioDownloadReferenceRegistry
+import moe.ouom.neriplayer.core.player.download.playback.AudioDownloadPlaybackCoordinator
+import moe.ouom.neriplayer.core.player.download.playback.LocalPlaybackReferenceResolution
+import moe.ouom.neriplayer.core.player.download.progress.AudioDownloadProgressPolicy
+import moe.ouom.neriplayer.core.player.download.progress.AudioDownloadProgressStore
+import moe.ouom.neriplayer.core.player.download.runtime.clearHlsResumeState
+import moe.ouom.neriplayer.core.player.download.runtime.deleteWorkingFile
+import moe.ouom.neriplayer.core.player.download.runtime.digestHexSnapshot
+import moe.ouom.neriplayer.core.player.download.runtime.ensureSongDownloadNotCancelled
+import moe.ouom.neriplayer.core.player.download.runtime.executeTrackedCall
+import moe.ouom.neriplayer.core.player.download.runtime.hasHlsResumeState
+import moe.ouom.neriplayer.core.player.download.runtime.markTransferNetworkActivity
+import moe.ouom.neriplayer.core.player.download.runtime.publishProgress
+import moe.ouom.neriplayer.core.player.download.runtime.releaseReferenceOwnership
+import moe.ouom.neriplayer.core.player.download.runtime.rememberHlsResumeState
+import moe.ouom.neriplayer.core.player.download.runtime.resolveHlsResumeState
+import moe.ouom.neriplayer.core.player.download.runtime.resolveWorkingFileBytes
+import moe.ouom.neriplayer.core.player.download.runtime.sha256FilePrefix
+import moe.ouom.neriplayer.core.player.download.runtime.sha256FilePrefixDigest
+import moe.ouom.neriplayer.core.player.download.runtime.shouldPreserveArtifactsForNetworkPolicy
+import moe.ouom.neriplayer.core.player.download.runtime.snapshotActiveCalls
+import moe.ouom.neriplayer.core.player.download.runtime.storageSpaceOwnerKey
+import moe.ouom.neriplayer.core.player.download.runtime.truncateWorkingFile
+import moe.ouom.neriplayer.core.player.download.runtime.withNetworkPolicyMutationPermit
+import moe.ouom.neriplayer.core.player.download.sidecar.AudioDownloadSidecarPolicy
+import moe.ouom.neriplayer.core.player.download.sidecar.downloadSidecars
+import moe.ouom.neriplayer.core.player.download.sidecar.ensureDownloadNotCancelled
+import moe.ouom.neriplayer.core.player.download.source.AudioDownloadSourceResolver
+import moe.ouom.neriplayer.core.player.download.transfer.AudioDownloadFileTransfer
+import moe.ouom.neriplayer.core.player.download.transfer.AudioDownloadHlsTransfer
+import moe.ouom.neriplayer.core.player.download.transfer.AudioDownloadTransferPolicy
+import moe.ouom.neriplayer.core.player.download.transfer.AudioHlsResumeStore
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +92,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
-import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
+import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.policy.DownloadCoreCommitPhase
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -45,7 +105,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
-import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import okhttp3.Dispatcher
 import okhttp3.Request
@@ -370,7 +430,7 @@ object AudioDownloadManager {
             override fun resolveVisibleDownloadFileName(
                 requestedName: String,
                 actualName: String
-            ): String = moe.ouom.neriplayer.core.player.download
+            ): String = moe.ouom.neriplayer.core.player.download.playback
                 .resolveVisibleDownloadFileName(requestedName, actualName)
         },
         maxPlaylistBytes = MAX_HLS_PLAYLIST_BYTES,
@@ -467,7 +527,7 @@ object AudioDownloadManager {
             override fun resolveVisibleDownloadFileName(
                 requestedName: String,
                 actualName: String
-            ): String = moe.ouom.neriplayer.core.player.download
+            ): String = moe.ouom.neriplayer.core.player.download.playback
                 .resolveVisibleDownloadFileName(requestedName, actualName)
         },
         readBufferBytes = DOWNLOAD_READ_BUFFER_BYTES,

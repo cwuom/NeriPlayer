@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.core.player.policy.usb
 
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveSystemVolumeGain
-import moe.ouom.neriplayer.data.settings.DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
-import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveVolumeRiskThresholdDbfs
+import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
+import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveVolumeRiskThresholdDbfs
 import kotlin.math.log10
 
 internal enum class UsbExclusiveOutputDeviceClass {

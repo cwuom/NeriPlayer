@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.startup.theme
 
-import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.data.settings.appearance.ThemeMode
 
 internal data class StartupNightModeSyncPlan(
     val useDark: Boolean,
