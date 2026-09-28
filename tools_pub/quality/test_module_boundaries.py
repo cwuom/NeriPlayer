@@ -110,6 +110,29 @@ class ModuleBoundariesTest(unittest.TestCase):
             )
         self.assertTrue(any("17 source files" in error for error in verify(self.root)))
 
+    def test_rejects_production_sources_in_migrated_app_packages(self):
+        self.module(":core:model")
+        for language in ("java", "kotlin"):
+            for family in ("core/api/search", "core/api/lyrics", "core/lyrics"):
+                package = "moe/ouom/neriplayer/" + family + "/nested"
+                directory = self.root / "app/src/main" / language / package
+                directory.mkdir(parents=True)
+                (directory / "Stranded.kt").write_text(
+                    "package " + package.replace("/", ".") + "\nclass Stranded\n"
+                )
+        errors = verify(self.root)
+        self.assertEqual(6, len(errors))
+        self.assertTrue(all("belongs in a library module" in error for error in errors))
+
+    def test_allows_host_integration_tests_for_migrated_packages(self):
+        self.module(":core:model")
+        directory = self.root / "app/src/androidTest/java/moe/ouom/neriplayer/core/api/lyrics"
+        directory.mkdir(parents=True)
+        (directory / "HostTest.kt").write_text(
+            "package moe.ouom.neriplayer.core.api.lyrics\nclass HostTest\n"
+        )
+        self.assertEqual([], verify(self.root))
+
 
 if __name__ == "__main__":
     unittest.main()

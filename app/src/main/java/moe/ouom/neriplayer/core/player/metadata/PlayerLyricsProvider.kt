@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.player.metadata
 
+import moe.ouom.neriplayer.core.api.lyrics.amll.AmllLyricsResolver
+import moe.ouom.neriplayer.core.lyrics.convertPlainLyricsToEntries
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers

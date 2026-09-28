@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player.metadata
+package moe.ouom.neriplayer.core.lyrics
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,13 +19,11 @@ package moe.ouom.neriplayer.core.player.metadata
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.core.player.metadata/PlayerLyricUtils
+ * File: moe.ouom.neriplayer.core.lyrics/PlainLyrics
  * Updated: 2026/3/23
  */
 
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
-
-internal fun convertPlainLyricsToEntries(text: String, durationMs: Long): List<LyricEntry> {
+fun convertPlainLyricsToEntries(text: String, durationMs: Long): List<LyricEntry> {
     val lines = text.lines().filter { it.isNotBlank() }
     if (lines.isEmpty()) {
         return emptyList()

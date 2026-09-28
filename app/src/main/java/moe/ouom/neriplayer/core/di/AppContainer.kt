@@ -43,8 +43,11 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricsMatcher
 import moe.ouom.neriplayer.core.api.lyrics.KugouLyricsClient
 import moe.ouom.neriplayer.core.api.lyrics.LrcLibClient
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
+import moe.ouom.neriplayer.core.api.search.SearchManager
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
 import moe.ouom.neriplayer.core.api.youtube.bootstrap.YouTubePlaybackBootstrapCoordinator
@@ -418,8 +421,25 @@ object AppContainer {
     val youtubeMusicDownloadPlaybackRepository: YouTubeMusicPlaybackRepository
         get() = youtubeMusicDownloadPlaybackRepositoryDelegate.value
 
-    val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
-    val qqMusicSearchApi by lazy { QQMusicSearchApi() }
+    val cloudMusicSearchApi by lazy {
+        CloudMusicSearchApi(neteaseClient, sharedOkHttpClient, debugLogging = BuildConfig.DEBUG)
+    }
+    val qqMusicSearchApi by lazy {
+        QQMusicSearchApi(
+            client = sharedOkHttpClient,
+            amllTtmlClient = amllTtmlClient,
+            amllLyricsEnabledProvider = { settingsRepo.amllLyricsEnabledFlow.first() },
+            debugLogging = BuildConfig.DEBUG
+        )
+    }
+    val searchManager by lazy {
+        SearchManager { platform ->
+            when (platform) {
+                MusicPlatform.CLOUD_MUSIC -> cloudMusicSearchApi
+                MusicPlatform.QQ_MUSIC -> qqMusicSearchApi
+            }
+        }
+    }
     val lrcLibClient by lazy { LrcLibClient(sharedOkHttpClient) }
     val amllTtmlClient by lazy { AmllTtmlClient(sharedOkHttpClient) }
     val kugouLyricsClient by lazy { KugouLyricsClient(sharedOkHttpClient) }

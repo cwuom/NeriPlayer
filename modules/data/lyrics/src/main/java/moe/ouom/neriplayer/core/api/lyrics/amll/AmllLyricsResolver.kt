@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player.metadata
+package moe.ouom.neriplayer.core.api.lyrics.amll
 
 import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient
 import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlLyrics
@@ -10,12 +10,12 @@ import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
 import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
 import kotlin.math.max
 
-internal data class AmllResolvedLyrics(
+data class AmllResolvedLyrics(
     val rawLyrics: String,
     val entries: List<LyricEntry>
 )
 
-internal object AmllLyricsResolver {
+object AmllLyricsResolver {
     private const val MAX_SEARCH_CANDIDATES = 5
 
     suspend fun loadForSong(

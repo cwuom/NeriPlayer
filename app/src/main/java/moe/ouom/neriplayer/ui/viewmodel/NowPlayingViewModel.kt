@@ -41,7 +41,6 @@ import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.api.search.SearchManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
@@ -228,7 +227,7 @@ class NowPlayingViewModel : ViewModel() {
         }
         searchJob = viewModelScope.launch {
             try {
-                val results = SearchManager.search(
+                val results = AppContainer.searchManager.search(
                     keyword = request.keyword,
                     platform = request.platform,
                 )
@@ -456,11 +455,8 @@ class NowPlayingViewModel : ViewModel() {
             try {
                 val platform = selectedSong.source
                 val api = when (platform) {
-                    MusicPlatform.CLOUD_MUSIC -> {
-                        val client = AppContainer.neteaseClient
-                        moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi(client)
-                    }
-                    MusicPlatform.QQ_MUSIC -> moe.ouom.neriplayer.core.api.search.QQMusicSearchApi()
+                    MusicPlatform.CLOUD_MUSIC -> AppContainer.cloudMusicSearchApi
+                    MusicPlatform.QQ_MUSIC -> AppContainer.qqMusicSearchApi
                 }
 
                 val songDetails = api.getSongInfo(selectedSong.id)

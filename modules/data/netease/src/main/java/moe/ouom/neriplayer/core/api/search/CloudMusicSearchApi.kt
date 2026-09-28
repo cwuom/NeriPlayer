@@ -30,11 +30,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.lyrics.normalizeLegacyLrcTimestamps
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.util.network.awaitResponse
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -70,14 +68,17 @@ private data class CloudMusicLyricResponse(
 @Serializable
 private data class CloudMusicLrc(val lyric: String?)
 
-class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi {
+class CloudMusicSearchApi(
+    private val neteaseClient: NeteaseClient,
+    private val client: OkHttpClient,
+    private val debugLogging: Boolean = false
+) : SearchApi {
 
     companion object {
         private const val TAG = "CloudMusicSearchApi"
         private const val DEBUG_JSON_PREVIEW_MAX_CHARS = 512
     }
 
-    private val client: OkHttpClient = AppContainer.sharedOkHttpClient
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun search(keyword: String, page: Int): List<SongSearchInfo> {
@@ -177,7 +178,7 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
         val preview = json
             .replace(Regex("\\s+"), " ")
             .take(DEBUG_JSON_PREVIEW_MAX_CHARS)
-        if (BuildConfig.DEBUG) {
+        if (debugLogging) {
             NPLogger.d(TAG, "Response label=$label, length=${json.length}, preview=$preview")
             return
         }

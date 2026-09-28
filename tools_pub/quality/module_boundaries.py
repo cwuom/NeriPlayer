@@ -17,6 +17,7 @@ APP_FAMILIES = (
     "listentogether/session", "ui/screen/tab/settings/component",
     "core/player/queue", "data/sync/merge",
 )
+LIBRARY_OWNED_FAMILIES = ("core/api/search", "core/api/lyrics", "core/lyrics")
 FORBIDDEN_IMPORT = re.compile(
     r'^import moe\.ouom\.neriplayer\.(?:'
     r'core\.di\.|core\.player\.PlayerManager\b|ui\.|activity\.|'
@@ -122,6 +123,9 @@ def verify(root):
     for language in ("java", "kotlin"):
         app_sources = root / "app/src/main" / language
         verify_packages(root, app_sources, errors)
+        for family in LIBRARY_OWNED_FAMILIES:
+            for source in source_files(app_sources / "moe/ouom/neriplayer" / family):
+                errors.append(f"{source.relative_to(root)}: production code belongs in a library module")
         for family in APP_FAMILIES:
             verify_directory_capacity(root, app_sources / "moe/ouom/neriplayer" / family, errors)
     return errors

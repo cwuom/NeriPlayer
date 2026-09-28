@@ -4,7 +4,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.lyrics.isExternalLyricDurationCompatible
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import kotlin.math.abs
 
@@ -31,8 +30,9 @@ import kotlin.math.abs
  * Created: 2025/8/17
  */
 
-object SearchManager {
-    private const val MINIMUM_MATCH_SCORE = 60
+private const val MINIMUM_MATCH_SCORE = 60
+
+class SearchManager(private val searchApi: (MusicPlatform) -> SearchApi) {
 
     private val whitespaceRegex by lazy(LazyThreadSafetyMode.PUBLICATION) { Regex("\\s+") }
     private val artistSeparatorRegex by lazy(LazyThreadSafetyMode.PUBLICATION) {
@@ -163,13 +163,6 @@ object SearchManager {
                 "Failed to search $label for $keyword: ${e.message}"
             )
             emptyList()
-        }
-    }
-
-    private fun searchApi(platform: MusicPlatform): SearchApi {
-        return when (platform) {
-            MusicPlatform.CLOUD_MUSIC -> AppContainer.cloudMusicSearchApi
-            MusicPlatform.QQ_MUSIC -> AppContainer.qqMusicSearchApi
         }
     }
 

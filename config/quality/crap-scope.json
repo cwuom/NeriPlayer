@@ -1,5 +1,6 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/core/lyrics/PlainLyrics.kt",
     "moe/ouom/neriplayer/core/player/session/PlayerQueueSessionBindings.kt",
     "moe/ouom/neriplayer/core/player/queue/state/PlayerQueueStateStore.kt",
     "moe/ouom/neriplayer/core/player/queue/model/PlayerQueueSessionSnapshot.kt",
@@ -201,6 +202,21 @@
     "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/core/api/search/CloudMusicSearchApi.kt",
+      "class": "moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi",
+      "methods": ["<init>", "logResponseSummary"]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/api/search/QQMusicSearchApi.kt",
+      "class": "moe.ouom.neriplayer.core.api.search.QQMusicSearchApi",
+      "methods": ["<init>", "logDetailResponse"]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/api/search/SearchManager.kt",
+      "class": "moe.ouom.neriplayer.core.api.search.SearchManager",
+      "methods": ["<init>"]
+    },
     {
       "source": "moe/ouom/neriplayer/core/download/manager/batch/GlobalDownloadManagerCancellation.kt",
       "class": "moe.ouom.neriplayer.core.download.manager.batch.GlobalDownloadManagerCancellationKt",

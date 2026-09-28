@@ -28,16 +28,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.metadata.AmllLyricsResolver
+import moe.ouom.neriplayer.core.api.lyrics.amll.AmllLyricsResolver
 import moe.ouom.neriplayer.util.network.awaitResponse
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -169,10 +166,10 @@ private fun htmlUnescapeQQMusic(value: String): String {
 
 
 class QQMusicSearchApi(
-    private val amllTtmlClient: AmllTtmlClient = AppContainer.amllTtmlClient,
-    private val amllLyricsEnabledProvider: suspend () -> Boolean = {
-        AppContainer.settingsRepo.amllLyricsEnabledFlow.first()
-    }
+    private val client: OkHttpClient,
+    private val amllTtmlClient: AmllTtmlClient,
+    private val amllLyricsEnabledProvider: suspend () -> Boolean,
+    private val debugLogging: Boolean = false
 ) : SearchApi {
 
     companion object {
@@ -180,7 +177,6 @@ class QQMusicSearchApi(
         private const val DEBUG_JSON_PREVIEW_MAX_CHARS = 512
     }
 
-    private val client: OkHttpClient = AppContainer.sharedOkHttpClient
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun search(keyword: String, page: Int): List<SongSearchInfo> {
@@ -310,7 +306,7 @@ class QQMusicSearchApi(
         val preview = responseJson
             .replace(Regex("\\s+"), " ")
             .take(DEBUG_JSON_PREVIEW_MAX_CHARS)
-        if (BuildConfig.DEBUG) {
+        if (debugLogging) {
             NPLogger.d(TAG, "获取歌曲详情响应: label=$label, length=${responseJson.length}, preview=$preview")
             return
         }
