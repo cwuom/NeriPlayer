@@ -10,9 +10,12 @@ import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.batch.isFullLibraryDeleteCancellationSettled
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshPreserveReason
 import moe.ouom.neriplayer.core.download.model.remoteSourceStableKeyOrNull
+import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.policy.observeDownloadedSongReferencesFromSnapshot
 import moe.ouom.neriplayer.core.download.policy.partitionForBoundedParallelism
 import moe.ouom.neriplayer.core.download.policy.withDownloadClearRoomTimeout
@@ -43,6 +46,7 @@ import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildTok
 import moe.ouom.neriplayer.core.download.reconcile.EmptyScanDecision
 import moe.ouom.neriplayer.core.download.reconcile.EmptyScanObservation
 import moe.ouom.neriplayer.core.download.reconcile.ScanConfidence
+import moe.ouom.neriplayer.core.download.storage.migration.recovery.ManagedDownloadMigrationCheckpointStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.model.SongItem
@@ -93,7 +97,17 @@ internal fun GlobalDownloadManager.requestLocalScanLocked(
                 LegacyJsonCleanupScheduler.scheduleQuarantineRecovery(context)
             }
             val retryState = ManagedLibraryProcessingCoordinator.state.value
-            if (shouldCompleteProcessingAfterCatalogPublish(retryState)) {
+            val migrationRequestActive = if (
+                retryState is ManagedLibraryProcessingState.WaitingForRetry &&
+                    retryState.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE
+            ) {
+                runCatching {
+                    ManagedDownloadMigrationCheckpointStore(context).readRequest()?.autoResume == true
+                }.getOrDefault(true)
+            } else {
+                false
+            }
+            if (shouldCompleteProcessingAfterCatalogPublish(retryState, migrationRequestActive)) {
                 retryState.operationId?.let { operationId ->
                     if (latestOutcome is ManagedLibraryRefreshOutcome.Published) {
                         ManagedLibraryProcessingCoordinator.complete(context, operationId)
@@ -359,7 +373,8 @@ internal suspend fun GlobalDownloadManager.reloadDownloadedSongs(
             }
             refreshOutcome = ManagedLibraryRefreshOutcome.Published(
                 rootKey = scanRootKey,
-                songCount = songs.size
+                songCount = songs.size,
+                audioFileNames = songs.mapNotNull(DownloadedSong::resolvedLocalFileName).toSet()
             )
         }
         if (retryAfterDeletion) {
@@ -466,7 +481,13 @@ private suspend fun GlobalDownloadManager.refreshCatalogDuringFullLibraryDelete(
                         "全选删除待收敛时强制刷新目录: previous=${existingSongs.size}, " +
                             "missing=${missingSongs.size}, visible=${visibleSongs.size}"
                     )
-                    ManagedLibraryRefreshOutcome.Published(rootKey, visibleSongs.size)
+                    ManagedLibraryRefreshOutcome.Published(
+                        rootKey = rootKey,
+                        songCount = visibleSongs.size,
+                        audioFileNames = visibleSongs
+                            .mapNotNull(DownloadedSong::resolvedLocalFileName)
+                            .toSet()
+                    )
                 }
             }
         }

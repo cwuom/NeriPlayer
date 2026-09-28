@@ -88,13 +88,11 @@ internal object DocumentsFixture {
                     val roots = (listOfNotNull(activeRoot) +
                         automation.windows.mapNotNull { it.root }).distinctBy { it.windowId }
                     picker@ for (root in roots) {
-                        // 系统确认弹窗和选择器控件可能共用 android 根节点
                         val packageName = root.packageName?.toString()
-                        if (packageName !in setOf(
-                                "android", "com.android.documentsui", "com.google.android.documentsui"
-                            )) continue
-                        if (packageName == "android" && root.windowId != activeRoot?.windowId) continue
-                        val ids = if (now - selectedAt < 1_000L) listOf("android:id/button1") else listOf(
+                        val isPicker = packageName in setOf("com.android.documentsui", "com.google.android.documentsui")
+                        // 系统确认弹窗可能先于选择按钮出现，只点击当前活动的 android 窗口
+                        if (!isPicker && (packageName != "android" || root.windowId != activeRoot?.windowId)) continue
+                        val ids = if (!isPicker || now - selectedAt < 1_000L) listOf("android:id/button1") else listOf(
                             "android:id/button1",
                             "com.android.documentsui:id/action_menu_select",
                             "com.google.android.documentsui:id/action_menu_select"
