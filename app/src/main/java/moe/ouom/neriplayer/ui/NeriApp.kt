@@ -714,41 +714,39 @@ private fun NeriAppContent(
         dynamicColorEnabled,
         offlineMode
     ) {
-        val requestCoverUrl = playbackVisualCoverUrl
-        val requestSongKey = currentSongVisualKey
         if (!dynamicColorEnabled) {
             coverSeed = null
             return@LaunchedEffect
         }
-        if (requestCoverUrl.isNullOrBlank()) {
-            delay(PLAYBACK_COVER_SEED_GRACE_MS)
+        if (playbackVisualCoverUrl.isNullOrBlank()) {
+            delay(PLAYBACK_COVER_SEED_GRACE_MS.milliseconds)
             if (
                 latestPlaybackVisualCoverUrl.isNullOrBlank() &&
-                    latestPlaybackSongKey == requestSongKey
+                latestPlaybackSongKey == currentSongVisualKey
             ) {
                 coverSeed = null
             }
             return@LaunchedEffect
         }
-        val cachedSample = CoverArtColorCache.peek(requestCoverUrl)
+        val cachedSample = CoverArtColorCache.peek(playbackVisualCoverUrl)
         currentCoroutineContext().ensureActive()
         if (
             cachedSample != null &&
-                latestPlaybackVisualCoverUrl == requestCoverUrl &&
-                latestPlaybackSongKey == requestSongKey
+            latestPlaybackVisualCoverUrl == playbackVisualCoverUrl &&
+            latestPlaybackSongKey == currentSongVisualKey
         ) {
             coverSeed = PlaybackCoverSeed(
-                coverUrl = requestCoverUrl,
+                coverUrl = playbackVisualCoverUrl,
                 seedHex = cachedSample.seedHex,
-                songKey = requestSongKey
+                songKey = currentSongVisualKey
             )
         }
 
-        if (showNowPlaying && isRemoteImageSource(requestCoverUrl)) {
+        if (showNowPlaying && isRemoteImageSource(playbackVisualCoverUrl)) {
             coverArtImageLoader.enqueue(
                 offlineCachedImageRequest(
                     context = context,
-                    data = requestCoverUrl,
+                    data = playbackVisualCoverUrl,
                     sizePx = 256,
                     allowHardware = false,
                     offlineMode = offlineMode
@@ -762,19 +760,19 @@ private fun NeriAppContent(
             hasCachedSample = cachedSample != null
         )
         if (warmupDelayMillis > 0L) {
-            delay(warmupDelayMillis)
+            delay(warmupDelayMillis.milliseconds)
         }
 
-        CoverArtColorCache.preload(context, requestCoverUrl, offlineMode)?.let { sample ->
+        CoverArtColorCache.preload(context, playbackVisualCoverUrl, offlineMode)?.let { sample ->
             currentCoroutineContext().ensureActive()
             if (
-                latestPlaybackVisualCoverUrl == requestCoverUrl &&
-                    latestPlaybackSongKey == requestSongKey
+                latestPlaybackVisualCoverUrl == playbackVisualCoverUrl &&
+                latestPlaybackSongKey == currentSongVisualKey
             ) {
                 coverSeed = PlaybackCoverSeed(
-                    coverUrl = requestCoverUrl,
+                    coverUrl = playbackVisualCoverUrl,
                     seedHex = sample.seedHex,
-                    songKey = requestSongKey
+                    songKey = currentSongVisualKey
                 )
             }
         }
@@ -1144,7 +1142,7 @@ private fun NeriAppContent(
             }
             val currentRoute = backEntry?.destination?.route
             val visibleNavigationRoutes = remember(visibleNavigationEntries, currentRoute) {
-                buildSet<String?> {
+                buildSet {
                     visibleNavigationEntries.forEach { entry ->
                         add(entry.destination.route)
                     }
@@ -1196,21 +1194,20 @@ private fun NeriAppContent(
                 selectedMainTabRoute
             )
             LaunchedEffect(currentRoute, navHostStartDestination) {
-                val observedRoute = currentRoute
                 if (
                     shouldAcceptObservedMainTabRoute(
-                        observedRoute = observedRoute,
+                        observedRoute = currentRoute,
                         pendingRoute = pendingMainTabRoute
                     )
                 ) {
-                    selectedMainTabRoute = checkNotNull(observedRoute)
-                    if (pendingMainTabRoute == observedRoute) {
+                    selectedMainTabRoute = checkNotNull(currentRoute)
+                    if (pendingMainTabRoute == currentRoute) {
                         pendingMainTabRoute = null
                     }
                 }
             }
             var visibleMainTabGlassOwners by remember(navHostStartDestination) {
-                mutableStateOf<Set<MainTabGlassOwner>>(
+                mutableStateOf(
                     setOf(MainTabGlassOwner(navHostStartDestination))
                 )
             }
@@ -1280,7 +1277,7 @@ private fun NeriAppContent(
                     }
                     LauncherShortcutAction.ShuffleFavorites -> {
                         val playlistsReady = withTimeoutOrNull(
-                            LAUNCHER_SHORTCUT_PLAYLIST_READY_TIMEOUT_MS
+                            LAUNCHER_SHORTCUT_PLAYLIST_READY_TIMEOUT_MS.milliseconds
                         ) {
                             PlayerManager.localPlaylistsReadyFlow.first { ready -> ready }
                         } == true
@@ -1747,7 +1744,7 @@ private fun NeriAppContent(
                         snackbarHostState = snackbarHostState,
                         onMainTabSelected = ::navigateToMainTab,
                         onExpandNowPlaying = { showNowPlaying = true }
-                    ) { bottomBarLayoutInsets ->
+                    ) { _ ->
                         // Keep the effect on a stable layer outside NavHost transitions
                         Box(
                             modifier = Modifier
