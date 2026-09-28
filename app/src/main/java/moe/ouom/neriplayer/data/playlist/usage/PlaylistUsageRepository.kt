@@ -49,7 +49,7 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
-import moe.ouom.neriplayer.data.sync.github.SyncPlaylistUsageStatsMergePolicy
+import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync

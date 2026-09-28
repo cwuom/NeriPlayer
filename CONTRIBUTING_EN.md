@@ -413,8 +413,10 @@ and at most 16 direct source files per directory in libraries and app areas regi
   - `backup/`: playlist JSON backup/import and diff analysis.
   - `config/`: full app config import/export.
   - `sync/model/`: payload and conflict models shared by GitHub and WebDAV.
+  - `sync/merge/`: the shared merge entry point, playlist conflicts, ordering, and recent-play rules; `policy/` owns membership deletion and statistics merging.
+    `AndroidSyncMergeHost` provides system-playlist identities and messages through the merge host interface.
   - `sync/`: provider-neutral coordination, preferences, and cover mapping.
-  - `sync/github/`: GitHub transport, three-way merge, serialization, Data Saver,
+  - `sync/github/`: GitHub transport, sync orchestration, serialization, Data Saver,
     and secure storage.
   - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
 
@@ -725,9 +727,11 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 5. Missing-field or malformed snapshots must be cleaned before merging. `SyncSong`
    needs at least one of id, audioId, or mediaUri; deletion records also need a
    valid deletion time; songs with missing `addedAt` are low-priority display items.
-6. `CoverUrlMapper.kt` lives in provider-neutral `data/sync/`. Most merge logic
-   lives in `GitHubSyncManager.kt`; WebDAV reuses the same data model and much of
-   the merge behavior.
+6. `CoverUrlMapper.kt` lives in provider-neutral `data/sync/`. Both GitHub and WebDAV
+   use `data/sync/merge/SyncDataMerger.kt` for initial uploads and merging snapshots.
+   Shared merge components own business rules; the host resolves messages and system
+   playlists. Backends still coordinate transport retries, remote-version validation,
+   and local mutation-version checks.
 7. Do not break the delayed sync, periodic sync, validated-network checks, or retry
    behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`. GitHub writes must use
    the remote branch head and a non-force update, failing on conflicts rather than

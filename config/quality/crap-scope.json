@@ -1,5 +1,7 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/data/sync/merge/policy/SyncCounterShardPolicy.kt",
+    "moe/ouom/neriplayer/data/sync/merge/*.kt",
     "moe/ouom/neriplayer/core/comment/repository/NeteaseCommentPagination.kt",
     "moe/ouom/neriplayer/core/comment/CommentMemoryCache.kt",
     "moe/ouom/neriplayer/listentogether/network/*/*.kt",
@@ -193,6 +195,27 @@
     "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/data/sync/github/SyncPlaybackStatMapper.kt",
+      "class": "moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper",
+      "methods": ["normalizeCounterShards$app"]
+    },
+    {
+      "source": "moe/ouom/neriplayer/data/sync/github/GitHubSyncManager.kt",
+      "class": "moe.ouom.neriplayer.data.sync.github.GitHubSyncManager",
+      "methods": [
+        "performThreeWayMerge",
+        "buildInitialMergeResult"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/data/sync/webdav/WebDavSyncManager.kt",
+      "class": "moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager",
+      "methods": [
+        "performThreeWayMerge",
+        "buildInitialMergeResult"
+      ]
+    },
     {
       "source": "moe/ouom/neriplayer/core/comment/repository/BiliCommentRepository.kt",
       "class": "moe.ouom.neriplayer.core.comment.repository.BiliCommentRepository",

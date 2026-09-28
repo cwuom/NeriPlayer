@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.merge.policy
 
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
@@ -252,7 +252,7 @@ internal object SyncPlaybackStatsMergePolicy {
         playbackStatsClearedAt: Long
     ): SyncTrackStat? {
         if (!shouldKeepAfterClear(stat, playbackStatsClearedAt)) return null
-        val counterShards = SyncPlaybackStatMapper.normalizeCounterShards(stat.counterShards)
+        val counterShards = SyncCounterShardPolicy.normalizeCounterShards(stat.counterShards)
         if (playbackStatsClearedAt <= 0L) return stat.copy(
             counterShards = counterShards
         )
@@ -260,7 +260,7 @@ internal object SyncPlaybackStatsMergePolicy {
         val normalizedFirstPlayedAt = stat.firstPlayedAt
             .takeIf { it >= playbackStatsClearedAt && it <= stat.lastPlayedAt }
             ?: stat.lastPlayedAt
-        val normalizedShards = SyncPlaybackStatMapper.normalizeCounterShards(
+        val normalizedShards = SyncCounterShardPolicy.normalizeCounterShards(
             counterShards.filter { it.lastPlayedAt >= playbackStatsClearedAt }
         )
         return stat.copy(
@@ -276,7 +276,7 @@ internal object SyncPlaybackStatsMergePolicy {
         playbackStatsClearedAt: Long
     ): SyncPlaybackStatBucket? {
         if (!shouldKeepAfterClear(bucket, playbackStatsClearedAt)) return null
-        val counterShards = SyncPlaybackStatMapper.normalizeCounterShards(bucket.counterShards)
+        val counterShards = SyncCounterShardPolicy.normalizeCounterShards(bucket.counterShards)
         if (playbackStatsClearedAt <= 0L) return bucket.copy(
             counterShards = counterShards
         )
@@ -284,7 +284,7 @@ internal object SyncPlaybackStatsMergePolicy {
         val normalizedFirstPlayedAt = bucket.firstPlayedAt
             .takeIf { it >= playbackStatsClearedAt && it <= bucket.lastPlayedAt }
             ?: bucket.lastPlayedAt
-        val normalizedShards = SyncPlaybackStatMapper.normalizeCounterShards(
+        val normalizedShards = SyncCounterShardPolicy.normalizeCounterShards(
             counterShards.filter { it.lastPlayedAt >= playbackStatsClearedAt }
         )
         return bucket.copy(
@@ -391,7 +391,7 @@ internal object SyncPlaybackStatsMergePolicy {
         incomingBasePlayCount: Int,
         incomingShards: List<SyncPlaybackCounterShard>
     ): CounterMergeResult {
-        val shards = SyncPlaybackStatMapper.normalizeCounterShards(existingShards + incomingShards)
+        val shards = SyncCounterShardPolicy.normalizeCounterShards(existingShards + incomingShards)
         if (shards.isEmpty()) {
             return CounterMergeResult(
                 totalListenMs = maxOf(existingTotalListenMs, incomingTotalListenMs).coerceAtLeast(0L),

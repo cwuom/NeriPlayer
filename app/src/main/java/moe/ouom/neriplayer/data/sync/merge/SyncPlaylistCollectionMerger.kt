@@ -1,0 +1,94 @@
+package moe.ouom.neriplayer.data.sync.merge
+
+import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistDeletionPolicy
+import moe.ouom.neriplayer.data.sync.model.SyncConflict
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
+
+internal enum class SyncPlaylistChange { ADDED, UPDATED, DELETED, UNCHANGED }
+
+internal data class SyncPlaylistMergeEntry(
+    val playlist: SyncPlaylist,
+    val change: SyncPlaylistChange,
+    val songsAdded: Int = 0,
+    val songsRemoved: Int = 0,
+    val conflict: SyncConflict? = null,
+    val mapKey: Long = playlist.id
+)
+
+internal class SyncPlaylistCollectionResult(
+    val playlists: List<SyncPlaylist>,
+    private val entries: List<SyncPlaylistMergeEntry>
+) {
+    val playlistsAdded: Int get() = entries.count { it.change == SyncPlaylistChange.ADDED }
+    val playlistsUpdated: Int get() = entries.count { it.change == SyncPlaylistChange.UPDATED }
+    val playlistsDeleted: Int get() = entries.count { it.change == SyncPlaylistChange.DELETED }
+    val songsAdded: Int get() = entries.sumOf { it.songsAdded }
+    val songsRemoved: Int get() = entries.sumOf { it.songsRemoved }
+    val conflicts: List<SyncConflict> get() = entries.mapNotNull { it.conflict }
+}
+
+internal class SyncPlaylistCollectionMerger(host: SyncMergeHost) {
+    private val playlistMerger = SyncPlaylistMerger(host)
+
+    fun merge(
+        local: List<SyncPlaylist>,
+        remote: List<SyncPlaylist>,
+        lastSyncTime: Long,
+        deletions: List<SyncPlaylistSongDeletion>
+    ): SyncPlaylistCollectionResult {
+        val localById = local.associateBy { it.id }
+        val remoteById = remote.associateBy { it.id }
+        val entries = (localById.keys + remoteById.keys).mapNotNull { id ->
+            mergePair(localById[id], remoteById[id], lastSyncTime, deletions)
+        }
+        val mergedById = entries.associateBy({ it.mapKey }, { it.playlist })
+        return SyncPlaylistCollectionResult(
+            SyncPlaylistOrder.orderMergedPlaylists(local, remote, mergedById, lastSyncTime), entries
+        )
+    }
+
+    private fun mergePair(
+        local: SyncPlaylist?,
+        remote: SyncPlaylist?,
+        lastSyncTime: Long,
+        deletions: List<SyncPlaylistSongDeletion>
+    ): SyncPlaylistMergeEntry? = when {
+        local == null -> remote?.let(::unpaired)
+        remote == null -> unpaired(local)
+        local.isDeleted || remote.isDeleted -> mergeDeletedPair(local, remote, lastSyncTime, deletions)
+        else -> mergedEntry(playlistMerger.mergePlaylist(local, remote, lastSyncTime, deletions))
+    }
+
+    private fun unpaired(playlist: SyncPlaylist) = SyncPlaylistMergeEntry(
+        playlist,
+        if (playlist.isDeleted) SyncPlaylistChange.DELETED else SyncPlaylistChange.ADDED
+    )
+
+    private fun mergeDeletedPair(
+        local: SyncPlaylist,
+        remote: SyncPlaylist,
+        lastSyncTime: Long,
+        deletions: List<SyncPlaylistSongDeletion>
+    ): SyncPlaylistMergeEntry {
+        if (SyncPlaylistDeletionPolicy.shouldKeepPlaylistDeleted(local, remote)) {
+            return SyncPlaylistMergeEntry(
+                playlistMerger.mergeDeletedPlaylist(local, remote), SyncPlaylistChange.DELETED,
+                mapKey = local.id
+            )
+        }
+        val active = if (local.isDeleted) remote else local
+        val merged = playlistMerger.mergePlaylist(active, active, lastSyncTime, deletions)
+        return SyncPlaylistMergeEntry(
+            merged.playlist, SyncPlaylistChange.UPDATED, merged.songsAdded, merged.songsRemoved
+        )
+    }
+
+    private fun mergedEntry(merged: PlaylistMergeResult) = SyncPlaylistMergeEntry(
+        merged.playlist,
+        if (merged.isUpdated) SyncPlaylistChange.UPDATED else SyncPlaylistChange.UNCHANGED,
+        merged.songsAdded,
+        merged.songsRemoved,
+        merged.conflict
+    )
+}

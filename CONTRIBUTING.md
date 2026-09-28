@@ -365,8 +365,10 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `backup/`：本地歌单 JSON 备份、导入与差异分析。
   - `config/`：完整配置导入/导出。
   - `sync/model/`：GitHub 与 WebDAV 共用的同步载荷和冲突模型。
+  - `sync/merge/`：两个后端共用的合并入口、歌单冲突、排序和最近播放规则；`policy/` 管理成员删除与统计合并。
+    `AndroidSyncMergeHost` 提供系统歌单身份与文案，合并组件通过接口读取这些信息。
   - `sync/`：provider 无关的协调、偏好和封面映射。
-  - `sync/github/`：GitHub 传输、三路合并、序列化、省流模式和安全存储。
+  - `sync/github/`：GitHub 传输、同步编排、序列化、省流模式和安全存储。
   - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。
 
 - `modules/data/listen-together/src/main/java/moe/ouom/neriplayer/listentogether/network/`
@@ -621,7 +623,9 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
 5. 缺字段或畸形快照必须先清洗再合并；`SyncSong` 至少要有 id、audioId 或 mediaUri
    之一，删除记录还需要有效删除时间，缺失 `addedAt` 的歌曲只能作为低优先级展示项。
 6. `CoverUrlMapper.kt` 位于 provider 无关的 `data/sync/`；
-   合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
+   GitHub 与 WebDAV 的首次上传和双端合并统一调用 `data/sync/merge/SyncDataMerger.kt`。
+   业务规则在共享合并组件中维护，宿主负责资源文案与系统歌单解析；传输重试、
+   远端版本校验和本地 mutation version 检查仍由后端编排。
 7. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
    周期同步、validated network 检查和失败重试行为。GitHub 写入按远端分支头做
    非强制更新，冲突时必须失败而不是覆盖；WebDAV 无 ETag/Last-Modified 时仍需

@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.merge.policy
 
 import java.util.TreeMap
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
@@ -298,7 +298,7 @@ internal object SyncPlaylistUsageStatsMergePolicy {
         right: CounterInput,
         deriveOccurredAtFromCounterShards: Boolean = true
     ): MergedCounter {
-        val shards = SyncPlaybackStatMapper.normalizeCounterShards(
+        val shards = SyncCounterShardPolicy.normalizeCounterShards(
             left.counterShards + right.counterShards
         )
         if (shards.isEmpty()) {

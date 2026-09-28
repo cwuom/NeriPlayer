@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VE
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.sync.github.SyncPlaylistDeletionPolicy
+import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistDeletionPolicy
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertEquals

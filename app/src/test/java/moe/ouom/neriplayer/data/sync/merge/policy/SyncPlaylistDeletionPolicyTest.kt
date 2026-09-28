@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.merge.policy
 
 import com.google.gson.Gson
 import moe.ouom.neriplayer.data.model.identity

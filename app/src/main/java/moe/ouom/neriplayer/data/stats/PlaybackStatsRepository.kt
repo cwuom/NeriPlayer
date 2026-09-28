@@ -22,7 +22,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
-import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatsMergePolicy
+import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaybackStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker

@@ -17,8 +17,8 @@ import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.data.stats.resolvePlaybackStatsTimeRange
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
-import moe.ouom.neriplayer.data.sync.github.LocalPlaylistPlaybackSyncResult
-import moe.ouom.neriplayer.data.sync.github.SyncPlaylistUsageStatsMergePolicy
+import moe.ouom.neriplayer.data.sync.merge.policy.LocalPlaylistPlaybackSyncResult
+import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard

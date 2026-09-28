@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.merge.policy
 
 import moe.ouom.neriplayer.data.sync.model.CURRENT_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.SyncSong

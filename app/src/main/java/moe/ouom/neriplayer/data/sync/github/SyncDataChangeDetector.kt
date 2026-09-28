@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.sync.github
 
+import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.model.SyncData
 import moe.ouom.neriplayer.data.sync.model.SyncBiliVideoSkipMergePolicy
