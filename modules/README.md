@@ -18,6 +18,7 @@
 | `:data:bilibili` | [data/bilibili](data/bilibili) | Bilibili 客户端、评论、播放解析和账号仓库 |
 | `:data:youtube` | [data/youtube](data/youtube) | YouTube 客户端、播放解析、鉴权和 JavaScript 执行支持 |
 | `:data:lyrics` | [data/lyrics](data/lyrics) | 外部歌词客户端和匹配策略 |
+| `:data:listen-together` | [data/listen-together](data/listen-together) | 一起听 HTTP、WebSocket、地址校验和重连策略 |
 
 ## 🏗️ 依赖边界
 
@@ -26,6 +27,7 @@
 - Compose 页面、播放器与下载运行时、Room、Service 和 Worker 由 `app` 管理
 - 库所需的网络客户端、设备信息和配置由调用方注入，不通过 `AppContainer` 或 `PlayerManager` 获取宿主状态
 - 需要反映运行时变更的设置通过 provider 读取，避免在构造时保存过期快照
+- 一起听传输层接收宿主注入的 HTTP 客户端；会话状态、播放控制与生命周期由 `app` 协调
 - 模块专用资源与实现共同维护；例如 YouTube 的 JavaScript assets 和 consumer R8 规则归属 `:data:youtube`
 
 第三方 Git 子模块位于 [`np-submodule`](../np-submodule)。KSP 处理器和 Gradle convention plugin 属于构建工具，职责与运行时库分离。

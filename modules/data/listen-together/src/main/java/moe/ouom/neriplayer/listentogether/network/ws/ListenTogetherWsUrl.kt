@@ -17,7 +17,7 @@ fun buildListenTogetherWsUrl(baseUrl: String, roomId: String, token: String): St
     }
 }
 
-internal fun String?.redactListenTogetherWsUrlForLog(): String? {
+fun String?.redactListenTogetherWsUrlForLog(): String? {
     val raw = this ?: return null
     val parsed = raw.toHttpUrlOrNull() ?: return raw.substringBefore('?') + "?token=<redacted>"
     val redacted = parsed.newBuilder()

@@ -364,8 +364,11 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `sync/github/`：GitHub 传输、三路合并、序列化、省流模式和安全存储。
   - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。
 
+- `modules/data/listen-together/src/main/java/moe/ouom/neriplayer/listentogether/network/`
+  - HTTP、WebSocket、服务器地址校验和重连策略，依赖协议模型与注入的 HTTP 客户端。
+
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - `protocol/` 的房间、事件与传输模型已移到 `modules/core/listen-protocol`；`network/` 负责 HTTP/WebSocket 与重连，
+  - 房间、事件与传输模型位于 `modules/core/listen-protocol`，传输实现位于 `modules/data/listen-together`；
     `playback/` 负责队列、权威播放候选和进度同步，`control/`、`session/`、`invite/`、
     `mapping/`、`validation/` 分别承载控制、会话策略、邀请、模型映射和输入边界。
   - 根目录保留 `ListenTogetherSessionManager.kt` 与少量兼容入口；新增协议逻辑

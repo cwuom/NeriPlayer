@@ -18,7 +18,8 @@ plugins {
 
 val ownedLibraryPaths = listOf(
     ":core:lyrics", ":core:common", ":core:model", ":core:logging", ":core:network",
-    ":core:listen-protocol", ":data:netease", ":data:bilibili", ":data:youtube", ":data:lyrics"
+    ":core:listen-protocol", ":data:netease", ":data:bilibili", ":data:youtube", ":data:lyrics",
+    ":data:listen-together"
 )
 val libraryCoverageClasses = configurations.create("libraryCoverageClasses") {
     isCanBeConsumed = false

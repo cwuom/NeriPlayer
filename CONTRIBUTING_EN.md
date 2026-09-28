@@ -413,9 +413,12 @@ and at most 16 direct source files per directory in libraries and app areas regi
     and secure storage.
   - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
 
+- `modules/data/listen-together/src/main/java/moe/ouom/neriplayer/listentogether/network/`
+  - HTTP, WebSocket, server URL validation, and reconnect policies using protocol models and an injected HTTP client.
+
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - Room, event, and transport models from `protocol/` now live in `modules/core/listen-protocol`; `network/` owns
-    HTTP/WebSocket and reconnect behavior; `playback/` owns queues, authoritative
+  - Room, event, and transport models live in `modules/core/listen-protocol`; transport implementations live in
+    `modules/data/listen-together`; `playback/` owns queues, authoritative
     stream links, and position sync. `control/`, `session/`, `invite/`, `mapping/`,
     and `validation/` own their corresponding policies and boundaries.
   - The root retains `ListenTogetherSessionManager.kt` and a few compatibility

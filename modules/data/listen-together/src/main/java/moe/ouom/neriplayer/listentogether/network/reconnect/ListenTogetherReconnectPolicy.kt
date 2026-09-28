@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.listentogether.network.reconnect
 
-internal const val LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS = 15
+const val LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS = 15
 
-internal fun isTerminalListenTogetherReconnectError(errorMessage: String?): Boolean {
+fun isTerminalListenTogetherReconnectError(errorMessage: String?): Boolean {
     val normalized = errorMessage?.trim()?.lowercase().orEmpty()
     if (normalized.isBlank()) return false
     return isUnauthorizedReconnectError(normalized) ||
@@ -10,7 +10,7 @@ internal fun isTerminalListenTogetherReconnectError(errorMessage: String?): Bool
         isMissingRoomReconnectError(normalized)
 }
 
-internal fun listenTogetherReconnectDelayMs(attempt: Int): Long {
+fun listenTogetherReconnectDelayMs(attempt: Int): Long {
     val baseMs = when (attempt) {
         1 -> 1_500L
         2 -> 3_000L

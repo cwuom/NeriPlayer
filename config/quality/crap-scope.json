@@ -1,5 +1,6 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/listentogether/network/*/*.kt",
     "moe/ouom/neriplayer/data/storage/Storage*.kt",
     "moe/ouom/neriplayer/data/settings/AutoSettingsSchema.kt",
     "moe/ouom/neriplayer/data/settings/playback/PlaybackSettingsSection.kt",

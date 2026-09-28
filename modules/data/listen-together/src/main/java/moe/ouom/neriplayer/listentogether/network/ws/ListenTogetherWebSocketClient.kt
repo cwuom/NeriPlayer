@@ -13,9 +13,9 @@ import okhttp3.WebSocketListener
 
 private const val LISTEN_TOGETHER_MAX_WS_MESSAGE_CHARS = 2 * 1024 * 1024
 
-internal const val LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS = 35_000L
+const val LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS = 35_000L
 
-internal fun shouldReconnectListenTogetherSocket(
+fun shouldReconnectListenTogetherSocket(
     reconnectEnabled: Boolean,
     connectionState: ListenTogetherConnectionState,
     lastMessageAtElapsedMs: Long,

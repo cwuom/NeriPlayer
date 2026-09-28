@@ -32,7 +32,6 @@ import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
 import moe.ouom.neriplayer.listentogether.playback.toShareableShuffleRestoreQueueSnapshot
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherInitialSnapshot
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueMutation
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueOperation
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueReference

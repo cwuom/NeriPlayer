@@ -1,7 +1,6 @@
-package moe.ouom.neriplayer.listentogether
+package moe.ouom.neriplayer.listentogether.network.http
 
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
