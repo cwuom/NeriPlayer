@@ -1,5 +1,3 @@
-@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
-
 package moe.ouom.neriplayer.core.player.usb.sink
 
 import android.content.Context
@@ -11,43 +9,23 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
-import androidx.media3.exoplayer.audio.AudioSink
 import kotlin.math.abs
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
-import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveBackgroundAudioAnchorVolumeGuard
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridgeSubscription
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveEffectiveNativeVolume
 
 internal interface UsbExclusiveSinkVolumePort {
+    fun bitPerfect(): Boolean
     fun setNativeVolume(handle: Long, volume: Float)
     fun setFallbackVolume(volume: Float)
     fun publishVolume(volume: Float)
 }
 
-internal class AndroidUsbExclusiveSinkVolumePort(
-    private val fallbackSink: AudioSink,
-) : UsbExclusiveSinkVolumePort {
-    override fun setNativeVolume(handle: Long, volume: Float) {
-        UsbExclusiveSessionController.setPlayerVolume(handle, volume)
-    }
-
-    override fun setFallbackVolume(volume: Float) {
-        fallbackSink.setVolume(volume)
-    }
-
-    override fun publishVolume(volume: Float) {
-        UsbExclusiveAudioPathTracker.updateVolume(volume)
-    }
-}
-
 internal class UsbExclusiveSinkVolumeOwner(
     context: Context,
     observeSystemVolume: Boolean,
-    private val bitPerfect: () -> Boolean = { PlayerManager.usbExclusivePreferences.bitPerfect },
     private val port: UsbExclusiveSinkVolumePort,
 ) {
     private companion object {
@@ -124,7 +102,7 @@ internal class UsbExclusiveSinkVolumeOwner(
     fun effectiveNativeVolume(): Float = usbExclusiveEffectiveNativeVolume(
         playerVolume = playerVolume,
         systemVolumeFraction = cachedMusicVolumeFraction,
-        bitPerfect = bitPerfect(),
+        bitPerfect = port.bitPerfect(),
     )
 
     fun applyEffectiveNativeVolume(): Float {

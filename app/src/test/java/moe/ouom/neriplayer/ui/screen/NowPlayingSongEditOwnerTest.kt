@@ -52,6 +52,27 @@ class NowPlayingSongEditOwnerTest {
     }
 
     @Test
+    fun `editor save writes through playback port with matching current song`() = runTest {
+        val port = RecordingPlaybackPort()
+        val refreshed = song.copy(customName = "Updated title")
+        port.current = refreshed
+        val owner = owner(port)
+        val draft = EditSongLyricsDraft("edited", "translated", "romanized", false)
+
+        assertTrue(owner.saveEditorLyrics(song, draft))
+        val write = port.writes.single()
+        assertEquals(refreshed, write.song)
+        assertEquals("edited", write.lyric)
+        assertEquals("translated", write.translatedLyric)
+        assertEquals("romanized", write.romanizedLyric)
+        assertFalse(write.writeLocalMetadata)
+
+        port.current = song.copy(id = 999L)
+        assertTrue(owner.saveEditorLyrics(song, draft))
+        assertEquals(song, port.writes.last().song)
+    }
+
+    @Test
     fun `fill choice ignores missing selection and save lock then applies fields and lyric callback`() {
         val owner = owner()
         val candidate = SongSearchInfo(
@@ -283,7 +304,8 @@ class NowPlayingSongEditOwnerTest {
         val owner = NowPlayingSongEditOwner(
             initialSong = song, initialCoverUrl = "", initialBaseline = baseline.copy(coverUrl = ""),
             scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
-            onSavingChanged = {}
+            onSavingChanged = {},
+            playbackPort = RecordingPlaybackPort()
         )
         owner.applyResolvedCover(song, "content://cover/resolved")
         assertEquals("content://cover/resolved", owner.coverUrlState.value)
@@ -466,13 +488,26 @@ class NowPlayingSongEditOwnerTest {
         assertEquals(setOf("restore", "lyrics", "cover", "save"), cancelled)
     }
 
-    private fun owner() = NowPlayingSongEditOwner(
+    private fun owner(playbackPort: RecordingPlaybackPort = RecordingPlaybackPort()) = NowPlayingSongEditOwner(
         initialSong = song,
         initialCoverUrl = "current-cover",
         initialBaseline = baseline,
         scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
-        onSavingChanged = {}
+        onSavingChanged = {},
+        playbackPort = playbackPort
     )
+
+    private class RecordingPlaybackPort : NowPlayingSongEditPlaybackPort {
+        var current: SongItem? = null
+        val writes = mutableListOf<SongEditLyricsWrite>()
+
+        override fun currentSong(): SongItem? = current
+
+        override suspend fun saveLyrics(write: SongEditLyricsWrite): Boolean {
+            writes += write
+            return true
+        }
+    }
 
     private fun plan(
         pendingDraft: EditSongLyricsDraft? = null,

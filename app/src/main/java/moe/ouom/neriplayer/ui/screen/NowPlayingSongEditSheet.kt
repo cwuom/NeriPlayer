@@ -155,7 +155,8 @@ fun EditSongInfoSheet(
                 displayedRomanizedLyric = displayedRomanizedLyrics.toEditableLyricsText()
             ),
             scope = coroutineScope,
-            onSavingChanged = { onSavingChangedState.value(it) }
+            onSavingChanged = { onSavingChangedState.value(it) },
+            playbackPort = PlayerManagerNowPlayingSongEditPlaybackPort
         )
     }
     var coverUrl by owner.coverUrlState

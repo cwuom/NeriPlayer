@@ -16,11 +16,10 @@ class UsbExclusiveSinkVolumeOwnerTest {
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
         `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(null)
-        val port = RecordingVolumePort()
+        val port = RecordingVolumePort(bitPerfect = true)
         val owner = UsbExclusiveSinkVolumeOwner(
             context = context,
             observeSystemVolume = false,
-            bitPerfect = { true },
             port = port,
         )
         try {
@@ -50,7 +49,7 @@ class UsbExclusiveSinkVolumeOwnerTest {
         `when`(context.applicationContext).thenReturn(context)
         `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(null)
         val port = RecordingVolumePort()
-        val owner = UsbExclusiveSinkVolumeOwner(context, false, { false }, port)
+        val owner = UsbExclusiveSinkVolumeOwner(context, false, port)
         try {
             owner.setNativeHandle(7L)
             owner.setPlayerVolume(0.8f)
@@ -73,7 +72,7 @@ class UsbExclusiveSinkVolumeOwnerTest {
         `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(manager)
         `when`(manager.getStreamMinVolume(AudioManager.STREAM_MUSIC))
             .thenThrow(IllegalStateException("volume unavailable"))
-        val owner = UsbExclusiveSinkVolumeOwner(context, false, { true }, RecordingVolumePort())
+        val owner = UsbExclusiveSinkVolumeOwner(context, false, RecordingVolumePort(bitPerfect = true))
 
         owner.release()
     }
@@ -88,7 +87,7 @@ class UsbExclusiveSinkVolumeOwnerTest {
         `when`(manager.getStreamMinVolume(AudioManager.STREAM_MUSIC)).thenReturn(0)
         `when`(manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)).thenReturn(10)
         `when`(manager.getStreamVolume(AudioManager.STREAM_MUSIC)).thenReturn(5)
-        val owner = UsbExclusiveSinkVolumeOwner(context, false, { false }, RecordingVolumePort())
+        val owner = UsbExclusiveSinkVolumeOwner(context, false, RecordingVolumePort())
         try {
             verify(manager).getStreamVolume(AudioManager.STREAM_MUSIC)
         } finally {
@@ -96,10 +95,12 @@ class UsbExclusiveSinkVolumeOwnerTest {
         }
     }
 
-    private class RecordingVolumePort : UsbExclusiveSinkVolumePort {
+    private class RecordingVolumePort(private val bitPerfect: Boolean = false) : UsbExclusiveSinkVolumePort {
         val nativeVolumes = mutableListOf<Pair<Long, Float>>()
         val fallbackVolumes = mutableListOf<Float>()
         val publishedVolumes = mutableListOf<Float>()
+
+        override fun bitPerfect(): Boolean = bitPerfect
 
         override fun setNativeVolume(handle: Long, volume: Float) {
             nativeVolumes += handle to volume

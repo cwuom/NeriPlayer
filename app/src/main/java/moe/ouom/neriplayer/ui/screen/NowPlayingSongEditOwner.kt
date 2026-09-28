@@ -15,7 +15,6 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
@@ -31,7 +30,8 @@ internal class NowPlayingSongEditOwner(
     initialCoverUrl: String,
     initialBaseline: EditSongBaseline,
     private val scope: CoroutineScope,
-    private val onSavingChanged: (Boolean) -> Unit
+    private val onSavingChanged: (Boolean) -> Unit,
+    private val playbackPort: NowPlayingSongEditPlaybackPort
 ) {
     val coverUrlState = mutableStateOf(initialCoverUrl)
     val coverWasManuallyChangedState = mutableStateOf(false)
@@ -552,15 +552,14 @@ internal class NowPlayingSongEditOwner(
 
     private suspend fun writeLyricsForSave(song: SongItem, plan: EditSongLyricsSavePlan): Boolean {
         val draft = plan.draft ?: return true
-        return PlayerManager.updateSongLyricsAndTranslation(
-            songToUpdate = song,
-            newLyrics = restoredLyricsOrDraft(draft.lyric, originalLyric),
-            newTranslatedLyrics = restoredLyricsOrDraft(draft.translatedLyric, originalTranslatedLyric),
-            newRomanizedLyrics = restoredLyricsOrDraft(draft.romanizedLyric, originalRomanizedLyric),
+        return playbackPort.saveLyrics(SongEditLyricsWrite(
+            song = song,
+            lyric = restoredLyricsOrDraft(draft.lyric, originalLyric),
+            translatedLyric = restoredLyricsOrDraft(draft.translatedLyric, originalTranslatedLyric),
+            romanizedLyric = restoredLyricsOrDraft(draft.romanizedLyric, originalRomanizedLyric),
             writeLocalMetadata = plan.writeLyricsToLocalMetadata,
-            persistLocalSidecars = plan.persistLocalSidecars,
-            syncDownloadedMetadata = false
-        )
+            persistLocalSidecars = plan.persistLocalSidecars
+        ))
     }
 
     private fun restoredLyricsOrDraft(draft: String, original: String?): String? =
@@ -690,7 +689,7 @@ internal class NowPlayingSongEditOwner(
     }
 
     private fun latestSong(song: SongItem): SongItem =
-        latestMatchingEditSong(PlayerManager.currentSongFlow.value, song)
+        latestMatchingEditSong(playbackPort.currentSong(), song)
 
     fun importCover(
         context: android.content.Context,
@@ -755,18 +754,17 @@ internal class NowPlayingSongEditOwner(
     }
 
     private suspend fun persistEditedLyrics(song: SongItem, draft: EditSongLyricsDraft): Boolean =
-        PlayerManager.updateSongLyricsAndTranslation(
-            songToUpdate = latestSong(song),
-            newLyrics = draft.lyric,
-            newTranslatedLyrics = draft.translatedLyric,
-            newRomanizedLyrics = draft.romanizedLyric,
+        playbackPort.saveLyrics(SongEditLyricsWrite(
+            song = latestSong(song),
+            lyric = draft.lyric,
+            translatedLyric = draft.translatedLyric,
+            romanizedLyric = draft.romanizedLyric,
             writeLocalMetadata = draft.writeLocalMetadata,
             persistLocalSidecars = shouldPersistEditedSongLyricsLocally(
                 isLocalSong = song.isLocalSong(),
                 writeLocalMetadata = draft.writeLocalMetadata
-            ),
-            syncDownloadedMetadata = false
-        )
+            )
+        ))
 
     internal fun publishEditorLyricsSaveOutcome(outcome: Result<Boolean>, draft: EditSongLyricsDraft): Boolean {
         val saved = outcome.getOrElse { error ->
