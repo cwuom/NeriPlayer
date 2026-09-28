@@ -526,6 +526,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 ### 模块结构
 
+自有库位于 `modules/core/` 和 `modules/data/`，对应 `:core:*` 和 `:data:*` Gradle 模块。
+各模块职责、按功能细分的目录及维护约束见 [模块维护指南](modules/README.md)。
+
 - `:app`：Android 宿主、页面、播放/下载运行时及依赖组装。
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`：通用工具、共享模型、日志和网络基础能力。
 - `:core:lyrics` / `:core:listen-protocol`：歌词解析与转换、一起听协议模型。

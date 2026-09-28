@@ -681,6 +681,9 @@ For release build and signing details, see
 
 ### Module layout
 
+Owned libraries live under `modules/core/` and `modules/data/`, corresponding to the `:core:*` and `:data:*` Gradle modules.
+See the [module maintenance guide](modules/README.md) for responsibilities, feature directories, and maintenance checks.
+
 - `:app`: Android host, screens, playback/download runtime, and dependency assembly.
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`: shared utilities, models, logging, and networking.
 - `:core:lyrics` / `:core:listen-protocol`: lyric parsing/transforms and Listen Together protocol models.

@@ -13,13 +13,18 @@
 源码合并到 `app/build/reports/crap/sources`，重复路径直接报错；移动模块不会丢失原门禁。
 `:app:check` 执行 CRAP 门禁，Android CI 的 `verifyModularization` 还执行所有自有模块的
 lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
+
+自有库位于 `modules/core` 和 `modules/data`，Gradle 标识分别为 `:core:*` 和 `:data:*`。
+边界检查同时验证 `includeOwnedLibrary` 登记、孤立库、包名与目录一致性和目录容量；
+库主源码及 `module_boundaries.py` 中 `APP_FAMILIES` 登记的应用区域，每个目录最多 16 个直接源码文件，模块职责见
+[modules/README.md](../../modules/README.md)。移动路径时必须同步 CRAP source/method 选择器，不能减少原检查范围。
 单独查看完整报告可以运行 `./gradlew :app:crapReport`，该任务仍要求测试和报告输入有效，
 但不会因超分退出失败。
 
 报告位于 `app/build/reports/crap/`：
 
 - `methods.json`：能映射到 app 和自有库主源码的全部 JVM 方法，包含签名、位置、复杂度、覆盖率和分数
-- `above-8.md`：严格大于 8 的全部方法，包含不在本次门禁范围的既有代码
+- `above-8.md`：严格大于 8 的全部方法，包含门禁范围外的方法
 - `scope.md`：门禁范围内的全部方法
 - `coverage.xml`、`coverage/index.html`：真实测试采集结果
 
@@ -31,18 +36,18 @@ CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
 来源：[CRAP 原作者公式](https://www.artima.com/weblogs/viewpost.jsp?thread=215899)、
 [JaCoCo 计数器定义](https://www.jacoco.org/jacoco/trunk/doc/counters.html)。
 
-`config/quality/crap-scope.json` 的 `source_patterns` 对已拆出的组件和完整迁移的原文件
-实施整文件门禁。对于还在逐块拆分的原上帝类，`method_scopes` 精确列出本块改动的入口方法、
-构造方法和 Kotlin 默认参数方法；规则匹配不到 JaCoCo 方法时直接报错。其余方法仍进入
-`methods.json` 和 `above-8.md`，但不阻塞本块提交。
+`config/quality/crap-scope.json` 的 `source_patterns` 定义整文件检查范围，
+`method_scopes` 定义方法级检查范围，包括入口方法、构造方法和 Kotlin 默认参数方法。
+规则匹配不到 JaCoCo 方法时直接报错。范围外的方法仍进入 `methods.json` 和 `above-8.md`，
+用于风险分析，不参与门禁判定。
 范围内任意方法原始分数严格大于 9 时退出码为 1；分数等于 9 时通过。
 缺少 XML、无效计数器、空范围、范围匹配不到文件或范围文件无被测方法时退出码为 2。
 不使用平均分或历史 baseline 豁免；协程和 lambda 字节码同样保留，只使用 JaCoCo 内置的编译器过滤。
 新增拆分组件应位于已覆盖的文件模式内，或同时更新范围配置。原文件内受影响的方法也必须
 加入门禁；不能因为其既有分数较高而遗漏改动。
 
-Compose 编译器产生的分支会经过 [JaCoCo 内置过滤](https://www.jacoco.org/jacoco/trunk/doc/changes.html)，不能根据源码分支数或“未调用 composable”
-直接断言 CRAP 必然超分。评审时检查实际 `methods.json` 的复杂度、覆盖率和方法名；
+Compose 生成字节码使用 [JaCoCo 内置过滤](https://www.jacoco.org/jacoco/trunk/doc/changes.html)。
+复杂度和覆盖率以 `methods.json` 的实际计数器为准，源码分支数不等同于过滤后的 JVM 复杂度；
 JVM 门禁通过仍不能代替设备上的 Compose 行为测试。Kotlin `internal` 方法的 JVM 名称
 可能含模块后缀，移动方法时需按实际 XML 同步 `method_scopes`，不要改成宽泛匹配。
 

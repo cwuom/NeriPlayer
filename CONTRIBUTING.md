@@ -174,6 +174,9 @@
 
 #### 根模块
 
+自有库统一位于 `modules/core/` 和 `modules/data/`，Gradle 标识保持 `:core:*` / `:data:*`。
+职责与目录索引见 [modules/README.md](modules/README.md)。
+
 - `:app`
   - Android 宿主和依赖组装，保留页面、播放服务、下载、本地媒体与 Worker 适配层。
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`
@@ -203,9 +206,10 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
 不要通过全局容器恢复反向依赖。涉及 Room、服务生命周期和播放器的功能仍在 app，
 后续提取前应先设计窄接口，不要为了搬文件引入循环依赖。
 
-新增库需在 `settings.gradle.kts` 和 app 的 `ownedLibraryPaths` 登记，使用
+新增库需通过 `settings.gradle.kts` 的 `includeOwnedLibrary` 和 app 的 `ownedLibraryPaths` 登记，使用
 `build-logic.android.feature-library` convention，测试放在该模块 `src/test/`。
-`verifyModuleBoundaries` 检查依赖方向、循环、禁止导入和库主源码少于 2000 行的约束。
+`verifyModuleBoundaries` 检查依赖方向、循环、禁止导入、库位置、包名与目录一致性，
+以及库主源码少于 2000 行、库和 `APP_FAMILIES` 登记区域每个目录最多 16 个直接源码文件的约束。
 
 #### Android 客户端关键路径
 
@@ -236,7 +240,7 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `AdvancedLyricsView.kt` 与 `SyncedLyricsView.kt` 负责高级歌词排版、
     逐字/逐词高亮、翻译/音译显示、点击跳转和长按回调。
   - `LyricShareSheet.kt` 负责歌词行选择、复制、歌曲分享和歌词卡片生成。
-  - 共享歌词模型、LRC/YRC/TTML 解析和翻译对齐位于 `core/lyrics` 的 `core.lyrics` 包。
+  - 共享歌词模型、LRC/YRC/TTML 解析和翻译对齐位于 `modules/core/lyrics` 的 `core.lyrics` 包。
   - 旧 `AppleMusicLyric` 名称只存在于 `ui/component/LyricsCompatibility.kt`
     的 `@Deprecated` 包装中，新代码统一使用 `SyncedLyricsView`。
 
@@ -264,18 +268,18 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
 - `app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`
   - 首次启动引导，覆盖语言、平台账号、权限说明、播放控件、GitHub 同步和个性化设置。
 
-- `data/*/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `data/netease` 中的 `netease/`：网易云接口、加密和账号能力。
-  - `data/bilibili` 中的 `bili/`：Bilibili 搜索、二维码登录、收藏夹、合集、播放信息和音频播放解析。
+- `modules/data/*/src/main/java/moe/ouom/neriplayer/core/api/`
+  - `modules/data/netease` 中的 `netease/`：网易云接口、加密和账号能力。
+  - `modules/data/bilibili` 中的 `bili/`：Bilibili 搜索、二维码登录、收藏夹、合集、播放信息和音频播放解析。
     Explore 链接识别会保留 Bilibili 分 P、`cid` 和 `season_id` 上下文；
     改动时同步检查 `ExploreLinkRecognizer` 与 `ExploreViewModel`。
-  - `data/youtube` 中的 `youtube/`：YouTube Music 客户端（NewPipe Extractor）、
+  - `modules/data/youtube` 中的 `youtube/`：YouTube Music 客户端（NewPipe Extractor）、
     首页/歌单/搜索/播放、PoToken 和 JS Challenge 支持。
-  - `data/lyrics` 中的 `lyrics/`：外部歌词来源，当前实现为 `LrcLibClient`。
+  - `modules/data/lyrics` 中的 `lyrics/`：外部歌词来源，当前实现为 `LrcLibClient`。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `search/` 保留 `CloudMusicSearchApi` 与 `QQMusicSearchApi` 的宿主适配，接口和 DTO 位于 `core/model`。
-  - `lyrics/EditableLyricsMatcher` 组合平台能力与 `data/lyrics` 的匹配策略。
+  - `search/` 保留 `CloudMusicSearchApi` 与 `QQMusicSearchApi` 的宿主适配，接口和 DTO 位于 `modules/core/model`。
+  - `lyrics/EditableLyricsMatcher` 组合平台能力与 `modules/data/lyrics` 的匹配策略。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`：Media3 ExoPlayer 的统一管理层，
@@ -342,9 +346,9 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
     `MainActivity` 只负责协调这些组件与 UI 生命周期。
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `model/`：`SongIdentity` 与媒体模型扩展；共享的 `SongItem` 已移到 `core/model`。
+  - `model/`：`SongIdentity` 与媒体模型扩展；共享的 `SongItem` 已移到 `modules/core/model`。
   - `settings/`：`DataStore` 设置、KSP schema、启动快照、主题快照和播放偏好快照。
-  - `auth/`：宿主登录适配与 YouTube 轮换 Worker；各平台 Cookie / Auth 仓库位于对应 `data/*` 模块。
+  - `auth/`：宿主登录适配与 YouTube 轮换 Worker；各平台 Cookie / Auth 仓库位于对应 `modules/data/*` 模块。
   - `platform/netease/`：网易云平台侧缓存，当前包含歌单详情本地缓存。
   - `storage/`：存储占用分析、缓存分组和额外缓存清理。
   - `local/playlist/`：本地歌单 JSON 原子写入、系统歌单兼容、
@@ -361,7 +365,7 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - `protocol/` 的房间、事件与传输模型已移到 `core/listen-protocol`；`network/` 负责 HTTP/WebSocket 与重连，
+  - `protocol/` 的房间、事件与传输模型已移到 `modules/core/listen-protocol`；`network/` 负责 HTTP/WebSocket 与重连，
     `playback/` 负责队列、权威播放候选和进度同步，`control/`、`session/`、`invite/`、
     `mapping/`、`validation/` 分别承载控制、会话策略、邀请、模型映射和输入边界。
   - 根目录保留 `ListenTogetherSessionManager.kt` 与少量兼容入口；新增协议逻辑

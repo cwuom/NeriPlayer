@@ -195,6 +195,9 @@ Security reminders:
 
 #### Root modules
 
+Owned libraries live under `modules/core/` and `modules/data/`; Gradle identities remain `:core:*` / `:data:*`.
+See [modules/README.md](modules/README.md) for module responsibilities and the directory index.
+
 - `:app`
   - Android host and dependency assembly, including screens, playback services, downloads, local media, and Worker adapters.
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`
@@ -225,10 +228,11 @@ at call time, and inject clients and device tokens from `AppContainer`.
 Room, service lifecycles, and player integration remain in app; define narrow
 interfaces before extracting these responsibilities.
 
-Register new libraries in `settings.gradle.kts` and app's `ownedLibraryPaths`, use
+Register new libraries with `includeOwnedLibrary` in `settings.gradle.kts` and app's `ownedLibraryPaths`, use
 the `build-logic.android.feature-library` convention, and keep tests in their own
 `src/test/`. `verifyModuleBoundaries` checks dependency direction, cycles,
-forbidden imports, and the limit of fewer than 2000 lines per library source file.
+forbidden imports, library locations, package/directory alignment, fewer than 2000 lines per library source file,
+and at most 16 direct source files per directory in libraries and app areas registered in `APP_FAMILIES`.
 
 #### Android client key paths
 
@@ -263,7 +267,7 @@ forbidden imports, and the limit of fewer than 2000 lines per library source fil
     word/character highlighting, translation/phonetic display, click-to-seek,
     and long-press callbacks.
   - `LyricShareSheet.kt`: lyric-line selection, copy, song sharing, and lyric card generation.
-  - Shared lyric models, LRC/YRC/TTML parsing, and translation alignment live in the `core.lyrics` package in `core/lyrics`.
+  - Shared lyric models, LRC/YRC/TTML parsing, and translation alignment live in the `core.lyrics` package in `modules/core/lyrics`.
   - The old `AppleMusicLyric` name exists only as an `@Deprecated` wrapper in
     `ui/component/LyricsCompatibility.kt`. New code should use `SyncedLyricsView`.
 
@@ -294,20 +298,20 @@ forbidden imports, and the limit of fewer than 2000 lines per library source fil
   - First-run onboarding for language, platform accounts, permission guidance,
     playback controls, GitHub sync, and personalization.
 
-- `data/*/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `netease/` in `data/netease`: NetEase endpoints, crypto, and account capabilities.
-  - `bili/` in `data/bilibili`: Bilibili search, QR login, favorites, collections, playback info,
+- `modules/data/*/src/main/java/moe/ouom/neriplayer/core/api/`
+  - `netease/` in `modules/data/netease`: NetEase endpoints, crypto, and account capabilities.
+  - `bili/` in `modules/data/bilibili`: Bilibili search, QR login, favorites, collections, playback info,
     and audio playback resolution.
     Explore link recognition preserves Bilibili selected parts, `cid`, and
     `season_id` context; changes should check both `ExploreLinkRecognizer` and
     `ExploreViewModel`.
-  - `youtube/` in `data/youtube`: YouTube Music client based on NewPipe Extractor, home/playlist/search/playback,
+  - `youtube/` in `modules/data/youtube`: YouTube Music client based on NewPipe Extractor, home/playlist/search/playback,
     PoToken, and JS Challenge support.
-  - `lyrics/` in `data/lyrics`: external lyrics sources. Current implementation: `LrcLibClient`.
+  - `lyrics/` in `modules/data/lyrics`: external lyrics sources. Current implementation: `LrcLibClient`.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `search/` retains the `CloudMusicSearchApi` and `QQMusicSearchApi` host adapters; interfaces and DTOs live in `core/model`.
-  - `lyrics/EditableLyricsMatcher` coordinates platform capabilities and `data/lyrics` matching policies.
+  - `search/` retains the `CloudMusicSearchApi` and `QQMusicSearchApi` host adapters; interfaces and DTOs live in `modules/core/model`.
+  - `lyrics/EditableLyricsMatcher` coordinates platform capabilities and `modules/data/lyrics` matching policies.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`: unified Media3 ExoPlayer management, playback resolution, queue,
@@ -388,10 +392,10 @@ forbidden imports, and the limit of fewer than 2000 lines per library source fil
     `MainActivity` coordinates these components with the UI lifecycle.
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `model/`: `SongIdentity` and media model extensions; shared `SongItem` now lives in `core/model`.
+  - `model/`: `SongIdentity` and media model extensions; shared `SongItem` now lives in `modules/core/model`.
   - `settings/`: `DataStore` settings, KSP schema, bootstrap snapshot, theme snapshot,
     and playback preference snapshot.
-  - `auth/`: host login adapters and the YouTube rotation Worker; platform cookie/auth repositories live in the corresponding `data/*` modules.
+  - `auth/`: host login adapters and the YouTube rotation Worker; platform cookie/auth repositories live in the corresponding `modules/data/*` modules.
   - `platform/netease/`: NetEase platform-side caches, currently including playlist detail cache.
   - `storage/`: storage usage analysis, cache grouping, and extra cache cleanup.
   - `local/playlist/`: local playlist JSON atomic writes, system playlist compatibility,
@@ -410,7 +414,7 @@ forbidden imports, and the limit of fewer than 2000 lines per library source fil
   - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - Room, event, and transport models from `protocol/` now live in `core/listen-protocol`; `network/` owns
+  - Room, event, and transport models from `protocol/` now live in `modules/core/listen-protocol`; `network/` owns
     HTTP/WebSocket and reconnect behavior; `playback/` owns queues, authoritative
     stream links, and position sync. `control/`, `session/`, `invite/`, `mapping/`,
     and `validation/` own their corresponding policies and boundaries.
