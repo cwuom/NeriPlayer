@@ -2,12 +2,14 @@ package moe.ouom.neriplayer.core.api.lyrics.amll
 
 import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient
 import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlLyrics
+import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlSearchResult
 import moe.ouom.neriplayer.core.api.lyrics.isAmllDurationCompatible
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
 import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
 import kotlin.math.max
 
 data class AmllResolvedLyrics(
@@ -39,7 +41,7 @@ object AmllLyricsResolver {
         amllTtmlClient: AmllTtmlClient,
         requireDurationMatch: Boolean
     ): AmllResolvedLyrics? {
-        val results = runCatching {
+        val results = runCatchingNonCancellation {
             amllTtmlClient.searchLyrics(trackName, artistName)
         }.onFailure { error ->
             NPLogger.d(
@@ -56,28 +58,12 @@ object AmllLyricsResolver {
             return null
         }
         for (result in results) {
-            val lyrics = runCatching {
-                amllTtmlClient.getLyrics(result)
-            }.onFailure { error ->
-                NPLogger.d(
-                    "NERI-PlayerManager",
-                    "AMLL raw lyric request failed: song='$trackName', source=search:${result.file}, " +
-                        "error=${error.message}"
-                )
-            }.getOrNull()
-            if (lyrics == null) {
-                NPLogger.d(
-                    "NERI-PlayerManager",
-                    "AMLL raw lyric unavailable: song='$trackName', source=search:${result.file}"
-                )
-                continue
-            }
-            val resolved = parseUsableLyrics(
+            val resolved = loadUsableCandidate(
                 trackName = trackName,
                 durationMs = durationMs,
-                amllLyrics = lyrics,
-                requireDurationMatch = requireDurationMatch,
-                sourceLabel = "search:${result.file}"
+                result = result,
+                amllTtmlClient = amllTtmlClient,
+                requireDurationMatch = requireDurationMatch
             )
             if (resolved != null) {
                 return resolved
@@ -88,6 +74,38 @@ object AmllLyricsResolver {
             "AMLL lyrics search had no usable word-timed candidate: song='$trackName', artist='$artistName'"
         )
         return null
+    }
+
+    private suspend fun loadUsableCandidate(
+        trackName: String,
+        durationMs: Long,
+        result: AmllTtmlSearchResult,
+        amllTtmlClient: AmllTtmlClient,
+        requireDurationMatch: Boolean
+    ): AmllResolvedLyrics? {
+        val lyrics = runCatchingNonCancellation {
+            amllTtmlClient.getLyrics(result)
+        }.onFailure { error ->
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "AMLL raw lyric request failed: song='$trackName', source=search:${result.file}, " +
+                    "error=${error.message}"
+            )
+        }.getOrNull()
+        if (lyrics == null) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "AMLL raw lyric unavailable: song='$trackName', source=search:${result.file}"
+            )
+            return null
+        }
+        return parseUsableLyrics(
+            trackName = trackName,
+            durationMs = durationMs,
+            amllLyrics = lyrics,
+            requireDurationMatch = requireDurationMatch,
+            sourceLabel = "search:${result.file}"
+        )
     }
 
     private fun parseUsableLyrics(

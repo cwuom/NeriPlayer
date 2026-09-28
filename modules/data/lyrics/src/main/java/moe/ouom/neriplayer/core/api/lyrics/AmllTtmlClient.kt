@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.core.api.lyrics
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.network.awaitResponse
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -114,15 +116,17 @@ class AmllTtmlClient(
         )
     }
 
-    private suspend fun executeString(request: Request): String? = withContext(Dispatchers.IO) {
-        try {
-            okHttpClient.newCall(request).execute().use { response ->
+    private suspend fun executeString(request: Request): String? {
+        return try {
+            okHttpClient.newCall(request).awaitResponse { response ->
                 if (!response.isSuccessful) {
                     NPLogger.d(TAG, "AMLL request returned ${response.code} for ${request.url.redactedForLog()}")
-                    return@withContext null
+                    return@awaitResponse null
                 }
                 response.body.string().takeIf { it.isNotBlank() }
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             NPLogger.d(TAG, "AMLL request failed: ${error.message}")
             null

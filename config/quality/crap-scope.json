@@ -1,5 +1,6 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/core/api/lyrics/amll/AmllLyricsResolver.kt",
     "moe/ouom/neriplayer/core/lyrics/PlainLyrics.kt",
     "moe/ouom/neriplayer/core/player/session/PlayerQueueSessionBindings.kt",
     "moe/ouom/neriplayer/core/player/queue/state/PlayerQueueStateStore.kt",
@@ -202,6 +203,11 @@
     "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/core/api/lyrics/AmllTtmlClient.kt",
+      "class": "moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient",
+      "methods": ["executeString", "executeString$lambda$0"]
+    },
     {
       "source": "moe/ouom/neriplayer/ui/viewmodel/BackupRestoreViewModel.kt",
       "class": "moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel",

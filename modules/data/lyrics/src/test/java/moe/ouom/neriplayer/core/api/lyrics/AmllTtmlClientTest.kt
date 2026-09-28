@@ -7,12 +7,22 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AmllTtmlClientTest {
+    private val clients = mutableListOf<OkHttpClient>()
+
+    @After
+    fun closeClients() {
+        clients.forEach { client ->
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+    }
 
     @Test
     fun `scoreAmllSearchResult prefers matching title and artist`() {
@@ -73,6 +83,7 @@ class AmllTtmlClientTest {
                     .build()
             }
             .build()
+            .also { clients += it }
         val client = AmllTtmlClient(okHttpClient, baseUrl = "https://amll.test")
 
         val results = client.searchLyrics("Hello", "Expected Artist")
@@ -112,6 +123,7 @@ class AmllTtmlClientTest {
                     .build()
             }
             .build()
+            .also { clients += it }
         val client = AmllTtmlClient(okHttpClient, baseUrl = "https://amll.test")
 
         val results = client.searchLyrics(
