@@ -515,73 +515,78 @@ internal suspend fun GlobalDownloadManager.runCancellationConvergence(
             )
         }
         if (settled && isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
-            val operationRequests = runCatching {
-                loadCancellationConvergenceRequests(songKey, targetOperationIds) { ids ->
-                    DownloadExecutionRoomStore.readOperationSnapshots(context, ids)
-                }
-            }.getOrElse { error ->
-                NPLogger.w(
-                    TAG,
-                    "取消收敛读取持久 operation 失败，保留凭据: " +
-                        "songKey=$songKey, error=${error.message}",
-                    error
-                )
-                emptyList()
-            }
-            var cleanupSucceeded = true
-            operationRequests.forEach { request ->
-                if (!isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
-                    return
-                }
-                releaseDownloadArtifactAfterExecutionOwnershipLoss(
-                    context = context,
-                    song = request.song,
-                    operationId = request.operationId,
-                    expectedLeaseId = request.artifactLeaseId
-                )
-                cleanupSucceeded = cleanupCancelledDownloadArtifacts(
-                    context = context,
-                    song = request.song,
-                    operationId = request.operationId,
-                    keepCancellationOperation = true
-                ) && cleanupSucceeded
-            }
-            if (operationRequests.isEmpty() &&
-                targetOperationIds.isEmpty() &&
-                !snapshotBoundary
-            ) {
-                ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(
-                    context,
-                    setOf(songKey)
-                )
-            }
-            if (cleanupSucceeded && isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
-                DownloadExecutionRoomStore.finalizeRequestedCancellations(
-                    context = context,
-                    operationIds = operationRequests.map(DownloadExecutionRequest::operationId)
-                )
-                if (targetOperationIds.isEmpty() && !snapshotBoundary) {
-                    DownloadExecutionRoomStore.purgeCancelled(context, setOf(songKey))
-                } else if (targetOperationIds.isNotEmpty()) {
-                    DownloadExecutionRoomStore.purgeCancelledOperationIds(
-                        context = context,
-                        operationIds = targetOperationIds
-                    )
-                } else {
-                    NPLogger.d(
+            val converged = runCancellationConvergenceRound(
+                loadRequests = {
+                    loadCancellationConvergenceRequests(songKey, targetOperationIds) { ids ->
+                        DownloadExecutionRoomStore.readOperationSnapshots(context, ids)
+                    }
+                },
+                onReadFailure = { error ->
+                    NPLogger.w(
                         TAG,
-                        "取消收敛缺少可删除的旧 operation，保留替代请求: " +
-                            "songKey=$songKey"
+                        "取消收敛读取持久 operation 失败，保留凭据: " +
+                            "songKey=$songKey, error=${error.message}",
+                        error
                     )
+                },
+                cleanup = cleanup@{ operationRequests ->
+                    var cleanupSucceeded = true
+                    operationRequests.forEach { request ->
+                        if (!isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
+                            return@cleanup false
+                        }
+                        releaseDownloadArtifactAfterExecutionOwnershipLoss(
+                            context = context,
+                            song = request.song,
+                            operationId = request.operationId,
+                            expectedLeaseId = request.artifactLeaseId
+                        )
+                        cleanupSucceeded = cleanupCancelledDownloadArtifacts(
+                            context = context,
+                            song = request.song,
+                            operationId = request.operationId,
+                            keepCancellationOperation = true
+                        ) && cleanupSucceeded
+                    }
+                    if (operationRequests.isEmpty() &&
+                        targetOperationIds.isEmpty() &&
+                        !snapshotBoundary
+                    ) {
+                        ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(
+                            context,
+                            setOf(songKey)
+                        )
+                    }
+                    cleanupSucceeded && isCancellationCleanupStillCurrent(songKey, cancellationGeneration)
+                },
+                finish = { operationRequests ->
+                    DownloadExecutionRoomStore.finalizeRequestedCancellations(
+                        context = context,
+                        operationIds = operationRequests.map(DownloadExecutionRequest::operationId)
+                    )
+                    if (targetOperationIds.isEmpty() && !snapshotBoundary) {
+                        DownloadExecutionRoomStore.purgeCancelled(context, setOf(songKey))
+                    } else if (targetOperationIds.isNotEmpty()) {
+                        DownloadExecutionRoomStore.purgeCancelledOperationIds(
+                            context = context,
+                            operationIds = targetOperationIds
+                        )
+                    } else {
+                        NPLogger.d(
+                            TAG,
+                            "取消收敛缺少可删除的旧 operation，保留替代请求: " +
+                                "songKey=$songKey"
+                        )
+                    }
+                    clearSongCancelled(songKey)
+                    if (!downloadedSongDeletionCounts.containsKey(songKey)) {
+                        wakeDownloadExecutionPump(context, "single_cancel_converged")
+                    }
+                    NPLogger.d(TAG, "取消收敛完成: songKey=$songKey")
+                    clearCancellationTracking(songKey, targetOperationIds)
                 }
-                clearSongCancelled(songKey)
-                if (!downloadedSongDeletionCounts.containsKey(songKey)) {
-                    wakeDownloadExecutionPump(context, "single_cancel_converged")
-                }
-                NPLogger.d(TAG, "取消收敛完成: songKey=$songKey")
-                clearCancellationTracking(songKey, targetOperationIds)
-                return
-            }
+            )
+            if (converged || !isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) return
         }
         val retryDelayMs = cancellationConvergenceDelayMs(attemptIndex + 1)
         if (retryDelayMs != null) {
@@ -617,13 +622,17 @@ internal suspend fun loadCancellationConvergenceRequests(
         .filter { (operationId, snapshot) ->
             operationId in operationIds &&
                 snapshot.request.operationId == operationId &&
-                snapshot.state in DownloadExecutionRoomStore.CANCELLATION_CANDIDATE_OPERATION_STATES &&
+                isCancellationConvergenceCleanupState(snapshot.state) &&
                 snapshot.request.song.stableKey() == songKey
         }
         .map { (_, snapshot) -> snapshot.request }
         .distinctBy(DownloadExecutionRequest::operationId)
         .toList()
 }
+
+private fun isCancellationConvergenceCleanupState(state: String): Boolean =
+    // CANCELLED 只表示执行已退出，目录清理可能仍未完成
+    state == "CANCELLED" || state in DownloadExecutionRoomStore.CANCELLATION_CANDIDATE_OPERATION_STATES
 
 internal fun GlobalDownloadManager.requestAllDownloadTaskCancellation(
     purpose: DownloadClearPurpose = DownloadClearPurpose.TASK_PROGRESS,

@@ -1,5 +1,6 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/core/download/manager/batch/DownloadCancellationConvergenceRound.kt",
     "moe/ouom/neriplayer/data/sync/merge/policy/SyncCounterShardPolicy.kt",
     "moe/ouom/neriplayer/data/sync/merge/*.kt",
     "moe/ouom/neriplayer/core/comment/repository/NeteaseCommentPagination.kt",
@@ -195,6 +196,14 @@
     "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/core/download/manager/batch/GlobalDownloadManagerCancellation.kt",
+      "class": "moe.ouom.neriplayer.core.download.manager.batch.GlobalDownloadManagerCancellationKt",
+      "methods": [
+        "loadCancellationConvergenceRequests",
+        "isCancellationConvergenceCleanupState"
+      ]
+    },
     {
       "source": "moe/ouom/neriplayer/data/sync/github/SyncPlaybackStatMapper.kt",
       "class": "moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper",
