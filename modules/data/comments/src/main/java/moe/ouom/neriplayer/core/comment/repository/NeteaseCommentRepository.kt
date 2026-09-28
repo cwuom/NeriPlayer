@@ -16,24 +16,19 @@ import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.CommentSort
 import org.json.JSONObject
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 
-/**
- * 网易云评论仓库。
- *
- * 复用项目已有的 [AppContainer.neteaseClient] (同一条 HTTP / Cookie / 加密链路)，
- * 不新建任何网易云网络层 (§16/§20/§35)。
- */
-internal class NeteaseCommentRepository(
-    private val clientProvider: () -> NeteaseClient = { AppContainer.neteaseClient }
+/** 由宿主注入共享客户端，沿用相同的 HTTP、Cookie 和加密链路 */
+class NeteaseCommentRepository(
+    private val cache: CommentMemoryCache,
+    private val clientProvider: () -> NeteaseClient
 ) : CommentRepository {
 
     override val platform: CommentPlatform = CommentPlatform.NETEASE
 
     override suspend fun cachedComments(source: CommentSource, pageSize: Int, sort: CommentSort): CommentPage? {
         require(source.platform == platform)
-        return CommentMemoryCache.get(platform.name, source.resourceId, 1, sort, pageSize,
+        return cache.get(platform.name, source.resourceId, 1, sort, pageSize,
             sessionKey = clientProvider().commentCacheSessionKey())
     }
 
@@ -50,7 +45,7 @@ internal class NeteaseCommentRepository(
         val client = clientProvider()
         val sessionKey = client.commentCacheSessionKey()
         if (!forceRefresh) {
-            CommentMemoryCache.get(platform.name, resourceId, page, sort, pageSize, cursor, sessionKey)?.let { return it }
+            cache.get(platform.name, resourceId, page, sort, pageSize, cursor, sessionKey)?.let { return it }
         }
 
         // 只记录非敏感上下文, 不打印评论正文 / Cookie (§36)
@@ -71,14 +66,10 @@ internal class NeteaseCommentRepository(
         }
 
         val result = parseNeteaseCommentPage(raw, page = page, pageSize = pageSize)
-        val stalledTimeCursor = sort == CommentSort.NEWEST &&
-            (result.nextCursor.isNullOrBlank() || result.nextCursor == cursor)
-        if (result.hasMore && (result.comments.isEmpty() || stalledTimeCursor)) {
-            throw CommentApiException(200, CommentError.API, "NetEase comment pagination did not advance")
-        }
+        requireNeteaseCommentProgress(result, sort, cursor)
         if (sessionKey == client.commentCacheSessionKey()) {
-            if (forceRefresh && page == 1) CommentMemoryCache.invalidate(platform.name, resourceId)
-            CommentMemoryCache.put(platform.name, resourceId, page, result, sort, pageSize, cursor, sessionKey)
+            if (forceRefresh && page == 1) cache.invalidate(platform.name, resourceId)
+            cache.put(platform.name, resourceId, page, result, sort, pageSize, cursor, sessionKey)
         }
         return result
     }
@@ -94,7 +85,7 @@ internal class NeteaseCommentRepository(
                 throw CommentApiException(code, neteaseCommentError(code), "NetEase comment like failed: $code")
             }
         } finally {
-            CommentMemoryCache.invalidate(platform.name, source.resourceId)
+            cache.invalidate(platform.name, source.resourceId)
         }
     }
 
@@ -124,7 +115,7 @@ internal class NeteaseCommentRepository(
                 throw CommentApiException(code, neteaseCommentError(code), "NetEase comment send failed: $code")
             }
         } finally {
-            CommentMemoryCache.invalidate(platform.name, source.resourceId)
+            cache.invalidate(platform.name, source.resourceId)
         }
     }
 

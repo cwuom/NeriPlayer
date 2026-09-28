@@ -24,7 +24,7 @@ import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
 import moe.ouom.neriplayer.core.comment.model.commentLengthLimit
 import moe.ouom.neriplayer.core.comment.model.SongComment
 import moe.ouom.neriplayer.core.comment.repository.CommentRepository
-import moe.ouom.neriplayer.core.comment.repository.commentRepositoryFor
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.collections.mergeDistinctBy
 import moe.ouom.neriplayer.util.concurrent.RequestGeneration
@@ -143,7 +143,7 @@ internal class CommentViewModel : ViewModel() {
     private var sendJob: Job? = null
 
     /** 仓库工厂, 单元测试可替换 (生产环境即按平台分发) */
-    internal var repositoryFactory: (CommentPlatform) -> CommentRepository = ::commentRepositoryFor
+    internal var repositoryFactory: (CommentPlatform) -> CommentRepository = { AppContainer.commentRepositoryFor(it) }
 
     /**
      * 歌曲切换 / 打开评论弹窗时调用。

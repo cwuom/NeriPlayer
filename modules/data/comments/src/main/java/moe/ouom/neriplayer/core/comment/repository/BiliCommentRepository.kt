@@ -16,12 +16,12 @@ import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.CommentSort
 import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
 import moe.ouom.neriplayer.core.comment.model.commentLengthLimit
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 
-internal class BiliCommentRepository(
-    private val clientProvider: () -> BiliClient = { AppContainer.biliClient }
+class BiliCommentRepository(
+    private val cache: CommentMemoryCache,
+    private val clientProvider: () -> BiliClient
 ) : CommentRepository {
 
     override val platform: CommentPlatform = CommentPlatform.BILIBILI
@@ -31,7 +31,7 @@ internal class BiliCommentRepository(
     override suspend fun cachedComments(source: CommentSource, pageSize: Int, sort: CommentSort): CommentPage? {
         require(source.platform == platform)
         val resourceId = synchronized(resolvedResourceIds) { resolvedResourceIds[source] } ?: return null
-        return CommentMemoryCache.get(platform.name, resourceId, 1, sort, pageSize,
+        return cache.get(platform.name, resourceId, 1, sort, pageSize,
             sessionKey = clientProvider().commentCacheSessionKey())
     }
 
@@ -49,7 +49,7 @@ internal class BiliCommentRepository(
         val client = clientProvider()
         val sessionKey = client.commentCacheSessionKey()
         if (!forceRefresh) {
-            CommentMemoryCache.get(platform.name, resourceId, page, sort, pageSize, cursor, sessionKey)?.let { return it }
+            cache.get(platform.name, resourceId, page, sort, pageSize, cursor, sessionKey)?.let { return it }
         }
 
         NPLogger.d(TAG, "load comments: platform=BILIBILI, resourceId=$resourceId, page=$page")
@@ -58,8 +58,8 @@ internal class BiliCommentRepository(
         }
         val result = parseBiliCommentPage(root, page, pageSize)
         if (sessionKey == client.commentCacheSessionKey()) {
-            if (forceRefresh && page == 1) CommentMemoryCache.invalidate(platform.name, resourceId)
-            CommentMemoryCache.put(platform.name, resourceId, page, result, sort, pageSize, cursor, sessionKey)
+            if (forceRefresh && page == 1) cache.invalidate(platform.name, resourceId)
+            cache.put(platform.name, resourceId, page, result, sort, pageSize, cursor, sessionKey)
         }
         return result
     }
@@ -76,7 +76,7 @@ internal class BiliCommentRepository(
                 throw CommentApiException(code, biliCommentError(code), "Bili comment like failed: $code")
             }
         } finally {
-            CommentMemoryCache.invalidate(platform.name, resourceId)
+            cache.invalidate(platform.name, resourceId)
         }
     }
 
@@ -149,7 +149,7 @@ internal class BiliCommentRepository(
                 throw CommentApiException(code, biliCommentError(code), "Bili comment send failed: $code")
             }
         } finally {
-            CommentMemoryCache.invalidate(platform.name, resourceId)
+            cache.invalidate(platform.name, resourceId)
         }
     }
 

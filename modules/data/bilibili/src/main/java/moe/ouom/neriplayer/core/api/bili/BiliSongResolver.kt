@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.core.api.bili
  * Updated: 2026/3/23
  */
 
-import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.model.SongItem
 import kotlinx.coroutines.CancellationException
 
@@ -37,17 +37,17 @@ data class ResolvedBiliSong(
     val pageInfo: BiliClient.VideoPage?
 )
 
-internal fun buildBiliSongAlbum(
+fun buildBiliSongAlbum(
     cid: Long? = null,
     bvid: String? = null
 ): String {
     val normalizedCid = cid?.takeIf { it > 0L }
     val normalizedBvid = bvid?.trim()?.takeIf { it.isNotEmpty() }
     if (normalizedCid == null && normalizedBvid == null) {
-        return PlayerManager.BILI_SOURCE_TAG
+        return SongSourceTags.BILIBILI
     }
     return buildString {
-        append(PlayerManager.BILI_SOURCE_TAG)
+        append(SongSourceTags.BILIBILI)
         append('|')
         normalizedCid?.let(::append)
         normalizedBvid?.let {
@@ -128,7 +128,7 @@ suspend fun resolveBiliSong(song: SongItem, client: BiliClient): ResolvedBiliSon
 }
 
 internal fun SongItem.toBiliResolutionSongOrNull(): SongItem? {
-    val biliAlbum = album.startsWith(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true)
+    val biliAlbum = album.startsWith(SongSourceTags.BILIBILI, ignoreCase = true)
     if (!biliAlbum && !channelId.equals("bilibili", ignoreCase = true)) return null
     // 本地歌曲的 id 可能是稳定键摘要，明确保存的来源 avid 优先
     val avid = audioId?.trim()?.toLongOrNull()?.takeIf { it > 0L }
@@ -142,9 +142,9 @@ internal fun SongItem.toBiliResolutionSongOrNull(): SongItem? {
     )
 }
 
-internal fun SongItem.biliCidOrNull(): Long? {
+fun SongItem.biliCidOrNull(): Long? {
     val isBiliSong = channelId.equals("bilibili", ignoreCase = true) ||
-        album.startsWith(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true)
+        album.startsWith(SongSourceTags.BILIBILI, ignoreCase = true)
     if (!isBiliSong) return null
 
     return subAudioId
@@ -159,9 +159,9 @@ internal fun SongItem.biliCidOrNull(): Long? {
             ?.takeIf { it > 0L }
 }
 
-internal fun SongItem.biliBvidOrNull(): String? {
+fun SongItem.biliBvidOrNull(): String? {
     val isBiliSong = channelId.equals("bilibili", ignoreCase = true) ||
-        album.startsWith(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true)
+        album.startsWith(SongSourceTags.BILIBILI, ignoreCase = true)
     if (!isBiliSong) return null
 
     return album

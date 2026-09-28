@@ -90,6 +90,11 @@ import moe.ouom.neriplayer.data.platform.youtube.isYouTubeInnertubeHost
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureDisabledException
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.comment.CommentMemoryCache
+import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import moe.ouom.neriplayer.core.comment.repository.CommentRepository
+import moe.ouom.neriplayer.core.comment.repository.BiliCommentRepository
+import moe.ouom.neriplayer.core.comment.repository.NeteaseCommentRepository
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
@@ -358,6 +363,15 @@ object AppContainer {
     }
 
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
+
+    private val commentCache = CommentMemoryCache()
+    private val neteaseComments = NeteaseCommentRepository(commentCache) { neteaseClient }
+    private val biliComments = BiliCommentRepository(commentCache) { biliClient }
+
+    internal fun commentRepositoryFor(platform: CommentPlatform): CommentRepository = when (platform) {
+        CommentPlatform.NETEASE -> neteaseComments
+        CommentPlatform.BILIBILI -> biliComments
+    }
     internal val biliSponsorBlockRepository by lazy { BiliSponsorBlockRepository(sharedOkHttpClient) }
     internal val biliVideoSkipRepository by lazy { BiliVideoSkipRepository.getInstance(application) }
     private val youtubeMusicClientDelegate = lazy {

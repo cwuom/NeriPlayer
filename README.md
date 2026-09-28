@@ -532,6 +532,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `:app`：Android 宿主、页面、播放/下载运行时及依赖组装。
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`：通用工具、共享模型、日志和网络基础能力。
 - `:core:lyrics` / `:core:listen-protocol`：歌词解析与转换、一起听协议模型。
+- `:data:comments` / `:data:listen-together`：跨平台评论仓库和一起听传输层，宿主负责注入客户端与管理生命周期。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`：平台 API、账号和播放源解析。
 - `:data:lyrics`：歌词来源和匹配策略。
 - `:ksp-annotations` / `:ksp-processor`：设置项自动登记与生成。

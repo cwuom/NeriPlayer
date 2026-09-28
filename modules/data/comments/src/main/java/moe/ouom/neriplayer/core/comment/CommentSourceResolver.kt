@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.api.bili.biliBvidOrNull
 import moe.ouom.neriplayer.core.api.bili.biliCidOrNull
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
-import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal const val BILIBILI_CHANNEL_ID = "bilibili"
@@ -22,7 +22,7 @@ internal const val NETEASE_CHANNEL_ID = "netease"
  *
  * @return 平台不支持评论时返回 null (本地歌曲 / YouTube Music / 未知来源)
  */
-internal fun resolveCommentSource(song: SongItem?): CommentSource? {
+fun resolveCommentSource(song: SongItem?): CommentSource? {
     if (song == null) return null
 
     val channelId = song.channelId?.trim()?.lowercase(Locale.ROOT).orEmpty()
@@ -30,10 +30,10 @@ internal fun resolveCommentSource(song: SongItem?): CommentSource? {
         channelId == BILIBILI_CHANNEL_ID -> CommentPlatform.BILIBILI
         channelId == NETEASE_CHANNEL_ID -> CommentPlatform.NETEASE
         // channelId 缺失或未知时, 才回退到 album 的来源标记
-        song.album.startsWith(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true) ->
+        song.album.startsWith(SongSourceTags.BILIBILI, ignoreCase = true) ->
             CommentPlatform.BILIBILI
 
-        song.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG, ignoreCase = true) ->
+        song.album.startsWith(SongSourceTags.NETEASE, ignoreCase = true) ->
             CommentPlatform.NETEASE
 
         else -> null

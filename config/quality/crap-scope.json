@@ -1,5 +1,7 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/core/comment/repository/NeteaseCommentPagination.kt",
+    "moe/ouom/neriplayer/core/comment/CommentMemoryCache.kt",
     "moe/ouom/neriplayer/listentogether/network/*/*.kt",
     "moe/ouom/neriplayer/data/storage/Storage*.kt",
     "moe/ouom/neriplayer/data/settings/AutoSettingsSchema.kt",
@@ -191,6 +193,88 @@
     "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/core/comment/repository/BiliCommentRepository.kt",
+      "class": "moe.ouom.neriplayer.core.comment.repository.BiliCommentRepository",
+      "methods": [
+        "<init>",
+        "cachedComments",
+        "loadComments",
+        "setLiked",
+        "sendComment"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/comment/repository/BiliCommentRepository.kt",
+      "class": "moe.ouom.neriplayer.core.comment.repository.BiliCommentRepository$loadComments$root$1",
+      "methods": [
+        "invokeSuspend"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/comment/repository/BiliCommentRepository.kt",
+      "class": "moe.ouom.neriplayer.core.comment.repository.BiliCommentRepository$setLiked$root$1",
+      "methods": [
+        "invokeSuspend"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/comment/repository/BiliCommentRepository.kt",
+      "class": "moe.ouom.neriplayer.core.comment.repository.BiliCommentRepository$sendComment$root$1",
+      "methods": [
+        "invokeSuspend"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/comment/repository/NeteaseCommentRepository.kt",
+      "class": "moe.ouom.neriplayer.core.comment.repository.NeteaseCommentRepository",
+      "methods": [
+        "<init>",
+        "cachedComments",
+        "loadComments",
+        "setLiked",
+        "sendComment"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/comment/repository/NeteaseCommentRepository.kt",
+      "class": "moe.ouom.neriplayer.core.comment.repository.NeteaseCommentRepository$loadComments$raw$1",
+      "methods": [
+        "invokeSuspend"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/comment/repository/NeteaseCommentRepository.kt",
+      "class": "moe.ouom.neriplayer.core.comment.repository.NeteaseCommentRepository$setLiked$root$1",
+      "methods": [
+        "invokeSuspend"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/comment/repository/NeteaseCommentRepository.kt",
+      "class": "moe.ouom.neriplayer.core.comment.repository.NeteaseCommentRepository$sendComment$root$1",
+      "methods": [
+        "invokeSuspend"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/di/AppContainer.kt",
+      "class": "moe.ouom.neriplayer.core.di.AppContainer",
+      "methods": [
+        "<clinit>",
+        "commentRepositoryFor$app",
+        "neteaseComments$lambda$0",
+        "biliComments$lambda$0"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/ui/viewmodel/CommentViewModel.kt",
+      "class": "moe.ouom.neriplayer.ui.viewmodel.CommentViewModel",
+      "methods": [
+        "<init>",
+        "repositoryFactory$lambda$0"
+      ]
+    },
     {
       "source": "moe/ouom/neriplayer/ui/screen/host/SettingsHostScreen.kt",
       "class": "moe.ouom.neriplayer.ui.screen.host.SettingsHostScreenKt",

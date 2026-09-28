@@ -687,6 +687,7 @@ See the [module maintenance guide](modules/README.md) for responsibilities, feat
 - `:app`: Android host, screens, playback/download runtime, and dependency assembly.
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`: shared utilities, models, logging, and networking.
 - `:core:lyrics` / `:core:listen-protocol`: lyric parsing/transforms and Listen Together protocol models.
+- `:data:comments` / `:data:listen-together`: cross-platform comment repositories and Listen Together transport, with clients and lifecycle managed by the host.
 - `:data:netease` / `:data:bilibili` / `:data:youtube`: platform APIs, accounts, and playback source resolution.
 - `:data:lyrics`: lyric sources and matching policies.
 - `:ksp-annotations` / `:ksp-processor`: generated settings registration and metadata.

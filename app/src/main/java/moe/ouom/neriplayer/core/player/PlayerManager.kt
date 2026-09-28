@@ -257,7 +257,7 @@ internal fun localPlaylistIdForSong(source: LocalPlaylistPlaybackSource?, song: 
 @Suppress("ObjectPropertyName", "ktlint:standard:property-naming")
 object PlayerManager {
     const val BILI_SOURCE_TAG = PlaybackMediaItemFactory.BILI_SOURCE_TAG
-    const val NETEASE_SOURCE_TAG = "Netease"
+    const val NETEASE_SOURCE_TAG = moe.ouom.neriplayer.data.model.SongSourceTags.NETEASE
 
     @Volatile
     internal var initialized = false

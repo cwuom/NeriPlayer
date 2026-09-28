@@ -22,6 +22,7 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
 class BiliCommentLegacyIdTest {
+    private val cache = CommentMemoryCache()
     @Test
     fun `liking legacy song comments uses verified aid and checks errors`(): Unit = runBlocking {
         val client = mock(BiliClient::class.java).also {
@@ -30,7 +31,7 @@ class BiliCommentLegacyIdTest {
         `when`(client.getVideoBasicInfoByBvid(BVID)).thenReturn(video())
         `when`(client.setVideoCommentLiked(AID, "101", true)).thenReturn(JSONObject("""{"code":0}"""))
         `when`(client.setVideoCommentLiked(AID, "101", false)).thenReturn(JSONObject("""{"code":-111}"""))
-        val repository = BiliCommentRepository { client }
+        val repository = BiliCommentRepository(cache) { client }
         repository.setLiked(source(song()), "101", true)
         verify(client).setVideoCommentLiked(AID, "101", true)
         verify(client, never()).setVideoCommentLiked(PACKED_ID, "101", true)
@@ -40,10 +41,10 @@ class BiliCommentLegacyIdTest {
     }
 
     @Before
-    fun clearCacheBefore() = CommentMemoryCache.clear()
+    fun clearCacheBefore() = cache.clear()
 
     @After
-    fun clearCacheAfter() = CommentMemoryCache.clear()
+    fun clearCacheAfter() = cache.clear()
 
     @Test
     fun `packed id never requests comments from a colliding real video`(): Unit = runBlocking {
@@ -53,7 +54,7 @@ class BiliCommentLegacyIdTest {
         `when`(client.getVideoBasicInfoByBvid(BVID)).thenReturn(video())
         `when`(client.getVideoComments(PACKED_ID, 1, 20)).thenReturn(comments(901))
         `when`(client.getVideoComments(AID, 1, 20)).thenReturn(comments(101))
-        val repository = BiliCommentRepository { client }
+        val repository = BiliCommentRepository(cache) { client }
 
         val result = repository.loadComments(source(song()), 1, 20)
 
@@ -71,7 +72,7 @@ class BiliCommentLegacyIdTest {
         )
         `when`(client.getVideoBasicInfoByAvid(AID)).thenReturn(video())
         `when`(client.getVideoComments(AID, 1, 20)).thenReturn(comments(101))
-        val repository = BiliCommentRepository { client }
+        val repository = BiliCommentRepository(cache) { client }
 
         for (audioId in listOf(null, PACKED_ID.toString())) {
             val legacy = song().copy(album = "Bilibili|$CID", audioId = audioId)
@@ -92,7 +93,7 @@ class BiliCommentLegacyIdTest {
         `when`(client.getVideoBasicInfoByAvid(AID)).thenReturn(video())
         `when`(client.getVideoComments(AID, 1, 20)).thenReturn(comments(101))
         val legacy = song().copy(album = "Bilibili", subAudioId = null)
-        val result = BiliCommentRepository { client }.loadComments(source(legacy), 1, 20)
+        val result = BiliCommentRepository(cache) { client }.loadComments(source(legacy), 1, 20)
         assertEquals(listOf("101"), result.comments.map { it.id })
         verify(client, never()).getVideoComments(PACKED_ID, 1, 20)
     }
@@ -106,7 +107,7 @@ class BiliCommentLegacyIdTest {
         `when`(client.getVideoBasicInfoByAvid(aid)).thenReturn(video(aid = aid))
         `when`(client.getVideoComments(aid, 1, 20)).thenReturn(comments(101))
         val canonical = song().copy(id = aid, audioId = aid.toString(), album = "Bilibili", subAudioId = null)
-        val result = BiliCommentRepository { client }.loadComments(source(canonical), 1, 20)
+        val result = BiliCommentRepository(cache) { client }.loadComments(source(canonical), 1, 20)
         assertEquals(listOf("101"), result.comments.map { it.id })
         verify(client, never()).getVideoBasicInfoByAvid(12L)
     }
@@ -119,7 +120,7 @@ class BiliCommentLegacyIdTest {
         `when`(client.getVideoBasicInfoByAvid(PACKED_ID)).thenReturn(video(aid = PACKED_ID, cid = 99L))
         `when`(client.getVideoBasicInfoByAvid(AID)).thenReturn(video(cid = 98L))
         val failure = runCatching {
-            BiliCommentRepository { client }.loadComments(
+            BiliCommentRepository(cache) { client }.loadComments(
                 source(song().copy(album = "Bilibili|$CID")), 1, 20
             )
         }.exceptionOrNull()
@@ -138,7 +139,7 @@ class BiliCommentLegacyIdTest {
         `when`(client.getVideoBasicInfoByAvid(AID)).thenReturn(video())
         val canonical = song().copy(album = "Bilibili", audioId = PACKED_ID.toString(), subAudioId = null)
         val failure = runCatching {
-            BiliCommentRepository { client }.loadComments(source(canonical), 1, 20)
+            BiliCommentRepository(cache) { client }.loadComments(source(canonical), 1, 20)
         }.exceptionOrNull()
         assertTrue(failure is CommentApiException)
         verify(client, never()).getVideoComments(AID, 1, 20)
@@ -154,7 +155,7 @@ class BiliCommentLegacyIdTest {
             video(aid = PACKED_ID, bvid = "BV1different")
         )
         val failure = runCatching {
-            BiliCommentRepository { client }.loadComments(source(song()), 1, 20)
+            BiliCommentRepository(cache) { client }.loadComments(source(song()), 1, 20)
         }.exceptionOrNull()
         assertTrue(failure is CommentApiException)
         verify(client, never()).getVideoComments(PACKED_ID, 1, 20)
@@ -168,7 +169,7 @@ class BiliCommentLegacyIdTest {
         `when`(client.getVideoBasicInfoByBvid(BVID)).thenReturn(video())
         `when`(client.getVideoComments(AID, 1, 20)).thenReturn(comments(101))
         `when`(client.getVideoComments(AID, 2, 20)).thenReturn(comments(102, page = 2))
-        val repository = BiliCommentRepository { client }
+        val repository = BiliCommentRepository(cache) { client }
         val source = source(song())
         repository.loadComments(source, 1, 20)
         repository.loadComments(source, 2, 20)
@@ -187,7 +188,7 @@ class BiliCommentLegacyIdTest {
         )
         `when`(client.getVideoComments(AID, 1, 20)).thenReturn(comments(101))
         `when`(client.getVideoComments(PACKED_ID, 1, 20)).thenReturn(comments(901))
-        val repository = BiliCommentRepository { client }
+        val repository = BiliCommentRepository(cache) { client }
         val legacy = repository.loadComments(source(song()), 1, 20)
         val canonical = repository.loadComments(
             source(song().copy(album = "Bilibili", audioId = PACKED_ID.toString(), subAudioId = null)), 1, 20
@@ -204,7 +205,7 @@ class BiliCommentLegacyIdTest {
         val cancelled = CancellationException("cancelled")
         `when`(client.getVideoBasicInfoByBvid(BVID)).thenThrow(cancelled)
         val result = runCatching {
-            BiliCommentRepository { client }.loadComments(source(song()), 1, 20)
+            BiliCommentRepository(cache) { client }.loadComments(source(song()), 1, 20)
         }
         assertTrue(result.exceptionOrNull() is CancellationException)
         assertEquals(cancelled.message, result.exceptionOrNull()?.message)

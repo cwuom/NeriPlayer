@@ -313,6 +313,11 @@ and at most 16 direct source files per directory in libraries and app areas regi
   - `search/` retains the `CloudMusicSearchApi` and `QQMusicSearchApi` host adapters; interfaces and DTOs live in `modules/core/model`.
   - `lyrics/EditableLyricsMatcher` coordinates platform capabilities and `modules/data/lyrics` matching policies.
 
+- `modules/data/comments/src/main/java/moe/ouom/neriplayer/core/comment/`
+  - Comment sources, models, parsing, pagination, and caches; `AppContainer` injects client providers and cache instances.
+  - The host owns cache lifetime. Libraries do not access the global container. Repository tests belong to the module; ViewModel integration tests remain in `app`.
+  - Source tags belong to `:core:model`; Bilibili legacy playback identity resolution belongs to `:data:bilibili` and does not depend on the player singleton.
+
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`: unified Media3 ExoPlayer management, playback resolution, queue,
     cache, state recovery, retry, and playback policy.

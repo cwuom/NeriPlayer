@@ -281,6 +281,11 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `search/` 保留 `CloudMusicSearchApi` 与 `QQMusicSearchApi` 的宿主适配，接口和 DTO 位于 `modules/core/model`。
   - `lyrics/EditableLyricsMatcher` 组合平台能力与 `modules/data/lyrics` 的匹配策略。
 
+- `modules/data/comments/src/main/java/moe/ouom/neriplayer/core/comment/`
+  - 评论来源、模型、解析、分页和缓存；客户端 provider 与缓存由 `AppContainer` 组装注入。
+  - 缓存实例的生命周期由宿主决定，库内不读取全局容器；仓库测试位于该模块，ViewModel 集成测试位于 `app`。
+  - 歌曲来源标签属于 `:core:model`，Bilibili 历史播放身份解析属于 `:data:bilibili`，无需引用播放器单例。
+
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`：Media3 ExoPlayer 的统一管理层，
     负责音源解析、播放队列、缓存、状态恢复、失败重试和播放策略。

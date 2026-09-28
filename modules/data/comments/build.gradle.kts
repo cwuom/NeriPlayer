@@ -3,20 +3,16 @@ plugins {
 }
 
 android {
-    namespace = "moe.ouom.neriplayer.data.bilibili"
+    namespace = "moe.ouom.neriplayer.data.comments"
 }
 
 dependencies {
     api(project(":core:model"))
-    implementation(libs.kotlinx.serialization.json)
+    api(project(":data:bilibili"))
+    api(project(":data:netease"))
     implementation(project(":core:common"))
-    implementation(project(":core:network"))
     implementation(project(":core:logging"))
-    implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.datastore.preferences)
-    implementation(libs.androidx.security.crypto)
 
     testImplementation(libs.junit)
     testImplementation(libs.org.json)

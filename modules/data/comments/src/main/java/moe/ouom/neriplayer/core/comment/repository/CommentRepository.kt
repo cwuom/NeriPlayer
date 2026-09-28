@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
  *
  * ViewModel / UI 只依赖本接口, 不接触任何平台 HTTP 细节 (§9/§10 分层要求)。
  */
-internal interface CommentRepository {
+interface CommentRepository {
 
     val platform: CommentPlatform
 
@@ -43,17 +43,4 @@ internal interface CommentRepository {
     ): CommentPage
 
     suspend fun sendComment(source: CommentSource, content: String, target: CommentReplyTarget? = null)
-}
-
-private val neteaseCommentRepository = NeteaseCommentRepository()
-private val biliCommentRepository = BiliCommentRepository()
-
-/**
- * 按平台取对应的评论仓库。
- *
- * 后续接入 QQ 音乐 / 酷狗等平台时, 只需在此处增加分支 (任务书 §47)。
- */
-internal fun commentRepositoryFor(platform: CommentPlatform): CommentRepository = when (platform) {
-    CommentPlatform.NETEASE -> neteaseCommentRepository
-    CommentPlatform.BILIBILI -> biliCommentRepository
 }

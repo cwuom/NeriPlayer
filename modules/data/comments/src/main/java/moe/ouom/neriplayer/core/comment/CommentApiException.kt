@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.core.comment.model.CommentError
  *
  * 只在 comment 层内部使用, 由 Mapper 抛出、Repository 透传、ViewModel 转换为 [CommentError]。
  */
-internal class CommentApiException(
+class CommentApiException(
     val code: Int,
     val reason: CommentError,
     message: String

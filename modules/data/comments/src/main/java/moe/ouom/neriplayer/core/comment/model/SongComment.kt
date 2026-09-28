@@ -36,7 +36,7 @@ data class CommentReplyTarget(
     val username: String
 )
 
-internal fun CommentPlatform.commentLengthLimit(): Int = when (this) {
+fun CommentPlatform.commentLengthLimit(): Int = when (this) {
     CommentPlatform.NETEASE -> 140
     CommentPlatform.BILIBILI -> 1000
 }

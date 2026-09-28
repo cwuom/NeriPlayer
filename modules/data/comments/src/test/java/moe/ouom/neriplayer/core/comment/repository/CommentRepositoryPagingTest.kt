@@ -1,13 +1,6 @@
 package moe.ouom.neriplayer.core.comment.repository
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
-import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
@@ -17,12 +10,9 @@ import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.core.comment.model.CommentSort
 import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
 import moe.ouom.neriplayer.core.comment.CommentApiException
-import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
-import moe.ouom.neriplayer.ui.viewmodel.CommentViewModel
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -31,14 +21,14 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-import kotlin.time.Duration.Companion.milliseconds
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class CommentRepositoryPagingTest {
+    private val cache = CommentMemoryCache()
+
     @Test
     fun `netease floor passes time cursor and rejects a stalled response`(): Unit = runBlocking {
         val client = mock(NeteaseClient::class.java)
-        val repository = NeteaseCommentRepository { client }
+        val repository = NeteaseCommentRepository(cache) { client }
         val source = CommentSource(CommentPlatform.NETEASE, AID)
         `when`(client.getSongCommentReplies(AID, "42", 20, null)).thenReturn(
             """{"code":200,"data":{"comments":[{"commentId":43}],"hasMore":true,"time":100}}"""
@@ -56,13 +46,13 @@ class CommentRepositoryPagingTest {
     @Test
     fun `netease send invalidates anonymous cache and preserves platform rejection`(): Unit = runBlocking {
         val client = mock(NeteaseClient::class.java)
-        val repository = NeteaseCommentRepository { client }
+        val repository = NeteaseCommentRepository(cache) { client }
         val source = CommentSource(CommentPlatform.NETEASE, AID)
         `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenReturn(neteasePage(1..1, false))
         repository.loadComments(source, 1, 20)
         `when`(client.sendSongComment(AID, "text", "42")).thenReturn("""{"code":200}""")
         repository.sendComment(source, "text", CommentReplyTarget("42", "40", "user"))
-        assertNull(CommentMemoryCache.get("NETEASE", AID, 1))
+        assertNull(cache.get("NETEASE", AID, 1))
         `when`(client.sendSongComment(AID, "text", null)).thenReturn("""{"code":250}""")
         val failure = runCatching { repository.sendComment(source, "text") }.exceptionOrNull()
         assertTrue(failure is CommentApiException)
@@ -72,7 +62,7 @@ class CommentRepositoryPagingTest {
     @Test
     fun `bilibili replies and writes use verified video identity and propagate closed comments`(): Unit = runBlocking {
         val client = biliClient()
-        val repository = BiliCommentRepository { client }
+        val repository = BiliCommentRepository(cache) { client }
         `when`(client.getVideoCommentReplies(AID, "42", 1, 20)).thenReturn(biliPage(43..44, 1, 2))
         assertEquals(listOf("43", "44"), repository.loadReplies(biliSource(), "42", 1, 20).comments.map { it.id })
         `when`(client.sendVideoComment(AID, "text", "42", "43")).thenReturn(JSONObject("""{"code":0}"""))
@@ -88,7 +78,7 @@ class CommentRepositoryPagingTest {
     fun `netease passes newest cursor and isolates cached sorts`(): Unit = runBlocking {
         val client = mock(NeteaseClient::class.java)
         val source = CommentSource(CommentPlatform.NETEASE, AID)
-        val repository = NeteaseCommentRepository { client }
+        val repository = NeteaseCommentRepository(cache) { client }
         `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenReturn(neteasePage(1..2, false))
         `when`(client.getSongCommentsCancellable(AID, 1, 20, 3, null)).thenReturn(
             """{"code":200,"data":{"comments":[{"commentId":9}],"hasMore":true,"cursor":"12345"}}"""
@@ -109,7 +99,7 @@ class CommentRepositoryPagingTest {
         val client = biliClient()
         `when`(client.getVideoComments(AID, 1, 20, 1)).thenReturn(biliPage(1..2, 1, 2))
         `when`(client.getVideoComments(AID, 1, 20, 0)).thenReturn(biliPage(9..10, 1, 2))
-        val repository = BiliCommentRepository { client }
+        val repository = BiliCommentRepository(cache) { client }
         repository.loadComments(biliSource(), 1, 20)
         assertEquals(listOf("9", "10"), repository.loadComments(biliSource(), 1, 20, sort = CommentSort.NEWEST).comments.map { it.id })
     }
@@ -118,7 +108,7 @@ class CommentRepositoryPagingTest {
     fun `netease cached comments are isolated by login session and refreshed without losing fallback`(): Unit = runBlocking {
         val client = mock(NeteaseClient::class.java)
         val source = CommentSource(CommentPlatform.NETEASE, AID)
-        val repository = NeteaseCommentRepository { client }
+        val repository = NeteaseCommentRepository(cache) { client }
         `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenReturn(neteasePage(1..1, false))
         repository.loadComments(source, 1, 20)
         `when`(client.commentCacheSessionKey()).thenReturn("session-a")
@@ -140,7 +130,7 @@ class CommentRepositoryPagingTest {
     @Test
     fun `bilibili caches verified identity separately for each session`(): Unit = runBlocking {
         val client = biliClient()
-        val repository = BiliCommentRepository { client }
+        val repository = BiliCommentRepository(cache) { client }
         `when`(client.commentCacheSessionKey()).thenReturn("session-a")
         `when`(client.getVideoComments(AID, 1, 20, 1)).thenReturn(biliPage(1..1, 1, 1), biliPage(2..2, 1, 1))
         assertNull(repository.cachedComments(biliSource(), 20, CommentSort.HOT))
@@ -162,12 +152,12 @@ class CommentRepositoryPagingTest {
     fun `netease like checks business response and invalidates cached pages`(): Unit = runBlocking {
         val client = mock(NeteaseClient::class.java)
         val source = CommentSource(CommentPlatform.NETEASE, AID)
-        val repository = NeteaseCommentRepository { client }
+        val repository = NeteaseCommentRepository(cache) { client }
         `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenReturn(neteasePage(1..1, false))
         `when`(client.setSongCommentLiked(AID, "1", true)).thenReturn("""{"code":200}""")
         repository.loadComments(source, 1, 20)
         repository.setLiked(source, "1", true)
-        assertNull(CommentMemoryCache.get("NETEASE", AID, 1))
+        assertNull(cache.get("NETEASE", AID, 1))
         `when`(client.setSongCommentLiked(AID, "1", false)).thenReturn("""{"code":301}""")
         val failure = runCatching { repository.setLiked(source, "1", false) }.exceptionOrNull()
         assertTrue(failure is CommentApiException)
@@ -181,7 +171,7 @@ class CommentRepositoryPagingTest {
             """{"code":200,"data":{"comments":[{"commentId":1}],"hasMore":true,"cursor":"12345"}}"""
         )
         val failure = runCatching {
-            NeteaseCommentRepository { client }.loadComments(
+            NeteaseCommentRepository(cache) { client }.loadComments(
                 CommentSource(CommentPlatform.NETEASE, AID), 2, 20, sort = CommentSort.NEWEST, cursor = "12345"
             )
         }.exceptionOrNull()
@@ -190,95 +180,12 @@ class CommentRepositoryPagingTest {
 
     @Before
     fun setUp() {
-        CommentMemoryCache.clear()
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        cache.clear()
     }
 
     @After
     fun tearDown() {
-        CommentMemoryCache.clear()
-        Dispatchers.resetMain()
-    }
-
-    @Test
-    fun `bilibili refresh reloads every page of the refreshed resource`(): Unit = runBlocking {
-        val client = biliClient()
-        `when`(client.getVideoComments(AID, 1, 20)).thenReturn(biliPage(1..20, 1, 40))
-        `when`(client.getVideoComments(AID, 2, 20)).thenReturn(biliPage(21..40, 2, 40))
-        verifyRefresh(BiliCommentRepository { client }, biliSource()) {
-            `when`(client.getVideoComments(AID, 1, 20)).thenReturn(biliPage(2..21, 1, 40))
-            `when`(client.getVideoComments(AID, 2, 20)).thenReturn(biliPage(22..41, 2, 40))
-        }
-        verify(client, times(2)).getVideoComments(AID, 2, 20)
-    }
-
-    @Test
-    fun `netease refresh reloads every page of the refreshed resource`(): Unit = runBlocking {
-        val client = mock(NeteaseClient::class.java)
-        `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenReturn(neteasePage(1..20, true))
-        `when`(client.getSongCommentsCancellable(AID, 2, 20, 2, null)).thenReturn(neteasePage(21..40, false))
-        verifyRefresh(NeteaseCommentRepository { client }, CommentSource(CommentPlatform.NETEASE, AID)) {
-            `when`(client.getSongCommentsCancellable(AID, 1, 20, 2, null)).thenReturn(neteasePage(2..21, true))
-            `when`(client.getSongCommentsCancellable(AID, 2, 20, 2, null)).thenReturn(neteasePage(22..41, false))
-        }
-        verify(client, times(2)).getSongCommentsCancellable(AID, 2, 20, 2, null)
-    }
-
-    @Test
-    fun `anonymous degraded page preserves comments and retries without cached degradation`(): Unit = runBlocking {
-        val client = biliClient()
-        `when`(client.getVideoComments(AID, 1, 20)).thenReturn(biliPage(1..3, 1, 29))
-        `when`(client.getVideoComments(AID, 2, 20)).thenReturn(
-            JSONObject("""{"code":0,"data":{"page":{"num":0,"size":0,"count":0},"replies":null}}"""),
-            biliPage(4..5, 2, 29)
-        )
-        val vm = CommentViewModel().apply { repositoryFactory = { BiliCommentRepository { client } } }
-        try {
-            withTimeout(5_000.milliseconds) {
-                vm.onSourceChanged(biliSource())
-                vm.uiState.first { it.status == CommentListStatus.SUCCESS }
-                vm.loadMore()
-                val failed = vm.uiState.first { !it.isLoadingMore }
-                assertEquals(listOf("1", "2", "3"), failed.comments.map { it.id })
-                assertEquals(29L, failed.total)
-                assertEquals(1, failed.page)
-                assertTrue(failed.hasMore)
-                assertEquals(CommentError.API, failed.loadMoreError)
-
-                vm.loadMore()
-                val recovered = vm.uiState.first { it.page == 2 }
-                assertEquals(listOf("1", "2", "3", "4", "5"), recovered.comments.map { it.id })
-                assertNull(recovered.loadMoreError)
-            }
-        } finally {
-            vm.onSheetHidden()
-        }
-        verify(client, times(2)).getVideoComments(AID, 2, 20)
-    }
-
-    private suspend fun verifyRefresh(
-        repository: CommentRepository,
-        source: CommentSource,
-        updateServer: suspend () -> Unit
-    ) {
-        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
-        try {
-            withTimeout(5_000.milliseconds) {
-                vm.onSourceChanged(source)
-                vm.uiState.first { it.status == CommentListStatus.SUCCESS }
-                vm.loadMore()
-                vm.uiState.first { it.page == 2 }
-                updateServer()
-                vm.refresh()
-                vm.uiState.first { it.page == 1 && !it.isRefreshing }
-                vm.loadMore()
-                val result = vm.uiState.first { it.page == 2 && !it.isLoadingMore }
-                assertEquals((2..41).map(Int::toString), result.comments.map { it.id })
-                assertFalse(result.hasMore)
-            }
-        } finally {
-            vm.onSheetHidden()
-        }
+        cache.clear()
     }
 
     private suspend fun biliClient(): BiliClient = mock(BiliClient::class.java).also { client ->

@@ -16,6 +16,7 @@
 | `:core:listen-protocol` | [core/listen-protocol](core/listen-protocol) | 一起听房间、事件和传输协议模型 |
 | `:data:netease` | [data/netease](data/netease) | 网易云客户端、加密、二维码登录和账号仓库 |
 | `:data:bilibili` | [data/bilibili](data/bilibili) | Bilibili 客户端、评论、播放解析和账号仓库 |
+| `:data:comments` | [data/comments](data/comments) | 跨平台评论模型、来源解析、分页、缓存和仓库 |
 | `:data:youtube` | [data/youtube](data/youtube) | YouTube 客户端、播放解析、鉴权和 JavaScript 执行支持 |
 | `:data:lyrics` | [data/lyrics](data/lyrics) | 外部歌词客户端和匹配策略 |
 | `:data:listen-together` | [data/listen-together](data/listen-together) | 一起听 HTTP、WebSocket、地址校验和重连策略 |
@@ -28,6 +29,7 @@
 - 库所需的网络客户端、设备信息和配置由调用方注入，不通过 `AppContainer` 或 `PlayerManager` 获取宿主状态
 - 需要反映运行时变更的设置通过 provider 读取，避免在构造时保存过期快照
 - 一起听传输层接收宿主注入的 HTTP 客户端；会话状态、播放控制与生命周期由 `app` 协调
+- `:data:comments` 组合平台数据模块，客户端 provider 与缓存实例由宿主提供；界面和 ViewModel 留在 `app`
 - 模块专用资源与实现共同维护；例如 YouTube 的 JavaScript assets 和 consumer R8 规则归属 `:data:youtube`
 
 第三方 Git 子模块位于 [`np-submodule`](../np-submodule)。KSP 处理器和 Gradle convention plugin 属于构建工具，职责与运行时库分离。
