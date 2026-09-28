@@ -2,11 +2,16 @@
 
 package moe.ouom.neriplayer.core.player.playback
 
+import moe.ouom.neriplayer.core.player.queue.policy.ListenTogetherTrackFinishPlan
+import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueNavigationOwner
+import moe.ouom.neriplayer.core.player.queue.policy.QueueNavigationStep
+import moe.ouom.neriplayer.core.player.queue.policy.QueueTrackCompletion
+
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.currentPositionMsOrZero
 import moe.ouom.neriplayer.core.player.durationMsOrZero
-import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.failure.PlaybackFailureAdvanceAction

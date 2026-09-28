@@ -6,7 +6,7 @@ import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PersistedState
-import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.model.withPlaybackState
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals

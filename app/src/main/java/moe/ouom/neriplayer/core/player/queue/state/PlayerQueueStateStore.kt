@@ -1,8 +1,11 @@
-package moe.ouom.neriplayer.core.player.model
+package moe.ouom.neriplayer.core.player.queue.state
+
+import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSessionSnapshot
+import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import moe.ouom.neriplayer.core.player.playback.PlayerQueueNavigationOwner
+import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueNavigationOwner
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 

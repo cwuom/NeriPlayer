@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player.model
+package moe.ouom.neriplayer.core.player.queue.model
 
 internal data class PlayerQueueSessionSnapshot(
     val queue: PlayerQueueSnapshot = PlayerQueueSnapshot.EMPTY,

@@ -25,7 +25,7 @@ package moe.ouom.neriplayer.data.sync.github
 
 import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistSongMergePolicy
 import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistUsageStatsMergePolicy
-import moe.ouom.neriplayer.data.sync.merge.AndroidSyncMergeHost
+import moe.ouom.neriplayer.data.sync.host.AndroidSyncMergeHost
 import moe.ouom.neriplayer.data.sync.merge.SyncDataMerger
 import moe.ouom.neriplayer.data.sync.merge.SyncMergeResult
 import android.content.Context

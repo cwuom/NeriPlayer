@@ -330,7 +330,8 @@ and at most 16 direct source files per directory in libraries and app areas regi
     channel balance, and high-resolution output processing.
   - `playback/PlaybackStatsTracker.kt`: playback stats tracking. Playback commands
     and queue advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
-  - `PlayerQueueSnapshot` holds the list and current index. `PlayerQueueSessionSnapshot`
+  - `queue/model`, `queue/state`, and `queue/policy` hold queue models, state ownership,
+    and editing/navigation rules. `PlayerQueueSnapshot` holds the list and current index. `PlayerQueueSessionSnapshot`
     combines the queue, shuffle mode, and restore order; `PlayerQueueStateStore`
     publishes the complete session. Use `startPlayback`, `setLocalShuffle`, and
     `restoreSession` for playlist starts, local shuffle changes, and persisted-session
@@ -345,6 +346,9 @@ and at most 16 direct source files per directory in libraries and app areas regi
     Clearing the queue also clears its restore order. Persistence reads one session
     snapshot to avoid mixing different versions of shuffle state. The current-song
     Flow and Media3 side effects still require their own thread-boundary checks.
+    `session/PlayerQueueSessionBindings` adapts new-engine initialization, local/remote
+    playlist starts, and persisted-state restoration. `verifyDomainDependencies`
+    checks direct JVM dependencies of the queue package, which cannot reference this host adapter.
   - `persistence/PlaybackStatePersistenceCoordinator.kt` owns save requests and delays.
     Call `prepareStatePersist` or `scheduleStatePersist` at the synchronous event
     boundary to capture a complete snapshot and issue a request before awaiting
@@ -418,7 +422,9 @@ and at most 16 direct source files per directory in libraries and app areas regi
   - `config/`: full app config import/export.
   - `sync/model/`: payload and conflict models shared by GitHub and WebDAV.
   - `sync/merge/`: the shared merge entry point, playlist conflicts, ordering, and recent-play rules; `policy/` owns membership deletion and statistics merging.
-    `AndroidSyncMergeHost` provides system-playlist identities and messages through the merge host interface.
+    `host/AndroidSyncMergeHost` provides system-playlist identities and messages through the merge host interface.
+    `verifyDomainDependencies` protects the entire merge package against direct database,
+    network, and Android host dependencies.
   - `sync/`: provider-neutral coordination, preferences, and cover mapping.
   - `sync/github/`: GitHub transport, sync orchestration, serialization, Data Saver,
     and secure storage.

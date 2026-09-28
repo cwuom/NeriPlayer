@@ -4,6 +4,7 @@
 
 ```bash
 ./gradlew :app:verifyCrap
+./gradlew :app:verifyDomainDependencies
 ./gradlew verifyModularization
 ```
 
@@ -12,7 +13,7 @@
 再计算逐方法 CRAP。库的覆盖率产物由 convention 的 outgoing configurations 提供。
 源码从各模块的 `src/main/java` 和 `src/main/kotlin` 合并到 `app/build/reports/crap/sources`，
 重复路径直接报错。生成报告前检查 app 和每个自有库的执行数据，缺失或空文件立即失败。
-`:app:check` 执行 CRAP 门禁，Android CI 的 `verifyModularization` 还执行所有自有模块的
+`:app:check` 执行 CRAP 与计算域依赖门禁，Android CI 的 `verifyModularization` 还执行所有自有模块的
 lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
 
 自有库位于 `modules/core` 和 `modules/data`，Gradle 标识分别为 `:core:*` 和 `:data:*`。
@@ -64,3 +65,25 @@ python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 结构验证需要同时审查依赖：采集器消费数据源接口，清理执行器消费清理端口，
 展示层只消费快照，计算和文件遍历不得读取全局容器、Context 或数据库实例。
 独立组件不以原上帝类为 receiver，也不回调原入口取得内部状态。
+
+## 计算域依赖门禁
+
+`verifyDomainDependencies` 通过 AGP `ScopedArtifact.CLASSES` 取得 app 自身的 Debug 编译产物，
+使用运行 Gradle 的 JDK 所带的 `jdeps` 检查直接类依赖，使用 `javap` 检查宿主桥接的成员签名。
+规则位于 `config/quality/domain-dependencies.json`；报告位于
+`app/build/reports/domain-dependencies/report.json`。
+
+- `core/player/queue` 包含队列模型、状态存储和编辑/导航策略；新增队列计算代码放入该包
+- `data/sync/merge` 包含共享合并规则与宿主接口；Android 实现在相邻的 `data/sync/host`
+- 两个计算域的全部编译类自动纳入检查，包括新类、嵌套类、lambda 和 Kotlin 生成类
+- 类依赖采用允许列表，禁止直接引用播放器全局状态、数据库、网络、UI 或宿主适配器实现
+- 混合文件中的身份与同步辅助函数仅允许列出的 JVM 方法签名；允许某个方法不等于允许整个文件
+- `CoverUrlMapper` 只允许出现在既有清洗函数的类型签名中，不允许计算域调用其成员
+- 产物缺失、重复类、空计算域、工具失败或分析结果缺少目标类均使检查失败
+
+这是直接依赖检查，不是传递依赖或反射调用分析。共享模型的 Parcelable 实现和宿主桥接的
+内部平台依赖不因此被认定为纯计算代码。调整允许列表时应审查具体方法的行为，保留
+`stableKey` 与 `sameIdentityAs` 的不同语义，尤其不能以 key 相等代替本地歌曲同源判断。
+
+门禁回归使用 JDK `javac --release 17` 编译隔离夹具，再运行真实 `jdeps` 和 `javap`，
+验证非法调用、同包间接引用、嵌套类、新文件和桥接成员越界均能被拒绝。

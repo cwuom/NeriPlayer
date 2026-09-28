@@ -265,6 +265,36 @@ abstract class ProjectCoverageReport : JacocoReport() {
     abstract val projectDirectories: ListProperty<Directory>
 }
 
+abstract class DomainDependencyCheck : Exec() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val projectJars: ListProperty<RegularFile>
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val projectDirectories: ListProperty<Directory>
+}
+
+val verifyDomainDependencies = tasks.register<DomainDependencyCheck>("verifyDomainDependencies") {
+    group = "verification"
+    description = "Check compiled queue and sync rules against explicit domain dependencies."
+    workingDir(rootProject.projectDir)
+    inputs.files(rootProject.file("tools_pub/quality/domain_dependencies.py"),
+        rootProject.file("config/quality/domain-dependencies.json"))
+    doFirst {
+        val executableSuffix = if (System.getProperty("os.name").startsWith("Windows")) ".exe" else ""
+        val jdkBin = File(System.getProperty("java.home"), "bin")
+        val artifacts = projectJars.get().map { it.asFile } + projectDirectories.get().map { it.asFile }
+        commandLine(listOf(
+            "python3", "-B", "tools_pub/quality/domain_dependencies.py",
+            "--config", rootProject.file("config/quality/domain-dependencies.json").absolutePath,
+            "--jdeps", File(jdkBin, "jdeps$executableSuffix").absolutePath,
+            "--javap", File(jdkBin, "javap$executableSuffix").absolutePath,
+            "--output", layout.buildDirectory.file("reports/domain-dependencies/report.json").get().asFile.absolutePath
+        ) + artifacts.flatMap { listOf("--input", it.absolutePath) })
+    }
+}
+
 val crapExecutionData = providers.provider {
     tasks.named<Test>("testDebugUnitTest").get()
         .extensions.getByType<JacocoTaskExtension>().destinationFile
@@ -295,6 +325,13 @@ val crapCoverageReport = tasks.register<ProjectCoverageReport>("crapCoverageRepo
 
 androidComponents.onVariants(androidComponents.selector().withBuildType("debug")) { variant ->
     variant.artifacts.forScope(ScopedArtifacts.Scope.PROJECT)
+        .use(verifyDomainDependencies)
+        .toGet(
+            ScopedArtifact.CLASSES,
+            DomainDependencyCheck::projectJars,
+            DomainDependencyCheck::projectDirectories
+        )
+    variant.artifacts.forScope(ScopedArtifacts.Scope.PROJECT)
         .use(crapCoverageReport)
         .toGet(
             ScopedArtifact.CLASSES,
@@ -308,6 +345,8 @@ val crapToolTests = tasks.register<Exec>("crapToolTests") {
     workingDir(rootProject.projectDir)
     commandLine("python3", "-B", "-m", "unittest", "discover", "-s", "tools_pub/quality", "-p", "test_*.py")
 }
+
+verifyDomainDependencies.configure { dependsOn(crapToolTests) }
 
 val crapReport = tasks.register<Exec>("crapReport") {
     group = "verification"
@@ -333,7 +372,7 @@ val verifyCrap = tasks.register<Exec>("verifyCrap") {
 }
 
 tasks.named("check") {
-    dependsOn(verifyCrap)
+    dependsOn(verifyCrap, verifyDomainDependencies)
 }
 
 ksp {

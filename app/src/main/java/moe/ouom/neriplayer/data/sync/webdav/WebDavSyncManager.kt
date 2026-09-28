@@ -24,7 +24,7 @@ package moe.ouom.neriplayer.data.sync.webdav
  */
 
 
-import moe.ouom.neriplayer.data.sync.merge.AndroidSyncMergeHost
+import moe.ouom.neriplayer.data.sync.host.AndroidSyncMergeHost
 import moe.ouom.neriplayer.data.sync.merge.SyncDataMerger
 import moe.ouom.neriplayer.data.sync.merge.SyncMergeResult
 import android.content.Context

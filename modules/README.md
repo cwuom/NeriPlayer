@@ -65,7 +65,7 @@ python3 -B tools_pub/quality/module_boundaries.py
 python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 ```
 
-运行所有自有模块的 JVM 测试、合并覆盖率、CRAP 门禁和 Android lint：
+运行所有自有模块的 JVM 测试、合并覆盖率、CRAP 门禁、计算域依赖检查和 Android lint：
 
 ```bash
 ./gradlew verifyModularization

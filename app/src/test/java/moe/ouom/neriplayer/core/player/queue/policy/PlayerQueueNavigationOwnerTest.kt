@@ -1,7 +1,7 @@
-package moe.ouom.neriplayer.core.player.playback
+package moe.ouom.neriplayer.core.player.queue.policy
 
 import androidx.media3.common.Player
-import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.policy.failure.PlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals

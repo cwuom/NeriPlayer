@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player.model
+package moe.ouom.neriplayer.core.player.queue.model
 
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs

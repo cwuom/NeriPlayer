@@ -296,7 +296,8 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `engine/`：Media3 音频处理器，包括响度均衡、声道平衡和高解析输出相关处理。
   - `playback/PlaybackStatsTracker.kt`：播放统计采集；播放命令与队列推进也在
     `playback/PlayerManagerPlaybackExtensions.kt`。
-  - `PlayerQueueSnapshot` 持有列表与当前索引；`PlayerQueueSessionSnapshot` 将队列、
+  - `queue/model`、`queue/state` 和 `queue/policy` 分别维护队列模型、状态所有权与编辑/导航规则。
+    `PlayerQueueSnapshot` 持有列表与当前索引；`PlayerQueueSessionSnapshot` 将队列、
     随机播放模式和恢复顺序组成完整会话，由 `PlayerQueueStateStore` 统一发布。
     开始播放新歌单、切换本地随机播放和加载持久化会话分别使用 `startPlayback`、
     `setLocalShuffle` 和 `restoreSession`，在同一事务内更新队列与恢复信息。
@@ -307,6 +308,8 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
     恢复洗牌前顺序时若歌曲集合已改变或副本对应存在歧义，保留当前队列。
     清空队列同时清除恢复顺序；持久化读取一次会话快照，避免混用不同版本的随机播放状态。
     当前歌曲 Flow 和 Media3 副作用的线程边界仍需单独检查。
+    `session/PlayerQueueSessionBindings` 适配新引擎初始化、本地/远端播放请求和持久化恢复。
+    队列计算包的直接 JVM 依赖由 `verifyDomainDependencies` 检查，禁止引用该宿主适配器。
   - `persistence/PlaybackStatePersistenceCoordinator.kt` 统一管理保存请求与延迟任务。
     在同步事件入口调用 `prepareStatePersist` 或 `scheduleStatePersist`，先捕获完整快照并签发请求，
     再等待统计落盘或其它异步工作；写入串行执行，排队期间被替代的请求不再写入。
@@ -369,7 +372,8 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `config/`：完整配置导入/导出。
   - `sync/model/`：GitHub 与 WebDAV 共用的同步载荷和冲突模型。
   - `sync/merge/`：两个后端共用的合并入口、歌单冲突、排序和最近播放规则；`policy/` 管理成员删除与统计合并。
-    `AndroidSyncMergeHost` 提供系统歌单身份与文案，合并组件通过接口读取这些信息。
+    `host/AndroidSyncMergeHost` 提供系统歌单身份与文案，合并组件通过接口读取这些信息。
+    `verifyDomainDependencies` 检查整个合并计算包，避免数据库、网络和 Android 宿主依赖回流。
   - `sync/`：provider 无关的协调、偏好和封面映射。
   - `sync/github/`：GitHub 传输、同步编排、序列化、省流模式和安全存储。
   - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。

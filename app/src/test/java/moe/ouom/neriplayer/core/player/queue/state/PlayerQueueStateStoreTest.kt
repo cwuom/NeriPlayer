@@ -1,4 +1,7 @@
-package moe.ouom.neriplayer.core.player.model
+package moe.ouom.neriplayer.core.player.queue.state
+
+import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.queue.model.reorderQueueSongsPreservingLatestMetadata
 
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors

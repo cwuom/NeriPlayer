@@ -1,11 +1,11 @@
-package moe.ouom.neriplayer.core.player.playback
+package moe.ouom.neriplayer.core.player.queue.policy
 
 import androidx.media3.common.Player
-import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
-import moe.ouom.neriplayer.core.player.model.reorderQueueSongsPreservingLatestMetadata
-import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
-import moe.ouom.neriplayer.core.player.model.resolvePlayerRepeatAllShuffleOrder
-import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
+import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.queue.model.reorderQueueSongsPreservingLatestMetadata
+import moe.ouom.neriplayer.core.player.queue.model.resolvePlayerQueueRestoreOrder
+import moe.ouom.neriplayer.core.player.queue.model.resolvePlayerRepeatAllShuffleOrder
+import moe.ouom.neriplayer.core.player.queue.model.resolvePlayerSequentialShuffleOrder
 import moe.ouom.neriplayer.core.player.policy.failure.PlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.data.model.SongItem
 

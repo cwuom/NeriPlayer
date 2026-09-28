@@ -1,6 +1,8 @@
-package moe.ouom.neriplayer.core.player.model
+package moe.ouom.neriplayer.core.player.queue.state
 
-import moe.ouom.neriplayer.core.player.playback.PlayerQueueNavigationOwner
+import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
+
+import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueNavigationOwner
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

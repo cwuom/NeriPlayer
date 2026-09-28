@@ -1,13 +1,13 @@
-package moe.ouom.neriplayer.core.player.persistence
+package moe.ouom.neriplayer.core.player.queue.policy
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueDisplayIndices
-import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
-import moe.ouom.neriplayer.core.player.model.resolvePlayerRepeatAllShuffleOrder
-import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
-import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
-import moe.ouom.neriplayer.core.player.model.reorderQueueSongsPreservingLatestMetadata
+import moe.ouom.neriplayer.core.player.queue.model.resolvePlayerQueueDisplayIndices
+import moe.ouom.neriplayer.core.player.queue.model.resolvePlayerQueueRestoreOrder
+import moe.ouom.neriplayer.core.player.queue.model.resolvePlayerRepeatAllShuffleOrder
+import moe.ouom.neriplayer.core.player.queue.model.resolvePlayerSequentialShuffleOrder
+import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.queue.model.reorderQueueSongsPreservingLatestMetadata
 import moe.ouom.neriplayer.data.model.SongItem
 
 class PlayerManagerQueueOrderTest {

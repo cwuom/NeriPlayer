@@ -15,7 +15,7 @@ val verifyModuleBoundaries = tasks.register<Exec>("verifyModuleBoundaries") {
 tasks.register("verifyModularization") {
     group = "verification"
     description = "Run app and library tests, combined CRAP coverage, lint and module boundary checks."
-    dependsOn(verifyModuleBoundaries, ":app:verifyCrap", ":app:lintDebug")
+    dependsOn(verifyModuleBoundaries, ":app:verifyDomainDependencies", ":app:verifyCrap", ":app:lintDebug")
     dependsOn(gradle.includedBuild("build-logic").task(":convention:test"))
     subprojects.filter { it.path.startsWith(":core:") || it.path.startsWith(":data:") }
         .forEach { dependsOn("${it.path}:lintDebug") }

@@ -1,0 +1,44 @@
+[
+  {
+    "name": "playback-queue",
+    "package": "moe.ouom.neriplayer.core.player.queue.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "kotlinx.coroutines.flow.*",
+      "moe.ouom.neriplayer.data.model.SongItem",
+      "moe.ouom.neriplayer.core.player.policy.failure.PlaybackFailureAdvanceAction"
+    ],
+    "bridges": {
+      "moe.ouom.neriplayer.data.model.SongIdentityKt": [
+        "Methodref sameIdentityAs:(Lmoe/ouom/neriplayer/data/model/SongItem;Lmoe/ouom/neriplayer/data/model/SongItem;)Z",
+        "Methodref stableKey:(Lmoe/ouom/neriplayer/data/model/SongItem;)Ljava/lang/String;"
+      ]
+    }
+  },
+  {
+    "name": "sync-merge",
+    "package": "moe.ouom.neriplayer.data.sync.merge.",
+    "descriptor_only": ["moe.ouom.neriplayer.data.sync.CoverUrlMapper"],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "moe.ouom.neriplayer.data.model.SongIdentity",
+      "moe.ouom.neriplayer.data.sync.model.*"
+    ],
+    "bridges": {
+      "moe.ouom.neriplayer.data.model.SongIdentityKt": [
+        "Methodref identity:(Lmoe/ouom/neriplayer/data/sync/model/SyncSong;)Lmoe/ouom/neriplayer/data/model/SongIdentity;",
+        "Methodref stableKey:(Lmoe/ouom/neriplayer/data/model/SongIdentity;)Ljava/lang/String;"
+      ],
+      "moe.ouom.neriplayer.data.sync.model.SyncDataModelsKt": [
+        "Methodref copyWithNormalizedMembershipTokens$default:(Lmoe/ouom/neriplayer/data/sync/model/SyncSong;Ljava/lang/String;JLjava/lang/Long;ILjava/lang/Object;)Lmoe/ouom/neriplayer/data/sync/model/SyncSong;",
+        "Methodref mergePositiveTimestamp:(JJ)J",
+        "Methodref sanitizeCoverUrlForSync$default:(Ljava/lang/String;Lmoe/ouom/neriplayer/data/sync/CoverUrlMapper;ILjava/lang/Object;)Ljava/lang/String;"
+      ]
+    }
+  }
+]

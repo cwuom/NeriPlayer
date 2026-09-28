@@ -15,6 +15,7 @@ MAX_DIRECTORY_SOURCES = 16
 APP_FAMILIES = (
     "core/player/download", "core/player/service", "data/settings",
     "listentogether/session", "ui/screen/tab/settings/component",
+    "core/player/queue", "data/sync/merge",
 )
 FORBIDDEN_IMPORT = re.compile(
     r'^import moe\.ouom\.neriplayer\.(?:'
