@@ -2,35 +2,40 @@ package moe.ouom.neriplayer.core.player.model
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import moe.ouom.neriplayer.core.player.playback.PlayerQueueNavigationOwner
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 
 internal class PlayerQueueStateStore {
     private val lock = Any()
     @Volatile
-    private var current = PlayerQueueSnapshot.EMPTY
+    private var current = PlayerQueueSessionSnapshot()
     private val _playlistFlow = MutableStateFlow<List<SongItem>>(emptyList())
     val playlistFlow: StateFlow<List<SongItem>> = _playlistFlow
+    private val _shuffleModeFlow = MutableStateFlow(false)
+    val shuffleModeFlow: StateFlow<Boolean> = _shuffleModeFlow
 
-    fun snapshot(): PlayerQueueSnapshot = current
+    fun snapshot(): PlayerQueueSnapshot = current.queue
+
+    fun sessionSnapshot(): PlayerQueueSessionSnapshot = current
 
     fun select(index: Int) {
         synchronized(lock) {
-            current = current.selecting(index)
+            publishLocked(current.copy(queue = current.queue.selecting(index)))
         }
     }
 
     fun publish(playlist: List<SongItem>, currentIndex: Int): PlayerQueueSnapshot =
         synchronized(lock) {
-            publishLocked(PlayerQueueSnapshot.from(playlist, currentIndex))
+            publishQueueLocked(PlayerQueueSnapshot.from(playlist, currentIndex))
         }
 
     fun update(
         transform: (PlayerQueueSnapshot) -> PlayerQueueSnapshot?
     ): PlayerQueueSnapshot? = synchronized(lock) {
         // 变换只计算队列，播放器和磁盘操作留在锁外，避免阻塞其它队列写入
-        val updated = transform(current) ?: return@synchronized null
-        publishLocked(updated)
+        val updated = transform(current.queue) ?: return@synchronized null
+        publishQueueLocked(updated)
     }
 
     fun updatePlaylist(
@@ -55,9 +60,77 @@ internal class PlayerQueueStateStore {
         return updatedSong
     }
 
-    private fun publishLocked(next: PlayerQueueSnapshot): PlayerQueueSnapshot {
-        current = next
-        _playlistFlow.value = next.playlist
+    fun setLocalShuffle(
+        enabled: Boolean,
+        currentSong: SongItem?,
+        shuffleRemaining: (MutableList<Int>) -> Unit = { it.shuffle() }
+    ): PlayerQueueSnapshot? = synchronized(lock) {
+        if (enabled == current.shuffleEnabled) return@synchronized null
+        val restore = if (enabled) captureRestore(current.queue) else null
+        val updated = if (enabled) {
+            PlayerQueueNavigationOwner.sequentialShuffle(current.queue, shuffleRemaining)
+        } else {
+            PlayerQueueNavigationOwner.restoreShuffleOrder(
+                current.queue, current.shuffleRestore?.playlist, currentSong,
+                current.shuffleRestore?.currentIndex ?: -1
+            )
+        }
+        publishLocked(PlayerQueueSessionSnapshot(updated ?: current.queue, enabled, restore))
+        updated
+    }
+
+    fun startPlayback(
+        queue: PlayerQueueSnapshot,
+        shuffleLocally: Boolean,
+        shuffleRemaining: (MutableList<Int>) -> Unit = { it.shuffle() }
+    ): PlayerQueueSnapshot = synchronized(lock) {
+        val shouldShuffle = current.shuffleEnabled && shuffleLocally
+        val restore = if (shouldShuffle) captureRestore(queue) else null
+        val next = if (shouldShuffle) {
+            PlayerQueueNavigationOwner.sequentialShuffle(queue, shuffleRemaining) ?: queue
+        } else queue
+        publishLocked(PlayerQueueSessionSnapshot(next, current.shuffleEnabled, restore))
+        next
+    }
+
+    fun restoreSession(
+        queue: PlayerQueueSnapshot,
+        shuffleEnabled: Boolean,
+        shuffleRestore: PlayerQueueSnapshot?
+    ) = synchronized(lock) {
+        val restore = shuffleRestore.takeIf { shuffleEnabled && queue.playlist.isNotEmpty() }
+        publishLocked(PlayerQueueSessionSnapshot(queue, shuffleEnabled, restore))
+    }
+
+    fun setShuffleMode(enabled: Boolean, clearRestore: Boolean = false) = synchronized(lock) {
+        publishLocked(current.copy(
+            shuffleEnabled = enabled,
+            shuffleRestore = if (clearRestore) null else current.shuffleRestore
+        ))
+    }
+
+    fun clearShuffleRestore(): Boolean = synchronized(lock) {
+        val hadRestore = current.shuffleRestore != null
+        publishLocked(current.copy(shuffleRestore = null))
+        hadRestore
+    }
+
+    private fun captureRestore(queue: PlayerQueueSnapshot): PlayerQueueSnapshot? =
+        PlayerQueueNavigationOwner.captureShuffleRestore(queue)?.let {
+            it.selecting(it.currentIndex.coerceAtLeast(0))
+        }
+
+    private fun publishQueueLocked(next: PlayerQueueSnapshot): PlayerQueueSnapshot {
+        publishLocked(current.copy(
+            queue = next,
+            shuffleRestore = current.shuffleRestore.takeIf { next.playlist.isNotEmpty() }
+        ))
         return next
+    }
+
+    private fun publishLocked(next: PlayerQueueSessionSnapshot) {
+        current = next
+        _playlistFlow.value = next.queue.playlist
+        _shuffleModeFlow.value = next.shuffleEnabled
     }
 }

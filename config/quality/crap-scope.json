@@ -1,5 +1,9 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/core/player/session/PlayerQueueSessionBindings.kt",
+    "moe/ouom/neriplayer/core/player/model/PlayerQueueStateStore.kt",
+    "moe/ouom/neriplayer/core/player/model/PlayerQueueSessionSnapshot.kt",
+    "moe/ouom/neriplayer/core/player/persistence/PlaybackStatePersistenceSnapshot.kt",
     "moe/ouom/neriplayer/core/download/manager/batch/DownloadCancellationConvergenceRound.kt",
     "moe/ouom/neriplayer/data/sync/merge/policy/SyncCounterShardPolicy.kt",
     "moe/ouom/neriplayer/data/sync/merge/*.kt",

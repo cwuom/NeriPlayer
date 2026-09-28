@@ -519,14 +519,7 @@ internal fun PlayerManager.playPlaylistImpl(
             songKeys = songs.mapTo(LinkedHashSet(songs.size)) { song -> song.stableKey() }
         )
     }
-    publishCurrentQueue(songs, startIndex.coerceIn(0, songs.lastIndex))
-
-    if (player.shuffleModeEnabled && commandSource != PlaybackCommandSource.REMOTE_SYNC) {
-        rememberShuffleRestoreQueueSnapshot()
-        shuffleCurrentQueueForSequentialPlayback()
-    } else {
-        clearShuffleRestoreQueueSnapshot()
-    }
+    publishShuffledCurrentSong(queueSessionBindings.startPlaylist(songs, startIndex, commandSource))
 
     playAtIndex(currentIndex, commandSource = commandSource)
     emitPlaybackCommand(

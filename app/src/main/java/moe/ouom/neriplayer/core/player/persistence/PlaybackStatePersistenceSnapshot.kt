@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.persistence
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PersistedState
 import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.model.PlayerQueueSessionSnapshot
 import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
 import moe.ouom.neriplayer.core.player.model.withPlaybackState
 import moe.ouom.neriplayer.data.model.SongItem
@@ -21,16 +22,19 @@ internal class PlaybackStatePersistenceSnapshot(
     shuffleRestorePlaylist: List<SongItem>?,
     shuffleRestoreIndex: Int
 ) {
-    private val shuffleRestorePlaylist = shuffleRestorePlaylist
-        ?.takeIf { playback.shuffleEnabled == true }
-        ?.toList()
-    private val shuffleRestoreIndex = if (playback.shuffleEnabled == true) {
-        val currentSong = queue.playlist.getOrNull(queue.currentIndex)
-        this.shuffleRestorePlaylist?.indexOfFirst { currentSong?.sameIdentityAs(it) == true }
-            ?.takeIf { it >= 0 } ?: shuffleRestoreIndex.takeIf { it >= 0 }
-    } else {
-        null
-    }
+    constructor(
+        session: PlayerQueueSessionSnapshot,
+        playback: PersistedPlaybackState,
+        keepShuffleMode: Boolean
+    ) : this(
+        session.queue,
+        playback.copy(shuffleEnabled = keepShuffleMode && session.shuffleEnabled),
+        session.shuffleRestore?.playlist,
+        session.shuffleRestore?.currentIndex ?: -1
+    )
+
+    private val shuffleRestorePlaylist = enabledRestorePlaylist(shuffleRestorePlaylist)
+    private val shuffleRestoreIndex = resolveRestoreIndex(shuffleRestoreIndex)
 
     init {
         require(playback.index == queue.currentIndex)
@@ -38,25 +42,39 @@ internal class PlaybackStatePersistenceSnapshot(
     }
 
     fun writeAfter(previous: PlaybackStatePersistenceSnapshot?): PlaybackStateWrite {
-        if (queue.playlist.isEmpty()) {
-            return if (previous?.queue?.playlist?.isEmpty() == true && playback == previous.playback) {
-                PlaybackStateWrite.NONE
-            } else {
-                PlaybackStateWrite.CLEAR
-            }
-        }
-        if (previous == null || queue.playlist !== previous.queue.playlist ||
-            shuffleRestorePlaylist != previous.shuffleRestorePlaylist ||
-            shuffleRestoreIndex != previous.shuffleRestoreIndex
-        ) {
-            return PlaybackStateWrite.REPLACE_QUEUE
-        }
-        return if (playback != previous.playback) {
+        if (queue.playlist.isEmpty()) return emptyQueueWrite(previous)
+        if (requiresQueueReplacement(previous)) return PlaybackStateWrite.REPLACE_QUEUE
+        return if (playback != previous?.playback) {
             PlaybackStateWrite.UPDATE_PLAYBACK
         } else {
             PlaybackStateWrite.NONE
         }
     }
+
+    private fun enabledRestorePlaylist(playlist: List<SongItem>?): List<SongItem>? =
+        if (playback.shuffleEnabled == true) playlist?.toList() else null
+
+    private fun resolveRestoreIndex(fallback: Int): Int? {
+        if (playback.shuffleEnabled != true) return null
+        return currentSongRestoreIndex() ?: fallback.takeIf { it >= 0 }
+    }
+
+    private fun currentSongRestoreIndex(): Int? {
+        val currentSong = queue.playlist.getOrNull(queue.currentIndex) ?: return null
+        return shuffleRestorePlaylist?.indexOfFirst { currentSong.sameIdentityAs(it) }?.takeIf { it >= 0 }
+    }
+
+    private fun emptyQueueWrite(previous: PlaybackStatePersistenceSnapshot?): PlaybackStateWrite =
+        if (previous?.queue?.playlist?.isEmpty() == true && playback == previous.playback) {
+            PlaybackStateWrite.NONE
+        } else {
+            PlaybackStateWrite.CLEAR
+        }
+
+    private fun requiresQueueReplacement(previous: PlaybackStatePersistenceSnapshot?): Boolean =
+        previous == null || queue.playlist !== previous.queue.playlist ||
+            shuffleRestorePlaylist != previous.shuffleRestorePlaylist ||
+            shuffleRestoreIndex != previous.shuffleRestoreIndex
 
     fun toPersistedState(): PersistedState {
         val currentSong = queue.playlist.getOrNull(queue.currentIndex)

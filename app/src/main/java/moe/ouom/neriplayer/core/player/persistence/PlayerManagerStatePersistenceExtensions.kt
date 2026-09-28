@@ -21,19 +21,17 @@ internal fun PlayerManager.prepareStatePersist(
     positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
     shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot()
 ): PlaybackStatePersistRequest? = statePersistenceCoordinator.prepare {
-    val queue = currentQueueSnapshot()
+    val session = queueStore.sessionSnapshot()
     PlaybackStatePersistenceSnapshot(
-        queue = queue,
+        session = session,
         playback = PersistedPlaybackState(
-            index = queue.currentIndex,
+            index = session.queue.currentIndex,
             mediaUrl = _currentMediaUrl.value.takeUnless { isCurrentListenTogetherFallbackMediaUrl() },
             positionMs = if (keepLastPlaybackProgressEnabled) positionMs.coerceAtLeast(0L) else 0L,
             shouldResumePlayback = shouldResumePlayback && !suppressAutoResumeForCurrentSession,
-            repeatMode = if (keepPlaybackModeStateEnabled) repeatModeSetting else Player.REPEAT_MODE_OFF,
-            shuffleEnabled = keepPlaybackModeStateEnabled && _shuffleModeFlow.value
+            repeatMode = if (keepPlaybackModeStateEnabled) repeatModeSetting else Player.REPEAT_MODE_OFF
         ),
-        shuffleRestorePlaylist = shuffleRestorePlaylistReference,
-        shuffleRestoreIndex = shuffleRestoreCurrentIndex
+        keepShuffleMode = keepPlaybackModeStateEnabled
     )
 }
 

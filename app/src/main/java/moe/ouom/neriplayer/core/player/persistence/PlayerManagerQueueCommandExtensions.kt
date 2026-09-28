@@ -186,10 +186,6 @@ private fun PlayerManager.applyRemovalWithoutPlaybackContinuation(action: Remove
 }
 
 private fun PlayerManager.stopAfterQueueRemoval() {
-    if (currentPlaylist.isEmpty()) {
-        shuffleRestorePlaylistReference = null
-        shuffleRestoreCurrentIndex = -1
-    }
     stopPlaybackPreservingQueue(clearMediaUrl = true)
     emitQueueUpdateCommand(shouldPlay = false)
 }
@@ -346,8 +342,6 @@ private fun PlayerManager.publishRemoteQueueEdit(queue: List<SongItem>, currentI
         bumpDisplayRevision = true,
     )
     if (queue.isEmpty()) {
-        shuffleRestorePlaylistReference = null
-        shuffleRestoreCurrentIndex = -1
         stopPlaybackPreservingQueue(clearMediaUrl = true)
     }
 

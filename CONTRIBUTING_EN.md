@@ -330,17 +330,21 @@ and at most 16 direct source files per directory in libraries and app areas regi
     channel balance, and high-resolution output processing.
   - `playback/PlaybackStatsTracker.kt`: playback stats tracking. Playback commands
     and queue advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
-  - `PlayerQueueSnapshot` holds the queue and current index together;
-    `PlayerQueueStateStore` publishes that state for persistence and presentation.
-    Use `publishCurrentQueue` to replace a queue and `updateCurrentQueue` for
-    moves, removal, insertion, and shuffling. Compute from the latest snapshot
-    inside the lock; keep player and disk operations outside it.
+  - `PlayerQueueSnapshot` holds the list and current index. `PlayerQueueSessionSnapshot`
+    combines the queue, shuffle mode, and restore order; `PlayerQueueStateStore`
+    publishes the complete session. Use `startPlayback`, `setLocalShuffle`, and
+    `restoreSession` for playlist starts, local shuffle changes, and persisted-session
+    hydration so queue and restore data change in one transaction.
+    Use `publishCurrentQueue` for remote queue updates and `updateCurrentQueue` for
+    moves, removal, and insertion. Compute from the latest snapshot inside the lock;
+    keep player and disk operations outside it.
     Async metadata updates use `updateQueuedSong` to preserve the current selection.
     UI reorders provide order only; song content comes from the latest queue.
     Reject stale reorders when duplicate songs cannot be matched unambiguously,
     and retain the current queue if restoring pre-shuffle order is ambiguous.
-    Queue transactions keep the list and index consistent; the current-song Flow
-    and Media3 side effects still require their own thread-boundary checks.
+    Clearing the queue also clears its restore order. Persistence reads one session
+    snapshot to avoid mixing different versions of shuffle state. The current-song
+    Flow and Media3 side effects still require their own thread-boundary checks.
   - `persistence/PlaybackStatePersistenceCoordinator.kt` owns save requests and delays.
     Call `prepareStatePersist` or `scheduleStatePersist` at the synchronous event
     boundary to capture a complete snapshot and issue a request before awaiting

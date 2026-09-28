@@ -435,8 +435,7 @@ private fun loadRestoredStateSnapshot(
 }
 
 internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerStateSnapshot) {
-    publishCurrentQueue(snapshot.playlist, snapshot.currentIndex)
-    if (currentPlaylist.isEmpty()) {
+    if (!queueSessionBindings.restore(snapshot)) {
         NPLogger.w(
             "NERI-PlayerManager",
             "restoreState: sanitized playlist became empty, originalSize=${snapshot.originalPlaylistSize}, persistedIndex=${snapshot.persistedIndex}"
@@ -446,8 +445,6 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
         _currentPlaybackAudioInfo.value = null
         _playbackPositionMs.value = 0L
         currentMediaUrlResolvedAtMs = 0L
-        shuffleRestorePlaylistReference = null
-        shuffleRestoreCurrentIndex = -1
         clearRestoredPlayback()
         updateResumePlaybackRequested(false)
         return
@@ -460,14 +457,6 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
     _repeatModeFlow.value = repeatModeSetting
 
     player.shuffleModeEnabled = snapshot.shuffleEnabled
-    _shuffleModeFlow.value = snapshot.shuffleEnabled
-    if (snapshot.shuffleEnabled) {
-        shuffleRestorePlaylistReference = snapshot.shuffleRestorePlaylist
-        shuffleRestoreCurrentIndex = snapshot.shuffleRestoreIndex
-    } else {
-        shuffleRestorePlaylistReference = null
-        shuffleRestoreCurrentIndex = -1
-    }
 
     setRestoredPlayback(snapshot.resumePositionMs, snapshot.shouldResumePlayback)
     updateResumePlaybackRequested(false)
@@ -477,7 +466,7 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
     lastStatePersistAtMs = SystemClock.elapsedRealtime()
     NPLogger.d(
         "NERI-PlayerManager",
-        "restoreState completed: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, restoredResumePositionMs=$restoredResumePositionMs, restoredShouldResumePlayback=$restoredShouldResumePlayback, shuffle=${_shuffleModeFlow.value}, repeatMode=$repeatModeSetting, currentSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}"
+        "restoreState completed: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, restoredResumePositionMs=$restoredResumePositionMs, restoredShouldResumePlayback=$restoredShouldResumePlayback, shuffle=${shuffleModeFlow.value}, repeatMode=$repeatModeSetting, currentSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}"
     )
 }
 

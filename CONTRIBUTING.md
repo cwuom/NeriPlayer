@@ -296,14 +296,17 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `engine/`：Media3 音频处理器，包括响度均衡、声道平衡和高解析输出相关处理。
   - `playback/PlaybackStatsTracker.kt`：播放统计采集；播放命令与队列推进也在
     `playback/PlayerManagerPlaybackExtensions.kt`。
-  - 队列列表与当前索引由 `PlayerQueueSnapshot` 一起持有，`PlayerQueueStateStore`
-    统一发布状态；持久化与队列展示从同一快照读取。
-    整队替换使用 `publishCurrentQueue`；移动、删除、插入和洗牌使用
-    `updateCurrentQueue`，在锁内基于最新快照计算，播放器与磁盘操作放在锁外。
+  - `PlayerQueueSnapshot` 持有列表与当前索引；`PlayerQueueSessionSnapshot` 将队列、
+    随机播放模式和恢复顺序组成完整会话，由 `PlayerQueueStateStore` 统一发布。
+    开始播放新歌单、切换本地随机播放和加载持久化会话分别使用 `startPlayback`、
+    `setLocalShuffle` 和 `restoreSession`，在同一事务内更新队列与恢复信息。
+    远端整队更新使用 `publishCurrentQueue`；移动、删除和插入使用 `updateCurrentQueue`。
+    这些操作在锁内基于最新快照计算，播放器与磁盘操作放在锁外。
     异步歌曲元数据写回使用 `updateQueuedSong`，按歌曲身份更新最新队列，保留当前选曲。
     UI 重排只提供顺序，歌曲内容取自最新队列；重复歌曲无法准确对应时拒绝旧请求并刷新界面。
     恢复洗牌前顺序时若歌曲集合已改变或副本对应存在歧义，保留当前队列。
-    队列事务保证列表与索引一致；当前歌曲 Flow 和 Media3 副作用的线程边界仍需单独检查。
+    清空队列同时清除恢复顺序；持久化读取一次会话快照，避免混用不同版本的随机播放状态。
+    当前歌曲 Flow 和 Media3 副作用的线程边界仍需单独检查。
   - `persistence/PlaybackStatePersistenceCoordinator.kt` 统一管理保存请求与延迟任务。
     在同步事件入口调用 `prepareStatePersist` 或 `scheduleStatePersist`，先捕获完整快照并签发请求，
     再等待统计落盘或其它异步工作；写入串行执行，排队期间被替代的请求不再写入。

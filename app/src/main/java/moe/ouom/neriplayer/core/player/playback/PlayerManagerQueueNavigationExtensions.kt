@@ -170,52 +170,9 @@ private fun PlayerManager.dispatchFailureAdvance(
     )
 }
 
-internal fun PlayerManager.rememberShuffleRestoreQueueSnapshot() {
-    val snapshot = PlayerQueueNavigationOwner.captureShuffleRestore(currentQueueSnapshot())
-    if (snapshot == null) {
-        clearShuffleRestoreQueueSnapshot()
-        return
-    }
-    shuffleRestorePlaylistReference = snapshot.playlist
-    shuffleRestoreCurrentIndex = snapshot.currentIndex.coerceIn(snapshot.playlist.indices)
-}
-
-internal fun PlayerManager.clearShuffleRestoreQueueSnapshot() {
-    shuffleRestorePlaylistReference = null
-    shuffleRestoreCurrentIndex = -1
-}
-
-private fun PlayerManager.restoreShuffleRestoreQueueSnapshot(): Boolean {
-    val currentSong = _currentSongFlow.value
-    val restoredQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
-        PlayerQueueNavigationOwner.restoreShuffleOrder(
-            current = snapshot,
-            restorePlaylist = shuffleRestorePlaylistReference,
-            currentSong = currentSong,
-            fallbackIndex = shuffleRestoreCurrentIndex,
-        )
-    }
-    clearShuffleRestoreQueueSnapshot()
-    if (restoredQueue == null) return false
-    setCurrentSongForPlayback(restoredQueue.playlist.getOrNull(restoredQueue.currentIndex))
-    return true
-}
-
-internal fun PlayerManager.shuffleCurrentQueueForSequentialPlayback(): Boolean {
-    val shuffledQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
-        PlayerQueueNavigationOwner.sequentialShuffle(snapshot)
-    }
-    val changed = shuffledQueue != null
-    publishShuffledCurrentSong(shuffledQueue)
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "shuffleCurrentQueueForSequentialPlayback: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, changed=$changed"
-    )
-    return changed
-}
-
-private fun PlayerManager.publishShuffledCurrentSong(shuffledQueue: PlayerQueueSnapshot?) {
+internal fun PlayerManager.publishShuffledCurrentSong(shuffledQueue: PlayerQueueSnapshot?) {
     if (shuffledQueue == null) return
+    bumpCurrentQueueDisplayRevision()
     setCurrentSongForPlayback(shuffledQueue.playlist.getOrNull(shuffledQueue.currentIndex))
 }
 
@@ -461,8 +418,7 @@ private fun PlayerManager.handleUnchangedShuffleMode(enabled: Boolean) {
 }
 
 private fun PlayerManager.clearStaleShuffleRestoreSnapshot() {
-    val hadRestoreSnapshot = PlayerQueueNavigationOwner.hasShuffleRestoreSnapshot(shuffleRestorePlaylistReference)
-    clearShuffleRestoreQueueSnapshot()
+    val hadRestoreSnapshot = queueStore.clearShuffleRestore()
     if (hadRestoreSnapshot) {
         statePersistenceWriter.invalidate()
         scheduleStatePersist()
@@ -474,8 +430,8 @@ private fun PlayerManager.changeShuffleMode(enabled: Boolean, commandSource: Pla
         "NERI-PlayerManager",
         "setShuffle: enabled=$enabled, currentIndex=$currentIndex, queueSize=${currentPlaylist.size}"
     )
-    if (enabled) enableShuffle(commandSource) else disableShuffle(commandSource)
-    _shuffleModeFlow.value = enabled
+    updateQueueShuffleMode(enabled, commandSource)
+    player.shuffleModeEnabled = enabled
     scheduleStatePersist()
     emitPlaybackCommand(
         type = "PLAYBACK_MODE",
@@ -487,24 +443,12 @@ private fun PlayerManager.changeShuffleMode(enabled: Boolean, commandSource: Pla
     )
 }
 
-private fun PlayerManager.enableShuffle(commandSource: PlaybackCommandSource) {
+private fun PlayerManager.updateQueueShuffleMode(enabled: Boolean, commandSource: PlaybackCommandSource) {
     if (commandSource == PlaybackCommandSource.REMOTE_SYNC) {
-        clearShuffleRestoreQueueSnapshot()
-        player.shuffleModeEnabled = true
+        queueStore.setShuffleMode(enabled, clearRestore = true)
         return
     }
-    rememberShuffleRestoreQueueSnapshot()
-    player.shuffleModeEnabled = true
-    shuffleCurrentQueueForSequentialPlayback()
-}
-
-private fun PlayerManager.disableShuffle(commandSource: PlaybackCommandSource) {
-    if (commandSource == PlaybackCommandSource.REMOTE_SYNC) {
-        clearShuffleRestoreQueueSnapshot()
-    } else {
-        restoreShuffleRestoreQueueSnapshot()
-    }
-    player.shuffleModeEnabled = false
+    publishShuffledCurrentSong(queueStore.setLocalShuffle(enabled, _currentSongFlow.value))
 }
 
 internal fun PlayerManager.applyListenTogetherPlaybackModeImpl(
@@ -513,7 +457,7 @@ internal fun PlayerManager.applyListenTogetherPlaybackModeImpl(
 ) {
     val update = PlayerQueueNavigationOwner.remoteModeUpdate(
         currentRepeatMode = repeatModeSetting,
-        currentShuffleEnabled = _shuffleModeFlow.value,
+        currentShuffleEnabled = shuffleModeFlow.value,
         requestedRepeatMode = repeatMode,
         requestedShuffleEnabled = shuffleEnabled,
     ) ?: return
@@ -535,8 +479,8 @@ private fun PlayerManager.syncRemoteRepeatModeIfInitialized() {
 
 private fun PlayerManager.applyRemoteShuffleMode(enabled: Boolean?) {
     if (enabled == null) return
+    queueStore.setShuffleMode(enabled)
     syncRemoteShuffleModeIfInitialized(enabled)
-    _shuffleModeFlow.value = enabled
 }
 
 private fun PlayerManager.syncRemoteShuffleModeIfInitialized(enabled: Boolean) {

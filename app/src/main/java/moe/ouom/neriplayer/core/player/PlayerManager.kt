@@ -81,6 +81,7 @@ import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayState
 import moe.ouom.neriplayer.core.player.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.session.PlayerQueueSessionBindings
 import moe.ouom.neriplayer.core.player.model.PlayerQueueStateStore
 import moe.ouom.neriplayer.core.player.model.RestoredPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
@@ -438,7 +439,8 @@ object PlayerManager {
     internal var usbExclusivePreferences = UsbExclusivePreferences()
     internal var allowMixedPlaybackEnabled = false
 
-    private val queueStore = PlayerQueueStateStore()
+    internal val queueStore = PlayerQueueStateStore()
+    internal val queueSessionBindings = PlayerQueueSessionBindings(queueStore)
     internal val currentPlaylist: List<SongItem>
         get() = queueStore.snapshot().playlist
     internal var currentIndex: Int
@@ -474,10 +476,8 @@ object PlayerManager {
         song: SongItem,
         transform: (SongItem) -> SongItem?
     ): SongItem? = queueStore.updateSongMatching(song, transform)
-    @Volatile
-    internal var shuffleRestorePlaylistReference: List<SongItem>? = null
-    @Volatile
-    internal var shuffleRestoreCurrentIndex = -1
+    internal val shuffleRestorePlaylistReference: List<SongItem>?
+        get() = queueStore.sessionSnapshot().shuffleRestore?.playlist
 
     @Volatile
     internal var consecutivePlayFailures = 0
@@ -588,8 +588,7 @@ object PlayerManager {
     val usbExclusivePlaybackPreparingFlow: StateFlow<Boolean> =
         _usbExclusivePlaybackPreparingFlow
 
-    internal val _shuffleModeFlow = MutableStateFlow(false)
-    val shuffleModeFlow: StateFlow<Boolean> = _shuffleModeFlow
+    val shuffleModeFlow: StateFlow<Boolean> = queueStore.shuffleModeFlow
 
     internal val _repeatModeFlow = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatModeFlow: StateFlow<Int> = _repeatModeFlow
@@ -1011,8 +1010,6 @@ object PlayerManager {
         currentMediaUrlResolvedAtMs = 0L
         setCurrentSongForPlayback(null)
         publishCurrentQueue(emptyList(), -1)
-        shuffleRestorePlaylistReference = null
-        shuffleRestoreCurrentIndex = -1
         consecutivePlayFailures = 0
         NPLogger.d("NERI-PlayerManager", "resetForListenTogetherJoin(): state cleared")
         scheduleStatePersist(positionMs = 0L, shouldResumePlayback = false, debounceMs = 0L)

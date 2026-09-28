@@ -328,8 +328,7 @@ private fun PlayerManager.prepareInitializationSession(app: Application, effecti
     stateFile = File(app.filesDir, "last_playlist.json")
     playbackStateFile = File(app.filesDir, "last_playback_state.json")
     statePersistenceWriter.invalidate()
-    shuffleRestorePlaylistReference = null
-    shuffleRestoreCurrentIndex = -1
+    queueSessionBindings.prepareForNewEngine()
     lastStatePersistAtMs = 0L
     playbackProgressOwner.resetPersistenceClock()
     playbackStatsOwner = PlaybackStatsOwner(ioScope, AppPlaybackStatsWritePort)
@@ -1014,7 +1013,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
         }
 
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-            _shuffleModeFlow.value = shuffleModeEnabled
+            queueStore.setShuffleMode(shuffleModeEnabled)
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
@@ -1911,8 +1910,6 @@ private fun PlayerManager.clearPlaybackStateAfterRelease() {
     currentMediaUrlResolvedAtMs = 0L
     setCurrentSongForPlayback(null)
     publishCurrentQueue(emptyList(), -1)
-    shuffleRestorePlaylistReference = null
-    shuffleRestoreCurrentIndex = -1
     clearPendingSeekPosition()
     _playbackPositionMs.value = 0L
 
