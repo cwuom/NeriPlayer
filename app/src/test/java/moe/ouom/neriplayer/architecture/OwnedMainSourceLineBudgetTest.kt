@@ -200,7 +200,18 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherRoomSocketEventOwner.kt",
             "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherSocketControlResultOwner.kt",
             "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherRoomMembershipOwner.kt",
-            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherMembershipTransport.kt"
+            "app/src/main/java/moe/ouom/neriplayer/listentogether/session/ListenTogetherMembershipTransport.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/PlayerManager.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/audio/output/PlaybackSoundOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/audio/output/PlayerManagerPlaybackSoundPort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/audio/output/PlaybackQualityOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/audio/output/PlayerManagerPlaybackQualityPort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/audio/output/PlaybackTransportOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/audio/output/PlayerManagerPlaybackTransportPort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/playback/PlaybackProgressOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/playback/PlayerManagerPlaybackProgressPort.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/playback/PlaybackAutoSkipPolicy.kt",
+            "app/src/main/java/moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

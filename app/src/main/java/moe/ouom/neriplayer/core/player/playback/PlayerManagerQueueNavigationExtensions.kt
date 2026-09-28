@@ -73,7 +73,7 @@ internal fun PlayerManager.handleTrackEnded() {
     val finishedSong = _currentSongFlow.value
     val finishedDurationMs = PlayerQueueNavigationOwner.finishedDuration(
         song = finishedSong,
-        reportedDurationMs = _playbackDurationMs.value,
+        reportedDurationMs = playbackDurationFlow.value,
     )
     persistLongFormPlaybackProgress(
         song = finishedSong,

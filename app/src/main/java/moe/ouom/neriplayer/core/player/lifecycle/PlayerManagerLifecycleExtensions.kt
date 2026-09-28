@@ -3,18 +3,7 @@
 package moe.ouom.neriplayer.core.player.lifecycle
 
 import android.app.Application
-import android.content.Context
-import android.media.AudioDeviceCallback
-import android.media.AudioDeviceInfo
-import android.media.AudioManager
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BluetoothAudio
-import androidx.compose.material.icons.filled.Headset
-import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material.icons.filled.Usb
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -34,11 +23,9 @@ import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -54,13 +41,6 @@ import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.audio.route.AudioDeviceRouteOwner
 import moe.ouom.neriplayer.core.player.audio.route.PlayerManagerAudioDeviceRoutePort
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
-import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
-import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
-import moe.ouom.neriplayer.core.player.audio.isWiredOutputType
-import moe.ouom.neriplayer.core.player.audio.requiresDisconnectConfirmation
-import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
-import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.playWhenReadyChangeReasonName
 import moe.ouom.neriplayer.core.player.debug.playbackSuppressionReasonName
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
@@ -74,7 +54,6 @@ import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalTranslatedLyrics
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
-import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
@@ -85,18 +64,10 @@ import moe.ouom.neriplayer.core.player.playback.AppPlaybackStatsWritePort
 import moe.ouom.neriplayer.core.player.playback.PlaybackStatsOwner
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.playback.clearAudioRouteMuteSuppression
-import moe.ouom.neriplayer.core.player.playback.pauseForAudioRouteLoss
-import moe.ouom.neriplayer.core.player.playback.pauseImpl
-import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.playback.playImpl
-import moe.ouom.neriplayer.core.player.playback.restorePlaybackAfterTransientAudioRouteLoss
 import moe.ouom.neriplayer.core.player.playback.startProgressUpdates
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
-import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT
-import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
-import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS
-import moe.ouom.neriplayer.core.player.policy.audio.shouldConfirmBluetoothDisconnect
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
 import moe.ouom.neriplayer.core.player.policy.command.shouldResumeSilentlyForListenTogetherNoisyPause
@@ -104,17 +75,9 @@ import moe.ouom.neriplayer.core.player.policy.offload.pcmAudioRequirements
 import moe.ouom.neriplayer.core.player.policy.offload.shouldUpdateAudioOffloadForReactiveChange
 import moe.ouom.neriplayer.core.player.policy.pending.shouldAcceptPlayerCallback
 import moe.ouom.neriplayer.core.player.policy.pending.shouldExposePlayerCallbackState
-import moe.ouom.neriplayer.core.player.policy.usb.isTransientUsbExclusiveOpenGate
-import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveNoisyRouteToNativePath
-import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveRecoveryForPendingReconfiguration
-import moe.ouom.neriplayer.core.player.policy.usb.shouldSkipRedundantUsbExclusiveReconfiguration
-import moe.ouom.neriplayer.core.player.policy.usb.shouldSkipUsbExclusiveRouteRebuildForManualPlayback
-import moe.ouom.neriplayer.core.player.policy.usb.shouldStopUsbExclusivePlaybackForNoisyRoute
 import moe.ouom.neriplayer.core.player.policy.wake.PlaybackTransitionWakeLock
 import moe.ouom.neriplayer.core.player.prefetch.prefetchNextGenericTrackUrl
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
-import moe.ouom.neriplayer.core.player.service.AudioPlayerService
-import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForOutputDisconnect
 import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
 import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
 import moe.ouom.neriplayer.core.player.url.shouldAdvanceAfterStuckTrackEnd
@@ -124,7 +87,6 @@ import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheForPlaybackRecov
 import moe.ouom.neriplayer.core.player.url.shouldRecoverMissingLocalPlayback
 import moe.ouom.neriplayer.core.player.url.shouldTreatPlaybackFailureAsTrackEnd
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForError
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.recovery.PlayerManagerUsbExclusiveLivenessPort
 import moe.ouom.neriplayer.core.player.usb.recovery.PlayerManagerUsbInterruptedPlaybackPort
@@ -134,17 +96,12 @@ import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbSinkRoutePort
 import moe.ouom.neriplayer.core.player.usb.route.UsbSinkRouteOwner
 import moe.ouom.neriplayer.core.player.usb.route.UsbRouteTransitionOwner
 import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbSystemAudioRoutePort
-import moe.ouom.neriplayer.core.player.usb.route.UsbSystemAudioReleaseRequest
 import moe.ouom.neriplayer.core.player.usb.route.UsbSystemAudioRouteOwner
 import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbPlaybackRoutePort
 import moe.ouom.neriplayer.core.player.usb.route.UsbPlaybackRouteOwner
 import moe.ouom.neriplayer.core.player.usb.route.AndroidUsbPlaybackNativeRoutePort
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveErrorCode
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
-import moe.ouom.neriplayer.core.player.usb.transport.isRecoverableTransportFailure
-import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackRuntimeWatchdog
@@ -152,7 +109,6 @@ import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidateForRecovery
 import moe.ouom.neriplayer.data.settings.LyricSourcePreferencePolicy
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
@@ -365,6 +321,9 @@ private fun PlayerManager.prepareInitializationSession(app: Application, effecti
     urlRefreshController.cancelCurrent()
     ioScope = newIoScope()
     mainScope = newMainScope()
+    playbackSoundOwner.rebindScopes(mainScope, ioScope)
+    playbackQualityOwner.rebindScope(ioScope)
+    playbackTransportOwner.rebindScope(mainScope)
 
     stateFile = File(app.filesDir, "last_playlist.json")
     playbackStateFile = File(app.filesDir, "last_playback_state.json")
@@ -372,7 +331,7 @@ private fun PlayerManager.prepareInitializationSession(app: Application, effecti
     shuffleRestorePlaylistReference = null
     shuffleRestoreCurrentIndex = -1
     lastStatePersistAtMs = 0L
-    lastLongFormPlaybackProgressPersistAtMs = 0L
+    playbackProgressOwner.resetPersistenceClock()
     playbackStatsOwner = PlaybackStatsOwner(ioScope, AppPlaybackStatsWritePort)
     val appWasInForeground = usbExclusiveLivenessOwner.appInForeground
     usbExclusiveLivenessOwner.cancelJobs()
@@ -492,9 +451,10 @@ private fun PlayerManager.applyInitialPlaybackPreferences(
     lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
     LyriconManager.setEnabled(lyriconEnabled)
     initializeLyriconIfEnabled(app)
-    playbackSoundConfig = initialPlaybackPreferences.toPlaybackSoundConfig()
-    playbackHighResolutionOutputEnabled =
+    playbackSoundOwner.restoreInitialPreferences(
+        initialPlaybackPreferences.toPlaybackSoundConfig(),
         initialPlaybackPreferences.playbackHighResolutionOutputEnabled
+    )
     NPLogger.d(
         "NERI-PlayerManager",
         "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, mobileDataFollowDefault=$mobileDataFollowDefaultAudioQuality, mobileDataQuality=$mobileDataNeteaseAudioQuality/$mobileDataYouTubeAudioQuality/$mobileDataBiliAudioQuality, keepProgress=$keepLastPlaybackProgressEnabled, rememberLongFormProgress=$rememberLongFormPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, neteaseLocalSourceFallback=$neteaseLocalSourceFallbackEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, highResolutionOutput=$playbackHighResolutionOutputEnabled, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
@@ -622,7 +582,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
         }
     })
     applyInitialPlaybackWakeMode()
-    _playbackSoundState.value = playbackEffectsController.attachPlayer(player)
+    playbackSoundOwner.attachPlayer(player)
     applyPlaybackSoundConfig(playbackSoundConfig, persist = false)
     applyAudioFocusPolicy()
     applyUsbExclusivePlaybackPolicy()
@@ -1063,8 +1023,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
-            _playbackSoundState.value =
-                playbackEffectsController.onAudioSessionIdChanged(audioSessionId)
+            playbackSoundOwner.onAudioSessionIdChanged(audioSessionId)
         }
     })
 
@@ -1608,7 +1567,7 @@ private fun PlayerManager.rollbackInitialization(e: Throwable, effectiveMaxCache
         releasePlayerAfterFailedInitialization()
     }
     rollbackInitializationStep("released playback effects", "release effects") {
-        _playbackSoundState.value = playbackEffectsController.release()
+        playbackSoundOwner.releaseEngine()
     }
     rollbackInitializationStep("released cache", "release cache") { releaseMediaCache() }
     rollbackInitializationStep("cancelled mainScope", "cancel mainScope") { mainScope.cancel() }
@@ -1865,7 +1824,7 @@ private fun cancelJobForRelease(job: Job?) {
 
 private fun PlayerManager.preparePlaybackRelease() {
     updateResumePlaybackRequested(false)
-    lastAutoTrackAdvanceAtMs = 0L
+    playbackTransportOwner.resetForRelease()
     cancelPlaybackStartupWatchdog(reason = "release")
     resetPlaybackRuntimeWatchdog(reason = "release")
     clearActivePlaybackCandidates()
@@ -1887,8 +1846,7 @@ private fun PlayerManager.stopPlaybackForRelease() {
 }
 
 private fun PlayerManager.releaseUsbSessionsAndJobs() {
-    cancelJobForRelease(playbackSoundPersistJob)
-    playbackSoundPersistJob = null
+    playbackSoundOwner.cancelPersistenceForRelease()
     usbPlaybackRouteOwner.release()
 }
 
@@ -1922,7 +1880,7 @@ private fun PlayerManager.releaseMediaJobsAndLyrics() {
 
 private fun PlayerManager.releasePlayerEngine() {
     releasePlayerIfInitialized()
-    _playbackSoundState.value = playbackEffectsController.release()
+    playbackSoundOwner.releaseEngine()
     _playWhenReadyFlow.value = false
     _playerPlaybackStateFlow.value = Player.STATE_IDLE
     releaseMediaCache()
