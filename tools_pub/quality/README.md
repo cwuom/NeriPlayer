@@ -19,7 +19,9 @@ lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
 自有库位于 `modules/core` 和 `modules/data`，Gradle 标识分别为 `:core:*` 和 `:data:*`。
 边界检查同时验证 `includeOwnedLibrary` 登记、孤立库、包名与目录一致性和目录容量；
 库主源码及 `module_boundaries.py` 中 `APP_FAMILIES` 登记的应用区域，每个目录最多 16 个直接源码文件，模块职责见
-[modules/README.md](../../modules/README.md)。移动路径时必须同步 CRAP source/method 选择器，不能减少原检查范围。
+[根目录 README](../../README.md#模块结构)。移动路径时必须同步 CRAP source/method 选择器，不能减少原检查范围。
+已迁出的 `core/api/search`、`core/api/lyrics` 和 `core/lyrics` 生产代码不得重新放入 `app`；
+`LIBRARY_OWNED_FAMILIES` 检查这些目录及其子目录，宿主集成测试仍可保留在 `app`。
 单独查看完整报告可以运行 `./gradlew :app:crapReport`，该任务仍要求测试和报告输入有效，
 但不会因超分退出失败。
 

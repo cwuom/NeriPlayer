@@ -196,7 +196,11 @@ Security reminders:
 #### Root modules
 
 Owned libraries live under `modules/core/` and `modules/data/`; Gradle identities remain `:core:*` / `:data:*`.
-See [modules/README.md](modules/README.md) for module responsibilities and the directory index.
+See the root [README_EN.md](README_EN.md#module-layout) for module responsibilities and dependency rules.
+New libraries use the `build-logic.android.feature-library` convention, register through
+`includeOwnedLibrary` in `settings.gradle.kts`, and join `ownedLibraryPaths` in `app/build.gradle.kts`
+so builds, tests, and coverage include them. Source moves must update packages, callers, path contracts,
+and CRAP selectors together.
 
 - `:app`
   - Android host and dependency assembly, including screens, playback services, downloads, local media, and Worker adapters.
@@ -307,11 +311,11 @@ and at most 16 direct source files per directory in libraries and app areas regi
     `ExploreViewModel`.
   - `youtube/` in `modules/data/youtube`: YouTube Music client based on NewPipe Extractor, home/playlist/search/playback,
     PoToken, and JS Challenge support.
-  - `lyrics/` in `modules/data/lyrics`: external lyrics sources. Current implementation: `LrcLibClient`.
-
-- `app/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `search/` retains the `CloudMusicSearchApi` and `QQMusicSearchApi` host adapters; interfaces and DTOs live in `modules/core/model`.
-  - `lyrics/EditableLyricsMatcher` coordinates platform capabilities and `modules/data/lyrics` matching policies.
+  - `search/CloudMusicSearchApi` in `modules/data/netease`: NetEase metadata search using injected NetEase and HTTP clients.
+  - `lyrics/` in `modules/data/lyrics`: LrcLib, Kugou, and AMLL clients plus cross-source matching in `EditableLyricsMatcher`; `lyrics/amll/` owns AMLL word-timed lyric resolution and duration validation.
+  - `search/` in `modules/data/lyrics`: `QQMusicSearchApi` and `SearchManager`; interfaces and DTOs belong to `modules/core/model`.
+  - `AppContainer` assembles clients and routing, injecting HTTP, debug configuration, and live settings providers. Library code does not access the application container or player singleton.
+  - `PlainLyrics.kt` in `modules/core/lyrics` provides the plain-text timeline conversion shared by playback and matching.
 
 - `modules/data/comments/src/main/java/moe/ouom/neriplayer/core/comment/`
   - Comment sources, models, parsing, pagination, and caches; `AppContainer` injects client providers and cache instances.
@@ -617,9 +621,9 @@ Use this when integrating a new platform into `Explore` search or discovery.
 
 Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
-1. Implement a new `SearchApi` under `core/api/search/`.
+1. Implement the `SearchApi` contract from `:core:model` under `core/api/search/` in the appropriate platform data module.
 2. Register the singleton in `AppContainer`.
-3. Add routing, matching, and fallback logic in `SearchManager`.
+3. Register routing in the provider for `AppContainer.searchManager`; maintain and test matching and fallback rules in `:data:lyrics`.
 4. Add `MusicPlatform`, string resources, and debug probes as needed.
 
 #### 3. Add an online playback platform

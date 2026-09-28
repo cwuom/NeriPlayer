@@ -175,7 +175,10 @@
 #### 根模块
 
 自有库统一位于 `modules/core/` 和 `modules/data/`，Gradle 标识保持 `:core:*` / `:data:*`。
-职责与目录索引见 [modules/README.md](modules/README.md)。
+模块职责与依赖规则见根目录 [README.md](README.md#模块结构)。新增库时应用
+`build-logic.android.feature-library` convention，在 `settings.gradle.kts` 中使用
+`includeOwnedLibrary` 登记，并加入 `app/build.gradle.kts` 的 `ownedLibraryPaths`，
+确保进入构建、测试与覆盖率检查。移动源码时同步包名、调用方、路径契约和 CRAP 选择器。
 
 - `:app`
   - Android 宿主和依赖组装，保留页面、播放服务、下载、本地媒体与 Worker 适配层。
@@ -275,11 +278,11 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
     改动时同步检查 `ExploreLinkRecognizer` 与 `ExploreViewModel`。
   - `modules/data/youtube` 中的 `youtube/`：YouTube Music 客户端（NewPipe Extractor）、
     首页/歌单/搜索/播放、PoToken 和 JS Challenge 支持。
-  - `modules/data/lyrics` 中的 `lyrics/`：外部歌词来源，当前实现为 `LrcLibClient`。
-
-- `app/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `search/` 保留 `CloudMusicSearchApi` 与 `QQMusicSearchApi` 的宿主适配，接口和 DTO 位于 `modules/core/model`。
-  - `lyrics/EditableLyricsMatcher` 组合平台能力与 `modules/data/lyrics` 的匹配策略。
+  - `modules/data/netease` 中的 `search/CloudMusicSearchApi`：网易云元数据搜索适配，复用注入的网易云客户端和 HTTP 客户端。
+  - `modules/data/lyrics` 中的 `lyrics/`：LrcLib、Kugou、AMLL 客户端及 `EditableLyricsMatcher` 跨来源匹配；`lyrics/amll/` 负责 AMLL 逐词歌词解析与时长校验。
+  - `modules/data/lyrics` 中的 `search/`：`QQMusicSearchApi` 和 `SearchManager`；接口和 DTO 位于 `modules/core/model`。
+  - `AppContainer` 组装搜索客户端与路由，注入 HTTP、调试配置和实时设置 provider；库代码不访问应用容器或播放器单例。
+  - 纯文本歌词时间轴转换位于 `modules/core/lyrics` 的 `PlainLyrics.kt`，播放器与匹配器共享同一实现。
 
 - `modules/data/comments/src/main/java/moe/ouom/neriplayer/core/comment/`
   - 评论来源、模型、解析、分页和缓存；客户端 provider 与缓存由 `AppContainer` 组装注入。
@@ -530,9 +533,9 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
 
 适用于补封面、歌词、曲目信息，而不是扩展 `Explore` 页。
 
-1. 在 `core/api/search/` 下实现新的 `SearchApi`。
+1. 在所属平台数据模块的 `core/api/search/` 下实现 `:core:model` 提供的 `SearchApi`。
 2. 在 `AppContainer` 中注册单例。
-3. 在 `SearchManager` 中增加路由、匹配和降级逻辑。
+3. 在 `AppContainer.searchManager` 的 provider 中登记路由；匹配和降级规则在 `:data:lyrics` 中维护并测试。
 4. 视需要补充 `MusicPlatform`、字符串资源和调试探针。
 
 #### 3. 新增在线播放平台

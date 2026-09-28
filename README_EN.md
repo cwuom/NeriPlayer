@@ -682,14 +682,14 @@ For release build and signing details, see
 ### Module layout
 
 Owned libraries live under `modules/core/` and `modules/data/`, corresponding to the `:core:*` and `:data:*` Gradle modules.
-See the [module maintenance guide](modules/README.md) for responsibilities, feature directories, and maintenance checks.
+Directories follow `modules/<layer>/<module>`; for example, `modules/data/youtube` maps to `:data:youtube`.
 
 - `:app`: Android host, screens, playback/download runtime, and dependency assembly.
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`: shared utilities, models, logging, and networking.
 - `:core:lyrics` / `:core:listen-protocol`: lyric parsing/transforms and Listen Together protocol models.
 - `:data:comments` / `:data:listen-together`: cross-platform comment repositories and Listen Together transport, with clients and lifecycle managed by the host.
 - `:data:netease` / `:data:bilibili` / `:data:youtube`: platform APIs, accounts, and playback source resolution.
-- `:data:lyrics`: lyric sources and matching policies.
+- `:data:lyrics`: lyric sources, QQ metadata search, cross-source matching, and AMLL resolution, with clients and live settings supplied by the host.
 - `:ksp-annotations` / `:ksp-processor`: generated settings registration and metadata.
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`: lyrics parsing and Compose lyrics UI submodules.
 - `build-logic`: shared Gradle convention plugins.
@@ -697,8 +697,21 @@ See the [module maintenance guide](modules/README.md) for responsibilities, feat
 - `np-submodule/NeriPlayer-LTW`: Listen Together Cloudflare Workers server.
 - `np-submodule/miuix`: vendored upstream Miuix source/docs tree, not part of the current app module graph.
 
-Libraries do not depend on `app`; the host injects preferences, device tokens, and network clients.
-Run `./gradlew verifyModularization` for dependency boundaries, module JVM tests, combined CRAP coverage, and lint.
+Dependencies point from `app` to `data` and `core`. Data modules may compose core libraries and
+other data modules; core modules cannot depend on data modules, libraries cannot depend on `app`,
+and the module graph must remain acyclic. The host injects preferences, device tokens, and network
+clients. Settings that can change at runtime are read through providers when needed.
+Compose screens, Room, services, workers, and the playback/download runtime belong to `app`.
+
+Source packages follow their directories and group code by responsibility. For example, the YouTube
+module separates bootstrap data, challenge solving, response parsing, playback policies, and HTTP
+transport into `bootstrap`, `challenge`, `parser`, `playback`, and `transport`. Each module owns its
+tests, resources, and consumer R8 rules; integration tests requiring the application host stay in `app`.
+
+Run `./gradlew verifyModularization` for dependency boundaries, module JVM tests, combined CRAP coverage,
+domain dependencies, and lint. Run an individual module's tests with `./gradlew :data:youtube:testDebugUnitTest`.
+The standalone structural check, `python3 -B tools_pub/quality/module_boundaries.py`, needs no Android SDK.
+Library source files must stay below 2000 lines, with at most 16 direct Kotlin/Java files per production directory.
 See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension rules.
 
 ### Entry point and navigation

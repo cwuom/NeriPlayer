@@ -527,14 +527,14 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 ### 模块结构
 
 自有库位于 `modules/core/` 和 `modules/data/`，对应 `:core:*` 和 `:data:*` Gradle 模块。
-各模块职责、按功能细分的目录及维护约束见 [模块维护指南](modules/README.md)。
+目录使用 `modules/<层>/<模块>`，例如 `modules/data/youtube` 对应 `:data:youtube`。
 
 - `:app`：Android 宿主、页面、播放/下载运行时及依赖组装。
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`：通用工具、共享模型、日志和网络基础能力。
 - `:core:lyrics` / `:core:listen-protocol`：歌词解析与转换、一起听协议模型。
 - `:data:comments` / `:data:listen-together`：跨平台评论仓库和一起听传输层，宿主负责注入客户端与管理生命周期。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`：平台 API、账号和播放源解析。
-- `:data:lyrics`：歌词来源和匹配策略。
+- `:data:lyrics`：歌词来源、QQ 元数据搜索、跨来源匹配与 AMLL 解析；客户端及实时设置由宿主注入。
 - `:ksp-annotations` / `:ksp-processor`：设置项自动登记与生成。
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`：歌词解析与 Compose 歌词 UI 子模块。
 - `build-logic`：统一 Gradle convention plugin。
@@ -542,8 +542,20 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `np-submodule/NeriPlayer-LTW`：一起听 Cloudflare Workers 服务端。
 - `np-submodule/miuix`：仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
 
-库模块不依赖 `app`；偏好设置、设备令牌和网络客户端由宿主注入。
-运行 `./gradlew verifyModularization` 检查依赖边界、各模块 JVM 测试、合并 CRAP 覆盖率和 lint。
+依赖从 `app` 指向 `data` 和 `core`；`data` 可以组合基础库和其他数据模块，
+`core` 不依赖 `data`，库模块不依赖 `app`，模块之间不得形成循环依赖。
+偏好设置、设备令牌和网络客户端由宿主注入；需要反映设置变更的值通过 provider 按需读取。
+Compose 页面、Room、Service、Worker 及播放和下载运行时由 `app` 管理。
+
+源码按业务职责细分，包名与目录一致。例如 YouTube 模块将启动信息、挑战求解、
+响应解析、播放策略和 HTTP 传输分别放入 `bootstrap`、`challenge`、`parser`、
+`playback` 和 `transport`。模块自己的测试、资源与 consumer R8 规则随实现维护，
+需要宿主参与的集成测试保留在 `app`。
+
+运行 `./gradlew verifyModularization` 检查依赖边界、各模块 JVM 测试、合并 CRAP 覆盖率、
+计算域依赖和 lint；单模块测试可运行 `./gradlew :data:youtube:testDebugUnitTest`。
+结构检查也可独立运行 `python3 -B tools_pub/quality/module_boundaries.py`，无需 Android SDK。
+库源码文件必须少于 2000 行，库内每个生产源码目录最多包含 16 个直接 Kotlin/Java 文件。
 具体扩展规则见 [贡献指南](CONTRIBUTING.md#项目结构与当前实现--project-layout)。
 
 ### 入口与导航
