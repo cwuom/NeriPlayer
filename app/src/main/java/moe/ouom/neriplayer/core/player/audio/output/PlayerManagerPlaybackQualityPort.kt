@@ -37,7 +37,8 @@ internal object PlayerManagerPlaybackQualityPort : PlaybackQualityPort {
                 reason = reason,
                 bypassCooldown = true,
                 fallbackSeekPositionMs = positionMs,
-                resumePlaybackAfterRefresh = manager.resumePlaybackRequested,
+                // USB 重配置保留的恢复意图不能让音质刷新提前恢复播放
+                resumePlaybackAfterRefresh = manager.player.playWhenReady || manager.player.isPlaying,
                 resumedPlaybackCommandSource = manager.activePlaybackCommandSource
             )
         }
