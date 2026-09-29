@@ -178,6 +178,13 @@ internal fun SettingsLyricsSection(
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
                 )
+                XiaomiSuperIslandLyricsSetting(
+                    autoSettingsRepository = autoSettingsRepository,
+                    settingsRepository = settingsRepository,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
             }
             if (cardIndex == null) LyricsDetailGap(showHeader)
             if (shouldShowCard(3)) LyricsDetailCard(

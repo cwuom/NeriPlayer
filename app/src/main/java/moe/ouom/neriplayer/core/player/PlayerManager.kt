@@ -173,6 +173,8 @@ import moe.ouom.neriplayer.core.player.persistence.updateSongTranslatedLyricsImp
 import moe.ouom.neriplayer.core.player.persistence.updateUserLyricOffsetImpl
 import moe.ouom.neriplayer.core.player.timer.SleepTimerManager
 import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
+import moe.ouom.neriplayer.core.player.service.XiaomiSuperIslandLyricBridge
+import moe.ouom.neriplayer.core.player.service.LiveLyricNotificationBridge
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_PLAYBACK_PREFER_M4A
 import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
 import moe.ouom.neriplayer.core.player.url.safeCustomPlaybackCacheKey
@@ -413,6 +415,10 @@ object PlayerManager {
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false
     internal var dynamicIslandLyricsEnabled = false
+    internal var xiaomiSuperIslandLyricEnabled = false
+    internal var liveUpdateLyricEnabled = false
+    internal var xiaomiSuperIslandLyricBridge: XiaomiSuperIslandLyricBridge? = null
+    internal var liveLyricNotificationBridge: LiveLyricNotificationBridge? = null
     internal var floatingLyricsEnabled = false
     internal var floatingLyricsShowTranslation = true
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
