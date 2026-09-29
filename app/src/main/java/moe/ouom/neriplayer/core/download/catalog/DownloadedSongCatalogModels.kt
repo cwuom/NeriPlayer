@@ -1,12 +1,12 @@
 package moe.ouom.neriplayer.core.download.catalog
 
+import moe.ouom.neriplayer.core.download.catalog.projection.projectDownloadedSongEdits
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
 import moe.ouom.neriplayer.core.download.model.localFileNameFromFileReference
 import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.model.remoteSourceIdentityOrNull as downloadedRemoteSourceIdentityOrNull
 import moe.ouom.neriplayer.core.download.model.remoteSourceStableKeyOrNull
 import moe.ouom.neriplayer.core.download.model.withRecoveredRemoteSourceStableKey
-import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
@@ -460,89 +460,7 @@ internal fun projectDownloadedSongMetadata(
     existing: DownloadedSong,
     updatedSong: SongItem
 ): DownloadedSong {
-    val existingRemoteSource = existing.downloadedRemoteSourceIdentityOrNull()
-    val updatedRemoteSource = updatedSong.remoteSourceIdentityOrNull()
-    val remoteSource = existingRemoteSource ?: updatedRemoteSource
-    val existingRemoteSourceChannel = existing.sourceChannelId
-        ?.trim()
-        ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
-    val customCover = updatedSong.customCoverUrl?.trim()?.takeIf(String::isNotBlank)
-    val restoredLocalCover = updatedSong.coverUrl?.takeIf(::isResolvableLocalReference)
-    val updatedAlbum = updatedSong.album
-        .trim()
-        .takeIf { it.isNotBlank() }
-    val updatedSourceChannel = updatedSong.channelId
-        ?.trim()
-        ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
-    val sourceChannelId = existingRemoteSourceChannel ?: updatedSourceChannel ?: remoteSource?.album
-    val sourceAudioId = existing.sourceAudioId
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-        ?: updatedSong.audioId
-            ?.trim()
-            ?.takeIf { updatedSourceChannel != null && it.isNotBlank() }
-        ?: remoteSource
-            ?.takeIf { sourceChannelId.equals("netease", ignoreCase = true) }
-            ?.id
-            ?.toString()
-    val sourceSubAudioId = existing.sourceSubAudioId
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-        ?: updatedSong.subAudioId
-            ?.trim()
-            ?.takeIf { updatedSourceChannel != null && it.isNotBlank() }
-    val preservesExistingRemoteSource = existingRemoteSource != null
-    val updatedLocalReference = updatedSong.mediaUri?.takeIf(::isResolvableLocalReference)
-    val existingLocalReference = existing.mediaUri?.takeIf(String::isNotBlank) ?: existing.filePath
-    val updatedLocalFileName = updatedSong.localFileName?.takeIf(String::isNotBlank)
-        ?: localFileNameFromFileReference(updatedLocalReference)
-        ?: existing.resolvedLocalFileName().takeIf {
-            updatedLocalReference == null || updatedLocalReference == existingLocalReference
-        }
-    return existing.copy(
-        id = if (preservesExistingRemoteSource) existing.id else updatedSong.id,
-        name = updatedSong.name,
-        artist = updatedSong.artist,
-        album = updatedAlbum ?: existing.album,
-        coverPath = if (customCover == null) restoredLocalCover else existing.coverPath,
-        coverUrl = updatedSong.coverUrl ?: existing.coverUrl,
-        matchedLyric = updatedSong.matchedLyric,
-        matchedTranslatedLyric = updatedSong.matchedTranslatedLyric,
-        matchedRomanizedLyric = updatedSong.matchedRomanizedLyric,
-        matchedLyricSource = updatedSong.matchedLyricSource?.name,
-        matchedSongId = updatedSong.matchedSongId,
-        userLyricOffsetMs = updatedSong.userLyricOffsetMs,
-        customCoverUrl = customCover,
-        customName = updatedSong.customName,
-        customArtist = updatedSong.customArtist,
-        originalName = existing.originalName
-            ?: existing.name.takeIf { preservesExistingRemoteSource }
-            ?: updatedSong.originalName,
-        originalArtist = existing.originalArtist
-            ?: existing.artist.takeIf { preservesExistingRemoteSource }
-            ?: updatedSong.originalArtist,
-        originalCoverUrl = existing.originalCoverUrl
-            ?: existing.coverUrl.takeIf { preservesExistingRemoteSource }
-            ?: updatedSong.originalCoverUrl,
-        originalLyric = existing.originalLyric ?: updatedSong.originalLyric,
-        originalTranslatedLyric = existing.originalTranslatedLyric
-            ?: updatedSong.originalTranslatedLyric,
-        originalRomanizedLyric = existing.originalRomanizedLyric
-            ?: updatedSong.originalRomanizedLyric,
-        mediaUri = updatedLocalReference ?: existing.mediaUri,
-        localFileName = updatedLocalFileName,
-        durationMs = updatedSong.durationMs.takeIf { it > 0L } ?: existing.durationMs,
-        stableKey = remoteSource?.stableKey()
-            ?: updatedSong.stableKey().takeIf(String::isNotBlank)
-            ?: existing.stableKey,
-        sourceIdentityAlbum = remoteSource?.album ?: existing.sourceIdentityAlbum,
-        sourceMediaUri = remoteSource?.mediaUri ?: existing.sourceMediaUri,
-        sourceChannelId = sourceChannelId,
-        sourceAudioId = sourceAudioId,
-        sourceSubAudioId = sourceSubAudioId,
-        sourcePlaylistContextId = existing.sourcePlaylistContextId
-            ?: updatedSong.playlistContextId
-    ).withRecoveredRemoteSourceStableKey()
+    return projectDownloadedSongEdits(existing, updatedSong)
 }
 
 internal fun DownloadedSong.toMetadataPersistenceSong(updatedSong: SongItem): SongItem {

@@ -1,5 +1,6 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/core/download/catalog/projection/*.kt",
     "moe/ouom/neriplayer/core/download/catalog/assembly/*.kt",
     "moe/ouom/neriplayer/core/download/catalog/host/DownloadedSongLocalMetadataAdapter.kt",
     "moe/ouom/neriplayer/core/api/lyrics/amll/AmllLyricsResolver.kt",
@@ -205,6 +206,11 @@
     "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/core/download/catalog/DownloadedSongCatalogModels.kt",
+      "class": "moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogModelsKt",
+      "methods": ["projectDownloadedSongMetadata"]
+    },
     {
       "source": "moe/ouom/neriplayer/core/download/catalog/DownloadedSongBuilder.kt",
       "class": "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilder",

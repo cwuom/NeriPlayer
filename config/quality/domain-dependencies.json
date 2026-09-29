@@ -1,5 +1,34 @@
 [
   {
+    "name": "downloaded-song-projection",
+    "package": "moe.ouom.neriplayer.core.download.catalog.projection.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "moe.ouom.neriplayer.core.api.search.MusicPlatform",
+      "moe.ouom.neriplayer.core.download.model.DownloadedSong",
+      "moe.ouom.neriplayer.data.model.SongItem",
+      "moe.ouom.neriplayer.data.model.SongIdentity"
+    ],
+    "bridges": {
+      "moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogModelsKt": [
+        "Methodref isResolvableLocalReference:(Ljava/lang/String;)Z"
+      ],
+      "moe.ouom.neriplayer.core.download.model.DownloadModelsKt": [
+        "Methodref withRecoveredRemoteSourceStableKey:(Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;)Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;",
+        "Methodref remoteSourceIdentityOrNull:(Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;)Lmoe/ouom/neriplayer/data/model/SongIdentity;",
+        "Methodref localFileNameFromFileReference:(Ljava/lang/String;)Ljava/lang/String;",
+        "Methodref resolvedLocalFileName:(Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;)Ljava/lang/String;"
+      ],
+      "moe.ouom.neriplayer.data.model.SongIdentityKt": [
+        "Methodref remoteSourceIdentityOrNull:(Lmoe/ouom/neriplayer/data/model/SongItem;)Lmoe/ouom/neriplayer/data/model/SongIdentity;",
+        "Methodref stableKey:(Lmoe/ouom/neriplayer/data/model/SongItem;)Ljava/lang/String;",
+        "Methodref stableKey:(Lmoe/ouom/neriplayer/data/model/SongIdentity;)Ljava/lang/String;"
+      ]
+    }
+  },
+  {
     "name": "downloaded-song-assembly",
     "package": "moe.ouom.neriplayer.core.download.catalog.assembly.",
     "descriptor_only": [],
