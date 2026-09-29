@@ -1,5 +1,6 @@
 {
   "source_patterns": [
+    "moe/ouom/neriplayer/core/download/storage/metadata/codec/*.kt",
     "moe/ouom/neriplayer/core/download/catalog/projection/*.kt",
     "moe/ouom/neriplayer/core/download/catalog/assembly/*.kt",
     "moe/ouom/neriplayer/core/download/catalog/host/DownloadedSongLocalMetadataAdapter.kt",
@@ -206,6 +207,11 @@
     "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/core/download/storage/ManagedDownloadStorageJsonCodec.kt",
+      "class": "moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec",
+      "methods": ["downloadedAudioMetadataFromJsonObject"]
+    },
     {
       "source": "moe/ouom/neriplayer/core/download/catalog/DownloadedSongCatalogModels.kt",
       "class": "moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogModelsKt",

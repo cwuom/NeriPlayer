@@ -1,5 +1,25 @@
 [
   {
+    "name": "downloaded-metadata-codec",
+    "package": "moe.ouom.neriplayer.core.download.storage.metadata.codec.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "org.json.JSONObject",
+      "moe.ouom.neriplayer.core.download.ManagedDownloadStorage$DownloadedAudioMetadata",
+      "moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState",
+      "moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState$Companion",
+      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata",
+      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata$Baseline",
+      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata$Overrides",
+      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata$Companion"
+    ],
+    "bridges": {
+      "moe.ouom.neriplayer.core.download.ManagedDownloadStorage": []
+    }
+  },
+  {
     "name": "downloaded-song-projection",
     "package": "moe.ouom.neriplayer.core.download.catalog.projection.",
     "descriptor_only": [],

@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.download.storage
 
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.storage.metadata.codec.ManagedDownloadedAudioMetadataDecoder
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
@@ -35,7 +35,7 @@ internal object ManagedDownloadStorageJsonCodec {
     fun downloadedAudioMetadataFromJsonObject(
         root: JSONObject
     ): ManagedDownloadStorage.DownloadedAudioMetadata {
-        return root.toDownloadedAudioMetadata()
+        return ManagedDownloadedAudioMetadataDecoder(root).decode()
     }
 
     fun workingResumeMetadataToJson(
@@ -428,134 +428,11 @@ internal object ManagedDownloadStorageJsonCodec {
         }
     }
 
-    private fun JSONObject.toDownloadedAudioMetadata(): ManagedDownloadStorage.DownloadedAudioMetadata {
-        val restorable = ManagedDownloadRestorableMetadata.fromJson(
-            optJSONObject("restorableMetadata")
-        )
-        val baseline = restorable?.baseline
-        val overrides = restorable?.overrides
-        val declaredDownloadFinalized = optOptionalBoolean("downloadFinalized")
-        val declaredEmbeddingState = DownloadedAudioEmbeddingState.fromPersisted(
-            optString("metadataEmbeddingState").takeIf {
-                has("metadataEmbeddingState") && !isNull("metadataEmbeddingState")
-            }
-        )
-        val isShippedV15Completion = declaredDownloadFinalized == true &&
-            declaredEmbeddingState == null
-        val isPreviouslyDowngradedV15Completion =
-            declaredDownloadFinalized == false &&
-                declaredEmbeddingState == DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED &&
-                optString("createdAtSource").equals("LEGACY_V15", ignoreCase = true) &&
-                optString("stableKey").isNotBlank() &&
-                optString("audioFileName").isNotBlank() &&
-                optLong("downloadTimeMs") > 0L &&
-                optString("operationId").isBlank() &&
-                optString("artifactState").let { state ->
-                    state.isBlank() || state.equals("FINALIZED", ignoreCase = true) ||
-                        state.equals("COMPLETE", ignoreCase = true)
-                }
-        val acceptsLegacyV15Completion =
-            isShippedV15Completion || isPreviouslyDowngradedV15Completion
-        return ManagedDownloadStorage.DownloadedAudioMetadata(
-            stableKey = optString("stableKey").takeIf(String::isNotBlank)
-                ?: restorable?.sourceStableKey,
-            songId = optLong("songId").takeIf { it > 0L },
-            identityAlbum = optString("identityAlbum").takeIf(String::isNotBlank),
-            album = optString("album").takeIf(String::isNotBlank),
-            name = optString("name").takeIf(String::isNotBlank) ?: baseline?.title,
-            artist = optString("artist").takeIf(String::isNotBlank) ?: baseline?.artist,
-            coverUrl = optString("coverUrl").takeIf(String::isNotBlank),
-            matchedLyric = overrides?.originalLyric ?: optPresentString("matchedLyric"),
-            matchedTranslatedLyric = overrides?.translatedLyric
-                ?: optPresentString("matchedTranslatedLyric"),
-            matchedRomanizedLyric = overrides?.romanizedLyric
-                ?: optPresentString("matchedRomanizedLyric"),
-            matchedLyricSource = optString("matchedLyricSource").takeIf(String::isNotBlank),
-            matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
-            userLyricOffsetMs = optLong("userLyricOffsetMs")
-                .takeIf { has("userLyricOffsetMs") && !isNull("userLyricOffsetMs") }
-                ?.takeUnless { it == 0L }
-                ?: overrides?.userLyricOffsetMs
-                ?: 0L,
-            customCoverUrl = optString("customCoverUrl").takeIf(String::isNotBlank),
-            customName = optString("customName").takeIf(String::isNotBlank)
-                ?: overrides?.title,
-            customArtist = optString("customArtist").takeIf(String::isNotBlank)
-                ?: overrides?.artist,
-            originalName = optString("originalName").takeIf(String::isNotBlank)
-                ?: baseline?.title,
-            originalArtist = optString("originalArtist").takeIf(String::isNotBlank)
-                ?: baseline?.artist,
-            originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank)
-                ?: baseline?.coverReference,
-            originalLyric = optPresentString("originalLyric") ?: baseline?.originalLyric,
-            originalTranslatedLyric = optPresentString("originalTranslatedLyric")
-                ?: baseline?.translatedLyric,
-            originalRomanizedLyric = optPresentString("originalRomanizedLyric")
-                ?: baseline?.romanizedLyric,
-            mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
-            channelId = optString("channelId").takeIf(String::isNotBlank),
-            audioId = optString("audioId").takeIf(String::isNotBlank),
-            subAudioId = optString("subAudioId").takeIf(String::isNotBlank),
-            playlistContextId = optString("playlistContextId").takeIf(String::isNotBlank),
-            coverPath = optString("coverPath").takeIf(String::isNotBlank)
-                ?: overrides?.coverReference ?: baseline?.coverReference,
-            lyricPath = optString("lyricPath").takeIf(String::isNotBlank),
-            translatedLyricPath = optString("translatedLyricPath").takeIf(String::isNotBlank),
-            romanizedLyricPath = optString("romanizedLyricPath").takeIf(String::isNotBlank),
-            durationMs = optLong("durationMs"),
-            verifiedAudioDurationMs = optLong("verifiedAudioDurationMs").takeIf { it > 0L },
-            downloadTimeMs = optLong("downloadTimeMs")
-                .takeIf { has("downloadTimeMs") && it > 0L },
-            downloadFinalized = if (acceptsLegacyV15Completion) {
-                true
-            } else {
-                declaredDownloadFinalized
-            },
-            audioPublicationPending = optBoolean("audioPublicationPending", false),
-            audioPublicationOwnerId = optString("audioPublicationOwnerId").takeIf(String::isNotBlank),
-            metadataEmbeddingState = if (acceptsLegacyV15Completion) {
-                DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED
-            } else {
-                declaredEmbeddingState
-            },
-            createdAtMs = optLong("createdAtMs")
-                .takeIf { has("createdAtMs") && it > 0L }
-                ?: restorable?.createdAtMs,
-            createdAtSource = optString("createdAtSource")
-                .takeIf(String::isNotBlank),
-            createdAtConfidence = optString("createdAtConfidence")
-                .takeIf(String::isNotBlank),
-            artifactId = optString("artifactId").takeIf(String::isNotBlank),
-            operationId = optString("operationId").takeIf(String::isNotBlank),
-            terminalTemporaryWriteCleanupToken = optString(
-                "terminalTemporaryWriteCleanupToken"
-            ).takeIf(String::isNotBlank),
-            artifactState = optString("artifactState").takeIf(String::isNotBlank),
-            audioFileName = optString("audioFileName").takeIf(String::isNotBlank),
-            libraryId = optString("libraryId").takeIf(String::isNotBlank),
-            libraryAddedAtMs = optLong("libraryAddedAtMs")
-                .takeIf { has("libraryAddedAtMs") && it > 0L },
-            sourceCreatedAtMs = optLong("sourceCreatedAtMs")
-                .takeIf { has("sourceCreatedAtMs") && it > 0L },
-            sourceModifiedAtMs = optLong("sourceModifiedAtMs")
-                .takeIf { has("sourceModifiedAtMs") && it > 0L },
-            restorableMetadata = restorable
-        )
-    }
-
     private fun JSONObject.optPresentString(fieldName: String): String? {
         if (!has(fieldName) || isNull(fieldName)) {
             return null
         }
         return optString(fieldName)
-    }
-
-    private fun JSONObject.optOptionalBoolean(fieldName: String): Boolean? {
-        if (!has(fieldName) || isNull(fieldName)) {
-            return null
-        }
-        return optBoolean(fieldName)
     }
 
     private fun JSONArray?.toNeteaseArtistSummaries(): List<NeteaseArtistSummary> {

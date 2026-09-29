@@ -84,6 +84,7 @@ python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 - `data/sync/merge` 包含共享合并规则与宿主接口；Android 实现在相邻的 `data/sync/host`
 - `core/download/catalog/assembly` 负责下载条目的元数据优先级、歌词覆盖和封面选择，文件访问由宿主提供
 - `core/download/catalog/projection` 负责编辑后的来源身份、原始标签和本地引用合并，不读写文件或目录状态
+- `core/download/storage/metadata/codec` 只解析 JSON 与兼容旧版元数据，不调用存储入口或恢复任务
 - 各计算域的全部编译类自动纳入检查，包括新类、嵌套类、lambda 和 Kotlin 生成类
 - 类依赖采用允许列表，禁止直接引用播放器全局状态、数据库、网络、UI 或宿主适配器实现
 - 混合文件中的身份与同步辅助函数仅允许列出的 JVM 方法签名；允许某个方法不等于允许整个文件
