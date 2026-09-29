@@ -529,14 +529,16 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 自有库按 `modules/<层>/<模块>` 组织，对应同名 Gradle 路径，例如 `modules/api/youtube` 对应 `:api:youtube`。
 
 - `:app`：Android 宿主、页面、播放/下载运行时与依赖组装。
-- `:core:common` / `:core:model` / `:core:logging` / `:core:network`：通用工具、共享模型、日志和网络基础能力。
-- `:core:lyrics` / `:core:ltw-protocol`：歌词解析与转换、一起听协议模型和消息。
+- `:data:model`：统一数据模型，按认证、平台、歌词、下载、播放、存储和同步细分；不依赖业务实现模块。
+- `:core:common` / `:core:logging` / `:core:network`：通用工具、日志和网络基础能力。
+- `:core:lyrics` / `:core:ltw-protocol`：歌词解析与转换、一起听协议编解码约定；数据类型统一位于 `:data:model`。
 - `:core:playback-queue`：队列状态、编辑、导航和顺序策略；歌曲身份规则通过接口注入。
-- `:core:download`：下载元数据模型、JSON 解码和完成状态规则，文件读写由宿主负责。
-- `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求/响应模型、认证协议和网络解析。
+- `:core:download`：下载元数据 JSON 解码和完成状态规则，文件读写由宿主负责。
+- `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求构造、认证协议和网络解析。
 - `:api:lyrics` / `:api:search` / `:api:ltw`：歌词服务、元数据搜索接口和一起听 HTTP/WebSocket 传输。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存和播放源仓库。
 - `:data:lyrics` / `:data:comments`：跨来源歌词匹配与回退、评论分页和缓存。
+- `:data:sync`：同步合并、删除标记、冲突处理和身份匹配；由宿主注入本地数据与文案接口。
 - `:data:storage`：存储统计、文件扫描和缓存清理；宿主提供目录、数据库统计及下载条目快照。
 - `:ksp-annotations` / `:ksp-processor`：设置项自动登记与生成。
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`：歌词解析与 Compose 歌词 UI 子模块。
@@ -545,15 +547,17 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `np-submodule/NeriPlayer-LTW`：一起听 Cloudflare Workers 服务端。
 - `np-submodule/miuix`：仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
 
-依赖方向为 `app -> data -> api -> core`，上层可以直接依赖下层；`core` 不依赖 `api` 或 `data`，
-`api` 不依赖 `data`，所有库不得依赖 `app`，模块之间不得形成循环。
-客户端读取账号、刷新凭据和使用宿主存储时依赖窄接口，由宿主组装实现。
-需要反映设置变更的值通过 provider 按需读取，避免模块持有过期配置。
+实现模块的依赖方向为 `app -> data -> api -> core`，上层可以直接依赖下层。
+所有层都可以依赖基础数据契约 `:data:model`；该模块不依赖任何项目实现模块。
+除此之外，core 不依赖 api/data，api 不依赖数据仓储，所有库不得依赖 app 或形成循环。
+客户端读取账号、刷新凭据和使用宿主存储时依赖窄接口，由宿主组装实现；
+会变化的设置通过 provider 按需读取。
 
-分类先确定所属业务，再按职责细分包：共享认证和音乐模型放在 `core:model`，
-平台请求/响应模型放在对应 API 模块的 `model` 包，仓库私有模型随数据模块维护。
-解析器、网络请求和持久化实现分别放入 `parser`、`client`/`transport`、`repository`/`cache` 等包，
-不因实现只依赖 Kotlin 就放入 `common`，也不把所有数据类集中到共享模型库。
+业务数据模型、枚举和跨模块状态契约统一放入 `modules/data/model`，包名使用 `data.model.<业务>`，
+平台专属类型归入各平台子包，继续区分认证、缓存、请求结果等职责；公共类型按播放、下载、同步等业务分类。
+API、仓储和宿主不再各自维护模型目录。
+JSON 解析、数据库映射、网络请求和界面展示逻辑留在对应实现模块。
+页面私有状态随 UI 维护，Room 实体随数据库维护，私有算法中间状态随算法维护。
 源码包名与目录一致；保留既有 Parcelable 类全名以兼容已保存的 Android 状态。
 各模块维护自己的测试、资源与 consumer R8 规则，需要宿主参与的集成测试保留在 `app`。
 
@@ -604,8 +608,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   仍不可播时可根据设置自动匹配 Bilibili 音源或本地音频。
 - 播放状态会定期持久化，用于进程重启后的队列和状态恢复。
 - 播放器实现已按 `playback/`、`url/`、`resolver/`、`service/`、`effects/`、
-  `lifecycle/`、`watchdog/` 与 `usb/` 等职责分包；共享歌曲模型由 `:core:model` 维护，
-  旧包名仅保留少量兼容别名，不应作为新增代码入口。
+  `lifecycle/`、`watchdog/` 与 `usb/` 等职责分包；共享歌曲与播放状态契约由 `:data:model` 维护。
 - 睡眠定时器、淡入淡出、切歌交叉淡入淡出、播放模式恢复等均由播放器层管理。
 - 预抢占音频焦点、混音播放、蓝牙断连暂停和 USB 独占播放通过播放偏好快照
   在播放器启动早期生效。
@@ -668,9 +671,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   `Android Keystore + EncryptedSharedPreferences` 本地加密保存。
 - 播放历史、播放统计、歌单、收藏快照和部分映射数据使用本地文件持久化。
 - 本地歌单使用 JSON 文件存储，并通过临时文件实现原子写入。
-- GitHub 与 WebDAV 共用的同步载荷模型位于 `data/sync/model/`，
-  封面映射位于 `data/sync/`；GitHub/WebDAV 管理器与传输仍在各自 provider 包，
-  现有兼容序列化和多数合并策略继续位于 `sync/github/`。
+- GitHub 与 WebDAV 共用的同步载荷模型位于 `:data:model` 的 `data/model/sync/`，
+  合并和冲突策略位于 `:data:sync`；宿主负责封面映射、兼容序列化与持久化，
+  GitHub/WebDAV 管理器与传输位于各自 provider 包。
   删除记录会和撤销操作一起进入合并策略，避免本地撤销后的歌曲在下一轮同步又被旧删除记录移除。
 - GitHub/WebDAV 同步使用本地生成的 UUID 作为设备标识，不依赖 `ANDROID_ID`。
 - GitHub 同步通过 Git Data API 在用户仓库中创建原始二进制 blob，再以非强制更新提交到默认分支；

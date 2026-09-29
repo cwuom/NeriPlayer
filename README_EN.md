@@ -684,14 +684,16 @@ For release build and signing details, see
 Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for example, `modules/api/youtube` maps to `:api:youtube`.
 
 - `:app`: Android host, screens, playback/download runtime, and dependency assembly.
-- `:core:common` / `:core:model` / `:core:logging` / `:core:network`: shared utilities, models, logging, and networking.
-- `:core:lyrics` / `:core:ltw-protocol`: lyric parsing/transforms and Listen Together protocol models and messages.
+- `:data:model`: centralized data contracts grouped by authentication, platform, lyrics, downloads, playback, storage, and sync, without dependencies on project implementations.
+- `:core:common` / `:core:logging` / `:core:network`: shared utilities, logging, and networking.
+- `:core:lyrics` / `:core:ltw-protocol`: lyric parsing/transforms and Listen Together wire-format conventions; data types belong to `:data:model`.
 - `:core:playback-queue`: queue state, editing, navigation, and ordering policies with injected song identity rules.
-- `:core:download`: download metadata models, JSON decoding, and completion policies with file I/O owned by the host.
-- `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request/response models, authentication protocols, and response parsing.
+- `:core:download`: download metadata JSON decoding and completion policies with file I/O owned by the host.
+- `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request construction, authentication protocols, and response parsing.
 - `:api:lyrics` / `:api:search` / `:api:ltw`: lyric services, metadata search contracts, and Listen Together HTTP/WebSocket transport.
 - `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, and playback source repositories.
 - `:data:lyrics` / `:data:comments`: lyric matching and fallback across sources, comment pagination, and caching.
+- `:data:sync`: sync merging, tombstones, conflict resolution, and identity matching through host-provided data and presentation interfaces.
 - `:data:storage`: storage accounting, file scanning, and cache cleanup with host-provided locations, database statistics, and download snapshots.
 - `:ksp-annotations` / `:ksp-processor`: generated settings registration and metadata.
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`: lyrics parsing and Compose lyrics UI submodules.
@@ -700,16 +702,17 @@ Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for ex
 - `np-submodule/NeriPlayer-LTW`: Listen Together Cloudflare Workers server.
 - `np-submodule/miuix`: vendored upstream Miuix source/docs tree, not part of the current app module graph.
 
-Dependencies flow from `app -> data -> api -> core`; higher layers may depend directly on lower layers.
-Core cannot depend on API or data modules, API cannot depend on data, and no library may depend on app.
-The graph must remain acyclic. Clients read accounts, refresh credentials, and use host storage through
-narrow interfaces assembled by the host. Providers read live settings when needed.
+Implementation dependencies flow from `app -> data -> api -> core`; higher layers may use lower layers directly.
+Every layer may depend on the foundational `:data:model` contracts, which have no dependencies on project implementations.
+Otherwise core cannot depend on API/data implementations, API cannot depend on repositories, and no library may depend on app.
+The graph must remain acyclic. Clients use injected account, credential-refresh, and storage interfaces, with providers for live settings.
 
-Classify by business ownership before implementation role. Shared authentication and music models belong
-to `core:model`; platform request/response models belong to the owning API module's `model` package;
-repository-specific models remain with their data module. Parsers, requests, and persistence belong in
-`parser`, `client`/`transport`, and `repository`/`cache` packages. Kotlin-only code does not automatically
-belong to `common`, and the shared model library is not a collection of every data class.
+Business data models, enums, and cross-module state contracts live in `modules/data/model`, using `data.model.<business>` packages
+with platform-specific types grouped under their platform, then authentication, cache, or response subpackages.
+Shared contracts are grouped by playback, downloads, sync, and other business responsibilities.
+API, repository, and host modules do not own separate model directories.
+JSON adapters, database mapping, requests, and presentation logic remain with their implementations.
+Screen-local state stays with its UI, Room entities with the database, and private intermediate records with their algorithms.
 Packages match their directories. Existing Parcelable class names remain stable for saved Android state.
 Modules own their tests, resources, and consumer R8 rules; host integration tests stay in `app`.
 
@@ -772,8 +775,7 @@ See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension ru
 - Playback state is persisted periodically for queue and state recovery.
 - Player code is split by responsibility across `playback/`, `url/`, `resolver/`,
   `service/`, `effects/`, `lifecycle/`, `watchdog/`, and `usb/`. Shared song
-  models are maintained in `:core:model`; legacy packages only retain a small set of
-  compatibility aliases and should not be used for new code.
+  and playback state contracts are maintained in `:data:model`.
 - Sleep timer, fade-in/fade-out, crossfade-next, and playback mode recovery are
   handled in the player layer.
 - Preemptive audio focus, mixed playback, pause on Bluetooth disconnect, and
@@ -849,10 +851,10 @@ See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension ru
 - Play history, playback stats, playlists, favorite snapshots, and mappings are
   persisted through local files.
 - Local playlists are stored as JSON with atomic temp-file writes.
-- Sync payload models shared by GitHub and WebDAV live under `data/sync/model/`,
-  while cover mapping lives under `data/sync/`. GitHub/WebDAV managers and
-  transports remain in their provider packages; compatibility serialization and
-  most merge policies currently remain under `sync/github/`.
+- Sync payloads shared by GitHub and WebDAV live in `:data:model` under `data/model/sync/`.
+  Merge and conflict policies belong to `:data:sync`; the host owns cover mapping,
+  compatibility serialization, and persistence. GitHub/WebDAV managers and
+  transports live in their provider packages.
   Deletion records and undo operations participate in the same merge policy so
   locally restored songs are not removed again by stale deletion records on the
   next sync.
