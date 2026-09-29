@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.listentogether.session.connection
 
 import moe.ouom.neriplayer.listentogether.session.state.normalized
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
 
 internal fun hasListenTogetherReconnectTarget(session: ListenTogetherSessionState, enabled: Boolean): Boolean =
     enabled && !session.wsUrl.isNullOrBlank() && !session.roomId.isNullOrBlank()

@@ -14,12 +14,12 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.listentogether.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.core.player.watchdog.currentPlaybackCandidate
 
 internal const val LISTEN_TOGETHER_STREAM_CACHE_KEY_PREFIX = "listen-together-stream"

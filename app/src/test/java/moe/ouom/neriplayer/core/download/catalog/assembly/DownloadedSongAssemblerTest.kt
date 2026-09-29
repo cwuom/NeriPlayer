@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.catalog.assembly
 
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.catalog.fallbackDownloadedSongId
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import org.junit.Assert.assertEquals

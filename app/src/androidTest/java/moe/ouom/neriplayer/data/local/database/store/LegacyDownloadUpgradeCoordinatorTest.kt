@@ -19,6 +19,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 @RunWith(AndroidJUnit4::class)
 class LegacyDownloadUpgradeCoordinatorTest {
@@ -534,7 +535,7 @@ class LegacyDownloadUpgradeCoordinatorTest {
                 sizeBytes = 64L,
                 lastModifiedMs = 1L
             )
-            val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            val metadata = DownloadedAudioMetadata(
                 stableKey = "42|netease|",
                 audioFileName = audio.name
             )

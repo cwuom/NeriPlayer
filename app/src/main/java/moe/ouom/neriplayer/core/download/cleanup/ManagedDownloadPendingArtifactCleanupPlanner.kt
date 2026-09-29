@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import java.util.Locale
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 /** 描述可删除的引用，以及已经跨过核心提交边界的 pending 引用 */
 internal data class ManagedDownloadPendingArtifactCleanupPlan(
@@ -272,7 +273,7 @@ internal object ManagedDownloadPendingArtifactCleanupPlanner {
     }
 
     private fun isDurableCoreMetadata(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+        metadata: DownloadedAudioMetadata
     ): Boolean {
         if (metadata.downloadFinalized == true) {
             return true
@@ -285,7 +286,7 @@ internal object ManagedDownloadPendingArtifactCleanupPlanner {
     }
 
     private fun isKnownTransientPendingMetadata(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+        metadata: DownloadedAudioMetadata
     ): Boolean {
         if (metadata.downloadFinalized == true) return false
         val state = metadata.artifactState
@@ -328,8 +329,8 @@ internal object ManagedDownloadPendingArtifactCleanupPlanner {
     )
 
     private fun metadataIdentityCompatible(
-        pending: ManagedDownloadStorage.DownloadedAudioMetadata,
-        durable: ManagedDownloadStorage.DownloadedAudioMetadata
+        pending: DownloadedAudioMetadata,
+        durable: DownloadedAudioMetadata
     ): Boolean {
         val pendingStableKey = pending.stableKey?.trim()?.takeIf(String::isNotBlank)
         val durableStableKey = durable.stableKey?.trim()?.takeIf(String::isNotBlank)

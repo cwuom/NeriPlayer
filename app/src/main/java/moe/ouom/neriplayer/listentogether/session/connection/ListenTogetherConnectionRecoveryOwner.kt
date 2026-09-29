@@ -7,11 +7,11 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.listentogether.network.reconnect.LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS
-import moe.ouom.neriplayer.listentogether.network.reconnect.isTerminalListenTogetherReconnectError
-import moe.ouom.neriplayer.listentogether.network.reconnect.listenTogetherReconnectDelayMs
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS
+import moe.ouom.neriplayer.api.ltw.reconnect.isTerminalListenTogetherReconnectError
+import moe.ouom.neriplayer.api.ltw.reconnect.listenTogetherReconnectDelayMs
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
 import kotlin.time.Duration.Companion.milliseconds
 
 internal interface ListenTogetherConnectionRecoveryPort {

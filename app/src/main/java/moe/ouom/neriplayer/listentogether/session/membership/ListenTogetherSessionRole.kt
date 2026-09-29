@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether.session.membership
 
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
 
 internal fun resolveListenTogetherSessionRole(
     sessionUserId: String?,

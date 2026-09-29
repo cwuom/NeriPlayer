@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.bootstrap
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.operation.content.preserveAudioPublicationReceipt
 import org.json.JSONObject
@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadPublicationVisibilityTest {
     @Test
@@ -135,7 +136,7 @@ class ManagedDownloadPublicationVisibilityTest {
         json().put("audioPublicationPending", publishing)
     )
 
-    private fun snapshot(metadata: ManagedDownloadStorage.DownloadedAudioMetadata): ManagedDownloadStorage.DownloadLibrarySnapshot {
+    private fun snapshot(metadata: DownloadedAudioMetadata): ManagedDownloadStorage.DownloadLibrarySnapshot {
         val audio = ManagedDownloadStorage.StoredEntry("song.mp3", "/library/song.mp3", "/library/song.mp3", "/library/song.mp3", 1L, 1L)
         return ManagedDownloadStorage.DownloadLibrarySnapshot(
             audioEntries = listOf(audio),

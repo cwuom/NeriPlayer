@@ -17,8 +17,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.core.net.toUri
 import kotlinx.coroutines.yield
-import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
-import moe.ouom.neriplayer.data.storage.StorageUsageSummary
+import moe.ouom.neriplayer.data.storage.model.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.storage.model.StorageUsageSummary
 import moe.ouom.neriplayer.data.storage.analyzeStorageUsage
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.ManagedLibraryProcessingDetailsCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.download.SettingsDownloadQualityFollowPlaybackCard

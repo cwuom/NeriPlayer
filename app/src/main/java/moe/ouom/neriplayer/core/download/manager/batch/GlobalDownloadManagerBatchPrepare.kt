@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.manager.batch
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.PreExistingDownloadedAudioAction
-import moe.ouom.neriplayer.core.download.isUnfinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.resolvePreExistingDownloadedAudioAction
 import moe.ouom.neriplayer.core.download.shouldDeferQueuedDownloadStartForNetwork
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation

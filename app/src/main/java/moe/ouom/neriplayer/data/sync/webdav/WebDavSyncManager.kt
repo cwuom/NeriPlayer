@@ -39,7 +39,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VE
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipRepository
+import moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepositoryProvider
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
@@ -86,7 +86,7 @@ class WebDavSyncManager private constructor(context: Context) {
     private val playlistUsageRepo = PlaylistUsageRepository.getInstance(appContext)
     private val localPlaylistPlaybackStatsRepo =
         LocalPlaylistPlaybackStatsRepository.getInstance(appContext)
-    private val biliVideoSkipRepo = BiliVideoSkipRepository.getInstance(appContext)
+    private val biliVideoSkipRepo = BiliVideoSkipRepositoryProvider.getInstance(appContext)
 
     companion object {
         private const val TAG = "WebDavSyncManager"

@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.listentogether.session.state
 
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

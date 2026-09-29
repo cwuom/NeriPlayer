@@ -7,6 +7,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadCoverLookupTest {
 
@@ -181,7 +182,7 @@ class ManagedDownloadCoverLookupTest {
 
     private fun snapshot(
         audioEntries: List<ManagedDownloadStorage.StoredEntry>,
-        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+        metadataByAudioName: Map<String, DownloadedAudioMetadata>,
         coverEntries: List<ManagedDownloadStorage.StoredEntry>
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
         return ManagedDownloadStorage.DownloadLibrarySnapshot(
@@ -205,8 +206,8 @@ class ManagedDownloadCoverLookupTest {
     private fun metadata(
         stableKey: String?,
         coverPath: String? = null
-    ): ManagedDownloadStorage.DownloadedAudioMetadata {
-        return ManagedDownloadStorage.DownloadedAudioMetadata(
+    ): DownloadedAudioMetadata {
+        return DownloadedAudioMetadata(
             stableKey = stableKey,
             name = "Song",
             artist = "Artist",

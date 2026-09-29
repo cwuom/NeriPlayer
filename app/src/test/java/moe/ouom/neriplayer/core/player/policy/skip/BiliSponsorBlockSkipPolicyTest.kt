@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.policy.skip
 
-import moe.ouom.neriplayer.core.api.bili.BiliSponsorBlockSegment
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockSegment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

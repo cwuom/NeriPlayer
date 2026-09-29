@@ -31,6 +31,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadSnapshotPersistenceLifecycleTest {
@@ -261,7 +262,7 @@ class ManagedDownloadSnapshotPersistenceLifecycleTest {
             sizeBytes = 4_096L,
             lastModifiedMs = 100L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "snapshot-lifecycle-stable",
             songId = 55L,
             name = "Snapshot lifecycle",

@@ -75,11 +75,11 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
@@ -151,7 +151,7 @@ fun LibraryHostScreen(
         PlayerManager.playBiliVideoAsAudio(videos, index)
     },
     onPlayBiliPartsWithSourceRoute: (
-        BiliClient.VideoBasicInfo,
+        VideoBasicInfo,
         Int,
         String,
         String?

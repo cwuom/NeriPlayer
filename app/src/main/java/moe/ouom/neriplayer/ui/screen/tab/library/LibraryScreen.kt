@@ -71,7 +71,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
+import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.PlaybackStatsHotPlaylist
 import moe.ouom.neriplayer.data.stats.buildPlaybackStatsHotPlaylist

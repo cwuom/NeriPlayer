@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.text.Normalizer
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadStorageLookupTest {
 
@@ -43,7 +44,7 @@ class ManagedDownloadStorageLookupTest {
             reference = "/music/stella.audio",
             mediaUri = "/music/stella.audio"
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "525241128|netease|",
             audioFileName = audioName,
             downloadFinalized = true
@@ -158,10 +159,10 @@ class ManagedDownloadStorageLookupTest {
             mediaUri = "/music/same (1).flac"
         )
         val metadata = mapOf(
-            canonical.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+            canonical.name to DownloadedAudioMetadata(
                 stableKey = "1|netease|"
             ),
-            duplicate.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+            duplicate.name to DownloadedAudioMetadata(
                 stableKey = "2|netease|"
             )
         )
@@ -188,12 +189,12 @@ class ManagedDownloadStorageLookupTest {
             mediaUri = "/music/same.flac"
         )
         val metadata = mapOf(
-            numbered.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+            numbered.name to DownloadedAudioMetadata(
                 stableKey = "1|netease|",
                 downloadFinalized = true,
                 metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
             ),
-            canonical.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+            canonical.name to DownloadedAudioMetadata(
                 stableKey = "1|netease|",
                 downloadFinalized = false
             )
@@ -264,7 +265,7 @@ class ManagedDownloadStorageLookupTest {
             audioEntries = listOf(expected),
             metadataEntries = emptyList(),
             metadataByAudioName = mapOf(
-                expected.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                expected.name to DownloadedAudioMetadata(
                     stableKey = sourceStableKey
                 )
             ),
@@ -323,7 +324,7 @@ class ManagedDownloadStorageLookupTest {
             audioEntries = listOf(expected),
             metadataEntries = emptyList(),
             metadataByAudioName = mapOf(
-                expected.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                expected.name to DownloadedAudioMetadata(
                     stableKey = sourceSong.stableKey()
                 )
             ),
@@ -358,7 +359,7 @@ class ManagedDownloadStorageLookupTest {
             audioEntries = listOf(expected),
             metadataEntries = emptyList(),
             metadataByAudioName = mapOf(
-                expected.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                expected.name to DownloadedAudioMetadata(
                     stableKey = "42|netease|"
                 )
             ),

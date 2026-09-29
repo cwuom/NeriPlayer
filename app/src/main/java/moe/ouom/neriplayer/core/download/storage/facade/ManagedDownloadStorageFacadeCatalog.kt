@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.facade
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
-import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.storage.operation.content.ensureManagedLibraryManifestForRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.fastIndexRootIdentity
 import moe.ouom.neriplayer.core.download.storage.operation.content.fastIndexShardStorage
@@ -30,7 +30,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootForOperation
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.PendingAudioWriteScanResult
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.PendingArtifactScanResult
 import android.content.Context

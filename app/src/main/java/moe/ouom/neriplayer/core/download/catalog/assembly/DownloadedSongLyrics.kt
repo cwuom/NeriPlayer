@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.catalog.assembly
 
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.catalog.shouldInspectDownloadedLocalLyrics
 import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricOverride
 

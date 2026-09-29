@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.metadata
 
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 

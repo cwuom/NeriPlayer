@@ -17,7 +17,13 @@ APP_FAMILIES = (
     "listentogether/session", "ui/screen/tab/settings/component",
     "core/player/queue", "data/sync/merge",
 )
-LIBRARY_OWNED_FAMILIES = ("core/api/search", "core/api/lyrics", "core/lyrics")
+LIBRARY_OWNED_FAMILIES = ("core/api", "core/lyrics", "core/player/queue")
+MODULE_LAYERS = {"core": 0, "api": 1, "data": 2}
+PACKAGE_OWNERS = {
+    "moe.ouom.neriplayer.core.model": ":core:model",
+    "moe.ouom.neriplayer.core.network": ":core:network",
+    "moe.ouom.neriplayer.core.player.queue": ":core:playback-queue",
+}
 FORBIDDEN_IMPORT = re.compile(
     r'^import moe\.ouom\.neriplayer\.(?:'
     r'core\.di\.|core\.player\.PlayerManager\b|ui\.|activity\.|'
@@ -26,7 +32,7 @@ FORBIDDEN_IMPORT = re.compile(
 
 
 def owned_module(name):
-    return name.startswith((":core:", ":data:"))
+    return name.startswith(tuple(f":{layer}:" for layer in MODULE_LAYERS))
 
 
 def source_files(directory):
@@ -83,9 +89,9 @@ def verify(root):
         for dependency in sorted(dependencies):
             if dependency not in declared:
                 errors.append(f"{name}: undeclared dependency {dependency}")
-            if dependency == ":app" or (
-                name.startswith(":core:") and dependency.startswith(":data:")
-            ):
+            owner_layer = MODULE_LAYERS[name.split(":")[1]]
+            dependency_layer = MODULE_LAYERS.get(dependency.split(":")[1], -1)
+            if dependency == ":app" or dependency_layer > owner_layer:
                 errors.append(f"{name}: forbidden upward dependency {dependency}")
         sources = [file for language in ("java", "kotlin")
                    for file in source_files(directory / "src/main" / language)]
@@ -100,6 +106,15 @@ def verify(root):
         for source in sources:
             text = source.read_text()
             label = source.relative_to(root)
+            package = PACKAGE.search(text)
+            if package:
+                for prefix, owner in PACKAGE_OWNERS.items():
+                    if (package[1] == prefix or package[1].startswith(prefix + ".")) and name != owner:
+                        errors.append(f"{label}: package belongs to {owner}")
+            if name.startswith(":data:") and package and package[1].startswith((
+                "moe.ouom.neriplayer.api.", "moe.ouom.neriplayer.core.api."
+            )):
+                errors.append(f"{label}: API implementation belongs in an api module")
             for match in FORBIDDEN_IMPORT.finditer(text):
                 errors.append(f"{label}: application dependency {match.group()}")
             count = len(text.splitlines())

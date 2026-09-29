@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.facade
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.operation.content.buildManagedDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.operation.content.buildPendingAudioWriteName
 import moe.ouom.neriplayer.core.download.storage.operation.content.deletePendingAudioMetadataBlocking
@@ -50,7 +50,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.CancelledPending
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.FinalizedPendingAudioPromotion
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.SnapshotEntryBucket
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

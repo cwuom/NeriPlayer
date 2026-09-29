@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.playback
 
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.download.storage.migration.progress.ManagedMigra
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import java.io.IOException
 import java.util.Locale
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal class ManagedDownloadMigrationException(
     message: String,
@@ -35,7 +36,7 @@ internal class ManagedDownloadMigrationException(
 internal data class ManagedMigrationEntry(
     val subdirectory: String?,
     val entry: ManagedDownloadStorage.StoredEntry,
-    val metadata: ManagedDownloadStorage.DownloadedAudioMetadata? = null
+    val metadata: DownloadedAudioMetadata? = null
 ) {
     fun logicalCreatedAtMs(): Long? {
         return metadata?.createdAtMs?.takeIf { it > 0L }

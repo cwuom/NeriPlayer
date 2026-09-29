@@ -25,7 +25,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
 
 @Parcelize
 data class YouTubeMusicPlaylist(

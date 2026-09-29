@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.ui.screen
 
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.lyrics.LyricsEditorSeed
 import moe.ouom.neriplayer.core.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel

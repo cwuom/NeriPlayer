@@ -2,10 +2,10 @@ package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.listentogether.control.buildListenTogetherQueueMutationPlan
 import moe.ouom.neriplayer.listentogether.control.ListenTogetherEventFactory
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

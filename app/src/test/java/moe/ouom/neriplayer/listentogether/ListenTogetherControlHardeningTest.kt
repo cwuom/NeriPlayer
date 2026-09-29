@@ -6,13 +6,13 @@ import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.playback.wrapListenTogetherSingleTrackRepeatPosition
 import moe.ouom.neriplayer.listentogether.playback.resolveListenTogetherQueueIndex
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueOperation
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueReference
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueOperation
+import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueReference
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.session.control.ListenTogetherForwardedRequestDeduper
 import moe.ouom.neriplayer.listentogether.session.control.shouldRejectForwardedListenTogetherMemberControl
 import org.junit.Assert.assertEquals
@@ -697,7 +697,7 @@ class ListenTogetherControlHardeningTest {
         baseRoomVersion: Long,
         operations: List<ListenTogetherQueueOperation>,
         targetCurrent: ListenTogetherQueueReference? = null
-    ) = moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueMutation(
+    ) = moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueMutation(
         baseRoomVersion = baseRoomVersion,
         operations = operations,
         targetCurrent = targetCurrent

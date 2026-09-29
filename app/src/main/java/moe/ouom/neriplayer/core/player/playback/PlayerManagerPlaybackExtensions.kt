@@ -11,8 +11,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliPartSong
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.lyricon.mediaLyriconPositionMs
@@ -90,8 +90,8 @@ import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
+import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.api.youtube.transport.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.listentogether.playback.shouldShowListenTogetherPreviewClipNotice
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import kotlin.time.Duration.Companion.milliseconds
@@ -1024,7 +1024,7 @@ private fun PlayerManager.maybeWarmNextYouTubeMusicAfterCurrentResolved() {
 }
 
 internal fun PlayerManager.playBiliVideoPartsImpl(
-    videoInfo: BiliClient.VideoBasicInfo,
+    videoInfo: VideoBasicInfo,
     startIndex: Int,
     coverUrl: String
 ) {

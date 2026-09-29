@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether
 
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.session.connection.ListenTogetherForegroundRecoveryAction
 import moe.ouom.neriplayer.listentogether.session.connection.resolveListenTogetherForegroundRecoveryAction
 import moe.ouom.neriplayer.listentogether.session.connection.shouldReconnectListenTogetherForegroundSocket

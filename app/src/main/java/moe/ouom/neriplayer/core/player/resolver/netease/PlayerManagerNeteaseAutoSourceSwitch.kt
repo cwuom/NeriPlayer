@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.player.resolver.netease
 
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.api.bilibili.model.search.SearchVideoItem
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
@@ -9,7 +11,7 @@ import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.buildBiliRepresentationIdentity
 import moe.ouom.neriplayer.core.player.url.inferBiliQualityKey
-import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
+import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import kotlin.math.absoluteValue
@@ -103,7 +105,7 @@ private fun buildNeteaseAutoSourceQueries(song: SongItem): List<String> {
 private suspend fun PlayerManager.fetchBiliAutoSourceCandidates(
     song: SongItem,
     query: String
-): List<BiliClient.SearchVideoItem> {
+): List<SearchVideoItem> {
     val durationFilter = durationFilterForBiliSearch(song.durationMs)
     val firstTry = runCatching {
         biliClient.searchVideos(
@@ -140,7 +142,7 @@ private suspend fun PlayerManager.fetchBiliAutoSourceCandidates(
 
 private suspend fun PlayerManager.resolveNeteaseAutoBiliCandidate(
     song: SongItem,
-    candidate: BiliClient.SearchVideoItem,
+    candidate: SearchVideoItem,
     sideEffects: RefreshResolverSideEffects
 ): SongUrlResult.Success? {
     val videoInfo = fetchBiliAutoSourceVideoInfo(candidate) ?: return null
@@ -221,8 +223,8 @@ private fun sanitizeNeteaseAutoBiliCacheKeyPart(value: String): String {
 }
 
 private suspend fun PlayerManager.fetchBiliAutoSourceVideoInfo(
-    candidate: BiliClient.SearchVideoItem
-): BiliClient.VideoBasicInfo? {
+    candidate: SearchVideoItem
+): VideoBasicInfo? {
     return runCatching {
         if (candidate.bvid.isNotBlank()) {
             biliClient.getVideoBasicInfoByBvid(candidate.bvid)
@@ -240,14 +242,14 @@ private suspend fun PlayerManager.fetchBiliAutoSourceVideoInfo(
 }
 
 private data class BiliAutoSourcePageMatch(
-    val page: BiliClient.VideoPage,
+    val page: VideoPage,
     val score: Int
 )
 
 private fun selectNeteaseAutoBiliPage(
     song: SongItem,
-    candidate: BiliClient.SearchVideoItem,
-    videoInfo: BiliClient.VideoBasicInfo
+    candidate: SearchVideoItem,
+    videoInfo: VideoBasicInfo
 ): BiliAutoSourcePageMatch? {
     val candidateScore = scoreNeteaseAutoBiliCandidate(song, candidate)
     return videoInfo.pages
@@ -269,7 +271,7 @@ private fun selectNeteaseAutoBiliPage(
 
 internal fun scoreNeteaseAutoBiliCandidate(
     song: SongItem,
-    candidate: BiliClient.SearchVideoItem
+    candidate: SearchVideoItem
 ): Int {
     return scoreNeteaseAutoBiliText(
         song = song,

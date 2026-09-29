@@ -4,7 +4,7 @@ import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.url.CachePrefetchReadiness
@@ -16,8 +16,8 @@ import moe.ouom.neriplayer.core.player.url.prepareExoPlayerCacheForPrefetch
 import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeImmediatePlaybackWarmupTargets
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeWarmupTargets
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
+import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 

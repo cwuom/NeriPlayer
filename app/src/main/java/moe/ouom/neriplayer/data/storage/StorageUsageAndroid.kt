@@ -1,9 +1,20 @@
 package moe.ouom.neriplayer.data.storage
 
+import moe.ouom.neriplayer.data.storage.model.FileStats
+import moe.ouom.neriplayer.data.storage.model.ManagedDownloadLibraryUsage
+import moe.ouom.neriplayer.data.storage.model.StorageCacheKind
+import moe.ouom.neriplayer.data.storage.scan.statsOf
+import moe.ouom.neriplayer.data.storage.source.StorageCacheFileAccess
+import moe.ouom.neriplayer.data.storage.source.StorageLocations
+import moe.ouom.neriplayer.data.storage.source.StoragePlatformCacheAccess
+import moe.ouom.neriplayer.data.storage.source.StorageUsageSource
+import moe.ouom.neriplayer.data.storage.source.storagePlatformCaches
+
 import android.content.Context
 import java.io.File
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.snapshot.CURRENT_SNAPSHOT_CACHE_FILE_NAME
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.DownloadIndexRoomStore
@@ -15,7 +26,12 @@ internal fun storageLocations(context: Context): StorageLocations {
         filesDir = context.filesDir,
         cacheDir = context.cacheDir,
         diagnosticsDir = context.getExternalFilesDir(null) ?: context.filesDir,
-        databaseFiles = listOf(databaseFile, File(databaseFile.path + "-wal"), File(databaseFile.path + "-shm"))
+        databaseFiles = listOf(databaseFile, File(databaseFile.path + "-wal"), File(databaseFile.path + "-shm")),
+        downloadMetadataFiles = listOf(
+            "managed_download_snapshot_v1.json", CURRENT_SNAPSHOT_CACHE_FILE_NAME,
+            "pending_download_queue_v1.json", "cancelled_download_keys_v1.json",
+            "downloaded_song_catalog_v3.json", "downloaded_song_catalog_v4.json"
+        ).map { File(context.filesDir, it) }
     )
 }
 
@@ -27,9 +43,11 @@ internal class AndroidStorageUsageSource(private val context: Context) : Storage
     override suspend fun platformCacheStats() =
         PlatformPlaylistCacheRoomStore(NeriUserDataDatabase.getInstance(context))
             .storageStats(storagePlatformCaches.values.toList())
+            .mapValues { (_, stats) -> stats.toStorageUsageStats() }
 
     override suspend fun downloadIndexStats() =
         DownloadIndexRoomStore(NeriUserDataDatabase.getInstance(context)).storageStats()
+            .toStorageUsageStats()
 }
 
 internal class AndroidStoragePlatformCaches(private val context: Context) : StoragePlatformCacheAccess {

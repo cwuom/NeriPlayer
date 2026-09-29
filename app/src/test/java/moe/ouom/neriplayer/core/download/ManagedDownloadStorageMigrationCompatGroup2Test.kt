@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlin.system.measureTimeMillis
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 class ManagedDownloadStorageMigrationCompatGroup2Test : ManagedDownloadStorageMigrationCompatTestSupport() {
@@ -388,7 +389,7 @@ class ManagedDownloadStorageMigrationCompatGroup2Test : ManagedDownloadStorageMi
             sizeBytes = 10L,
             lastModifiedMs = 200L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "42|netease|track-42",
             songId = 42L,
             identityAlbum = "netease"
@@ -878,7 +879,7 @@ class ManagedDownloadStorageMigrationCompatGroup2Test : ManagedDownloadStorageMi
                     original = ManagedMigrationEntry(
                         subdirectory = null,
                         entry = entry(sourceMetadata),
-                        metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                        metadata = DownloadedAudioMetadata(
                             createdAtMs = 1_700_000_123_000L,
                             createdAtSource = "MTIME",
                             createdAtConfidence = "INFERRED"

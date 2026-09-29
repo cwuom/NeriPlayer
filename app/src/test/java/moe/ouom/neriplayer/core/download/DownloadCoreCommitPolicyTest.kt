@@ -19,6 +19,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class DownloadCoreCommitPolicyTest {
     @Test
@@ -375,7 +376,7 @@ class DownloadCoreCommitPolicyTest {
         assertFalse(shouldDemotePublishedAudioForFinalization(null))
         assertFalse(
             shouldDemotePublishedAudioForFinalization(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = false,
                     artifactState = "REPAIR_REQUIRED"
                 )
@@ -383,7 +384,7 @@ class DownloadCoreCommitPolicyTest {
         )
         assertFalse(
             shouldDemotePublishedAudioForFinalization(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = false,
                     artifactState = "CORE_COMMITTED",
                     operationId = "op-core"
@@ -396,7 +397,7 @@ class DownloadCoreCommitPolicyTest {
     fun `only an explicitly active operation may demote a published audio`() {
         assertTrue(
             shouldDemotePublishedAudioForFinalization(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = false,
                     artifactState = "COMMITTING",
                     operationId = "op-1"
@@ -405,7 +406,7 @@ class DownloadCoreCommitPolicyTest {
         )
         assertFalse(
             shouldDemotePublishedAudioForFinalization(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = false,
                     artifactState = "COMMITTING"
                 )
@@ -413,7 +414,7 @@ class DownloadCoreCommitPolicyTest {
         )
         assertFalse(
             shouldDemotePublishedAudioForFinalization(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = true,
                     artifactState = "COMMITTING",
                     operationId = "op-1"

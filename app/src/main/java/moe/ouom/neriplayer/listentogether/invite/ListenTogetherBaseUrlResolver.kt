@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether.invite
 
-import moe.ouom.neriplayer.listentogether.network.http.normalizeBaseUrl
-import moe.ouom.neriplayer.listentogether.network.http.normalizedHttpBaseUrlOrNull
+import moe.ouom.neriplayer.api.ltw.http.normalizeBaseUrl
+import moe.ouom.neriplayer.api.ltw.http.normalizedHttpBaseUrlOrNull
 
 const val DEFAULT_LISTEN_TOGETHER_BASE_URL =
     "https://neriplayer.hancat.work/"

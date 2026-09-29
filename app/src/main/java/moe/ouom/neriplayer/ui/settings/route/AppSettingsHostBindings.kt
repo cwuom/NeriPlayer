@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.appearance.ThemeMode
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
-import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
+import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
 import moe.ouom.neriplayer.ui.settings.owner.AppUsbExclusiveSettingsActions
 import moe.ouom.neriplayer.util.platform.LanguageManager
 

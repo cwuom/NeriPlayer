@@ -75,10 +75,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.storage.StorageUsageItemKind
-import moe.ouom.neriplayer.data.storage.StorageUsageItem
-import moe.ouom.neriplayer.data.storage.StorageUsageSection
-import moe.ouom.neriplayer.data.storage.StorageUsageSummary
+import moe.ouom.neriplayer.data.storage.model.StorageUsageItemKind
+import moe.ouom.neriplayer.data.storage.model.StorageUsageItem
+import moe.ouom.neriplayer.data.storage.model.StorageUsageSection
+import moe.ouom.neriplayer.data.storage.model.StorageUsageSummary
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton

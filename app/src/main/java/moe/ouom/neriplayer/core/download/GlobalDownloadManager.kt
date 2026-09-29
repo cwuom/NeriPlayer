@@ -68,7 +68,7 @@ import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildTok
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -270,12 +270,12 @@ object GlobalDownloadManager {
     internal data class FinalizedManagedAudioSnapshot(
         val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         val audio: ManagedDownloadStorage.StoredEntry,
-        val metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+        val metadata: DownloadedAudioMetadata
     )
 
     internal data class CoreRecoveryAudioCandidate(
         val audio: ManagedDownloadStorage.StoredEntry,
-        val metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        val metadata: DownloadedAudioMetadata?,
         val operationMatches: Boolean,
         val identityMatches: Boolean
     )
@@ -290,7 +290,7 @@ object GlobalDownloadManager {
     internal data class PlayableManagedAudioSnapshot(
         val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         val audio: ManagedDownloadStorage.StoredEntry,
-        val metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+        val metadata: DownloadedAudioMetadata?
     ) {
         val reference: String?
             get() = ManagedDownloadStorage.resolveStoredEntryPlaybackUri(
@@ -921,7 +921,7 @@ object GlobalDownloadManager {
     /** 当前快照的音频引用优先于旧 metadata，避免迁移后恢复 app-private URI */
     internal fun resolveDurableMetadataPlaybackReference(
         audio: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+        metadata: DownloadedAudioMetadata?
     ): String? {
         return this.resolveDurableMetadataPlaybackReferenceImpl(audio, metadata)
     }
@@ -1017,7 +1017,7 @@ object GlobalDownloadManager {
         operationId: String? = null,
         clearRestorableOverrides: RestorableMetadataClearPolicy =
             RestorableMetadataClearPolicy(),
-        existingMetadataHint: ManagedDownloadStorage.DownloadedAudioMetadata? = null
+        existingMetadataHint: DownloadedAudioMetadata? = null
     ): Boolean = downloadedAudioMetadataStore.persist(
         context = context,
         audio = audio,
@@ -1036,7 +1036,7 @@ object GlobalDownloadManager {
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
         metadataEntry: ManagedDownloadStorage.StoredEntry? = null
-    ): ManagedDownloadStorage.DownloadedAudioMetadata? = downloadedAudioMetadataStore.read(
+    ): DownloadedAudioMetadata? = downloadedAudioMetadataStore.read(
         context = context,
         audio = audio,
         metadataEntry = metadataEntry

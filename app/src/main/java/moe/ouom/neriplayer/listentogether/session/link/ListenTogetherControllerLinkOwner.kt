@@ -21,13 +21,13 @@ import moe.ouom.neriplayer.listentogether.playback.shouldDeferControllerLinkReso
 import moe.ouom.neriplayer.listentogether.playback.shouldPublishControllerLinkUnavailable
 import moe.ouom.neriplayer.listentogether.playback.shouldRequestListenTogetherControllerLink
 import moe.ouom.neriplayer.listentogether.playback.shouldRetryControllerLinkResolution
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
 import moe.ouom.neriplayer.util.units.SECOND_MS
 import kotlin.time.Duration.Companion.milliseconds
 

@@ -43,11 +43,11 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.netease.mergeNeteaseSessionCookies
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.api.netease.client.mergeNeteaseSessionCookies
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint
+import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.youtube.auth.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
 import moe.ouom.neriplayer.util.platform.LanguageManager

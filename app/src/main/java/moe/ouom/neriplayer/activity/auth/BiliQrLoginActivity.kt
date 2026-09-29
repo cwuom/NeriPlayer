@@ -44,8 +44,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliQrLoginClient
-import moe.ouom.neriplayer.core.api.bili.BiliQrLoginSession
+import moe.ouom.neriplayer.api.bilibili.auth.BiliQrLoginClient
+import moe.ouom.neriplayer.api.bilibili.model.auth.BiliQrLoginSession
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteBiliWebLogin
 import moe.ouom.neriplayer.core.logging.NPLogger

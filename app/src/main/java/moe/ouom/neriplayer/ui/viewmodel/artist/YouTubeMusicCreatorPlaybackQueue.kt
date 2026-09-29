@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorBrowseEndpoint
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorItem
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorItemsPage
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorBrowseEndpoint
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItemsPage
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal const val YOUTUBE_MUSIC_CREATOR_PLAYBACK_PAGE_LIMIT = 80

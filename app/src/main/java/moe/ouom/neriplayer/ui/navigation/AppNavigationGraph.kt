@@ -16,8 +16,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.google.gson.Gson
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.screen.download.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.download.DownloadProgressScreen
@@ -82,7 +82,7 @@ internal class AppNavigationGraphPresentation(
 internal class AppNavigationMediaActions(
     val playSongs: (List<SongItem>, Int, String?) -> Unit,
     val playBiliAudio: (List<BiliVideoItem>, Int, String?) -> Unit,
-    val playBiliParts: (BiliClient.VideoBasicInfo, Int, String, String?) -> Unit,
+    val playBiliParts: (VideoBasicInfo, Int, String, String?) -> Unit,
     val onNeteaseAlbumClick: (AlbumSummary) -> Unit,
     val onYouTubePlaylistClick: (YouTubeMusicPlaylist) -> Unit,
     val onYouTubeCreatorClick: (YouTubeMusicCreatorSummary) -> Unit
@@ -400,7 +400,7 @@ private fun NavGraphBuilder.registerBiliDetailRoutes(
     coherentFeedbackEnabled: Boolean,
     offlineMode: Boolean,
     playBiliAudio: (List<BiliVideoItem>, Int, String?) -> Unit,
-    playBiliParts: (BiliClient.VideoBasicInfo, Int, String, String?) -> Unit,
+    playBiliParts: (VideoBasicInfo, Int, String, String?) -> Unit,
     renderScene: @Composable AnimatedContentScope.(String?, @Composable () -> Unit) -> Unit
 ) {
     composable(

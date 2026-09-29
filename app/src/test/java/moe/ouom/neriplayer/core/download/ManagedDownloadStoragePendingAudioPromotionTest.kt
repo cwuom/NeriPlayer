@@ -15,6 +15,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.storage.operation.content.canReclaimEmptyPublicationTarget
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadStoragePendingAudioPromotionTest {
     @Test
@@ -197,7 +198,7 @@ class ManagedDownloadStoragePendingAudioPromotionTest {
 
     @Test
     fun `staged metadata reuses its final audio name for the same pending artifact`() {
-        val stagedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val stagedMetadata = DownloadedAudioMetadata(
             stableKey = "42|netease|album",
             operationId = "operation-42",
             audioFileName = "song (1).mp3"
@@ -216,7 +217,7 @@ class ManagedDownloadStoragePendingAudioPromotionTest {
 
     @Test
     fun `staged metadata cannot redirect a pending promotion to another artifact`() {
-        val stagedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val stagedMetadata = DownloadedAudioMetadata(
             stableKey = "42|netease|album",
             operationId = "operation-42",
             audioFileName = "song (1).mp3"
@@ -258,7 +259,7 @@ class ManagedDownloadStoragePendingAudioPromotionTest {
 
     @Test
     fun `renamed pending metadata follows the resolved audio file name without losing identity`() {
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "42|netease|album",
             operationId = "operation-42",
             name = "Song",

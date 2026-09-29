@@ -22,6 +22,7 @@ import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapsho
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomMapper
 import moe.ouom.neriplayer.data.model.SongItem
 import org.mockito.Mockito
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadStorageSnapshotCacheTest {
 
@@ -73,7 +74,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             name = "$audioName.npmeta.json",
             reference = "content://provider/metadata"
         )
-        val pendingMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val pendingMetadata = DownloadedAudioMetadata(
             stableKey = "pending|netease|",
             downloadFinalized = false,
             artifactState = "CORE_COMMITTED"
@@ -137,7 +138,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             sizeBytes = 64L,
             lastModifiedMs = 2L
         )
-        val formalMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val formalMetadata = DownloadedAudioMetadata(
             stableKey = "formal|netease|",
             downloadFinalized = true
         )
@@ -189,7 +190,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             name = "$audioName.npmeta.pending.json",
             reference = "content://provider/orphan-pending-metadata"
         )
-        val formalMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val formalMetadata = DownloadedAudioMetadata(
             stableKey = "formal|netease|",
             downloadFinalized = true
         )
@@ -266,7 +267,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
                 cachedEntry = cachedEntry,
                 currentEntry = cachedEntry,
-                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+                cachedMetadata = DownloadedAudioMetadata(songId = 42L)
             )
         )
     }
@@ -286,7 +287,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
                 cachedEntry = entry,
                 currentEntry = entry,
-                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+                cachedMetadata = DownloadedAudioMetadata(songId = 42L)
             )
         )
     }
@@ -309,8 +310,8 @@ class ManagedDownloadStorageSnapshotCacheTest {
             lastModifiedMs = 101L
         )
         val cachedChangedEntry = changedEntry.copy(lastModifiedMs = 100L)
-        val unchangedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
-        val changedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 43L)
+        val unchangedMetadata = DownloadedAudioMetadata(songId = 42L)
+        val changedMetadata = DownloadedAudioMetadata(songId = 43L)
         val cachedSnapshot = emptySnapshot().copy(
             metadataEntriesByAudioName = mapOf(
                 "Artist - Song.mp3" to unchangedEntry,
@@ -394,14 +395,14 @@ class ManagedDownloadStorageSnapshotCacheTest {
             ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
                 cachedEntry = cachedEntry,
                 currentEntry = cachedEntry,
-                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+                cachedMetadata = DownloadedAudioMetadata(songId = 42L)
             )
         )
         assertFalse(
             ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
                 cachedEntry = cachedEntry.copy(lastModifiedMs = 100L),
                 currentEntry = cachedEntry.copy(lastModifiedMs = 101L),
-                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+                cachedMetadata = DownloadedAudioMetadata(songId = 42L)
             )
         )
     }
@@ -440,7 +441,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             sizeBytes = 64L,
             lastModifiedMs = 9999L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-key",
             songId = 12L,
             identityAlbum = "album-key",
@@ -531,7 +532,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             sizeBytes = 512L,
             lastModifiedMs = 124L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "room-stable",
             songId = 44L,
             identityAlbum = "NeteaseAlbum",
@@ -922,7 +923,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             sizeBytes = 32L,
             lastModifiedMs = 103L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable",
             songId = 7L,
             name = "Song",
@@ -984,7 +985,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             sizeBytes = 128L,
             lastModifiedMs = 100L
         )
-        val staleMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val staleMetadata = DownloadedAudioMetadata(
             stableKey = "old-stable",
             songId = 1L,
             name = "Old Song",
@@ -1014,7 +1015,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             localFilePath = "/music/new/Artist - Song.flac.npmeta.json",
             lastModifiedMs = 200L
         )
-        val updatedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val updatedMetadata = DownloadedAudioMetadata(
             stableKey = "new-stable",
             songId = 2L,
             name = "New Song",
@@ -1043,7 +1044,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             sizeBytes = 1024L,
             lastModifiedMs = 99L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable",
             songId = 7L,
             name = "Song",
@@ -1106,7 +1107,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             sizeBytes = 128L,
             lastModifiedMs = 100L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable",
             songId = 7L,
             name = "Song",
@@ -1324,7 +1325,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
 
     @Test
     fun `fast lyric references read original translated and romanized sidecars together`() {
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             matchedLyric = "metadata original",
             matchedTranslatedLyric = "metadata translated",
             matchedRomanizedLyric = "metadata romanized"
@@ -1354,7 +1355,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
     @Test
     fun `fast lyric references fall back to metadata after the sidecar is deleted`() {
         val bundle = ManagedDownloadStorage.resolveLyricsBundleFromReferences(
-            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            metadata = DownloadedAudioMetadata(
                 matchedLyric = "metadata original",
                 originalTranslatedLyric = "metadata translated",
                 originalRomanizedLyric = "metadata romanized"
@@ -1376,7 +1377,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
     @Test(expected = SecurityException::class)
     fun `fast lyric references do not hide a revoked SAF permission`() {
         ManagedDownloadStorage.resolveLyricsBundleFromReferences(
-            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            metadata = DownloadedAudioMetadata(
                 matchedLyric = "metadata original"
             ),
             originalReference = "content://com.android.externalstorage.documents/document/" +

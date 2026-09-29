@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.SnapshotEntryBucket
-import moe.ouom.neriplayer.core.download.model.publicationOwnerId
+import moe.ouom.neriplayer.core.download.policy.publicationOwnerId
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -57,6 +57,7 @@ import java.nio.file.Files
 import java.util.UUID
 import org.json.JSONObject
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 private val audioCommitLocks = Array(64) { Mutex() }
 private val audioPublicationLocks = Array(64) { Mutex() }
@@ -439,7 +440,7 @@ private fun ManagedDownloadStorage.inheritPendingPublicationOwner(
 private fun ManagedDownloadStorage.findExistingAudioForCommit(
     context: Context,
     snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
-    expected: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    expected: DownloadedAudioMetadata?,
     tempFile: File
 ): StoredEntry? {
     val stableKey = expected?.stableKey?.takeIf(String::isNotBlank) ?: return null
@@ -495,7 +496,8 @@ private fun ManagedDownloadStorage.prepareAudioNameAndMetadata(
                 !isPendingAudioPromotionFinalNameCandidate(desiredName, audioName) || expectedOwner?.operationId.isNullOrBlank()
             ) return@firstOrNull false
             val owner = readTextInternal(context, entry.reference)?.let(::parseDownloadedAudioMetadataJson)
-            owner?.operationId == expectedOwner.operationId && owner.stableKey == expectedOwner.stableKey
+                ?: return@firstOrNull false
+            owner.operationId == expectedOwner.operationId && owner.stableKey == expectedOwner.stableKey
         }?.let { ManagedDownloadTreeNaming.metadataAudioName(it.name) }
         if (ownedReservation != null) {
             val occupied = when (root) {

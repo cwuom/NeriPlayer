@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.listentogether.mapping
 import android.net.Uri
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
+import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
 import moe.ouom.neriplayer.data.model.SongItem
 
 fun buildStableTrackKey(

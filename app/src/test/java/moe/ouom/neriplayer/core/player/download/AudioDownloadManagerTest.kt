@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import org.json.JSONObject
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
@@ -800,7 +801,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
                 audioIsPending = false,
                 downloadActive = false,
                 downloadCancelled = false,
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     downloadFinalized = false,
                     operationId = "op-1",
                     artifactState = "COMMITTING"
@@ -812,7 +813,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
                 audioIsPending = false,
                 downloadActive = false,
                 downloadCancelled = false,
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     downloadFinalized = false,
                     artifactState = "CORE_COMMITTED"
                 )
@@ -831,7 +832,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
                 audioIsPending = true,
                 downloadActive = false,
                 downloadCancelled = false,
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     downloadFinalized = false,
                     artifactState = "CORE_COMMITTED"
                 )
@@ -842,7 +843,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
                 audioIsPending = false,
                 downloadActive = false,
                 downloadCancelled = false,
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     downloadFinalized = true,
                     artifactState = "STAGING"
                 )
@@ -871,7 +872,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
                 audioIsPending = false,
                 downloadActive = false,
                 downloadCancelled = false,
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     downloadFinalized = false
                 )
             )
@@ -880,7 +881,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
 
     @Test
     fun `present legacy audio remains playable while repair metadata is pending`() {
-        val repairMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val repairMetadata = DownloadedAudioMetadata(
             downloadFinalized = false,
             artifactState = "REPAIR_REQUIRED"
         )
@@ -1026,7 +1027,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
         val finalizedSnapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
             audioEntries = listOf(reboundAudio),
             metadataByAudioName = mapOf(
-                reboundAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                reboundAudio.name to DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
                 )
@@ -1043,7 +1044,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
             findReboundFinalizedManagedAudio(
                 finalizedSnapshot.copy(
                     metadataByAudioName = mapOf(
-                        reboundAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                        reboundAudio.name to DownloadedAudioMetadata(
                             downloadFinalized = false
                         )
                     )
@@ -1069,7 +1070,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
         ) = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
             audioEntries = listOf(audio),
             metadataByAudioName = mapOf(
-                audio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                audio.name to DownloadedAudioMetadata(
                     downloadFinalized = finalized,
                     metadataEmbeddingState = embeddingState
                 )

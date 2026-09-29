@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.comment
 
 import java.util.Locale
-import moe.ouom.neriplayer.core.api.bili.biliBvidOrNull
-import moe.ouom.neriplayer.core.api.bili.biliCidOrNull
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliBvidOrNull
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliCidOrNull
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
 import moe.ouom.neriplayer.data.model.SongSourceTags

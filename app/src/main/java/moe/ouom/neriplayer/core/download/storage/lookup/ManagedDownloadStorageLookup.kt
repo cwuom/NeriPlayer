@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.lookup
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal data class ManagedDownloadAudioLookupResult(
     val entry: ManagedDownloadStorage.StoredEntry,
@@ -20,7 +21,7 @@ internal data class ManagedDownloadAudioLookupResult(
 internal object ManagedDownloadStorageLookup {
     fun selectCanonicalAudioEntries(
         audioEntries: List<ManagedDownloadStorage.StoredEntry>,
-        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
+        metadataByAudioName: Map<String, DownloadedAudioMetadata>
     ): List<ManagedDownloadStorage.StoredEntry> {
         val grouped = audioEntries
             .mapNotNull { entry ->
@@ -303,7 +304,7 @@ internal object ManagedDownloadStorageLookup {
         audioEntries: List<ManagedDownloadStorage.StoredEntry>,
         song: SongItem,
         fileNameTemplate: String?,
-        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
+        metadataByAudioName: Map<String, DownloadedAudioMetadata>
     ): ManagedDownloadStorage.StoredEntry? {
         if (audioEntries.isEmpty()) return null
         // 唯一身份候选无需生成历史文件名和正则，调用方继续校验元信息归属
@@ -352,9 +353,9 @@ internal object ManagedDownloadStorageLookup {
     }
 
     private fun metadataForEntry(
-    metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+    metadataByAudioName: Map<String, DownloadedAudioMetadata>,
     entry: ManagedDownloadStorage.StoredEntry
-): ManagedDownloadStorage.DownloadedAudioMetadata? {
+): DownloadedAudioMetadata? {
     return metadataByAudioName[entry.name]
         ?: metadataByAudioName[entry.logicalName]
         ?: metadataByAudioName.entries.firstOrNull { (name, _) ->

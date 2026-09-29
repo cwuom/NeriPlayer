@@ -1,11 +1,12 @@
 package moe.ouom.neriplayer.data.storage
 
+import moe.ouom.neriplayer.data.storage.model.DownloadIndexUsageStats
+
 import android.content.res.Configuration
 import android.content.res.Resources
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.Locale
-import moe.ouom.neriplayer.data.local.database.store.DownloadIndexStorageStats
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,12 +19,10 @@ class StorageUsageResourceTest {
             "索引记录 118 条",
             downloadIndexCountDescription(
                 localizedResources(Locale.SIMPLIFIED_CHINESE),
-                downloadIndexUsageStats(
-                    fileStats = FileStats.Empty,
-                    roomStats = DownloadIndexStorageStats(
-                        databaseRecordCount = 118,
-                        allocatedPageBytes = 0L
-                    )
+                DownloadIndexUsageStats(
+                    sizeBytes = 0,
+                    fileCount = 0,
+                    databaseRecordCount = 118
                 )
             )
         )
@@ -31,12 +30,10 @@ class StorageUsageResourceTest {
             "1 index record",
             downloadIndexCountDescription(
                 localizedResources(Locale.US),
-                downloadIndexUsageStats(
-                    fileStats = FileStats.Empty,
-                    roomStats = DownloadIndexStorageStats(
-                        databaseRecordCount = 1,
-                        allocatedPageBytes = 0L
-                    )
+                DownloadIndexUsageStats(
+                    sizeBytes = 0,
+                    fileCount = 0,
+                    databaseRecordCount = 1
                 )
             )
         )

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether.session.control
 
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
 
 internal data class PendingTrackFinishedLegacyFallback(
     val event: ListenTogetherEvent,

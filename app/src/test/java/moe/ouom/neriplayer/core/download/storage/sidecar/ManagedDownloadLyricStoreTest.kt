@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.mockito.Mockito.mock
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadLyricStoreTest {
     private val context = mock(Context::class.java)
@@ -24,7 +25,7 @@ class ManagedDownloadLyricStoreTest {
     fun `stale metadata lyrics outside the current snapshot are never probed`() {
         val staleOriginal = "content://downloads-old/Lyrics/song.lrc"
         val staleRomanized = "content://downloads-old/Lyrics/song_roma.lrc"
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             lyricPath = staleOriginal,
             romanizedLyricPath = staleRomanized
         )
@@ -64,7 +65,7 @@ class ManagedDownloadLyricStoreTest {
     @Test
     fun `metadata lyric is probed when the current snapshot enumerated it`() {
         val currentReference = "content://downloads-new/Lyrics/song.lrc"
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             lyricPath = currentReference
         )
         val probed = mutableListOf<String?>()

@@ -23,7 +23,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.policy.DownloadCoreCommitPhase
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -42,11 +42,11 @@ import moe.ouom.neriplayer.core.download.execution.host.DownloadTransferAdmissio
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.policy.shouldRollbackCancelledAudio
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.hasConfirmedInternetAccess
 import okhttp3.Request

@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.listChildren
 import moe.ouom.neriplayer.core.download.storage.operation.listSubdirectoryEntries
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.FastIndexReadResult
 import android.content.Context
 import android.net.Uri

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.startup.app
 
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicPlaylistDetail as ApiPlaylistDetail
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicPlaylistDetail as ApiPlaylistDetail
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail

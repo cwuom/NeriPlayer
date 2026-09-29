@@ -2,15 +2,16 @@ package moe.ouom.neriplayer.core.download.cleanup
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.isUnfinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import java.util.Locale
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal data class ManagedDownloadParsedMetadataEntry(
     val entry: ManagedDownloadStorage.StoredEntry,
-    val metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+    val metadata: DownloadedAudioMetadata
 )
 
 internal object ManagedDownloadUnfinalizedCleanupPlanner {
@@ -72,7 +73,7 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
     }
 
     private fun isDurableCoreMetadata(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+        metadata: DownloadedAudioMetadata
     ): Boolean {
         if (metadata.downloadFinalized == true) {
             return true
@@ -197,7 +198,7 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
     }
 
     private fun sidecarReferences(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata,
+        metadata: DownloadedAudioMetadata,
         managedSidecarReferences: Set<String>
     ): List<String> {
         return listOf(

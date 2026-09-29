@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorBrowseEndpoint
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorItem
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorItemType
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorItemsPage
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorBrowseEndpoint
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItemType
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItemsPage
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test

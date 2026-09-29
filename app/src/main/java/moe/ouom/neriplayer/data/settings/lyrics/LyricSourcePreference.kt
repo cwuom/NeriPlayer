@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.settings.lyrics
 
 import java.util.Locale
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
 
 /**
  * 播放时优先使用的歌词来源。

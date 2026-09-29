@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.core.download.policy.runDownloadStartupRecoverySafely
 import moe.ouom.neriplayer.core.download.policy.runDownloadedSongMetadataSyncSafely
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -34,24 +34,27 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
-import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicSearchFilter
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicSearchResult
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicSearchResultType
+import moe.ouom.neriplayer.api.bilibili.model.collection.FavFolder
+import moe.ouom.neriplayer.api.bilibili.model.search.SearchVideoItem
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliPartSong
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliSongAlbum
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchFilter
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchResult
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchResultType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
+import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
-import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
+import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
+import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
+import moe.ouom.neriplayer.api.youtube.transport.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.util.search.SearchTextMatcher
 import moe.ouom.neriplayer.util.search.searchValues
 import org.json.JSONObject
@@ -1027,7 +1030,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun hydrateLinkedBiliFolder(
-        folder: BiliClient.FavFolder,
+        folder: FavFolder,
         fallbackKind: BiliPlaylistKind
     ): BiliPlaylist {
         if (folder.itemType == BILI_RESOURCE_TYPE_COLLECTION) {
@@ -1062,7 +1065,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    private fun BiliClient.FavFolder.toExploreBiliPlaylist(
+    private fun FavFolder.toExploreBiliPlaylist(
         fallbackKind: BiliPlaylistKind
     ): BiliPlaylist {
         val resolvedKind = if (itemType == BILI_RESOURCE_TYPE_COLLECTION) {
@@ -1255,7 +1258,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    suspend fun getVideoInfoByAvid(avid: Long): BiliClient.VideoBasicInfo {
+    suspend fun getVideoInfoByAvid(avid: Long): VideoBasicInfo {
         return withContext(Dispatchers.IO) {
             biliClient.getVideoBasicInfoByAvid(avid)
         }
@@ -1268,7 +1271,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
      * @param coverUrl 视频封面
      * @return 转换后的 SongItem
      */
-    fun toSongItem(page: BiliClient.VideoPage, basicInfo: BiliClient.VideoBasicInfo, coverUrl: String): SongItem {
+    fun toSongItem(page: VideoPage, basicInfo: VideoBasicInfo, coverUrl: String): SongItem {
         return buildBiliPartSong(page, basicInfo, coverUrl)
     }
 
@@ -1419,7 +1422,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 }
 
 /** Bilibili 搜索结果到通用 SongItem 的转换器 */
-private fun BiliClient.SearchVideoItem.toSongItem(): SongItem {
+private fun SearchVideoItem.toSongItem(): SongItem {
     return SongItem(
         id = this.aid, // 使用 avid 作为唯一ID
         name = this.titlePlain,
@@ -1433,7 +1436,7 @@ private fun BiliClient.SearchVideoItem.toSongItem(): SongItem {
     )
 }
 
-private fun BiliClient.VideoBasicInfo.toSongItem(): SongItem {
+private fun VideoBasicInfo.toSongItem(): SongItem {
     return SongItem(
         id = aid,
         name = title,
@@ -1447,7 +1450,7 @@ private fun BiliClient.VideoBasicInfo.toSongItem(): SongItem {
     )
 }
 
-internal fun BiliClient.VideoBasicInfo.toExploreLinkSong(
+internal fun VideoBasicInfo.toExploreLinkSong(
     target: ExploreLinkTarget.BiliVideo
 ): SongItem {
     val selectedPage = target.cid
@@ -1464,7 +1467,7 @@ internal fun BiliClient.VideoBasicInfo.toExploreLinkSong(
     } ?: toSongItem()
 }
 
-internal fun BiliClient.VideoBasicInfo.toExploreLinkCollectionTarget(
+internal fun VideoBasicInfo.toExploreLinkCollectionTarget(
     target: ExploreLinkTarget.BiliVideo
 ): ExploreLinkTarget.BiliCollection? {
     if (!target.isCollectionShare) return null

@@ -1,11 +1,12 @@
 package moe.ouom.neriplayer.core.download.bootstrap
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal data class ManagedLibraryRebuildItem(
     val audio: ManagedDownloadStorage.StoredEntry,
-    val metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    val metadata: DownloadedAudioMetadata?,
     val stableKey: String?,
     val artifactId: String?,
     val logicalTimeMs: Long?
@@ -49,7 +50,7 @@ internal object ManagedLibraryRebuilder {
     }
 
     fun logicalTimeMs(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         audio: ManagedDownloadStorage.StoredEntry
     ): Long? {
         return metadata?.downloadTimeMs?.takeIf { it > 0L }
@@ -61,7 +62,7 @@ internal object ManagedLibraryRebuilder {
     /** 侧载目录完整时，缺失的受要求资源不能继续作为已下载成品展示 */
     private fun hasKnownFinalizedSidecars(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         isKnownReference: (String) -> Boolean
     ): Boolean {
         if (metadata == null || !snapshot.sidecarEntriesComplete) {

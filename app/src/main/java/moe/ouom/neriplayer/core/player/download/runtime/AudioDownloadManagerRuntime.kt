@@ -25,7 +25,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.settings.download.resolveDownloadAudioQualitySelection
 import okhttp3.Request
@@ -33,6 +33,7 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal fun AudioDownloadManager.evictDownloadConnections() {
     runCatching {
@@ -451,7 +452,7 @@ internal suspend fun AudioDownloadManager.buildCorePendingMetadata(
     val nowMs = System.currentTimeMillis()
     val identity = song.identity()
     val stableKey = song.stableKey()
-    val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+    val metadata = DownloadedAudioMetadata(
         stableKey = stableKey,
         songId = song.id,
         identityAlbum = identity.album,

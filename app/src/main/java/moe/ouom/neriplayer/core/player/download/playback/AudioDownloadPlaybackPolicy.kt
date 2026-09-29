@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.playback
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirect
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import org.json.JSONObject
 import java.util.Locale
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal fun shouldAbortDownloadWork(
     allDownloadsCancelled: Boolean,
@@ -291,7 +292,7 @@ internal fun isReadableManagedAudioPlaybackAllowed(
     audioIsPending: Boolean,
     downloadActive: Boolean,
     downloadCancelled: Boolean,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    metadata: DownloadedAudioMetadata?,
     allowLegacyPublishedAudio: Boolean = false
 ): Boolean {
     if (downloadCancelled) {

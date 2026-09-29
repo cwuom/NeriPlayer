@@ -13,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 @RunWith(AndroidJUnit4::class)
 class DownloadBatchSnapshotPreflightTest {
@@ -33,7 +34,7 @@ class DownloadBatchSnapshotPreflightTest {
         val snapshot = ManagedDownloadSnapshotIndex.compose(
             audioEntries = entries, metadataEntries = emptyList(),
             metadataByAudioName = songs.zip(entries).associate { (song, entry) ->
-                entry.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                entry.name to DownloadedAudioMetadata(
                     stableKey = song.stableKey(), downloadFinalized = song.id <= 524L,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
                     artifactState = if (song.id <= 524L) "FINALIZED" else "CORE_COMMITTED",

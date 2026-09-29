@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.core.download.model.BatchDownloadPresentationState
 import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.model.downloadProgressFraction
-import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.model.resumeBatchDownloadPresentationForRetry
 import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
 import moe.ouom.neriplayer.core.download.policy.shouldScheduleCancellationConvergence

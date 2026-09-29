@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicHomeItem
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeItem
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeShelf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame

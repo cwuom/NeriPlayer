@@ -105,7 +105,7 @@ import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.comment.resolveCommentSource
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -127,7 +127,7 @@ import moe.ouom.neriplayer.data.model.playbackVisualKeyAliases
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS

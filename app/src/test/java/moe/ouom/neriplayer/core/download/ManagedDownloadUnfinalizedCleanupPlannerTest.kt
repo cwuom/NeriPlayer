@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadUnfinalizedClean
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadUnfinalizedCleanupPlannerTest {
 
@@ -23,7 +24,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             parsedMetadataEntries = listOf(
                 ManagedDownloadParsedMetadataEntry(
                     entry("pending.mp3.npmeta.json", metadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         downloadFinalized = false,
                         romanizedLyricPath = romanizedReference
                     )
@@ -51,14 +52,14 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             parsedMetadataEntries = listOf(
                 ManagedDownloadParsedMetadataEntry(
                     entry("pending.mp3.npmeta.json", pendingMetadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         downloadFinalized = false,
                         romanizedLyricPath = sharedRomanizedReference
                     )
                 ),
                 ManagedDownloadParsedMetadataEntry(
                     entry("completed.mp3.npmeta.json", completedMetadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         downloadFinalized = true,
                         metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
                         romanizedLyricPath = sharedRomanizedReference
@@ -86,7 +87,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             parsedMetadataEntries = listOf(
                 ManagedDownloadParsedMetadataEntry(
                     entry("song.mp3.npmeta.json", metadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         downloadFinalized = false,
                         coverPath = coverReference,
                         lyricPath = lyricReference
@@ -116,7 +117,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             parsedMetadataEntries = listOf(
                 ManagedDownloadParsedMetadataEntry(
                     entry("song.mp3.npmeta.pending.json", metadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         downloadFinalized = false,
                         translatedLyricPath = translatedLyricReference
                     )
@@ -148,7 +149,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             parsedMetadataEntries = listOf(
                 ManagedDownloadParsedMetadataEntry(
                     entry("core.mp3.npmeta.json", metadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         stableKey = "song:core",
                         operationId = "operation:core",
                         audioFileName = "core.mp3",
@@ -181,7 +182,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             parsedMetadataEntries = listOf(
                 ManagedDownloadParsedMetadataEntry(
                     entry("core.mp3.npmeta.json", durableMetadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         stableKey = "song:core",
                         operationId = "operation:core",
                         audioFileName = "core.mp3",
@@ -192,7 +193,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
                 ),
                 ManagedDownloadParsedMetadataEntry(
                     entry("stale.mp3.npmeta.json", staleMetadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         downloadFinalized = false,
                         coverPath = sharedSidecarReference
                     )
@@ -220,7 +221,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             parsedMetadataEntries = listOf(
                 ManagedDownloadParsedMetadataEntry(
                     entry("unknown.mp3.npmeta.json", metadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(downloadFinalized = false)
+                    DownloadedAudioMetadata(downloadFinalized = false)
                 )
             ),
             managedSidecarReferences = emptySet()
@@ -250,7 +251,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             parsedMetadataEntries = listOf(
                 ManagedDownloadParsedMetadataEntry(
                     entry("song.mp3.npmeta.pending.json", orphanMetadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         stableKey = stableKey,
                         operationId = operationId,
                         audioFileName = "song.mp3",
@@ -259,7 +260,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
                 ),
                 ManagedDownloadParsedMetadataEntry(
                     entry("song (1).mp3.npmeta.json", finalizedMetadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         stableKey = stableKey,
                         operationId = operationId,
                         audioFileName = "song (1).mp3",
@@ -294,7 +295,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             parsedMetadataEntries = listOf(
                 ManagedDownloadParsedMetadataEntry(
                     entry("song.mp3.npmeta.pending.json", orphanMetadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         stableKey = "netease:42",
                         operationId = "operation-old",
                         audioFileName = "song.mp3",
@@ -303,7 +304,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
                 ),
                 ManagedDownloadParsedMetadataEntry(
                     entry("song (1).mp3.npmeta.json", finalizedMetadataReference),
-                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                    DownloadedAudioMetadata(
                         stableKey = "netease:42",
                         operationId = "operation-new",
                         audioFileName = "song (1).mp3",

@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
 
 internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%title% - %artist% - %album% - %source%"
 internal const val PREVIOUS_DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%title% - %artist% [%hash%]"

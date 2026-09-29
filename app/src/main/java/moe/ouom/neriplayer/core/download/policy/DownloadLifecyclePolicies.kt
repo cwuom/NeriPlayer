@@ -5,11 +5,10 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.model.DownloadStatus
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.isAcceptedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 /** 标签后处理一次尝试后的收尾动作 */
 internal enum class TagPostProcessingAction {
@@ -260,7 +259,7 @@ internal suspend fun <T> runNonCancellableDownloadRollback(
 
 internal fun shouldInspectDownloadedAudioDetails(
     allowSlowLocalInspection: Boolean,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    metadata: DownloadedAudioMetadata?,
     coverReference: String?,
     needsLocalLyricFallback: Boolean
 ): Boolean {
@@ -273,19 +272,6 @@ internal fun shouldInspectDownloadedAudioDetails(
         metadata.originalArtist.isNullOrBlank() ||
         metadata.durationMs <= 0L ||
         coverReference.isNullOrBlank()
-}
-
-internal fun isUnfinalizedDownloadedMetadata(
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
-): Boolean {
-    return !isFinalizedDownloadedMetadata(metadata)
-}
-
-internal fun isFinalizedDownloadedMetadata(
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
-): Boolean {
-    return metadata?.downloadFinalized == true &&
-        isAcceptedDownloadedAudioEmbeddingState(metadata.metadataEmbeddingState)
 }
 
 internal fun resolveDownloadedLyricContent(

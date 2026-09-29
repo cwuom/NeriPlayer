@@ -51,9 +51,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
@@ -87,7 +87,7 @@ import moe.ouom.neriplayer.core.player.model.RestoredPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
-import moe.ouom.neriplayer.core.player.queue.model.buildPlayerQueueDisplayState
+import moe.ouom.neriplayer.core.player.queue.policy.buildPlayerQueueDisplayState
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
@@ -231,7 +231,8 @@ import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
-
+import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueEditOwner
+import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
 
 internal const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
 
@@ -439,7 +440,8 @@ object PlayerManager {
     internal var usbExclusivePreferences = UsbExclusivePreferences()
     internal var allowMixedPlaybackEnabled = false
 
-    internal val queueStore = PlayerQueueStateStore()
+    internal val queueStore = PlayerQueueStateStore(AppQueueSongIdentity)
+    internal val queueEdits = PlayerQueueEditOwner(AppQueueSongIdentity)
     internal val queueSessionBindings = PlayerQueueSessionBindings(queueStore)
     internal val currentPlaylist: List<SongItem>
         get() = queueStore.snapshot().playlist
@@ -1719,7 +1721,7 @@ object PlayerManager {
         localPlaylistId = playlistId
     )
 
-    fun playBiliVideoParts(videoInfo: BiliClient.VideoBasicInfo, startIndex: Int, coverUrl: String) =
+    fun playBiliVideoParts(videoInfo: VideoBasicInfo, startIndex: Int, coverUrl: String) =
         this.playBiliVideoPartsImpl(videoInfo, startIndex, coverUrl)
 
     fun play(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) =

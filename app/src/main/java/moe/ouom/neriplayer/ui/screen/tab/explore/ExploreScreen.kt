@@ -137,11 +137,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
+import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.search.ExploreSearchHistoryRepository
 import moe.ouom.neriplayer.data.search.exploreSearchHistoryRecordKeyword
 import moe.ouom.neriplayer.data.search.exploreSearchHistoryForDisplay
@@ -319,7 +319,7 @@ fun ExploreScreen(
     onSongPlayPreservingQueue: (SongItem) -> Unit = {},
     onSongPlayNext: (SongItem) -> Unit = {},
     onSongAddToQueueEnd: (SongItem) -> Unit = {},
-    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
+    onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -384,7 +384,7 @@ fun ExploreScreen(
     }
 
     var showPartsSheet by remember { mutableStateOf(false) }
-    var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
+    var partsInfo by remember { mutableStateOf<VideoBasicInfo?>(null) }
     var clickedSongCoverUrl by remember { mutableStateOf("") }
     val partsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 

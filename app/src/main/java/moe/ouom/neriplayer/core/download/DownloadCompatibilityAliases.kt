@@ -31,8 +31,6 @@ import moe.ouom.neriplayer.core.download.naming.sanitizeManagedDownloadFileName 
 import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadArtists as buildExpectedDownloadArtistsDelegate
 import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadTitles as buildExpectedDownloadTitlesDelegate
 import moe.ouom.neriplayer.core.download.policy.isSuspiciousEmptyDownloadScan as isSuspiciousEmptyDownloadScanDelegate
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata as isFinalizedDownloadedMetadataDelegate
-import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata as isUnfinalizedDownloadedMetadataDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveCompletedDownloadFinalizationAction as resolveCompletedDownloadFinalizationActionDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricContent as resolveDownloadedLyricContentDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricOverride as resolveDownloadedLyricOverrideDelegate
@@ -61,6 +59,7 @@ import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup as
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal typealias DownloadedSongCatalogIndex = moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
 internal typealias DownloadedSongCatalogStore = moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogStore
@@ -312,7 +311,7 @@ internal suspend fun <T> runNonCancellableDownloadRollback(block: suspend () -> 
 
 internal fun shouldInspectDownloadedAudioDetails(
     allowSlowLocalInspection: Boolean,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    metadata: DownloadedAudioMetadata?,
     coverReference: String?,
     needsLocalLyricFallback: Boolean
 ): Boolean = shouldInspectDownloadedAudioDetailsDelegate(
@@ -321,12 +320,6 @@ internal fun shouldInspectDownloadedAudioDetails(
     coverReference,
     needsLocalLyricFallback
 )
-
-internal fun isUnfinalizedDownloadedMetadata(metadata: ManagedDownloadStorage.DownloadedAudioMetadata?): Boolean =
-    isUnfinalizedDownloadedMetadataDelegate(metadata)
-
-internal fun isFinalizedDownloadedMetadata(metadata: ManagedDownloadStorage.DownloadedAudioMetadata?): Boolean =
-    isFinalizedDownloadedMetadataDelegate(metadata)
 
 internal fun resolveDownloadedLyricOverride(
     fileLyric: String?,

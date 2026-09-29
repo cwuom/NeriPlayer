@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.model
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 
 @Parcelize

@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.core.download.manager.recovery
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.PendingDownloadRecoveryCandidate
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.isUnfinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.mergePendingDownloadRecoveryCandidates
 import moe.ouom.neriplayer.core.download.manager.admission.admitArtifactRecoveryMutation
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation

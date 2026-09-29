@@ -4,11 +4,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.api.bili.BiliSponsorBlockSegment
-import moe.ouom.neriplayer.core.api.bili.BiliSponsorBlockTarget
-import moe.ouom.neriplayer.core.api.bili.biliBvidOrNull
-import moe.ouom.neriplayer.core.api.bili.biliCidOrNull
-import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockSegment
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockTarget
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliBvidOrNull
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliCidOrNull
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.resolveBiliSong
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.skip.BiliSponsorBlockSkipTracker

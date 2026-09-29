@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 /**
  * 本地播放引用协调器
@@ -529,7 +530,7 @@ internal class AudioDownloadPlaybackCoordinator(
     private fun metadataForManagedAudio(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
         audio: ManagedDownloadStorage.StoredEntry
-    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+    ): DownloadedAudioMetadata? {
         return ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
     }
 

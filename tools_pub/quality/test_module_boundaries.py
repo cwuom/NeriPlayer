@@ -35,6 +35,56 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.module(":data:music", ":core:model")
         self.assertEqual([], verify(self.root))
 
+    def test_accepts_api_between_core_and_data(self):
+        self.module(":core:model")
+        self.module(":api:music", ":core:model")
+        self.module(":data:music", ":api:music")
+        self.assertEqual([], verify(self.root))
+
+    def test_rejects_data_dependency_from_api(self):
+        self.module(":core:model")
+        self.module(":data:music", ":core:model")
+        self.module(":api:music", ":data:music")
+        self.assertTrue(any("forbidden upward dependency" in error for error in verify(self.root)))
+
+    def test_rejects_api_dependency_from_core(self):
+        self.module(":api:music")
+        self.module(":core:model", ":api:music")
+        self.assertTrue(any("forbidden upward dependency" in error for error in verify(self.root)))
+
+    def test_rejects_api_implementation_inside_data_module(self):
+        self.module(":data:music")
+        base = self.root / "modules/data/music/src/main/java/moe/ouom/neriplayer"
+        for package in ("core/api/music", "api/music"):
+            path = base / package
+            path.mkdir(parents=True)
+            (path / "Client.kt").write_text(
+                "package moe.ouom.neriplayer." + package.replace("/", ".") + "\nclass Client\n"
+            )
+        errors = verify(self.root)
+        self.assertEqual(2, len(errors))
+        self.assertTrue(all("API implementation belongs in an api module" in error for error in errors))
+
+    def test_rejects_shared_model_in_common_module(self):
+        self.module(":core:common")
+        directory = self.root / "modules/core/common/src/main/java/moe/ouom/neriplayer/core/model/auth"
+        directory.mkdir(parents=True)
+        (directory / "AuthState.kt").write_text(
+            "package moe.ouom.neriplayer.core.model.auth\nenum class AuthState { Missing }\n"
+        )
+        errors = verify(self.root)
+        self.assertEqual(1, len(errors))
+        self.assertIn("package belongs to :core:model", errors[0])
+
+    def test_accepts_shared_model_in_model_module(self):
+        self.module(":core:model")
+        directory = self.root / "modules/core/model/src/main/java/moe/ouom/neriplayer/core/model/auth"
+        directory.mkdir(parents=True)
+        (directory / "AuthState.kt").write_text(
+            "package moe.ouom.neriplayer.core.model.auth\nenum class AuthState { Missing }\n"
+        )
+        self.assertEqual([], verify(self.root))
+
     def test_rejects_application_and_data_dependencies_from_core(self):
         self.module(":data:music", ":app")
         self.module(":core:model", ":data:music")

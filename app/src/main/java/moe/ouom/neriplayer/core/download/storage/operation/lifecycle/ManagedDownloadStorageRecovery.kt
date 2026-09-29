@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.operation.lifecycle
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.operation.content.invalidateSnapshotCache
 import moe.ouom.neriplayer.core.download.storage.operation.content.parseDownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.storage.operation.content.preserveAudioPublicationReceipt
@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.writeTextThro
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StartupRecoveryResult
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import android.content.Context
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile

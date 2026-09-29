@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal object ManagedDownloadMigrationTargetIndexBuilder {
     fun build(
@@ -11,9 +12,9 @@ internal object ManagedDownloadMigrationTargetIndexBuilder {
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
         readText: ((ManagedDownloadStorage.StoredEntry) -> String?)? = null,
-        parseMetadata: ((String) -> ManagedDownloadStorage.DownloadedAudioMetadata?)? = null,
+        parseMetadata: ((String) -> DownloadedAudioMetadata?)? = null,
         parsedMetadataByAudioName:
-            Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>? = null
+            Map<String, DownloadedAudioMetadata>? = null
     ): ManagedMigrationTargetIndex {
         val (rootEntriesByName, ambiguousRootNames) = buildNameIndex(rootEntries)
         val (coverEntriesByName, ambiguousCoverNames) = buildNameIndex(coverEntries)

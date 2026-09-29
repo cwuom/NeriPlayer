@@ -2,6 +2,8 @@
 
 package moe.ouom.neriplayer.data.auth.bili
 
+import moe.ouom.neriplayer.data.auth.bili.model.BiliAuthBundle
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -38,9 +40,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
+import moe.ouom.neriplayer.api.bilibili.auth.BiliCookieSource
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthHealth
+import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
 import org.json.JSONObject
 
 private const val BILI_AUTH_PREFS = "bili_auth_secure_prefs"
@@ -57,54 +60,6 @@ private val BILI_LOGIN_COOKIE_KEYS = listOf(
     "DedeUserID",
     "bili_jct"
 )
-
-data class BiliAuthBundle(
-    val cookies: Map<String, String> = emptyMap(),
-    val savedAt: Long = 0L
-) {
-    fun hasLoginCookies(): Boolean {
-        return !cookies["SESSDATA"].isNullOrBlank()
-    }
-
-    fun normalized(savedAt: Long = this.savedAt): BiliAuthBundle {
-        return copy(
-            cookies = LinkedHashMap(cookies.filterKeys { it.isNotBlank() }),
-            savedAt = savedAt
-        )
-    }
-
-    fun toJson(): String {
-        return JSONObject().apply {
-            put(
-                "cookies",
-                JSONObject().apply {
-                    cookies.forEach { (key, value) -> put(key, value) }
-                }
-            )
-            put("savedAt", savedAt)
-        }.toString()
-    }
-
-    companion object {
-        fun fromJson(json: String): BiliAuthBundle {
-            return runCatching {
-                val root = JSONObject(json)
-                val cookiesJson = root.optJSONObject("cookies") ?: JSONObject()
-                val cookies = linkedMapOf<String, String>()
-                val keys = cookiesJson.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    cookies[key] = cookiesJson.optString(key, "")
-                }
-                val savedAt = root.optLong("savedAt", 0L)
-                BiliAuthBundle(
-                    cookies = cookies,
-                    savedAt = savedAt
-                ).normalized(savedAt = savedAt)
-            }.getOrDefault(BiliAuthBundle())
-        }
-    }
-}
 
 fun evaluateBiliAuthHealth(
     bundle: BiliAuthBundle,
@@ -138,7 +93,7 @@ fun evaluateBiliAuthHealth(
     )
 }
 
-class BiliCookieRepository(private val context: Context) {
+class BiliCookieRepository(private val context: Context) : BiliCookieSource {
     private var encryptedPrefs: SharedPreferences
     private val _authFlow: MutableStateFlow<BiliAuthBundle>
     private val _cookieFlow: MutableStateFlow<Map<String, String>>
@@ -160,7 +115,7 @@ class BiliCookieRepository(private val context: Context) {
         )
     }
 
-    fun getCookiesOnce(): Map<String, String> = _cookieFlow.value
+    override fun getCookiesOnce(): Map<String, String> = _cookieFlow.value
 
     fun getAuthHealthOnce(): SavedCookieAuthHealth = _authHealthFlow.value
 

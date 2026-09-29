@@ -28,9 +28,9 @@ import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
-import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
-import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherServerTestResult
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
+import moe.ouom.neriplayer.api.ltw.model.ListenTogetherServerTestResult
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 
 internal fun isDefaultListenTogetherSettingsServer(input: String): Boolean =

@@ -12,7 +12,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.api.netease.mergeNeteaseSessionCookies
+import moe.ouom.neriplayer.api.netease.client.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.data.model.SongItem
 
 class NeteaseHomeRecommendationsTest {

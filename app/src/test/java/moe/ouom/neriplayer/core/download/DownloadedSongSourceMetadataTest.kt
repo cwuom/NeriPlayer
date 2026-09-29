@@ -13,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class DownloadedSongSourceMetadataTest {
 
@@ -278,7 +279,7 @@ class DownloadedSongSourceMetadataTest {
             fileSize = 1L,
             downloadTime = 1L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             matchedLyric = "[00:01.00]cached lyric",
             matchedTranslatedLyric = "[00:01.00]cached translation",
             originalLyric = "[00:01.00]original lyric",

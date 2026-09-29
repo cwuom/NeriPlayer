@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.ui
 
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.data.storage.ExtraCacheClearResult
-import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.storage.model.ExtraCacheClearResult
+import moe.ouom.neriplayer.data.storage.model.StorageCacheClearOptions
 import moe.ouom.neriplayer.ui.settings.owner.AppSettingsCacheClearOwner
 import moe.ouom.neriplayer.ui.settings.owner.formatExtraCacheClearResult
 import org.junit.Assert.assertEquals

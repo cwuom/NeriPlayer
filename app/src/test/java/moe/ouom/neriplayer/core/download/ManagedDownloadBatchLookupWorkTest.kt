@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadBatchLookupWorkTest {
     @Test
@@ -29,7 +30,7 @@ class ManagedDownloadBatchLookupWorkTest {
         val snapshot = ManagedDownloadSnapshotIndex.compose(
             audioEntries = audio, metadataEntries = emptyList(),
             metadataByAudioName = songs.zip(audio).associate { (song, entry) ->
-                entry.name to ManagedDownloadStorage.DownloadedAudioMetadata(stableKey = song.stableKey())
+                entry.name to DownloadedAudioMetadata(stableKey = song.stableKey())
             }, coverEntries = emptyList(), lyricEntries = emptyList()
         ).copy(audioEntriesByStableKey = indexedEntries)
         val started = System.nanoTime()
@@ -63,7 +64,7 @@ class ManagedDownloadBatchLookupWorkTest {
         )
         val snapshot = ManagedDownloadSnapshotIndex.compose(
             audioEntries = listOf(entry), metadataEntries = emptyList(),
-            metadataByAudioName = mapOf(entry.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+            metadataByAudioName = mapOf(entry.name to DownloadedAudioMetadata(
                 songId = 42L, stableKey = "foreign-source-42", channelId = "bilibili", audioId = "42"
             )), coverEntries = emptyList(), lyricEntries = emptyList()
         )
@@ -89,7 +90,7 @@ class ManagedDownloadBatchLookupWorkTest {
         val snapshot = ManagedDownloadSnapshotIndex.compose(
             audioEntries = listOf(numbered, canonical), metadataEntries = emptyList(),
             metadataByAudioName = listOf(numbered, canonical).associate { entry ->
-                entry.name to ManagedDownloadStorage.DownloadedAudioMetadata(stableKey = song.stableKey())
+                entry.name to DownloadedAudioMetadata(stableKey = song.stableKey())
             }, coverEntries = emptyList(), lyricEntries = emptyList()
         )
         assertEquals(canonical, ManagedDownloadStorageLookup.findAudioEntry(snapshot, song, null)?.entry)

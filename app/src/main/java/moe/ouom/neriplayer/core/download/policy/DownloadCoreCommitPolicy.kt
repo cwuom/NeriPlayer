@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.policy
 
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import java.util.Locale
 import java.util.UUID
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 /**
  * tracks the point after which a cancellation no longer owns the committed media
@@ -177,7 +177,7 @@ internal enum class FinalizedDownloadPublicationResult {
  * 旧版本或待修复元信息不能因为缺少完成标记而暂时失去可播放引用
  */
 internal fun shouldDemotePublishedAudioForFinalization(
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    metadata: DownloadedAudioMetadata?
 ): Boolean {
     val operationId = metadata?.operationId
         ?.trim()

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether.session.membership
 
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.util.units.MINUTE_MS
 import java.util.concurrent.TimeUnit
 

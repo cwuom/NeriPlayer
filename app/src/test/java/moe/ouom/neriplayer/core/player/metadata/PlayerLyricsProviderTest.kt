@@ -4,11 +4,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchCandidate
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchConfidence
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
-import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
+import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchCandidate
+import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchConfidence
+import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.lyrics.model.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.core.lyrics.LyricEntry

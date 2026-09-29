@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.settings.lyrics
 
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

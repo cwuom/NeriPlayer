@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.listentogether.compat
 
 import moe.ouom.neriplayer.listentogether.playback.isListenTogetherSeekControlSatisfied
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
 import java.util.Locale
 
 internal fun buildListenTogetherLegacyQueueMutationFallback(

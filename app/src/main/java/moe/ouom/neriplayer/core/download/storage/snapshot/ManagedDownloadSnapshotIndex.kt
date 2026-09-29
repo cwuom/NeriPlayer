@@ -4,18 +4,19 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import org.json.JSONObject
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal object ManagedDownloadSnapshotIndex {
     fun compose(
         audioEntries: List<ManagedDownloadStorage.StoredEntry>,
         metadataEntries: List<ManagedDownloadStorage.StoredEntry>,
-        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+        metadataByAudioName: Map<String, DownloadedAudioMetadata>,
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
         rootEntriesComplete: Boolean = true,
         sidecarEntriesComplete: Boolean = true,
         pendingAudioEntries: List<ManagedDownloadStorage.StoredEntry> = emptyList(),
-        pendingMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> =
+        pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata> =
             emptyMap(),
         rootEmptyConfirmationPending: Boolean = false
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
@@ -161,10 +162,10 @@ internal object ManagedDownloadSnapshotIndex {
     }
 
     private fun metadataForAudioEntry(
-        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+        metadataByAudioName: Map<String, DownloadedAudioMetadata>,
         lookupIndex: MetadataLookupIndex,
         audio: ManagedDownloadStorage.StoredEntry
-    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+    ): DownloadedAudioMetadata? {
         val canonicalAudioName = ManagedDownloadTreeNaming.canonicalLookupName(audio.name)
         val canonicalLogicalName = ManagedDownloadTreeNaming.canonicalLookupName(audio.logicalName)
         return metadataByAudioName[audio.name]
@@ -179,11 +180,11 @@ internal object ManagedDownloadSnapshotIndex {
     }
 
     private fun buildMetadataLookupIndex(
-        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
+        metadataByAudioName: Map<String, DownloadedAudioMetadata>
     ): MetadataLookupIndex {
-        val byMapKey = linkedMapOf<String, ManagedDownloadStorage.DownloadedAudioMetadata>()
-        val byDeclaredAudioName = linkedMapOf<String, ManagedDownloadStorage.DownloadedAudioMetadata>()
-        val byReference = linkedMapOf<String, ManagedDownloadStorage.DownloadedAudioMetadata>()
+        val byMapKey = linkedMapOf<String, DownloadedAudioMetadata>()
+        val byDeclaredAudioName = linkedMapOf<String, DownloadedAudioMetadata>()
+        val byReference = linkedMapOf<String, DownloadedAudioMetadata>()
         metadataByAudioName.forEach { (audioName, metadata) ->
             byMapKey.putIfAbsent(
                 ManagedDownloadTreeNaming.canonicalLookupName(audioName),
@@ -207,9 +208,9 @@ internal object ManagedDownloadSnapshotIndex {
     }
 
     private data class MetadataLookupIndex(
-        val byMapKey: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
-        val byDeclaredAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
-        val byReference: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
+        val byMapKey: Map<String, DownloadedAudioMetadata>,
+        val byDeclaredAudioName: Map<String, DownloadedAudioMetadata>,
+        val byReference: Map<String, DownloadedAudioMetadata>
     )
 
     fun serializePayload(
@@ -303,7 +304,7 @@ internal object ManagedDownloadSnapshotIndex {
     fun applyMetadataWrite(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         metadataEntry: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+        metadata: DownloadedAudioMetadata
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
         val targetAudioName = ManagedDownloadTreeNaming.metadataAudioName(metadataEntry.name)
             ?: return snapshot
@@ -659,8 +660,8 @@ internal object ManagedDownloadSnapshotIndex {
         }
     }
 
-    private fun ManagedDownloadStorage.DownloadedAudioMetadata.hasSameAudioIndexIdentity(
-        other: ManagedDownloadStorage.DownloadedAudioMetadata
+    private fun DownloadedAudioMetadata.hasSameAudioIndexIdentity(
+        other: DownloadedAudioMetadata
     ): Boolean {
         return stableKey == other.stableKey &&
             songId == other.songId &&

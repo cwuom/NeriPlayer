@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.ui.screen.tab
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.data.storage.StorageUsageSection
-import moe.ouom.neriplayer.data.storage.StorageUsageSummary
+import moe.ouom.neriplayer.data.storage.model.StorageUsageSection
+import moe.ouom.neriplayer.data.storage.model.StorageUsageSummary
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectoryProcessingPresentation
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.SettingsStorageDetailsController

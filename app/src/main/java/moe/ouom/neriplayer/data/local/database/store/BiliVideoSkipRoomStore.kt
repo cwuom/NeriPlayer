@@ -6,36 +6,33 @@ import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipDraft
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipRule
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
-
-internal data class BiliVideoSkipRoomSnapshot(
-    val rules: List<BiliVideoSkipRule>,
-    val drafts: List<BiliVideoSkipDraft>
-)
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipDraft
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipRule
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipSnapshot
+import moe.ouom.neriplayer.data.platform.bili.skip.storage.BiliVideoSkipStore
 
 internal class BiliVideoSkipRoomStore(
     private val database: NeriUserDataDatabase
-) {
-    suspend fun isRoomPrimary(): Boolean {
+) : BiliVideoSkipStore {
+    override suspend fun isPrimary(): Boolean {
         return database.syncMetadataDao()
             .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
             ?.value == ROOM_PRIMARY_STATE
     }
 
-    suspend fun readIfRoomPrimary(): BiliVideoSkipRoomSnapshot? {
-        if (!isRoomPrimary()) {
+    override suspend fun readIfPrimary(): BiliVideoSkipSnapshot? {
+        if (!isPrimary()) {
             return null
         }
         return readSnapshot()
     }
 
-    suspend fun replaceAll(
+    override suspend fun replaceAll(
         rules: List<BiliVideoSkipRule>,
         drafts: List<BiliVideoSkipDraft>,
-        now: Long = System.currentTimeMillis()
+        now: Long
     ) {
         database.withTransaction {
             val dao = database.biliVideoSkipDao()
@@ -55,9 +52,9 @@ internal class BiliVideoSkipRoomStore(
         }
     }
 
-    suspend fun replaceRules(
+    override suspend fun replaceRules(
         rules: List<BiliVideoSkipRule>,
-        now: Long = System.currentTimeMillis()
+        now: Long
     ) {
         database.withTransaction {
             val dao = database.biliVideoSkipDao()
@@ -75,9 +72,9 @@ internal class BiliVideoSkipRoomStore(
         }
     }
 
-    suspend fun replaceDrafts(
+    override suspend fun replaceDrafts(
         drafts: List<BiliVideoSkipDraft>,
-        now: Long = System.currentTimeMillis()
+        now: Long
     ) {
         database.withTransaction {
             val dao = database.biliVideoSkipDao()
@@ -87,7 +84,7 @@ internal class BiliVideoSkipRoomStore(
         }
     }
 
-    private suspend fun readSnapshot(): BiliVideoSkipRoomSnapshot {
+    private suspend fun readSnapshot(): BiliVideoSkipSnapshot {
         return database.withTransaction {
             val dao = database.biliVideoSkipDao()
             val intervalsByTarget = dao.getIntervals()
@@ -101,7 +98,7 @@ internal class BiliVideoSkipRoomStore(
                             )
                         }
                 }
-            BiliVideoSkipRoomSnapshot(
+            BiliVideoSkipSnapshot(
                 rules = dao.getRules().map { rule ->
                     BiliVideoSkipRule(
                         target = BiliVideoSkipTarget(rule.bvid, rule.cid),

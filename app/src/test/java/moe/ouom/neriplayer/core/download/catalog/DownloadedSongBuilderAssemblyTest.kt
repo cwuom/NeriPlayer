@@ -12,6 +12,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class DownloadedSongBuilderAssemblyTest {
     @Test
@@ -19,7 +20,7 @@ class DownloadedSongBuilderAssemblyTest {
         val context = mock(Context::class.java)
         val store = mock(DownloadedAudioMetadataStore::class.java)
         val audio = entry("Artist - Song.flac", "/downloads/Artist - Song.flac")
-        `when`(store.read(context, audio, null)).thenReturn(ManagedDownloadStorage.DownloadedAudioMetadata(
+        `when`(store.read(context, audio, null)).thenReturn(DownloadedAudioMetadata(
             name = "Sidecar title", album = "Sidecar album", downloadTimeMs = 456L
         ))
 
@@ -59,7 +60,7 @@ class DownloadedSongBuilderAssemblyTest {
         val metadataStore = mock(DownloadedAudioMetadataStore::class.java)
         val audio = entry("Artist - Song.flac", "/downloads/Artist - Song.flac")
         val cover = entry("Artist - Song.jpg", "/downloads/Covers/Artist - Song.jpg")
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             songId = 123L, name = "Metadata title", artist = "Metadata artist", album = "Metadata album",
             originalName = "Original title", originalArtist = "Original artist", durationMs = 100L,
             matchedLyric = "", matchedTranslatedLyric = "translation", matchedRomanizedLyric = "romanization",

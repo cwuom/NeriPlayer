@@ -15,6 +15,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadMigrationSourceAuthorityTest {
 
@@ -95,13 +96,13 @@ class ManagedDownloadMigrationSourceAuthorityTest {
         val targetAudio = entry("other.mp3", "/target/other.mp3", 10L)
         val plan = plan(
             sourceAudio = sourceAudio,
-            sourceMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            sourceMetadata = DownloadedAudioMetadata(
                 songId = 42L,
                 identityAlbum = "album",
                 mediaUri = "content://source/audio"
             ),
             targetAudio = targetAudio,
-            targetMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            targetMetadata = DownloadedAudioMetadata(
                 songId = 42L,
                 identityAlbum = "album",
                 mediaUri = "content://target/audio"
@@ -119,11 +120,11 @@ class ManagedDownloadMigrationSourceAuthorityTest {
         val targetAudio = entry("track.mp3", "/target/track.mp3", 10L)
         val plan = plan(
             sourceAudio = sourceAudio,
-            sourceMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            sourceMetadata = DownloadedAudioMetadata(
                 stableKey = "source-key"
             ),
             targetAudio = targetAudio,
-            targetMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            targetMetadata = DownloadedAudioMetadata(
                 stableKey = "target-key"
             )
         )
@@ -149,7 +150,7 @@ class ManagedDownloadMigrationSourceAuthorityTest {
                 lyricEntriesByName = emptyMap()
             ),
             sourceMetadataByAudioName = mapOf(
-                sourceAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                sourceAudio.name to DownloadedAudioMetadata(
                     stableKey = "source-key"
                 )
             )
@@ -194,16 +195,16 @@ class ManagedDownloadMigrationSourceAuthorityTest {
                 coverEntriesByName = emptyMap(),
                 lyricEntriesByName = emptyMap(),
                 metadataByAudioName = mapOf(
-                    targetAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    targetAudio.name to DownloadedAudioMetadata(
                         stableKey = "target-a"
                     ),
-                    secondTarget.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    secondTarget.name to DownloadedAudioMetadata(
                         stableKey = "target-b"
                     )
                 )
             ),
             sourceMetadataByAudioName = mapOf(
-                sourceAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                sourceAudio.name to DownloadedAudioMetadata(
                     stableKey = "source-key"
                 )
             )
@@ -227,13 +228,13 @@ class ManagedDownloadMigrationSourceAuthorityTest {
                 coverEntriesByName = emptyMap(),
                 lyricEntriesByName = emptyMap(),
                 metadataByAudioName = mapOf(
-                    targetDirectory.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    targetDirectory.name to DownloadedAudioMetadata(
                         stableKey = "target-key"
                     )
                 )
             ),
             sourceMetadataByAudioName = mapOf(
-                sourceAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                sourceAudio.name to DownloadedAudioMetadata(
                     stableKey = "source-key"
                 )
             )
@@ -247,7 +248,7 @@ class ManagedDownloadMigrationSourceAuthorityTest {
     fun `same stable key schedules deterministic source authoritative replacement`() {
         val sourceAudio = entry("track.mp3", "/source/track.mp3", 20L)
         val targetAudio = entry("track.mp3", "/target/track.mp3", 10L)
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(stableKey = "song-42")
+        val metadata = DownloadedAudioMetadata(stableKey = "song-42")
         val plan = plan(
             sourceAudio = sourceAudio,
             sourceMetadata = metadata,
@@ -281,11 +282,11 @@ class ManagedDownloadMigrationSourceAuthorityTest {
         val sourceRef = ManagedMigrationEntryRef(null, sourceAudio)
         val operationPlan = plan(
             sourceAudio = sourceAudio,
-            sourceMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            sourceMetadata = DownloadedAudioMetadata(
                 operationId = "operation-7"
             ),
             targetAudio = targetAudio,
-            targetMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            targetMetadata = DownloadedAudioMetadata(
                 operationId = "operation-7"
             )
         )
@@ -294,11 +295,11 @@ class ManagedDownloadMigrationSourceAuthorityTest {
 
         val differentIdentityPlan = plan(
             sourceAudio = sourceAudio,
-            sourceMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            sourceMetadata = DownloadedAudioMetadata(
                 stableKey = "source-key"
             ),
             targetAudio = targetAudio.copy(name = "other.mp3"),
-            targetMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            targetMetadata = DownloadedAudioMetadata(
                 stableKey = "target-key"
             )
         )
@@ -308,9 +309,9 @@ class ManagedDownloadMigrationSourceAuthorityTest {
 
     private fun plan(
         sourceAudio: ManagedDownloadStorage.StoredEntry,
-        sourceMetadata: ManagedDownloadStorage.DownloadedAudioMetadata,
+        sourceMetadata: DownloadedAudioMetadata,
         targetAudio: ManagedDownloadStorage.StoredEntry,
-        targetMetadata: ManagedDownloadStorage.DownloadedAudioMetadata
+        targetMetadata: DownloadedAudioMetadata
     ): ManagedMigrationNamePlan {
         val sourceRef = ManagedMigrationEntryRef(null, sourceAudio)
         return ManagedDownloadMigrationNamePlanner.buildNamePlan(

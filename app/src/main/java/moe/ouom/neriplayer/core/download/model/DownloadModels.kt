@@ -1,9 +1,8 @@
 package moe.ouom.neriplayer.core.download.model
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadSongDeletePlan
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadDeleteReferenceIndex
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
@@ -106,7 +105,7 @@ internal fun DownloadedSong.withRecoveredRemoteSourceStableKey(): DownloadedSong
 }
 
 internal fun DownloadedSong.withCachedDownloadedLyrics(
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    metadata: DownloadedAudioMetadata?
 ): DownloadedSong {
     if (metadata == null) return this
     return copy(

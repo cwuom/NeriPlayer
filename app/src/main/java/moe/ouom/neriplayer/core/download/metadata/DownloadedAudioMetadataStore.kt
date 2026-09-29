@@ -12,14 +12,14 @@ import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.model.publicationOwnerId
-import moe.ouom.neriplayer.core.download.model.resolvePersistedDownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.policy.publicationOwnerId
+import moe.ouom.neriplayer.core.download.policy.resolvePersistedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.util.time.elapsedMillisSince
 import org.json.JSONObject
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 /**
  * 以固定并发度读取独立侧载, 保持返回顺序并避免阻塞下一首歌曲
@@ -169,7 +170,7 @@ internal class DownloadedAudioMetadataStore(
         operationId: String? = null,
         clearRestorableOverrides: RestorableMetadataClearPolicy =
             RestorableMetadataClearPolicy(),
-        existingMetadataHint: ManagedDownloadStorage.DownloadedAudioMetadata? = null
+        existingMetadataHint: DownloadedAudioMetadata? = null
     ): Boolean {
         val startedAtNs = System.nanoTime()
         val identity = song.identity()
@@ -417,7 +418,7 @@ internal class DownloadedAudioMetadataStore(
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
         metadataEntry: ManagedDownloadStorage.StoredEntry? = null
-    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+    ): DownloadedAudioMetadata? {
         val resolvedMetadataEntry = metadataEntry
             ?: ManagedDownloadStorage.findMetadataForAudio(context, audio)
             ?: return null
@@ -500,7 +501,7 @@ internal class DownloadedAudioMetadataStore(
         audio: ManagedDownloadStorage.StoredEntry,
         song: SongItem,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
-        existingMetadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        existingMetadata: DownloadedAudioMetadata?,
         resolveExistingSidecars: Boolean
     ): DownloadedMetadataSidecarReferences {
         if (!resolveExistingSidecars) {
@@ -853,7 +854,7 @@ internal data class DownloadedMetadataCreatedAt(
 )
 
 internal fun resolveDownloadedMetadataCreatedAt(
-    existing: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    existing: DownloadedAudioMetadata?,
     song: SongItem,
     audioLastModifiedMs: Long?,
     nowMs: Long = System.currentTimeMillis()
@@ -893,7 +894,7 @@ internal fun resolveDownloadedMetadataCreatedAt(
 
 internal fun preserveMissingDownloadedMetadataLyrics(
     song: SongItem,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    metadata: DownloadedAudioMetadata?,
     explicitLyrics: Boolean = false,
     explicitUserLyricOffset: Boolean = false
 ): SongItem {

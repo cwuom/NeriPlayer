@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.comment.repository
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.api.bilibili.client.BiliClient
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.model.CommentError
@@ -20,6 +20,9 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoStats
 
 class BiliCommentLegacyIdTest {
     private val cache = CommentMemoryCache()
@@ -224,11 +227,11 @@ class BiliCommentLegacyIdTest {
         bvid: String = BVID,
         cid: Long = CID,
         part: Int = 3
-    ) = BiliClient.VideoBasicInfo(
+    ) = VideoBasicInfo(
         aid = aid, bvid = bvid, title = "song", coverUrl = "", desc = "", durationSec = 1,
         ownerMid = 0L, ownerName = "artist", ownerFace = "",
-        stats = BiliClient.VideoStats(0L, 0L, 0L, 0L, 0L, 0L, 0L),
-        pages = listOf(BiliClient.VideoPage(cid, part, "song", 1, 0, 0))
+        stats = VideoStats(0L, 0L, 0L, 0L, 0L, 0L, 0L),
+        pages = listOf(VideoPage(cid, part, "song", 1, 0, 0))
     )
 
     private fun comments(id: Int, page: Int = 1) = JSONObject(

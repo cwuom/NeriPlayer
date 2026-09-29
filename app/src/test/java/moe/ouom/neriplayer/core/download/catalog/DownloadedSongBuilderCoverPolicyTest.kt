@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDetails
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.junit.Assert.assertEquals
@@ -10,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class DownloadedSongBuilderCoverPolicyTest {
 
@@ -19,7 +20,7 @@ class DownloadedSongBuilderCoverPolicyTest {
 
         assertFalse(
             shouldUseIndexedDownloadedCoverFallback(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     coverUrl = originalCover,
                     originalCoverUrl = originalCover,
                     customCoverUrl = null,
@@ -33,7 +34,7 @@ class DownloadedSongBuilderCoverPolicyTest {
     fun `ordinary downloads retain indexed cover fallback`() {
         assertTrue(
             shouldUseIndexedDownloadedCoverFallback(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     coverUrl = "https://example.com/cover.jpg"
                 )
             )
@@ -45,7 +46,7 @@ class DownloadedSongBuilderCoverPolicyTest {
         val staleReference =
             "content://com.android.externalstorage.documents/tree/primary%3AOld/" +
                 "document/primary%3AOld%2FCovers%2Fcover.jpg"
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             coverUrl = staleReference,
             originalCoverUrl = staleReference
         )
@@ -67,7 +68,7 @@ class DownloadedSongBuilderCoverPolicyTest {
             ).first(),
             reference = "content://new-root/Covers/Song.jpg"
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = stableKey,
             coverPath = "content://old-root/Covers/Song.jpg",
             coverUrl = "https://example.com/cover.jpg"
@@ -116,7 +117,7 @@ class DownloadedSongBuilderCoverPolicyTest {
             name = "legacy-cover-cb470461.jpg",
             reference = "content://new-root/Covers/legacy-cover-cb470461.jpg"
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             restorableMetadata = ManagedDownloadRestorableMetadata(
                 sourceStableKey = "1|netease|",
                 baseline = ManagedDownloadRestorableMetadata.Baseline(),
@@ -142,7 +143,7 @@ class DownloadedSongBuilderCoverPolicyTest {
         assertFalse(
             shouldInspectDownloadedAudioDetails(
                 allowSlowLocalInspection = false,
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     name = "Song",
                     artist = "Artist",
                     durationMs = 1_000L

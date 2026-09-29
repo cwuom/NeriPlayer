@@ -10,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 /** 锁定刚提交音频的别名替换和精确引用优先级 */
 class AudioDownloadManagerPlaybackRaceTest {
@@ -134,7 +135,7 @@ class AudioDownloadManagerPlaybackRaceTest {
             sizeBytes = 10L,
             lastModifiedMs = 2L
         )
-        val formalMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val formalMetadata = DownloadedAudioMetadata(
             stableKey = "1|netease|",
             downloadFinalized = true
         )

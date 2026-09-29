@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.settings.playback
 
-import moe.ouom.neriplayer.data.settings.DEFAULT_YOUTUBE_PLAYBACK_SOURCE
-import moe.ouom.neriplayer.data.settings.YouTubePlaybackSourcePreferencePolicy
+import moe.ouom.neriplayer.data.youtube.settings.DEFAULT_YOUTUBE_PLAYBACK_SOURCE
+import moe.ouom.neriplayer.data.youtube.settings.YouTubePlaybackSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
 import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY
 import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE

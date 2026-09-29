@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.core.player.model
  * Updated: 2026/3/23
  */
 
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 

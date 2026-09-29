@@ -50,7 +50,6 @@ import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirect
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLookup
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.migration.copy.ManagedDownloadMigrationCopyWorker
 import moe.ouom.neriplayer.core.download.storage.migration.recovery.ManagedDownloadMigrationFinalizer
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationNamePlanner
@@ -688,59 +687,6 @@ internal object ManagedDownloadStorage {
         TRANSLATED,
         ROMANIZED
     }
-    data class DownloadedAudioMetadata(
-        val stableKey: String? = null,
-        val songId: Long? = null,
-        val identityAlbum: String? = null,
-        val album: String? = null,
-        val name: String? = null,
-        val artist: String? = null,
-        val coverUrl: String? = null,
-        val matchedLyric: String? = null,
-        val matchedTranslatedLyric: String? = null,
-        val matchedRomanizedLyric: String? = null,
-        val matchedLyricSource: String? = null,
-        val matchedSongId: String? = null,
-        val userLyricOffsetMs: Long = 0L,
-        val customCoverUrl: String? = null,
-        val customName: String? = null,
-        val customArtist: String? = null,
-        val originalName: String? = null,
-        val originalArtist: String? = null,
-        val originalCoverUrl: String? = null,
-        val originalLyric: String? = null,
-        val originalTranslatedLyric: String? = null,
-        val originalRomanizedLyric: String? = null,
-        val mediaUri: String? = null,
-        val channelId: String? = null,
-        val audioId: String? = null,
-        val subAudioId: String? = null,
-        val playlistContextId: String? = null,
-        val coverPath: String? = null,
-        val lyricPath: String? = null,
-        val translatedLyricPath: String? = null,
-        val romanizedLyricPath: String? = null,
-        val durationMs: Long = 0L,
-        val verifiedAudioDurationMs: Long? = null,
-        val downloadTimeMs: Long? = null,
-        val downloadFinalized: Boolean? = null,
-        val audioPublicationPending: Boolean = false,
-        val metadataEmbeddingState: DownloadedAudioEmbeddingState? = null,
-        val createdAtMs: Long? = null,
-        val createdAtSource: String? = null,
-        val artifactId: String? = null,
-        val operationId: String? = null,
-        val terminalTemporaryWriteCleanupToken: String? = null,
-        val artifactState: String? = null,
-        val audioFileName: String? = null,
-        val libraryId: String? = null,
-        val libraryAddedAtMs: Long? = null,
-        val sourceCreatedAtMs: Long? = null,
-        val sourceModifiedAtMs: Long? = null,
-        val restorableMetadata: ManagedDownloadRestorableMetadata? = null,
-        val createdAtConfidence: String? = null,
-        val audioPublicationOwnerId: String? = null
-    )
     fun primeSettings(directoryUri: String?, directoryLabel: String?, fileNameTemplate: String? = null) {
         return this.primeSettingsImpl(directoryUri, directoryLabel, fileNameTemplate)
     }

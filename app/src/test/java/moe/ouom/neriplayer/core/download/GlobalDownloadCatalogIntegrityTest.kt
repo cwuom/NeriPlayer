@@ -14,6 +14,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class GlobalDownloadCatalogIntegrityTest {
     @get:Rule
@@ -134,7 +135,7 @@ class GlobalDownloadCatalogIntegrityTest {
         assertTrue(matchesDownloadedCatalogFileSize(recordedSize, readDownloadedCatalogReferenceSize(context, file.absolutePath)))
     }
 
-    private fun metadata(publicationPending: Boolean) = ManagedDownloadStorage.DownloadedAudioMetadata(
+    private fun metadata(publicationPending: Boolean) = DownloadedAudioMetadata(
         downloadFinalized = true,
         artifactState = "FINALIZED",
         audioPublicationPending = publicationPending

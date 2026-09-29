@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
 import java.io.IOException
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongDeleteTarget
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadResult

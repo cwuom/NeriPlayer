@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.artifact
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.model.publicationOwnerId
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publicationOwnerId
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 /**
  * 核心音频保留恢复凭据，元信息完成后才对正式目录发布
@@ -119,7 +120,7 @@ internal class DownloadCorePublicationCoordinator {
     private suspend fun readMetadata(
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry
-    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+    ): DownloadedAudioMetadata? {
         val entry = ManagedDownloadStorage.findMetadataForAudio(context, audio) ?: return null
         return ManagedDownloadStorage.readText(context, entry.reference)
             ?.let(ManagedDownloadStorage::parseDownloadedAudioMetadataJson)

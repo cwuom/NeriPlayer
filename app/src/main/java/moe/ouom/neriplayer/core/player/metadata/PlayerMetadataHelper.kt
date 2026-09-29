@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.player.metadata
 
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.api.search.SongDetails
-import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.SongDetails
+import moe.ouom.neriplayer.core.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun shouldSkipSongMetadataMutation(

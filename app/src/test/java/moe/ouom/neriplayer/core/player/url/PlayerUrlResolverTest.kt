@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.player.url
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
-import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
+import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

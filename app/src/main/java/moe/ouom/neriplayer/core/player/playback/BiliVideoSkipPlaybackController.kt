@@ -8,15 +8,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.api.bili.biliBvidOrNull
-import moe.ouom.neriplayer.core.api.bili.biliCidOrNull
-import moe.ouom.neriplayer.core.api.bili.resolveBiliVideoSkipTarget
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliBvidOrNull
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliCidOrNull
+import moe.ouom.neriplayer.data.platform.bili.skip.resolver.resolveBiliVideoSkipTarget
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.policy.skip.BiliVideoSkipTracker
+import moe.ouom.neriplayer.data.platform.bili.skip.policy.BiliVideoSkipTracker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val BILI_VIDEO_SKIP_TARGET_LOAD_MAX_ATTEMPTS = 3

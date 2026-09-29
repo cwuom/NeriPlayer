@@ -14,6 +14,7 @@ import android.content.Context
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import java.util.Locale
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 internal suspend fun GlobalDownloadManager.resolveCoreRecoveryAudioCandidate(
@@ -141,7 +142,7 @@ internal suspend fun GlobalDownloadManager.resolveCoreRecoveryAudioCandidate(
     var directMetadataProbeBudget = 8
     suspend fun metadataCandidates(
         audio: ManagedDownloadStorage.StoredEntry
-    ): List<ManagedDownloadStorage.DownloadedAudioMetadata> {
+    ): List<DownloadedAudioMetadata> {
         val indexed = listOfNotNull(
             snapshot?.let { currentSnapshot ->
                 ManagedDownloadStorage.metadataForAudioEntry(

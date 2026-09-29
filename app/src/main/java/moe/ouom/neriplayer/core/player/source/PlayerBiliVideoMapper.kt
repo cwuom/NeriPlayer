@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.core.player.source
  * Updated: 2026/3/23
  */
 
-import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliSongAlbum
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 

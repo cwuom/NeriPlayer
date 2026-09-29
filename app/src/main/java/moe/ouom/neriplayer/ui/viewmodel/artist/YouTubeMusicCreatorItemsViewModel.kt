@@ -15,8 +15,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorItem
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 

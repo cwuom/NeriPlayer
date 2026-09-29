@@ -15,15 +15,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorDetail
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorItem
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSection
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorDetail
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
-import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
+import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
+import moe.ouom.neriplayer.api.youtube.transport.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 
 data class YouTubeMusicCreatorDetailUiState(

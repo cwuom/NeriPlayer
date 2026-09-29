@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.playback.sync.ListenTogetherPlayerSyncContext
 import moe.ouom.neriplayer.listentogether.playback.sync.ListenTogetherPlayerSyncPlan
 import moe.ouom.neriplayer.listentogether.playback.sync.resolveListenTogetherPlayerSyncPlan
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.session.state.normalized
 import moe.ouom.neriplayer.data.model.SongItem
 

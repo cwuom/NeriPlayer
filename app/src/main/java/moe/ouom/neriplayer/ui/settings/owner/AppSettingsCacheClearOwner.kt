@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.settings.owner
 
-import moe.ouom.neriplayer.data.storage.ExtraCacheClearResult
-import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.storage.model.ExtraCacheClearResult
+import moe.ouom.neriplayer.data.storage.model.StorageCacheClearOptions
 
 internal class AppSettingsCacheClearOwner(
     private val clearPlayerCache: suspend (StorageCacheClearOptions) -> String,

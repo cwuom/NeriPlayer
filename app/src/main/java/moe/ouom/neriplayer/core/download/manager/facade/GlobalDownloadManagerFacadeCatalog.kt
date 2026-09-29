@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
     context: Context,
@@ -98,7 +99,7 @@ internal fun GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublishIm
 
 internal fun GlobalDownloadManager.resolveDurableMetadataPlaybackReferenceImpl(
     audio: ManagedDownloadStorage.StoredEntry,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    metadata: DownloadedAudioMetadata?
 ): String? {
     return ManagedDownloadStorage.resolveStoredEntryPlaybackUri(audio)
         ?: metadata?.mediaUri

@@ -71,6 +71,7 @@ import java.io.File
 import java.io.IOException
 import java.util.Locale
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 internal fun ManagedDownloadStorage.restorePersistedMigrationProgress(
@@ -355,7 +356,7 @@ internal suspend fun ManagedDownloadStorage.applyDeletedSourceCopyReceiptRecover
                 lastModifiedMs = receipt.sourceLastModifiedMs.coerceAtLeast(0L),
                 isDirectory = false
             ),
-            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            metadata = DownloadedAudioMetadata(
                 createdAtMs = receipt.sourceLogicalCreatedAtMs,
                 createdAtSource = receipt.sourceCreatedAtSource,
                 createdAtConfidence = receipt.sourceCreatedAtConfidence

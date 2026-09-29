@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.persistence
 
 import androidx.room.withTransaction
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PersistedSongItem
 import moe.ouom.neriplayer.core.player.model.PersistedState

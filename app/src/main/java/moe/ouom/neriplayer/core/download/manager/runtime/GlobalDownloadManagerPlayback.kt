@@ -5,8 +5,8 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.buildExpectedDownloadArtists
 import moe.ouom.neriplayer.core.download.buildExpectedDownloadTitles
 import moe.ouom.neriplayer.core.download.downloadedSongPlaybackReferenceCandidates
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.isUnfinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.shouldRepairDownloadedCover
 import moe.ouom.neriplayer.core.download.shouldRepairMetadataLessManagedDownload
 import moe.ouom.neriplayer.core.download.shouldTrustFastDownloadedSongCatalogHit
@@ -35,6 +35,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 internal suspend fun GlobalDownloadManager.findExistingDownloadedAudio(
@@ -309,7 +310,7 @@ internal suspend fun GlobalDownloadManager.validateExistingDownloadedAudio(
     context: Context,
     song: SongItem,
     audio: ManagedDownloadStorage.StoredEntry,
-    snapshotMetadata: ManagedDownloadStorage.DownloadedAudioMetadata? = null
+    snapshotMetadata: DownloadedAudioMetadata? = null
 ): ManagedDownloadStorage.StoredEntry? {
     // 快照中的长度不是当前存在证据，用户可能已从文件管理器删除音频
     if (ManagedDownloadReferenceLookup.inspect(context, audio.reference) ==
@@ -497,7 +498,7 @@ internal suspend fun GlobalDownloadManager.cleanupUnfinalizedDownloadForRetry(
 }
 
 internal fun GlobalDownloadManager.isMetadataOwnedBySong(
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata,
+    metadata: DownloadedAudioMetadata,
     song: SongItem
 ): Boolean {
     val identity = song.identity()
@@ -524,7 +525,8 @@ internal fun GlobalDownloadManager.isMetadataOwnedBySong(
             return metadata.songId == song.id && source == identity.album
         }
     }
-    if (metadata.songId != null && metadata.songId > 0L && metadata.songId == song.id &&
+    val storedSongId = metadata.songId
+    if (storedSongId != null && storedSongId > 0L && storedSongId == song.id &&
         !metadata.album.isNullOrBlank() &&
         (metadata.album == song.album || metadata.album == identity.album)
     ) {
@@ -535,7 +537,7 @@ internal fun GlobalDownloadManager.isMetadataOwnedBySong(
 }
 
 internal fun GlobalDownloadManager.isRecoveryMetadataOwnedBySong(
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata,
+    metadata: DownloadedAudioMetadata,
     song: SongItem,
     operationId: String?
 ): Boolean {

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.url
 
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.deriveCodecLabel
 import moe.ouom.neriplayer.core.player.model.estimateBitrateKbps
 import moe.ouom.neriplayer.core.player.model.inferYouTubeQualityKeyFromBitrate
-import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
+import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
 import java.net.URLDecoder
 import kotlin.math.abs
@@ -201,7 +201,7 @@ internal fun buildBiliPlaybackAudioInfo(
 }
 
 internal fun buildYouTubePlaybackAudioInfo(
-    playableAudio: moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableAudio,
+    playableAudio: moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio,
     getLocalizedString: (Int) -> String
 ): PlaybackAudioInfo {
     val qualityKey = inferYouTubeQualityKeyFromBitrate(playableAudio.bitrateKbps)

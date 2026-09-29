@@ -37,12 +37,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicDebugProbeResult
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicLocaleResolver
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicDebugProbeResult
+import moe.ouom.neriplayer.api.youtube.protocol.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthState
 
 data class YouTubeApiProbeUiState(
     val running: Boolean = false,

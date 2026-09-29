@@ -12,9 +12,9 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
+import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
 
 internal object PlaybackMediaItemFactory {
     const val BILI_SOURCE_TAG = SongSourceTags.BILIBILI

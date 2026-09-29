@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.lyrics
 
-import moe.ouom.neriplayer.core.api.lyrics.hasCollapsedTimedLyricTimeline
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.data.lyrics.matching.hasCollapsedTimedLyricTimeline
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult

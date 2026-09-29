@@ -16,10 +16,10 @@ import moe.ouom.neriplayer.listentogether.session.state.shouldIgnoreListenTogeth
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.isListenTogetherQueueUpdateCause
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
 
 internal interface ListenTogetherRoomSocketEventPort {
     fun session(): ListenTogetherSessionState

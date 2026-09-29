@@ -11,6 +11,7 @@ import org.junit.Test
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class DownloadedArtifactIntegrityTest {
     @Test
@@ -294,9 +295,9 @@ class DownloadedArtifactIntegrityTest {
         )
     }
 
-    private fun completeMetadata(song: SongItem): ManagedDownloadStorage.DownloadedAudioMetadata {
+    private fun completeMetadata(song: SongItem): DownloadedAudioMetadata {
         val identity = song.identity()
-        return ManagedDownloadStorage.DownloadedAudioMetadata(
+        return DownloadedAudioMetadata(
             stableKey = song.stableKey(),
             songId = song.id,
             identityAlbum = identity.album,

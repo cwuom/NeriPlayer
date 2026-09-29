@@ -30,9 +30,9 @@ import android.os.Parcelable
 import androidx.core.net.toUri
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync

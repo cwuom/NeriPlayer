@@ -31,9 +31,9 @@ import moe.ouom.neriplayer.activity.shouldProcessUsbDeviceAttachedAction
 import moe.ouom.neriplayer.activity.usbDeviceAttachAliasComponentState
 import moe.ouom.neriplayer.core.player.audio.focus.shouldPauseUsbExclusiveForFocusChange
 import moe.ouom.neriplayer.core.player.audio.focus.shouldSuppressUsbExclusiveForFocusChange
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

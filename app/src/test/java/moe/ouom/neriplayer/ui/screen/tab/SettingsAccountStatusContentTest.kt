@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import android.content.res.Resources
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthState
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountEntryAction
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.accountStatusText
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.hasValidSavedCookieHealth

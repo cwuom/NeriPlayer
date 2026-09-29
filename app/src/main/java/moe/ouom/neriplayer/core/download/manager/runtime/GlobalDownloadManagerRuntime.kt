@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.core.download.catalog.ManagedLibraryItemRoomStore
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
 import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.FinalizedManagedAudioSnapshot
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PlayableManagedAudioSnapshot
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.CatalogPublishMode
@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import java.security.MessageDigest
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 internal suspend fun <T> GlobalDownloadManager.withSongExecutionLock(
@@ -208,7 +209,7 @@ internal fun GlobalDownloadManager.resolvePlayableManagedAudioSnapshot(
 
 internal fun GlobalDownloadManager.isDownloadedMetadataIdentityCompatible(
     song: SongItem,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+    metadata: DownloadedAudioMetadata
 ): Boolean {
     val expectedRemoteIdentity = song.remoteSourceIdentityOrNull() ?: return true
     val metadataStableKey = metadata.stableKey

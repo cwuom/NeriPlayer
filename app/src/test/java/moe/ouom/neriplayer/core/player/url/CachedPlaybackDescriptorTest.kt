@@ -7,8 +7,8 @@ import androidx.media3.datasource.cache.DefaultContentMetadata
 import java.io.File
 import java.util.TreeSet
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource

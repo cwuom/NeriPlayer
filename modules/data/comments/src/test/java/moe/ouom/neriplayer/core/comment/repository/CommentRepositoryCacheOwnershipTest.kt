@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.core.comment.repository
 
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.api.bilibili.client.BiliClient
+import moe.ouom.neriplayer.api.netease.client.NeteaseClient
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.model.CommentPlatform
 import moe.ouom.neriplayer.core.comment.model.CommentSource
@@ -20,6 +20,9 @@ import org.junit.runners.Parameterized
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoStats
 
 @RunWith(Parameterized::class)
 class CommentRepositoryCacheOwnershipTest(private val platform: CommentPlatform) {
@@ -31,11 +34,11 @@ class CommentRepositoryCacheOwnershipTest(private val platform: CommentPlatform)
     @Before
     fun setUp(): Unit = runBlocking {
         `when`(bili.getVideoBasicInfoByAvid(123L)).thenReturn(
-            BiliClient.VideoBasicInfo(
+            VideoBasicInfo(
                 aid = 123L, bvid = "BV1test", title = "song", coverUrl = "", desc = "",
                 durationSec = 1, ownerMid = 0L, ownerName = "", ownerFace = "",
-                stats = BiliClient.VideoStats(0L, 0L, 0L, 0L, 0L, 0L, 0L),
-                pages = listOf(BiliClient.VideoPage(456L, 1, "song", 1, 0, 0))
+                stats = VideoStats(0L, 0L, 0L, 0L, 0L, 0L, 0L),
+                pages = listOf(VideoPage(456L, 1, "song", 1, 0, 0))
             )
         )
         setSession("session-a")

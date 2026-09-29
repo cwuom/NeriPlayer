@@ -38,11 +38,11 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
-import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
-import moe.ouom.neriplayer.data.auth.youtube.parseYouTubeAuthBundleFromRaw
+import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthHealth
+import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthState
+import moe.ouom.neriplayer.api.youtube.model.auth.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.data.youtube.auth.parseYouTubeAuthBundleFromRaw
 
 data class YouTubeAuthUiState(
     val health: YouTubeAuthHealth = evaluateYouTubeAuthHealth(YouTubeAuthBundle()),

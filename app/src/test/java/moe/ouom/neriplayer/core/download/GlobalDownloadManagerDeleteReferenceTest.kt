@@ -18,6 +18,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class GlobalDownloadManagerDeleteReferenceTest {
 
@@ -95,7 +96,7 @@ class GlobalDownloadManagerDeleteReferenceTest {
             sizeBytes = 128L,
             lastModifiedMs = 1L
         )
-        val otherMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val otherMetadata = DownloadedAudioMetadata(
             coverPath = sharedCoverReference
         )
         val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
@@ -142,7 +143,7 @@ class GlobalDownloadManagerDeleteReferenceTest {
         val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
             metadataEntriesByAudioName = mapOf(currentAudio.name to currentMetadata),
             metadataByAudioName = mapOf(
-                "artist - other.mp3" to ManagedDownloadStorage.DownloadedAudioMetadata(
+                "artist - other.mp3" to DownloadedAudioMetadata(
                     romanizedLyricPath = sharedRomanizedReference
                 )
             ),
@@ -200,7 +201,7 @@ class GlobalDownloadManagerDeleteReferenceTest {
             audioEntriesByLookupKey = mapOf(currentAudio.reference to currentAudio),
             metadataEntriesByAudioName = mapOf(currentAudio.name to currentMetadata),
             metadataByAudioName = mapOf(
-                currentAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                currentAudio.name to DownloadedAudioMetadata(
                     stableKey = stableKey,
                     coverPath = stableCover.reference
                 )
@@ -545,9 +546,9 @@ class GlobalDownloadManagerDeleteReferenceTest {
             ),
             coverEntriesByName = mapOf(orphanSidecar.name to orphanSidecar),
             metadataByAudioName = mapOf(
-                catalogAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                catalogAudio.name to DownloadedAudioMetadata(
                     stableKey = "catalog", audioFileName = catalogAudio.name, downloadFinalized = true),
-                orphanAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                orphanAudio.name to DownloadedAudioMetadata(
                     stableKey = "orphan", audioFileName = orphanAudio.name, downloadFinalized = true,
                     coverPath = orphanSidecar.reference)
             ),

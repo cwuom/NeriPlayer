@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadRefere
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 /** 锁定下载 catalog 与异步扫描之间的发布顺序 */
 class GlobalDownloadManagerCatalogRaceTest {
@@ -26,7 +27,7 @@ class GlobalDownloadManagerCatalogRaceTest {
             audioEntries = listOf(audio),
             audioEntriesByLookupKey = mapOf(reference to audio),
             metadataByAudioName = mapOf(
-                audio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                audio.name to DownloadedAudioMetadata(
                     downloadFinalized = false,
                     artifactState = "REPAIR_REQUIRED"
                 )

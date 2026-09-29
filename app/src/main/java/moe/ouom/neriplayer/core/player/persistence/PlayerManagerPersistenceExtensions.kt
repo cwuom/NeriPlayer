@@ -16,8 +16,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
@@ -56,7 +56,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.isReadableLocalFile
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
+import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.settings.lyrics.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.saturatingAddLyricOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.shouldRebaseLyricOffsetForSource

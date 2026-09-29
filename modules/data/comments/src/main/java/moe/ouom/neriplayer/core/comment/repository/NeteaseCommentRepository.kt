@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.comment.repository
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.api.netease.client.NeteaseClient
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.mapper.parseNeteaseCommentPage

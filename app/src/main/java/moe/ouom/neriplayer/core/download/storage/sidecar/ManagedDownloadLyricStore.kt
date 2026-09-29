@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal object ManagedDownloadLyricStore {
     fun lyricFileName(baseName: String, translated: Boolean): String {
@@ -47,7 +48,7 @@ internal object ManagedDownloadLyricStore {
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         song: SongItem,
         resolvedAudio: ManagedDownloadStorage.StoredEntry?,
-        resolvedMetadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        resolvedMetadata: DownloadedAudioMetadata?,
         fileNameTemplate: String?,
         exists: (Context, String?) -> Boolean
     ): String? {
@@ -75,7 +76,7 @@ internal object ManagedDownloadLyricStore {
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         song: SongItem,
         resolvedAudio: ManagedDownloadStorage.StoredEntry?,
-        resolvedMetadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        resolvedMetadata: DownloadedAudioMetadata?,
         translated: Boolean,
         fileNameTemplate: String?,
         exists: (Context, String?) -> Boolean
@@ -115,7 +116,7 @@ internal object ManagedDownloadLyricStore {
     }
 
     fun fallbackEmbeddedLyric(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         translated: Boolean
     ): String? {
         return if (translated) {
@@ -126,7 +127,7 @@ internal object ManagedDownloadLyricStore {
     }
 
     fun selectedEmbeddedLyric(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         translated: Boolean
     ): String? {
         return if (translated) {
@@ -137,13 +138,13 @@ internal object ManagedDownloadLyricStore {
     }
 
     fun fallbackEmbeddedRomanizedLyric(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+        metadata: DownloadedAudioMetadata?
     ): String? {
         return metadata?.matchedRomanizedLyric ?: metadata?.originalRomanizedLyric
     }
 
     fun selectedEmbeddedRomanizedLyric(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+        metadata: DownloadedAudioMetadata?
     ): String? = metadata?.matchedRomanizedLyric
 
     private fun findIndexedLyricReference(

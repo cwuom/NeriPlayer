@@ -18,7 +18,7 @@ import moe.ouom.neriplayer.core.download.resource.DownloadTransferStalledExcepti
 import moe.ouom.neriplayer.core.player.engine.datasource.ChunkRequestIOException
 import moe.ouom.neriplayer.core.player.engine.datasource.ResumableHttpRangeSupport
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import okhttp3.Request

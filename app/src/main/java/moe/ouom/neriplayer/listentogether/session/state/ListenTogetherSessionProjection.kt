@@ -2,9 +2,9 @@ package moe.ouom.neriplayer.listentogether.session.state
 
 import moe.ouom.neriplayer.listentogether.session.membership.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
-import moe.ouom.neriplayer.listentogether.network.ws.buildListenTogetherWsUrl
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomResponse
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import moe.ouom.neriplayer.api.ltw.ws.buildListenTogetherWsUrl
+import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherRoomResponse
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
 
 internal data class PreparedListenTogetherSessionUpdate(
     val normalizedBaseUrl: String,

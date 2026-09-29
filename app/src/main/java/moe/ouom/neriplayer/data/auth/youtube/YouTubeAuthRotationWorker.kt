@@ -1,5 +1,13 @@
 package moe.ouom.neriplayer.data.auth.youtube
 
+import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeCookieSupport
+import moe.ouom.neriplayer.data.youtube.auth.SharedPreferencesYouTubeCookieRotationStateStore
+import moe.ouom.neriplayer.data.youtube.model.auth.YouTubeCookieRotationOutcome
+import moe.ouom.neriplayer.data.youtube.auth.YouTubeCookieRotator
+import moe.ouom.neriplayer.data.youtube.auth.hasYouTubeRotationPrerequisites
+import moe.ouom.neriplayer.data.youtube.auth.web.applyYouTubeWebCookies
+import moe.ouom.neriplayer.data.youtube.auth.youtubeAuthRotationMutex
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers

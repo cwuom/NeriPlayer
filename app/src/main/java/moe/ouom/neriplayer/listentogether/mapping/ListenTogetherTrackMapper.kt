@@ -2,10 +2,10 @@ package moe.ouom.neriplayer.listentogether.mapping
 
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
+import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
+import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.SongItem
 
 fun ListenTogetherTrack.toSongItem(): SongItem {

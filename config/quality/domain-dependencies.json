@@ -7,17 +7,15 @@
       "java.lang.*",
       "kotlin.*",
       "org.json.JSONObject",
-      "moe.ouom.neriplayer.core.download.ManagedDownloadStorage$DownloadedAudioMetadata",
+      "moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata",
       "moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState",
       "moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState$Companion",
-      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata",
-      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata$Baseline",
-      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata$Overrides",
-      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata$Companion"
+      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata",
+      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata$Baseline",
+      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata$Overrides",
+      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata$Companion"
     ],
-    "bridges": {
-      "moe.ouom.neriplayer.core.download.ManagedDownloadStorage": []
-    }
+    "bridges": {}
   },
   {
     "name": "downloaded-song-projection",
@@ -26,7 +24,7 @@
     "allowed_classes": [
       "java.lang.*",
       "kotlin.*",
-      "moe.ouom.neriplayer.core.api.search.MusicPlatform",
+      "moe.ouom.neriplayer.core.model.music.MusicPlatform",
       "moe.ouom.neriplayer.core.download.model.DownloadedSong",
       "moe.ouom.neriplayer.data.model.SongItem",
       "moe.ouom.neriplayer.data.model.SongIdentity"
@@ -56,19 +54,18 @@
       "java.lang.*",
       "java.util.*",
       "kotlin.*",
-      "moe.ouom.neriplayer.core.download.ManagedDownloadStorage$DownloadedAudioMetadata",
+      "moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata",
       "moe.ouom.neriplayer.core.download.model.DownloadedSong"
     ],
     "bridges": {
-      "moe.ouom.neriplayer.core.download.ManagedDownloadStorage": [],
       "moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState": [],
-      "moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata": [],
+      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata": [],
       "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilderKt": [
         "Methodref fallbackDownloadedSongId:(Ljava/lang/String;)J",
         "Methodref shouldInspectDownloadedLocalLyrics:(ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"
       ],
       "moe.ouom.neriplayer.core.download.policy.DownloadLifecyclePoliciesKt": [
-        "Methodref shouldInspectDownloadedAudioDetails:(ZLmoe/ouom/neriplayer/core/download/ManagedDownloadStorage$DownloadedAudioMetadata;Ljava/lang/String;Z)Z",
+        "Methodref shouldInspectDownloadedAudioDetails:(ZLmoe/ouom/neriplayer/core/download/model/DownloadedAudioMetadata;Ljava/lang/String;Z)Z",
         "Methodref resolveDownloadedLyricOverride:(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"
       ],
       "moe.ouom.neriplayer.core.download.model.DownloadModelsKt": [
@@ -85,20 +82,16 @@
       "java.util.*",
       "kotlin.*",
       "kotlinx.coroutines.flow.*",
-      "moe.ouom.neriplayer.data.model.SongItem",
-      "moe.ouom.neriplayer.core.player.policy.failure.PlaybackFailureAdvanceAction"
+      "moe.ouom.neriplayer.data.model.SongItem"
     ],
-    "bridges": {
-      "moe.ouom.neriplayer.data.model.SongIdentityKt": [
-        "Methodref sameIdentityAs:(Lmoe/ouom/neriplayer/data/model/SongItem;Lmoe/ouom/neriplayer/data/model/SongItem;)Z",
-        "Methodref stableKey:(Lmoe/ouom/neriplayer/data/model/SongItem;)Ljava/lang/String;"
-      ]
-    }
+    "bridges": {}
   },
   {
     "name": "sync-merge",
     "package": "moe.ouom.neriplayer.data.sync.merge.",
-    "descriptor_only": ["moe.ouom.neriplayer.data.sync.CoverUrlMapper"],
+    "descriptor_only": [
+      "moe.ouom.neriplayer.data.sync.CoverUrlMapper"
+    ],
     "allowed_classes": [
       "java.lang.*",
       "java.util.*",

@@ -4,9 +4,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,6 +15,7 @@ import org.junit.Assert.assertTrue
 import org.json.JSONObject
 import org.junit.Test
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class DownloadedAudioMetadataStoreTest {
 
@@ -353,7 +353,7 @@ class DownloadedAudioMetadataStoreTest {
     fun `restoring metadata keeps lyric content when the incoming song has no lyrics`() {
         val restored = preserveMissingDownloadedMetadataLyrics(
             song = testSong(),
-            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            metadata = DownloadedAudioMetadata(
                 matchedLyric = "[00:01.00]stored lyric",
                 matchedTranslatedLyric = "stored translation",
                 matchedRomanizedLyric = "stored romanization",
@@ -371,7 +371,7 @@ class DownloadedAudioMetadataStoreTest {
     fun `explicit lyric clearing does not resurrect content or match provenance`() {
         val cleared = preserveMissingDownloadedMetadataLyrics(
             song = testSong(),
-            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            metadata = DownloadedAudioMetadata(
                 matchedLyric = "stored lyric",
                 matchedTranslatedLyric = "stored translation",
                 matchedRomanizedLyric = "stored romanization",

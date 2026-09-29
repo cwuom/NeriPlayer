@@ -37,7 +37,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderContent
+import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderVideo
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
@@ -57,9 +59,9 @@ data class BiliUploaderDetailUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val header: BiliUploaderHeader? = null,
-    val videos: List<BiliClient.UploaderVideo> = emptyList(),
-    val collections: List<BiliClient.UploaderContent> = emptyList(),
-    val series: List<BiliClient.UploaderContent> = emptyList(),
+    val videos: List<UploaderVideo> = emptyList(),
+    val collections: List<UploaderContent> = emptyList(),
+    val series: List<UploaderContent> = emptyList(),
     val videosHasMore: Boolean = false,
     val contentsHasMore: Boolean = false,
     val videosLoadingMore: Boolean = false,
@@ -199,7 +201,7 @@ class BiliUploaderDetailViewModel(application: Application) : AndroidViewModel(a
         }
     }
 
-    suspend fun getVideoInfo(bvid: String): BiliClient.VideoBasicInfo =
+    suspend fun getVideoInfo(bvid: String): VideoBasicInfo =
         withContext(Dispatchers.IO) { client.getVideoBasicInfoByBvid(bvid) }
 
     private fun shouldKeepCurrentUploader(mid: Long): Boolean {
@@ -242,7 +244,7 @@ class BiliUploaderDetailViewModel(application: Application) : AndroidViewModel(a
     )
 }
 
-internal fun BiliClient.UploaderVideo.toBiliVideoItem(): BiliVideoItem {
+internal fun UploaderVideo.toBiliVideoItem(): BiliVideoItem {
     return BiliVideoItem(
         id = aid,
         bvid = bvid,

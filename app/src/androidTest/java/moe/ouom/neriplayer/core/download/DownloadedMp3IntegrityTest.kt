@@ -21,7 +21,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.transfer.DownloadIntegrityException
 import moe.ouom.neriplayer.core.player.download.sidecar.verifyDownloadedAudioPayload
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.model.SongItem
@@ -34,6 +34,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 @RunWith(AndroidJUnit4::class)
 class DownloadedMp3IntegrityTest {
@@ -202,7 +203,7 @@ class DownloadedMp3IntegrityTest {
                 track, audio, audio.name,
                 AudioDownloadManager.DownloadedPayloadSummary(audio.length(), audio.length()), source(audio)
             ))
-            val baseline = ManagedDownloadStorage.DownloadedAudioMetadata(
+            val baseline = DownloadedAudioMetadata(
                 stableKey = track.stableKey(), durationMs = track.durationMs,
                 verifiedAudioDurationMs = verifiedDuration, artifactState = "CORE_COMMITTED", downloadFinalized = false
             )
@@ -292,7 +293,7 @@ class DownloadedMp3IntegrityTest {
         val audio = createSilentMp3()
         try {
             val song = song()
-            val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            val metadata = DownloadedAudioMetadata(
                 stableKey = song.stableKey(), artifactState = "CORE_COMMITTED", downloadFinalized = false
             )
             assertEquals(entry(audio), GlobalDownloadManager.validateExistingDownloadedAudio(
@@ -318,10 +319,10 @@ class DownloadedMp3IntegrityTest {
         val previous = cache.cachedSnapshot(context, restorePersisted = false)
         val track = song().copy(durationMs = 275_000L)
         val stored = entry(audio)
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = track.stableKey(), artifactState = "CORE_COMMITTED", downloadFinalized = false
         )
-        fun publish(value: ManagedDownloadStorage.DownloadedAudioMetadata) {
+        fun publish(value: DownloadedAudioMetadata) {
             cache.putSnapshot(context, cacheKey, ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
                 audioEntries = listOf(stored), audioEntriesByLookupKey = mapOf(stored.reference to stored),
                 audioEntriesByStableKey = mapOf(track.stableKey() to listOf(stored)),

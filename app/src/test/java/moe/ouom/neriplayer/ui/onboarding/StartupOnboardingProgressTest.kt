@@ -5,8 +5,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthState
 import moe.ouom.neriplayer.data.settings.playback.PlaybackControlSize
 
 class StartupOnboardingProgressTest {

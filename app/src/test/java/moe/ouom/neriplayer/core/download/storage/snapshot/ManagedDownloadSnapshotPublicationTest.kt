@@ -22,6 +22,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadSnapshotPublicationTest {
     private lateinit var context: Context
@@ -90,7 +91,7 @@ class ManagedDownloadSnapshotPublicationTest {
                 cache.putSnapshotIfUnchanged(context, "root-a", scanned, revision)
             }
             assertTrue(scanStarted.await(5, TimeUnit.SECONDS))
-            val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            val metadata = DownloadedAudioMetadata(
                 stableKey = "new-stable",
                 customName = "New title",
                 originalLyric = "[00:01.00]new original",

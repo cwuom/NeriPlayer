@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.settings
 
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackSourcePreference
+import moe.ouom.neriplayer.data.youtube.settings.YouTubePlaybackSourcePreferencePolicy
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers

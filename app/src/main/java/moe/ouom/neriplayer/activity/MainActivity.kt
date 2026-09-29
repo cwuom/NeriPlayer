@@ -732,7 +732,7 @@ class MainActivity : ComponentActivity() {
                                             joiningInvite -> getString(R.string.listen_together_status_joining)
                                             !listenTogetherStatus.isNullOrBlank() -> listenTogetherStatus
                                             isListenTogetherRoomActive &&
-                                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState.CONNECTING ->
+                                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState.CONNECTING ->
                                                 getString(R.string.listen_together_status_syncing)
 
                                             isListenTogetherRoomActive -> getString(R.string.listen_together_status_active)
@@ -778,7 +778,7 @@ class MainActivity : ComponentActivity() {
                                             updateListenTogetherStatus(
                                                 when {
                                                     listenTogetherSessionState.roomId.isNullOrBlank() -> null
-                                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState.CONNECTING ->
+                                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState.CONNECTING ->
                                                         getString(R.string.listen_together_status_syncing)
 
                                                     else -> getString(R.string.listen_together_status_active)

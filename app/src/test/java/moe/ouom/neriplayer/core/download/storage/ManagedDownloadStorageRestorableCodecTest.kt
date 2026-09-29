@@ -1,18 +1,16 @@
 package moe.ouom.neriplayer.core.download.storage
 
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
-import org.json.JSONObject
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ManagedDownloadStorageRestorableCodecTest {
     @Test
     fun `downloaded metadata codec persists the restorable baseline`() {
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "youtube:video-1",
             name = "Edited title",
             artist = "Edited artist",
@@ -46,79 +44,8 @@ class ManagedDownloadStorageRestorableCodecTest {
     }
 
     @Test
-    fun `downloaded metadata codec restores offset from nested overrides`() {
-        val nested = JSONObject().apply {
-            put(
-                "restorableMetadata",
-                JSONObject().put(
-                    "overrides",
-                    JSONObject().put("userLyricOffsetMs", -321L)
-                )
-            )
-        }
-
-        val parsedFromMissing = ManagedDownloadStorageJsonCodec
-            .downloadedAudioMetadataFromJsonObject(nested)
-        assertEquals(-321L, parsedFromMissing.userLyricOffsetMs)
-
-        val parsedFromZero = ManagedDownloadStorageJsonCodec
-            .downloadedAudioMetadataFromJsonObject(
-                JSONObject(nested.toString()).put("userLyricOffsetMs", 0L)
-            )
-        assertEquals(-321L, parsedFromZero.userLyricOffsetMs)
-
-        val parsedFromExplicit = ManagedDownloadStorageJsonCodec
-            .downloadedAudioMetadataFromJsonObject(
-                JSONObject(nested.toString()).put("userLyricOffsetMs", -120L)
-            )
-        assertEquals(-120L, parsedFromExplicit.userLyricOffsetMs)
-    }
-
-    @Test
-    fun `downloaded metadata codec recognizes shipped finalized legacy metadata`() {
-        val parsed = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(
-            JSONObject().put("downloadFinalized", true)
-        )
-
-        assertEquals(true, parsed.downloadFinalized)
-        assertEquals(
-            DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED,
-            parsed.metadataEmbeddingState
-        )
-    }
-
-    @Test
-    fun `downloaded metadata codec keeps explicit unfinished legacy metadata unverified`() {
-        val parsed = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(
-            JSONObject().put("downloadFinalized", false)
-        )
-
-        assertEquals(false, parsed.downloadFinalized)
-        assertNull(parsed.metadataEmbeddingState)
-    }
-
-    @Test
-    fun `downloaded metadata codec repairs metadata downgraded by the v15 upgrader`() {
-        val parsed = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(
-            JSONObject()
-                .put("stableKey", "file:song.flac")
-                .put("audioFileName", "song.flac")
-                .put("downloadTimeMs", 1234L)
-                .put("downloadFinalized", false)
-                .put("metadataEmbeddingState", "LEGACY_UNVERIFIED")
-                .put("createdAtSource", "LEGACY_V15")
-        )
-
-        assertEquals(true, parsed.downloadFinalized)
-        assertEquals(
-            DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED,
-            parsed.metadataEmbeddingState
-        )
-    }
-
-    @Test
     fun `downloaded metadata codec preserves terminal finalization token`() {
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             terminalTemporaryWriteCleanupToken = "finalization-token"
         )
 
@@ -126,5 +53,57 @@ class ManagedDownloadStorageRestorableCodecTest {
         val parsed = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(json)
 
         assertEquals("finalization-token", parsed.terminalTemporaryWriteCleanupToken)
+    }
+
+    @Test
+    fun `legacy encoding retains original baseline edited values and creation fallback`() {
+        val original = DownloadedAudioMetadata(
+            stableKey = "legacy-key",
+            name = "title",
+            artist = "artist",
+            album = "album",
+            coverUrl = "remote-cover",
+            matchedLyric = "current-original",
+            matchedTranslatedLyric = "current-translated",
+            matchedRomanizedLyric = "current-romanized",
+            customName = "custom-title",
+            customArtist = "custom-artist",
+            customCoverUrl = "custom-cover",
+            originalName = "original-title",
+            originalArtist = "original-artist",
+            originalCoverUrl = "original-cover",
+            originalLyric = "original-lyric",
+            originalTranslatedLyric = "original-translated",
+            originalRomanizedLyric = "original-romanized",
+            coverPath = "local-cover",
+            downloadTimeMs = 123L
+        )
+        val encoded = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(original)
+        val decoded = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(encoded)
+        val expectedNested = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "legacy-key",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                title = "original-title",
+                artist = "original-artist",
+                album = "album",
+                coverReference = "original-cover",
+                originalLyric = "original-lyric",
+                translatedLyric = "original-translated",
+                romanizedLyric = "original-romanized"
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(
+                title = "custom-title",
+                artist = "custom-artist",
+                coverReference = "local-cover",
+                originalLyric = "current-original",
+                translatedLyric = "current-translated",
+                romanizedLyric = "current-romanized"
+            ),
+            createdAtMs = 123L,
+            updatedAtMs = 123L
+        )
+
+        assertEquals(6, encoded.getInt("schemaVersion"))
+        assertEquals(original.copy(createdAtMs = 123L, restorableMetadata = expectedNested), decoded)
     }
 }

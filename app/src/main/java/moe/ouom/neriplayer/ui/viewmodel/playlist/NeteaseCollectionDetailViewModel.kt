@@ -39,7 +39,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.netease.mergeNeteaseSessionCookies
+import moe.ouom.neriplayer.api.netease.client.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteaseArtist
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistDetail

@@ -95,8 +95,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
@@ -1068,7 +1068,7 @@ private fun NeriAppContent(
     }
 
     fun playBiliPartsAndOpenNowPlayingWithSource(
-        videoInfo: BiliClient.VideoBasicInfo,
+        videoInfo: VideoBasicInfo,
         index: Int,
         coverUrl: String,
         sourceRoute: String?
@@ -1083,7 +1083,7 @@ private fun NeriAppContent(
     }
 
     fun playBiliPartsAndOpenNowPlaying(
-        videoInfo: BiliClient.VideoBasicInfo,
+        videoInfo: VideoBasicInfo,
         index: Int,
         coverUrl: String
     ) {

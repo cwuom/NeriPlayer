@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether.session.membership
 
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
 
 internal data class ListenTogetherMembershipCredential(
     val baseUrl: String,

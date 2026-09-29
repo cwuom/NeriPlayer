@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class DownloadRecoveryIdentityTest {
     private val song = SongItem(
@@ -18,19 +19,19 @@ class DownloadRecoveryIdentityTest {
 
     @Test
     fun `two absent uris never establish ownership`() {
-        val foreign = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val foreign = DownloadedAudioMetadata(
             songId = 117111510797424L, album = "netease", name = "君が生まれた日"
         )
         assertFalse(GlobalDownloadManager.isMetadataOwnedBySong(foreign, song))
         assertFalse(GlobalDownloadManager.isRecoveryMetadataOwnedBySong(foreign, song, null))
         assertFalse(GlobalDownloadManager.isRecoveryMetadataOwnedBySong(
-            ManagedDownloadStorage.DownloadedAudioMetadata(), song, null
+            DownloadedAudioMetadata(), song, null
         ))
     }
 
     @Test
     fun `strong foreign identity cannot be overridden by operation or numeric id`() {
-        val foreign = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val foreign = DownloadedAudioMetadata(
             stableKey = "another|netease|", songId = song.id, album = song.album,
             operationId = "same-operation"
         )
@@ -40,7 +41,7 @@ class DownloadRecoveryIdentityTest {
 
     @Test
     fun `numeric ids from different providers never establish ownership`() {
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             songId = song.id, identityAlbum = "netease", album = "netease"
         )
         assertFalse(GlobalDownloadManager.isMetadataOwnedBySong(metadata, song))
@@ -49,16 +50,16 @@ class DownloadRecoveryIdentityTest {
     @Test
     fun `matching stable identity or legacy canonical identity remains recoverable`() {
         assertTrue(GlobalDownloadManager.isMetadataOwnedBySong(
-            ManagedDownloadStorage.DownloadedAudioMetadata(stableKey = song.stableKey()), song
+            DownloadedAudioMetadata(stableKey = song.stableKey()), song
         ))
         assertTrue(GlobalDownloadManager.isMetadataOwnedBySong(
-            ManagedDownloadStorage.DownloadedAudioMetadata(songId = song.id, identityAlbum = song.identity().album), song
+            DownloadedAudioMetadata(songId = song.id, identityAlbum = song.identity().album), song
         ))
     }
 
     @Test
     fun `identityless receipt requires the exact nonempty operation`() {
-        val receipt = ManagedDownloadStorage.DownloadedAudioMetadata(operationId = "original")
+        val receipt = DownloadedAudioMetadata(operationId = "original")
         assertTrue(GlobalDownloadManager.isRecoveryMetadataOwnedBySong(receipt, song, "original"))
         assertFalse(GlobalDownloadManager.isRecoveryMetadataOwnedBySong(receipt, song, "another"))
         assertFalse(GlobalDownloadManager.isRecoveryMetadataOwnedBySong(receipt, song, ""))

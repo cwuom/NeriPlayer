@@ -45,7 +45,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.TreeChildNameRef
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedLyricsBundle
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.LyricKind
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.RestoredMigrationManifest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.ValidatedMigrationCopyReceipts
 import android.content.Context
@@ -738,7 +738,7 @@ internal suspend fun ManagedDownloadStorage.restoreManagedMigrationEntriesFromJo
                 lastModifiedMs = sourceEntry.lastModifiedMs.coerceAtLeast(0L),
                 isDirectory = false
             ),
-            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            metadata = DownloadedAudioMetadata(
                 createdAtMs = sourceEntry.logicalCreatedAtMs,
                 createdAtSource = sourceEntry.createdAtSource,
                 createdAtConfidence = sourceEntry.createdAtConfidence

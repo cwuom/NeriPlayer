@@ -6,6 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedDownloadSnapshotHotPathIncrementalTest {
     @Test
@@ -104,7 +105,7 @@ class ManagedDownloadSnapshotHotPathIncrementalTest {
             entry("${audio.name}.npmeta.json", "content://provider/metadata/$index")
         }
         val metadata = audioEntries.mapIndexed { index, audio ->
-            audio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+            audio.name to DownloadedAudioMetadata(
                 stableKey = "stable-$index",
                 songId = index.toLong() + 1L,
                 audioFileName = audio.name,

@@ -89,8 +89,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.bili.buildBiliThumbnailUrl
+import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderContent
+import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderContentKind
+import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderVideo
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.bilibili.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.theme.background.BlurTransformation
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
@@ -134,7 +137,7 @@ fun BiliUploaderDetailScreen(
     uploader: BiliUploaderSummary,
     onBack: () -> Unit = {},
     onPlayAudio: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> },
-    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
     onContentClick: (BiliPlaylist) -> Unit = {},
     offlineMode: Boolean = false
 ) {
@@ -192,7 +195,7 @@ fun BiliUploaderDetailScreen(
                         runCatching { viewModel.getVideoInfo(video.bvid) }
                             .onSuccess { info ->
                                 if (info.pages.size <= 1) {
-                                    onPlayAudio(ui.videos.map(BiliClient.UploaderVideo::toBiliVideoItem), index)
+                                    onPlayAudio(ui.videos.map(UploaderVideo::toBiliVideoItem), index)
                                 } else {
                                     onPlayParts(info, 0, video.coverUrl)
                                 }
@@ -226,8 +229,8 @@ private fun BiliUploaderContent(
     onRetry: () -> Unit,
     onLoadMoreVideos: () -> Unit,
     onLoadMoreContents: () -> Unit,
-    onVideoClick: (BiliClient.UploaderVideo, Int) -> Unit,
-    onContentClick: (BiliClient.UploaderContent) -> Unit,
+    onVideoClick: (UploaderVideo, Int) -> Unit,
+    onContentClick: (UploaderContent) -> Unit,
     offlineMode: Boolean,
     isTabletLayout: Boolean
 ) {
@@ -354,9 +357,9 @@ private fun BiliUploaderContent(
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.BiliUploaderContentRows(
-    items: List<BiliClient.UploaderContent>,
+    items: List<UploaderContent>,
     emptyText: String,
-    onContentClick: (BiliClient.UploaderContent) -> Unit,
+    onContentClick: (UploaderContent) -> Unit,
     offlineMode: Boolean
 ) {
     if (items.isEmpty()) {
@@ -599,7 +602,7 @@ private fun BiliUploaderTabs(
 
 @Composable
 private fun BiliUploaderVideoRow(
-    video: BiliClient.UploaderVideo,
+    video: UploaderVideo,
     onClick: () -> Unit,
     offlineMode: Boolean
 ) {
@@ -659,7 +662,7 @@ private fun BiliUploaderVideoRow(
 
 @Composable
 private fun BiliUploaderContentRow(
-    content: BiliClient.UploaderContent,
+    content: UploaderContent,
     onClick: () -> Unit,
     offlineMode: Boolean
 ) {
@@ -716,7 +719,7 @@ private fun BiliUploaderContentRow(
             )
         }
         Icon(
-            imageVector = if (content.kind == BiliClient.UploaderContentKind.COLLECTION) {
+            imageVector = if (content.kind == UploaderContentKind.COLLECTION) {
                 Icons.Outlined.Folder
             } else {
                 Icons.AutoMirrored.Outlined.PlaylistPlay
@@ -751,7 +754,7 @@ private fun BiliUploaderLoadMoreButton(
     }
 }
 
-private fun BiliClient.UploaderContent.toBiliPlaylist(uploaderName: String): BiliPlaylist {
+private fun UploaderContent.toBiliPlaylist(uploaderName: String): BiliPlaylist {
     return BiliPlaylist(
         mediaId = id,
         fid = id,
@@ -760,8 +763,8 @@ private fun BiliClient.UploaderContent.toBiliPlaylist(uploaderName: String): Bil
         count = total,
         coverUrl = coverUrl,
         kind = when (kind) {
-            BiliClient.UploaderContentKind.COLLECTION -> BiliPlaylistKind.COLLECTION
-            BiliClient.UploaderContentKind.SERIES -> BiliPlaylistKind.SERIES
+            UploaderContentKind.COLLECTION -> BiliPlaylistKind.COLLECTION
+            UploaderContentKind.SERIES -> BiliPlaylistKind.SERIES
         },
         subtitle = uploaderName
     )

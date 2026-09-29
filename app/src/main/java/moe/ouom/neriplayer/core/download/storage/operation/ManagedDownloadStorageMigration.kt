@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.normalizeDire
 import moe.ouom.neriplayer.core.download.storage.operation.content.parseDownloadedAudioMetadataBatch
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 import android.content.Context
 import android.provider.DocumentsContract
 import androidx.core.net.toUri

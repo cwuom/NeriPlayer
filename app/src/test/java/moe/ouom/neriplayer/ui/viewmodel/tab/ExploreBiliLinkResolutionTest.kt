@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
-import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.api.bilibili.model.video.UgcSeason
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoStats
 import moe.ouom.neriplayer.core.player.PlayerManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -24,7 +27,7 @@ class ExploreBiliLinkResolutionTest {
     @Test
     fun `collection share uses the video's UGC season`() {
         val target = videoInfo(
-            ugcSeason = BiliClient.UgcSeason(
+            ugcSeason = UgcSeason(
                 id = 4002195L,
                 mid = 670363050L,
                 title = "直播切片"
@@ -61,7 +64,7 @@ class ExploreBiliLinkResolutionTest {
     @Test
     fun `ordinary video link does not open its UGC season`() {
         val target = videoInfo(
-            ugcSeason = BiliClient.UgcSeason(
+            ugcSeason = UgcSeason(
                 id = 4002195L,
                 mid = 670363050L,
                 title = "直播切片"
@@ -73,8 +76,8 @@ class ExploreBiliLinkResolutionTest {
         assertNull(target)
     }
 
-    private fun videoInfo(ugcSeason: BiliClient.UgcSeason? = null): BiliClient.VideoBasicInfo {
-        return BiliClient.VideoBasicInfo(
+    private fun videoInfo(ugcSeason: UgcSeason? = null): VideoBasicInfo {
+        return VideoBasicInfo(
             aid = 1L,
             bvid = "BV1rXNY6CE2u",
             title = "Video title",
@@ -84,7 +87,7 @@ class ExploreBiliLinkResolutionTest {
             ownerMid = 100L,
             ownerName = "Uploader",
             ownerFace = "",
-            stats = BiliClient.VideoStats(
+            stats = VideoStats(
                 view = 0L,
                 danmaku = 0L,
                 reply = 0L,
@@ -94,7 +97,7 @@ class ExploreBiliLinkResolutionTest {
                 like = 0L
             ),
             pages = listOf(
-                BiliClient.VideoPage(
+                VideoPage(
                     cid = 100L,
                     page = 1,
                     part = "First part",
@@ -102,7 +105,7 @@ class ExploreBiliLinkResolutionTest {
                     width = 0,
                     height = 0
                 ),
-                BiliClient.VideoPage(
+                VideoPage(
                     cid = 200L,
                     page = 2,
                     part = "2. Selected part - Selected artist",

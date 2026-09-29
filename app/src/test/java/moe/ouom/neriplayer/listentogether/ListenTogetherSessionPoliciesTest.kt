@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.listentogether
 
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.listentogether.session.state.LISTEN_TOGETHER_PAUSED_HEARTBEAT_INTERVAL_MS
 import moe.ouom.neriplayer.listentogether.session.state.LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS
 import moe.ouom.neriplayer.listentogether.session.control.ListenTogetherRecentEventTracker
@@ -537,7 +537,7 @@ class ListenTogetherSessionPoliciesTest {
         )
     }
 
-    private fun track(stableKey: String) = moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack(
+    private fun track(stableKey: String) = moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack(
         stableKey = stableKey,
         channelId = "netease",
         audioId = stableKey,

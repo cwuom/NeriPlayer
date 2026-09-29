@@ -22,13 +22,14 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 class ManagedDownloadStorageMigrationCompatTest : ManagedDownloadStorageMigrationCompatTestSupport() {
 
     @Test
     fun `successive migrations preserve source modification time independently of creation`() {
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             createdAtMs = 100L, createdAtSource = "FILESYSTEM_BIRTH_TIME", createdAtConfidence = "EXACT"
         )
         val migrated = ManagedDownloadStorage.enrichMigrationMetadataTemporalFields(metadata, 300L)
@@ -470,7 +471,7 @@ class ManagedDownloadStorageMigrationCompatTest : ManagedDownloadStorageMigratio
             localFilePath = "/target/track.mp3",
             sizeBytes = 10L
         )
-        val sourceMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val sourceMetadata = DownloadedAudioMetadata(
             stableKey = "stable-key"
         )
         val targetMetadata = sourceMetadata.copy(
@@ -583,7 +584,7 @@ class ManagedDownloadStorageMigrationCompatTest : ManagedDownloadStorageMigratio
                 .first()
         )
         val pureHashCover = entry("${"c".repeat(64)}.jpg")
-        val parsedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val parsedMetadata = DownloadedAudioMetadata(
             stableKey = stableKey,
             coverPath = pureHashCover.reference
         )

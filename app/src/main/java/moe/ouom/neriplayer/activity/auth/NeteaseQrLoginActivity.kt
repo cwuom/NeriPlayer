@@ -46,7 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.netease.NeteaseQrLoginClient
+import moe.ouom.neriplayer.api.netease.auth.NeteaseQrLoginClient
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -336,7 +336,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun pollQrLogin(session: moe.ouom.neriplayer.core.api.netease.NeteaseQrLoginSession) {
+    private suspend fun pollQrLogin(session: moe.ouom.neriplayer.api.netease.model.auth.NeteaseQrLoginSession) {
         while (shouldPollNeteaseQrLogin(lifecycle.currentState, hasReturned)) {
             pollRound += 1
             NPLogger.d(LOG_TAG, "Poll round=$pollRound")

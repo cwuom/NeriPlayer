@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadManagedAudioPolicy
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal object ManagedDownloadMigrationEntryCollector {
     internal data class PendingArtifactClassification(
@@ -165,7 +166,7 @@ internal object ManagedDownloadMigrationEntryCollector {
         rootEntries: List<ManagedDownloadStorage.StoredEntry>,
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
-        parsedMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+        parsedMetadataByAudioName: Map<String, DownloadedAudioMetadata>,
         allowMetadataLessAudio: Boolean
     ): List<ManagedMigrationEntry> {
         val audioEntries = rootEntries.filter { entry -> entry.extension in audioExtensions }
@@ -253,7 +254,7 @@ internal object ManagedDownloadMigrationEntryCollector {
         managedAudioEntries: List<ManagedDownloadStorage.StoredEntry>,
         metadataAudioNames: Set<String>,
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
-        parsedMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
+        parsedMetadataByAudioName: Map<String, DownloadedAudioMetadata>
     ): Set<String> {
         val managedAudioNames = managedAudioEntries.mapTo(hashSetOf()) {
             it.name
@@ -325,7 +326,7 @@ internal object ManagedDownloadMigrationEntryCollector {
 
     private fun managedLyricNames(
         managedAudioEntries: List<ManagedDownloadStorage.StoredEntry>,
-        parsedMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+        parsedMetadataByAudioName: Map<String, DownloadedAudioMetadata>,
         metadataAudioNames: Set<String>
     ): Set<String> {
         val managedAudioNames = managedAudioEntries.mapTo(hashSetOf()) {

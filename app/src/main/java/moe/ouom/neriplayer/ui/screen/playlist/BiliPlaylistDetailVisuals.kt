@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
 
 import android.content.Context
 import coil.Coil
-import moe.ouom.neriplayer.core.api.bili.buildBiliThumbnailUrl
+import moe.ouom.neriplayer.api.bilibili.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
 internal const val BILI_PLAYLIST_HERO_COVER_SIZE_PX = 320

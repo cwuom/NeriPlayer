@@ -52,6 +52,7 @@ import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.time.elapsedMillisSince
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 private const val MAX_AUTOMATIC_EMPTY_CONFIRMATIONS = 2
 
@@ -507,7 +508,7 @@ private suspend fun GlobalDownloadManager.refreshCatalogDuringFullLibraryDelete(
 
 internal fun GlobalDownloadManager.buildSongFromDurableMetadata(
     audio: ManagedDownloadStorage.StoredEntry,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    metadata: DownloadedAudioMetadata?
 ): SongItem? {
     val stableKey = metadata?.stableKey?.takeIf(String::isNotBlank) ?: return null
     return SongItem(

@@ -4,8 +4,8 @@ import moe.ouom.neriplayer.listentogether.session.state.normalized
 import android.content.Context
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.listentogether.control.controlledPlaybackCommandTypes
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomStatuses
 
 internal fun resolveListenTogetherControlBlockReason(
     context: Context,

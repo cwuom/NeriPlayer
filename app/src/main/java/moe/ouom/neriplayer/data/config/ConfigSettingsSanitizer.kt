@@ -21,7 +21,7 @@ import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
-import moe.ouom.neriplayer.data.settings.YouTubePlaybackSourcePreferencePolicy
+import moe.ouom.neriplayer.data.youtube.settings.YouTubePlaybackSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsAlignment
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsAlpha

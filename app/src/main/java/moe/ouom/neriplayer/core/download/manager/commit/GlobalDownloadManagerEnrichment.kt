@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.manager.commit
 import moe.ouom.neriplayer.core.download.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.runNonCancellableDownloadRollback
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
@@ -78,13 +78,14 @@ import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
     context: Context,
     song: SongItem,
     storedAudio: ManagedDownloadStorage.StoredEntry,
-    existingMetadataHint: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    existingMetadataHint: DownloadedAudioMetadata?,
     operationId: String,
     artifactLeaseId: String?,
     expectedAttemptId: Long?,

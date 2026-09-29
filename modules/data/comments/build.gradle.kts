@@ -8,8 +8,9 @@ android {
 
 dependencies {
     api(project(":core:model"))
-    api(project(":data:bilibili"))
-    api(project(":data:netease"))
+    api(project(":api:bilibili"))
+    api(project(":api:netease"))
+    implementation(project(":data:bilibili"))
     implementation(project(":core:common"))
     implementation(project(":core:logging"))
     implementation(libs.kotlinx.coroutines.android)

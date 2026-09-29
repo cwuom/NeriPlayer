@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.SongMetad
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.NeteaseRemotePlaylistSyncPlan
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.SongMetadataUpdateIndex
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.api.netease.client.NeteaseClient
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist

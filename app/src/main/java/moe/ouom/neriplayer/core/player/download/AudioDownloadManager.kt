@@ -92,8 +92,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.policy.DownloadCoreCommitPhase
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -104,7 +104,7 @@ import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
+import moe.ouom.neriplayer.api.youtube.transport.isTrustedYouTubeHost
 import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import okhttp3.Dispatcher

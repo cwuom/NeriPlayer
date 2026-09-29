@@ -38,11 +38,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicLibraryPlaylist
+import moe.ouom.neriplayer.api.bilibili.model.collection.FavFolder
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint
-import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
+import moe.ouom.neriplayer.data.youtube.auth.buildRefreshObserverFingerprint
+import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistDeleteResult
@@ -225,7 +225,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun mapBiliFolders(
-        folders: List<BiliClient.FavFolder>,
+        folders: List<FavFolder>,
         kind: BiliPlaylistKind,
         currentMid: Long
     ): List<BiliPlaylist> = coroutineScope {
@@ -243,7 +243,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun mapBiliFolder(
-        folder: BiliClient.FavFolder,
+        folder: FavFolder,
         kind: BiliPlaylistKind,
         currentMid: Long
     ): BiliPlaylist? {
@@ -450,7 +450,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         return result
     }
 
-    private fun moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
+    private fun moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
         return hasSavedAuthMaterial()
     }
 

@@ -81,10 +81,10 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.bili.buildBiliThumbnailUrl
-import moe.ouom.neriplayer.core.api.bili.resolveBiliVideoSkipTargetOptions
-import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.bilibili.image.buildBiliThumbnailUrl
+import moe.ouom.neriplayer.data.platform.bili.skip.resolver.resolveBiliVideoSkipTargetOptions
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliSongAlbum
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -129,7 +129,7 @@ fun BiliPlaylistDetailScreen(
     playlist: BiliPlaylist,
     onBack: () -> Unit = {},
     onPlayAudio: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> },
-    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
     suppressVisibilityTransition: Boolean = false,
     offlineMode: Boolean = false
 ) {
@@ -247,7 +247,7 @@ fun BiliPlaylistDetailScreen(
     }
 
     var showPartsSheet by remember { mutableStateOf(false) }
-    var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
+    var partsInfo by remember { mutableStateOf<VideoBasicInfo?>(null) }
     val partsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     fun toggleSelect(id: String) {

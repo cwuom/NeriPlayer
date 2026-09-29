@@ -81,9 +81,9 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
-import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
-import moe.ouom.neriplayer.data.storage.StorageCacheKind
-import moe.ouom.neriplayer.data.storage.StorageUsageSummary
+import moe.ouom.neriplayer.data.storage.model.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.storage.model.StorageCacheKind
+import moe.ouom.neriplayer.data.storage.model.StorageUsageSummary
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsCheckbox
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton

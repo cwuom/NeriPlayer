@@ -4,11 +4,11 @@ package moe.ouom.neriplayer.data.sync.model
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipRule
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
-import moe.ouom.neriplayer.data.platform.bili.MAX_BILI_VIDEO_SKIP_RULES
-import moe.ouom.neriplayer.data.platform.bili.normalizeBiliVideoSkipIntervals
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipRule
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.platform.bili.skip.model.MAX_BILI_VIDEO_SKIP_RULES
+import moe.ouom.neriplayer.data.platform.bili.skip.policy.normalizeBiliVideoSkipIntervals
 
 @Serializable
 data class SyncBiliVideoSkipInterval(

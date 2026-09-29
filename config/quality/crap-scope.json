@@ -4,7 +4,7 @@
     "moe/ouom/neriplayer/core/download/catalog/projection/*.kt",
     "moe/ouom/neriplayer/core/download/catalog/assembly/*.kt",
     "moe/ouom/neriplayer/core/download/catalog/host/DownloadedSongLocalMetadataAdapter.kt",
-    "moe/ouom/neriplayer/core/api/lyrics/amll/AmllLyricsResolver.kt",
+    "moe/ouom/neriplayer/data/lyrics/repository/AmllLyricsResolver.kt",
     "moe/ouom/neriplayer/core/lyrics/PlainLyrics.kt",
     "moe/ouom/neriplayer/core/player/session/PlayerQueueSessionBindings.kt",
     "moe/ouom/neriplayer/core/player/queue/state/PlayerQueueStateStore.kt",
@@ -16,13 +16,13 @@
     "moe/ouom/neriplayer/data/sync/host/AndroidSyncMergeHost.kt",
     "moe/ouom/neriplayer/core/comment/repository/NeteaseCommentPagination.kt",
     "moe/ouom/neriplayer/core/comment/CommentMemoryCache.kt",
-    "moe/ouom/neriplayer/listentogether/network/*/*.kt",
+    "moe/ouom/neriplayer/api/ltw/*/*.kt",
     "moe/ouom/neriplayer/data/storage/Storage*.kt",
     "moe/ouom/neriplayer/data/settings/AutoSettingsSchema.kt",
     "moe/ouom/neriplayer/data/settings/playback/PlaybackSettingsSection.kt",
-    "moe/ouom/neriplayer/core/api/bili/BiliCommentApi.kt",
-    "moe/ouom/neriplayer/core/api/bili/BiliCookieSession.kt",
-    "moe/ouom/neriplayer/core/api/bili/BiliRequestSupport.kt",
+    "moe/ouom/neriplayer/api/bilibili/comment/BiliCommentApi.kt",
+    "moe/ouom/neriplayer/api/bilibili/auth/BiliCookieSession.kt",
+    "moe/ouom/neriplayer/api/bilibili/http/BiliRequestSupport.kt",
     "moe/ouom/neriplayer/ui/screen/tab/home/HomeContinueSection.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/SettingsDownloadDirectoryPreflight.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/navigation/SettingsNavigationSearch.kt",
@@ -52,19 +52,19 @@
     "moe/ouom/neriplayer/core/player/service/usb/AndroidUsbExclusiveKeepAlivePort.kt",
     "moe/ouom/neriplayer/core/player/service/usb/UsbExclusiveMediaSessionVolumeRouter.kt",
     "moe/ouom/neriplayer/core/player/service/usb/AndroidUsbExclusiveVolumeRoutingPort.kt",
-    "moe/ouom/neriplayer/core/api/youtube/challenge/YouTubeStreamingCipherResolution.kt",
-    "moe/ouom/neriplayer/core/api/youtube/protocol/YouTubePlayerRequestComposer.kt",
+    "moe/ouom/neriplayer/api/youtube/challenge/YouTubeStreamingCipherResolution.kt",
+    "moe/ouom/neriplayer/api/youtube/protocol/YouTubePlayerRequestComposer.kt",
     "moe/ouom/neriplayer/core/player/service/presentation/PlaybackServicePresentationOwner.kt",
     "moe/ouom/neriplayer/core/player/service/presentation/PlaybackServicePresentationSource.kt",
     "moe/ouom/neriplayer/core/player/service/presentation/AndroidPlaybackServicePresentationPort.kt",
-    "moe/ouom/neriplayer/core/api/youtube/protocol/YouTubePlayerResponseParsers.kt",
-    "moe/ouom/neriplayer/core/api/youtube/playback/YouTubePlayableAudioSelection.kt",
-    "moe/ouom/neriplayer/core/api/youtube/playback/YouTubePlayableAudioCache.kt",
-    "moe/ouom/neriplayer/core/api/youtube/bootstrap/YouTubePlaybackBootstrapOwner.kt",
-    "moe/ouom/neriplayer/core/api/youtube/playback/YouTubePlaybackStreamAccessOwner.kt",
-    "moe/ouom/neriplayer/core/api/youtube/potoken/YouTubePlaybackManifestPoToken.kt",
-    "moe/ouom/neriplayer/core/api/youtube/playback/YouTubePlaybackDependencies.kt",
-    "moe/ouom/neriplayer/core/api/youtube/transport/YouTubePlaybackHttpPolicy.kt",
+    "moe/ouom/neriplayer/api/youtube/protocol/YouTubePlayerResponseParsers.kt",
+    "moe/ouom/neriplayer/api/youtube/playback/YouTubePlayableAudioSelection.kt",
+    "moe/ouom/neriplayer/data/youtube/cache/YouTubePlayableAudioCache.kt",
+    "moe/ouom/neriplayer/api/youtube/bootstrap/YouTubePlaybackBootstrapOwner.kt",
+    "moe/ouom/neriplayer/api/youtube/playback/YouTubePlaybackStreamAccessOwner.kt",
+    "moe/ouom/neriplayer/api/youtube/potoken/YouTubePlaybackManifestPoToken.kt",
+    "moe/ouom/neriplayer/data/youtube/repository/YouTubePlaybackDependencies.kt",
+    "moe/ouom/neriplayer/api/youtube/transport/YouTubePlaybackHttpPolicy.kt",
     "moe/ouom/neriplayer/core/player/persistence/PlayerManagerQueueCommandExtensions.kt",
     "moe/ouom/neriplayer/core/player/queue/policy/PlayerQueueEditOwner.kt",
     "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusivePcmWriter.kt",
@@ -77,8 +77,10 @@
     "moe/ouom/neriplayer/ui/screen/nowplaying/cover/NowPlayingCoverActionToolbar.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/cover/NowPlayingCoverControlsPlacement.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/cover/NowPlayingCoverLyrics.kt",
-    "moe/ouom/neriplayer/core/api/youtube/protocol/YouTubeMusicProtocolModels.kt",
-    "moe/ouom/neriplayer/core/api/youtube/parser/YouTubeMusicResponseParser.kt",
+    "moe/ouom/neriplayer/api/youtube/model/music/YouTubeMusicContentModels.kt",
+    "moe/ouom/neriplayer/api/youtube/protocol/YouTubeMusicRequestContext.kt",
+    "moe/ouom/neriplayer/api/youtube/model/playback/YouTubePlayableAudio.kt",
+    "moe/ouom/neriplayer/api/youtube/parser/YouTubeMusicResponseParser.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsEditor.kt",
     "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionOpenGate.kt",
     "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionResources.kt",
@@ -204,68 +206,124 @@
     "moe/ouom/neriplayer/core/player/playback/PlaybackProgressOwner.kt",
     "moe/ouom/neriplayer/core/player/playback/PlayerManagerPlaybackProgressPort.kt",
     "moe/ouom/neriplayer/core/player/playback/PlaybackAutoSkipPolicy.kt",
-    "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
+    "moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt",
+    "moe/ouom/neriplayer/core/player/queue/model/*.kt",
+    "moe/ouom/neriplayer/core/player/queue/state/*.kt",
+    "moe/ouom/neriplayer/core/player/queue/policy/Player*.kt",
+    "moe/ouom/neriplayer/core/player/session/AppQueueSongIdentity.kt",
+    "moe/ouom/neriplayer/data/lyrics/model/AmllResolvedLyrics.kt",
+    "moe/ouom/neriplayer/data/lyrics/repository/AmllLyricsRepository.kt",
+    "moe/ouom/neriplayer/data/lyrics/repository/KugouLyricsRepository.kt",
+    "moe/ouom/neriplayer/data/lyrics/repository/LrcLibLyricsRepository.kt",
+    "moe/ouom/neriplayer/data/lyrics/repository/QQMusicLyricsRepository.kt",
+    "moe/ouom/neriplayer/data/lyrics/matching/QQMusicLyricSelection.kt",
+    "moe/ouom/neriplayer/core/lyrics/LyricWordTiming.kt",
+    "moe/ouom/neriplayer/data/youtube/auth/web/YouTubeWebSessionAdapter.kt",
+    "moe/ouom/neriplayer/core/player/queue/policy/failure/*.kt",
+    "moe/ouom/neriplayer/data/storage/model/*.kt",
+    "moe/ouom/neriplayer/data/storage/accounting/*.kt",
+    "moe/ouom/neriplayer/data/storage/scan/*.kt",
+    "moe/ouom/neriplayer/data/storage/cleanup/*.kt",
+    "moe/ouom/neriplayer/data/storage/policy/*.kt",
+    "moe/ouom/neriplayer/data/storage/source/StorageLocations.kt",
+    "moe/ouom/neriplayer/api/youtube/model/auth/YouTubeAuthAutoRefreshResult.kt",
+    "moe/ouom/neriplayer/api/youtube/model/playback/YouTubePlaybackBootstrap.kt",
+    "moe/ouom/neriplayer/api/youtube/model/playback/YouTubePlayerPlayabilityStatus.kt",
+    "moe/ouom/neriplayer/api/youtube/model/playback/YouTubeMusicPlaybackQuality.kt",
+    "moe/ouom/neriplayer/api/youtube/model/playback/YouTubePlayerClientProfile.kt",
+    "moe/ouom/neriplayer/api/youtube/model/playback/PreparedYouTubePlayerRequest.kt",
+    "moe/ouom/neriplayer/api/youtube/model/music/YouTubeMusicRequestLocale.kt"
   ],
   "method_scopes": [
     {
       "source": "moe/ouom/neriplayer/core/download/storage/ManagedDownloadStorageJsonCodec.kt",
       "class": "moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec",
-      "methods": ["downloadedAudioMetadataFromJsonObject"]
+      "methods": [
+        "downloadedAudioMetadataFromJsonObject"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/core/download/catalog/DownloadedSongCatalogModels.kt",
       "class": "moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogModelsKt",
-      "methods": ["projectDownloadedSongMetadata"]
+      "methods": [
+        "projectDownloadedSongMetadata"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/core/download/catalog/DownloadedSongBuilder.kt",
       "class": "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilder",
       "methods": [
-        "build$default", "build$lambda$0", "build$lambda$1",
-        "readMetadata", "fileInfo", "resolveCoverInfo",
-        "resolveCoverInfo$lambda$0", "resolveCoverInfo$lambda$1",
-        "resolveCoverInfo$lambda$0$0", "resolveCoverInfo$lambda$2", "resolveCoverInfo$lambda$3"
+        "build$default",
+        "build$lambda$0",
+        "build$lambda$1",
+        "readMetadata",
+        "fileInfo",
+        "resolveCoverInfo",
+        "resolveCoverInfo$lambda$0",
+        "resolveCoverInfo$lambda$1",
+        "resolveCoverInfo$lambda$0$0",
+        "resolveCoverInfo$lambda$2",
+        "resolveCoverInfo$lambda$3"
       ]
     },
     {
       "source": "moe/ouom/neriplayer/core/download/catalog/DownloadedSongBuilder.kt",
       "class": "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilderKt",
-      "methods": ["shouldInspectDownloadedLocalLyrics"]
+      "methods": [
+        "shouldInspectDownloadedLocalLyrics"
+      ]
     },
     {
-      "source": "moe/ouom/neriplayer/core/api/lyrics/AmllTtmlClient.kt",
-      "class": "moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient",
-      "methods": ["executeString", "executeString$lambda$0"]
+      "source": "moe/ouom/neriplayer/api/lyrics/client/AmllTtmlClient.kt",
+      "class": "moe.ouom.neriplayer.api.lyrics.client.AmllTtmlClient",
+      "methods": [
+        "executeString",
+        "executeString$lambda$0"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/ui/viewmodel/BackupRestoreViewModel.kt",
       "class": "moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel",
-      "methods": ["observePlaylistCount"]
+      "methods": [
+        "observePlaylistCount"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/ui/viewmodel/BackupRestoreViewModel.kt",
       "class": "moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel$observePlaylistCount$1",
-      "methods": ["invokeSuspend"]
+      "methods": [
+        "invokeSuspend"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/ui/viewmodel/BackupRestoreViewModel.kt",
       "class": "moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel$observePlaylistCount$1$1",
-      "methods": ["emit"]
+      "methods": [
+        "emit"
+      ]
     },
     {
-      "source": "moe/ouom/neriplayer/core/api/search/CloudMusicSearchApi.kt",
-      "class": "moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi",
-      "methods": ["<init>", "logResponseSummary"]
+      "source": "moe/ouom/neriplayer/api/search/client/CloudMusicSearchApi.kt",
+      "class": "moe.ouom.neriplayer.api.search.client.CloudMusicSearchApi",
+      "methods": [
+        "<init>",
+        "logResponseSummary"
+      ]
     },
     {
-      "source": "moe/ouom/neriplayer/core/api/search/QQMusicSearchApi.kt",
-      "class": "moe.ouom.neriplayer.core.api.search.QQMusicSearchApi",
-      "methods": ["<init>", "logDetailResponse"]
+      "source": "moe/ouom/neriplayer/api/search/client/QQMusicSearchApi.kt",
+      "class": "moe.ouom.neriplayer.api.search.client.QQMusicSearchApi",
+      "methods": [
+        "<init>",
+        "logDetailResponse"
+      ]
     },
     {
-      "source": "moe/ouom/neriplayer/core/api/search/SearchManager.kt",
-      "class": "moe.ouom.neriplayer.core.api.search.SearchManager",
-      "methods": ["<init>"]
+      "source": "moe/ouom/neriplayer/data/lyrics/search/SearchManager.kt",
+      "class": "moe.ouom.neriplayer.data.lyrics.search.SearchManager",
+      "methods": [
+        "<init>"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/core/download/manager/batch/GlobalDownloadManagerCancellation.kt",
@@ -278,7 +336,9 @@
     {
       "source": "moe/ouom/neriplayer/data/sync/github/SyncPlaybackStatMapper.kt",
       "class": "moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper",
-      "methods": ["normalizeCounterShards$app"]
+      "methods": [
+        "normalizeCounterShards$app"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/data/sync/github/GitHubSyncManager.kt",
@@ -805,12 +865,16 @@
     {
       "source": "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionController.kt",
       "class": "moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController$ToneStartAdmission",
-      "methods": ["<init>"]
+      "methods": [
+        "<init>"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionController.kt",
       "class": "moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController$PlayerPcmOpenRequest",
-      "methods": ["<init>"]
+      "methods": [
+        "<init>"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveAudioSink.kt",
@@ -842,8 +906,8 @@
       ]
     },
     {
-      "source": "moe/ouom/neriplayer/core/api/youtube/YouTubeMusicPlaybackRepository.kt",
-      "class": "moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository",
+      "source": "moe/ouom/neriplayer/data/youtube/repository/YouTubeMusicPlaybackRepository.kt",
+      "class": "moe.ouom.neriplayer.data.youtube.repository.YouTubeMusicPlaybackRepository",
       "methods": [
         "<init>",
         "getBootstrapCache",
@@ -866,8 +930,8 @@
       ]
     },
     {
-      "source": "moe/ouom/neriplayer/core/api/bili/BiliClient.kt",
-      "class": "moe.ouom.neriplayer.core.api.bili.BiliClient",
+      "source": "moe/ouom/neriplayer/api/bilibili/client/BiliClient.kt",
+      "class": "moe.ouom.neriplayer.api.bilibili.client.BiliClient",
       "methods": [
         "<init>",
         "getEffectiveCookies",
@@ -993,14 +1057,22 @@
       "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
       "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$membershipOwner$1",
       "methods": [
-        "<init>", "currentSession", "repeatMode", "shuffleEnabled", "shuffleRestoreSongs",
-        "applyRoomResponse", "pauseForDeparture"
+        "<init>",
+        "currentSession",
+        "repeatMode",
+        "shuffleEnabled",
+        "shuffleRestoreSongs",
+        "applyRoomResponse",
+        "pauseForDeparture"
       ]
     },
     {
       "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
       "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$connectWebSocket$1",
-      "methods": ["<init>", "onMessage"]
+      "methods": [
+        "<init>",
+        "onMessage"
+      ]
     },
     {
       "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
@@ -1045,16 +1117,29 @@
       "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
       "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$roomSocketEventOwner$1",
       "methods": [
-        "<init>", "session", "room", "accept", "updateNotice", "applyToPlayer",
-        "publishControllerHeartbeat", "pauseClosedRoomPlayback", "closeRoomLocally"
+        "<init>",
+        "session",
+        "room",
+        "accept",
+        "updateNotice",
+        "applyToPlayer",
+        "publishControllerHeartbeat",
+        "pauseClosedRoomPlayback",
+        "closeRoomLocally"
       ]
     },
     {
       "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
       "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$socketControlResultOwner$1",
       "methods": [
-        "<init>", "currentUserUuid", "currentRoom", "accept", "isController",
-        "applyToPlayer", "setLastError", "trySendTrackFinishedLegacyFallback"
+        "<init>",
+        "currentUserUuid",
+        "currentRoom",
+        "accept",
+        "isController",
+        "applyToPlayer",
+        "setLastError",
+        "trySendTrackFinishedLegacyFallback"
       ]
     }
   ]

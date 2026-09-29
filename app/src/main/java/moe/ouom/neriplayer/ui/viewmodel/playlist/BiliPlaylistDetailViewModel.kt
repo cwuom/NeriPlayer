@@ -35,14 +35,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
-import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
-import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliPartSong
+import moe.ouom.neriplayer.api.bilibili.model.collection.CollectionArchiveItem
+import moe.ouom.neriplayer.api.bilibili.model.collection.FavResourceItem
+import moe.ouom.neriplayer.api.bilibili.model.collection.FavResourcePage
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.bili.BiliArchiveContentCache
-import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderContentCache
-import moe.ouom.neriplayer.data.platform.bili.CachedBiliArchiveVideo
-import moe.ouom.neriplayer.data.platform.bili.CachedBiliFavoriteVideo
+import moe.ouom.neriplayer.data.platform.bili.cache.archive.model.BiliArchiveContentCache
+import moe.ouom.neriplayer.data.platform.bili.cache.favorite.model.BiliFavoriteFolderContentCache
+import moe.ouom.neriplayer.data.platform.bili.cache.archive.model.CachedBiliArchiveVideo
+import moe.ouom.neriplayer.data.platform.bili.cache.favorite.model.CachedBiliFavoriteVideo
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -223,7 +227,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
      * @param bvid 视频的 BV 号
      * @return 包含所有分P信息的 VideoBasicInfo 对象
      */
-    suspend fun getVideoInfo(bvid: String): BiliClient.VideoBasicInfo {
+    suspend fun getVideoInfo(bvid: String): VideoBasicInfo {
         return withContext(Dispatchers.IO) {
             NPLogger.d(TAG, "getVideoInfo start: bvid=$bvid")
             runCatching { client.getVideoBasicInfoByBvid(bvid) }
@@ -481,7 +485,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         )
     }
 
-    private suspend fun mapFavoriteItemsToVideos(items: List<BiliClient.FavResourceItem>): List<BiliVideoItem> {
+    private suspend fun mapFavoriteItemsToVideos(items: List<FavResourceItem>): List<BiliVideoItem> {
         val videos = ArrayList<BiliVideoItem>(items.size)
         for (item in items) {
             when (item.type) {
@@ -508,7 +512,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         return videos.distinctBy { it.bvid.ifBlank { it.id.toString() } }
     }
 
-    private fun BiliClient.FavResourcePage.latestPageSignature(): String {
+    private fun FavResourcePage.latestPageSignature(): String {
         return buildString {
             append(info.count)
             append('#')
@@ -600,7 +604,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         return this == BiliPlaylistKind.COLLECTION || this == BiliPlaylistKind.SERIES
     }
 
-    private fun BiliClient.FavResourceItem.toVideoItem(): BiliVideoItem? {
+    private fun FavResourceItem.toVideoItem(): BiliVideoItem? {
         val resolvedBvid = bvid?.takeIf { it.isNotBlank() } ?: return null
         return BiliVideoItem(
             id = id,
@@ -613,7 +617,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         )
     }
 
-    private fun BiliClient.CollectionArchiveItem.toVideoItem(
+    private fun CollectionArchiveItem.toVideoItem(
         uploader: String,
         uploaderMid: Long = 0L
     ): BiliVideoItem {
@@ -687,7 +691,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
      * @param coverUrl 视频封面
      * @return 转换后的 SongItem
      */
-    fun toSongItem(page: BiliClient.VideoPage, basicInfo: BiliClient.VideoBasicInfo, coverUrl: String): SongItem {
+    fun toSongItem(page: VideoPage, basicInfo: VideoBasicInfo, coverUrl: String): SongItem {
         return buildBiliPartSong(page, basicInfo, coverUrl)
     }
 }

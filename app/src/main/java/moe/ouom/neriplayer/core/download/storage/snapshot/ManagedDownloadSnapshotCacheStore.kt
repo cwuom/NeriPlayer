@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
 import moe.ouom.neriplayer.core.logging.NPLogger
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal interface ManagedDownloadSnapshotPersistenceStore {
     suspend fun restore(
@@ -272,7 +273,7 @@ internal class ManagedDownloadSnapshotCacheStore(
     fun updateAfterMetadataWrite(
         context: Context,
         metadataEntry: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+        metadata: DownloadedAudioMetadata
     ): Boolean {
         val appContext = context.applicationContext
         val cacheKey = currentKey(appContext)

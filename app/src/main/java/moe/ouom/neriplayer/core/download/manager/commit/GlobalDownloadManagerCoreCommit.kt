@@ -38,13 +38,14 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import java.util.Locale
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichment(
     context: Context,
     song: SongItem,
     storedAudio: ManagedDownloadStorage.StoredEntry,
-    existingMetadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    existingMetadata: DownloadedAudioMetadata?,
     artifactLeaseId: String?,
     expectedAttemptId: Long?,
     operationId: String?,
@@ -1037,7 +1038,7 @@ internal suspend fun GlobalDownloadManager.deferPendingCorePublication(
     context: Context,
     song: SongItem,
     audio: ManagedDownloadStorage.StoredEntry,
-    existingMetadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    existingMetadata: DownloadedAudioMetadata?,
     artifactLeaseId: String?,
     expectedAttemptId: Long?,
     operationId: String?,

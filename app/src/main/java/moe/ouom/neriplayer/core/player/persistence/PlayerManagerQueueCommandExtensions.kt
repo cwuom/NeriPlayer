@@ -2,15 +2,13 @@
 
 package moe.ouom.neriplayer.core.player.persistence
 
-import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueEditOwner
-import moe.ouom.neriplayer.core.player.queue.policy.QueueInsertPlacement
-import moe.ouom.neriplayer.core.player.queue.policy.RemoveQueueEdit
-import moe.ouom.neriplayer.core.player.queue.policy.RemovedQueuePlaybackAction
-
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.queue.model.QueueInsertPlacement
+import moe.ouom.neriplayer.core.player.queue.model.RemoveQueueEdit
+import moe.ouom.neriplayer.core.player.queue.model.RemovedQueuePlaybackAction
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun PlayerManager.replaceCurrentInQueueAndPlayImpl(
@@ -82,7 +80,7 @@ private fun PlayerManager.replaceCurrentAfterLoudnessGate(
 private fun PlayerManager.applyCurrentReplacement(song: SongItem, source: PlaybackCommandSource) {
     var existingIndex = -1
     val updatedQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
-        val planned = PlayerQueueEditOwner.replaceCurrent(snapshot, song) ?: return@updateCurrentQueue null
+        val planned = queueEdits.replaceCurrent(snapshot, song) ?: return@updateCurrentQueue null
         existingIndex = planned.existingIndex
         planned.queue
     } ?: return
@@ -118,7 +116,7 @@ private fun PlayerManager.applyQueueMove(fromIndex: Int, toIndex: Int) {
     var oldIndex = -1
     val updatedQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
         oldIndex = snapshot.currentIndex
-        PlayerQueueEditOwner.move(snapshot, fromIndex, toIndex)
+        queueEdits.move(snapshot, fromIndex, toIndex)
     } ?: return
 
     NPLogger.d(
@@ -144,7 +142,7 @@ private fun PlayerManager.removeQueueIfRoomAllowed(index: Int) {
 private fun PlayerManager.applyQueueRemoval(index: Int) {
     var removal: RemoveQueueEdit? = null
     val updatedQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
-        val planned = PlayerQueueEditOwner.remove(snapshot, index) ?: return@updateCurrentQueue null
+        val planned = queueEdits.remove(snapshot, index) ?: return@updateCurrentQueue null
         removal = planned
         planned.queue
     } ?: return
@@ -158,7 +156,7 @@ private fun PlayerManager.applyCommittedQueueRemoval(
     edit: RemoveQueueEdit?,
 ) {
     val removal = edit ?: return
-    val playbackAction = PlayerQueueEditOwner.removalPlaybackAction(
+    val playbackAction = queueEdits.removalPlaybackAction(
         removal,
         transportActive = isTransportActiveWithoutInitialization(),
     )
@@ -233,7 +231,7 @@ private fun PlayerManager.applyQueueReorder(
     val updatedQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
         oldIndex = snapshot.currentIndex
         oldSize = snapshot.playlist.size
-        PlayerQueueEditOwner.reorder(
+        queueEdits.reorder(
             current = snapshot,
             requestedQueue = queue,
             requestedIndex = currentIndexInQueue,
@@ -305,7 +303,7 @@ private fun PlayerManager.applyQueueInsertion(song: SongItem, placement: QueueIn
     var existingIndex = -1
     var insertedIndex = -1
     val updatedQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
-        val planned = PlayerQueueEditOwner.insert(snapshot, song, _currentSongFlow.value, placement)
+        val planned = queueEdits.insert(snapshot, song, _currentSongFlow.value, placement)
             ?: return@updateCurrentQueue null
         existingIndex = planned.existingIndex
         insertedIndex = planned.insertedIndex
@@ -340,7 +338,7 @@ internal fun PlayerManager.applyRemoteQueueUpdateImpl(
 }
 
 private fun PlayerManager.publishRemoteQueueEdit(queue: List<SongItem>, currentIndexInQueue: Int) {
-    val updatedQueue = PlayerQueueEditOwner.remote(queue, currentIndexInQueue)
+    val updatedQueue = queueEdits.remote(queue, currentIndexInQueue)
     publishCurrentQueue(
         updatedQueue.playlist,
         updatedQueue.currentIndex,

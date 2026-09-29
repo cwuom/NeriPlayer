@@ -11,9 +11,9 @@ import moe.ouom.neriplayer.listentogether.compat.isListenTogetherPendingMemberCo
 import moe.ouom.neriplayer.listentogether.compat.isListenTogetherQueueMutationCompatibilityError
 import moe.ouom.neriplayer.listentogether.compat.isUnsupportedTrackFinishedEventError
 import moe.ouom.neriplayer.listentogether.control.requestControlEventTypes
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
 import kotlin.time.Duration.Companion.milliseconds
 
 internal interface ListenTogetherLocalControlPort {

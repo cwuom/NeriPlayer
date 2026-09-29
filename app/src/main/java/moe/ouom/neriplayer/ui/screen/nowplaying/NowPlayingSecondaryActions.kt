@@ -52,11 +52,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.resolveBiliVideoSkipTargetOptions
-import moe.ouom.neriplayer.core.api.bili.BiliVideoSkipTargetOption
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.search.SongSearchInfo
-import moe.ouom.neriplayer.core.api.youtube.protocol.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.platform.bili.skip.resolver.resolveBiliVideoSkipTargetOptions
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTargetOption
+import moe.ouom.neriplayer.api.bilibili.client.BiliClient
+import moe.ouom.neriplayer.core.model.music.SongSearchInfo
+import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
@@ -66,8 +66,8 @@ import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
 import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScalePage
 import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScales

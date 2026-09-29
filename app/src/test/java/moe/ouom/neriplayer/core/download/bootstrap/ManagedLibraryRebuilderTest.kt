@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedLibraryRebuilderTest {
     @Test
@@ -20,7 +21,7 @@ class ManagedLibraryRebuilderTest {
         )
         for ((reference, indexed, expected) in cases) {
             val audio = audio(77L)
-            val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            val metadata = DownloadedAudioMetadata(
                 stableKey = "stable-song", downloadFinalized = true,
                 metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
                 coverPath = reference, lyricPath = reference,
@@ -34,7 +35,7 @@ class ManagedLibraryRebuilderTest {
     @Test
     fun `rebuild plan keeps stable identity and durable logical time`() {
         val audio = audio(lastModifiedMs = 99L)
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-song",
             artifactId = "artifact-song",
             downloadTimeMs = 11L,
@@ -62,7 +63,7 @@ class ManagedLibraryRebuilderTest {
     @Test
     fun `unfinalized metadata does not enter library rebuild plan`() {
         val audio = audio(lastModifiedMs = 77L)
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-song",
             downloadFinalized = true,
             metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED
@@ -77,7 +78,7 @@ class ManagedLibraryRebuilderTest {
     @Test
     fun `shipped legacy finalized metadata remains in library rebuild plan`() {
         val audio = audio(lastModifiedMs = 77L)
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-song",
             downloadFinalized = true,
             metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED
@@ -94,7 +95,7 @@ class ManagedLibraryRebuilderTest {
         val audio = audio(lastModifiedMs = 77L).copy(
             name = "song.mp3.npdl_pending.recovery.pending"
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-song",
             downloadFinalized = true,
             metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
@@ -109,7 +110,7 @@ class ManagedLibraryRebuilderTest {
     @Test
     fun `finalized metadata with a known missing required cover stays out of the plan`() {
         val audio = audio(lastModifiedMs = 77L)
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-song",
             coverUrl = "https://example.com/cover.jpg",
             downloadFinalized = true,
@@ -133,7 +134,7 @@ class ManagedLibraryRebuilderTest {
             sizeBytes = 10L,
             lastModifiedMs = 77L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-song",
             coverUrl = "https://example.com/cover.jpg",
             coverPath = cover.reference,
@@ -154,7 +155,7 @@ class ManagedLibraryRebuilderTest {
     @Test
     fun `finalized metadata with a known missing required lyric stays out of the plan`() {
         val audio = audio(lastModifiedMs = 77L)
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-song",
             matchedLyric = "[00:01.00]lyric",
             downloadFinalized = true,
@@ -170,7 +171,7 @@ class ManagedLibraryRebuilderTest {
     @Test
     fun `fast index preview accepts finalized entries without claiming a complete root`() {
         val audio = audio(lastModifiedMs = 77L)
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-song",
             downloadFinalized = true,
             metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
@@ -192,7 +193,7 @@ class ManagedLibraryRebuilderTest {
         val audio = audio(lastModifiedMs = 77L).copy(
             name = "song.mp3.npdl_pending.recovery.pending"
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "stable-song",
             downloadFinalized = true,
             metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
@@ -209,7 +210,7 @@ class ManagedLibraryRebuilderTest {
 
     private fun snapshot(
         audio: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+        metadata: DownloadedAudioMetadata?
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
         return ManagedDownloadStorage.DownloadLibrarySnapshot(
             audioEntries = listOf(audio),

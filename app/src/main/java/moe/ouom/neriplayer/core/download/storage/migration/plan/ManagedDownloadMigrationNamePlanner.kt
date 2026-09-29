@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal const val DEFAULT_REPLACEMENT_BACKUP_NAMESPACE = "migration"
 
@@ -19,7 +20,7 @@ internal data class ManagedMigrationTargetIndex(
     val rootEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
     val coverEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
     val lyricEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
-    val metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> = emptyMap(),
+    val metadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap(),
     /** 同名目标无法安全绑定到某一个文档时，迁移只能分配新名称 */
     val ambiguousNamesBySubdirectory: Map<String?, Set<String>> = emptyMap()
 ) {
@@ -210,7 +211,7 @@ internal object ManagedDownloadMigrationNamePlanner {
     fun buildNamePlan(
         entries: List<ManagedMigrationEntryRef>,
         targetIndex: ManagedMigrationTargetIndex,
-        sourceMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> = emptyMap(),
+        sourceMetadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap(),
         replacementBackupNamespace: String = DEFAULT_REPLACEMENT_BACKUP_NAMESPACE
     ): ManagedMigrationNamePlan {
         val plannedNames = mutableMapOf<String, String>()
@@ -714,8 +715,8 @@ internal object ManagedDownloadMigrationNamePlanner {
     )
 
     private fun reserveDuplicateSidecars(
-        sourceMetadata: ManagedDownloadStorage.DownloadedAudioMetadata,
-        targetMetadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        sourceMetadata: DownloadedAudioMetadata,
+        targetMetadata: DownloadedAudioMetadata?,
         sourceSidecarIndex: ManagedMigrationSourceSidecarIndex,
         targetIndex: ManagedMigrationTargetIndex,
         plannedNames: MutableMap<String, String>,
@@ -805,7 +806,7 @@ internal object ManagedDownloadMigrationNamePlanner {
         return "name:$nameIdentity"
     }
 
-    private fun sidecarPaths(metadata: ManagedDownloadStorage.DownloadedAudioMetadata?): Set<String> {
+    private fun sidecarPaths(metadata: DownloadedAudioMetadata?): Set<String> {
         if (metadata == null) return emptySet()
         return buildSet {
             metadata.coverPath?.trim()?.takeIf(String::isNotBlank)?.let(::add)
@@ -930,7 +931,7 @@ private class ManagedMigrationTargetIdentityIndex(targetIndex: ManagedMigrationT
         }
 
     fun matchFor(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+        metadata: DownloadedAudioMetadata
     ): ManagedMigrationIdentityMatch? {
         val identities = migrationSongIdentities(metadata)
         if (identities.isEmpty()) return null
@@ -955,7 +956,7 @@ private class ManagedMigrationTargetIdentityIndex(targetIndex: ManagedMigrationT
 }
 
 private fun migrationSongIdentities(
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+    metadata: DownloadedAudioMetadata
 ): List<ManagedMigrationSongIdentity> {
     return buildList {
         metadata.stableKey?.trim()?.takeIf(String::isNotBlank)?.let { stableKey ->

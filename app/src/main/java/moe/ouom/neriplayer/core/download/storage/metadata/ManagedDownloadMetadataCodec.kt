@@ -2,10 +2,11 @@ package moe.ouom.neriplayer.core.download.storage.metadata
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.model.isAcceptedDownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.policy.isAcceptedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal data class ManagedMetadataReferenceReplacement(
     val from: String,
@@ -73,7 +74,7 @@ internal object ManagedDownloadMetadataCodec {
 
     fun parseDownloadedAudioMetadataJson(
         rawJson: String
-    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+    ): DownloadedAudioMetadata? {
         return runCatching {
             ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(JSONObject(rawJson))
         }.onFailure {
@@ -102,8 +103,8 @@ internal object ManagedDownloadMetadataCodec {
     }
 
     fun isMetadataWriteVerified(
-        expected: ManagedDownloadStorage.DownloadedAudioMetadata,
-        actual: ManagedDownloadStorage.DownloadedAudioMetadata?
+        expected: DownloadedAudioMetadata,
+        actual: DownloadedAudioMetadata?
     ): Boolean {
         return actual == expected
     }

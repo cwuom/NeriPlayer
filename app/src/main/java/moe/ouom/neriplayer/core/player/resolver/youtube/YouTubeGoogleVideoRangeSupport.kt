@@ -26,7 +26,7 @@ package moe.ouom.neriplayer.core.player.resolver.youtube
 
 import android.net.Uri
 import moe.ouom.neriplayer.core.player.engine.datasource.ResumableHttpRangeSupport
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
+import moe.ouom.neriplayer.api.youtube.transport.isYouTubeGoogleVideoHost
 import okhttp3.Request
 import java.io.IOException
 import java.util.Locale

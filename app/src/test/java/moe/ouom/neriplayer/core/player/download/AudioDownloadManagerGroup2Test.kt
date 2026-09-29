@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.player.download.network.INITIAL_DOWNLOAD_PARALLE
 import moe.ouom.neriplayer.core.player.download.runtime.hasHlsResumeState
 import moe.ouom.neriplayer.core.player.download.transfer.DownloadIntegrityException
 import moe.ouom.neriplayer.core.player.download.transfer.DownloadRangeRestartRequiredException
-import moe.ouom.neriplayer.core.api.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.engine.datasource.ChunkRequestIOException
 import moe.ouom.neriplayer.data.model.SongItem

@@ -34,13 +34,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.platform.bili.isBiliStreamHost
-import moe.ouom.neriplayer.data.platform.bili.isBiliStreamUrl
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
+import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
+import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.api.bilibili.stream.isBiliStreamHost
+import moe.ouom.neriplayer.api.bilibili.stream.isBiliStreamUrl
+import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.api.youtube.transport.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 
 internal fun removeExplicitRangeHeader(headers: Map<String, String>): Map<String, String> {

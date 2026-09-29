@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 
 internal data class ManualSearchRequest(
     val keyword: String,

@@ -2,9 +2,9 @@ package moe.ouom.neriplayer.core.comment.repository
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
-import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
+import moe.ouom.neriplayer.api.bilibili.client.BiliClient
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliSongAlbum
+import moe.ouom.neriplayer.data.platform.bili.playback.resolver.resolveBiliSong
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.mapper.parseBiliCommentPage

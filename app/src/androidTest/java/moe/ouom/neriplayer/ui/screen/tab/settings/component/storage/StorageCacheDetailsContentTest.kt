@@ -8,10 +8,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.storage.StorageUsageItem
-import moe.ouom.neriplayer.data.storage.StorageUsageItemKind
-import moe.ouom.neriplayer.data.storage.StorageUsageSection
-import moe.ouom.neriplayer.data.storage.StorageUsageSummary
+import moe.ouom.neriplayer.data.storage.model.StorageUsageItem
+import moe.ouom.neriplayer.data.storage.model.StorageUsageItemKind
+import moe.ouom.neriplayer.data.storage.model.StorageUsageSection
+import moe.ouom.neriplayer.data.storage.model.StorageUsageSummary
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Before
 import org.junit.Rule

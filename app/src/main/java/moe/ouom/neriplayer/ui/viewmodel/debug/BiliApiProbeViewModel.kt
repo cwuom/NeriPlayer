@@ -35,7 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.api.bilibili.model.playback.PlayOptions
 import moe.ouom.neriplayer.core.di.AppContainer
 import org.json.JSONArray
 import org.json.JSONObject
@@ -328,7 +328,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             getCidByBvidAndPage(bvid, page)
         }
 
-        val list = client.getAllAudioStreams(bvid, cid, BiliClient.PlayOptions())
+        val list = client.getAllAudioStreams(bvid, cid, PlayOptions())
         val arr = JSONArray()
         list.forEach { a ->
             arr.put(JSONObject().apply {
@@ -348,7 +348,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val page = ui.value.page.toIntOrNull() ?: 1
         val cid = getCidByBvidAndPage(bvid, page)
 
-        val list = client.getAllAudioStreams(bvid, cid, BiliClient.PlayOptions())
+        val list = client.getAllAudioStreams(bvid, cid, PlayOptions())
         val arr = JSONArray()
         list.forEach { a ->
             arr.put(JSONObject().apply {
@@ -378,7 +378,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             getCidByBvidAndPage(bvid, page)
         }
 
-        val opts = BiliClient.PlayOptions(
+        val opts = PlayOptions(
             qn = ui.value.cid.toIntOrNull(),
             fnval = 0,
             platform = "html5",
@@ -405,7 +405,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val page = ui.value.page.toIntOrNull() ?: 1
         val cid = getCidByBvidAndPage(bvid, page)
 
-        val opts = BiliClient.PlayOptions(
+        val opts = PlayOptions(
             qn = null,
             fnval = 0,
             platform = "html5",

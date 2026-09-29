@@ -17,9 +17,26 @@ plugins {
 }
 
 val ownedLibraryPaths = listOf(
-    ":core:lyrics", ":core:common", ":core:model", ":core:logging", ":core:network",
-    ":core:listen-protocol", ":data:netease", ":data:bilibili", ":data:youtube", ":data:lyrics",
-    ":data:listen-together", ":data:comments"
+    ":core:common",
+    ":core:download",
+    ":core:logging",
+    ":core:ltw-protocol",
+    ":core:lyrics",
+    ":core:model",
+    ":core:network",
+    ":core:playback-queue",
+    ":api:bilibili",
+    ":api:ltw",
+    ":api:lyrics",
+    ":api:netease",
+    ":api:search",
+    ":api:youtube",
+    ":data:bilibili",
+    ":data:comments",
+    ":data:lyrics",
+    ":data:netease",
+    ":data:storage",
+    ":data:youtube"
 )
 val libraryCoverageClasses = configurations.create("libraryCoverageClasses") {
     isCanBeConsumed = false
@@ -277,14 +294,17 @@ abstract class DomainDependencyCheck : Exec() {
 
 val verifyDomainDependencies = tasks.register<DomainDependencyCheck>("verifyDomainDependencies") {
     group = "verification"
-    description = "Check compiled queue and sync rules against explicit domain dependencies."
+    description = "Check compiled app and library rules against explicit domain dependencies."
+    dependsOn(libraryCoverageClasses)
+    inputs.files(libraryCoverageClasses)
     workingDir(rootProject.projectDir)
     inputs.files(rootProject.file("tools_pub/quality/domain_dependencies.py"),
         rootProject.file("config/quality/domain-dependencies.json"))
     doFirst {
         val executableSuffix = if (System.getProperty("os.name").startsWith("Windows")) ".exe" else ""
         val jdkBin = File(System.getProperty("java.home"), "bin")
-        val artifacts = projectJars.get().map { it.asFile } + projectDirectories.get().map { it.asFile }
+        val artifacts = projectJars.get().map { it.asFile } + projectDirectories.get().map { it.asFile } +
+            libraryCoverageClasses.files
         commandLine(listOf(
             "python3", "-B", "tools_pub/quality/domain_dependencies.py",
             "--config", rootProject.file("config/quality/domain-dependencies.json").absolutePath,

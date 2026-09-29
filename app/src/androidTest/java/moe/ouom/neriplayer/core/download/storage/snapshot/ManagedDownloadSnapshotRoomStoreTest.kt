@@ -16,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadSnapshotRoomStoreTest {
@@ -156,7 +157,7 @@ class ManagedDownloadSnapshotRoomStoreTest {
             sizeBytes = 256L,
             lastModifiedMs = 101L
         )
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             stableKey = "snapshot-stable",
             songId = 55L,
             identityAlbum = "NeteaseAlbum",

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether.session.state
 
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
 
 internal data class AcceptedRoomState(
     val state: ListenTogetherRoomState,

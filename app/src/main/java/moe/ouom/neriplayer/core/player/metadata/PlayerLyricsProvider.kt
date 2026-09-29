@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.metadata
 
-import moe.ouom.neriplayer.core.api.lyrics.amll.AmllLyricsResolver
+import moe.ouom.neriplayer.data.lyrics.repository.AmllLyricsResolver
 import moe.ouom.neriplayer.core.lyrics.convertPlainLyricsToEntries
 
 /*
@@ -34,23 +34,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchCandidate
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchConfidence
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricsMatcher
-import moe.ouom.neriplayer.core.api.lyrics.LrcLibClient
-import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
-import moe.ouom.neriplayer.core.api.lyrics.editableLyricMatchSourcePriority
-import moe.ouom.neriplayer.core.api.lyrics.extractPlainLyricsFromCollapsedTimedLyrics
-import moe.ouom.neriplayer.core.api.lyrics.hasEditableLyricWordTiming
-import moe.ouom.neriplayer.core.api.lyrics.hasLrcTimestamp
-import moe.ouom.neriplayer.core.api.lyrics.isExternalLyricDurationCompatible
-import moe.ouom.neriplayer.core.api.lyrics.isReliableLyricMatchIdentity
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
+import moe.ouom.neriplayer.data.lyrics.repository.AmllLyricsRepository
+import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchCandidate
+import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchConfidence
+import moe.ouom.neriplayer.data.lyrics.repository.EditableLyricsMatcher
+import moe.ouom.neriplayer.data.lyrics.repository.LrcLibLyricsRepository
+import moe.ouom.neriplayer.data.lyrics.model.RankedEditableLyricMatch
+import moe.ouom.neriplayer.data.lyrics.matching.editableLyricMatchSourcePriority
+import moe.ouom.neriplayer.data.lyrics.matching.extractPlainLyricsFromCollapsedTimedLyrics
+import moe.ouom.neriplayer.core.lyrics.hasEditableLyricWordTiming
+import moe.ouom.neriplayer.data.lyrics.matching.hasLrcTimestamp
+import moe.ouom.neriplayer.data.lyrics.matching.isExternalLyricDurationCompatible
+import moe.ouom.neriplayer.data.lyrics.matching.isReliableLyricMatchIdentity
+import moe.ouom.neriplayer.api.netease.client.NeteaseClient
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.api.youtube.client.YouTubeMusicClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -59,8 +59,8 @@ import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.core.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
 import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
@@ -417,7 +417,7 @@ internal object PlayerLyricsProvider {
 
     private suspend fun loadAmllLyricsWithCache(
         song: SongItem,
-        amllTtmlClient: AmllTtmlClient,
+        amllTtmlClient: AmllLyricsRepository,
         requireDurationMatch: Boolean
     ): List<LyricEntry> {
         val cacheKey = buildAmllLyricsCacheKey(song, requireDurationMatch)
@@ -1068,9 +1068,9 @@ internal object PlayerLyricsProvider {
         neteaseClient: NeteaseClient,
         neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>,
         youtubeMusicClient: YouTubeMusicClient,
-        lrcLibClient: LrcLibClient,
+        lrcLibClient: LrcLibLyricsRepository,
         editableLyricsMatcher: EditableLyricsMatcher,
-        amllTtmlClient: AmllTtmlClient,
+        amllTtmlClient: AmllLyricsRepository,
         amllLyricsEnabled: Boolean,
         preferWordTimedLyrics: Boolean,
         defaultLyricSource: LyricSourcePreference,
@@ -1343,7 +1343,7 @@ internal object PlayerLyricsProvider {
     private suspend fun getYouTubeMusicLyrics(
         song: SongItem,
         youtubeMusicClient: YouTubeMusicClient,
-        lrcLibClient: LrcLibClient,
+        lrcLibClient: LrcLibLyricsRepository,
         editableLyricsMatcher: EditableLyricsMatcher,
         preferWordTimedLyrics: Boolean,
         ytMusicLyricsCache: LruCache<String, YouTubeMusicLyricsCacheEntry>,

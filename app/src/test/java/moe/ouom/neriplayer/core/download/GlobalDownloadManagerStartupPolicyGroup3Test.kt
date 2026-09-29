@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import moe.ouom.neriplayer.core.download.policy.recoveryOperationIdsForKeys
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 
 class GlobalDownloadManagerStartupPolicyGroup3Test : GlobalDownloadManagerStartupPolicyTestSupport() {
@@ -238,7 +239,7 @@ class GlobalDownloadManagerStartupPolicyGroup3Test : GlobalDownloadManagerStartu
 
     @Test
     fun `detailed inspection is skipped when cached metadata is already complete`() {
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             name = "Song",
             artist = "Artist",
             originalName = "Song",
@@ -259,7 +260,7 @@ class GlobalDownloadManagerStartupPolicyGroup3Test : GlobalDownloadManagerStartu
 
     @Test
     fun `detailed inspection stays enabled when local lyric fallback is the only source left`() {
-        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+        val metadata = DownloadedAudioMetadata(
             name = "Song",
             artist = "Artist",
             originalName = "Song",

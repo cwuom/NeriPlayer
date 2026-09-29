@@ -1,8 +1,7 @@
 package moe.ouom.neriplayer.core.player.session
-
-import moe.ouom.neriplayer.core.player.queue.state.PlayerQueueStateStore
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.queue.state.PlayerQueueStateStore
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,7 +15,7 @@ class PlayerQueueSessionBindingsTest {
     @Test
     fun `new engine without restored state cannot inherit the released engine shuffle mode`() {
         for (emptyRestore in listOf(false, true)) {
-            val store = PlayerQueueStateStore()
+            val store = PlayerQueueStateStore(AppQueueSongIdentity)
             val bindings = PlayerQueueSessionBindings(store)
             store.publish(songs, 1)
             store.setLocalShuffle(true, songs[1]) { it.reverse() }
@@ -35,7 +34,7 @@ class PlayerQueueSessionBindingsTest {
 
     @Test
     fun `restored shuffle session can start a local playlist but remote starts retain supplied order`() {
-        val store = PlayerQueueStateStore()
+        val store = PlayerQueueStateStore(AppQueueSongIdentity)
         val bindings = PlayerQueueSessionBindings(store)
         bindings.prepareForNewEngine()
         assertTrue(bindings.restore(restored(songs.reversed(), true)))
@@ -54,7 +53,7 @@ class PlayerQueueSessionBindingsTest {
 
     @Test
     fun `restored sequential playback ignores obsolete shuffle restore data`() {
-        val store = PlayerQueueStateStore()
+        val store = PlayerQueueStateStore(AppQueueSongIdentity)
         val bindings = PlayerQueueSessionBindings(store)
         store.setShuffleMode(true)
         assertTrue(bindings.restore(restored(songs, false)))

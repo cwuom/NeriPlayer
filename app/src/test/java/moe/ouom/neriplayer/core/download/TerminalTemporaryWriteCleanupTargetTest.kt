@@ -12,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class TerminalTemporaryWriteCleanupTargetTest {
     @Test
@@ -120,7 +121,7 @@ class TerminalTemporaryWriteCleanupTargetTest {
 
         assertTrue(
             ManagedDownloadStorage.matchesTerminalTemporaryWriteFinalizationIdentity(
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     terminalTemporaryWriteCleanupToken = "finalization-token"
                 ),
                 preparation = preparation
@@ -128,7 +129,7 @@ class TerminalTemporaryWriteCleanupTargetTest {
         )
         assertFalse(
             ManagedDownloadStorage.matchesTerminalTemporaryWriteFinalizationIdentity(
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     terminalTemporaryWriteCleanupToken = "another-token"
                 ),
                 preparation = preparation

@@ -1,14 +1,15 @@
 package moe.ouom.neriplayer.core.download.storage
 
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.metadata.codec.ManagedDownloadedAudioMetadataDecoder
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONArray
 import org.json.JSONObject
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal object ManagedDownloadStorageJsonCodec {
     fun storedEntriesToJsonArray(entries: List<ManagedDownloadStorage.StoredEntry>): JSONArray {
@@ -27,14 +28,14 @@ internal object ManagedDownloadStorageJsonCodec {
     }
 
     fun downloadedAudioMetadataToJson(
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+        metadata: DownloadedAudioMetadata
     ): JSONObject {
         return metadata.toJson()
     }
 
     fun downloadedAudioMetadataFromJsonObject(
         root: JSONObject
-    ): ManagedDownloadStorage.DownloadedAudioMetadata {
+    ): DownloadedAudioMetadata {
         return ManagedDownloadedAudioMetadataDecoder(root).decode()
     }
 
@@ -178,7 +179,7 @@ internal object ManagedDownloadStorageJsonCodec {
         )
     }
 
-    private fun ManagedDownloadStorage.DownloadedAudioMetadata.toJson(): JSONObject {
+    private fun DownloadedAudioMetadata.toJson(): JSONObject {
         val restorable = restorableMetadata ?: toLegacyRestorableMetadata()
         return JSONObject().apply {
             put("schemaVersion", 6)
@@ -236,7 +237,7 @@ internal object ManagedDownloadStorageJsonCodec {
         }
     }
 
-    private fun ManagedDownloadStorage.DownloadedAudioMetadata.toLegacyRestorableMetadata():
+    private fun DownloadedAudioMetadata.toLegacyRestorableMetadata():
         ManagedDownloadRestorableMetadata {
         return ManagedDownloadRestorableMetadata(
             sourceStableKey = stableKey,

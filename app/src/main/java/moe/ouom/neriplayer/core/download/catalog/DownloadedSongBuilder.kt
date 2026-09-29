@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLook
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 internal fun fallbackDownloadedSongId(reference: String): Long {
     val digest = MessageDigest.getInstance("SHA-256")
@@ -75,7 +76,7 @@ internal class DownloadedSongBuilder(
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
-    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+    ): DownloadedAudioMetadata? {
         val metadataEntry = snapshot.metadataEntriesByAudioName[audio.logicalName]
             ?: snapshot.metadataEntriesByAudioName[audio.name]
         return ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
@@ -84,7 +85,7 @@ internal class DownloadedSongBuilder(
 
     private fun fileInfo(
         audio: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         existingDownloadTime: Long?
     ): DownloadedSongFileInfo {
         val (parsedArtist, parsedTitle) = parseDownloadedFileName(audio.name)
@@ -104,12 +105,12 @@ internal class DownloadedSongBuilder(
     private fun resolveCoverInfo(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         allowSlowLocalInspection: Boolean,
         verifySnapshotReferences: Boolean
     ): DownloadedSongCoverInfo {
-        val values = metadata ?: ManagedDownloadStorage.DownloadedAudioMetadata()
+        val values = metadata ?: DownloadedAudioMetadata()
         return DownloadedSongCoverInfo(
             reference = selectDownloadedSongCover(
                 indexedCover = {
@@ -196,7 +197,7 @@ internal class DownloadedSongBuilder(
     private suspend fun resolveLyricContent(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         loadLyricContents: Boolean,
         resolveLyricFallbacks: Boolean
@@ -287,7 +288,7 @@ internal class DownloadedSongBuilder(
     private suspend fun indexedOrMetadataLyricReference(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         translated: Boolean,
         loadLyricContents: Boolean
@@ -326,7 +327,7 @@ internal class DownloadedSongBuilder(
     private suspend fun indexedOrMetadataRomanizedLyricReference(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         loadLyricContents: Boolean
     ): DownloadedLyricReference {
@@ -363,7 +364,7 @@ internal class DownloadedSongBuilder(
     private suspend fun indexedFallbackLyricText(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         translated: Boolean,
         resolvedReference: String?,
@@ -390,7 +391,7 @@ internal class DownloadedSongBuilder(
     private suspend fun indexedRomanizedFallbackLyricText(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        metadata: DownloadedAudioMetadata?,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         resolvedReference: String?,
         indexedReference: String?,
@@ -495,7 +496,7 @@ internal fun selectDownloadedLyricReference(
 }
 
 internal fun resolveIndexedDownloadedCoverReference(
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    metadata: DownloadedAudioMetadata?,
     storedAudio: ManagedDownloadStorage.StoredEntry,
     snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
 ): String? {
@@ -519,7 +520,7 @@ internal fun sanitizeDownloadedCoverMetadataReference(
 }
 
 internal fun shouldUseIndexedDownloadedCoverFallback(
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    metadata: DownloadedAudioMetadata?
 ): Boolean {
     if (metadata == null) return true
     val originalCoverIsRemote = metadata.originalCoverUrl

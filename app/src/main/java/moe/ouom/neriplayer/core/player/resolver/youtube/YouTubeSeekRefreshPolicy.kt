@@ -25,8 +25,8 @@ package moe.ouom.neriplayer.core.player.resolver.youtube
 
 import java.net.URI
 import java.net.URLDecoder
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.api.youtube.transport.isYouTubeGoogleVideoHost
+import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal object YouTubeSeekRefreshPolicy {

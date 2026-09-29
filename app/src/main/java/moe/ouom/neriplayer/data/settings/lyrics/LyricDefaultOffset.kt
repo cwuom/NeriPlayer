@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.settings.lyrics
 
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.model.music.MusicPlatform
 import kotlin.math.roundToLong
 
 internal const val MIN_LYRIC_DEFAULT_OFFSET_MS = -5000L

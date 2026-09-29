@@ -5,10 +5,10 @@ import moe.ouom.neriplayer.listentogether.session.connection.ListenTogetherSocke
 import moe.ouom.neriplayer.listentogether.session.link.ListenTogetherControllerLinkOwner
 import moe.ouom.neriplayer.listentogether.session.state.AcceptedRoomState
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherAppliedEvent
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherAppliedEvent
+import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
+import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
 
 internal interface ListenTogetherSocketControlResultPort {
     fun currentUserUuid(): String?

@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.player.persistence
-
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.queue.state.PlayerQueueStateStore
+import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -75,7 +75,7 @@ class PlaybackStatePersistenceSnapshotTest {
 
     @Test
     fun `selection only updates retain the queue reference for incremental persistence`() {
-        val store = PlayerQueueStateStore()
+        val store = PlayerQueueStateStore(AppQueueSongIdentity)
         store.publish(listOf(song(1L), song(2L)), 0)
         val before = store.sessionSnapshot()
         val previous = PlaybackStatePersistenceSnapshot(before, PersistedPlaybackState(0), true)
@@ -89,7 +89,7 @@ class PlaybackStatePersistenceSnapshotTest {
 
     @Test
     fun `disabled mode persistence omits both session shuffle mode and its restore order`() {
-        val store = PlayerQueueStateStore()
+        val store = PlayerQueueStateStore(AppQueueSongIdentity)
         store.publish(listOf(song(1L), song(2L)), 1)
         store.setLocalShuffle(true, song(2L)) { it.reverse() }
         val session = store.sessionSnapshot()

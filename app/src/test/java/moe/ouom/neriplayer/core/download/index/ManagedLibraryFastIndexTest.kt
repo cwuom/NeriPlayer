@@ -4,7 +4,7 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,6 +12,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
 
 class ManagedLibraryFastIndexTest {
     @Test
@@ -89,7 +90,7 @@ class ManagedLibraryFastIndexTest {
         )
         assertTrue(
             isFinalizedDownloadedMetadata(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = restored?.get("embedded")?.metadataEmbeddingState
                 )
@@ -97,7 +98,7 @@ class ManagedLibraryFastIndexTest {
         )
         assertTrue(
             isFinalizedDownloadedMetadata(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = restored?.get("disabled")?.metadataEmbeddingState
                 )
@@ -148,7 +149,7 @@ class ManagedLibraryFastIndexTest {
         assertNull(restored?.metadataEmbeddingState)
         assertFalse(
             isFinalizedDownloadedMetadata(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = restored?.metadataEmbeddingState
                 )

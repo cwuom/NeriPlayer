@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.download.model
 
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
 import kotlin.math.abs
 import kotlin.math.max
 import moe.ouom.neriplayer.data.model.SongItem
@@ -59,7 +58,7 @@ internal data class DownloadedArtifactIntegrityResult(
 
 internal fun verifyDownloadedArtifactIntegrity(
     song: SongItem,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    metadata: DownloadedAudioMetadata?,
     references: DownloadedArtifactReferenceState,
     expectCover: Boolean,
     expectOriginalLyric: Boolean,
@@ -246,7 +245,7 @@ internal fun hasDownloadedAudioDurationMismatch(expectedMs: Long, actualMs: Long
 
 internal fun expectedDownloadedAudioDurationMs(
     song: SongItem,
-    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    metadata: DownloadedAudioMetadata?
 ): Long {
     return metadata?.takeIf { it.stableKey == song.stableKey() }
         ?.verifiedAudioDurationMs?.takeIf { it > 0L } ?: song.durationMs
