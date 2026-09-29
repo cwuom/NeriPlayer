@@ -33,6 +33,20 @@
             <option value="$PROJECT_DIR$/buildSrc" />
             <option value="$PROJECT_DIR$/ksp-annotations" />
             <option value="$PROJECT_DIR$/ksp-processor" />
+            <option value="$PROJECT_DIR$/modules/core" />
+            <option value="$PROJECT_DIR$/modules/core/common" />
+            <option value="$PROJECT_DIR$/modules/core/listen-protocol" />
+            <option value="$PROJECT_DIR$/modules/core/logging" />
+            <option value="$PROJECT_DIR$/modules/core/lyrics" />
+            <option value="$PROJECT_DIR$/modules/core/model" />
+            <option value="$PROJECT_DIR$/modules/core/network" />
+            <option value="$PROJECT_DIR$/modules/data" />
+            <option value="$PROJECT_DIR$/modules/data/bilibili" />
+            <option value="$PROJECT_DIR$/modules/data/comments" />
+            <option value="$PROJECT_DIR$/modules/data/listen-together" />
+            <option value="$PROJECT_DIR$/modules/data/lyrics" />
+            <option value="$PROJECT_DIR$/modules/data/netease" />
+            <option value="$PROJECT_DIR$/modules/data/youtube" />
             <option value="$PROJECT_DIR$/np-submodule/accompanist-lyrics-core" />
             <option value="$PROJECT_DIR$/np-submodule/accompanist-lyrics-ui/src" />
           </set>
