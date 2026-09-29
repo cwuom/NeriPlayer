@@ -8,7 +8,7 @@
 ./gradlew verifyModularization
 ```
 
-`verifyCrap` 运行 app 和自有 core/data 库的 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES
+`verifyCrap` 运行 app 和自有 core/api/data 库的 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES
 获取每个模块自身的 Kotlin/Java 字节码，合并各测试任务的执行数据，生成 JaCoCo XML，
 再计算逐方法 CRAP。库的覆盖率产物由 convention 的 outgoing configurations 提供。
 源码从各模块的 `src/main/java` 和 `src/main/kotlin` 合并到 `app/build/reports/crap/sources`，
@@ -16,11 +16,13 @@
 `:app:check` 执行 CRAP 与计算域依赖门禁，Android CI 的 `verifyModularization` 还执行所有自有模块的
 lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
 
-自有库位于 `modules/core` 和 `modules/data`，Gradle 标识分别为 `:core:*` 和 `:data:*`。
+自有库位于 `modules/core`、`modules/api` 和 `modules/data`，Gradle 标识分别为 `:core:*`、`:api:*` 和 `:data:*`。
+依赖遵循 `app -> data -> api -> core`；禁止反向依赖，API 实现不得放入数据模块。
 边界检查同时验证 `includeOwnedLibrary` 登记、孤立库、包名与目录一致性和目录容量；
+共享模型、网络基础能力和队列包还校验模块归属，防止源码被移回不匹配的库。
 库主源码及 `module_boundaries.py` 中 `APP_FAMILIES` 登记的应用区域，每个目录最多 16 个直接源码文件，模块职责见
 [根目录 README](../../README.md#模块结构)。移动路径时必须同步 CRAP source/method 选择器，不能减少原检查范围。
-已迁出的 `core/api/search`、`core/api/lyrics` 和 `core/lyrics` 生产代码不得重新放入 `app`；
+已迁出的 `core/api`、`core/lyrics` 和 `core/player/queue` 生产代码不得重新放入 `app`；
 `LIBRARY_OWNED_FAMILIES` 检查这些目录及其子目录，宿主集成测试仍可保留在 `app`。
 单独查看完整报告可以运行 `./gradlew :app:crapReport`，该任务仍要求测试和报告输入有效，
 但不会因超分退出失败。
@@ -75,16 +77,16 @@ python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 
 ## 计算域依赖门禁
 
-`verifyDomainDependencies` 通过 AGP `ScopedArtifact.CLASSES` 取得 app 自身的 Debug 编译产物，
+`verifyDomainDependencies` 通过 AGP `ScopedArtifact.CLASSES` 取得 app 和自有库的 Debug 编译产物，
 使用运行 Gradle 的 JDK 所带的 `jdeps` 检查直接类依赖，使用 `javap` 检查宿主桥接的成员签名。
 规则位于 `config/quality/domain-dependencies.json`；报告位于
 `app/build/reports/domain-dependencies/report.json`。
 
-- `core/player/queue` 包含队列模型、状态存储和编辑/导航策略；新增队列计算代码放入该包
+- `core:playback-queue` 的 `core/player/queue` 包含队列模型、状态存储和编辑/导航策略；歌曲身份由接口注入，库不得依赖宿主的 `SongIdentity` 实现
 - `data/sync/merge` 包含共享合并规则与宿主接口；Android 实现在相邻的 `data/sync/host`
 - `core/download/catalog/assembly` 负责下载条目的元数据优先级、歌词覆盖和封面选择，文件访问由宿主提供
 - `core/download/catalog/projection` 负责编辑后的来源身份、原始标签和本地引用合并，不读写文件或目录状态
-- `core/download/storage/metadata/codec` 只解析 JSON 与兼容旧版元数据，不调用存储入口或恢复任务
+- `core:download` 的 `core/download/storage/metadata/codec` 只解析 JSON 与兼容旧版元数据，不调用存储入口或恢复任务
 - 各计算域的全部编译类自动纳入检查，包括新类、嵌套类、lambda 和 Kotlin 生成类
 - 类依赖采用允许列表，禁止直接引用播放器全局状态、数据库、网络、UI 或宿主适配器实现
 - 混合文件中的身份与同步辅助函数仅允许列出的 JVM 方法签名；允许某个方法不等于允许整个文件

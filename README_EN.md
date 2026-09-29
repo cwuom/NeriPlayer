@@ -681,15 +681,18 @@ For release build and signing details, see
 
 ### Module layout
 
-Owned libraries live under `modules/core/` and `modules/data/`, corresponding to the `:core:*` and `:data:*` Gradle modules.
-Directories follow `modules/<layer>/<module>`; for example, `modules/data/youtube` maps to `:data:youtube`.
+Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for example, `modules/api/youtube` maps to `:api:youtube`.
 
 - `:app`: Android host, screens, playback/download runtime, and dependency assembly.
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`: shared utilities, models, logging, and networking.
-- `:core:lyrics` / `:core:listen-protocol`: lyric parsing/transforms and Listen Together protocol models.
-- `:data:comments` / `:data:listen-together`: cross-platform comment repositories and Listen Together transport, with clients and lifecycle managed by the host.
-- `:data:netease` / `:data:bilibili` / `:data:youtube`: platform APIs, accounts, and playback source resolution.
-- `:data:lyrics`: lyric sources, QQ metadata search, cross-source matching, and AMLL resolution, with clients and live settings supplied by the host.
+- `:core:lyrics` / `:core:ltw-protocol`: lyric parsing/transforms and Listen Together protocol models and messages.
+- `:core:playback-queue`: queue state, editing, navigation, and ordering policies with injected song identity rules.
+- `:core:download`: download metadata models, JSON decoding, and completion policies with file I/O owned by the host.
+- `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request/response models, authentication protocols, and response parsing.
+- `:api:lyrics` / `:api:search` / `:api:ltw`: lyric services, metadata search contracts, and Listen Together HTTP/WebSocket transport.
+- `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, and playback source repositories.
+- `:data:lyrics` / `:data:comments`: lyric matching and fallback across sources, comment pagination, and caching.
+- `:data:storage`: storage accounting, file scanning, and cache cleanup with host-provided locations, database statistics, and download snapshots.
 - `:ksp-annotations` / `:ksp-processor`: generated settings registration and metadata.
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`: lyrics parsing and Compose lyrics UI submodules.
 - `build-logic`: shared Gradle convention plugins.
@@ -697,16 +700,18 @@ Directories follow `modules/<layer>/<module>`; for example, `modules/data/youtub
 - `np-submodule/NeriPlayer-LTW`: Listen Together Cloudflare Workers server.
 - `np-submodule/miuix`: vendored upstream Miuix source/docs tree, not part of the current app module graph.
 
-Dependencies point from `app` to `data` and `core`. Data modules may compose core libraries and
-other data modules; core modules cannot depend on data modules, libraries cannot depend on `app`,
-and the module graph must remain acyclic. The host injects preferences, device tokens, and network
-clients. Settings that can change at runtime are read through providers when needed.
-Compose screens, Room, services, workers, and the playback/download runtime belong to `app`.
+Dependencies flow from `app -> data -> api -> core`; higher layers may depend directly on lower layers.
+Core cannot depend on API or data modules, API cannot depend on data, and no library may depend on app.
+The graph must remain acyclic. Clients read accounts, refresh credentials, and use host storage through
+narrow interfaces assembled by the host. Providers read live settings when needed.
 
-Source packages follow their directories and group code by responsibility. For example, the YouTube
-module separates bootstrap data, challenge solving, response parsing, playback policies, and HTTP
-transport into `bootstrap`, `challenge`, `parser`, `playback`, and `transport`. Each module owns its
-tests, resources, and consumer R8 rules; integration tests requiring the application host stay in `app`.
+Classify by business ownership before implementation role. Shared authentication and music models belong
+to `core:model`; platform request/response models belong to the owning API module's `model` package;
+repository-specific models remain with their data module. Parsers, requests, and persistence belong in
+`parser`, `client`/`transport`, and `repository`/`cache` packages. Kotlin-only code does not automatically
+belong to `common`, and the shared model library is not a collection of every data class.
+Packages match their directories. Existing Parcelable class names remain stable for saved Android state.
+Modules own their tests, resources, and consumer R8 rules; host integration tests stay in `app`.
 
 Run `./gradlew verifyModularization` for dependency boundaries, module JVM tests, combined CRAP coverage,
 domain dependencies, and lint. Run an individual module's tests with `./gradlew :data:youtube:testDebugUnitTest`.
@@ -767,7 +772,7 @@ See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension ru
 - Playback state is persisted periodically for queue and state recovery.
 - Player code is split by responsibility across `playback/`, `url/`, `resolver/`,
   `service/`, `effects/`, `lifecycle/`, `watchdog/`, and `usb/`. Shared song
-  models live under `data/model/`; legacy packages only retain a small set of
+  models are maintained in `:core:model`; legacy packages only retain a small set of
   compatibility aliases and should not be used for new code.
 - Sleep timer, fade-in/fade-out, crossfade-next, and playback mode recovery are
   handled in the player layer.

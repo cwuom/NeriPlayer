@@ -526,15 +526,18 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 ### 模块结构
 
-自有库位于 `modules/core/` 和 `modules/data/`，对应 `:core:*` 和 `:data:*` Gradle 模块。
-目录使用 `modules/<层>/<模块>`，例如 `modules/data/youtube` 对应 `:data:youtube`。
+自有库按 `modules/<层>/<模块>` 组织，对应同名 Gradle 路径，例如 `modules/api/youtube` 对应 `:api:youtube`。
 
-- `:app`：Android 宿主、页面、播放/下载运行时及依赖组装。
+- `:app`：Android 宿主、页面、播放/下载运行时与依赖组装。
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`：通用工具、共享模型、日志和网络基础能力。
-- `:core:lyrics` / `:core:listen-protocol`：歌词解析与转换、一起听协议模型。
-- `:data:comments` / `:data:listen-together`：跨平台评论仓库和一起听传输层，宿主负责注入客户端与管理生命周期。
-- `:data:netease` / `:data:bilibili` / `:data:youtube`：平台 API、账号和播放源解析。
-- `:data:lyrics`：歌词来源、QQ 元数据搜索、跨来源匹配与 AMLL 解析；客户端及实时设置由宿主注入。
+- `:core:lyrics` / `:core:ltw-protocol`：歌词解析与转换、一起听协议模型和消息。
+- `:core:playback-queue`：队列状态、编辑、导航和顺序策略；歌曲身份规则通过接口注入。
+- `:core:download`：下载元数据模型、JSON 解码和完成状态规则，文件读写由宿主负责。
+- `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求/响应模型、认证协议和网络解析。
+- `:api:lyrics` / `:api:search` / `:api:ltw`：歌词服务、元数据搜索接口和一起听 HTTP/WebSocket 传输。
+- `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存和播放源仓库。
+- `:data:lyrics` / `:data:comments`：跨来源歌词匹配与回退、评论分页和缓存。
+- `:data:storage`：存储统计、文件扫描和缓存清理；宿主提供目录、数据库统计及下载条目快照。
 - `:ksp-annotations` / `:ksp-processor`：设置项自动登记与生成。
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`：歌词解析与 Compose 歌词 UI 子模块。
 - `build-logic`：统一 Gradle convention plugin。
@@ -542,15 +545,17 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `np-submodule/NeriPlayer-LTW`：一起听 Cloudflare Workers 服务端。
 - `np-submodule/miuix`：仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
 
-依赖从 `app` 指向 `data` 和 `core`；`data` 可以组合基础库和其他数据模块，
-`core` 不依赖 `data`，库模块不依赖 `app`，模块之间不得形成循环依赖。
-偏好设置、设备令牌和网络客户端由宿主注入；需要反映设置变更的值通过 provider 按需读取。
-Compose 页面、Room、Service、Worker 及播放和下载运行时由 `app` 管理。
+依赖方向为 `app -> data -> api -> core`，上层可以直接依赖下层；`core` 不依赖 `api` 或 `data`，
+`api` 不依赖 `data`，所有库不得依赖 `app`，模块之间不得形成循环。
+客户端读取账号、刷新凭据和使用宿主存储时依赖窄接口，由宿主组装实现。
+需要反映设置变更的值通过 provider 按需读取，避免模块持有过期配置。
 
-源码按业务职责细分，包名与目录一致。例如 YouTube 模块将启动信息、挑战求解、
-响应解析、播放策略和 HTTP 传输分别放入 `bootstrap`、`challenge`、`parser`、
-`playback` 和 `transport`。模块自己的测试、资源与 consumer R8 规则随实现维护，
-需要宿主参与的集成测试保留在 `app`。
+分类先确定所属业务，再按职责细分包：共享认证和音乐模型放在 `core:model`，
+平台请求/响应模型放在对应 API 模块的 `model` 包，仓库私有模型随数据模块维护。
+解析器、网络请求和持久化实现分别放入 `parser`、`client`/`transport`、`repository`/`cache` 等包，
+不因实现只依赖 Kotlin 就放入 `common`，也不把所有数据类集中到共享模型库。
+源码包名与目录一致；保留既有 Parcelable 类全名以兼容已保存的 Android 状态。
+各模块维护自己的测试、资源与 consumer R8 规则，需要宿主参与的集成测试保留在 `app`。
 
 运行 `./gradlew verifyModularization` 检查依赖边界、各模块 JVM 测试、合并 CRAP 覆盖率、
 计算域依赖和 lint；单模块测试可运行 `./gradlew :data:youtube:testDebugUnitTest`。
@@ -599,7 +604,7 @@ Compose 页面、Room、Service、Worker 及播放和下载运行时由 `app` �
   仍不可播时可根据设置自动匹配 Bilibili 音源或本地音频。
 - 播放状态会定期持久化，用于进程重启后的队列和状态恢复。
 - 播放器实现已按 `playback/`、`url/`、`resolver/`、`service/`、`effects/`、
-  `lifecycle/`、`watchdog/` 与 `usb/` 等职责分包；共享歌曲模型位于 `data/model/`，
+  `lifecycle/`、`watchdog/` 与 `usb/` 等职责分包；共享歌曲模型由 `:core:model` 维护，
   旧包名仅保留少量兼容别名，不应作为新增代码入口。
 - 睡眠定时器、淡入淡出、切歌交叉淡入淡出、播放模式恢复等均由播放器层管理。
 - 预抢占音频焦点、混音播放、蓝牙断连暂停和 USB 独占播放通过播放偏好快照

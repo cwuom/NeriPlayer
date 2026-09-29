@@ -174,7 +174,7 @@
 
 #### 根模块
 
-自有库统一位于 `modules/core/` 和 `modules/data/`，Gradle 标识保持 `:core:*` / `:data:*`。
+自有库统一位于 `modules/core/`、`modules/api/` 和 `modules/data/`，对应 `:core:*`、`:api:*` 和 `:data:*`。
 模块职责与依赖规则见根目录 [README.md](README.md#模块结构)。新增库时应用
 `build-logic.android.feature-library` convention，在 `settings.gradle.kts` 中使用
 `includeOwnedLibrary` 登记，并加入 `app/build.gradle.kts` 的 `ownedLibraryPaths`，
@@ -184,12 +184,18 @@
   - Android 宿主和依赖组装，保留页面、播放服务、下载、本地媒体与 Worker 适配层。
 - `:core:common` / `:core:model` / `:core:logging` / `:core:network`
   - 通用工具、跨平台共享模型、日志和 HTTP 基础能力。
-- `:core:lyrics` / `:core:listen-protocol`
+- `:core:lyrics` / `:core:ltw-protocol`
   - 不依赖 Compose 的歌词解析、转换、翻译对齐，以及一起听协议模型。
+- `:api:netease` / `:api:bilibili` / `:api:youtube` / `:api:lyrics` / `:api:search` / `:api:ltw`
+  - 平台服务、协议模型与网络解析；YouTube 的 JS assets 和 consumer R8 规则由 API 模块维护。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`
-  - 各平台 API、账号仓库和播放源解析；YouTube 的 JS assets 和 consumer R8 规则由该模块维护。
+  - 账号持久化、缓存和播放源仓库。
+- `:core:playback-queue` / `:data:storage`
+  - 队列计算与存储统计，分别通过身份接口和输入快照隔离宿主。
+- `:core:download`
+  - 下载元数据模型、完成状态规则和 JSON 解码；目录访问、写入和恢复调度由宿主负责。
 - `:data:lyrics`
-  - 外部歌词来源和匹配策略；跨平台匹配编排仍由 app 负责。
+  - 跨来源歌词匹配、排序和回退编排；服务客户端来自 `:api:lyrics` 和 `:api:search`。
 - `:ksp-annotations` / `:ksp-processor`
   - 设置项 schema、key、备份白名单和设置 UI 元数据的 KSP 生成链路。
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`
@@ -203,8 +209,8 @@
 - `np-submodule/miuix`
   - 仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
 
-库模块的依赖方向为 `app -> data -> core`，允许 app 直接使用 core。
-core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` 或 `PlayerManager`。
+库模块的依赖方向为 `app -> data -> api -> core`，允许直接使用下层模块。
+core 不得依赖 api/data，api 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` 或 `PlayerManager`。
 设置值通过挂起的 provider 在调用时读取，网络客户端和设备令牌由 `AppContainer` 注入，
 不要通过全局容器恢复反向依赖。涉及 Room、服务生命周期和播放器的功能仍在 app，
 后续提取前应先设计窄接口，不要为了搬文件引入循环依赖。
@@ -271,17 +277,14 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
 - `app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`
   - 首次启动引导，覆盖语言、平台账号、权限说明、播放控件、GitHub 同步和个性化设置。
 
-- `modules/data/*/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `modules/data/netease` 中的 `netease/`：网易云接口、加密和账号能力。
-  - `modules/data/bilibili` 中的 `bili/`：Bilibili 搜索、二维码登录、收藏夹、合集、播放信息和音频播放解析。
-    Explore 链接识别会保留 Bilibili 分 P、`cid` 和 `season_id` 上下文；
-    改动时同步检查 `ExploreLinkRecognizer` 与 `ExploreViewModel`。
-  - `modules/data/youtube` 中的 `youtube/`：YouTube Music 客户端（NewPipe Extractor）、
-    首页/歌单/搜索/播放、PoToken 和 JS Challenge 支持。
-  - `modules/data/netease` 中的 `search/CloudMusicSearchApi`：网易云元数据搜索适配，复用注入的网易云客户端和 HTTP 客户端。
-  - `modules/data/lyrics` 中的 `lyrics/`：LrcLib、Kugou、AMLL 客户端及 `EditableLyricsMatcher` 跨来源匹配；`lyrics/amll/` 负责 AMLL 逐词歌词解析与时长校验。
-  - `modules/data/lyrics` 中的 `search/`：`QQMusicSearchApi` 和 `SearchManager`；接口和 DTO 位于 `modules/core/model`。
-  - `AppContainer` 组装搜索客户端与路由，注入 HTTP、调试配置和实时设置 provider；库代码不访问应用容器或播放器单例。
+- `modules/api/*/src/main/java/moe/ouom/neriplayer/api/`
+  - `netease/`：网易云客户端、加密、请求参数和二维码认证协议。
+  - `bilibili/`：搜索、二维码登录、收藏夹、合集和播放信息；仓库与跳过规则位于 `modules/data/bilibili`。
+    Explore 链接识别会保留分 P、`cid` 和 `season_id` 上下文，改动时同步检查 `ExploreLinkRecognizer` 与 `ExploreViewModel`。
+  - `youtube/`：YouTube Music 客户端、PoToken、JS Challenge、请求/响应解析和协议模型；认证持久化与缓存位于 `modules/data/youtube`。
+  - `lyrics/`：LrcLib、Kugou 和 AMLL 服务访问；匹配与回退属于 `modules/data/lyrics`。
+  - `search/`：`SearchApi`、网易云和 QQ 元数据搜索服务；`SearchManager` 属于 `modules/data/lyrics`，共享音乐模型属于 `modules/core/model`。
+  - `AppContainer` 组装客户端与路由，注入 HTTP、调试配置和实时设置 provider；库不读取应用容器或播放器单例。
   - 纯文本歌词时间轴转换位于 `modules/core/lyrics` 的 `PlainLyrics.kt`，播放器与匹配器共享同一实现。
 
 - `modules/data/comments/src/main/java/moe/ouom/neriplayer/core/comment/`
@@ -299,7 +302,7 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `engine/`：Media3 音频处理器，包括响度均衡、声道平衡和高解析输出相关处理。
   - `playback/PlaybackStatsTracker.kt`：播放统计采集；播放命令与队列推进也在
     `playback/PlayerManagerPlaybackExtensions.kt`。
-  - `queue/model`、`queue/state` 和 `queue/policy` 分别维护队列模型、状态所有权与编辑/导航规则。
+  - `:core:playback-queue` 的 `queue/model`、`queue/state` 和 `queue/policy` 分别维护队列模型、状态所有权与编辑/导航规则。
     `PlayerQueueSnapshot` 持有列表与当前索引；`PlayerQueueSessionSnapshot` 将队列、
     随机播放模式和恢复顺序组成完整会话，由 `PlayerQueueStateStore` 统一发布。
     开始播放新歌单、切换本地随机播放和加载持久化会话分别使用 `startPlayback`、
@@ -381,11 +384,11 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
   - `sync/github/`：GitHub 传输、同步编排、序列化、省流模式和安全存储。
   - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。
 
-- `modules/data/listen-together/src/main/java/moe/ouom/neriplayer/listentogether/network/`
+- `modules/api/ltw/src/main/java/moe/ouom/neriplayer/api/ltw/`
   - HTTP、WebSocket、服务器地址校验和重连策略，依赖协议模型与注入的 HTTP 客户端。
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - 房间、事件与传输模型位于 `modules/core/listen-protocol`，传输实现位于 `modules/data/listen-together`；
+  - 房间、事件与传输模型位于 `modules/core/ltw-protocol`，传输实现位于 `modules/api/ltw`；
     `playback/` 负责队列、权威播放候选和进度同步，`control/`、`session/`、`invite/`、
     `mapping/`、`validation/` 分别承载控制、会话策略、邀请、模型映射和输入边界。
   - 根目录保留 `ListenTogetherSessionManager.kt` 与少量兼容入口；新增协议逻辑
@@ -523,7 +526,7 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
 
 适用于把新平台接到 `Explore` 页搜索或发现流。
 
-1. 在 `core/api/` 下实现对应客户端或仓库。
+1. 在 `modules/api/<平台>/` 下实现客户端，缓存和业务编排放在对应的 `modules/data/<平台>/` 中。
 2. 在 `ExploreViewModel` 中增加请求、分页和状态映射。
 3. 在 `ExploreScreen` / Host 页面中补充平台标签和结果 UI。
 4. 如需播放，继续接入 `PlayerManager` 的音源解析链路。
@@ -533,7 +536,7 @@ core 不得依赖 data，库不得引用 app、Compose 页面、`AppContainer` �
 
 适用于补封面、歌词、曲目信息，而不是扩展 `Explore` 页。
 
-1. 在所属平台数据模块的 `core/api/search/` 下实现 `:core:model` 提供的 `SearchApi`。
+1. 在 `:api:search` 下实现该模块的 `SearchApi` 接口，共享音乐 DTO 保留在 `:core:model`。
 2. 在 `AppContainer` 中注册单例。
 3. 在 `AppContainer.searchManager` 的 provider 中登记路由；匹配和降级规则在 `:data:lyrics` 中维护并测试。
 4. 视需要补充 `MusicPlatform`、字符串资源和调试探针。
@@ -869,6 +872,7 @@ USB `exclusive/` 下的自有 `.cpp` / `.h` 也在检查范围内。新增组件
 `NowPlayingScreen`、`SettingsScreen` 和 `NeriApp` 组合页面与功能组件，具体编辑会话、目录选择、
 设置领域绑定和导航副作用在对应组件中处理。不要把原入口作为 receiver 搬进扩展文件，
 也不要让新组件回读原入口的内部状态。
+`:data:storage` 按 `model`、`source`、`scan`、`accounting`、`cleanup` 和 `policy` 分类。
 存储统计由 `StorageUsageScanner` 通过数据源接口采集快照，`StorageUsagePresenter`
 只读取快照和字符串资源；`StorageCacheCleaner` 通过文件和平台清理端口执行操作，Room 和全局服务访问集中在
 `StorageUsageAndroid.kt`。新增组件应保持这个单向依赖，并纳入完整文件门禁。
